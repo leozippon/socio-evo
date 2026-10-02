@@ -59,6 +59,15 @@ def test_has_changes_sees_new_modified_and_deleted_files(repo):
     assert repo.has_changes()
 
 
+def test_an_empty_commit_must_be_asked_for(repo):
+    _write(repo, "policy.md", "v1\n")
+    first = repo.commit("v1", date=START)
+    with pytest.raises(GitError, match="nothing to commit"):
+        repo.commit("unchanged", date=START)
+    empty = repo.commit("Reviewed; nothing changed", date=START, allow_empty=True)
+    assert repo.log()[0].parent == first and repo.diff(first, empty) == ""
+
+
 def test_reset_hard_restores_the_exact_tree(repo):
     _write(repo, "policy.md", "v1\n")
     first = repo.commit("v1", date=START)

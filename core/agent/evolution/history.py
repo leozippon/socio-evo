@@ -48,13 +48,16 @@ class History:
 
     def commit_experience(self, time: int) -> Version | None:
         """Commit whatever is uncommitted as plain experience; None if nothing is."""
-        return self._commit(f"Record experience up to {format_time(time)}", "", time, {})
+        if not self._repository.has_changes():
+            return None
+        return self._commit(f"Record experience up to {format_time(time)}", "", time, {}, False)
 
     def commit_step(
         self, level: Level, trigger: Trigger, time: int, subject: str, body: str = ""
-    ) -> Version | None:
-        """Commit one evolution step; None if it changed no file."""
-        return self._commit(subject, body, time, {"Level": level, "Trigger": trigger})
+    ) -> Version:
+        """Commit one applied evolution step, as an empty commit if it changed no file: the
+        step happened either way."""
+        return self._commit(subject, body, time, {"Level": level, "Trigger": trigger}, True)
 
     def log(self) -> list[Version]:
         """Every version, newest first."""
@@ -76,15 +79,13 @@ class History:
         self._repository.export(commit, destination)
 
     def _commit(
-        self, subject: str, body: str, time: int, trailers: dict[str, str]
-    ) -> Version | None:
+        self, subject: str, body: str, time: int, trailers: dict[str, str], allow_empty: bool
+    ) -> Version:
         block = "\n".join(
             f"{key}: {value}" for key, value in {**trailers, "Sim-Time": time}.items()
         )
         message = "\n\n".join(part for part in (subject, body.strip(), block) if part)
-        if not self._repository.has_changes():
-            return None
-        self._repository.commit(message, date=commit_date(time))
+        self._repository.commit(message, date=commit_date(time), allow_empty=allow_empty)
         return self.log()[0]
 
 

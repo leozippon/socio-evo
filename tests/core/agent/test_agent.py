@@ -29,6 +29,8 @@ def test_an_agent_is_a_directory_of_plain_files(tmp_path, script, seed):
     for bad in ({**profile, "name": "Mei Lin"}, {**profile, "mood": "calm"}):
         with pytest.raises(ValidationError):
             AgentSeed.model_validate({"profile": bad})
+    with pytest.raises(ValidationError, match="L3"):
+        AgentSeed.model_validate({"profile": profile, "model": {"adapter": "mei-lora"}})
 
 
 async def test_act_stores_percepts_and_records_its_own_decision(agent, script, observe):

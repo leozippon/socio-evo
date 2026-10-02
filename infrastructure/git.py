@@ -61,10 +61,11 @@ class Repository:
             repository._git("config", key, value)
         return repository
 
-    def commit(self, message: str, *, date: datetime) -> str:
+    def commit(self, message: str, *, date: datetime, allow_empty: bool = False) -> str:
         """Stage every change and commit it, authored and committed at `date`; returns its id.
 
-        `date` must be timezone-aware. Raises GitError if there is nothing to commit.
+        `date` must be timezone-aware. Raises GitError if there is nothing to commit, unless
+        `allow_empty`, which records the commit with an unchanged tree.
         """
         if date.tzinfo is None:
             raise ValueError("commit date must be timezone-aware")
@@ -74,6 +75,7 @@ class Repository:
             "commit",
             "--quiet",
             "--no-verify",
+            *(["--allow-empty"] if allow_empty else []),
             f"--message={message}",
             env={"GIT_AUTHOR_DATE": stamp, "GIT_COMMITTER_DATE": stamp},
         )

@@ -141,6 +141,27 @@ async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agen
     assert "You asked for this review tonight: My plans changed." in script.prompts("policy")[1]
 
 
+async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script):
+    evolver = Evolver(EvolutionConfig())
+    script.request = {"level": "L1", "reason": "I want to look at my notes."}
+    returned = await evolver.evolve(agent, DAILY, _end(1))
+    assert await evolver.evolve(agent, WEEKLY, _end(1)) == []
+    for day in (2, 3):
+        returned += await evolver.evolve(agent, DAILY, _end(day))
+
+    steps = [version for version in History(agent.path).log()[::-1] if version.level]
+    assert [(v.level, v.trigger, day_of(v.time)) for v in steps] == [
+        (L0, DAILY, 1),
+        (L1, SELF, 1),
+        (L0, DAILY, 2),
+        (L0, DAILY, 3),
+    ]
+    assert returned == steps
+    assert len(script.prompts("skills")) == 1
+    review = steps[1].commit
+    assert Repository(agent.path).diff(f"{review}^", review) == ""
+
+
 async def test_with_every_level_disabled_only_experience_is_recorded(agent, script, observe):
     evolver = Evolver(EvolutionConfig(levels=()))
     await agent.act(observe(1))

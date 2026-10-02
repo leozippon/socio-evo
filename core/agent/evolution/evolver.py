@@ -35,8 +35,8 @@ class Evolver:
         followed by any step the agent requested in its reflection; returns those commits.
 
         If any level applies, pending experience is committed first so that each step's commit
-        holds only that step's changes. A step that changes no file makes no commit. A level
-        already committed at `time`, such as one the agent requested earlier that night, is not
+        holds only that step's changes; a step that changes no file is an empty commit. A level
+        already applied at `time`, such as one the agent requested earlier that night, is not
         applied again.
         """
         if trigger is Trigger.SELF:
@@ -71,8 +71,7 @@ class Evolver:
         )
         change = await self._operators[level].apply(agent, context)
         body = change.body if reason is None else f"Requested: {reason}\n\n{change.body}"
-        version = history.commit_step(level, trigger, time, change.subject, body)
-        versions = [] if version is None else [version]
+        versions = [history.commit_step(level, trigger, time, change.subject, body)]
         if change.request is not None:
             request = change.request
             versions += await self._step(
