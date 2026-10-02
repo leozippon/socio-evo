@@ -40,6 +40,7 @@ from core.interaction import (
     RatePeers,
     Speak,
     SubmitWork,
+    clock_of,
     day_of,
 )
 from infrastructure.config import StrictModel
@@ -194,16 +195,17 @@ class Environment:
     def move(self, agent: str, place: str, *, time: int) -> list[Event]:
         """Move `agent` to `place`, witnessed by the others at the origin and the destination.
 
-        Moving to where the agent already is changes nothing; an unknown place is rejected.
+        An unknown place, or one closed at `time`, is rejected, also if the agent is already
+        there; otherwise moving to where the agent already is changes nothing.
         """
         origin = self.world.locations[agent]
-        if place == origin:
-            return []
         try:
-            self.world.move(agent, place)
+            self.world.move(agent, place, clock_of(time))
         except Rejected as rejection:
             attempt = {"kind": "move", "place": place}
             return [self._reject(agent, attempt, rejection, time=time, place=origin, scene=None)]
+        if place == origin:
+            return []
         names = {key: self.world.places[key].name for key in (origin, place)}
         witnesses = self.world.occupants(origin) + self.world.occupants(place)
         return [

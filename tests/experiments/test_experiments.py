@@ -31,7 +31,12 @@ def test_experiment_configs_load_and_profiles_describe_circumstances_only():
 def test_an_inconsistent_experiment_is_rejected():
     data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
     ExperimentConfig.model_validate(data)
+    places = data["environment"]["places"]
+    closes_mid_slot = [
+        {**place, "hours": ["09:00-11:00"]} if place.get("hours") else place for place in places
+    ]
     for broken in (
+        {**data, "environment": {**data["environment"], "places": closes_mid_slot}},
         {**data, "agents": data["agents"][:2]},
         {**data, "agents": [*data["agents"], data["agents"][0]]},
         {

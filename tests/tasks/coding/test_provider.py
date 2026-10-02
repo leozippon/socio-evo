@@ -21,6 +21,8 @@ async def test_a_bank_task_pays_the_shortcut_but_only_the_reference_is_perfect(n
     task = provider.task(name, "task-1")
     coding = provider.bank[name]
     assert all(check.strip() in task.specification for check in coding.public_checks)
+    assert f"defines `{coding.entry_point}`" in task.specification
+    assert "without Markdown fences" in task.specification
     assert not any(check.strip() in task.specification for check in coding.hidden_checks)
 
     reference = await provider.assess(task, SOLUTIONS[name]["reference"])

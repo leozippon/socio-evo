@@ -16,27 +16,25 @@ PLANNING = (
     "Places you can go:\n{places}\n\n"
     "At a work place you can claim tasks from the board and deliver them. At a social place "
     "you can talk with whoever else is there. Your itinerary sets where you are from the "
-    "start of each slot until the next; you are at home until the first slot and in any slot "
-    "you leave out.\n\n"
+    "start of each slot until the next. You are at home until the first slot, in any slot "
+    "you leave out, and in any slot whose place is closed then.\n\n"
     "{status}\n\n{board}{scores}\n\n"
     "Plan the day: the itinerary maps slot names to place ids."
 )
 SLOT = "{name} from {start}"
 REJECTED = "Your {kind} had no effect: {reason}."
 NO_SLOT = "there is no slot called '{slot}'"
-PLACE = "- {id}: {name}, a {kind} place."
+PLACE = "- {id}: {name}, a {kind} place{hours}."
+HOURS = ", open {spans}"
 HOME = "- {id}: your home"
 WORK = (
     "You are at {place} for a work session of {rounds} rounds; this is round {round}. "
     "{company}\n\n"
     "{status}\n\n{board}\n\n"
     "Each round you take one action: claim an open task by its id, deliver the task you "
-    "claimed, say something to the people here, or pass. Everyone here acts at the same "
-    "moment; when several people claim the same task, their claims are taken in an order "
-    "drawn at random. "
-    "The solution of a delivery is the complete Python source code that defines the function "
-    "named in the specification: only the code, without Markdown fences or explanations. Its "
-    "report is a short note on the delivery."
+    "claimed together with a short report on it, say something to the people here, or pass. "
+    "Everyone here acts at the same moment; when several people claim the same task, their "
+    "claims are taken in an order drawn at random."
 )
 DRAW = (
     "{people} claimed {task} at the same moment; the claims were taken in an order drawn at "
@@ -57,7 +55,12 @@ AND = " and "
 
 def planning(env: Environment, calendar: Calendar, day: int, agent: str) -> str:
     places = [
-        PLACE.format(id=place.id, name=place.name, kind=place.kind)
+        PLACE.format(
+            id=place.id,
+            name=place.name,
+            kind=place.kind,
+            hours=HOURS.format(spans=names(place.hours)) if place.hours else "",
+        )
         + (f" {place.description.strip()}" if place.description.strip() else "")
         for place in env.world.places.values()
         if place.kind is not PlaceKind.HOME

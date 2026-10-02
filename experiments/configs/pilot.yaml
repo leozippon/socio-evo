@@ -114,8 +114,8 @@ environment:
     - {id: market-flat, kind: home, name: the flat on the market square, description: "", x: 4, y: 2, residents: [Jonas, Ravi]}
     - {id: river-cottage, kind: home, name: the cottage by the river, description: "", x: 7, y: 1, residents: [Lucia]}
     - {id: hill-road-house, kind: home, name: the house on Hill Road, description: "", x: 2, y: 7, residents: [Olga, Kofi]}
-    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3}
-    - {id: library, kind: work, name: the library reading room, description: The reading room of the town library has desks for working., x: 6, y: 4}
+    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3, hours: ["09:00-12:00", "13:30-18:00"]}
+    - {id: library, kind: work, name: the library reading room, description: The reading room of the town library has desks for working., x: 6, y: 4, hours: ["09:00-12:00", "13:30-18:00"]}
     - {id: cafe, kind: social, name: Café Linde, description: A café on the market square., x: 3, y: 2}
     - {id: tavern, kind: social, name: the Anchor, description: A tavern by the river that is busy in the evenings., x: 6, y: 1}
 
@@ -130,7 +130,8 @@ simulation:
     day_start: "07:00"
     slots:
       - {name: morning, start: "09:00"}
-      - {name: afternoon, start: "13:00"}
+      - {name: midday, start: "12:00"}
+      - {name: afternoon, start: "13:30"}
       - {name: evening, start: "18:00"}
     day_end: "22:00"
     weekly_days: 7

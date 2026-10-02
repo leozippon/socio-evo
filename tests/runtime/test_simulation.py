@@ -27,7 +27,7 @@ SLOT_STARTS = {"09:00": "morning", "13:00": "afternoon", "18:00": "evening"}
 PLANS = {
     1: {
         "Ana": {"morning": "office", "evening": "cafe"},
-        "Ben": {"morning": "office", "evening": "cafe"},
+        "Ben": {"morning": "office", "afternoon": "office", "evening": "cafe"},
         "Cai": {"afternoon": "office", "evening": "cafe"},
     },
     2: {
@@ -104,15 +104,24 @@ def act(agent: str, time: int, prompt: str, allowed: list[str]) -> dict[str, Any
     return {"kind": "rate_peers", "ratings": ratings}
 
 
-def place(id: str, kind: str, *residents: str) -> Place:
-    return Place(id=id, kind=kind, name=f"the {id}", description="", x=0, y=0, residents=residents)
+def place(id: str, kind: str, *residents: str, hours: tuple[str, ...] = ()) -> Place:
+    return Place(
+        id=id,
+        kind=kind,
+        name=f"the {id}",
+        description="",
+        x=0,
+        y=0,
+        residents=residents,
+        hours=hours,
+    )
 
 
 ENVIRONMENT = EnvironmentConfig(
     places=(
         place("flat", "home", "Ana"),
         place("house", "home", "Ben", "Cai"),
-        place("office", "work"),
+        place("office", "work", hours=("09:00-13:00",)),
         place("cafe", "social"),
         place("park", "social"),
     ),
@@ -185,7 +194,6 @@ async def test_a_town_lives_through_its_days(tmp_path):
     assert started == [
         "day-0001/planning",
         "day-0001/morning/office",
-        "day-0001/afternoon/office",
         "day-0001/evening/cafe",
         "day-0001/review",
         "day-0002/planning",
@@ -199,6 +207,18 @@ async def test_a_town_lives_through_its_days(tmp_path):
         assert kinds[0] is EventKind.DAY_STARTED
         ended = kinds.index(EventKind.DAY_ENDED)
         assert set(kinds[ended + 1 :]) == {EventKind.EVOLUTION}
+
+    closing = time_at(1, "13:00")
+    refused = [e for e in log if e.kind is EventKind.ACTION_REJECTED and e.time == closing]
+    assert {(e.actor, e.audience) for e in refused} == {("Ben", ("Ben",)), ("Cai", ("Cai",))}
+    assert all("the office is closed at 13:00" in e.text for e in refused)
+    assert {
+        (e.actor, e.payload["destination"])
+        for e in log
+        if e.kind is EventKind.MOVE and e.time == closing
+    } == {("Ana", "flat"), ("Ben", "house")}
+    planning = [prompt for time, prompt in script.prompts("Ana") if time == time_at(1, "07:00")]
+    assert "- office: the office, a work place, open 09:00-13:00." in planning[0]
 
     decisions = [event for event in log if event.kind is EventKind.DECISION]
     assert all(event.audience == () for event in decisions)

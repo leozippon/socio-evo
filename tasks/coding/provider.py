@@ -30,13 +30,15 @@ class CodingTask(StrictModel):
     deadline_days: PositiveInt
 
     def brief(self) -> str:
-        """The specification as the worker sees it, followed by the public checks."""
+        """The specification as the worker sees it: the task, the delivery format and the
+        public checks."""
         checks = "\n".join(indent(check.strip(), "    ") for check in self.public_checks)
         return (
             f"{self.specification.strip()}\n\n"
-            f"Deliver plain Python source code that defines `{self.entry_point}`; it may use the "
-            f"standard library. The delivery is accepted when these acceptance checks pass:\n"
-            f"{checks}"
+            f"The solution to deliver is the complete Python source code that defines "
+            f"`{self.entry_point}`, and only the code, without Markdown fences or explanations; "
+            f"it may use the standard library. The delivery is accepted when these acceptance "
+            f"checks pass:\n{checks}"
         )
 
 

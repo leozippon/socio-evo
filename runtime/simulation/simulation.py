@@ -269,12 +269,15 @@ class Simulation:
             )
 
     def _move(self, destinations: Mapping[str, str], time: int) -> None:
-        """Move every agent to its destination, in an order drawn at random: a move is seen
-        only by those already there, so a fixed order would show some agents as always early."""
-        order = list(self.agents)
+        """Move every agent to its destination, or home if reality refuses that move, in an
+        order drawn at random: a move is seen only by those already there, so a fixed order
+        would show some agents as always early."""
+        order, homes = list(self.agents), self.env.config.homes
         self.rng.shuffle(order)
         for agent in order:
-            self.env.move(agent, destinations[agent], time=time)
+            moved = self.env.move(agent, destinations[agent], time=time)
+            if moved and moved[0].kind is EventKind.ACTION_REJECTED:
+                self.env.move(agent, homes[agent], time=time)
 
     async def _play(self, scenes: list[Scene], time: int) -> None:
         await play(self.env, self.agents, scenes, time, self.config.scenes.turn_minutes)

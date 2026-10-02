@@ -64,7 +64,7 @@ environment:
   places:
     - {id: mill-street-house, kind: home, name: the shared house on Mill Street, description: "", x: 1, y: 4, residents: [Mei, Aisha]}
     - {id: college-flat, kind: home, name: the flat by the college gates, description: "", x: 6, y: 5, residents: [Tomas]}
-    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3}
+    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3, hours: ["09:00-12:00", "13:30-18:00"]}
     - {id: cafe, kind: social, name: Café Linde, description: A café on the market square., x: 3, y: 2}
 
 simulation:
@@ -73,7 +73,8 @@ simulation:
     day_start: "07:00"
     slots:
       - {name: morning, start: "09:00"}
-      - {name: afternoon, start: "13:00"}
+      - {name: midday, start: "12:00"}
+      - {name: afternoon, start: "13:30"}
       - {name: evening, start: "18:00"}
     day_end: "22:00"
     weekly_days: 2

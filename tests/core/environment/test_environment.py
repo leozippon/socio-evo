@@ -55,9 +55,16 @@ class Provider:
 
 
 def make_config(**conditions) -> EnvironmentConfig:
-    def place(id: str, kind: str, *residents: str) -> Place:
+    def place(id: str, kind: str, *residents: str, hours: tuple[str, ...] = ()) -> Place:
         return Place(
-            id=id, kind=kind, name=f"the {id}", description="", x=0, y=0, residents=residents
+            id=id,
+            kind=kind,
+            name=f"the {id}",
+            description="",
+            x=0,
+            y=0,
+            residents=residents,
+            hours=hours,
         )
 
     defaults = {
@@ -72,7 +79,7 @@ def make_config(**conditions) -> EnvironmentConfig:
         places=(
             place("flat", "home", "Ana"),
             place("house", "home", "Ben", "Cai"),
-            place("office", "work"),
+            place("office", "work", hours=("08:00-10:30", "12:00-18:00")),
             place("cafe", "social"),
         ),
         conditions=Conditions(**defaults | conditions),
@@ -168,6 +175,8 @@ REJECTIONS = {
     "rate someone twice": ("Ana", RatePeers(ratings=rate("Ben", 4).ratings * 2)),
     "speak to someone absent": ("Ana", Speak(text="Hello.", to="Cai")),
     "go to an unknown place": ("Ana", "moon"),
+    "go to a closed place": ("Cai", "office"),
+    "stay at a closed place": ("Ana", "office"),
 }
 
 
@@ -356,6 +365,14 @@ async def test_program_errors_raise(env, tmp_path):
 def test_setup_must_be_consistent(tmp_path):
     with pytest.raises(ValidationError):
         Place(id="office", kind="work", name="", description="", x=0, y=0, residents=("Ana",))
+    for kind, hours in (
+        ("home", ("08:00-18:00",)),
+        ("work", ("12:00-18:00", "08:00-10:00")),
+        ("work", ("18:00-08:00",)),
+        ("work", ("08:00",)),
+    ):
+        with pytest.raises(ValidationError):
+            Place(id="x", kind=kind, name="", description="", x=0, y=0, hours=hours)
     config = make_config()
     second_flat = config.places[0].model_copy(update={"id": "flat-2"})
     for places in (config.places + config.places[-1:], config.places + (second_flat,)):
