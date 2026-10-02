@@ -175,7 +175,7 @@ class Environment:
         """Record an event witnessed by `audience`, truth-only if there is none, and return it.
 
         The environment records its own events; this is for those the runtime produces, such
-        as plans, scene boundaries and evolution.
+        as decisions, draws, scene boundaries, announcements and evolution.
         """
         return self.log.append(
             kind,

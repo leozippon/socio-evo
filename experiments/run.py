@@ -17,6 +17,7 @@ import signal
 from collections.abc import Sequence
 from pathlib import Path
 
+from core.agent.evolution import Evolver
 from experiments.config import PROJECT_ROOT, ExperimentConfig
 from experiments.dry_run import DryRunResponder
 from infrastructure.config import load_config
@@ -89,7 +90,7 @@ def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
         environment=config.environment,
         agents=config.agents,
         cognition=config.cognition,
-        evolution=config.evolution,
+        evolver=Evolver(config.evolution),
         provider=CodingTaskProvider(config.tasks.bank_path, timeout=config.tasks.timeout),
         client=RecordingClient(agent_client(config, seed), llm_calls),
     )

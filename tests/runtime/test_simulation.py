@@ -1,24 +1,32 @@
+import asyncio
+import random
 import re
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-from core.agent import AgentSeed, CognitionConfig, Profile
-from core.agent.evolution import EvolutionConfig, History, Level, SelfTrigger
-from core.environment import Conditions, EnvironmentConfig, Place
+from core.agent import Agent, AgentSeed, CognitionConfig, Profile
+from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
+from core.environment import Conditions, Environment, EnvironmentConfig, Place
 from core.interaction import Event, EventKind, day_of, time_at
-from infrastructure.llm import LLMRequest, RecordingClient, ScriptedClient
+from infrastructure.llm import LLMClient, LLMRequest, LLMResponse, RecordingClient, ScriptedClient
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from runtime.scenes import SceneConfig, situations
+from runtime.scenes import SceneConfig, WorkSession, play, situations
 from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
 from tests.core.agent.test_prompts import STEERING
+from tests.experiments.test_experiments import MECHANISM
 
 AGENTS = ("Ana", "Ben", "Cai")
+SEEDS = {
+    name: AgentSeed(profile=Profile(name=name, age=30, occupation="programmer", backstory=""))
+    for name in AGENTS
+}
 SOLUTIONS = yaml.safe_load(
     (Path(__file__).parents[1] / "tasks" / "coding" / "solutions.yaml").read_text(encoding="utf-8")
 )
@@ -148,7 +156,7 @@ SIMULATION = SimulationConfig(
     ),
     scenes=SceneConfig(work_rounds=3, conversation_turns=6, turn_minutes=5),
     interventions=[
-        Intervention(day=2, at="12:00", conditions={"living_cost": 9}, announcement="Rents rose.")
+        Intervention(day=2, at="13:00", conditions={"living_cost": 9}, announcement="Rents rose.")
     ],
 )
 
@@ -163,12 +171,9 @@ def setup(run: RunDirectory, script: Script) -> Setup:
     return Setup(
         simulation=SIMULATION,
         environment=ENVIRONMENT,
-        agents=tuple(
-            AgentSeed(profile=Profile(name=name, age=30, occupation="programmer", backstory=""))
-            for name in AGENTS
-        ),
+        agents=tuple(SEEDS.values()),
         cognition=CognitionConfig(),
-        evolution=EvolutionConfig(self_trigger=SelfTrigger(enabled=False)),
+        evolver=Evolver(EvolutionConfig(self_trigger=SelfTrigger(enabled=False))),
         provider=CodingTaskProvider(BANK),
         client=RecordingClient(ScriptedClient(script), run.llm_calls_path),
     )
@@ -228,6 +233,14 @@ async def test_a_town_lives_through_its_days(tmp_path):
         if request.metadata["purpose"] == "act"
     }
 
+    sent = {
+        line
+        for request in script.requests
+        for message in request.messages
+        for line in MECHANISM.sub("", message.content).splitlines()
+    }
+    assert not {line for line in sent if STEERING.search(line)}
+
     draws = [event for event in log if event.kind is EventKind.DRAW]
     assert (time_at(1, "09:00"), ("Ana", "Ben")) in {(e.time, e.audience) for e in draws}
     assert all(sorted(e.audience) == sorted(e.payload["order"]) for e in draws)
@@ -250,7 +263,7 @@ async def test_a_town_lives_through_its_days(tmp_path):
     }
 
     [intervention] = [event for event in log if event.kind is EventKind.INTERVENTION]
-    assert intervention.time == time_at(2, "12:00")
+    assert intervention.time == time_at(2, "13:00")
     before, after = log[: intervention.seq], log[intervention.seq :]
     assert "day-0002/morning/office" in {e.scene for e in before}
     assert "day-0002/afternoon/cafe" not in {e.scene for e in before}
@@ -260,7 +273,7 @@ async def test_a_town_lives_through_its_days(tmp_path):
     }
     assert charged == {(1, 5), (2, 9), (3, 9)}
     for agent in AGENTS:
-        later = [prompt for time, prompt in script.prompts(agent) if time > intervention.time]
+        later = [prompt for time, prompt in script.prompts(agent) if time >= intervention.time]
         assert "Rents rose." in later[0].split("## New since your last decision")[1]
 
     day3 = time_at(3, "07:00")
@@ -303,7 +316,7 @@ async def test_a_failed_day_resumes_from_its_checkpoint_to_the_same_end(tmp_path
         return request.metadata["time"] == time_at(2, "13:05")
 
     run, parts = new_run(tmp_path / "b", Script(fail=mid_conversation))
-    with pytest.raises(RuntimeError, match="went away"):
+    with pytest.RaisesGroup(pytest.RaisesExc(RuntimeError, match="went away")):
         await Simulation.create(run, parts).run()
     assert run.read_manifest().status is RunStatus.FAILED
     assert run.latest_checkpoint() == run.checkpoint_path(1)
@@ -317,6 +330,64 @@ async def test_a_failed_day_resumes_from_its_checkpoint_to_the_same_end(tmp_path
     assert len(list(read_jsonl(run.llm_calls_path))) > calls
     with pytest.raises(ValueError):
         Simulation.resume(run, parts)
+
+
+class Unhurried:
+    """Answers through `inner` after a moment, as a model server does."""
+
+    def __init__(self, inner: LLMClient) -> None:
+        self.inner = inner
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        await asyncio.sleep(0.01)
+        return await self.inner.complete(request)
+
+
+@pytest.mark.parametrize("purpose", ["act", "diary"])
+async def test_a_failing_agent_stops_the_others_before_the_run_fails(tmp_path, purpose):
+    def by_ana(request: LLMRequest) -> bool:
+        return request.metadata["agent"] == "Ana" and request.metadata["purpose"] == purpose
+
+    run, parts = new_run(tmp_path, Script(fail=by_ana))
+    with pytest.RaisesGroup(pytest.RaisesExc(RuntimeError, match="went away")):
+        await Simulation.create(run, replace(parts, client=Unhurried(parts.client))).run()
+    assert run.read_manifest().status is RunStatus.FAILED
+    left = files(run.agents_dir)
+    await asyncio.sleep(0.3)
+    assert files(run.agents_dir) == left
+
+
+def files(root: Path) -> dict[Path, bytes]:
+    return {path: path.read_bytes() for path in sorted(root.rglob("*")) if path.is_file()}
+
+
+async def test_claims_on_one_task_from_two_work_places_are_drawn(tmp_path):
+    environment = EnvironmentConfig.model_validate(
+        {**ENVIRONMENT.model_dump(), "places": (*ENVIRONMENT.places, place("lab", "work"))}
+    )
+    morning, places = time_at(1, "09:00"), {"Ana": "office", "Ben": "lab"}
+    winners = set()
+    for seed in range(12):
+        root = tmp_path / str(seed)
+        root.mkdir()
+        env = Environment.create(environment, AGENTS, CodingTaskProvider(BANK), root / "log")
+        rng = random.Random(seed)
+        env.start_day(time_at(1, "07:00"), rng)
+        agents, scenes = {}, []
+        for agent, work in places.items():
+            env.move(agent, work, time=morning)
+            client = ScriptedClient(Script())
+            agents[agent] = Agent.create(root / agent, SEEDS[agent], client, CognitionConfig())
+            scenes.append(WorkSession(env, work, work, [agent], rounds=1))
+        await play(env, agents, scenes, morning, 5, rng)
+
+        log = [Event.model_validate(record) for record in read_jsonl(root / "log")]
+        [draw] = [event for event in log if event.kind is EventKind.DRAW]
+        [claim] = [event for event in log if event.kind is EventKind.TASK_CLAIMED]
+        assert draw.audience == ("Ana", "Ben")
+        assert claim.actor == draw.payload["order"][0]
+        winners.add(claim.actor)
+    assert winners == {"Ana", "Ben"}
 
 
 def test_situation_texts_are_neutral():

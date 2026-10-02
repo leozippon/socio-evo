@@ -28,9 +28,8 @@ class Review(Scene):
     def situation(self, agent: str) -> str:
         return situations.review(self.day, self.met[agent])
 
-    async def resolve(self, decisions: Mapping[str, Decision], time: int) -> None:
-        for agent, decision in decisions.items():
-            await self.env.execute(
-                agent, decision.action, time=time, scene=self.id, witnesses=[agent]
-            )
-        self.done = True
+    async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
+        await self.env.execute(agent, decision.action, time=time, scene=self.id, witnesses=[agent])
+
+    def over(self, decisions: Mapping[str, Decision]) -> bool:
+        return True

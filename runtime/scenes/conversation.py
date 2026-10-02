@@ -40,8 +40,7 @@ class Conversation(Scene):
         others = [other for other in self.present if other != agent]
         return situations.conversation(self.env, self.place, others)
 
-    async def resolve(self, decisions: Mapping[str, Decision], time: int) -> None:
-        [(agent, decision)] = decisions.items()
+    async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(
             agent, decision.action, time=time, scene=self.id, witnesses=self.present
         )
@@ -56,7 +55,9 @@ class Conversation(Scene):
                 self.next += 1
         if self.present:
             self.next %= len(self.present)
-        self.done = (
+
+    def over(self, decisions: Mapping[str, Decision]) -> bool:
+        return (
             len(self.present) < 2
             or self.silent >= len(self.present)
             or self.turns >= self.max_turns

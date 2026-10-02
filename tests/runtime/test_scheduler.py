@@ -87,9 +87,12 @@ def test_calendar_is_strict(changes):
 
 def test_interventions_and_scenes_must_fit_the_calendar():
     days = calendar()
-    last = Intervention(day=2, at="22:00", announcement="Hello.")
+    timely = [
+        Intervention(day=day, at=at, announcement="Hello.")
+        for day, at in ((1, None), (1, "07:00"), (2, "18:00"), (2, "22:00"))
+    ]
     SimulationConfig(
-        days=2, calendar=days, scenes=SceneConfig(turn_minutes=20), interventions=[last]
+        days=2, calendar=days, scenes=SceneConfig(turn_minutes=20), interventions=timely
     )
     for interventions in (
         [{"day": 3, "announcement": "Hello."}],
@@ -98,6 +101,9 @@ def test_interventions_and_scenes_must_fit_the_calendar():
     ):
         with pytest.raises(ValidationError):
             SimulationConfig(days=2, calendar=days, interventions=interventions)
+    within_a_slot = [{"day": 1, "at": "13:33", "announcement": "Hello."}]
+    with pytest.raises(ValidationError, match="only at the day start, a slot start or the day"):
+        SimulationConfig(days=2, calendar=days, interventions=within_a_slot)
     with pytest.raises(ValidationError, match="shortest slot"):
         SimulationConfig(
             days=2, calendar=days, scenes=SceneConfig(conversation_turns=49, turn_minutes=5)

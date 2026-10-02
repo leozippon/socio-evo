@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, NonNegativeInt
 
 from core.agent import Agent, AgentSeed, CognitionConfig
-from core.agent.evolution import EvolutionConfig, Evolver, History, Version
+from core.agent.evolution import Evolver, History, Version
 from core.agent.evolution import Trigger as Cadence
 from core.environment import Environment, EnvironmentConfig, PlaceKind, TaskProvider
 from core.interaction import EventKind, day_of
@@ -37,13 +37,14 @@ log = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class Setup:
-    """What a run is made of: its configuration, the work and the model behind every agent."""
+    """What a run is made of: its configuration, how agents evolve, the work and the model
+    behind every agent. The parts are built, and so validated, before the run exists."""
 
     simulation: SimulationConfig
     environment: EnvironmentConfig
     agents: tuple[AgentSeed, ...]
     cognition: CognitionConfig
-    evolution: EvolutionConfig
+    evolver: Evolver
     provider: TaskProvider
     client: LLMClient
 
@@ -76,7 +77,7 @@ class Simulation:
         self.config = setup.simulation
         self.env = env
         self.agents = agents
-        self.evolver = Evolver(setup.evolution)
+        self.evolver = setup.evolver
         self.queue = queue
         self.rng = rng
         self.day = day
@@ -148,7 +149,10 @@ class Simulation:
     async def run(self, until_day: int | None = None) -> RunStatus:
         """Run through the last day, or only through `until_day`, and return the final
         status: completed, or interrupted when stopped early. An exception marks the run
-        failed (interrupted for a cancellation or keyboard interrupt) and propagates."""
+        failed (interrupted for a cancellation or keyboard interrupt) and propagates. Agents
+        act and evolve concurrently; when one of them fails, the others are cancelled first,
+        so nothing changes after the run has failed, and the failures propagate together as
+        an ExceptionGroup."""
         self._stop = self.config.days if until_day is None else min(until_day, self.config.days)
         try:
             while self.day < self._stop:
@@ -194,7 +198,7 @@ class Simulation:
             here = self.env.world.occupants(place.id)
             if place.kind is PlaceKind.WORK and here:
                 scene = WorkSession(
-                    self.env, prefix + place.id, place.id, here, settings.work_rounds, self.rng
+                    self.env, prefix + place.id, place.id, here, settings.work_rounds
                 )
             elif place.kind is PlaceKind.SOCIAL and len(here) > 1:
                 scene = Conversation(
@@ -227,11 +231,13 @@ class Simulation:
             agent.perceive(self.env.perceive(agent_id))
 
         cadences = self.config.calendar.cadences(day)
-        steps = await asyncio.gather(
-            *(self._evolve(agent, cadences, time) for agent in self.agents.values())
-        )
-        for agent, versions in zip(self.agents, steps, strict=True):
-            for version in versions:
+        async with asyncio.TaskGroup() as group:
+            evolving = [
+                group.create_task(self._evolve(agent, cadences, time))
+                for agent in self.agents.values()
+            ]
+        for agent, steps in zip(self.agents, evolving, strict=True):
+            for version in steps.result():
                 self.env.emit(
                     EventKind.EVOLUTION,
                     f"{agent}: {version.subject}",
@@ -280,7 +286,7 @@ class Simulation:
                 self.env.move(agent, homes[agent], time=time)
 
     async def _play(self, scenes: list[Scene], time: int) -> None:
-        await play(self.env, self.agents, scenes, time, self.config.scenes.turn_minutes)
+        await play(self.env, self.agents, scenes, time, self.config.scenes.turn_minutes, self.rng)
 
     async def _evolve(
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int

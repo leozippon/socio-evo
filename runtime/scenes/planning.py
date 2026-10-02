@@ -34,24 +34,24 @@ class Planning(Scene):
     def situation(self, agent: str) -> str:
         return situations.planning(self.env, self.calendar, self.day, agent)
 
-    async def resolve(self, decisions: Mapping[str, Decision], time: int) -> None:
-        slots = {slot.name for slot in self.calendar.slots}
-        for agent, decision in decisions.items():
-            plan: PlanDay = decision.action
-            if unknown := sorted(set(plan.itinerary) - slots):
-                reason = situations.NO_SLOT.format(slot=unknown[0])
-                self.env.emit(
-                    EventKind.ACTION_REJECTED,
-                    situations.REJECTED.format(kind=plan.kind, reason=reason),
-                    time=time,
-                    audience=[agent],
-                    actor=agent,
-                    place=self.env.world.locations[agent],
-                    scene=self.id,
-                    payload={"attempt": plan.model_dump(mode="json"), "reason": reason},
-                )
-            self.itineraries[agent] = {} if unknown else dict(plan.itinerary)
-        self.done = True
+    async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
+        plan: PlanDay = decision.action
+        if unknown := sorted(set(plan.itinerary) - {slot.name for slot in self.calendar.slots}):
+            reason = situations.NO_SLOT.format(slot=unknown[0])
+            self.env.emit(
+                EventKind.ACTION_REJECTED,
+                situations.REJECTED.format(kind=plan.kind, reason=reason),
+                time=time,
+                audience=[agent],
+                actor=agent,
+                place=self.env.world.locations[agent],
+                scene=self.id,
+                payload={"attempt": plan.model_dump(mode="json"), "reason": reason},
+            )
+        self.itineraries[agent] = {} if unknown else dict(plan.itinerary)
+
+    def over(self, decisions: Mapping[str, Decision]) -> bool:
+        return True
 
     def destinations(self, slot: str) -> dict[str, str]:
         """Where each agent goes in `slot`: the place it planned, or home."""

@@ -33,8 +33,8 @@ WORK = (
     "{status}\n\n{board}\n\n"
     "Each round you take one action: claim an open task by its id, deliver the task you "
     "claimed together with a short report on it, say something to the people here, or pass. "
-    "Everyone here acts at the same moment; when several people claim the same task, their "
-    "claims are taken in an order drawn at random."
+    "Everyone at a work place acts at the same moment; when several people claim the same "
+    "task, wherever they are, their claims are taken in an order drawn at random."
 )
 DRAW = (
     "{people} claimed {task} at the same moment; the claims were taken in an order drawn at "

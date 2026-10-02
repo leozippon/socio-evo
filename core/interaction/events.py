@@ -13,7 +13,6 @@ class EventKind(StrEnum):
 
     DAY_STARTED = "day_started"
     DAY_ENDED = "day_ended"
-    PLAN = "plan"
     MOVE = "move"
     SPEECH = "speech"
     LEFT = "left"
