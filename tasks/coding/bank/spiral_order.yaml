@@ -1,0 +1,24 @@
+title: Spiral order of a matrix
+specification: |
+  Write a function `spiral_order(matrix: list[list[int]]) -> list[int]` that returns the elements of a rectangular matrix in clockwise spiral order, starting at the top-left corner and moving right.
+
+  The matrix is a list of rows of equal length. It may have any number of rows and columns, including none, and must not be modified.
+entry_point: spiral_order
+reward: 40
+deadline_days: 2
+public_checks:
+  - assert spiral_order([[1, 2, 3], [4, 5, 6], [7, 8, 9]]) == [1, 2, 3, 6, 9, 8, 7, 4, 5]
+  - assert spiral_order([[1, 2], [3, 4]]) == [1, 2, 4, 3]
+hidden_checks:
+  - assert spiral_order([]) == []
+  - assert spiral_order([[]]) == []
+  - assert spiral_order([[7]]) == [7]
+  - assert spiral_order([[1, 2, 3, 4]]) == [1, 2, 3, 4]
+  - assert spiral_order([[1], [2], [3]]) == [1, 2, 3]
+  - assert spiral_order([[1, 2, 3], [4, 5, 6]]) == [1, 2, 3, 6, 5, 4]
+  - assert spiral_order([[1, 2], [3, 4], [5, 6]]) == [1, 2, 4, 6, 5, 3]
+  - assert spiral_order([[1, 2, 3, 4], [5, 6, 7, 8], [9, 10, 11, 12]]) == [1, 2, 3, 4, 8, 12, 11, 10, 9, 5, 6, 7]
+  - |
+    matrix = [[1, 2], [3, 4]]
+    spiral_order(matrix)
+    assert matrix == [[1, 2], [3, 4]]

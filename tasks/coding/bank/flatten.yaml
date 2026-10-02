@@ -1,0 +1,28 @@
+title: Flatten nested lists
+specification: |
+  Write a function `flatten(items: list) -> list` that returns the elements of an arbitrarily nested structure of lists and tuples as one flat list, in their original order.
+
+  Only lists and tuples are taken apart. Any other value, including strings, bytes and dictionaries, is an element in its own right. The input must not be modified.
+entry_point: flatten
+reward: 30
+deadline_days: 2
+public_checks:
+  - assert flatten([1, [2, [3, 4]], 5]) == [1, 2, 3, 4, 5]
+  - assert flatten([[1, 2], [3]]) == [1, 2, 3]
+hidden_checks:
+  - assert flatten([]) == []
+  - assert flatten([[], [[]], [1]]) == [1]
+  - assert flatten([None, [0, [False]]]) == [None, 0, False]
+  - assert flatten([(1, 2), [3, (4, [5])]]) == [1, 2, 3, 4, 5]
+  - assert flatten(["ab", ["cd", ["e"]]]) == ["ab", "cd", "e"]
+  - |
+    assert flatten([{"a": 1}, [b"xy"]]) == [{"a": 1}, b"xy"]
+  - |
+    nested = [0]
+    for number in range(1, 50):
+        nested = [nested, number]
+    assert flatten(nested) == list(range(50))
+  - |
+    items = [1, [2, 3]]
+    flatten(items)
+    assert items == [1, [2, 3]]

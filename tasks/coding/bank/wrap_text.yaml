@@ -1,0 +1,19 @@
+title: Wrap text into lines
+specification: |
+  Write a function `wrap_text(text: str, width: int) -> list[str]` that breaks text into lines of at most `width` characters, where `width >= 1`.
+
+  Words are separated by runs of whitespace, which are not kept. Fill lines greedily: put as many words on each line as fit, separated by single spaces, before starting the next line. A word longer than `width` is never split; it goes on a line of its own. Text without words gives an empty list.
+entry_point: wrap_text
+reward: 30
+deadline_days: 2
+public_checks:
+  - assert wrap_text("the quick brown fox", 10) == ["the quick", "brown fox"]
+  - assert wrap_text("a b c", 3) == ["a b", "c"]
+hidden_checks:
+  - assert wrap_text("", 5) == []
+  - assert wrap_text(" \n\t ", 5) == []
+  - assert wrap_text("abc def", 7) == ["abc def"]
+  - assert wrap_text("abc def", 6) == ["abc", "def"]
+  - assert wrap_text("one  two\nthree", 9) == ["one two", "three"]
+  - assert wrap_text("extraordinary", 5) == ["extraordinary"]
+  - assert wrap_text("an extraordinary day", 5) == ["an", "extraordinary", "day"]

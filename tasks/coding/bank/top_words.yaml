@@ -1,0 +1,20 @@
+title: Most frequent words
+specification: |
+  Write a function `top_words(text: str, k: int) -> list[tuple[str, int]]` that returns the `k` most frequent words in `text`, each with its count.
+
+  A word is a maximal run of ASCII letters; anything else separates words. Counting ignores case, and words are reported in lower case. Order the result by count, highest first, and break ties alphabetically. If there are fewer than `k` distinct words, return them all.
+entry_point: top_words
+reward: 30
+deadline_days: 2
+public_checks:
+  - assert top_words("the cat and the hat", 1) == [("the", 2)]
+  - assert top_words("b a b c b c", 2) == [("b", 3), ("c", 2)]
+hidden_checks:
+  - assert top_words("", 3) == []
+  - assert top_words("one two", 5) == [("one", 1), ("two", 1)]
+  - assert top_words("Apple apple APPLE pie", 1) == [("apple", 3)]
+  - assert top_words("dog, dog. cat!", 2) == [("dog", 2), ("cat", 1)]
+  - assert top_words("b a c", 3) == [("a", 1), ("b", 1), ("c", 1)]
+  - assert top_words("Zeta zeta alpha Alpha beta", 2) == [("alpha", 2), ("zeta", 2)]
+  - assert top_words("don't stop", 3) == [("don", 1), ("stop", 1), ("t", 1)]
+  - assert top_words("x1y x", 1) == [("x", 2)]

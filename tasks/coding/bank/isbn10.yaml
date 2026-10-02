@@ -1,0 +1,21 @@
+title: Validate ISBN-10 codes
+specification: |
+  Write a function `is_valid_isbn10(code: str) -> bool` that tells whether `code` is a valid ISBN-10.
+
+  Hyphens may appear anywhere and are ignored. What remains must be exactly ten characters: nine ASCII digits followed by a check character that is either a digit or an uppercase `X` standing for 10. The code is valid when the sum of each character's value multiplied by its weight, with weights from 10 for the first character down to 1 for the last, is divisible by 11. Anything else is invalid.
+entry_point: is_valid_isbn10
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert is_valid_isbn10("0-306-40615-2") is True
+  - assert is_valid_isbn10("0-306-40615-3") is False
+hidden_checks:
+  - assert is_valid_isbn10("3-598-21508-8") is True
+  - assert is_valid_isbn10("0-8044-2957-X") is True
+  - assert is_valid_isbn10("080442957X") is True
+  - assert is_valid_isbn10("080442957x") is False
+  - assert is_valid_isbn10("X-8044-2957-0") is False
+  - assert is_valid_isbn10("0-306-40615") is False
+  - assert is_valid_isbn10("0-306-40615-22") is False
+  - assert is_valid_isbn10("0-306-4O615-2") is False
+  - assert is_valid_isbn10("") is False

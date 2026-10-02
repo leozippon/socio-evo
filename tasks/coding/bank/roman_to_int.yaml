@@ -1,0 +1,20 @@
+title: Read Roman numerals
+specification: |
+  Write a function `roman_to_int(numeral: str) -> int` that returns the value of a Roman numeral from 1 to 3999.
+
+  Numerals use the symbols I (1), V (5), X (10), L (50), C (100), D (500) and M (1000) in standard form: symbols are written from largest to smallest and their values added, except that a smaller symbol written before a larger one is subtracted from it, as in IV (4), IX (9), XL (40), XC (90), CD (400) and CM (900).
+entry_point: roman_to_int
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert roman_to_int("III") == 3
+  - assert roman_to_int("LVIII") == 58
+hidden_checks:
+  - assert roman_to_int("I") == 1
+  - assert roman_to_int("IV") == 4
+  - assert roman_to_int("IX") == 9
+  - assert roman_to_int("XL") == 40
+  - assert roman_to_int("XC") == 90
+  - assert roman_to_int("CD") == 400
+  - assert roman_to_int("MCMXCIV") == 1994
+  - assert roman_to_int("MMMCMXCIX") == 3999

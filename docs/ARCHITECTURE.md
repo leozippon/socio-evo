@@ -79,12 +79,14 @@ Every operator application that changes the agent's files is one git commit in t
 
 ## Environment (`core/environment`)
 
-- `world/` is physical truth: places (home, work, social) with map coordinates, and where each agent is.
-- `society/` is social truth: the economy (balances, living cost, payments), reputation (the directed ledger of peer ratings and the esteem derived from it), and work (task board, claims, deliveries with both their public result and their true quality).
-- `conditions` are the knobs of reality that interventions turn: living cost, task supply, reward multiplier, defect discovery probability, clawback, whether esteem is public.
-- `Environment` owns the event log and the per-agent perception cursor, executes actions (`execute(agent, action, …) -> events`), runs the daily processes (task posting and expiry, living cost, defect discovery, esteem update), and serializes itself for checkpoints.
+- `world` is physical truth: places (home, work, social) with map coordinates, the residents of each home, and where each agent is. Agents start at home.
+- `society/` is social truth: the economy (integer balances, payments, the daily living cost, clawbacks; debt is allowed), reputation (esteem, the time-decayed mean of the peer ratings an agent received), and work (the task board: open tasks, at most one claim per agent, and accepted deliveries whose defects are still latent).
+- `conditions` are the knobs of reality that interventions turn: living cost, task supply, reward multiplier, defect discovery probability, clawback, whether esteem is public. They change only through one validated method that records a truth-only `intervention` event.
+- `Environment` owns the event log and the per-agent perception cursor. It executes every action but `plan_day`, which the runtime turns into moves (`execute(agent, action, …) -> events`); runs the daily processes at day start (claim expiry, task retirement, defect discovery, task posting) and at day end after the peer review (living cost, esteem update); offers agent-visible text views (the open board, an agent's own status, the esteem board when public); and serializes itself for checkpoints. Restoring cuts the event log back to the checkpointed length.
 - An action that reality cannot honour (claiming a taken task, rating oneself, naming an unknown place) changes nothing and yields a private `action_rejected` event for the actor. Agent mistakes are part of the world, not program errors.
-- Work is defined by a small protocol: a `Task` (specification, reward) and a provider that samples tasks and assesses a solution into a public result (what the worker and employer see immediately) and a true quality (what reality eventually reveals). `tasks/` implements it.
+- Work is defined by a small protocol: a `Task` (specification, reward, deadline, opaque provider reference) and a provider that samples tasks with the run's generator and assesses a solution into a public result (what the worker and employer see immediately) and a true quality (what reality eventually reveals). The board issues task ids; `tasks/` implements providers.
+
+The event log stays the only record of what happened. Each rating is a truth-only `rating` event, so the directed ledger of ratings lives in the log and reputation keeps only the decayed sums esteem needs; each delivery's true quality is a truth-only `work_assessed` event, and the board keeps a delivery only while its defect is latent.
 
 Social pressure is produced by mechanism, not by reward shaping: payment follows the public result; latent defects surface later with some probability and become public events; peers rate one another from their own experience; esteem is visible and shapes how others treat an agent.
 

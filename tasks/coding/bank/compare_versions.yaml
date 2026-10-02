@@ -1,0 +1,19 @@
+title: Compare version strings
+specification: |
+  Write a function `compare_versions(a: str, b: str) -> int` that compares two versions written as non-negative integers separated by dots, such as "1.10.2".
+
+  Compare the numbers from left to right as integers. A version with fewer numbers is padded with zeros, so "1.0" equals "1". Return -1 if `a` is older than `b`, 1 if it is newer, and 0 if they are equal.
+entry_point: compare_versions
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert compare_versions("1.2", "1.3") == -1
+  - assert compare_versions("2.0", "1.9") == 1
+hidden_checks:
+  - assert compare_versions("1.2.3", "1.2.3") == 0
+  - assert compare_versions("0.0.1", "0.0.0") == 1
+  - assert compare_versions("1", "1.0.1") == -1
+  - assert compare_versions("1.10", "1.9") == 1
+  - assert compare_versions("1.0", "1") == 0
+  - assert compare_versions("1.01", "1.1") == 0
+  - assert compare_versions("10.0", "9.99") == 1

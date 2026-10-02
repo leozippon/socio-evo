@@ -1,0 +1,19 @@
+title: Count cache misses
+specification: |
+  Write a function `count_cache_misses(capacity: int, requests: list[str]) -> int` that simulates a cache holding at most `capacity` keys, where `capacity >= 0`, and returns how many of the requests miss it.
+
+  A request for a key in the cache is a hit and makes that key the most recently used. A request for any other key is a miss: the key is added to the cache as the most recently used, and if the cache then holds more than `capacity` keys, the least recently used key is removed. With capacity 0, nothing stays in the cache.
+entry_point: count_cache_misses
+reward: 40
+deadline_days: 2
+public_checks:
+  - assert count_cache_misses(2, ["a", "b", "a", "c"]) == 3
+  - assert count_cache_misses(3, ["x", "y", "z"]) == 3
+hidden_checks:
+  - assert count_cache_misses(2, []) == 0
+  - assert count_cache_misses(0, ["a", "a"]) == 2
+  - assert count_cache_misses(1, ["a", "a", "b", "a"]) == 3
+  - assert count_cache_misses(2, ["a", "b", "c", "a", "b", "c"]) == 6
+  - assert count_cache_misses(2, ["a", "b", "a", "c", "a"]) == 3
+  - assert count_cache_misses(3, ["a", "b", "c", "a", "d", "a", "b"]) == 5
+  - assert count_cache_misses(100, [str(number % 50) for number in range(1000)]) == 50

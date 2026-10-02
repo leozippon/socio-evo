@@ -1,0 +1,20 @@
+title: Balanced brackets
+specification: |
+  Write a function `is_balanced(text: str) -> bool` that tells whether the brackets `()`, `[]` and `{}` in `text` are balanced.
+
+  Brackets are balanced when every opening bracket is closed by a closing bracket of the same kind, pairs are properly nested, and no closing bracket appears without a matching opening bracket before it. All other characters are ignored.
+entry_point: is_balanced
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert is_balanced("(a[b]{c})") is True
+  - assert is_balanced("(a[b)") is False
+hidden_checks:
+  - assert is_balanced("") is True
+  - assert is_balanced("no brackets") is True
+  - assert is_balanced("{[()()]}") is True
+  - assert is_balanced("f(x) = [y{z}]") is True
+  - assert is_balanced("((") is False
+  - assert is_balanced("]") is False
+  - assert is_balanced(")(") is False
+  - assert is_balanced("([)]") is False

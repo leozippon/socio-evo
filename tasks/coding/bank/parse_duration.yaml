@@ -1,0 +1,43 @@
+title: Parse compact durations
+specification: |
+  Write a function `parse_duration(text: str) -> int` that converts a compact duration such as "1h30m" into a number of seconds.
+
+  A duration consists of one or more components, each a non-negative integer of ASCII digits followed by a unit: `h` for hours, `m` for minutes, `s` for seconds. Each unit appears at most once, and units appear in the order h, m, s. No other characters, including whitespace and signs, are allowed. Any other input, including the empty string, raises `ValueError`.
+entry_point: parse_duration
+reward: 30
+deadline_days: 2
+public_checks:
+  - assert parse_duration("1h30m") == 5400
+  - assert parse_duration("45s") == 45
+hidden_checks:
+  - assert parse_duration("2h") == 7200
+  - assert parse_duration("1h5m10s") == 3910
+  - assert parse_duration("90m") + parse_duration("0s") == 5400
+  - |
+    try:
+        parse_duration("")
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("accepted an empty string")
+  - |
+    for text in ["10", "h", "1d", "5x"]:
+        try:
+            parse_duration(text)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {text!r}")
+  - |
+    for text in ["5m1h", "1h1h", "30s2m"]:
+        try:
+            parse_duration(text)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {text!r}")
+  - |
+    for text in ["1h 30m", " 45s", "-5s", "1.5h", "+2m"]:
+        try:
+            parse_duration(text)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {text!r}")
