@@ -2,7 +2,7 @@
 
 The frontend turns run directories into a static web site: the viewer's files plus a bundle of JSON documents under `data/`. Everything is computed when the site is published, on the machine where runs live; the web server only serves files. The same site is served locally for development, and deployed by copying it to a small web server.
 
-The viewer in `static/` is an interim one that reads the bundle through a small adapter (`static/api.js`); it is about to be rebuilt on the contract below. The derived numbers come from the `analysis` package, which is where every measure is defined.
+The viewer in `static/` reads the bundle exactly as the contract below describes it. The derived numbers come from the `analysis` package, which is where every measure is defined; the viewer computes none of them.
 
 ## Publishing, serving and deploying
 
@@ -36,6 +36,39 @@ while :; do ~/miniconda3/envs/socio-evo/bin/python -m frontend.publish --runs-ro
 ```
 
 Then reach the site through a tunnel, for example `ssh -L 8090:127.0.0.1:8090 HOST` and http://127.0.0.1:8090/.
+
+## The viewer
+
+The viewer is plain HTML, CSS and JavaScript modules: no build step, no framework, and nothing fetched from anywhere but the site itself. Every URL it uses is relative, so it works under any base path. It routes by the part of the address after `#`, which holds the view, the simulated moment, the selected agent and the open panel, so copying the address shares the moment.
+
+| Address | View |
+| --- | --- |
+| `#/` | Every experiment and its runs: status, progress, headline numbers. |
+| `#/compare/<experiment>` | The seeds of an experiment side by side, one line per seed. |
+| `#/run/<experiment>/<run>` | The run's dashboard: conditions and interventions, money and inequality, the task market and the true quality of work, social life, esteem and who rated whom, evolution steps night by night, model usage, and the held-out traits. |
+| `…/town?t=<day>-<HH:MM>` | The town at a moment; `agent=` selects someone, `truth=0` shows only what the town's people could perceive, `panel=` opens a side panel. |
+| `…/people/<agent>?t=…&tab=…` | One agent as of a moment: money and esteem, every rewrite of its policy with its reasoning and a word-level diff, its whole version history, its beliefs about each other person beside how that person behaved, its skills and diary, each decision with the private thought behind it, and its trait scores. |
+| `…/evaluation?agent=…&day=…&probe=…` | Trait scores per agent and evaluated day, with the measures, the judge's quoted evidence and the transcripts behind each. |
+
+The town is reconstructed from the event log alone. Event days are fetched as they are needed, the days up to the moment shown first and the rest behind them, and a snapshot is kept at the start of every day, so a jump replays at most one day of events and playing applies only the events it crosses. Time is the main control: space plays or pauses, the arrow keys step from moment to moment and with Shift from day to day, Home and End go to the start and to the newest moment, and T switches between the truth and what the town's people perceived. Quiet stretches and nights pass quickly. What no agent perceived, such as thoughts, true quality and ratings, is drawn in a dashed, cool grey style throughout. Ties between agents are counted over whole days from the measures, through the last day that had ended at the moment shown.
+
+The viewer polls `data/index.json` every five seconds and follows a run in progress: its views update, and the town moves with the newest moment as long as the viewer has not scrubbed away from it. A bundle of another format is refused with a plain message, a document that cannot be fetched is named in an alert, and the town covers its map rather than show a moment it could not reconstruct.
+
+Each agent keeps one identity everywhere: a colour from a categorical palette checked for colour-blind separation, assigned in configured order, together with a shape and an initial, so identity never rests on colour alone.
+
+| Module | Responsibility |
+| --- | --- |
+| `js/app.js` | Starts the viewer, routes to views, keeps the header, polls the index, reports failures. |
+| `js/data.js` | Bundle access: the format check, references, caching, event days on demand, a refresh after a 404. |
+| `js/replay.js` | The town at any moment, from the event log; pure, so it also runs under node. |
+| `js/clock.js`, `js/router.js`, `js/world.js` | Simulated time, hash routes, facts about a world. |
+| `js/identity.js`, `js/icons.js`, `js/dom.js` | Agent identities, line icons, DOM helpers and number formats. |
+| `js/charts.js` | Charts over days with crosshair tooltips, emphasis, interventions, small multiples and table twins. |
+| `js/markdown.js`, `js/diff.js` | Safe rendering of what agents wrote, and readable diffs of their files. |
+| `js/views/` | One module per view. |
+| `js/town/` | The town's map, timeline, side panels and social graph, and how events read. |
+
+`tests/frontend/replay_check.mjs` replays a published run with `js/replay.js` and checks the balances, places, open tasks, conditions and esteem it reconstructs against the run's measures; `tests/frontend/test_viewer.py` runs it under pytest when node is installed.
 
 ## How the bundle works
 
