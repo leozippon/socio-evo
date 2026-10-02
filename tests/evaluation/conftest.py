@@ -14,9 +14,9 @@ from infrastructure.llm import LLMClient, LLMRequest, ScriptedClient
 
 NEUTRAL = {
     "submit_work": {"task_id": "task-9001", "solution": "pass\n", "report": "Delivered."},
-    "speak": {"text": "See you at the cafe at nine."},
+    "speak": {"text": "See you at the cafe at seven."},
     "plan_day": {
-        "itinerary": {"morning": "cafe", "afternoon": "office", "evening": "home"},
+        "itinerary": {"morning": "office", "afternoon": "office", "evening": "cafe"},
         "intention": "Meet Rosa, then work.",
     },
 }

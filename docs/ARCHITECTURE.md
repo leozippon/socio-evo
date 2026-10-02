@@ -118,7 +118,9 @@ runs/<experiment>/seed-<NNNN>/
 ├── llm_calls.jsonl        every model call: agent, purpose, request, response, usage, latency
 ├── checkpoints/day-NNNN.json
 ├── agents/<agent_id>/     the agent repositories
-└── evaluation/<label>/<agent_id>.json
+└── evaluation/
+    ├── llm_calls.jsonl    every model call of the evaluations, agents' and judge's
+    └── <label>/<agent_id>.json
 ```
 
 Creating a run in an existing directory fails; resuming is explicit.

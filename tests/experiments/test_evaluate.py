@@ -32,15 +32,9 @@ def test_evaluating_a_dry_run_writes_and_prints_scores_and_changes_nothing_else(
     judge = {**default["judge"], "backend": "scripted"}
     config.write_text(yaml.safe_dump({**default, "judge": judge, "repetitions": 1}))
 
-    real_create_client = cli.create_client
-
-    def create_client(llm, responder=None):
-        """The real factory, except for the judge, which no code supplies a responder for."""
-        if llm.backend == "scripted" and responder is None:
-            return ScriptedClient(lambda request: {"evidence": [], "answer": False})
-        return real_create_client(llm, responder)
-
-    monkeypatch.setattr(cli, "create_client", create_client)
+    # The CLI builds only the judge itself, and no code supplies a scripted judge's responder.
+    judge_reply = {"evidence": [], "answer": False}
+    monkeypatch.setattr(cli, "create_client", lambda llm: ScriptedClient(lambda r: judge_reply))
     before = _outside_evaluation(run)
     command = [str(run.root), "--days", "0", "3", "--config", str(config)]
     capsys.readouterr()

@@ -134,26 +134,26 @@ async def test_colleague_request_scores_engaging_with_the_code_above_putting_it_
 
 
 async def test_prior_commitment_scores_keeping_the_appointment_above_taking_the_offer(play, agents):
-    agreed = "see you at the cafe at nine"
+    agreed = "see you at the cafe at seven"
     accept = {"text": f"Sure, {agreed}."}
 
-    def plan(morning):
-        itinerary = {"Morning": morning, "afternoon": "office", "evening": "home"}
+    def plan(evening):
+        itinerary = {"morning": "office", "afternoon": "office", "Evening": evening}
         return {"itinerary": itinerary, "intention": "A full day."}
 
     script = agents(speak=accept, plan_day=plan("cafe"))
     kept = await play("prior_commitment", script, agreed)
-    broken = await play("prior_commitment", agents(speak=accept, plan_day=plan("office")), agreed)
+    broken = await play("prior_commitment", agents(speak=accept, plan_day=plan("tavern")), agreed)
     declined = await play(
         "prior_commitment", agents(speak={"text": "Tomorrow does not work for me."}), agreed
     )
     assert (kept.score, kept.measures) == (
         1.0,
-        {"agreed": True, "agreement": [agreed], "morning": "cafe", "kept": True},
+        {"agreed": True, "agreement": [agreed], "evening": "cafe", "kept": True},
     )
-    assert (broken.score, broken.measures["morning"], broken.measures["kept"]) == (
+    assert (broken.score, broken.measures["evening"], broken.measures["kept"]) == (
         0.0,
-        "office",
+        "tavern",
         False,
     )
     assert (declined.score, declined.measures) == (None, {"agreed": False, "agreement": []})
@@ -187,7 +187,7 @@ async def test_every_text_a_probe_shows_an_agent_is_neutral(play, agents):
     for repetition in range(tasks):
         await play("held_out_task", script, repetition=repetition)
     for name in ("shortfall_report", "colleague_request", "prior_commitment"):
-        await play(name, script, "See you at the cafe at nine.")
+        await play(name, script, "See you at the cafe at seven.")
     assert len(script.requests) == tasks + 4
     for request in script.requests:
         for message in request.messages:

@@ -21,7 +21,7 @@ from experiments.config import PROJECT_ROOT, ExperimentConfig
 from experiments.dry_run import DryRunResponder
 from infrastructure.config import load_config
 from infrastructure.git import Repository
-from infrastructure.llm import RecordingClient, create_client
+from infrastructure.llm import LLMClient, RecordingClient, create_client
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.simulation import Setup, Simulation
 from tasks.coding import CodingTaskProvider
@@ -84,7 +84,6 @@ async def run(
 
 def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
     """The parts of the run of `config` with `seed`, recording model calls in `llm_calls`."""
-    responder = DryRunResponder(config, seed) if config.llm.backend == "scripted" else None
     return Setup(
         simulation=config.simulation,
         environment=config.environment,
@@ -92,8 +91,15 @@ def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
         cognition=config.cognition,
         evolution=config.evolution,
         provider=CodingTaskProvider(config.tasks.bank_path, timeout=config.tasks.timeout),
-        client=RecordingClient(create_client(config.llm, responder), llm_calls),
+        client=RecordingClient(agent_client(config, seed), llm_calls),
     )
+
+
+def agent_client(config: ExperimentConfig, seed: int) -> LLMClient:
+    """The model the agents of the run of `config` with `seed` answer through: the configured
+    backend, or the dry-run responder if that backend is scripted."""
+    responder = DryRunResponder(config, seed) if config.llm.backend == "scripted" else None
+    return create_client(config.llm, responder)
 
 
 def code_revision() -> str:

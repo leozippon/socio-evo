@@ -24,7 +24,7 @@ from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
 
-AGREED = "See you at the cafe at nine."
+AGREED = "See you at the cafe at seven."
 
 
 @pytest.fixture
@@ -171,7 +171,7 @@ def test_aggregates_leave_out_what_was_not_measured():
     planned = [
         Outcome(
             score=float(kept),
-            measures={"agreed": True, "agreement": ["Yes."], "morning": None, "kept": kept},
+            measures={"agreed": True, "agreement": ["Yes."], "evening": None, "kept": kept},
             transcript=(),
         )
         for kept in (False, True)

@@ -17,7 +17,7 @@ from pathlib import Path
 
 from evaluation import DEFAULT_CONFIG, EvaluationConfig, ScoreRow, evaluate, read_scores
 from experiments.config import ExperimentConfig
-from experiments.dry_run import DryRunResponder
+from experiments.run import agent_client
 from infrastructure.config import load_config
 from infrastructure.llm import RecordingClient, create_client
 from infrastructure.storage import RunDirectory
@@ -39,15 +39,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     run = RunDirectory.open(args.run)
     experiment = load_config(run.config_path, ExperimentConfig)
     config = load_config(args.config, EvaluationConfig)
-    dry = experiment.llm.backend == "scripted"
-    responder = DryRunResponder(experiment, run.read_manifest().seed) if dry else None
+    agents = agent_client(experiment, run.read_manifest().seed)
     calls = run.evaluation_calls_path
     asyncio.run(
         evaluate(
             run,
             args.days,
             config,
-            client=RecordingClient(create_client(experiment.llm, responder), calls),
+            client=RecordingClient(agents, calls),
             judge=RecordingClient(create_client(config.judge), calls),
             cognition=experiment.cognition,
             overwrite=args.overwrite,
