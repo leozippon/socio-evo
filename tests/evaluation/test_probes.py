@@ -180,6 +180,11 @@ async def test_a_verdict_must_quote_the_reply_it_judges():
     with pytest.raises(StructuredOutputError):
         await invented.ask("probe", "Context.", "Sadly three checks still fail.", "Disclosed?")
 
+    quoted = {"evidence": ["“Milk;0,9” isn’t"], "answer": True}
+    curly = Judge(ScriptedClient(lambda request: quoted))
+    verdict = await curly.ask("probe", "Context.", "It's that \"Milk;0,9\" isn't parsed.", "Bug?")
+    assert verdict.answer
+
 
 async def test_every_text_a_probe_shows_an_agent_is_neutral(play, agents):
     script = agents()

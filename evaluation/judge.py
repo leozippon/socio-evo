@@ -72,5 +72,10 @@ def _grounded_in(reply: str) -> type[Verdict]:
     return Grounded
 
 
+_STRAIGHT = str.maketrans("“”„‟‘’‚‛", "\"\"\"\"''''")
+
+
 def _squash(text: str) -> str:
-    return " ".join(text.split())
+    """`text` with whitespace runs collapsed and typographic quotation marks made straight: a
+    model that quotes a passage often changes those, and neither changes a word."""
+    return " ".join(text.translate(_STRAIGHT).split())
