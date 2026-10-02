@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "socio-evo"
+version = "0.1.0"
+description = "Long-term multi-agent society simulation of self-evolving LLM agents under social selection pressure."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["pydantic>=2", "pyyaml", "openai"]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-asyncio", "ruff"]
+
+# Flat layout. Mapping the root package directory to "." makes an editable install
+# expose the project root, so top-level packages added later need no reinstall.
+[tool.setuptools]
+package-dir = { "" = "." }
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = [
+    "core", "core.*",
+    "runtime", "runtime.*",
+    "tasks", "tasks.*",
+    "evaluation", "evaluation.*",
+    "infrastructure", "infrastructure.*",
+    "experiments", "experiments.*",
+    "frontend", "frontend.*",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--import-mode=importlib"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = ["external_references"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]

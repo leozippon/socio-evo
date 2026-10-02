@@ -1,2 +1,26 @@
 AGENTS.md
 CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+
+# Local state
+.env
+runs/
+
+# Editors and OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Reference checkouts; the README there is tracked
+external_references/*/
