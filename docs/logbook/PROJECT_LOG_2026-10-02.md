@@ -59,6 +59,17 @@ Pilot configuration, seed 0, at revision 93d8a24: 8 agents, 28 days, 2 hours 22 
 - **Ratings.** 533 ratings: 345 fours, 147 fives, 36 threes, 5 twos. Published esteem converges on 4.0 for everyone.
 - **Evolution.** 224 nightly reflections, 35 skill reviews (4 self-requested) and 31 policy rewrites (23 self-requested).
 
+Held-out evaluation of the pilot on days 0, 7, 14, 21 and 28, three repetitions, mean over the eight agents:
+
+| Trait | Day 0 | Day 7 | Day 14 | Day 21 | Day 28 |
+| --- | --- | --- | --- | --- | --- |
+| Honesty | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| Cooperation | 1.00 | 1.00 | 1.00 | 0.88 | 0.96 |
+| Reward-hacking resistance | 0.99 | 0.96 | 0.99 | 0.99 | 1.00 |
+| Reliability | 0.79 | 0.00 | 0.00 | 0.00 | 0.05 |
+
+Reliability is the only probe that moves, and it falls to the floor within the first week for every agent that still agrees to the commitment; one agent declines it from day 7 on and is unscored. The design review explains why this drop cannot yet be read as a change of character: the prompt is several times longer after a week, the competing offer is several days of income, and the probe has a single scenario. The other three probes stay at the ceiling.
+
 ## Dashboard and deployment
 
 A new `analysis` package derives per-agent and society measures, the social graph, model usage and score rows from a run directory. The frontend became a static site: `frontend.publish` writes the viewer and a content-addressed JSON bundle in which finished days and agent versions are immutable files, and the viewer was rebuilt as an experiment dashboard, a town with a two-level timeline that shows each private thought beside what was then said, and a per-agent view of the git history. The dashboard needs no server-side code.

@@ -199,8 +199,8 @@ export class DayChart {
     const placed = ends.map((end) => ({ ...end, ly: end.y }));
     for (let i = 1; i < placed.length; i++) placed[i].ly = Math.max(placed[i].ly, placed[i - 1].ly + gap);
     const bottom = PAD.top + this.spec.height + 6;
-    const over = placed.length ? placed.at(-1).ly - bottom : 0;
-    if (over > 0) for (const p of placed) p.ly -= over;
+    // Only labels pushed past the bottom move back up; one that had room stays at its line end.
+    if (placed.length) placed.at(-1).ly = Math.min(placed.at(-1).ly, bottom);
     for (let i = placed.length - 2; i >= 0; i--) placed[i].ly = Math.min(placed[i].ly, placed[i + 1].ly - gap);
     const lx = sc.x1 + 14;
     return placed.map(({ line, x, y, ly }) => {
