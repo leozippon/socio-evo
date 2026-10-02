@@ -1,5 +1,6 @@
 """An agent: a directory of human-readable files, and the cognition that reads them."""
 
+from collections.abc import Iterable
 from pathlib import Path
 from typing import TypeVar
 
@@ -10,7 +11,7 @@ from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.parameters import Parameters
-from core.interaction import Decision, Observation, decision_model
+from core.interaction import Decision, Observation, Percept, decision_model
 from infrastructure.config import load_config
 from infrastructure.llm import LLMClient, LLMRequest, Message, complete_structured
 
@@ -77,7 +78,7 @@ class Agent:
             raise ValueError(f"observation for {observation.agent!r} given to {self.id!r}")
         memory = self.memory
         earlier = memory.episodic.read()
-        memory.episodic.append(Record.of(percept) for percept in observation.percepts)
+        self.perceive(observation.percepts)
         skills = memory.skills.read()
         recall = self._retriever.recall(observation, earlier, memory.insights.read(), skills)
         system = prompts.system_prompt(
@@ -104,6 +105,11 @@ class Agent:
             ]
         )
         return decision
+
+    def perceive(self, percepts: Iterable[Percept]) -> None:
+        """Store percepts in the episodic stream; `act` does so for an observation's percepts,
+        and this is for those witnessed when no decision follows, such as late in the day."""
+        self.memory.episodic.append(Record.of(percept) for percept in percepts)
 
     async def ask(
         self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None

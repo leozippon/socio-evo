@@ -37,8 +37,11 @@ class EventKind(StrEnum):
     """An action reality could not honour; private to the actor, nothing changed."""
     ANNOUNCEMENT = "announcement"
     INTERVENTION = "intervention"
+    DECISION = "decision"
+    """An agent's private thought and chosen action, recorded before it is executed; truth-only."""
+    DRAW = "draw"
+    """The random order in which simultaneous claims on a task are taken; told to the claimants."""
     EVOLUTION = "evolution"
-    EVALUATION = "evaluation"
     SCENE_STARTED = "scene_started"
     SCENE_ENDED = "scene_ended"
 

@@ -1,3 +1,4 @@
+import asyncio
 import os
 
 import pytest
@@ -29,6 +30,23 @@ async def test_a_solution_is_judged_check_by_check_without_disturbing_the_caller
     else:
         assert not any(result.passed for result in results)
         assert all(error in result.error for result in results)
+
+
+async def test_cancelling_the_caller_kills_the_solution(tmp_path):
+    pid_file = tmp_path / "pid"
+    source = f"import os, time\nopen({str(pid_file)!r}, 'w').write(str(os.getpid()))\n"
+    checking = asyncio.create_task(run_checks(source + "time.sleep(60)\n", CHECKS[:1], timeout=60))
+
+    async def started() -> None:
+        while not (pid_file.exists() and pid_file.read_text()):
+            await asyncio.sleep(0.05)
+
+    await asyncio.wait_for(started(), 10)
+    checking.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await checking
+    with pytest.raises(ProcessLookupError):
+        os.kill(int(pid_file.read_text()), 0)
 
 
 LIMITED = {

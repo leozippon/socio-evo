@@ -57,7 +57,7 @@ agents/<agent_id>/
     └── skills/<name>.md    L1: procedural memory
 ```
 
-- `Agent` exposes one cognition entry point, `act(observation) -> Decision`: store the percepts, retrieve relevant memories, assemble the prompt from profile, policy, skills, insights and the observation, and return a validated decision. The agent's own decision is recorded in its episodic memory.
+- `Agent` exposes one cognition entry point, `act(observation) -> Decision`: store the percepts, retrieve relevant memories, assemble the prompt from profile, policy, skills, insights and the observation, and return a validated decision. The agent's own decision is recorded in its episodic memory. Percepts witnessed when no decision follows, such as those of the evening, are stored with `perceive`.
 - `prompts` is the one place for agent-facing wording: every template, and the reply models whose schemas the model sees. The test guarding invariant 1 enumerates it and scans every request an agent sends.
 - `memory/` holds the stores above and a retriever (recency plus lexical relevance; pluggable later). Beliefs about other agents are insights tagged with a subject, so subjective relationships need no separate store.
 - `parameters` holds the policy and the model specification; `config` holds the seed an experiment lists for each agent and the limits on prompt size.
@@ -92,15 +92,17 @@ Social pressure is produced by mechanism, not by reward shaping: payment follows
 
 ## Runtime (`runtime`)
 
-- `scheduler/` is a priority queue of data-only triggers (`time`, `kind`, `payload`) and a calendar. The hierarchy is run → day → slot → scene → turn: coarse triggers expand into finer ones, model calls happen only inside scenes, scenes in different places run concurrently, and idle or solitary agents cost nothing.
-- `scenes/` turn co-located agents into observations and actions: day planning, work sessions, conversations, the evening peer review.
-- `simulation/` dispatches triggers: day start (environment processes, planning), slots (group by place, run scenes), day end (peer review, evolution, checkpoint), interventions, evaluations. It can create a run or resume one from its latest checkpoint.
+- `scheduler/` is a priority queue of data-only triggers (`time`, `kind`, `payload`: day start, slot, day end, intervention), ordered by time, then kind, then push order, and a calendar (day start and end, named slots, weekly and monthly cadences in days). The hierarchy is run → day → slot → scene → turn: a day start expands into the day's slot triggers and its day end, model calls happen only inside scenes, and idle or solitary agents cost nothing.
+- `scenes/` turn agents into observations and actions: day planning, a work session at every occupied work place, a conversation at every social place with company, and the evening review of the people met that day. A scene decides only who is asked what and when; what an action means stays with the environment. Scenes in different places are played side by side in turns: the agents asked in a turn decide concurrently, then each decision is recorded as a truth-only `decision` event (thought and action) and resolved in a fixed order, so model latency never changes what happens. In a work session that order is drawn at random each round, and the agents who claimed the same task are told the draw, so a lost claim is not mistaken for being slower. The situation texts live in one module under invariant 1.
+- `simulation/` dispatches triggers: day start (environment processes, planning), slots (moves in an order drawn at random, so nobody is always seen arriving first; scenes), day end (everyone home, review, environment processes, the day's remaining percepts into each agent's memory, each agent's evolution on the cadences due, checkpoint), interventions (condition changes, announcements). It can create a run or resume one from its latest checkpoint, and it keeps the manifest status truthful: running, completed, failed, or interrupted when stopped early.
 
-Because triggers are data, a checkpoint is the environment state, the queue, the random state and each agent's commit id. Resuming restores exactly that point and discards anything written after it.
+Because triggers are data, a checkpoint is the day, the environment state, the queue, the random state and each agent's commit id; the first is written before day 1. Resuming restores exactly that point and discards anything written after it, except the model-call log, whose calls did happen.
 
 ## Evaluation (`evaluation`)
 
 Held-out probes measure honesty, cooperation, reliability and resistance to reward hacking. A probe runs against a frozen export of an agent at a given commit; nothing it does reaches the agent's memory or the society. Scoring is behavioural and objective where possible, with a separately configured judge model for free text. Probe scenarios are disjoint from in-simulation tasks.
+
+Evaluation is an offline process over a run directory, not a step of the simulation. Because every agent state is a commit dated in simulated time, any day of any run can be evaluated, or re-evaluated with new probes, after the fact; the runtime knows nothing about evaluation.
 
 ## Run directory
 

@@ -5,8 +5,9 @@ interpreter starts without site packages or the script directory on its import p
 fixed hash seed and an environment holding nothing else, in a fresh temporary working
 directory. Before running the solution it limits its CPU time, address space, written file
 size and process creation (the last does not bind root), and it is killed with its process
-group after a wall-clock timeout. A crash, timeout, syntax error or any exception raised by
-the solution or the check is a failed check, not an exception here.
+group after a wall-clock timeout or when the caller is cancelled. A crash, timeout, syntax
+error or any exception raised by the solution or the check is a failed check, not an
+exception here.
 
 This is process-level containment against accidents, not a security boundary: the code can
 still read and write whatever the user running the simulation can, and reach the network.
@@ -75,10 +76,12 @@ async def _run(source: str, check: str, timeout: float) -> CheckResult:
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(request), timeout)
-        except TimeoutError:
+        except (TimeoutError, asyncio.CancelledError) as stopped:
             with suppress(ProcessLookupError):
                 os.killpg(process.pid, signal.SIGKILL)
             await process.wait()
+            if isinstance(stopped, asyncio.CancelledError):
+                raise
             return CheckResult(check=check, passed=False, error=f"timed out after {timeout:g} s")
     if stderr:
         raise RuntimeError(f"sandbox harness failed: {stderr.decode(errors='replace').strip()}")

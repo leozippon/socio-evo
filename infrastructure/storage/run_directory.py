@@ -16,6 +16,8 @@ class RunStatus(StrEnum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    """Stopped before its last day without an error, on request or by a signal."""
 
 
 class Manifest(StrictModel):
@@ -51,7 +53,7 @@ class RunDirectory:
 
         Raises FileExistsError if the run directory already exists.
         """
-        run = cls(runs_root / experiment / f"seed-{seed:04d}")
+        run = cls(cls.root_of(runs_root, experiment, seed))
         run.root.mkdir(parents=True)
         for directory in (run.checkpoints_dir, run.agents_dir, run.evaluation_dir):
             directory.mkdir()
@@ -68,6 +70,11 @@ class RunDirectory:
             )
         )
         return run
+
+    @staticmethod
+    def root_of(runs_root: Path, experiment: str, seed: int) -> Path:
+        """Where the run of `experiment` with `seed` lives under `runs_root`."""
+        return runs_root / experiment / f"seed-{seed:04d}"
 
     @classmethod
     def open(cls, root: Path) -> "RunDirectory":

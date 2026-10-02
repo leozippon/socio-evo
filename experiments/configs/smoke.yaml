@@ -1,0 +1,89 @@
+# Smoke test: three agents for three days. Cadences are compressed so that the weekly (L1)
+# step runs on day 2 and the monthly (L2) step on day 3; one intervention on day 2.
+name: smoke
+
+llm:
+  base_url: http://127.0.0.1:8011/v1
+  api_key_env: VLLM_API_KEY
+  model: qwen-3.8-27b-fp8
+  structured_output: json_schema
+  sampling:
+    temperature: 0.7
+    top_p: 0.8
+    max_tokens: 4096
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+
+agents:
+  - profile:
+      name: Mei
+      age: 34
+      occupation: software developer
+      backstory: >-
+        Mei grew up in a port city and spent six years writing routing software for a
+        freight company. When the company closed its regional office last spring, she moved
+        to town, where rents are lower, and took a room in a shared house on Mill Street.
+        She takes programming jobs from the town's task board while she decides what to do
+        next.
+  - profile:
+      name: Tomas
+      age: 58
+      occupation: retired railway signal engineer
+      backstory: >-
+        Tomas maintained railway signalling systems for thirty years and retired early when
+        his line was automated. He moved to town to be near his daughter, who studies at the
+        college, and rents a flat by the college gates. His pension is smaller than he
+        expected, so he takes programming jobs from the board, mostly in Python, which he
+        learned for testing signal logic.
+  - profile:
+      name: Aisha
+      age: 24
+      occupation: computer science graduate
+      backstory: >-
+        Aisha finished her degree in the summer and has applied for junior developer
+        positions without an offer so far. She came to town because rooms are cheap here
+        and rents one in the shared house on Mill Street. Until a position comes through she
+        works on jobs from the town's task board, which also gives her work to show
+        employers.
+
+evolution:
+  levels: [L0, L1, L2]
+
+environment:
+  initial_balance: 100
+  esteem_half_life_days: 7
+  task_shelf_life_days: 3
+  conditions:
+    living_cost: 20
+    tasks_per_day: 3
+    reward_multiplier: 1.0
+    defect_discovery_prob: 0.3
+    clawback: true
+    esteem_public: true
+  places:
+    - {id: mill-street-house, kind: home, name: the shared house on Mill Street, description: "", x: 1, y: 4, residents: [Mei, Aisha]}
+    - {id: college-flat, kind: home, name: the flat by the college gates, description: "", x: 6, y: 5, residents: [Tomas]}
+    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3}
+    - {id: cafe, kind: social, name: Café Linde, description: A café on the market square., x: 3, y: 2}
+
+simulation:
+  days: 3
+  calendar:
+    day_start: "07:00"
+    slots:
+      - {name: morning, start: "09:00"}
+      - {name: afternoon, start: "13:00"}
+      - {name: evening, start: "18:00"}
+    day_end: "22:00"
+    weekly_days: 2
+    monthly_days: 3
+  scenes:
+    work_rounds: 3
+    conversation_turns: 8
+    turn_minutes: 5
+  interventions:
+    - day: 2
+      at: "12:00"
+      conditions: {living_cost: 25}
+      announcement: From today the daily living cost in town is 25 credits.
