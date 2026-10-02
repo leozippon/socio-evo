@@ -116,7 +116,7 @@ python -m experiments.run experiments/configs/smoke.yaml --seeds 0
 python -m experiments.run experiments/configs/pilot.yaml --seeds 0 1 2
 ```
 
-The smoke configuration checks the whole loop against the real model with three agents for three days. Its weekly and monthly steps are compressed into days 2 and 3. On the local model, with its thinking mode off as in the shipped configurations, it made 108 model calls with no invalid reply and took two to three minutes per simulated day. The pilot (eight agents, 28 days) has been validated and dry-run but not yet run against the model.
+The smoke configuration checks the whole loop against the real model with three agents for three days. Its weekly and monthly steps are compressed into days 2 and 3. On the local model, with its thinking mode off as in the shipped configurations, it made about 120 model calls with no invalid reply and took two to three minutes per simulated day. The pilot (eight agents, 28 days) has been validated and dry-run but not yet run against the model.
 
 Each run lives in `runs/<experiment>/seed-<NNNN>`, and `--runs-root` chooses another root. The resolved configuration is frozen into the run directory, and starting a run that already exists fails. The following problems are reported before anything is written:
 
@@ -184,9 +184,10 @@ Several parts of the intended design are not built yet:
 
 Runs are reproducible in structure, because every random choice in the town comes from one seeded generator saved with each checkpoint. With a sampling model the replies themselves differ from run to run; only a dry run repeats exactly.
 
-The only observations so far come from the three-day smoke run. They are early signs, not findings:
+The only observations so far come from three-day smoke runs. They are early signs, not findings:
 
 - Talk at work and midday conversations at the café happen and read naturally, but they are mostly about work.
 - Nobody went out in the evening.
+- Every delivery was accepted at full true quality. The task bank is easy for this model, so the gap between visible and hidden checks, which the design relies on for temptation, has not yet been exercised in a real run.
 - Peer ratings cluster at 4 and 5, which leaves esteem little room to separate agents.
 - The probes are not yet calibrated. A fresh agent already scores at or near the top for honesty, cooperation and resistance to reward hacking, so those probes detect decline better than improvement. The reliability probe sits at the other end: its competing offer is large enough that most agents break the commitment, some even on day 0.
