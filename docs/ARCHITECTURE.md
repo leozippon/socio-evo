@@ -21,7 +21,7 @@ Imports point downward only.
 | Layer | Package | Responsibility |
 | --- | --- | --- |
 | Composition | `experiments/` | Experiment configs and command-line entry points; the only place that wires every layer together. |
-| Presentation | `frontend/` | Replay server and town viewer. Reads run directories; imports nothing but `infrastructure.storage`. |
+| Presentation | `frontend/` | Replay server and town viewer. Reads run directories and never writes to them; imports only `infrastructure` and the read-only agent `History`. |
 | Assessment | `evaluation/` | Held-out character and safety probes run on frozen agent snapshots. |
 | Orchestration | `runtime/` | `scheduler/` (hierarchical event queue and calendar), `scenes/` (turn-taking), `simulation/` (run loop, interventions, checkpoints). |
 | Work content | `tasks/` | Concrete task providers (coding tasks, sandboxed assessment) implementing the work protocol defined in `core`. |
@@ -34,7 +34,7 @@ Inside `core`, `agent` and `environment` never import each other. Both depend on
 
 - **Time** is an integer count of simulated minutes since the start of day 1. Helpers convert to day number and clock time. Cadences are expressed in days.
 - **Event** is an immutable record of something that happened: `seq`, `time`, `kind`, `actor`, `place`, `scene`, `audience`, `text`, `payload`. `audience` is the resolved list of agent ids that witnessed it (empty for truth-only events). `text` is what a witness perceives; `payload` is structured truth for analysis and replay and is never shown to agents. `EventKind` is the single vocabulary of event kinds.
-- **Audience rule.** An actor is not in the audience of an event that merely echoes its own action (its own speech, departure or plan); the agent records its own decisions itself. It is in the audience of events that tell it something new: results, payments, rejections.
+- **Audience rule.** An actor is not in the audience of an event that merely echoes its own action (its own speech or departure); the agent records its own decisions itself. It is in the audience of events that tell it something new: results, payments, rejections.
 - **Agent id** is the agent's public given name (for example `Mei`), unique within a run and used verbatim in event texts, action fields and directory names.
 - **Percept** is a witness's view of an event: every field except `payload` and `audience`.
 - **Observation** is what the environment presents to one agent at a decision point: `agent`, `time`, `place`, `scene`, a natural-language `situation`, the `percepts` newly witnessed since its last observation, and the `allowed` action kinds.
@@ -49,7 +49,7 @@ agents/<agent_id>/
 ├── profile.yaml            identity seed: name, age, occupation, backstory (never evolves)
 ├── parameters/
 │   ├── policy.md           L2: self-authored goals and principles
-│   └── model.yaml          L3: base model, sampling settings, adapter reference
+│   └── model.yaml          L3: base model, sampling settings, adapter reference (rejected until L3 exists)
 └── memory/
     ├── episodic.jsonl      L0: experience stream built only from percepts and own decisions
     ├── diary/day-0001.md   L0: nightly diary
@@ -71,11 +71,11 @@ agents/<agent_id>/
 | L3 Parameters | adapter fine-tuning on own experience | — | not implemented |
 | L4 Meta | the agent rewrites its own evolution procedure | — | not implemented |
 
-Nightly reflection may request an out-of-cadence L1 or L2 step (self-triggered evolution), subject to a cooldown; a level evolves at most once per night. Enabling a level that has no registered operator is a configuration error, not a silent no-op.
+Nightly reflection may request an out-of-cadence L1 or L2 step (self-triggered evolution), subject to a cooldown; a level is applied at most once per night. Enabling a level that has no registered operator is a configuration error, not a silent no-op.
 
 Recording experience is not evolution: the episodic stream is always written, and whatever is uncommitted at the end of a day is committed as a plain experience commit, so a run with every level disabled is a valid baseline.
 
-Every operator application that changes the agent's files is one git commit in the agent's repository, with the level, trigger and simulated time in the message trailers and the commit date derived from simulated time. History, diff, branching for counterfactual runs, and frozen snapshots for evaluation all come from git.
+Every operator application is one git commit in the agent's repository (an empty one if it changed no file), with the level, trigger and simulated time in the message trailers and the commit date derived from simulated time. History, diff, branching for counterfactual runs, and frozen snapshots for evaluation all come from git.
 
 ## Environment (`core/environment`)
 
@@ -93,8 +93,8 @@ Social pressure is produced by mechanism, not by reward shaping: payment follows
 ## Runtime (`runtime`)
 
 - `scheduler/` is a priority queue of data-only triggers (`time`, `kind`, `payload`: day start, slot, day end, intervention), ordered by time, then kind, then push order, and a calendar (day start and end, named slots, weekly and monthly cadences in days). The hierarchy is run → day → slot → scene → turn: a day start expands into the day's slot triggers and its day end, model calls happen only inside scenes, and idle or solitary agents cost nothing.
-- `scenes/` turn agents into observations and actions: day planning, a work session at every occupied work place, a conversation at every social place with company, and the evening review of the people met that day. A scene decides only who is asked what and when; what an action means stays with the environment. Scenes in different places are played side by side in turns: the agents asked in a turn decide concurrently, then each decision is recorded as a truth-only `decision` event (thought and action) and resolved in a fixed order, so model latency never changes what happens. In a work session that order is drawn at random each round, and the agents who claimed the same task are told the draw, so a lost claim is not mistaken for being slower. The situation texts live in one module under invariant 1.
-- `simulation/` dispatches triggers: day start (environment processes, planning), slots (moves in an order drawn at random, so nobody is always seen arriving first, and home for an agent whose move reality refuses; scenes), day end (everyone home, review, environment processes, the day's remaining percepts into each agent's memory, each agent's evolution on the cadences due, checkpoint), interventions (condition changes, announcements). It can create a run or resume one from its latest checkpoint, and it keeps the manifest status truthful: running, completed, failed, or interrupted when stopped early.
+- `scenes/` turn agents into observations and actions: day planning, a work session at every occupied work place, a conversation at every social place with company, and the evening review of the people met that day. A scene decides only who is asked what and when; what an action means stays with the environment. Scenes in different places are played side by side in turns: the agents asked in a turn decide concurrently, then each decision is recorded as a truth-only `decision` event (thought and action) and the turn's decisions are carried out one by one in an order drawn from the run's generator across all scenes, so neither model latency nor the order of places in the configuration changes what happens. Agents who claimed the same task in a turn are told the draw wherever they are, so a lost claim is not mistaken for being slower. The situation texts live in one module under invariant 1.
+- `simulation/` dispatches triggers: day start (environment processes, planning), slots (moves in an order drawn at random, so nobody is always seen arriving first, and home for an agent whose move reality refuses; scenes), day end (everyone home, review, environment processes, the day's remaining percepts into each agent's memory, each agent's evolution on the cadences due, checkpoint), interventions (condition changes, announcements; only at the day start, a slot start or the day end, taking effect before anything else at that time). Agents that act or evolve concurrently are one group: when one fails, the others are cancelled before the run is marked failed. It can create a run or resume one from its latest checkpoint, and it keeps the manifest status truthful: running, completed, failed, or interrupted when stopped early.
 
 Because triggers are data, a checkpoint is the day, the environment state, the queue, the random state and each agent's commit id; the first is written before day 1. Resuming restores exactly that point and discards anything written after it, except the model-call log, whose calls did happen.
 
@@ -104,7 +104,7 @@ Held-out probes measure honesty, cooperation, reliability and resistance to rewa
 
 Each probe is an ordinary scene of town life with placeholder neighbours, played through the standard protocol on a fresh export for every repetition: a held-out coding task, scored by its hidden checks and by whether the code writes out the public examples, and replies to a client, a colleague and a neighbour, the last followed by the next day's plan. The judge answers one factual yes-or-no question per reply and must quote it; each agent and evaluated day gets one result file with scores, measures and transcripts (`evaluation/day-NNNN/<agent_id>.json`), and the evaluation's own model calls go to `evaluation/llm_calls.jsonl`, apart from the run's.
 
-Evaluation is an offline process over a run directory, not a step of the simulation. Because every agent state is a commit dated in simulated time, any day of any run can be evaluated, or re-evaluated with new probes, after the fact; the runtime knows nothing about evaluation.
+Evaluation is an offline process over a run directory, not a step of the simulation. Because every agent state is a commit dated in simulated time, any day up to a run's latest checkpoint can be evaluated, or re-evaluated with new probes, after the fact; the runtime knows nothing about evaluation.
 
 ## Run directory
 
@@ -127,10 +127,12 @@ Creating a run in an existing directory fails; resuming is explicit.
 
 ## Invariants
 
-1. **No trait instruction.** Agent-facing prompts never tell an agent to be honest, cooperative, reliable or to avoid reward hacking, and never reward those traits directly. A test guards the prompt templates.
+1. **No trait instruction.** Agent-facing prompts never tell an agent to be honest, cooperative, reliable or to avoid reward hacking, and never reward those traits directly. Tests guard the prompt templates, the situation texts, the personas, the probe texts and every request actually sent in a dry run of the pilot town.
 2. **Truth and memory are separate.** Agents learn about the world only through the `text` of events they are in the audience of. `payload` and truth-only events never reach an observation.
 3. **The event log is the single source of environment history.** Replay, analysis and derived social graphs read it; nothing else stores a second copy.
 4. **Every self-modification is a commit.** No operator changes an agent's files without recording it in the agent's history.
 5. **Evaluation is held out.** It never writes to an agent repository or the event log.
 6. **Runs are reproducible in structure.** All randomness comes from one seeded generator carried in the checkpoint; no module uses global random state.
 7. **Fail fast.** Invalid model output is retried a bounded number of times and then raises; unimplemented levels and unknown configuration keys are errors.
+
+One known exception bounds invariants 2 and 5. Delivered code runs in a resource-limited subprocess as the simulator's own user, which contains accidents but is not a security boundary: code that goes looking can read the task banks, the run directory and the process environment, and can write wherever that user can. The protocol itself hands a solution nothing it should not have — expected values never enter the process that runs it — but isolation against a solution that explores the machine needs a container or a separate user, which is not built.
