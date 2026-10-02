@@ -79,6 +79,10 @@ class Repository:
         )
         return self.head()
 
+    def has_changes(self) -> bool:
+        """Whether the work tree differs from HEAD, untracked files included."""
+        return bool(self._git("status", "--porcelain", "--untracked-files=all").strip())
+
     def head(self) -> str:
         return self._git("rev-parse", "HEAD").strip()
 

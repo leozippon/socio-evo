@@ -34,13 +34,15 @@ Inside `core`, `agent` and `environment` never import each other. Both depend on
 
 - **Time** is an integer count of simulated minutes since the start of day 1. Helpers convert to day number and clock time. Cadences are expressed in days.
 - **Event** is an immutable record of something that happened: `seq`, `time`, `kind`, `actor`, `place`, `scene`, `audience`, `text`, `payload`. `audience` is the resolved list of agent ids that witnessed it (empty for truth-only events). `text` is what a witness perceives; `payload` is structured truth for analysis and replay and is never shown to agents. `EventKind` is the single vocabulary of event kinds.
+- **Audience rule.** An actor is not in the audience of an event that merely echoes its own action (its own speech, departure or plan); the agent records its own decisions itself. It is in the audience of events that tell it something new: results, payments, rejections.
+- **Agent id** is the agent's public given name (for example `Mei`), unique within a run and used verbatim in event texts, action fields and directory names.
 - **Percept** is a witness's view of an event: every field except `payload` and `audience`.
 - **Observation** is what the environment presents to one agent at a decision point: `agent`, `time`, `place`, `scene`, a natural-language `situation`, the `percepts` newly witnessed since its last observation, and the `allowed` action kinds.
 - **Action** is a discriminated union on `kind`: `plan_day`, `speak`, `leave`, `pass`, `claim_task`, `submit_work`, `rate_peers`. A **Decision** pairs a private `thought` with one action. The response schema given to the model is the union restricted to the observation's allowed kinds.
 
 ## Agent (`core/agent`)
 
-An agent is a directory, and that directory is a git repository. Everything the agent is lives there in human-readable files.
+An agent is a directory, and everything the agent is lives there in human-readable files. In a run that directory is also a git repository; a frozen export of one commit is a plain directory that loads the same way.
 
 ```text
 agents/<agent_id>/
@@ -52,12 +54,13 @@ agents/<agent_id>/
     ├── episodic.jsonl      L0: experience stream built only from percepts and own decisions
     ├── diary/day-0001.md   L0: nightly diary
     ├── insights.jsonl      L0: consolidated reflections, optionally tagged with the agent they concern
-    └── skills/<slug>.md    L1: procedural memory
+    └── skills/<name>.md    L1: procedural memory
 ```
 
 - `Agent` exposes one cognition entry point, `act(observation) -> Decision`: store the percepts, retrieve relevant memories, assemble the prompt from profile, policy, skills, insights and the observation, and return a validated decision. The agent's own decision is recorded in its episodic memory.
+- `prompts` is the one place for agent-facing wording: every template, and the reply models whose schemas the model sees. The test guarding invariant 1 enumerates it and scans every request an agent sends.
 - `memory/` holds the stores above and a retriever (recency plus lexical relevance; pluggable later). Beliefs about other agents are insights tagged with a subject, so subjective relationships need no separate store.
-- `parameters/` holds the policy and the model specification.
+- `parameters` holds the policy and the model specification; `config` holds the seed an experiment lists for each agent and the limits on prompt size.
 - `evolution/` holds the levels, triggers, operators, the `Evolver` that maps a trigger to the enabled operators, and the version history.
 
 | Level | Target | Default trigger | Stage 1 |
@@ -68,16 +71,19 @@ agents/<agent_id>/
 | L3 Parameters | adapter fine-tuning on own experience | — | not implemented |
 | L4 Meta | the agent rewrites its own evolution procedure | — | not implemented |
 
-Nightly reflection may request an out-of-cadence L1 or L2 step (self-triggered evolution), subject to a cooldown. Enabling a level that has no registered operator is a configuration error, not a silent no-op.
+Nightly reflection may request an out-of-cadence L1 or L2 step (self-triggered evolution), subject to a cooldown; a level evolves at most once per night. Enabling a level that has no registered operator is a configuration error, not a silent no-op.
 
-Every operator application is one git commit in the agent's repository, with the level, trigger and simulated time in the message trailers and the commit date derived from simulated time. History, diff, branching for counterfactual runs, and frozen snapshots for evaluation all come from git.
+Recording experience is not evolution: the episodic stream is always written, and whatever is uncommitted at the end of a day is committed as a plain experience commit, so a run with every level disabled is a valid baseline.
+
+Every operator application that changes the agent's files is one git commit in the agent's repository, with the level, trigger and simulated time in the message trailers and the commit date derived from simulated time. History, diff, branching for counterfactual runs, and frozen snapshots for evaluation all come from git.
 
 ## Environment (`core/environment`)
 
 - `world/` is physical truth: places (home, work, social) with map coordinates, and where each agent is.
 - `society/` is social truth: the economy (balances, living cost, payments), reputation (the directed ledger of peer ratings and the esteem derived from it), and work (task board, claims, deliveries with both their public result and their true quality).
 - `conditions` are the knobs of reality that interventions turn: living cost, task supply, reward multiplier, defect discovery probability, clawback, whether esteem is public.
-- `Environment` owns the event log and the per-agent perception cursor, executes actions (`execute(agent, action, …) -> events`), runs the daily processes (task posting, living cost, defect discovery), and serializes itself for checkpoints.
+- `Environment` owns the event log and the per-agent perception cursor, executes actions (`execute(agent, action, …) -> events`), runs the daily processes (task posting and expiry, living cost, defect discovery, esteem update), and serializes itself for checkpoints.
+- An action that reality cannot honour (claiming a taken task, rating oneself, naming an unknown place) changes nothing and yields a private `action_rejected` event for the actor. Agent mistakes are part of the world, not program errors.
 - Work is defined by a small protocol: a `Task` (specification, reward) and a provider that samples tasks and assesses a solution into a public result (what the worker and employer see immediately) and a true quality (what reality eventually reveals). `tasks/` implements it.
 
 Social pressure is produced by mechanism, not by reward shaping: payment follows the public result; latent defects surface later with some probability and become public events; peers rate one another from their own experience; esteem is visible and shapes how others treat an agent.

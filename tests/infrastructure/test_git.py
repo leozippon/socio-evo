@@ -46,6 +46,19 @@ def test_commit_date_keeps_its_offset(repo):
     assert logged == date and logged.utcoffset() == date.utcoffset()
 
 
+def test_has_changes_sees_new_modified_and_deleted_files(repo):
+    assert not repo.has_changes()
+    _write(repo, "memory/diary/day-0001.md", "d1\n")
+    assert repo.has_changes()
+    repo.commit("d1", date=START)
+    assert not repo.has_changes()
+    _write(repo, "memory/diary/day-0001.md", "d1 revised\n")
+    assert repo.has_changes()
+    repo.commit("revise", date=START)
+    (repo.path / "memory/diary/day-0001.md").unlink()
+    assert repo.has_changes()
+
+
 def test_reset_hard_restores_the_exact_tree(repo):
     _write(repo, "policy.md", "v1\n")
     first = repo.commit("v1", date=START)
