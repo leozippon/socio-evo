@@ -111,6 +111,11 @@ class RunDirectory:
     def evaluation_dir(self) -> Path:
         return self.root / "evaluation"
 
+    @property
+    def evaluation_calls_path(self) -> Path:
+        """Every model call made by evaluations of the run, apart from the run's own."""
+        return self.evaluation_dir / "llm_calls.jsonl"
+
     def checkpoint_path(self, day: int) -> Path:
         return self.checkpoints_dir / f"day-{day:04d}.json"
 

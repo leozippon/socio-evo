@@ -40,8 +40,9 @@ PLANNING = (
     f"Places you can go:\n- {WORK_PLACE}: the office, a work place.\n"
     f"- {SOCIAL_PLACE}: the cafe, a social place.\n- {HOME}: your home\n\n"
     "At a work place you can claim tasks from the board and deliver them. At a social place you "
-    "can talk with whoever else is there. A slot you leave out of your itinerary you spend at "
-    f"home.\n\nYou have no claimed task.\n\n{NO_TASKS}\n\n"
+    "can talk with whoever else is there. Your itinerary sets where you are from the start of "
+    "each slot until the next; you are at home until the first slot and in any slot you leave "
+    f"out.\n\nYou have no claimed task.\n\n{NO_TASKS}\n\n"
     "Plan the day: the itinerary maps slot names to place ids."
 )
 

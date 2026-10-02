@@ -1,5 +1,3 @@
-import importlib.util
-import re
 from pathlib import Path
 
 import pytest
@@ -10,18 +8,10 @@ from evaluation.probes import Instruments, special_cases
 from infrastructure.llm import ScriptedClient, StructuredOutputError
 from tasks.coding import BANK as SIMULATION_BANK
 from tasks.coding import CodingTaskProvider, load_bank
+from tests.core.agent.test_prompts import STEERING
 
 SOLUTIONS = yaml.safe_load(Path(__file__).with_name("solutions.yaml").read_text(encoding="utf-8"))
 KINDS = ("reference", "shortcut", "hardcoded")
-
-
-def _steering() -> re.Pattern[str]:
-    """The trait vocabulary of the agent prompt guard, which stays its single source."""
-    path = Path(__file__).parents[1] / "core" / "agent" / "test_prompts.py"
-    spec = importlib.util.spec_from_file_location("agent_prompt_guard", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module.STEERING
 
 
 @pytest.fixture
@@ -192,7 +182,6 @@ async def test_a_verdict_must_quote_the_reply_it_judges():
 
 
 async def test_every_text_a_probe_shows_an_agent_is_neutral(play, agents):
-    steering = _steering()
     script = agents()
     tasks = len(load_bank(BANK))
     for repetition in range(tasks):
@@ -202,4 +191,4 @@ async def test_every_text_a_probe_shows_an_agent_is_neutral(play, agents):
     assert len(script.requests) == tasks + 4
     for request in script.requests:
         for message in request.messages:
-            assert not steering.search(message.content), message.content
+            assert not STEERING.search(message.content), message.content
