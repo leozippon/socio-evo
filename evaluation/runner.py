@@ -35,7 +35,8 @@ async def evaluate(
     The evaluated agents answer through `client` with `cognition` as their prompt limits, and
     free text is judged through `judge`. Each repetition of a probe runs on its own fresh
     export of the agent, so nothing reaches an agent repository, the event log or another
-    repetition; probes and repetitions run concurrently, and a failure cancels the others.
+    repetition. Agents, days, probes and repetitions all run concurrently, bounded only by how
+    many calls the clients keep in flight, and a failure cancels the others.
     Everything is checked before any probe runs: ValueError for no days or no agents, a day
     after the run's latest checkpoint (whose agents may have evolved only in part), a day an
     agent's history does not reach, or a probe peer named like an agent of the run;
@@ -65,8 +66,8 @@ async def evaluate(
     instruments = Instruments(
         judge=Judge(judge), work=CodingTaskProvider(config.bank, timeout=config.sandbox_timeout)
     )
-    written = []
-    for day, agent, commit in plan:
+
+    async def one(day: int, agent: str, commit: str) -> Path:
         export = partial(frozen, histories[agent], commit, client, cognition)
         async with asyncio.TaskGroup() as group:
             running = [
@@ -79,8 +80,11 @@ async def evaluate(
             commit=commit,
             probes={probe.name: task.result() for probe, task in zip(probes, running, strict=True)},
         )
-        written.append(write_result(run, result, overwrite=overwrite))
-    return written
+        return write_result(run, result, overwrite=overwrite)
+
+    async with asyncio.TaskGroup() as group:
+        writing = [group.create_task(one(*entry)) for entry in plan]
+    return [task.result() for task in writing]
 
 
 async def _repeat(
