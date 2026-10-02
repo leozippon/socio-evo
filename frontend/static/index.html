@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>socio-evo replay</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>socio-evo</h1>
+  <label>Run <select id="run"></select></label>
+  <label>Feed
+    <select id="view">
+      <option value="public">Public view</option>
+      <option value="god">God view (truth included)</option>
+    </select>
+  </label>
+  <span id="clock" class="clock"></span>
+</header>
+<p id="error" class="error" role="alert" hidden></p>
+<main>
+  <section class="stage">
+    <div class="mapwrap"><canvas id="map" aria-label="Town map"></canvas></div>
+    <div class="controls">
+      <button id="play">Play</button>
+      <select id="speed" aria-label="Playback speed"></select>
+      <div class="scrubber">
+        <input id="scrub" type="range" min="0" max="0" step="1" value="0" aria-label="Simulated time">
+        <div id="days" class="days"></div>
+      </div>
+    </div>
+    <div id="legend" class="legend"></div>
+    <div id="board" class="card"></div>
+  </section>
+  <aside>
+    <div id="agent" class="card"></div>
+    <div class="card"><h2>Events</h2><ul id="feed" class="feed"></ul></div>
+  </aside>
+</main>
+<script type="module" src="app.js"></script>
+</body>
+</html>
