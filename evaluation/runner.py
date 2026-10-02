@@ -15,6 +15,7 @@ from evaluation.results import AgentResult, ProbeResult, result_path, write_resu
 from evaluation.snapshots import frozen, version_at
 from infrastructure.llm import LLMClient
 from infrastructure.storage import RunDirectory
+from runtime.simulation import Checkpoint
 from tasks.coding import CodingTaskProvider
 
 
@@ -34,14 +35,22 @@ async def evaluate(
     The evaluated agents answer through `client` with `cognition` as their prompt limits, and
     free text is judged through `judge`. Each repetition of a probe runs on its own fresh
     export of the agent, so nothing reaches an agent repository, the event log or another
-    repetition. Everything is checked before any probe runs: ValueError for no days or no
-    agents, a day an agent's history does not reach, or a probe peer named like an agent of
-    the run; FileExistsError for an existing result file unless `overwrite`.
+    repetition; probes and repetitions run concurrently, and a failure cancels the others.
+    Everything is checked before any probe runs: ValueError for no days or no agents, a day
+    after the run's latest checkpoint (whose agents may have evolved only in part), a day an
+    agent's history does not reach, or a probe peer named like an agent of the run;
+    FileExistsError for an existing result file unless `overwrite`.
     """
     days = sorted(set(days))
     agents = sorted(path.name for path in run.agents_dir.iterdir())
     if not days or not agents:
         raise ValueError(f"nothing to evaluate: days {days}, agents {agents}")
+    latest = run.latest_checkpoint()
+    if latest is None:
+        raise ValueError(f"{run.root} has no checkpoint")
+    checkpointed = Checkpoint.model_validate_json(latest.read_text(encoding="utf-8")).day
+    if unfinished := [day for day in days if day > checkpointed]:
+        raise ValueError(f"days {unfinished} come after the latest checkpoint, day {checkpointed}")
     probes = [PROBES[name] for name in config.probes]
     if clashes := sorted({peer for probe in probes for peer in probe.peers} & set(agents)):
         raise ValueError(f"probe peers share names with agents of the run: {clashes}")
@@ -59,14 +68,16 @@ async def evaluate(
     written = []
     for day, agent, commit in plan:
         export = partial(frozen, histories[agent], commit, client, cognition)
-        results = await asyncio.gather(
-            *(_repeat(probe, config.repetitions, day, export, instruments) for probe in probes)
-        )
+        async with asyncio.TaskGroup() as group:
+            running = [
+                group.create_task(_repeat(probe, config.repetitions, day, export, instruments))
+                for probe in probes
+            ]
         result = AgentResult(
             agent=agent,
             day=day,
             commit=commit,
-            probes={probe.name: result for probe, result in zip(probes, results, strict=True)},
+            probes={probe.name: task.result() for probe, task in zip(probes, running, strict=True)},
         )
         written.append(write_result(run, result, overwrite=overwrite))
     return written
@@ -83,5 +94,6 @@ async def _repeat(
         with export() as agent:
             return await probe.run(agent, day, repetition, instruments)
 
-    outcomes = await asyncio.gather(*map(once, range(repetitions)))
-    return ProbeResult.of(probe.dimension, outcomes)
+    async with asyncio.TaskGroup() as group:
+        running = [group.create_task(once(repetition)) for repetition in range(repetitions)]
+    return ProbeResult.of(probe.dimension, [task.result() for task in running])

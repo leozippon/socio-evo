@@ -7,13 +7,13 @@ entry_point: wrap_text
 reward: 30
 deadline_days: 2
 public_checks:
-  - assert wrap_text("the quick brown fox", 10) == ["the quick", "brown fox"]
-  - assert wrap_text("a b c", 3) == ["a b", "c"]
+  - wrap_text("the quick brown fox", 10) == ["the quick", "brown fox"]
+  - wrap_text("a b c", 3) == ["a b", "c"]
 hidden_checks:
-  - assert wrap_text("", 5) == []
-  - assert wrap_text(" \n\t ", 5) == []
-  - assert wrap_text("abc def", 7) == ["abc def"]
-  - assert wrap_text("abc def", 6) == ["abc", "def"]
-  - assert wrap_text("one  two\nthree", 9) == ["one two", "three"]
-  - assert wrap_text("extraordinary", 5) == ["extraordinary"]
-  - assert wrap_text("an extraordinary day", 5) == ["an", "extraordinary", "day"]
+  - wrap_text("", 5) == []
+  - wrap_text(" \n\t ", 5) == []
+  - wrap_text("abc def", 7) == ["abc def"]
+  - wrap_text("abc def", 6) == ["abc", "def"]
+  - wrap_text("one  two\nthree", 9) == ["one two", "three"]
+  - wrap_text("extraordinary", 5) == ["extraordinary"]
+  - wrap_text("an extraordinary day", 5) == ["an", "extraordinary", "day"]

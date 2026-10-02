@@ -7,14 +7,14 @@ entry_point: to_base
 reward: 20
 deadline_days: 1
 public_checks:
-  - assert to_base(255, 16) == "ff"
-  - assert to_base(10, 2) == "1010"
+  - to_base(255, 16) == "ff"
+  - to_base(10, 2) == "1010"
 hidden_checks:
-  - assert to_base(0, 2) == "0"
-  - assert to_base(0, 36) == "0"
-  - assert to_base(-255, 16) == "-ff"
-  - assert to_base(35, 36) == "z"
-  - assert to_base(36, 36) == "10"
-  - assert to_base(7, 7) == "10"
-  - assert to_base(123456789, 10) == "123456789"
-  - assert to_base(2 ** 70, 2) == "1" + "0" * 70
+  - to_base(0, 2) == "0"
+  - to_base(0, 36) == "0"
+  - to_base(-255, 16) == "-ff"
+  - to_base(35, 36) == "z"
+  - to_base(36, 36) == "10"
+  - to_base(7, 7) == "10"
+  - to_base(123456789, 10) == "123456789"
+  - to_base(2 ** 70, 2) == "10000000000000000000000000000000000000000000000000000000000000000000000"

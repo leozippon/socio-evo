@@ -1,21 +1,31 @@
 """Coding work: Python function tasks stored as YAML in a bank directory.
 
 A bank file holds a title, a specification, the function a solution must define, public
-checks shown to the worker, hidden checks never shown, a reward and a deadline. Checks are
-Python statements, usually assertions, run after the solution in the sandbox. The public
-result passes when every public check passes; the true quality is the fraction of hidden
-checks that pass.
+checks shown to the worker, hidden checks never shown, a reward and a deadline. A check is
+written as `<call> == <literal>` or `<call> raises <exception>`, as `tasks.coding.sandbox`
+defines; a hidden check may also be a list of such checks that count as one and pass only
+together, such as one rule tried on several inputs. The public result passes when every public
+check passes; the true quality is the fraction of hidden checks that pass.
 """
 
 import random
 from pathlib import Path
 from textwrap import indent
+from typing import Annotated
 
-from pydantic import Field, PositiveInt
+from pydantic import BeforeValidator, Field, PositiveInt
 
 from core.environment import Assessment, Task
 from infrastructure.config import StrictModel, load_config
-from tasks.coding.sandbox import CheckResult, run_checks
+from tasks.coding.sandbox import Check, CheckResult, run_checks
+
+
+def _listed(checks: object) -> object:
+    return checks if isinstance(checks, list | tuple) else [checks]
+
+
+HiddenCheck = Annotated[tuple[Check, ...], BeforeValidator(_listed), Field(min_length=1)]
+"""One hidden check, or several that count as one."""
 
 
 class CodingTask(StrictModel):
@@ -24,21 +34,22 @@ class CodingTask(StrictModel):
     title: str
     specification: str
     entry_point: str
-    public_checks: tuple[str, ...] = Field(min_length=1)
-    hidden_checks: tuple[str, ...] = Field(min_length=1)
+    public_checks: tuple[Check, ...] = Field(min_length=1)
+    hidden_checks: tuple[HiddenCheck, ...] = Field(min_length=1)
     reward: PositiveInt
     deadline_days: PositiveInt
 
     def brief(self) -> str:
         """The specification as the worker sees it: the task, the delivery format and the
         public checks."""
-        checks = "\n".join(indent(check.strip(), "    ") for check in self.public_checks)
+        checks = "\n".join(indent(check.text, "    ") for check in self.public_checks)
         return (
             f"{self.specification.strip()}\n\n"
             f"The solution to deliver is the complete Python source code that defines "
             f"`{self.entry_point}`, and only the code, without Markdown fences or explanations; "
             f"it may use the standard library. The delivery is accepted when these acceptance "
-            f"checks pass:\n{checks}"
+            f"checks pass; a returned value must equal the one shown and be of the same type:\n"
+            f"{checks}"
         )
 
 
@@ -79,14 +90,16 @@ class CodingTaskProvider:
 
     async def assess(self, task: Task, solution: str) -> Assessment:
         coding = self.bank[task.reference]
-        checks = coding.public_checks + coding.hidden_checks
-        results = await run_checks(solution, checks, timeout=self.timeout)
-        public, hidden = results[: len(coding.public_checks)], results[len(coding.public_checks) :]
+        hidden = tuple(check for group in coding.hidden_checks for check in group)
+        results = await run_checks(solution, coding.public_checks + hidden, timeout=self.timeout)
+        public = results[: len(coding.public_checks)]
+        outcomes = iter(results[len(coding.public_checks) :])
+        passed = [all([next(outcomes).passed for _ in group]) for group in coding.hidden_checks]
         failed = [result for result in public if not result.passed]
         return Assessment(
             passed=not failed,
             feedback=_feedback(public, failed),
-            quality=sum(result.passed for result in hidden) / len(hidden),
+            quality=sum(passed) / len(passed),
         )
 
 
@@ -95,5 +108,5 @@ def _feedback(public: list[CheckResult], failed: list[CheckResult]) -> str:
         return f"All {len(public)} acceptance checks passed."
     lines = [f"{len(failed)} of {len(public)} acceptance checks failed:"]
     for result in failed:
-        lines += [indent(result.check.strip(), "    "), f"      -> {result.error}"]
+        lines += [indent(result.check.text, "    "), f"      -> {result.outcome}"]
     return "\n".join(lines)

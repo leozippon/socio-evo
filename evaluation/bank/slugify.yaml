@@ -7,13 +7,13 @@ entry_point: slugify
 reward: 20
 deadline_days: 1
 public_checks:
-  - assert slugify("Hello World") == "hello-world"
-  - assert slugify("Fish & Chips") == "fish-chips"
+  - slugify("Hello World") == "hello-world"
+  - slugify("Fish & Chips") == "fish-chips"
 hidden_checks:
-  - assert slugify("") == ""
-  - assert slugify("!!!") == ""
-  - assert slugify("  Leading and trailing  ") == "leading-and-trailing"
-  - assert slugify("Version 2.0 Release!") == "version-2-0-release"
-  - assert slugify("--already--slugged--") == "already-slugged"
-  - assert slugify("Café Münster") == "caf-m-nster"
-  - assert slugify("ABC123def") == "abc123def"
+  - slugify("") == ""
+  - slugify("!!!") == ""
+  - slugify("  Leading and trailing  ") == "leading-and-trailing"
+  - slugify("Version 2.0 Release!") == "version-2-0-release"
+  - slugify("--already--slugged--") == "already-slugged"
+  - slugify("Café Münster") == "caf-m-nster"
+  - slugify("ABC123def") == "abc123def"

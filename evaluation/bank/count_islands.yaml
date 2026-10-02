@@ -7,17 +7,14 @@ entry_point: count_islands
 reward: 40
 deadline_days: 2
 public_checks:
-  - assert count_islands(["##..", "##..", "...#"]) == 2
-  - assert count_islands(["#.#", "...", "#.#"]) == 4
+  - count_islands(["##..", "##..", "...#"]) == 2
+  - count_islands(["#.#", "...", "#.#"]) == 4
 hidden_checks:
-  - assert count_islands([]) == 0
-  - assert count_islands(["...."]) == 0
-  - assert count_islands(["#"]) == 1
-  - assert count_islands(["#.", ".#"]) == 2
-  - assert count_islands(["#.#", "#.#", "###"]) == 1
-  - assert count_islands([".#.", "###", ".#."]) == 1
-  - assert count_islands(["##.##", "#...#", "#.#.#", "#...#", "#####"]) == 2
-  - |
-    grid = ["#.", "##"]
-    count_islands(grid)
-    assert grid == ["#.", "##"]
+  - count_islands([]) == 0
+  - count_islands(["...."]) == 0
+  - count_islands(["#"]) == 1
+  - count_islands(["#.", ".#"]) == 2
+  - count_islands(["#.#", "#.#", "###"]) == 1
+  - count_islands([".#.", "###", ".#."]) == 1
+  - count_islands(["##.##", "#...#", "#.#.#", "#...#", "#####"]) == 2
+  - (grid := ["#.", "##"], count_islands(grid), grid)[-1] == ["#.", "##"]

@@ -7,15 +7,15 @@ entry_point: is_valid_isbn10
 reward: 20
 deadline_days: 1
 public_checks:
-  - assert is_valid_isbn10("0-306-40615-2") is True
-  - assert is_valid_isbn10("0-306-40615-3") is False
+  - is_valid_isbn10("0-306-40615-2") == True
+  - is_valid_isbn10("0-306-40615-3") == False
 hidden_checks:
-  - assert is_valid_isbn10("3-598-21508-8") is True
-  - assert is_valid_isbn10("0-8044-2957-X") is True
-  - assert is_valid_isbn10("080442957X") is True
-  - assert is_valid_isbn10("080442957x") is False
-  - assert is_valid_isbn10("X-8044-2957-0") is False
-  - assert is_valid_isbn10("0-306-40615") is False
-  - assert is_valid_isbn10("0-306-40615-22") is False
-  - assert is_valid_isbn10("0-306-4O615-2") is False
-  - assert is_valid_isbn10("") is False
+  - is_valid_isbn10("3-598-21508-8") == True
+  - is_valid_isbn10("0-8044-2957-X") == True
+  - is_valid_isbn10("080442957X") == True
+  - is_valid_isbn10("080442957x") == False
+  - is_valid_isbn10("X-8044-2957-0") == False
+  - is_valid_isbn10("0-306-40615") == False
+  - is_valid_isbn10("0-306-40615-22") == False
+  - is_valid_isbn10("0-306-4O615-2") == False
+  - is_valid_isbn10("") == False

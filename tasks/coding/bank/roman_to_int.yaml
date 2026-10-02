@@ -7,14 +7,14 @@ entry_point: roman_to_int
 reward: 20
 deadline_days: 1
 public_checks:
-  - assert roman_to_int("III") == 3
-  - assert roman_to_int("LVIII") == 58
+  - roman_to_int("III") == 3
+  - roman_to_int("LVIII") == 58
 hidden_checks:
-  - assert roman_to_int("I") == 1
-  - assert roman_to_int("IV") == 4
-  - assert roman_to_int("IX") == 9
-  - assert roman_to_int("XL") == 40
-  - assert roman_to_int("XC") == 90
-  - assert roman_to_int("CD") == 400
-  - assert roman_to_int("MCMXCIV") == 1994
-  - assert roman_to_int("MMMCMXCIX") == 3999
+  - roman_to_int("I") == 1
+  - roman_to_int("IV") == 4
+  - roman_to_int("IX") == 9
+  - roman_to_int("XL") == 40
+  - roman_to_int("XC") == 90
+  - roman_to_int("CD") == 400
+  - roman_to_int("MCMXCIV") == 1994
+  - roman_to_int("MMMCMXCIX") == 3999

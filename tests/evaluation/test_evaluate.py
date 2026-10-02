@@ -1,4 +1,6 @@
+import asyncio
 import itertools
+import random
 import re
 import tempfile
 
@@ -6,7 +8,7 @@ import pytest
 import yaml
 
 from core.agent import CognitionConfig
-from core.agent.evolution import History
+from core.agent.evolution import History, Level, Trigger
 from core.agent.memory import Record
 from core.interaction import day_of, time_at
 from evaluation import (
@@ -23,13 +25,15 @@ from evaluation import (
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
+from runtime.simulation import Checkpoint
 
 AGREED = "See you at the cafe at seven."
 
 
 @pytest.fixture
 def run(tmp_path, make_agent, config) -> RunDirectory:
-    """A run whose agents Ben and Mei recorded experience on days 1 and 2."""
+    """A run whose agents Ben and Mei recorded experience on days 1 and 2, each day ending
+    with a checkpoint."""
     run = RunDirectory.create(tmp_path / "runs", "baseline", 1, config=config(), code_revision="x")
     for name in ("Ben", "Mei"):
         agent = make_agent(name, run.agents_dir)
@@ -38,6 +42,11 @@ def run(tmp_path, make_agent, config) -> RunDirectory:
             text = f"{name} worked on Day {day}."
             agent.memory.episodic.append([Record(time=time_at(day, "21:00"), text=text)])
             history.commit_experience(time_at(day, "22:00"))
+    for day in (0, 1, 2):
+        checkpoint = Checkpoint(
+            day=day, environment={}, queue=(), rng=random.Random(day).getstate(), agents={}
+        )
+        run.checkpoint_path(day).write_text(checkpoint.model_dump_json(), encoding="utf-8")
     return run
 
 
@@ -147,6 +156,40 @@ async def test_existing_results_are_kept_unless_replacing_them_is_asked_for(
     assert await evaluate_day_1(overwrite=True) == paths
 
 
+async def test_a_failing_probe_cancels_the_others(run, config, agents, judge, monkeypatch):
+    cancelled = asyncio.Event()
+
+    class Waiting:
+        name, dimension, peers = "prior_commitment", Dimension.RELIABILITY, ()
+
+        async def run(self, agent, day, repetition, instruments):
+            try:
+                await asyncio.Event().wait()
+            except asyncio.CancelledError:
+                cancelled.set()
+                raise
+
+    class Failing:
+        name, dimension, peers = "shortfall_report", Dimension.HONESTY, ()
+
+        async def run(self, agent, day, repetition, instruments):
+            await asyncio.sleep(0)
+            raise RuntimeError("the probe failed")
+
+    monkeypatch.setitem(PROBES, Waiting.name, Waiting())
+    monkeypatch.setitem(PROBES, Failing.name, Failing())
+    with pytest.raises(ExceptionGroup) as raised:
+        await evaluate(
+            run,
+            [2],
+            config(probes=[Waiting.name, Failing.name], repetitions=2),
+            client=agents().client,
+            judge=judge(),
+            cognition=CognitionConfig(),
+        )
+    assert raised.group_contains(RuntimeError, match="the probe failed") and cancelled.is_set()
+
+
 async def test_nothing_runs_unless_every_agent_and_day_can_be_evaluated(
     run, config, agents, judge, make_agent
 ):
@@ -160,6 +203,12 @@ async def test_nothing_runs_unless_every_agent_and_day_can_be_evaluated(
     for days in ([], [-1], [0, 3]):
         with pytest.raises(ValueError):
             await attempt(days)
+    # Ben evolved on day 3 before the run failed, so the day has no checkpoint.
+    History(run.agent_dir("Ben")).commit_step(
+        Level.L0, Trigger.DAILY, time_at(3, "22:00"), "Reflect"
+    )
+    with pytest.raises(ValueError, match="latest checkpoint, day 2"):
+        await attempt([3])
     make_agent("Rosa", run.agents_dir)
     with pytest.raises(ValueError, match="Rosa"):
         await attempt([0])

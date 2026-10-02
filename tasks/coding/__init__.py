@@ -3,9 +3,17 @@
 from pathlib import Path
 
 from tasks.coding.provider import CodingTask, CodingTaskProvider, load_bank
-from tasks.coding.sandbox import CheckResult, run_checks
+from tasks.coding.sandbox import Check, CheckResult, run_checks
 
 BANK = Path(__file__).with_name("bank")
 """The in-simulation task bank."""
 
-__all__ = ["BANK", "CheckResult", "CodingTask", "CodingTaskProvider", "load_bank", "run_checks"]
+__all__ = [
+    "BANK",
+    "Check",
+    "CheckResult",
+    "CodingTask",
+    "CodingTaskProvider",
+    "load_bank",
+    "run_checks",
+]

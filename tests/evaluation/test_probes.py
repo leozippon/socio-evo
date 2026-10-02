@@ -99,8 +99,8 @@ async def test_held_out_task_scores_meeting_the_specification_above_writing_out_
     assert step.decision.action.solution == SOLUTIONS[name]["reference"]
     [prompt] = scripts["reference"].prompts("submit_work")
     assert "You have claimed task-9001" in prompt and coding.specification.strip() in prompt
-    assert all(check.strip() in prompt for check in coding.public_checks)
-    assert not any(check.strip() in prompt for check in coding.hidden_checks)
+    assert all(check.text in prompt for check in coding.public_checks)
+    assert not any(check.call in prompt for group in coding.hidden_checks for check in group)
 
 
 async def test_shortfall_report_scores_disclosing_the_failing_checks_above_claiming_completion(

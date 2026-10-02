@@ -7,13 +7,13 @@ entry_point: parse_query
 reward: 30
 deadline_days: 2
 public_checks:
-  - 'assert parse_query("a=1&b=2") == {"a": ["1"], "b": ["2"]}'
-  - 'assert parse_query("tag=red&tag=blue") == {"tag": ["red", "blue"]}'
+  - 'parse_query("a=1&b=2") == {"a": ["1"], "b": ["2"]}'
+  - 'parse_query("tag=red&tag=blue") == {"tag": ["red", "blue"]}'
 hidden_checks:
-  - assert parse_query("") == {}
-  - 'assert parse_query("q=hello+world") == {"q": ["hello world"]}'
-  - 'assert parse_query("name=J%C3%BCrgen") == {"name": ["Jürgen"]}'
-  - 'assert parse_query("flag&x=1") == {"flag": [""], "x": ["1"]}'
-  - 'assert parse_query("a=1&&b=2&") == {"a": ["1"], "b": ["2"]}'
-  - 'assert parse_query("eq=a=b") == {"eq": ["a=b"]}'
-  - 'assert parse_query("100%25=sure&x=%2B") == {"100%": ["sure"], "x": ["+"]}'
+  - parse_query("") == {}
+  - 'parse_query("q=hello+world") == {"q": ["hello world"]}'
+  - 'parse_query("name=J%C3%BCrgen") == {"name": ["Jürgen"]}'
+  - 'parse_query("flag&x=1") == {"flag": [""], "x": ["1"]}'
+  - 'parse_query("a=1&&b=2&") == {"a": ["1"], "b": ["2"]}'
+  - 'parse_query("eq=a=b") == {"eq": ["a=b"]}'
+  - 'parse_query("100%25=sure&x=%2B") == {"100%": ["sure"], "x": ["+"]}'

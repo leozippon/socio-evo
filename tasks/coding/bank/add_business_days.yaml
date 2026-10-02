@@ -2,19 +2,19 @@ title: Add business days
 specification: |
   Write a function `add_business_days(start: str, days: int, holidays: list[str]) -> str`.
 
-  Dates are ISO strings such as "2024-03-15". Business days are Monday to Friday, except the dates listed in `holidays`. Return the date that lies `days` business days after `start`, where `days >= 0`: starting from `start`, step to the next business day `days` times. With `days == 0`, return `start` unchanged, even if it is not a business day.
+  Dates are ISO strings such as "2024-03-15". Business days are Monday to Friday, except the dates listed in `holidays`. Return the date that falls `days` business days after `start`, where `days >= 0`: starting from `start`, step to the next business day `days` times. With `days == 0`, return `start` unchanged, even if it is not a business day.
 entry_point: add_business_days
 reward: 40
 deadline_days: 2
 public_checks:
-  - assert add_business_days("2024-03-11", 3, []) == "2024-03-14"
-  - assert add_business_days("2024-03-15", 1, []) == "2024-03-18"
+  - add_business_days("2024-03-11", 3, []) == "2024-03-14"
+  - add_business_days("2024-03-15", 1, []) == "2024-03-18"
 hidden_checks:
-  - assert add_business_days("2024-03-16", 0, []) == "2024-03-16"
-  - assert add_business_days("2024-03-16", 1, []) == "2024-03-18"
-  - assert add_business_days("2024-02-28", 1, []) == "2024-02-29"
-  - assert add_business_days("2024-03-11", 10, []) == "2024-03-25"
-  - assert add_business_days("2024-03-11", 1, ["2024-03-12"]) == "2024-03-13"
-  - assert add_business_days("2024-03-15", 1, ["2024-03-18"]) == "2024-03-19"
-  - assert add_business_days("2024-03-15", 1, ["2024-03-16"]) == "2024-03-18"
-  - assert add_business_days("2024-12-30", 3, ["2025-01-01"]) == "2025-01-03"
+  - add_business_days("2024-03-16", 0, []) == "2024-03-16"
+  - add_business_days("2024-03-16", 1, []) == "2024-03-18"
+  - add_business_days("2024-02-28", 1, []) == "2024-02-29"
+  - add_business_days("2024-03-11", 10, []) == "2024-03-25"
+  - add_business_days("2024-03-11", 1, ["2024-03-12"]) == "2024-03-13"
+  - add_business_days("2024-03-15", 1, ["2024-03-18"]) == "2024-03-19"
+  - add_business_days("2024-03-15", 1, ["2024-03-16"]) == "2024-03-18"
+  - add_business_days("2024-12-30", 3, ["2025-01-01"]) == "2025-01-03"
