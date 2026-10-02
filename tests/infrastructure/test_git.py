@@ -38,6 +38,36 @@ def test_history_contents_and_diff(repo):
     assert "-v1" in diff and "+v2" in diff and "skills/review.md" in diff
 
 
+def test_changes_trees_and_blobs_are_read_without_a_work_tree(repo):
+    _write(repo, "policy.md", "v1\n")
+    _write(repo, "memory/episodic.jsonl", "{}\n")
+    first = repo.commit("first", date=START)
+    _write(repo, "policy.md", "v2\nmore\n")
+    (repo.path / "memory/episodic.jsonl").unlink()
+    (repo.path / "logo.bin").write_bytes(b"\0\1\2")
+    second = repo.commit("second", date=START)
+    empty = repo.commit("nothing changed", date=START, allow_empty=True)
+
+    changes = repo.changes()
+    assert changes[empty] == ()
+    assert {(c.path, c.status, c.added, c.deleted) for c in changes[second]} == {
+        ("policy.md", "M", 2, 1),
+        ("memory/episodic.jsonl", "D", 0, 1),
+        ("logo.bin", "A", None, None),
+    }
+    assert {c.path for c in changes[first]} == {"policy.md", "memory/episodic.jsonl"}
+    tree = repo.tree(second)
+    assert sorted(tree) == ["logo.bin", "policy.md"]
+    assert repo.blobs([tree["policy.md"], tree["logo.bin"]]) == {
+        tree["policy.md"]: b"v2\nmore\n",
+        tree["logo.bin"]: b"\0\1\2",
+    }
+    diff = repo.diff(first, second, ".", ":(exclude)memory/episodic.jsonl")
+    assert "+more" in diff and "episodic" not in diff
+    with pytest.raises(GitError):
+        repo.blobs(["0" * 40])
+
+
 def test_commit_date_keeps_its_offset(repo):
     date = datetime(2030, 1, 1, 21, 30, tzinfo=timezone(timedelta(hours=8)))
     _write(repo, "a.md", "a\n")

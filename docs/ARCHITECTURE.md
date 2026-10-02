@@ -21,7 +21,8 @@ Imports point downward only.
 | Layer | Package | Responsibility |
 | --- | --- | --- |
 | Composition | `experiments/` | Experiment configs and command-line entry points; the only place that wires every layer together. |
-| Presentation | `frontend/` | Replay server and town viewer. Reads run directories and never writes to them; imports only `infrastructure` and the read-only agent `History`. |
+| Presentation | `frontend/` | Publishes runs as a static site (the viewer and a bundle of JSON documents whose contract is `frontend/README.md`), serves it locally and deploys it. Reads run directories and never writes to them; imports `analysis`, `core.interaction`, `evaluation.results`, `infrastructure` and the read-only agent `History`. |
+| Analysis | `analysis/` | Measures derived from a run directory, finished or in progress: the one place where the event log becomes numbers, for the dashboard and for statistics alike, plus model-usage aggregates and tidy evaluation scores. Reads only; imports `core.interaction`, `evaluation.results` and `infrastructure`. |
 | Assessment | `evaluation/` | Held-out character and safety probes run on frozen agent snapshots. |
 | Orchestration | `runtime/` | `scheduler/` (hierarchical event queue and calendar), `scenes/` (turn-taking), `simulation/` (run loop, interventions, checkpoints). |
 | Work content | `tasks/` | Concrete task providers (coding tasks, sandboxed assessment) implementing the work protocol defined in `core`. |

@@ -1,5 +1,6 @@
 """Result files, one per agent and evaluated day, and the tidy scores read back from them."""
 
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,12 +67,15 @@ def result_path(run: RunDirectory, agent: str, day: int) -> Path:
 
 
 def write_result(run: RunDirectory, result: AgentResult, *, overwrite: bool) -> Path:
-    """Write `result` to its file and return the path; raises FileExistsError if the file
-    exists, unless `overwrite`."""
+    """Write `result` to its file atomically, so that a reader never sees a partial one, and
+    return the path; raises FileExistsError if the file exists, unless `overwrite`."""
     path = result_path(run, result.agent, result.day)
+    if path.exists() and not overwrite:
+        raise FileExistsError(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w" if overwrite else "x", encoding="utf-8") as file:
-        file.write(result.model_dump_json(indent=2) + "\n")
+    staging = path.with_suffix(".json.tmp")
+    staging.write_text(result.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    os.replace(staging, path)
     return path
 
 

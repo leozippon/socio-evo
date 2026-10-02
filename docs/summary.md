@@ -170,7 +170,7 @@ To replay runs:
 python -m frontend.server --runs-root runs
 ```
 
-Then open http://127.0.0.1:8765/. The viewer shows any run on a town map, finished or still running, with every agent's files and history as of any moment. It never writes into a run. Its features and API are described in [frontend/README.md](../frontend/README.md).
+Then open http://127.0.0.1:8765/. The viewer shows any run on a town map, finished or still running, with every agent's files and history as of any moment. It reads a static site that `python -m frontend.publish` builds from the runs: the viewer and a bundle of JSON documents with the event log, measures derived from it, the agents' histories and the evaluation. The same site can be pushed to a web server, and publishing never writes into a run. The bundle and the deployment are described in [frontend/README.md](../frontend/README.md).
 
 ## Current limits
 

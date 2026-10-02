@@ -1,128 +1,95 @@
-"""Serve the town viewer and its read-only JSON API.
+"""Serve the published site locally, publishing it again as the runs change.
 
     python -m frontend.server --runs-root runs [--host 127.0.0.1] [--port 8765]
+                              [--site DIR] [--interval SECONDS]
 
-Routes, all GET (`<run>` is `<experiment>/<seed>`):
-
-    /api/runs
-    /api/runs/<run>/world
-    /api/runs/<run>/events[?after=<seq>]
-    /api/runs/<run>/evaluation
-    /api/runs/<run>/agents/<agent>/history
-    /api/runs/<run>/agents/<agent>/commits/<commit>/diff
-    /api/runs/<run>/agents/<agent>/commits/<commit>/files
-
-Everything else is a static file from `frontend/static`.
+The server publishes the runs with `frontend.publish`, exactly as for a deployment, and
+serves the site directory as static files, so a browser gets the published documents at the
+same relative URLs. The site lives in a temporary directory unless `--site` names one to keep.
+Every `--interval` seconds (5 by default) the runs are published again; a failure is printed
+and the last complete site stays served.
 """
 
 import argparse
-import json
 import sys
+import tempfile
+import threading
+import traceback
+from functools import partial
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from frontend.api import Api, NotFound
-
-STATIC = Path(__file__).parent / "static"
-TYPES = {
-    ".html": "text/html; charset=utf-8",
-    ".js": "text/javascript; charset=utf-8",
-    ".css": "text/css; charset=utf-8",
-    ".svg": "image/svg+xml",
-}
+from frontend.publish import Publisher
 
 
-def route(api: Api, path: str, query: dict[str, list[str]]) -> Any:
-    """The JSON answer for an API `path` (below `/api/`); raises NotFound for no such route."""
-    parts = [unquote(part) for part in path.split("/")]
-    match parts:
-        case ["runs"]:
-            return api.runs()
-        case ["runs", experiment, seed, "world"]:
-            return api.world(experiment, seed)
-        case ["runs", experiment, seed, "events"]:
+class _Handler(SimpleHTTPRequestHandler):
+    """Static files of the site with the caching of the deployment: a URL with `?v=` names
+    content that never changes; anything else is fetched afresh. No directory listings."""
+
+    def list_directory(self, path: str) -> None:
+        self.send_error(HTTPStatus.NOT_FOUND)
+
+    def end_headers(self) -> None:
+        settled = "v" in parse_qs(urlsplit(self.path).query)
+        self.send_header(
+            "Cache-Control", "public, max-age=31536000, immutable" if settled else "no-store"
+        )
+        super().end_headers()
+
+    def log_message(self, format: str, *args: Any) -> None:
+        print(f"{self.address_string()} {format % args}", file=sys.stderr)
+
+
+class DevServer(ThreadingHTTPServer):
+    """Serves the site `publisher` writes, publishing it again every `interval` seconds while
+    it serves."""
+
+    def __init__(self, address: tuple[str, int], publisher: Publisher, interval: float) -> None:
+        publisher.publish()
+        super().__init__(address, partial(_Handler, directory=str(publisher.out)))
+        self.publisher = publisher
+        self.interval = interval
+        self._stop = threading.Event()
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        threading.Thread(target=self._refresh, daemon=True).start()
+        super().serve_forever(poll_interval)
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        super().shutdown()
+
+    def _refresh(self) -> None:
+        while not self._stop.wait(self.interval):
             try:
-                after = int(query.get("after", ["-1"])[0])
-            except ValueError:
-                raise NotFound("`after` must be an integer") from None
-            return api.events(experiment, seed, after)
-        case ["runs", experiment, seed, "evaluation"]:
-            return api.evaluation(experiment, seed)
-        case ["runs", experiment, seed, "agents", agent, "history"]:
-            return api.history(experiment, seed, agent)
-        case ["runs", experiment, seed, "agents", agent, "commits", commit, "diff"]:
-            return api.diff(experiment, seed, agent, commit)
-        case ["runs", experiment, seed, "agents", agent, "commits", commit, "files"]:
-            return api.files(experiment, seed, agent, commit)
-    raise NotFound(f"no route /api/{path}")
-
-
-def handler_for(api: Api) -> type[BaseHTTPRequestHandler]:
-    class Handler(BaseHTTPRequestHandler):
-        def do_GET(self) -> None:
-            url = urlsplit(self.path)
-            try:
-                if url.path.startswith("/api/"):
-                    body = json.dumps(
-                        route(api, url.path.removeprefix("/api/"), parse_qs(url.query))
-                    )
-                    self._send(HTTPStatus.OK, "application/json", body.encode())
-                else:
-                    self._static(url.path)
-            except NotFound as error:
-                self._error(HTTPStatus.NOT_FOUND, str(error))
-            except Exception as error:  # report, never crash the server thread silently
-                self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(error).__name__}: {error}")
-
-        def _static(self, path: str) -> None:
-            name = "index.html" if path == "/" else path.lstrip("/")
-            file = (STATIC / name).resolve()
-            if not file.is_relative_to(STATIC.resolve()) or not file.is_file():
-                raise NotFound(f"no file {path}")
-            kind = TYPES.get(file.suffix, "application/octet-stream")
-            self._send(HTTPStatus.OK, kind, file.read_bytes())
-
-        def _error(self, status: HTTPStatus, message: str) -> None:
-            self._send(status, "application/json", json.dumps({"error": message}).encode())
-
-        def _send(self, status: HTTPStatus, kind: str, body: bytes) -> None:
-            self.send_response(status)
-            self.send_header("Content-Type", kind)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
-
-        def log_message(self, format: str, *args: Any) -> None:
-            print(f"{self.address_string()} {format % args}", file=sys.stderr)
-
-    return Handler
-
-
-def make_server(runs_root: Path, host: str = "127.0.0.1", port: int = 8765) -> ThreadingHTTPServer:
-    """A server for `runs_root`; port 0 picks a free one."""
-    if not runs_root.is_dir():
-        raise FileNotFoundError(f"runs root {runs_root} is not a directory")
-    return ThreadingHTTPServer((host, port), handler_for(Api(runs_root)))
+                self.publisher.publish()
+            except Exception:
+                traceback.print_exc()
 
 
 def main(argv: list[str] | None = None) -> None:
-    parser = argparse.ArgumentParser(description="Replay viewer for socio-evo runs.")
+    parser = argparse.ArgumentParser(
+        prog="python -m frontend.server", description="Serve the published runs locally."
+    )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--site", type=Path, help="keep the published site in this directory")
+    parser.add_argument("--interval", type=float, default=5.0, metavar="SECONDS")
     args = parser.parse_args(argv)
-    server = make_server(args.runs_root, args.host, args.port)
-    print(f"Serving {args.runs_root} at http://{args.host}:{server.server_address[1]}/")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+    with tempfile.TemporaryDirectory(prefix="socio-evo-site-") as scratch:
+        publisher = Publisher(args.runs_root, args.site or Path(scratch))
+        server = DevServer((args.host, args.port), publisher, args.interval)
+        print(f"Serving {args.runs_root} at http://{args.host}:{server.server_address[1]}/")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
 
 
 if __name__ == "__main__":

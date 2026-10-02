@@ -27,6 +27,7 @@ include = [
     "evaluation", "evaluation.*",
     "infrastructure", "infrastructure.*",
     "experiments", "experiments.*",
+    "analysis", "analysis.*",
     "frontend", "frontend.*",
 ]
 
