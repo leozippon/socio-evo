@@ -43,5 +43,26 @@ Three agents, three days and three repetitions are far too little to read the re
 - **Probe calibration.** Three probes sit at the ceiling for a fresh agent and can only show decline. The reliability probe's competing offer (150 credits, about six days of living cost) may be too large to discriminate. Both need tuning before trajectories mean anything.
 - **Social life is thin.** Conversations are mostly about work, every evening of every smoke run was spent at home, and ratings barely vary, so esteem separates agents little.
 - **Task difficulty.** With every delivery at true quality 1.0, there are no latent defects to discover; the bank is too easy for this model to create the temptation the design relies on.
-- **The pilot has not been run on the model.** Eight agents for 28 days is estimated at two to three hours.
 - Not built: L3, L4, team tasks and payments between agents, birth and death, container isolation, embedding retrieval.
+
+## Design review
+
+A review of whether the system as built can answer the research question is in [reviews/DESIGN_REVIEW_2026-10-02.md](../reviews/DESIGN_REVIEW_2026-10-02.md). Its verdict: a sound instrument, not yet an experiment. Trait-relevant behaviour has no consequence, nothing is selected, and the probes cannot yet separate character from context. It lists the changes needed before a long run is worth interpreting and proposes the first experiment.
+
+## First pilot run
+
+Pilot configuration, seed 0, at revision 93d8a24: 8 agents, 28 days, 2 hours 22 minutes of wall-clock, 2,103 model calls and 10.8 million tokens, no failed call. Days took 3.5 minutes at the start and 5 to 8 at the end, as prompts grew. It is a baseline of the regime the review describes, not evidence for the research claim.
+
+- **Work.** 168 deliveries accepted, 3 attempts refused by the visible checks, 1 claim lapsed. Three accepted deliveries carried a latent defect (true quality 0.86 each) and all three were found, with 90 credits clawed back.
+- **Scarcity.** 261 of 430 claim attempts were refused; 117 draws. Final balances run from 245 credits (Jonas) to −235 (Ravi), with three of eight agents in debt.
+- **Social life.** Ten conversations in 28 days, all at midday, nine of them between two people; none after day 4 except on days 9, 15 and 23 to 26. Of 162 utterances, 119 were at the workshop. One agent's final policy reads "do not engage in social interactions until the day's income is secured and submitted".
+- **Ratings.** 533 ratings: 345 fours, 147 fives, 36 threes, 5 twos. Published esteem converges on 4.0 for everyone.
+- **Evolution.** 224 nightly reflections, 35 skill reviews (4 self-requested) and 31 policy rewrites (23 self-requested).
+
+## Dashboard and deployment
+
+A new `analysis` package derives per-agent and society measures, the social graph, model usage and score rows from a run directory. The frontend became a static site: `frontend.publish` writes the viewer and a content-addressed JSON bundle in which finished days and agent versions are immutable files, and the viewer was rebuilt as an experiment dashboard, a town with a two-level timeline that shows each private thought beside what was then said, and a per-agent view of the git history. The dashboard needs no server-side code.
+
+It is deployed on the `cornerhead` server as its own loopback-only nginx site on port 8090, serving `/opt/socio-evo/site`, beside the existing console, which was left untouched and verified before and after. Access is through an SSH tunnel. Updating it is one publish followed by `frontend/deploy/push.sh cornerhead build/site`, which uploads only changed files and switches releases atomically. The deployed site was driven in headless Chrome through a tunnel: every view loads in under two seconds with no console error.
+
+Two defects surfaced while evaluating the pilot and were fixed: the judge's word-for-word quote check rejected quotes that differed from the reply only in typographic quotation marks, which aborted the evaluation; and agent-days were evaluated one after another, which would have taken hours, and now run concurrently.
