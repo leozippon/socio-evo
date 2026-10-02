@@ -1,0 +1,20 @@
+title: Write numbers in other bases
+specification: |
+  Write a function `to_base(number: int, base: int) -> str` that writes an integer in a base from 2 to 36.
+
+  Digits with values above 9 are the lower-case letters "a" to "z". A negative number is written as "-" followed by the digits of its absolute value, and zero is written "0". The result has no prefix and no leading zeros.
+entry_point: to_base
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert to_base(255, 16) == "ff"
+  - assert to_base(10, 2) == "1010"
+hidden_checks:
+  - assert to_base(0, 2) == "0"
+  - assert to_base(0, 36) == "0"
+  - assert to_base(-255, 16) == "-ff"
+  - assert to_base(35, 36) == "z"
+  - assert to_base(36, 36) == "10"
+  - assert to_base(7, 7) == "10"
+  - assert to_base(123456789, 10) == "123456789"
+  - assert to_base(2 ** 70, 2) == "1" + "0" * 70

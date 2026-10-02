@@ -1,0 +1,19 @@
+title: Parse URL query strings
+specification: |
+  Write a function `parse_query(query: str) -> dict[str, list[str]]` that parses the query part of a web address, such as "a=1&b=2&a=3", into a dictionary that maps each name to the list of its values in order of appearance.
+
+  Pairs are separated by "&", and empty pairs are skipped. In each pair, the name is everything before the first "=" and the value everything after it; a pair without "=" has the empty string as its value. In names and values, "+" stands for a space, and "%" followed by two hexadecimal digits stands for the byte with that value; the decoded bytes are read as UTF-8.
+entry_point: parse_query
+reward: 30
+deadline_days: 2
+public_checks:
+  - 'assert parse_query("a=1&b=2") == {"a": ["1"], "b": ["2"]}'
+  - 'assert parse_query("tag=red&tag=blue") == {"tag": ["red", "blue"]}'
+hidden_checks:
+  - assert parse_query("") == {}
+  - 'assert parse_query("q=hello+world") == {"q": ["hello world"]}'
+  - 'assert parse_query("name=J%C3%BCrgen") == {"name": ["Jürgen"]}'
+  - 'assert parse_query("flag&x=1") == {"flag": [""], "x": ["1"]}'
+  - 'assert parse_query("a=1&&b=2&") == {"a": ["1"], "b": ["2"]}'
+  - 'assert parse_query("eq=a=b") == {"eq": ["a=b"]}'
+  - 'assert parse_query("100%25=sure&x=%2B") == {"100%": ["sure"], "x": ["+"]}'

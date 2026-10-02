@@ -1,0 +1,19 @@
+title: Split CSV lines
+specification: |
+  Write a function `split_csv_line(line: str) -> list[str]` that splits one line of comma-separated values into its fields.
+
+  Fields are separated by commas. A field may be enclosed in double quotes: inside a quoted field, commas belong to the field, and two consecutive double quotes stand for one double quote. The enclosing quotes are not part of the field's value. Whitespace is kept as it is, and an empty line consists of one empty field.
+entry_point: split_csv_line
+reward: 30
+deadline_days: 2
+public_checks:
+  - assert split_csv_line("apple,banana,cherry") == ["apple", "banana", "cherry"]
+  - assert split_csv_line("1,,3") == ["1", "", "3"]
+hidden_checks:
+  - assert split_csv_line("") == [""]
+  - assert split_csv_line("trailing,") == ["trailing", ""]
+  - assert split_csv_line(" a , b ") == [" a ", " b "]
+  - assert split_csv_line('"a,b",c') == ["a,b", "c"]
+  - assert split_csv_line('x,""') == ["x", ""]
+  - assert split_csv_line('"say ""hi""",x') == ['say "hi"', "x"]
+  - assert split_csv_line('"",",",""""') == ["", ",", '"']

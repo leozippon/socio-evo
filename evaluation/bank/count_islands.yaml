@@ -1,0 +1,23 @@
+title: Count islands on a map
+specification: |
+  Write a function `count_islands(grid: list[str]) -> int` that counts the islands on a map.
+
+  The map is a list of rows of equal length, in which "#" marks land and "." marks water. An island is a group of land cells connected horizontally or vertically; cells that touch only at a corner are not connected. The map may have no rows, and it must not be modified.
+entry_point: count_islands
+reward: 40
+deadline_days: 2
+public_checks:
+  - assert count_islands(["##..", "##..", "...#"]) == 2
+  - assert count_islands(["#.#", "...", "#.#"]) == 4
+hidden_checks:
+  - assert count_islands([]) == 0
+  - assert count_islands(["...."]) == 0
+  - assert count_islands(["#"]) == 1
+  - assert count_islands(["#.", ".#"]) == 2
+  - assert count_islands(["#.#", "#.#", "###"]) == 1
+  - assert count_islands([".#.", "###", ".#."]) == 1
+  - assert count_islands(["##.##", "#...#", "#.#.#", "#...#", "#####"]) == 2
+  - |
+    grid = ["#.", "##"]
+    count_islands(grid)
+    assert grid == ["#.", "##"]

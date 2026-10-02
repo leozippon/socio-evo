@@ -1,0 +1,19 @@
+title: Make slugs for web addresses
+specification: |
+  Write a function `slugify(title: str) -> str` that turns a title into a slug for a web address.
+
+  The slug consists of the runs of ASCII letters and digits in the title, in lower case and joined by single hyphens. Every other character, including whitespace, punctuation and letters outside ASCII, separates runs. A title without ASCII letters or digits gives the empty string.
+entry_point: slugify
+reward: 20
+deadline_days: 1
+public_checks:
+  - assert slugify("Hello World") == "hello-world"
+  - assert slugify("Fish & Chips") == "fish-chips"
+hidden_checks:
+  - assert slugify("") == ""
+  - assert slugify("!!!") == ""
+  - assert slugify("  Leading and trailing  ") == "leading-and-trailing"
+  - assert slugify("Version 2.0 Release!") == "version-2-0-release"
+  - assert slugify("--already--slugged--") == "already-slugged"
+  - assert slugify("Café Münster") == "caf-m-nster"
+  - assert slugify("ABC123def") == "abc123def"

@@ -1,0 +1,22 @@
+title: Summarize integer ranges
+specification: |
+  Write a function `summarize_ranges(numbers: list[int]) -> str` that describes a collection of integers compactly.
+
+  Take the distinct values in ascending order and group consecutive values into runs. Write a run of one value as that value, and a longer run as its first and last value joined by "..". Join the runs with commas, without spaces. The numbers may come in any order, repeat or be negative, and no numbers give the empty string. The input list must not be modified.
+entry_point: summarize_ranges
+reward: 30
+deadline_days: 1
+public_checks:
+  - assert summarize_ranges([1, 2, 3, 5, 7, 8]) == "1..3,5,7..8"
+  - assert summarize_ranges([10, 11, 12, 13]) == "10..13"
+hidden_checks:
+  - assert summarize_ranges([]) == ""
+  - assert summarize_ranges([4]) == "4"
+  - assert summarize_ranges([0, 2, 4]) == "0,2,4"
+  - assert summarize_ranges([5, 3, 4, 1]) == "1,3..5"
+  - assert summarize_ranges([2, 2, 3, 3]) == "2..3"
+  - assert summarize_ranges([-3, -2, -1, 1]) == "-3..-1,1"
+  - |
+    numbers = [3, 1, 2]
+    summarize_ranges(numbers)
+    assert numbers == [3, 1, 2]
