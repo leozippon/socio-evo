@@ -36,6 +36,7 @@ password hash, username, service or origin invalidates existing sessions.
 from __future__ import annotations
 
 import argparse
+import base64
 import errno
 import grp
 import hashlib
@@ -73,6 +74,113 @@ CSRF_RE = re.compile(r"([A-Za-z0-9_-]{43})\.([0-9]{1,12})\.([0-9a-f]{64})\Z")
 USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 HASH_RE = re.compile(r"scrypt\$32768\$8\$3\$([0-9a-f]{32})\$([0-9a-f]{64})\Z")
 METHOD_RE = re.compile(r"[A-Z]{1,32}\Z")
+
+# One static stylesheet for every gateway page; CSP permits only these exact bytes.
+PAGE_CSS = """
+:root {
+  color-scheme: light;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202b3c;
+  background: #f3f5f9;
+  font-synthesis: none;
+}
+* { box-sizing: border-box; }
+body {
+  --accent: #4338a2;
+  --accent-soft: #efedfc;
+  margin: 0;
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background: radial-gradient(ellipse at top, #e8edf6, transparent 65%);
+  font-size: 1rem;
+  line-height: 1.6;
+}
+body.cornerhead { --accent: #14665f; --accent-soft: #e8f4f1; }
+.shell { width: 100%; max-width: 28rem; min-width: 0; }
+.card {
+  padding: 2.5rem;
+  border: 1px solid #dce2eb;
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 16px 48px #202b3c0c, 0 2px 6px #202b3c05;
+  overflow-wrap: anywhere;
+}
+.brand { display: flex; align-items: center; gap: .75rem; font-weight: 650; }
+.brand-mark {
+  display: grid;
+  place-items: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  flex-shrink: 0;
+  border: 1px solid #202b3c0a;
+  border-radius: .75rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: .8rem;
+  letter-spacing: .04em;
+}
+h1 { margin: 1.75rem 0 .5rem; font-size: 1.8rem; line-height: 1.25; letter-spacing: -.04em; }
+p { margin: 0; }
+.description, .session-note, .footer { color: #566176; }
+.description { margin-bottom: 1.75rem; }
+form { display: grid; gap: 1.25rem; }
+.field { display: grid; gap: .4rem; }
+label { font-size: .875rem; font-weight: 600; }
+input:not([type="hidden"]) {
+  width: 100%;
+  min-width: 0;
+  min-height: 3rem;
+  padding: .65rem .85rem;
+  border: 1px solid #b8c2d2;
+  border-radius: .6rem;
+  background: #fcfdff;
+  color: #202b3c;
+  font: inherit;
+}
+input:focus { border-color: var(--accent); background: #fff; }
+input:focus, button:focus-visible, a:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 3px;
+}
+button, .button-link {
+  display: block;
+  width: 100%;
+  min-height: 3rem;
+  padding: .7rem 1rem;
+  border: 1px solid var(--accent);
+  border-radius: .6rem;
+  background: var(--accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+button:hover, .button-link:hover { filter: brightness(.93); }
+.session-note { margin-top: 1.25rem; font-size: .8125rem; }
+.secondary { margin-top: 1.5rem; text-align: center; font-size: .875rem; }
+a { color: var(--accent); text-underline-offset: .2em; }
+.footer { margin-top: 1.25rem; text-align: center; font-size: .75rem; }
+.error {
+  margin: 1.25rem 0 1.5rem;
+  padding: 1rem;
+  border: 1px solid #ecc7c7;
+  border-radius: .6rem;
+  background: #fff5f5;
+  color: #922c2c;
+}
+.error-code { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 650; }
+@media (max-width: 480px) {
+  body { padding: 1.5rem 1rem; }
+  .card { padding: 1.75rem 1.5rem; border-radius: 1rem; }
+  h1 { font-size: 1.6rem; }
+}
+"""
+PAGE_CSS_HASH = base64.b64encode(hashlib.sha256(PAGE_CSS.encode("utf-8")).digest()).decode("ascii")
 
 
 def hash_password(password: str) -> str:
@@ -334,6 +442,14 @@ class Gateway:
             # Never log exception arguments, submitted forms, cookies or headers.
             logging.getLogger("webui-auth").error("authentication operation failed")
             response = Response(503, "Authentication unavailable")
+        # Presentation only: keep failures, headers and cookies exactly as dispatched.
+        if response.status >= 400 and environ.get("PATH_INFO") in {"/_auth/login", "/_auth/logout"}:
+            response = Response(
+                response.status,
+                self.error_html(environ["PATH_INFO"], response.status, response.body),
+                response.headers,
+                True,
+            )
         body = response.body.encode("utf-8")
         headers = [
             (
@@ -345,7 +461,9 @@ class Gateway:
             ("Pragma", "no-cache"),
             (
                 "Content-Security-Policy",
-                "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
+                "default-src 'none'; "
+                + (f"style-src 'sha256-{PAGE_CSS_HASH}'; " if response.is_html else "")
+                + "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
             ("X-Content-Type-Options", "nosniff"),
             ("X-Frame-Options", "DENY"),
@@ -521,24 +639,68 @@ class Gateway:
             raise RequestError(400, "Invalid form") from None
         return {key: items[0] for key, items in values.items()}
 
-    def form_html(self, purpose: str, csrf: str) -> str:
-        title = f"{'Sign in to' if purpose == 'login' else 'Sign out of'} {self.config.service}"
-        fields = (
-            ""
-            if purpose == "logout"
-            else """
-<label>Username <input name="username" autocomplete="username" maxlength="64" required></label>
-<label>Password <input name="password" type="password" autocomplete="current-password"
-maxlength="256" required></label>"""
+    def page_html(self, title: str, content: str) -> str:
+        """Shared shell; content is markup built only by the escaped renderers below."""
+        brand, mark = (
+            ("CornerHead", "CH") if self.config.service == "cornerhead" else ("socio-evo", "SE")
         )
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{html.escape(title)}</title></head>
-<body><main><h1>{html.escape(title)}</h1><form method="post" action="/_auth/{purpose}">
+<title>{html.escape(title)} · {html.escape(brand)}</title>
+<style>{PAGE_CSS}</style></head>
+<body class="{html.escape(self.config.service, quote=True)}">
+<main class="shell"><section class="card" aria-labelledby="page-title">
+<div class="brand"><span class="brand-mark" aria-hidden="true">{html.escape(mark)}</span>
+<span>{html.escape(brand)}</span></div>
+<h1 id="page-title">{html.escape(title)}</h1>{content}
+</section><p class="footer">Private WebUI · Authorized access only</p></main></body></html>"""
+
+    def form_html(self, purpose: str, csrf: str) -> str:
+        login = purpose == "login"
+        title = "Sign in" if login else "Sign out?"
+        description = (
+            "Use your account to access this private workspace."
+            if login
+            else "This ends your session in this browser. You can sign in again at any time."
+        )
+        fields = (
+            """
+<div class="field"><label for="username">Username</label>
+<input id="username" name="username" type="text" autocomplete="username"
+autocapitalize="none" spellcheck="false" maxlength="64" required></div>
+<div class="field"><label for="password">Password</label>
+<input id="password" name="password" type="password" autocomplete="current-password"
+maxlength="256" required></div>"""
+            if login
+            else ""
+        )
+        note = (
+            f'<p class="session-note">Stay signed in for {SESSION_DAYS} days, '
+            "unless you sign out. On a shared device, sign out when you finish.</p>"
+            if login
+            else ""
+        )
+        content = f"""
+<p class="description">{html.escape(description)}</p>
+<form method="post" action="/_auth/{html.escape(purpose, quote=True)}">
 <input type="hidden" name="csrf" value="{html.escape(csrf, quote=True)}">{fields}
-<button type="submit">{"Sign in" if purpose == "login" else "Confirm sign out"}</button>
-</form><p><a href="/">Return to WebUI</a></p></main></body></html>"""
+<button type="submit">{"Sign in" if login else "Confirm sign out"}</button></form>{note}
+<p class="secondary"><a href="/">Return to WebUI</a></p>"""
+        return self.page_html(title, content)
+
+    def error_html(self, path: str, status: int, message: str) -> str:
+        login = path == "/_auth/login"
+        title = "Unable to sign in" if login else "Unable to sign out"
+        recovery = "Return to sign in" if login else "Return to sign-out confirmation"
+        content = f"""
+<div class="error" role="alert">
+<span class="error-code">{html.escape(str(status))} ·
+{html.escape(HTTPStatus(status).phrase)}</span>
+<p>{html.escape(message)}</p></div>
+<a class="button-link" href="{html.escape(path, quote=True)}">{html.escape(recovery)}</a>
+<p class="secondary"><a href="/">Return to WebUI</a></p>"""
+        return self.page_html(title, content)
 
 
 def serve(gateway: Gateway, path: Path, socket_group: str = "nginx") -> None:

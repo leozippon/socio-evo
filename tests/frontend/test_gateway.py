@@ -1,6 +1,8 @@
 """Authentication invariants and real HTTP over the production Unix transport."""
 
+import base64
 import grp
+import hashlib
 import http.client
 import io
 import json
@@ -14,13 +16,14 @@ import sys
 import time
 from contextlib import closing, contextmanager
 from dataclasses import dataclass, replace
+from html.parser import HTMLParser
 from http.cookies import SimpleCookie
 from pathlib import Path
 from urllib.parse import urlencode
 
 import pytest
 
-from ops.webui.gateway import Config, Gateway, hash_password, main, provision
+from ops.webui.gateway import Config, Gateway, RequestError, hash_password, main, provision
 
 ORIGIN = "https://8.133.175.124:8443"
 PASSWORD = "test-only-password-not-a-deployed-credential"
@@ -147,6 +150,139 @@ def config_file(config: Config, path: Path) -> Path:
     )
     path.chmod(0o600)
     return path
+
+
+class PageTags(HTMLParser):
+    def __init__(self, body: str) -> None:
+        super().__init__()
+        self.tags: list[tuple[str, dict[str, str | None]]] = []
+        self.feed(body)
+
+    def handle_starttag(self, tag, attrs):
+        self.tags.append((tag, dict(attrs)))
+
+
+def assert_styled_page(result: Result) -> PageTags:
+    assert result.header("Content-Type") == "text/html; charset=utf-8"
+    styles = re.findall(r"<style>(.*?)</style>", result.body, re.DOTALL)
+    assert len(styles) == 1
+    digest = base64.b64encode(hashlib.sha256(styles[0].encode("utf-8")).digest()).decode("ascii")
+    csp = result.header("Content-Security-Policy")
+    assert csp is not None
+    policy = dict(directive.strip().split(" ", 1) for directive in csp.split(";"))
+    assert policy == {
+        "default-src": "'none'",
+        "style-src": f"'sha256-{digest}'",
+        "form-action": "'self'",
+        "base-uri": "'none'",
+        "frame-ancestors": "'none'",
+    }
+    page = PageTags(result.body)
+    assert ("html", {"lang": "en"}) in page.tags
+    assert any(tag == "main" for tag, _ in page.tags)
+    assert any(
+        tag == "meta"
+        and attrs.get("name") == "viewport"
+        and attrs.get("content") == "width=device-width,initial-scale=1"
+        for tag, attrs in page.tags
+    )
+    assert not any(tag in {"script", "link", "img"} for tag, _ in page.tags)
+    assert all("style" not in attrs and "src" not in attrs for _, attrs in page.tags)
+    return page
+
+
+@pytest.mark.parametrize(
+    "service,brand", [("cornerhead", "CornerHead"), ("socio-evo", "socio-evo")]
+)
+@pytest.mark.parametrize("purpose", ["login", "logout"])
+def test_shared_responsive_forms_and_accessible_fields(config, clock, service, brand, purpose):
+    browser = Browser(Gateway(replace(config, service=service), clock))
+    result = browser.request(path=f"/_auth/{purpose}")
+    assert result.status == 200
+    page = assert_styled_page(result)
+    assert f"<span>{brand}</span>" in result.body
+    assert ("body", {"class": service}) in page.tags
+    assert ("form", {"method": "post", "action": f"/_auth/{purpose}"}) in page.tags
+    assert ("h1", {"id": "page-title"}) in page.tags
+    assert any(attrs.get("aria-labelledby") == "page-title" for _, attrs in page.tags)
+    inputs = {attrs["name"]: attrs for tag, attrs in page.tags if tag == "input"}
+    assert inputs["csrf"]["type"] == "hidden"
+    assert inputs["csrf"]["value"] == browser.cookies[browser.gateway.config.csrf_cookie_name]
+    if purpose == "login":
+        assert set(inputs) == {"csrf", "username", "password"}
+        for name, autocomplete in (("username", "username"), ("password", "current-password")):
+            assert ("label", {"for": name}) in page.tags
+            assert inputs[name]["id"] == name
+            assert inputs[name]["autocomplete"] == autocomplete
+            assert "required" in inputs[name]
+            assert "value" not in inputs[name]
+        assert inputs["password"]["type"] == "password"
+        assert inputs["username"]["autocapitalize"] == "none"
+        assert "30 days" in result.body
+    else:
+        assert set(inputs) == {"csrf"}
+        assert "Confirm sign out" in result.body
+        assert "This ends your session in this browser" in result.body
+    assert ("a", {"href": "/"}) in page.tags
+    # The inherited nginx policy composes with the gateway's exact CSS hash;
+    # it adds no default/style restriction that would block this stylesheet.
+    edge_policy = (PROJECT / "ops/webui/nginx-security.conf").read_text()
+    assert "default-src" not in edge_policy and "style-src" not in edge_policy
+
+
+@pytest.mark.parametrize("status", [401, 403, 429, 503])
+def test_styled_authentication_failures_preserve_status_and_do_not_issue_cookies(
+    browser, clock, monkeypatch, status
+):
+    csrf = browser.csrf()
+    if status == 403:
+        clock.now += 600
+    elif status == 429:
+        browser.gateway.attempts.extend([clock.now] * 10)
+    elif status == 503:
+
+        def unavailable():
+            raise OSError("test-only store failure")
+
+        monkeypatch.setattr(browser.gateway, "limit_login", unavailable)
+    before = browser.cookies.copy()
+    result = browser.request(
+        "POST",
+        "/_auth/login",
+        form={"username": "<submitted-username>", "password": "submitted-password", "csrf": csrf},
+    )
+    assert result.status == status
+    page = assert_styled_page(result)
+    assert any(attrs.get("role") == "alert" for _, attrs in page.tags)
+    assert ("a", {"class": "button-link", "href": "/_auth/login"}) in page.tags
+    assert "Return to sign in" in result.body
+    assert "submitted-username" not in result.body and "submitted-password" not in result.body
+    assert result.header("Set-Cookie") is None
+    assert browser.cookies == before
+    assert browser.request().status == 401
+    with closing(sqlite3.connect(browser.gateway.sessions.path)) as connection:
+        assert connection.execute("SELECT COUNT(*) FROM sessions").fetchone()[0] == 0
+
+
+def test_renderer_escapes_text_attributes_and_logout_error_recovery(browser, monkeypatch):
+    payload = '<script>alert("test")</script>'
+    assert payload not in browser.gateway.page_html(payload, "")
+    assert "&lt;script&gt;" in browser.gateway.page_html(payload, "")
+    form_page = PageTags(browser.gateway.form_html("login", payload))
+    assert any(attrs.get("value") == payload for tag, attrs in form_page.tags if tag == "input")
+    assert not any(tag == "script" for tag, _ in form_page.tags)
+
+    def rejected(_environ):
+        raise RequestError(403, payload)
+
+    monkeypatch.setattr(browser.gateway, "dispatch", rejected)
+    result = browser.request("POST", "/_auth/logout", form={"csrf": "invalid"})
+    assert result.status == 403
+    page = assert_styled_page(result)
+    assert payload not in result.body and "&lt;script&gt;" in result.body
+    assert ("a", {"class": "button-link", "href": "/_auth/logout"}) in page.tags
+    assert "Return to sign-out confirmation" in result.body
+    assert result.header("Set-Cookie") is None
 
 
 def test_login_cookie_only_and_secure_attributes(browser):
