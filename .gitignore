@@ -15,6 +15,7 @@ dist/
 # Local state
 .env
 runs/
+.pi/tasks/
 
 # Editors and OS
 .vscode/

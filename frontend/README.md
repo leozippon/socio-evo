@@ -23,19 +23,21 @@ Serve the runs locally while developing:
 
 Then open http://127.0.0.1:8765/. The server publishes into a temporary directory (`--site DIR` keeps it), serves that directory as static files, and publishes again every five seconds (`--interval`), so it serves exactly the documents a deployment would. It listens on loopback unless `--host` says otherwise.
 
-To deploy, install `deploy/nginx-site.conf` on the web server (it serves `/opt/socio-evo/site` on `127.0.0.1:8090`) and push a published site to it:
+The production viewer is at `https://8.133.175.124:20131/`, behind its own login and a private-CA IP certificate, beside CornerHead's separately authenticated service. Provisioning, CA trust, private credential retrieval, firewall isolation and operational checks have one authoritative home: [Private WebUI deployment](../ops/webui/README.md). The former unauthenticated 8090 listener is retired.
+
+Push an already published site through the root SSH alias:
 
 ```bash
-frontend/deploy/push.sh HOST build/site
+frontend/deploy/push.sh cornerhead build/site
 ```
 
-`push.sh` needs only `ssh` and `tar`; the server needs a POSIX shell, `tar`, `find`, `sed` and GNU coreutils, and the ssh user must be able to write to `/opt/socio-evo` (a third argument names another directory). `PUSH_SSH` replaces the `ssh` command, for example `PUSH_SSH="ssh -p 2222"`. It uploads only the files that differ from the server's current release, assembles the new release beside it with hard links, checks every file against the local checksums, and switches the `site` link in one rename, so a browser sees either the old site or the new one. The previous release is kept for rollback. To follow a running experiment on the server, publish and push in turn:
+The frontend wrapper delegates to the shared release deployer. It uploads only changed files, verifies every checksum and atomically switches `/opt/socio-evo/site`, preserving root/nginx-only ownership and permissions. One previous release remains available for rollback. `PUSH_SSH` supplies SSH options, for example `PUSH_SSH="ssh -p 2222"`; a third `ROOT` argument is only for development/test targets. Both ends need `tar`, `find` and GNU coreutils, and the remote needs `flock`. Never upload while the publisher is writing the same site directory. To follow a running experiment, publish and push sequentially:
 
 ```bash
-while :; do ~/miniconda3/envs/socio-evo/bin/python -m frontend.publish --runs-root runs --out build/site && frontend/deploy/push.sh HOST build/site; sleep 60; done
+while :; do ~/miniconda3/envs/socio-evo/bin/python -m frontend.publish --runs-root runs --out build/site && frontend/deploy/push.sh cornerhead build/site; sleep 60; done
 ```
 
-Then reach the site through a tunnel, for example `ssh -L 8090:127.0.0.1:8090 HOST` and http://127.0.0.1:8090/.
+Authenticated production data is served with `Cache-Control: no-store`, even for settled content, so browsers do not persist private research bundles. The local development server remains loopback-only by default and has no authentication; do not expose it publicly.
 
 ## The viewer
 

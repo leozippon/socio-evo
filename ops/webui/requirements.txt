@@ -1,0 +1,2 @@
+# Production WSGI server; native Unix socket support, no development HTTP server.
+waitress>=3.0.2,<4

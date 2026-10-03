@@ -1,0 +1,30 @@
+[Unit]
+Description=Private WebUI authentication (%i)
+After=webui-firewall.service systemd-tmpfiles-setup.service
+Requires=webui-firewall.service
+Before=nginx.service
+
+[Service]
+Type=simple
+User=%i
+Group=%i
+# tmpfiles owns these parents: RuntimeDirectory would reset their group before ExecStart.
+# setgid lets the socket inherit www-data without granting the process nginx's group.
+ExecStartPre=+/usr/bin/install -d -o %i -g www-data -m 2710 /run/webui-%i
+ExecStart=/opt/webui-auth/venv/bin/python -B /opt/webui-auth/gateway.py --config /etc/webui/%i/auth.json --socket /run/webui-%i/auth.sock --socket-group www-data
+Restart=on-failure
+RestartSec=2
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/webui/%i /run/webui-%i
+RestrictAddressFamilies=AF_UNIX
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+[Install]
+WantedBy=multi-user.target

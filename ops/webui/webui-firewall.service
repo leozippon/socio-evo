@@ -1,0 +1,17 @@
+[Unit]
+Description=WebUI local-user firewall boundary
+DefaultDependencies=no
+After=nftables.service
+Requires=nftables.service
+Before=network-pre.target nginx.service ssh.service
+Wants=network-pre.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/nft -f /etc/webui/firewall.nft
+ExecReload=/usr/sbin/nft -f /etc/webui/firewall.nft
+# Keep the boundary in place even when this unit is stopped.
+
+[Install]
+WantedBy=sysinit.target
