@@ -195,7 +195,9 @@ def assert_styled_page(result: Result) -> PageTags:
         and attrs.get("content") == "width=device-width,initial-scale=1"
         for tag, attrs in page.tags
     )
-    assert not any(tag in {"script", "link", "img"} for tag, _ in page.tags)
+    assert not any(tag in {"script", "link", "img", "nav", "footer"} for tag, _ in page.tags)
+    assert not any(tag == "span" and attrs.get("class") == "brand-mark" for tag, attrs in page.tags)
+    assert "prefers-color-scheme: dark" in styles[0]
     assert all("style" not in attrs and "src" not in attrs for _, attrs in page.tags)
     assert not any(tag == "a" and attrs.get("href") == "/" for tag, attrs in page.tags)
     return page
@@ -212,6 +214,22 @@ def test_shared_responsive_forms_and_accessible_fields(config, clock, service, b
     page = assert_styled_page(result)
     assert f"<span>{brand}</span>" in result.body
     assert ("body", {"class": service}) in page.tags
+    marks = [attrs for tag, attrs in page.tags if tag == "svg"]
+    assert len(marks) == 1
+    assert marks[0]["viewbox"] == "0 0 32 32" and marks[0]["aria-hidden"] == "true"
+    paths = {attrs["d"] for tag, attrs in page.tags if tag == "path"}
+    if service == "cornerhead":
+        assert paths == {"M8 25 V9 H24"}
+        assert any(tag == "lineargradient" and attrs["id"] == "auth-ch-g"
+                   for tag, attrs in page.tags)
+        tokens = ("#f3f5f9", "#ffffff", "#dfe4ea", "#1c212c", "#2456c4",
+                  "#12151c", "#1b1f28", "#3987e5")
+    else:
+        assert paths == {"M4 15 16 5l12 10", "M8 13v13h16V13"}
+        assert len([tag for tag, _ in page.tags if tag == "circle"]) == 2
+        tokens = ("#f4efe4", "#fffdf8", "#1f1b14", "#e6dfd0", "#8c6a3b",
+                  "#14120e", "#1e1b16", "#f1ebdf", "#d3b88a")
+    assert all(token in result.body for token in tokens)
     assert ("form", {"method": "post", "action": f"/_auth/{purpose}"}) in page.tags
     assert ("h1", {"id": "page-title"}) in page.tags
     assert any(attrs.get("aria-labelledby") == "page-title" for _, attrs in page.tags)

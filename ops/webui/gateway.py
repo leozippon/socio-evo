@@ -75,107 +75,258 @@ USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 HASH_RE = re.compile(r"scrypt\$32768\$8\$3\$([0-9a-f]{32})\$([0-9a-f]{64})\Z")
 METHOD_RE = re.compile(r"[A-Z]{1,32}\Z")
 
-# One static stylesheet for every gateway page; CSP permits only these exact bytes.
-PAGE_CSS = """
-:root {
-  color-scheme: light;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  color: #202b3c;
-  background: #f3f5f9;
-  font-synthesis: none;
-}
+# Static presentation follows each application's own tokens and original brand mark.
+# Only layout is shared; CSP hashes the exact combined stylesheet for that service.
+LAYOUT_CSS = """
 * { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; font-synthesis: none; }
 body {
-  --accent: #4338a2;
-  --accent-soft: #efedfc;
   margin: 0;
   min-height: 100vh;
   min-height: 100svh;
   display: grid;
   place-items: center;
-  padding: 2rem 1rem;
-  background: radial-gradient(ellipse at top, #e8edf6, transparent 65%);
-  font-size: 1rem;
-  line-height: 1.6;
+  padding: 24px 16px;
 }
-body.cornerhead { --accent: #14665f; --accent-soft: #e8f4f1; }
-.shell { width: 100%; max-width: 28rem; min-width: 0; }
-.card {
-  padding: 2.5rem;
-  border: 1px solid #dce2eb;
-  border-radius: 1.25rem;
-  background: #fff;
-  box-shadow: 0 16px 48px #202b3c0c, 0 2px 6px #202b3c05;
-  overflow-wrap: anywhere;
-}
-.brand { display: flex; align-items: center; gap: .75rem; font-weight: 650; }
-.brand-mark {
-  display: grid;
-  place-items: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  flex-shrink: 0;
-  border: 1px solid #202b3c0a;
-  border-radius: .75rem;
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: .8rem;
-  letter-spacing: .04em;
-}
-h1 { margin: 1.75rem 0 .5rem; font-size: 1.8rem; line-height: 1.25; letter-spacing: -.04em; }
+.shell { width: 100%; min-width: 0; }
+.card { overflow-wrap: anywhere; }
+.brand { display: flex; align-items: center; }
+.brand-mark { display: block; flex: none; }
+h1 { margin: 24px 0 20px; line-height: 1.25; }
 p { margin: 0; }
-.description { color: #566176; margin-bottom: 1.75rem; }
-form { display: grid; gap: 1.25rem; }
-.field { display: grid; gap: .4rem; }
-label { font-size: .875rem; font-weight: 600; }
+.description { margin-bottom: 20px; }
+form, .field { display: grid; }
+.field { gap: 6px; }
 input:not([type="hidden"]) {
   width: 100%;
   min-width: 0;
-  min-height: 3rem;
-  padding: .65rem .85rem;
-  border: 1px solid #b8c2d2;
-  border-radius: .6rem;
-  background: #fcfdff;
-  color: #202b3c;
+  min-height: 44px;
   font: inherit;
-}
-input:focus { border-color: var(--accent); background: #fff; }
-input:focus, button:focus-visible, a:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 3px;
+  font-size: 16px;
 }
 button, .button-link {
   display: block;
+  appearance: none;
   width: 100%;
-  min-height: 3rem;
-  padding: .7rem 1rem;
-  border: 1px solid var(--accent);
-  border-radius: .6rem;
-  background: var(--accent);
-  color: #fff;
+  min-height: 44px;
   font: inherit;
-  font-weight: 600;
   text-align: center;
   text-decoration: none;
   cursor: pointer;
+  box-shadow: none;
 }
-button:hover, .button-link:hover { filter: brightness(.93); }
-.error {
-  margin: 1.25rem 0 1.5rem;
-  padding: 1rem;
-  border: 1px solid #ecc7c7;
-  border-radius: .6rem;
-  background: #fff5f5;
-  color: #922c2c;
-}
-.error-code { display: block; margin-bottom: .25rem; font-size: .75rem; font-weight: 650; }
+.error { margin: 0 0 20px; padding: 12px; }
+.error-code { display: block; margin-bottom: 4px; font-size: 12px; font-weight: 650; }
 @media (max-width: 480px) {
-  body { padding: 1.5rem 1rem; }
-  .card { padding: 1.75rem 1.5rem; border-radius: 1rem; }
-  h1 { font-size: 1.6rem; }
+  .shell .card { padding: 24px 20px; }
 }
 """
-PAGE_CSS_HASH = base64.b64encode(hashlib.sha256(PAGE_CSS.encode("utf-8")).digest()).decode("ascii")
+
+CORNERHEAD_CSS = """
+:root {
+  color-scheme: light;
+  --bg: #f3f5f9;
+  --panel: #ffffff;
+  --border: #dfe4ea;
+  --text: #1c212c;
+  --muted: #68717f;
+  --accent: #2456c4;
+  --accent-soft: #e8eefc;
+  --input-bg: #f2f4f8;
+  --input-border: #cdd4de;
+  --bad: #bd3131;
+  --bad-soft: #fbe7e7;
+  --danger-border: #e5b8b8;
+  --shadow: 0 1px 3px rgba(24, 34, 56, 0.08);
+  font-size: clamp(14px, 12px + 0.22vw, 17.5px);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #12151c;
+    --panel: #1b1f28;
+    --border: #2c323e;
+    --text: #e4e8ef;
+    --muted: #9aa2b1;
+    --accent: #3987e5;
+    --accent-soft: #1d2b45;
+    --input-bg: #13161d;
+    --input-border: #3a4150;
+    --bad: #e06c6c;
+    --bad-soft: #3a1c1c;
+    --danger-border: #6d3a3a;
+    --shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  }
+}
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 1rem/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+}
+.shell { max-width: 400px; }
+.card {
+  padding: 28px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.brand { gap: .55rem; font-size: 1.12rem; font-weight: 750; letter-spacing: .01em; }
+.brand-mark { width: 1.7rem; height: 1.7rem; }
+h1 { font-size: 1.19rem; font-weight: 700; }
+.description { color: var(--muted); }
+form { gap: 16px; }
+label { font-size: .905rem; font-weight: 600; }
+input:not([type="hidden"]) {
+  padding: .5rem .7rem;
+  border: 1px solid var(--input-border);
+  border-radius: 8px;
+  background: var(--input-bg);
+  color: var(--text);
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  background: var(--panel);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+button, .button-link {
+  padding: .45rem .95rem;
+  border: 1px solid var(--accent);
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: .9rem;
+  font-weight: 600;
+  line-height: 1.45;
+}
+button:hover, .button-link:hover { background: color-mix(in srgb, var(--accent) 88%, #000); }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.error {
+  border: 1px solid var(--danger-border);
+  border-radius: 10px;
+  background: var(--bad-soft);
+  color: var(--bad);
+}
+"""
+
+SOCIO_EVO_CSS = """
+:root {
+  color-scheme: light;
+  --page: #f4efe4;
+  --surface: #fffdf8;
+  --surface-2: #f8f3e8;
+  --ink: #1f1b14;
+  --ink-2: #5a5246;
+  --muted: #847b6c;
+  --line: #e6dfd0;
+  --ring: rgba(31, 27, 20, 0.1);
+  --shadow: 0 1px 2px rgba(60, 45, 20, 0.08), 0 4px 14px rgba(60, 45, 20, 0.06);
+  --accent: #8c6a3b;
+  --focus: #1f1b14;
+  --critical: #d03b3b;
+  --critical-text: #b42727;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #14120e;
+    --surface: #1e1b16;
+    --surface-2: #25211a;
+    --ink: #f1ebdf;
+    --ink-2: #c4bba9;
+    --muted: #958c7b;
+    --line: #332e25;
+    --ring: rgba(255, 245, 225, 0.1);
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.25);
+    --accent: #d3b88a;
+    --focus: #f1ebdf;
+    --critical-text: #ef6b6b;
+  }
+}
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.shell { max-width: 360px; }
+.card {
+  padding: 28px;
+  background: var(--surface);
+  border: 1px solid var(--ring);
+  border-radius: 14px;
+  box-shadow: var(--shadow);
+}
+.brand { gap: 8px; font-size: 15px; font-weight: 700; }
+.brand-mark {
+  width: 26px;
+  height: 26px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.brand-mark circle { fill: var(--accent); stroke: none; }
+h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; }
+.description { color: var(--ink-2); }
+form { gap: 18px; }
+label { font-weight: 550; }
+input:not([type="hidden"]) {
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--ink);
+}
+input:focus, button:focus-visible, a:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+button, .button-link {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--page);
+  font-weight: 550;
+}
+button:hover, .button-link:hover { background: color-mix(in srgb, var(--ink) 85%, var(--page)); }
+.error {
+  border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--critical) 12%, var(--surface));
+  color: var(--critical-text);
+}
+"""
+
+PAGE_CSS = {
+    "cornerhead": LAYOUT_CSS + CORNERHEAD_CSS,
+    "socio-evo": LAYOUT_CSS + SOCIO_EVO_CSS,
+}
+PAGE_CSS_HASH = {
+    service: base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("ascii")
+    for service, css in PAGE_CSS.items()
+}
+BRANDS = {
+    "cornerhead": (
+        "CornerHead",
+        '<svg class="brand-mark" viewBox="0 0 32 32" width="30" height="30" aria-hidden="true">'
+        '<defs><linearGradient id="auth-ch-g" x1="0" y1="1" x2="1" y2="0">'
+        '<stop offset="0" stop-color="#2456c4"/><stop offset="1" stop-color="#6ea8ff"/>'
+        '</linearGradient></defs>'
+        '<path d="M8 25 V9 H24" fill="none" stroke="url(#auth-ch-g)" stroke-width="5.5" '
+        'stroke-linecap="round" stroke-linejoin="miter"/>'
+        '<circle cx="22.5" cy="22.5" r="5.5" fill="url(#auth-ch-g)"/></svg>',
+    ),
+    "socio-evo": (
+        "socio-evo",
+        '<svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">'
+        '<path d="M4 15 16 5l12 10"/><path d="M8 13v13h16V13"/>'
+        '<circle cx="13" cy="20" r="2.6"/><circle cx="19.5" cy="20" r="2.6"/></svg>',
+    ),
+}
 
 
 def hash_password(password: str) -> str:
@@ -457,7 +608,10 @@ class Gateway:
             (
                 "Content-Security-Policy",
                 "default-src 'none'; "
-                + (f"style-src 'sha256-{PAGE_CSS_HASH}'; " if response.is_html else "")
+                + (
+                    f"style-src 'sha256-{PAGE_CSS_HASH[self.config.service]}'; "
+                    if response.is_html else ""
+                )
                 + "form-action 'self'; base-uri 'none'; frame-ancestors 'none'",
             ),
             ("X-Content-Type-Options", "nosniff"),
@@ -636,18 +790,15 @@ class Gateway:
 
     def page_html(self, title: str, content: str) -> str:
         """Shared shell; content is markup built only by the escaped renderers below."""
-        brand, mark = (
-            ("CornerHead", "CH") if self.config.service == "cornerhead" else ("socio-evo", "SE")
-        )
+        brand, mark = BRANDS[self.config.service]
         return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} · {html.escape(brand)}</title>
-<style>{PAGE_CSS}</style></head>
+<style>{PAGE_CSS[self.config.service]}</style></head>
 <body class="{html.escape(self.config.service, quote=True)}">
 <main class="shell"><section class="card" aria-labelledby="page-title">
-<div class="brand"><span class="brand-mark" aria-hidden="true">{html.escape(mark)}</span>
-<span>{html.escape(brand)}</span></div>
+<div class="brand">{mark}<span>{html.escape(brand)}</span></div>
 <h1 id="page-title">{html.escape(title)}</h1>{content}
 </section></main></body></html>"""
 

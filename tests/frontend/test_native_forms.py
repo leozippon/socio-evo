@@ -18,7 +18,8 @@ from ops.webui.gateway import Config, Gateway, Response, hash_password
 PROJECT = Path(__file__).parents[2]
 
 
-def test_native_https_login_and_logout(tmp_path):
+@pytest.mark.parametrize("service", ["cornerhead", "socio-evo"])
+def test_native_https_login_and_logout(tmp_path, service):
     chromium = os.environ.get("CHROMIUM", "")
     if not chromium:
         pytest.skip("opt in with CHROMIUM=/absolute/path/to/existing/chrome")
@@ -72,7 +73,7 @@ def test_native_https_login_and_logout(tmp_path):
     origin = f"https://127.0.0.1:{server.server_port}"
     password = "isolated-browser-test-password"
     gateway = Gateway(Config(
-        "socio-evo", origin, "browser-test", hash_password(password), "s" * 64,
+        service, origin, "browser-test", hash_password(password), "s" * 64,
         tmp_path / "state",
     ))
     tls = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -84,8 +85,8 @@ def test_native_https_login_and_logout(tmp_path):
         env = dict(os.environ, WEBUI_BROWSER_SPKI=spki)
         env.pop("WEBUI_BROWSER_PROXY", None)
         result = subprocess.run(
-            ["node", str(helper), f"socio-evo={origin}"],
-            input=json.dumps({"socio-evo": {"username": "browser-test", "password": password}}),
+            ["node", str(helper), f"{service}={origin}"],
+            input=json.dumps({service: {"username": "browser-test", "password": password}}),
             capture_output=True, text=True, timeout=75, env=env,
         )
         assert result.returncode == 0, result.stdout + result.stderr
