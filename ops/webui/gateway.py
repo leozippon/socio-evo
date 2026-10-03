@@ -462,7 +462,7 @@ class Gateway:
             ),
             ("X-Content-Type-Options", "nosniff"),
             ("X-Frame-Options", "DENY"),
-            ("Referrer-Policy", "no-referrer"),
+            ("Referrer-Policy", "same-origin"),
             *response.headers,
         ]
         start_response(f"{response.status} {HTTPStatus(response.status).phrase}", headers)

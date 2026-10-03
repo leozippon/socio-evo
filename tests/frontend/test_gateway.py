@@ -81,6 +81,7 @@ class Browser:
         result.body = b"".join(self.gateway(env, start_response)).decode("utf-8")
         assert result.header("Cache-Control") == "no-store, max-age=0"
         assert result.header("Content-Security-Policy") is not None
+        assert result.header("Referrer-Policy") == "same-origin"
         self.save_cookies(result)
         return result
 
@@ -238,6 +239,7 @@ def test_shared_responsive_forms_and_accessible_fields(config, clock, service, b
     # it adds no default/style restriction that would block this stylesheet.
     edge_policy = (PROJECT / "ops/webui/nginx-security.conf").read_text()
     assert "default-src" not in edge_policy and "style-src" not in edge_policy
+    assert re.findall(r"add_header Referrer-Policy (\S+) always;", edge_policy) == ["same-origin"]
 
 
 @pytest.mark.parametrize("status", [401, 403, 429, 503])
@@ -742,6 +744,7 @@ def unix_request(
         response = connection.getresponse()
         result = Result(response.status, response.getheaders(), response.read().decode())
     assert result.header("Cache-Control") == "no-store, max-age=0"
+    assert result.header("Referrer-Policy") == "same-origin"
     return result
 
 

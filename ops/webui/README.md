@@ -78,4 +78,23 @@ ssh cornerhead 'systemctl status webui-firewall webui-auth@cornerhead webui-auth
 
 `--local` maps the real certificate/origin to loopback; omit it to test the public NAT path from the host. Rate limits apply to diagnostic logins too: avoid repeated rapid verification. A successful localhost check does not establish Internet reachability. From an external client with the private files retrieved above, run `python3 ops/webui/verify.py --ca "$HOME/.config/private-webui/ca.crt" --credentials-dir "$HOME/.config/private-webui"` to verify both real public endpoints without bypassing TLS. Cloud security-group/firewall admission for TCP 20817/20131 may also be required; report cloud timeouts separately from host-level success.
 
+Scripted checks set Origin explicitly and cannot establish that a browser generates it. The gateway and nginx both use `Referrer-Policy: same-origin` so native login/logout form POSTs retain the exact HTTPS Origin, while cross-origin referrers remain suppressed. Missing, `null` and wrong-port Origins are still rejected.
+
+An opt-in regression uses an existing Chromium executable, Node.js, OpenSSL and the test Python environment; it installs nothing:
+
+```bash
+CHROMIUM=/absolute/path/to/chrome python -m pytest tests/frontend/test_native_forms.py -q
+```
+
+It serves an isolated TLS fixture with test-only credentials and the actual gateway plus nginx's referrer policy, then checks native dummy login (401, not 403), authenticated login, logout confirmation and replay rejection. Browser submissions use the page's real form and cookie jar without overriding Origin. The fixture scopes a temporary certificate exception to its generated certificate's public key; it does not test CA trust or Safari.
+
+The same bounded browser probe can check the deployed services. Run it separately from rapid scripted probes, allowing at least one minute after other login diagnostics; nginx's existing login rate limit also covers form-page GETs:
+
+```bash
+CHROMIUM=/absolute/path/to/chrome node tests/frontend/native_form_check.mjs \
+  cornerhead=https://8.133.175.124:20817 socio-evo=https://8.133.175.124:20131 </dev/null
+```
+
+Optional private JSON on stdin (`{"SERVICE":{"username":"...","password":"..."}}`) enables authenticated login/logout checks; never put credentials in command arguments or tracked files. `WEBUI_BROWSER_PROXY` optionally sets a browser proxy. Use the browser/OS CA trust store for normal TLS; `WEBUI_BROWSER_SPKI` is only a narrowly scoped certificate-public-key exception for diagnostics and is not evidence of CA validation. Pair such a diagnostic with the CA-validated HTTP verifier above. The probe uses inherited private pipes for Chromium's DevTools protocol, with no DevTools TCP port. It reports only statuses and Origins and removes its temporary profile. Actual Safari must be checked separately on an available Apple client.
+
 For ordinary source-host diagnostics, MacroQuant's `webui_stack.sh status` checks its UDS, loaded-code fingerprint and authenticated frontend API path. Restart only the relevant UI/tunnel; never restart experiments to fix dashboard access. Check source-host listeners with `ss -lntp '( sport = :38888 or sport = :8765 )'`, identify the process and checkout before removing any legacy listener, and do not terminate an unrelated project's service blindly.
