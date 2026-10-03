@@ -164,6 +164,14 @@ class PageTags(HTMLParser):
 
 def assert_styled_page(result: Result) -> PageTags:
     assert result.header("Content-Type") == "text/html; charset=utf-8"
+    for removed_text in (
+        "Return to WebUI",
+        "Use your account to access this private workspace.",
+        "Stay signed in for 30 days, unless you sign out. "
+        "On a shared device, sign out when you finish.",
+        "Private WebUI · Authorized access only",
+    ):
+        assert removed_text not in result.body
     styles = re.findall(r"<style>(.*?)</style>", result.body, re.DOTALL)
     assert len(styles) == 1
     digest = base64.b64encode(hashlib.sha256(styles[0].encode("utf-8")).digest()).decode("ascii")
@@ -188,6 +196,7 @@ def assert_styled_page(result: Result) -> PageTags:
     )
     assert not any(tag in {"script", "link", "img"} for tag, _ in page.tags)
     assert all("style" not in attrs and "src" not in attrs for _, attrs in page.tags)
+    assert not any(tag == "a" and attrs.get("href") == "/" for tag, attrs in page.tags)
     return page
 
 
@@ -218,12 +227,13 @@ def test_shared_responsive_forms_and_accessible_fields(config, clock, service, b
             assert "value" not in inputs[name]
         assert inputs["password"]["type"] == "password"
         assert inputs["username"]["autocapitalize"] == "none"
-        assert "30 days" in result.body
+        assert "Sign in" in result.body
+        assert not any(tag == "p" for tag, _ in page.tags)
     else:
         assert set(inputs) == {"csrf"}
         assert "Confirm sign out" in result.body
         assert "This ends your session in this browser" in result.body
-    assert ("a", {"href": "/"}) in page.tags
+    assert not any(tag == "a" for tag, _ in page.tags)
     # The inherited nginx policy composes with the gateway's exact CSS hash;
     # it adds no default/style restriction that would block this stylesheet.
     edge_policy = (PROJECT / "ops/webui/nginx-security.conf").read_text()

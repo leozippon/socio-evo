@@ -124,8 +124,7 @@ body.cornerhead { --accent: #14665f; --accent-soft: #e8f4f1; }
 }
 h1 { margin: 1.75rem 0 .5rem; font-size: 1.8rem; line-height: 1.25; letter-spacing: -.04em; }
 p { margin: 0; }
-.description, .session-note, .footer { color: #566176; }
-.description { margin-bottom: 1.75rem; }
+.description { color: #566176; margin-bottom: 1.75rem; }
 form { display: grid; gap: 1.25rem; }
 .field { display: grid; gap: .4rem; }
 label { font-size: .875rem; font-weight: 600; }
@@ -161,10 +160,6 @@ button, .button-link {
   cursor: pointer;
 }
 button:hover, .button-link:hover { filter: brightness(.93); }
-.session-note { margin-top: 1.25rem; font-size: .8125rem; }
-.secondary { margin-top: 1.5rem; text-align: center; font-size: .875rem; }
-a { color: var(--accent); text-underline-offset: .2em; }
-.footer { margin-top: 1.25rem; text-align: center; font-size: .75rem; }
 .error {
   margin: 1.25rem 0 1.5rem;
   padding: 1rem;
@@ -654,15 +649,16 @@ class Gateway:
 <div class="brand"><span class="brand-mark" aria-hidden="true">{html.escape(mark)}</span>
 <span>{html.escape(brand)}</span></div>
 <h1 id="page-title">{html.escape(title)}</h1>{content}
-</section><p class="footer">Private WebUI · Authorized access only</p></main></body></html>"""
+</section></main></body></html>"""
 
     def form_html(self, purpose: str, csrf: str) -> str:
         login = purpose == "login"
         title = "Sign in" if login else "Sign out?"
         description = (
-            "Use your account to access this private workspace."
+            ""
             if login
-            else "This ends your session in this browser. You can sign in again at any time."
+            else '<p class="description">This ends your session in this browser. '
+            "You can sign in again at any time.</p>"
         )
         fields = (
             """
@@ -675,18 +671,10 @@ maxlength="256" required></div>"""
             if login
             else ""
         )
-        note = (
-            f'<p class="session-note">Stay signed in for {SESSION_DAYS} days, '
-            "unless you sign out. On a shared device, sign out when you finish.</p>"
-            if login
-            else ""
-        )
-        content = f"""
-<p class="description">{html.escape(description)}</p>
+        content = f"""{description}
 <form method="post" action="/_auth/{html.escape(purpose, quote=True)}">
 <input type="hidden" name="csrf" value="{html.escape(csrf, quote=True)}">{fields}
-<button type="submit">{"Sign in" if login else "Confirm sign out"}</button></form>{note}
-<p class="secondary"><a href="/">Return to WebUI</a></p>"""
+<button type="submit">{"Sign in" if login else "Confirm sign out"}</button></form>"""
         return self.page_html(title, content)
 
     def error_html(self, path: str, status: int, message: str) -> str:
@@ -698,8 +686,7 @@ maxlength="256" required></div>"""
 <span class="error-code">{html.escape(str(status))} ·
 {html.escape(HTTPStatus(status).phrase)}</span>
 <p>{html.escape(message)}</p></div>
-<a class="button-link" href="{html.escape(path, quote=True)}">{html.escape(recovery)}</a>
-<p class="secondary"><a href="/">Return to WebUI</a></p>"""
+<a class="button-link" href="{html.escape(path, quote=True)}">{html.escape(recovery)}</a>"""
         return self.page_html(title, content)
 
 
