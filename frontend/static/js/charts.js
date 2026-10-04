@@ -41,7 +41,8 @@ function tooltip(host) {
   const tip = h("div", { class: "tip", role: "status", hidden: true });
   host.append(tip);
   return {
-    show(x, y, title, rows) {
+    /** Beside the pointer; under a finger, above it, so the finger does not cover it. */
+    show(x, y, title, rows, touch = false) {
       tip.replaceChildren(
         h("div", { class: "tip-title" }, title),
         ...rows.map((row) =>
@@ -51,8 +52,9 @@ function tooltip(host) {
       tip.hidden = false;
       const box = host.getBoundingClientRect();
       const width = tip.offsetWidth;
+      const height = tip.offsetHeight;
       tip.style.left = `${Math.max(4, Math.min(x + 14 > box.width - width ? x - width - 14 : x + 14, box.width - width - 4))}px`;
-      tip.style.top = `${Math.max(0, y - 10)}px`;
+      tip.style.top = `${touch ? y - height - 28 : Math.max(0, y - 10)}px`;
     },
     hide() {
       tip.hidden = true;
@@ -85,8 +87,13 @@ export class DayChart {
       this.width = width;
       this.render();
     });
+    // A mouse reads by hovering; a finger by touching and sliding sideways (the page still
+    // scrolls vertically), and the reading stays until the next touch elsewhere.
+    this.svg.addEventListener("pointerdown", (event) => event.pointerType !== "mouse" && this.hover(event));
     this.svg.addEventListener("pointermove", (event) => this.hover(event));
-    this.svg.addEventListener("pointerleave", () => this.leave());
+    this.svg.addEventListener("pointerleave", (event) => event.pointerType === "mouse" && this.leave());
+    this.outside = (event) => !this.el.contains(event.target) && this.leave();
+    document.addEventListener("pointerdown", this.outside, true);
   }
 
   update(patch) {
@@ -245,7 +252,7 @@ export class DayChart {
     this.crosshair.setAttribute("x2", sc.x(day));
     this.crosshair.setAttribute("visibility", "visible");
     const markers = this.spec.markers.filter((m) => m.day === day).map((m) => ({ value: "", label: m.label, color: null }));
-    this.tip.show(sc.x(day), event.clientY - box.top, `Day ${day}`, [...rows, ...markers]);
+    this.tip.show(sc.x(day), event.clientY - box.top, `Day ${day}`, [...rows, ...markers], event.pointerType !== "mouse");
   }
 
   rowsAt(day) {
@@ -278,6 +285,7 @@ export class DayChart {
 
   destroy() {
     this.stop();
+    document.removeEventListener("pointerdown", this.outside, true);
   }
 }
 
@@ -318,7 +326,7 @@ function column(x, y, w, hgt, r) {
 export function figure({ title, note, chart, legend = null, tools = [], wide = false }) {
   const body = h("div", { class: "figure-body" }, chart.el);
   let showing = "chart";
-  const toggle = h("button", { class: "ghost small", type: "button", title: "Show the numbers as a table", "aria-pressed": "false" }, icon("table", 15), h("span", {}, "Table"));
+  const toggle = h("button", { class: "quiet small", type: "button", title: "Show the numbers as a table", "aria-pressed": "false" }, icon("table", 15), h("span", {}, "Table"));
   toggle.addEventListener("click", () => {
     showing = showing === "chart" ? "table" : "chart";
     toggle.setAttribute("aria-pressed", String(showing === "table"));
@@ -341,6 +349,7 @@ export function agentLegend(cast, names, { selected, onPick }) {
       {
         type: "button",
         class: `legend-item${selected === name ? " on" : ""}`,
+        "data-agent": name,
         "aria-pressed": String(selected === name),
         onclick: () => onPick(selected === name ? null : name, true),
         onpointerenter: () => onPick(name, false),
@@ -353,9 +362,9 @@ export function agentLegend(cast, names, { selected, onPick }) {
   return h("div", { class: "legend" }, items);
 }
 
-/** A legend of plain swatches, for columns. */
+/** A legend of swatches that mirror their marks: a block for columns, a stroke for lines. */
 export const swatchLegend = (entries) =>
-  h("div", { class: "legend static" }, entries.map(([label, color]) => h("span", { class: "legend-item" }, h("span", { class: "swatch", style: { background: color } }), label)));
+  h("div", { class: "legend static" }, entries.map(([label, color, mark = "column"]) => h("span", { class: "legend-item" }, h("span", { class: `swatch${mark === "line" ? " line" : ""}`, style: { background: color } }), label)));
 
 /**
  * Small multiples: one panel per agent with that agent in its colour over the others in grey,

@@ -216,89 +216,96 @@ SOCIO_EVO_CSS = """
   color-scheme: light;
   --page: #f4efe4;
   --surface: #fffdf8;
-  --surface-2: #f8f3e8;
+  --surface-2: #f9f5ec;
   --ink: #1f1b14;
-  --ink-2: #5a5246;
-  --muted: #847b6c;
+  --ink-2: #57503f;
   --line: #e6dfd0;
-  --ring: rgba(31, 27, 20, 0.1);
-  --shadow: 0 1px 2px rgba(60, 45, 20, 0.08), 0 4px 14px rgba(60, 45, 20, 0.06);
+  --line-2: #d5cbb6;
   --accent: #8c6a3b;
+  --accent-soft: #f1e6d2;
   --focus: #1f1b14;
   --critical: #d03b3b;
   --critical-text: #b42727;
+  --shadow: 0 1px 2px rgba(47, 36, 18, 0.05), 0 12px 32px rgba(47, 36, 18, 0.08);
 }
 @media (prefers-color-scheme: dark) {
   :root {
     color-scheme: dark;
     --page: #14120e;
     --surface: #1e1b16;
-    --surface-2: #25211a;
+    --surface-2: #24211b;
     --ink: #f1ebdf;
-    --ink-2: #c4bba9;
-    --muted: #958c7b;
-    --line: #332e25;
-    --ring: rgba(255, 245, 225, 0.1);
-    --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 6px 18px rgba(0, 0, 0, 0.25);
+    --ink-2: #c6bdab;
+    --line: #322d25;
+    --line-2: #463f33;
     --accent: #d3b88a;
+    --accent-soft: #352c20;
     --focus: #f1ebdf;
     --critical-text: #ef6b6b;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.35), 0 14px 36px rgba(0, 0, 0, 0.4);
   }
 }
 body {
   background: var(--page);
   color: var(--ink);
-  font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-.shell { max-width: 360px; }
+.shell { max-width: 380px; }
 .card {
-  padding: 28px;
+  padding: 32px 32px 28px;
   background: var(--surface);
-  border: 1px solid var(--ring);
-  border-radius: 14px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
   box-shadow: var(--shadow);
 }
-.brand { gap: 8px; font-size: 15px; font-weight: 700; }
+.brand { gap: 10px; font-size: 15px; font-weight: 650; letter-spacing: -.01em; }
 .brand-mark {
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   fill: none;
   stroke: currentColor;
-  stroke-width: 2;
+  stroke-width: 1.9;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
 .brand-mark circle { fill: var(--accent); stroke: none; }
-h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.015em; }
 .description { color: var(--ink-2); }
-form { gap: 18px; }
-label { font-weight: 550; }
+form { gap: 16px; }
+label { font-size: 13px; font-weight: 550; color: var(--ink-2); }
 input:not([type="hidden"]) {
-  padding: 8px 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--line-2);
+  border-radius: 10px;
   background: var(--surface-2);
   color: var(--ink);
+  transition: border-color .15s, box-shadow .15s, background-color .15s;
 }
-input:focus, button:focus-visible, a:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
+input:focus {
+  outline: none;
+  border-color: var(--ink);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 button, .button-link {
-  padding: 6px 12px;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  margin-top: 4px;
+  padding: 10px 14px;
+  border: 1px solid var(--ink);
+  border-radius: 10px;
   background: var(--ink);
   color: var(--page);
-  font-weight: 550;
+  font-weight: 600;
 }
-button:hover, .button-link:hover { background: color-mix(in srgb, var(--ink) 85%, var(--page)); }
+button:hover, .button-link:hover { background: color-mix(in srgb, var(--ink) 86%, var(--page)); }
 .error {
-  border: 1px solid color-mix(in srgb, var(--critical) 45%, transparent);
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--critical) 12%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--critical) 9%, var(--surface));
   color: var(--critical-text);
 }
+@media (prefers-reduced-motion: reduce) { input:not([type="hidden"]) { transition: none; } }
 """
 
 PAGE_CSS = {
@@ -322,9 +329,9 @@ BRANDS = {
     ),
     "socio-evo": (
         "socio-evo",
-        '<svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">'
+        '<svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">'
         '<path d="M4 15 16 5l12 10"/><path d="M8 13v13h16V13"/>'
-        '<circle cx="13" cy="20" r="2.6"/><circle cx="19.5" cy="20" r="2.6"/></svg>',
+        '<circle cx="12.75" cy="20" r="2.6"/><circle cx="19.25" cy="20" r="2.6"/></svg>',
     ),
 }
 

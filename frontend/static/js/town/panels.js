@@ -1,11 +1,12 @@
-// The town's side panels. Each renders one moment: `m` holds the replay state, the day's events
-// up to that moment, whether the truth is shown and who is selected.
+// The town's panels. Each renders one moment: `m` holds the replay state, the day's events up
+// to that moment, whether the truth is shown and who is selected.
 
 import { hhmm, minuteOf } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
+import { holdings } from "../replay.js";
 import { shortName } from "../world.js";
-import { actionSummary, clockOf, feedItems, glyph, involved, isPublic, isTruth, line } from "./events.js";
+import { actionSummary, actionTexts, clockOf, feedItems, glyph, involved, isPublic, isTruth, line, sceneName } from "./events.js";
 
 const truthTag = (label = "truth") => h("span", { class: "truth-tag" }, icon("eye", 13), label);
 
@@ -24,30 +25,29 @@ const ordinal = (n) => `${n}${["th", "st", "nd", "rd"][n % 100 > 10 && n % 100 <
 /** A decision with the thought behind it and what came of it. */
 export function decisionCard(decision, events, m, { focus = false, extra = null } = {}) {
   const { action, thought } = decision.payload;
-  const said = action.kind === "speak";
   const place = m.places.get(decision.place);
   const result = outcomes(events, decision.actor, m);
+  const texts = actionTexts(action);
+  const thinking = m.truth ? h("div", { class: "truth thought" }, truthTag("thought"), h("p", {}, thought)) : null;
   return h(
     "article",
     { class: `decision${focus ? " focus" : ""}`, "data-agent": decision.actor },
     h(
       "header",
       {},
-      h("button", { type: "button", class: "linkish", onclick: () => m.select(decision.actor) }, m.cast.badge(decision.actor, 18), h("b", {}, decision.actor)),
+      h("button", { type: "button", class: "linkish", onclick: () => m.select(decision.actor) }, m.cast.badge(decision.actor, 20), h("b", {}, decision.actor)),
       h("span", { class: "muted" }, `${place ? shortName(place) : ""} · ${clockOf(decision)}`),
       extra ? h("span", { class: "decision-extra" }, extra) : null,
       h("span", { class: "action-kind" }, actionSummary(action, m.lookups)),
     ),
-    said
+    texts.length
       ? h(
           "div",
           { class: "pair" },
-          m.truth ? h("div", { class: "truth thought" }, truthTag("thought"), h("p", {}, thought)) : null,
-          h("div", { class: "said" }, h("span", { class: "said-tag" }, icon("speech", 13), action.to ? `said to ${action.to}` : "said"), h("p", {}, action.text)),
+          thinking,
+          texts.map(([field, text]) => h("div", { class: "said" }, h("span", { class: "said-tag" }, icon("speech", 13), field === "said" ? (action.to ? `said to ${action.to}` : "said") : field.replaceAll("_", " ")), h("p", {}, text))),
         )
-      : m.truth
-        ? h("div", { class: "truth thought" }, truthTag("thought"), h("p", {}, thought))
-        : null,
+      : thinking,
     action.kind === "submit_work" && m.truth ? h("details", { class: "code" }, h("summary", {}, "Delivered code and report"), h("p", {}, action.report), h("pre", {}, action.solution)) : null,
     action.kind === "plan_day" && action.intention ? h("p", { class: "intention" }, h("span", { class: "muted" }, "Intends: "), action.intention) : null,
     result.length ? h("ul", { class: "outcomes" }, result) : null,
@@ -76,17 +76,15 @@ export class NowPanel {
         ? h(
             "ul",
             { class: "scenes" },
-            scenes.map(([id, scene]) => {
+            scenes.map(([, scene]) => {
               const place = m.places.get(scene.place);
               const round = Math.floor((m.state.time - scene.start) / m.world.scenes.turn_minutes) + 1;
-              const most = scene.kind === "work" ? m.world.scenes.work_rounds : m.world.scenes.conversation_turns;
+              const most = scene.kind === "work" ? m.world.scenes.work_rounds : scene.kind === "conversation" ? m.world.scenes.conversation_turns : null;
               return h(
                 "li",
                 {},
-                h("b", {}, scene.kind === "work" ? "Work session" : scene.kind === "conversation" ? "Conversation" : scene.kind === "planning" ? "Everyone plans the day" : "Evening review"),
-                place ? ` at ${shortName(place)}` : "",
-                scene.kind === "work" || scene.kind === "conversation" ? h("span", { class: "muted" }, ` · ${scene.kind === "work" ? "round" : "turn"} ${Math.min(round, most)} of up to ${most}`) : null,
-                h("span", { class: "present" }, scene.present.map((name) => m.cast.badge(name, 15))),
+                h("span", { class: "scene-name" }, h("b", {}, sceneName(scene.kind)), place ? ` · ${shortName(place)}` : "", most ? h("span", { class: "muted" }, ` · ${scene.kind === "work" ? "round" : "turn"} ${Math.min(round, most)} of ${most}`) : null),
+                h("span", { class: "present" }, scene.present.map((name) => m.cast.badge(name, 16))),
                 h("span", { class: "sr" }, scene.present.join(", ")),
               );
             }),
@@ -94,7 +92,7 @@ export class NowPanel {
         : null,
     );
     if (!latest) {
-      fill(this.el, head, emptyState(m.state.day ? "Nobody has decided anything yet today." : "The run has not begun its first day here.", "Press play or step forward with the arrow keys."));
+      fill(this.el, head, emptyState(m.state.day ? "Nobody has decided anything yet today." : "The run has not begun its first day here.", "Press play, or step through the moments."));
       return;
     }
     const turn = m.dayEvents.filter((e) => e.time === latest.time);
@@ -105,11 +103,7 @@ export class NowPanel {
     const body = [];
     if (m.selected && !inTurn.some((e) => e.actor === m.selected)) {
       const own = decisions.findLast((e) => e.actor === m.selected);
-      if (own)
-        body.push(
-          h("p", { class: "turn-label" }, `${m.selected}'s latest decision, at ${clockOf(own)}`),
-          decisionCard(own, m.dayEvents.filter((e) => e.time === own.time), m, { focus: true }),
-        );
+      if (own) body.push(h("p", { class: "turn-label" }, `${m.selected}'s latest decision, ${clockOf(own)}`), decisionCard(own, m.dayEvents.filter((e) => e.time === own.time), m, { focus: true }));
     }
     body.push(h("p", { class: "turn-label" }, ago > 0 ? `The latest turn, ${ago} min ago at ${clockOf(latest)}` : `This turn, ${clockOf(latest)}`, m.truth ? null : h("span", { class: "muted" }, " · thoughts hidden")));
     if (m.truth) body.push(...inTurn.map((e) => decisionCard(e, turn, m, { focus: e.actor === m.selected })));
@@ -118,6 +112,50 @@ export class NowPanel {
       body.push(seen.length ? h("ul", { class: "outcomes public" }, seen.map((e) => h("li", {}, glyph(e), line(e, m.cast, m.lookups)))) : emptyState("Nothing anyone could perceive happened in this turn."));
     }
     fill(this.el, head, h("div", { class: "turn" }, body));
+  }
+}
+
+/** The people of the town at the moment: where each is, what they hold, how they fare. */
+export class PeoplePanel {
+  constructor() {
+    this.el = h("div", { class: "panel people" });
+    this.key = null;
+  }
+
+  update(m) {
+    const key = `${m.state.seq}|${m.selected}`;
+    if (key === this.key) return;
+    this.key = key;
+    const holding = holdings(m.state);
+    fill(
+      this.el,
+      h(
+        "ul",
+        { class: "people-list" },
+        m.cast.names.map((name) => {
+          const place = m.places.get(m.state.locations[name]);
+          const balance = m.state.balances[name];
+          const delta = m.dayStart ? balance - m.dayStart[name] : 0;
+          const esteem = m.state.esteem[name];
+          return h(
+            "li",
+            {},
+            h(
+              "button",
+              { type: "button", class: `person-row${m.selected === name ? " on" : ""}`, "aria-pressed": String(m.selected === name), onclick: () => m.select(name) },
+              m.cast.badge(name, 28),
+              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? shortName(place) : "", holding[name] ? ` · holds ${holding[name]}` : "")),
+              h(
+                "span",
+                { class: "person-figures" },
+                h("span", { class: `money${balance < 0 ? " debt" : ""}`, title: "Balance, and its change since the day began" }, fmt.credits(balance), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
+                h("span", { class: "esteem", title: "Esteem as last published" }, icon("star", 12), esteem === null ? "–" : fmt.num(esteem, 1)),
+              ),
+            ),
+          );
+        }),
+      ),
+    );
   }
 }
 
@@ -141,20 +179,13 @@ export class FeedPanel {
     this.key = key;
     fill(
       this.bar,
-      h("span", { class: "muted" }, m.truth ? "Everything that happened, truth included" : "What the town's people could perceive"),
-      m.selected
-        ? h(
-            "button",
-            { type: "button", class: "ghost small", "aria-pressed": String(m.follow), onclick: () => this.onFollow(!m.follow) },
-            m.cast.badge(m.selected, 14),
-            m.follow ? `Only ${m.selected}` : `Follow ${m.selected}`,
-          )
-        : null,
+      h("span", { class: "muted" }, m.truth ? "Everything that happened" : "What the town's people perceived"),
+      m.selected ? h("button", { type: "button", class: "ghost small", "aria-pressed": String(m.follow), onclick: () => this.onFollow(!m.follow) }, m.cast.badge(m.selected, 14), m.follow ? `Only ${m.selected}` : `Follow ${m.selected}`) : null,
     );
     let events = m.dayEvents.filter((e) => e.kind !== "scene_ended" && e.kind !== "day_ended");
     if (!m.truth) events = events.filter((e) => isPublic(e) || e.kind === "scene_started" || e.kind === "day_started");
     if (m.selected && m.follow)
-      events = events.filter((e) => (m.truth ? involved(e).includes(m.selected) : e.audience.includes(m.selected) || e.actor === m.selected) || (e.kind === "scene_started" && e.payload.participants.includes(m.selected)) || e.kind === "day_started");
+      events = events.filter((e) => (m.truth ? involved(e).includes(m.selected) : e.audience.includes(m.selected) || e.actor === m.selected) || (e.kind === "scene_started" && e.payload.participants?.includes(m.selected)) || e.kind === "day_started");
     const items = feedItems(events);
     let lastTime = null;
     const rows = [];
@@ -185,14 +216,13 @@ export class FeedPanel {
         "li",
         { class: `feed-item group${truth ? " truth" : ""}` },
         h("button", { type: "button", class: "group-head", "aria-expanded": String(opened), onclick: toggle }, glyph(item.events[0]), h("span", {}, item.summary), truth ? truthTag() : null, icon(opened ? "down" : "chevron", 14)),
-        opened ? h("ul", { class: "group-items" }, item.events.map((e) => h("li", {}, line(e, m.cast, m.lookups), e.kind === "rating" ? "" : ""))) : null,
+        opened ? h("ul", { class: "group-items" }, item.events.map((e) => h("li", {}, line(e, m.cast, m.lookups)))) : null,
       );
     }
     const e = item.event;
     if (e.kind === "scene_started") {
       const place = m.places.get(e.place);
-      const what = { work: "Work session", conversation: "Conversation", planning: "Everyone plans the day", review: "The evening review" }[e.payload.kind];
-      return h("li", { class: "feed-scene" }, h("span", {}, `${what}${place ? ` at ${shortName(place)}` : ""}`), h("span", { class: "present" }, e.payload.participants.map((name) => m.cast.badge(name, 13))));
+      return h("li", { class: "feed-scene" }, h("span", {}, `${sceneName(e.payload.kind)}${place ? ` · ${shortName(place)}` : ""}`), h("span", { class: "present" }, (e.payload.participants ?? []).map((name) => m.cast.badge(name, 14))));
     }
     if (e.kind === "day_started") return h("li", { class: "feed-scene" }, h("span", {}, `Day ${m.state.day || ""} begins`));
     if (e.kind === "decision") {
@@ -246,8 +276,8 @@ export class BoardPanel {
               this.update(m, true);
             },
           },
-          h("span", { class: "task-reward" }, t ? `${t.reward}` : "?", h("small", {}, " cr")),
-          h("span", { class: "task-title" }, h("b", {}, t?.title ?? id), h("span", { class: "muted" }, ` ${id} · ${t ? fmt.plural(t.deadline_days, "day") : ""} to deliver · posted day ${posted(id) ? Math.floor(posted(id).time / 1440) + 1 : "?"}`)),
+          h("span", { class: "task-reward" }, t ? `${t.reward}` : "?", h("small", {}, "cr")),
+          h("span", { class: "task-title" }, h("b", {}, t?.title ?? id), h("span", { class: "muted" }, `${id} · ${t ? fmt.plural(t.deadline_days, "day") : "?"} to deliver · posted day ${posted(id) ? Math.floor(posted(id).time / 1440) + 1 : "?"}`)),
           extra,
         ),
         opened ? this.detail(id, m) : null,
@@ -263,7 +293,7 @@ export class BoardPanel {
       h("h4", {}, `Open · ${open.length}`),
       open.length ? h("ul", { class: "tasks" }, open.map((id) => row(id, null))) : h("p", { class: "muted pad-s" }, "The board is empty."),
       h("h4", {}, `Claimed · ${claimed.length}`),
-      claimed.length ? h("ul", { class: "tasks" }, claimed.map(([id, claim]) => row(id, h("span", { class: "task-who" }, m.cast.badge(claim.agent, 15), `due day ${claim.due_day}`), "claimed"))) : h("p", { class: "muted pad-s" }, "Nobody holds a task."),
+      claimed.length ? h("ul", { class: "tasks" }, claimed.map(([id, claim]) => row(id, h("span", { class: "task-who" }, m.cast.badge(claim.agent, 16), `due day ${claim.due_day}`), "claimed"))) : h("p", { class: "muted pad-s" }, "Nobody holds a task."),
       h("h4", {}, `Delivered today · ${delivered.length}`),
       delivered.length
         ? h(
@@ -271,7 +301,7 @@ export class BoardPanel {
             { class: "tasks" },
             delivered.map((e) => {
               const q = quality.get(`${e.actor}/${e.payload.task_id}`);
-              return row(e.payload.task_id, h("span", { class: "task-who" }, m.cast.badge(e.actor, 15), m.truth && q !== undefined ? h("span", { class: `quality${q < 1 ? " flawed" : ""}`, title: "True quality: the share of hidden checks passed" }, icon("eye", 12), fmt.num(q, 2)) : null), "done");
+              return row(e.payload.task_id, h("span", { class: "task-who" }, m.cast.badge(e.actor, 16), m.truth && q !== undefined ? h("span", { class: `quality${q < 1 ? " flawed" : ""}`, title: "True quality: the share of hidden checks passed" }, icon("eye", 12), fmt.num(q, 2)) : null), "done");
             }),
           )
         : h("p", { class: "muted pad-s" }, "Nothing yet."),
@@ -318,13 +348,13 @@ export class ChroniclePanel {
     const add = (e, text, cls = "") => notes.push({ e, text, cls });
     const scenes = new Map();
     for (const e of m.dayEvents) {
-      const p = e.payload;
+      const p = e.payload ?? {};
       switch (e.kind) {
         case "announcement":
           add(e, ["Announced to everyone: ", h("q", {}, e.text)]);
           break;
         case "intervention":
-          if (m.truth) add(e, ["Conditions changed", !m.dayEvents.some((x) => x.kind === "announcement" && x.time === e.time) ? " without an announcement" : "", `: ${Object.entries(p.changes).map(([k, v]) => `${k.replaceAll("_", " ")} → ${v}`).join(", ")}`], "truth-line");
+          if (m.truth) add(e, ["Conditions changed", !m.dayEvents.some((x) => x.kind === "announcement" && x.time === e.time) ? " without an announcement" : "", `: ${Object.entries(p.changes ?? {}).map(([k, v]) => `${k.replaceAll("_", " ")} → ${v}`).join(", ")}`], "truth-line");
           break;
         case "defect_discovered":
           add(e, [m.cast.mention(`A defect came to light in ${p.worker}'s delivery of ${p.task_id}`), ` (true quality ${fmt.num(p.quality, 2)})`], "critical");
@@ -343,7 +373,7 @@ export class ChroniclePanel {
           add(e, [m.cast.mention(`${p.agent} let ${p.task_id} lapse`)], "critical");
           break;
         case "scene_started":
-          if (p.kind === "conversation") scenes.set(e.scene, { e, said: 0, people: p.participants });
+          if (p.kind === "conversation") scenes.set(e.scene, { e, said: 0, people: p.participants ?? [] });
           break;
         case "speech":
           if (scenes.has(e.scene)) scenes.get(e.scene).said += 1;
@@ -355,7 +385,7 @@ export class ChroniclePanel {
           if (m.truth && p.level !== "L0") add(e, [m.cast.mention(`${p.agent}`), ` · ${p.subject}`, p.trigger === "self" ? " (asked for)" : ""], "truth-line");
           break;
         case "action_rejected":
-          if (p.attempt.kind === "move") add(e, [m.cast.mention(`${e.actor} found it closed`), `: ${p.reason}`], "warn");
+          if (p.attempt?.kind === "move") add(e, [m.cast.mention(`${e.actor} found it closed`), `: ${p.reason}`], "warn");
           break;
       }
     }
@@ -373,9 +403,7 @@ export class ChroniclePanel {
         ? h(
             "ol",
             { class: "chronicle-list" },
-            notes.map(({ e, text, cls }) =>
-              h("li", { class: cls }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, text))),
-            ),
+            notes.map(({ e, text, cls }) => h("li", { class: cls }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, text)))),
           )
         : emptyState("Nothing notable yet today."),
       broke.length ? h("p", { class: "note" }, "In debt: ", broke.map(([name, v], i) => [i ? ", " : "", m.cast.mention(name), ` ${fmt.credits(v)}`])) : null,

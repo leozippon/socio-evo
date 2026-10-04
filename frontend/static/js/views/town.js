@@ -1,29 +1,35 @@
-// The town, alive: the map, the cast, the timeline and the panels, all showing one moment that
-// is reconstructed from the event log. Event days load on demand, the needed prefix first and
-// the rest behind it; playing applies only the events it crosses; a live run is followed only
-// while the viewer stays at its newest moment.
+// The town, alive: the map, the timeline and the panels, all showing one moment that is
+// reconstructed from the event log. Event days load on demand, the needed prefix first and the
+// rest behind it; playing applies only the events it crosses; a live run is followed only while
+// the viewer stays at its newest moment.
+//
+// On a wide screen the panels stand beside the map and the timeline under it. On a narrower one
+// the map fills the screen and a bottom sheet holds the timeline, always in reach of a thumb,
+// with the panels above it: dragged or tapped up to read, down to watch.
 
 import { calendarOf, dayOf, dayStart, hhmm, minuteOf, parseStamp, slotAt, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
-import { Replay, holdings } from "../replay.js";
+import { Replay } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { actionSummary } from "../town/events.js";
+import { actionSummary, sceneName } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
-import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel } from "../town/panels.js";
+import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel } from "../town/panels.js";
 import { SPEEDS, Timeline } from "../town/timeline.js";
 import { placeById, shortName } from "../world.js";
 
 const QUIET = 12; // simulated minutes without events that playback crosses quickly
 const SKIP_SPEED = 240; // simulated minutes per second across quiet stretches
 const PANELS = [
-  ["now", "Now", "thought"],
-  ["feed", "Feed", "speech"],
-  ["board", "Board", "board"],
-  ["ties", "Ties", "people"],
-  ["day", "Day", "book"],
+  ["now", "Now"],
+  ["people", "People"],
+  ["feed", "Feed"],
+  ["board", "Board"],
+  ["ties", "Ties"],
+  ["day", "Day"],
 ];
+const WIDE = matchMedia("(min-width: 1000px)");
 
 export function mountTown(root, ctx) {
   const { source, world, cast } = ctx;
@@ -55,12 +61,7 @@ export function mountTown(root, ctx) {
   let ready = false; // the moment asked for has been shown, so the URL may follow the view
 
   // Layout ------------------------------------------------------------------------------------
-  const map = new TownMap({
-    world,
-    cast,
-    onSelect: (name) => select(name),
-    fit: () => (window.innerWidth > 1100 ? stage.clientHeight - castBar.offsetHeight - timeline.el.offsetHeight - 22 : null),
-  });
+  const map = new TownMap({ world, cast, onSelect: (name) => select(name, true) });
   const timeline = new Timeline({
     world,
     cast,
@@ -70,6 +71,7 @@ export function mountTown(root, ctx) {
     onSpeed: (speed) => {
       view.speed = speed;
       paint(false);
+      sync();
     },
     onTruth: () => setTruth(!view.truth),
     onLive: () => {
@@ -77,13 +79,13 @@ export function mountTown(root, ctx) {
       seek(liveEnd());
     },
   });
-  const castBar = h("div", { class: "cast-bar", role: "list", "aria-label": "The people of the town" });
   const panels = {
     now: new NowPanel(),
+    people: new PeoplePanel(),
     feed: new FeedPanel({
       onFollow: (on) => {
         view.only = on;
-        sync(true);
+        sync();
         refreshPanel(true);
       },
     }),
@@ -93,23 +95,84 @@ export function mountTown(root, ctx) {
   };
   const panelTabs = h(
     "div",
-    { class: "panel-tabs", role: "tablist" },
-    PANELS.map(([key, label, glyph]) => h("button", { type: "button", role: "tab", "data-panel": key, "aria-selected": String(view.panel === key), onclick: () => showPanel(key) }, icon(glyph, 15), label)),
+    { class: "panel-tabs", role: "tablist", "aria-label": "Panels" },
+    PANELS.map(([key, label]) => h("button", { type: "button", role: "tab", "data-panel": key, "aria-selected": String(view.panel === key), onclick: () => showPanel(key, true) }, label)),
   );
   const panelBody = h("div", { class: "panel-body", role: "tabpanel" });
-  const selectedBox = h("div", { class: "selected-box" });
-  const stage = h("section", { class: "town-stage", "aria-label": "The town" }, map.el, castBar, timeline.el);
-  const page = h("div", { class: "town" }, stage, h("aside", { class: "town-side" }, selectedBox, panelTabs, panelBody));
+  const selectedBox = h("div", { class: "selected-box", hidden: true });
+  const grip = h("button", { type: "button", class: "sheet-grip", "aria-label": "Show or hide the panels" }, h("span"));
+  const side = h("aside", { class: "town-side", "aria-label": "The moment in detail" }, selectedBox, panelTabs, panelBody);
+  const dock = h("div", { class: "town-dock" }, grip, timeline.el, side);
+  const page = h("div", { class: "town" }, map.el, dock);
   root.append(page);
-  let resizing = null;
-  const onResize = () => {
-    clearTimeout(resizing);
-    resizing = setTimeout(() => {
-      map.layout();
-      paint(false);
-    }, 120);
-  };
-  window.addEventListener("resize", onResize);
+
+  // The sheet (narrow screens only) -------------------------------------------------------------
+  const sheet = { state: "peek", height: 0, full: 0, peek: 0, drag: null };
+  /** Heights of the sheet's resting states, from the town's height and the sheet's own parts. */
+  function measureSheet() {
+    if (WIDE.matches) {
+      dock.style.transform = "";
+      page.style.removeProperty("--peek");
+      map.setInset(0);
+      return;
+    }
+    sheet.full = page.clientHeight;
+    sheet.peek = grip.offsetHeight + timeline.el.offsetHeight + panelTabs.offsetHeight;
+    page.style.setProperty("--peek", `${sheet.peek}px`);
+    setSheet(sheet.state, false);
+  }
+  const restingHeight = (state) => ({ peek: sheet.peek, half: Math.max(sheet.peek + 220, Math.round(sheet.full * 0.56)), full: sheet.full })[state];
+  function setSheet(state, animate = true) {
+    if (WIDE.matches) return;
+    sheet.state = state;
+    sheet.height = Math.min(sheet.full, restingHeight(state));
+    dock.classList.toggle("animate", animate);
+    dock.style.transform = `translateY(${sheet.full - sheet.height}px)`;
+    dock.dataset.state = state;
+    grip.setAttribute("aria-expanded", String(state !== "peek"));
+    map.setInset(sheet.height - sheet.peek + 20);
+  }
+  /** Drag the sheet by its grip or its tab bar; a tap on the grip opens or closes it. */
+  function sheetDrag(target, { tap }) {
+    target.addEventListener("pointerdown", (event) => {
+      if (WIDE.matches || (event.pointerType === "mouse" && event.button !== 0)) return;
+      sheet.drag = { y: event.clientY, height: sheet.height, moved: false, id: event.pointerId, at: performance.now(), last: event.clientY };
+    });
+    target.addEventListener("pointermove", (event) => {
+      const drag = sheet.drag;
+      if (!drag || drag.id !== event.pointerId) return;
+      const dy = event.clientY - drag.y;
+      if (!drag.moved && Math.abs(dy) < 8) return;
+      if (!drag.moved) target.setPointerCapture(event.pointerId);
+      drag.moved = true;
+      drag.velocity = (event.clientY - drag.last) / Math.max(1, performance.now() - drag.at);
+      drag.last = event.clientY;
+      drag.at = performance.now();
+      sheet.height = Math.max(sheet.peek, Math.min(sheet.full, drag.height - dy));
+      dock.classList.remove("animate");
+      dock.style.transform = `translateY(${sheet.full - sheet.height}px)`;
+    });
+    const end = (event) => {
+      const drag = sheet.drag;
+      if (!drag || drag.id !== event.pointerId) return;
+      sheet.drag = null;
+      if (!drag.moved) return tap && event.type === "pointerup" && setSheet(sheet.state === "peek" ? "half" : "peek");
+      // Rest where the finger was heading, or at the nearest state.
+      const states = ["peek", "half", "full"];
+      const projected = sheet.height - (drag.velocity ?? 0) * 180;
+      setSheet(states.reduce((best, state) => (Math.abs(restingHeight(state) - projected) < Math.abs(restingHeight(best) - projected) ? state : best), "peek"));
+    };
+    target.addEventListener("pointerup", end);
+    target.addEventListener("pointercancel", end);
+  }
+  sheetDrag(grip, { tap: true });
+  sheetDrag(panelTabs, { tap: false });
+  // A tap on a tab of a closed sheet opens it; the click handler shows the panel.
+  const layout = new ResizeObserver(() => measureSheet());
+  layout.observe(page);
+  layout.observe(timeline.el);
+  const onMedia = () => measureSheet();
+  WIDE.addEventListener("change", onMedia);
 
   // The moment ----------------------------------------------------------------------------------
   function phase(state) {
@@ -134,6 +197,7 @@ export function mountTown(root, ctx) {
       places,
       lookups,
       dayEvents: replay.eventsOf(day).filter((e) => e.seq <= state.seq),
+      dayStart: replay.snapshots.get(state.day)?.balances ?? null,
       truth: view.truth,
       selected: view.selected,
       follow: view.only,
@@ -158,45 +222,17 @@ export function mountTown(root, ctx) {
     for (const scene of Object.values(m.state.scenes)) {
       if (!scene.place) continue;
       const round = Math.floor((m.state.time - scene.start) / turn) + 1;
-      scenes.set(scene.place, scene.kind === "work" ? `working · round ${Math.min(round, world.scenes.work_rounds)}` : `talking · ${fmt.plural(scene.present.length, "person", "people")}`);
+      const label = scene.kind === "work" ? `working · round ${Math.min(round, world.scenes.work_rounds)}` : scene.kind === "conversation" ? `talking · ${fmt.plural(scene.present.length, "person", "people")}` : sceneName(scene.kind).toLowerCase();
+      scenes.set(scene.place, { kind: scene.kind, present: scene.present, label });
     }
     const key = `${m.state.seq}|${Math.floor(m.state.time / turn)}|${view.truth}`;
     return { state: m.state, minute: minuteOf(m.state.time), selected: view.selected, speech, thinking, scenes, effects, key };
   }
 
-  function renderCast(m) {
-    const holding = holdings(m.state);
-    const start = replay.snapshots.get(m.state.day)?.balances;
-    fill(
-      castBar,
-      cast.names.map((name) => {
-        const place = places.get(m.state.locations[name]);
-        const delta = start ? m.state.balances[name] - start[name] : 0;
-        const esteem = m.state.esteem[name];
-        return h(
-          "button",
-          { type: "button", role: "listitem", class: `cast-card${view.selected === name ? " on" : ""}`, "aria-pressed": String(view.selected === name), onclick: () => select(name), title: `${name}: ${place ? place.name : ""}` },
-          cast.badge(name, 22),
-          h(
-            "span",
-            { class: "cast-text" },
-            h("span", { class: "cast-name" }, h("b", {}, name), h("span", { class: "cast-esteem", title: "Esteem as last published" }, icon("star", 11), esteem === null ? "–" : fmt.num(esteem, 1))),
-            h("span", { class: `cast-money${m.state.balances[name] < 0 ? " debt" : ""}`, title: "Balance, and its change since the day began" }, fmt.credits(m.state.balances[name]), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
-            h("span", { class: "cast-where" }, place ? shortName(place) : "", holding[name] ? ` · ${holding[name]}` : ""),
-          ),
-        );
-      }),
-    );
-  }
-
   /** The selected agent, and in the truth view the thought behind its latest decision today. */
   function renderSelected(m = moment()) {
-    if (!view.selected) {
-      fill(selectedBox);
-      selectedBox.hidden = true;
-      return;
-    }
-    selectedBox.hidden = false;
+    selectedBox.hidden = !view.selected;
+    if (!view.selected) return fill(selectedBox);
     const agent = cast.agent(view.selected);
     const own = m.dayEvents.findLast((e) => e.kind === "decision" && e.actor === view.selected);
     const place = places.get(m.state.locations[view.selected]);
@@ -205,15 +241,15 @@ export function mountTown(root, ctx) {
       h(
         "div",
         { class: "selected-head" },
-        cast.badge(view.selected, 30),
-        h("div", {}, h("b", {}, agent.name), h("div", { class: "muted" }, `${agent.age}, ${agent.occupation} · ${place ? shortName(place) : ""}`)),
-        h("a", { class: "btn small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })) }, "Open file", icon("chevron", 14)),
-        h("button", { type: "button", class: "tl-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 16)),
+        cast.badge(view.selected, 34),
+        h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · at ${shortName(place)}` : ""}`)),
+        h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
+        h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
       view.truth && own
         ? h(
             "button",
-            { type: "button", class: "selected-thought truth", title: "Read the whole thought", onclick: (event) => event.currentTarget.classList.toggle("open") },
+            { type: "button", class: "selected-thought truth", "aria-expanded": "false", title: "Read the whole thought", onclick: (event) => event.currentTarget.setAttribute("aria-expanded", String(event.currentTarget.classList.toggle("open"))) },
             h("span", { class: "truth-tag" }, icon("thought", 13), `thinks, ${hhmm(minuteOf(own.time))} · ${actionSummary(own.payload.action, lookups)}`),
             h("span", { class: "thought-text" }, own.payload.thought),
           )
@@ -239,7 +275,6 @@ export function mountTown(root, ctx) {
     timeline.setCursor(view.time, { playing: view.playing, follow: view.follow && running(), truth: view.truth, speed: view.speed, phase: m.phase });
     map.update(mapFrame(m, effects), walk);
     if (changed) {
-      renderCast(m);
       renderSelected(m);
       if (dayOf(m.state.time) !== dayOf(replay.event(shownSeq ?? -1)?.time ?? -1)) timeline.setDay(replay.eventsOf(dayOf(m.state.time)));
       shownSeq = m.state.seq;
@@ -307,8 +342,8 @@ export function mountTown(root, ctx) {
   }
 
   /**
-   * Say that the moment cannot be shown yet, or at all: the map is covered and the cast and
-   * panels, which would show some other moment, are marked as not current. Null clears it.
+   * Say that the moment cannot be shown yet, or at all: the map is covered and the panels,
+   * which would show some other moment, are marked as not current. Null clears it.
    */
   function unavailable(message, failed = false) {
     map.cover(message, failed);
@@ -434,14 +469,18 @@ export function mountTown(root, ctx) {
   }
 
   // Choices -------------------------------------------------------------------------------------
-  function select(name) {
+  /** Select an agent, or clear the selection; from the map, a narrow screen opens the sheet. */
+  function select(name, fromMap = false) {
     view.selected = name === view.selected ? null : name;
     if (!view.selected) view.only = false;
     renderSelected();
-    renderCast(moment());
     paint(false);
     refreshPanel(true);
     sync();
+    if (view.selected && !WIDE.matches) {
+      if (fromMap && sheet.state === "peek") setSheet("half");
+      map.reveal(view.selected);
+    }
   }
 
   function setTruth(on) {
@@ -452,15 +491,17 @@ export function mountTown(root, ctx) {
     sync();
   }
 
-  function showPanel(key) {
+  function showPanel(key, user = false) {
     view.panel = key;
     for (const tab of panelTabs.children) tab.setAttribute("aria-selected", String(tab.dataset.panel === key));
     refreshPanel(true);
     sync();
+    if (user && !WIDE.matches && sheet.state === "peek") setSheet("half");
   }
 
   function onKey(event) {
-    if (event.target.closest("input, select, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target instanceof Element ? event.target : document.body;
+    if (target.closest("input, select, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
     const keys = {
       " ": () => togglePlay(),
       ArrowRight: () => step(event.shiftKey ? "day" : "moment", 1),
@@ -471,11 +512,15 @@ export function mountTown(root, ctx) {
         seek(liveEnd());
       },
       t: () => setTruth(!view.truth),
-      Escape: () => view.selected && select(null),
+      Escape: () => (view.selected ? select(null) : setSheet("peek")),
+      "+": () => map.zoomBy(1.6),
+      "=": () => map.zoomBy(1.6),
+      "-": () => map.zoomBy(1 / 1.6),
+      0: () => map.fitView(true),
     };
     const action = keys[event.key];
     if (!action) return;
-    if (event.key === " " && event.target.closest("button, a, summary")) return;
+    if (event.key === " " && target.closest("button, a, summary")) return;
     event.preventDefault();
     action();
   }
@@ -484,7 +529,6 @@ export function mountTown(root, ctx) {
   async function start() {
     replay.expect(source.doc.event_days.map((d) => d.day));
     timeline.setRun({ eventDays: source.doc.event_days, last: source.doc.last_time, running: running(), loaded: new Set() });
-    renderCast(moment());
     renderSelected();
     showPanel(view.panel);
     if (!source.doc.event_days.length) {
@@ -545,7 +589,8 @@ export function mountTown(root, ctx) {
       destroyed = true;
       cancelAnimationFrame(raf);
       document.removeEventListener("keydown", onKey);
-      window.removeEventListener("resize", onResize);
+      WIDE.removeEventListener("change", onMedia);
+      layout.disconnect();
       map.destroy();
       timeline.destroy();
       panels.ties.destroy();

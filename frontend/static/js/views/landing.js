@@ -1,4 +1,4 @@
-// Every experiment and its runs: status, progress and headline numbers, seeds side by side.
+// Every experiment and its runs: status, progress and a few headline numbers.
 
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
@@ -15,44 +15,33 @@ export function progress(entry) {
   );
 }
 
-const stat = (label, value, title = null) => h("div", { class: "run-stat", title }, h("span", { class: "run-stat-value" }, value), h("span", { class: "run-stat-label" }, label));
+export const statusPill = (entry) =>
+  h(
+    "span",
+    { class: `pill ${entry.status}`, title: entry.status === "running" ? "The run is in progress; the view follows it" : `The run is ${entry.status}` },
+    h("span", { class: "dot" }),
+    entry.status === "running" ? "Live" : entry.status[0].toUpperCase() + entry.status.slice(1),
+  );
+
+const figure = (label, value, title = null) => h("div", { class: "run-stat", title }, h("span", { class: "run-stat-value" }, value), h("span", { class: "run-stat-label" }, label));
 
 function runRow(entry) {
   const head = entry.headline;
   const open = { view: "overview", experiment: entry.experiment, run: entry.run, query: {} };
   return h(
-    "article",
+    "li",
     { class: "run-row" },
-    h(
-      "div",
-      { class: "run-id" },
-      h("a", { class: "run-name", href: href(open) }, entry.run),
-      h(
-        "div",
-        { class: "row" },
-        h("span", { class: `pill ${entry.status}` }, h("span", { class: "dot" }), entry.status === "running" ? "Live" : entry.status),
-        entry.dry_run ? h("span", { class: "pill dry" }, "dry run") : null,
-      ),
-    ),
+    h("div", { class: "run-id" }, h("a", { class: "run-name", href: href(open) }, entry.run), h("div", { class: "row" }, statusPill(entry), entry.dry_run ? h("span", { class: "pill dry", title: "A deterministic stand-in answered instead of a model" }, "dry run") : null)),
     progress(entry),
     h(
       "div",
       { class: "run-stats" },
-      stat("deliveries", fmt.int(head.deliveries)),
-      stat("defect rate", fmt.pct(head.defect_rate, 1), "Accepted deliveries that carried a latent defect"),
-      stat("defects found", fmt.int(head.defects_discovered)),
-      stat("mean balance", head.balance_mean === null ? "–" : fmt.credits(Math.round(head.balance_mean))),
-      stat("mean esteem", fmt.num(head.esteem_mean, 2)),
-      stat("evolution steps", fmt.int(head.evolution_steps)),
-      stat("model calls", fmt.compact(head.model_calls), `${fmt.int(head.tokens)} tokens`),
-      stat("evaluated days", head.evaluated_days.length ? head.evaluated_days.join(", ") : "none"),
+      figure("deliveries", fmt.int(head.deliveries), `${fmt.int(head.defects_discovered)} defects found`),
+      figure("defect rate", fmt.pct(head.defect_rate, 1), "Accepted deliveries that carried a latent defect"),
+      figure("mean balance", head.balance_mean === null ? "–" : fmt.credits(Math.round(head.balance_mean))),
+      figure("mean esteem", fmt.num(head.esteem_mean, 2)),
     ),
-    h(
-      "div",
-      { class: "run-links" },
-      h("a", { class: "ghost small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Town"),
-      h("a", { class: "btn small", href: href(open) }, "Open", icon("chevron", 15)),
-    ),
+    h("div", { class: "run-links" }, h("a", { class: "ghost small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Town"), h("a", { class: "btn small", href: href(open), "aria-label": `Open ${entry.experiment} ${entry.run}` }, "Open", icon("chevron", 15))),
   );
 }
 
@@ -65,23 +54,23 @@ export function mountLanding(root, ctx) {
     for (const entry of index.runs) (experiments.get(entry.experiment) ?? experiments.set(entry.experiment, []).get(entry.experiment)).push(entry);
     fill(
       page,
-      h("div", { class: "landing-head" }, h("h1", {}, "Experiments"), h("p", { class: "note" }, "Each experiment is one town and its rules; each seed is an independent run of it. Live runs update as they go.")),
+      h("header", { class: "page-head" }, h("h1", {}, "Experiments"), h("p", { class: "lede" }, "Each experiment is one town and its rules; each seed is an independent run of it. Live runs update as they go.")),
       experiments.size
         ? [...experiments].map(([name, runs]) => {
             const first = runs[0];
             return h(
               "section",
-              { class: "card experiment" },
+              { class: "experiment" },
               h(
                 "header",
-                { class: "spread" },
+                { class: "spread experiment-head" },
                 h("div", {}, h("h2", {}, name), h("p", { class: "note" }, `${first.agents.length} agents · ${first.days} days · ${first.model} · ${fmt.plural(runs.length, "seed")}`)),
-                runs.length > 1 ? h("a", { class: "ghost small", href: href({ view: "compare", experiment: name }) }, icon("lines", 15), "Compare seeds") : null,
+                runs.length > 1 ? h("a", { class: "quiet small", href: href({ view: "compare", experiment: name }) }, icon("lines", 15), "Compare seeds") : null,
               ),
-              h("div", { class: "runs" }, runs.map(runRow)),
+              h("ul", { class: "runs card" }, runs.map(runRow)),
             );
           })
-        : emptyState("No runs are published yet.", "Start one with ", h("code", {}, "python -m experiments.run experiments/configs/smoke.yaml --seeds 0"), " and publish the runs root."),
+        : h("div", { class: "card" }, emptyState("No runs are published yet.", "Start one with ", h("code", {}, "python -m experiments.run experiments/configs/smoke.yaml --seeds 0"), " and publish the runs root.")),
     );
   }
 

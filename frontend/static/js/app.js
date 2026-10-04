@@ -8,7 +8,7 @@ import { Cast } from "./identity.js";
 import { href, navigate, parse, remember, sibling } from "./router.js";
 import { mountCompare } from "./views/compare.js";
 import { mountEvaluation } from "./views/evaluation.js";
-import { mountLanding } from "./views/landing.js";
+import { mountLanding, statusPill } from "./views/landing.js";
 import { mountOverview } from "./views/overview.js";
 import { mountPerson } from "./views/person.js";
 import { mountTown } from "./views/town.js";
@@ -46,31 +46,26 @@ function fail(error) {
   showAlert(error.message ?? String(error), () => route(true));
 }
 
-const statusPill = (entry) =>
-  h(
-    "span",
-    { class: `pill ${entry.status}`, title: entry.status === "running" ? "The run is in progress; the view follows it" : `The run is ${entry.status}` },
-    h("span", { class: "dot" }),
-    entry.status === "running" ? "Live" : entry.status[0].toUpperCase() + entry.status.slice(1),
-  );
-
 function header() {
   const r = app.route;
   const entry = r.experiment && app.index?.runs.find((run) => run.experiment === r.experiment && (!r.run || run.run === r.run));
   const crumbs = [];
   if (r.view !== "home") {
-    crumbs.push(h("span", { class: "sep" }, "/"), h("a", { href: href({ view: "compare", experiment: r.experiment }) }, r.experiment));
-    if (r.run) crumbs.push(h("span", { class: "sep" }, "/"), h("a", { href: href(sibling(r, "overview")) }, r.run));
+    crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }) }, r.experiment));
+    if (r.run) crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: `${r.experiment} · ${r.run}` }, r.run));
   }
   fill($("crumbs"), crumbs);
+  document.body.classList.toggle("in-run", Boolean(r.run && entry));
+  document.body.dataset.view = r.view;
+  document.title = r.run ? `${r.experiment} · ${r.run} · socio-evo` : r.experiment ? `${r.experiment} · socio-evo` : "socio-evo";
   if (r.run && entry) {
     const tab = (view, label, glyph) =>
-      h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), label);
+      h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));
     fill($("tabs"), tab("overview", "Overview", "chart"), tab("town", "Town", "map"), tab("person", "People", "people"), tab("evaluation", "Evaluation", "scale"));
     fill(
       $("status"),
       statusPill(entry),
-      h("span", {}, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`),
+      h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`),
       entry.dry_run ? h("span", { class: "pill dry", title: "A deterministic stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null,
     );
   } else {
@@ -112,6 +107,7 @@ async function route(force = false) {
     app.view?.handle.destroy?.();
     const main = $("main");
     main.replaceChildren();
+    window.scrollTo(0, 0);
     const context = {
       route: r,
       index: app.index,

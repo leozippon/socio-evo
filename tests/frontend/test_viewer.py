@@ -10,6 +10,7 @@ from tests.frontend.test_publish import RUN, in_progress
 
 NODE = shutil.which("node")
 CHECK = Path(__file__).with_name("replay_check.mjs")
+PLAN_CHECK = Path(__file__).with_name("plan_check.mjs")
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
@@ -35,6 +36,16 @@ def test_the_replay_follows_a_run_stopped_in_the_middle_of_a_day(town, tmp_path)
     Publisher(tmp_path / "runs", site).publish()
     code, summary = replay_check(site)
     assert code == 0, summary["failures"]
+
+
+def test_the_town_plan_holds_for_published_and_made_up_worlds(town, tmp_path):
+    site = tmp_path / "site"
+    Publisher(town.parents[1], site).publish()
+    result = subprocess.run([NODE, str(PLAN_CHECK), str(site), RUN], capture_output=True, text=True)
+    assert result.stdout, result.stderr
+    summary = json.loads(result.stdout)
+    assert result.returncode == 0, summary["failures"]
+    assert len(summary["worlds"]) > 5 and summary["checks"] > 100
 
 
 def test_the_check_fails_when_the_town_and_the_measures_disagree(town, tmp_path):

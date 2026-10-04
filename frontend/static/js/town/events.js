@@ -17,13 +17,21 @@ export const isPublic = (event) => event.audience.length > 0;
 
 /** The agents an event concerns, actor first. */
 export function involved(event) {
-  const p = event.payload;
+  const p = event.payload ?? {};
   const names = new Set();
   if (event.actor) names.add(event.actor);
-  for (const key of ["agent", "worker", "rater", "target", "to"]) if (typeof p[key] === "string") names.add(p[key]);
-  if (event.kind === "draw") for (const name of p.order) names.add(name);
+  for (const key of ["agent", "worker", "rater", "target", "to", "from", "partner"]) if (typeof p[key] === "string") names.add(p[key]);
+  for (const key of ["order", "partners", "participants"]) if (Array.isArray(p[key])) for (const name of p[key]) if (typeof name === "string") names.add(name);
   return [...names];
 }
+
+/** What a scene is called; a kind of scene this viewer does not know is named by its kind. */
+const SCENES = { work: "Work session", conversation: "Conversation", planning: "Everyone plans the day", review: "The evening review" };
+export const sceneName = (kind) => SCENES[kind] ?? words(kind);
+const words = (key) => {
+  const text = String(key ?? "event").replaceAll("_", " ");
+  return text[0].toUpperCase() + text.slice(1);
+};
 
 const TONE = {
   payment: "good",
@@ -86,9 +94,26 @@ export function actionSummary(action, { tasks = null, places = null } = {}) {
       return `delivers ${title(action.task_id)}`;
     case "rate_peers":
       return action.ratings.length ? `rates ${action.ratings.map((r) => `${r.target} ${r.score}`).join(", ")}` : "rates nobody";
-    default:
-      return action.kind.replaceAll("_", " ");
+    default: {
+      // An action this viewer does not know: its kind and its short fields, as they are.
+      const fields = Object.entries(action)
+        .filter(([key, value]) => key !== "kind" && ["string", "number", "boolean"].includes(typeof value) && String(value).length <= 40)
+        .map(([key, value]) => `${key.replaceAll("_", " ")} ${value}`);
+      return [words(action.kind).toLowerCase(), ...fields].join(" · ");
+    }
   }
+}
+
+const KNOWN = new Set(["plan_day", "speak", "leave", "pass", "claim_task", "submit_work", "rate_peers"]);
+
+/**
+ * What an action says in words, by field: what was said, and for a kind this viewer does not
+ * know, any longer text it carries (a report, a remark), which its card shows as written.
+ */
+export function actionTexts(action) {
+  if (action.kind === "speak") return [["said", action.text]];
+  if (KNOWN.has(action.kind)) return [];
+  return Object.entries(action).filter(([key, value]) => key !== "kind" && typeof value === "string" && (key === "text" || value.length > 40));
 }
 
 /** The line of text the feed shows for an event, as a node. */
@@ -113,10 +138,13 @@ export function line(event, cast, lookups = {}) {
           .sort((a, b) => b[1] - a[1])
           .map(([name, v], i) => [i ? ", " : "", cast.mention(name), ` ${fmt.num(v, 1)}`]),
       );
-    default:
-      if (event.audience.length === 1 && (event.text.startsWith("You") || event.text.startsWith("Your")))
-        return h("span", {}, h("span", { class: "to" }, cast.badge(event.audience[0], 13), event.audience[0], " perceives: "), event.text);
-      return h("span", {}, cast.mention(event.text));
+    default: {
+      // Every other kind, known or not, reads as what its witnesses perceived.
+      const text = event.text || [event.actor, words(event.kind).toLowerCase()].filter(Boolean).join(" ");
+      if (event.audience.length === 1 && (text.startsWith("You") || text.startsWith("Your")))
+        return h("span", {}, h("span", { class: "to" }, cast.badge(event.audience[0], 13), event.audience[0], " perceives: "), text);
+      return h("span", {}, cast.mention(text));
+    }
   }
 }
 

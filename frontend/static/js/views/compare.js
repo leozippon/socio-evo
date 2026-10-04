@@ -6,7 +6,7 @@ import { RunSource } from "../data.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { href } from "../router.js";
 import { markers } from "../world.js";
-import { progress } from "./landing.js";
+import { progress, statusPill } from "./landing.js";
 import { TRAITS } from "./evaluation.js";
 
 const METRICS = [
@@ -55,18 +55,12 @@ export function mountCompare(root, ctx) {
       const evaluated = loaded.some((run) => run.evaluation.scores.length);
       fill(
         page,
-        h("div", { class: "landing-head" }, h("h1", {}, `${experiment}: seeds side by side`), h("p", { class: "note" }, "Each seed is an independent run of the same town and rules. Hover a line to pick out a seed.")),
+        h("header", { class: "page-head" }, h("p", { class: "eyebrow" }, "Experiment"), h("h1", {}, `${experiment}: seeds side by side`), h("p", { class: "lede" }, "Each seed is an independent run of the same town and rules. Point at a line to pick out a seed.")),
         h(
-          "div",
-          { class: "card runs pad" },
+          "ul",
+          { class: "card runs" },
           loaded.map(({ entry }) =>
-            h(
-              "div",
-              { class: "seed-row" },
-              h("a", { class: "run-name", href: href({ view: "overview", experiment, run: entry.run, query: {} }) }, entry.run),
-              h("span", { class: `pill ${entry.status}` }, h("span", { class: "dot" }), entry.status === "running" ? "Live" : entry.status),
-              progress(entry),
-            ),
+            h("li", { class: "seed-row" }, h("a", { class: "run-name", href: href({ view: "overview", experiment, run: entry.run, query: {} }) }, entry.run), statusPill(entry), progress(entry)),
           ),
         ),
         h(

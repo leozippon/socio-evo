@@ -47,12 +47,18 @@ The viewer is plain HTML, CSS and JavaScript modules: no build step, no framewor
 | --- | --- |
 | `#/` | Every experiment and its runs: status, progress, headline numbers. |
 | `#/compare/<experiment>` | The seeds of an experiment side by side, one line per seed. |
-| `#/run/<experiment>/<run>` | The run's dashboard: conditions and interventions, money and inequality, the task market and the true quality of work, social life, esteem and who rated whom, evolution steps night by night, model usage, and the held-out traits. |
-| `…/town?t=<day>-<HH:MM>` | The town at a moment; `agent=` selects someone, `truth=0` shows only what the town's people could perceive, `panel=` opens a side panel. |
+| `#/run/<experiment>/<run>` | The run's dashboard: a few key figures and the conditions and interventions first, then one section at a time (`section=`): money and inequality, the task market and the true quality of work, social life with esteem and who rated whom, evolution steps night by night, the held-out traits, and model usage. |
+| `…/town?t=<day>-<HH:MM>` | The town at a moment; `agent=` selects someone, `truth=0` shows only what the town's people could perceive, `panel=` opens a panel. |
 | `…/people/<agent>?t=…&tab=…` | One agent as of a moment: money and esteem, every rewrite of its policy with its reasoning and a word-level diff, its whole version history, its beliefs about each other person beside how that person behaved, its skills and diary, each decision with the private thought behind it, and its trait scores. |
 | `…/evaluation?agent=…&day=…&probe=…` | Trait scores per agent and evaluated day, with the measures, the judge's quoted evidence and the transcripts behind each. |
 
 The town is reconstructed from the event log alone. Event days are fetched as they are needed, the days up to the moment shown first and the rest behind them, and a snapshot is kept at the start of every day, so a jump replays at most one day of events and playing applies only the events it crosses. Time is the main control: space plays or pauses, the arrow keys step from moment to moment and with Shift from day to day, Home and End go to the start and to the newest moment, and T switches between the truth and what the town's people perceived. Quiet stretches and nights pass quickly. What no agent perceived, such as thoughts, true quality and ratings, is drawn in a dashed, cool grey style throughout. Ties between agents are counted over whole days from the measures, through the last day that had ended at the moment shown.
+
+The map is drawn from the world alone, so any configuration of places renders. Each place stands at its configured position (places configured at the same point are set around it in a ring) as a building whose style its kind and words give: a library, a workshop, a café with its awning, a tavern with its sign, a cottage, a flat or a house. Streets join the places around their buildings and lead out of town; a river runs past places that say they are by one, a square lies in front of places that say they stand on one, and a hill rises behind a place named for one. Gardens, trees, lamps and benches fill the space that is left. The scenery is seeded by the world's ids, so it never jumps, and it never stands for data: the light follows the simulated hour, windows are lit and chimneys smoke only where someone is, and everything else is decoration. Residents keep their badge as their head, walk the streets between places, stand in a ring when they talk and sleep at home at night. Names of places and speech are laid out together so that none covers another, speech first. The map pans and zooms by drag and pinch, wheel, double tap, its buttons and the + − 0 keys.
+
+On a wide screen the panels stand beside the map. Below 1000 pixels a run's views move to a tab bar at the bottom of the screen, and in the town the timeline and the panels share a bottom sheet that is dragged or tapped open over the map.
+
+An event of a kind the viewer does not know is shown from its text, kind and actor, as public, private or truth-only by its audience; an action it does not know is summarised from its fields, with any longer text shown as written; a scene of an unknown kind is named by its kind.
 
 The viewer polls `data/index.json` every five seconds and follows a run in progress: its views update, and the town moves with the newest moment as long as the viewer has not scrubbed away from it. A bundle of another format is refused with a plain message, a document that cannot be fetched is named in an alert, and the town covers its map rather than show a moment it could not reconstruct.
 
@@ -68,9 +74,10 @@ Each agent keeps one identity everywhere: a colour from a categorical palette ch
 | `js/charts.js` | Charts over days with crosshair tooltips, emphasis, interventions, small multiples and table twins. |
 | `js/markdown.js`, `js/diff.js` | Safe rendering of what agents wrote, and readable diffs of their files. |
 | `js/views/` | One module per view. |
-| `js/town/` | The town's map, timeline, side panels and social graph, and how events read. |
+| `js/town/plan.js`, `js/town/scenery.js` | The town's plan derived from the world (pure, so it also runs under node), and its scenery drawn from the plan. |
+| `js/town/` | The town's map, timeline, panels and social graph, and how events read. |
 
-`tests/frontend/replay_check.mjs` replays a published run with `js/replay.js` and checks the balances, places, open tasks, conditions and esteem it reconstructs against the run's measures; `tests/frontend/test_viewer.py` runs it under pytest when node is installed.
+`tests/frontend/replay_check.mjs` replays a published run with `js/replay.js` and checks the balances, places, open tasks, conditions and esteem it reconstructs against the run's measures. `tests/frontend/plan_check.mjs` checks the town plan of published and made-up worlds: buildings apart, streets around buildings and connecting every place, water and decoration clear of buildings, yards and streets, determinism. `tests/frontend/test_viewer.py` runs both under pytest when node is installed.
 
 ## How the bundle works
 
@@ -218,8 +225,13 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `initial_balance` | integer | Everyone's starting balance. |
 | `conditions` | object | The conditions at the start; interventions change them. |
 | `conditions.living_cost` | integer | Charged to every agent each evening. |
-| `conditions.tasks_per_day` | integer | Tasks posted each morning. |
-| `conditions.reward_multiplier` | number | Applied to a task's reward when it is paid. |
+| `conditions.one_part_tasks` | integer | One-part tasks, done alone, that each posting adds. |
+| `conditions.two_part_tasks` | integer | Two-part tasks, done by two people, that each posting adds. |
+| `conditions.trusting_client_prob` | number | Chance that a posted task's client accepts a part declared complete without running its checks. |
+| `conditions.reward_multiplier` | number | Applied to every reward when it is paid. |
+| `conditions.two_part_premium` | number | Multiplies the rewards of a two-part task, which its two workers share equally. |
+| `conditions.incomplete_share` | number | Share of the price paid for a part declared incomplete. |
+| `conditions.partner_choice` | boolean | Whether a two-person task is proposed to a chosen partner, or applicants are paired at random. |
 | `conditions.defect_discovery_prob` | number | Daily chance that each latent defect comes to light. |
 | `conditions.clawback` | boolean | Whether a discovered defect takes its payment back. |
 | `conditions.esteem_public` | boolean | Whether esteem is published to everyone. |
@@ -270,18 +282,23 @@ Within a day the events are those the simulation recorded in order: the day open
 | `decision` | the agent | none | `thought` (private), `action` (see below) |
 | `draw` | none | the claimants | `task_id`, `order`: agents who claimed one task in the same turn, in the drawn order in which their claims were taken |
 | `move` | the agent | others at origin and destination | `origin`, `destination` (place ids) |
-| `speech` | the speaker | others present | `utterance`, `to` (an agent addressed by name, or null) |
+| `speech` | the speaker | others present, or only `to` if private | `utterance`, `to` (an agent addressed by name, or null), `private` |
+| `speech_unheard` | the speaker | others present but the addressee | `to`: a private remark as bystanders perceive it, without the words |
 | `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place |
-| `task_posted` | none | everyone | `task`: `id`, `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of claiming included), `reference` (the task's source in the bank) |
-| `task_claimed` | the agent | everyone at the place | `task_id`, `due_day` (last day to deliver) |
-| `task_expired` | none | everyone | `task_id`, `agent` whose claim lapsed undelivered (recorded the morning after the due day); the task is open again |
+| `task_posted` | none | everyone | `task`: `id`, `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
+| `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`: a proposal to take a two-person task together |
+| `task_applied` | the applicant | the applicant | `task_id` of a two-person task, for the board to pair |
+| `task_claimed` | the agent whose claim took it; none for a pair the board formed | everyone at the places of its workers | `task_id`, `workers` (one per part; for a proposal, the proposer first), `due_day` (last day to deliver) |
+| `task_expired` | none | everyone | `task_id`, `workers`, `delivered` (for each part, the worker whose delivery was accepted, or null): a task not completed by its due day, recorded the morning after; nothing is paid and the task is open again |
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
-| `work_submitted` | the worker | everyone at the place if accepted, else the worker | `task_id`, `passed` (accepted on the acceptance checks), `solution` (the code), `report` (the worker's own account), `feedback` (what the worker was told) |
-| `work_assessed` | the worker | none | `task_id`, `passed`, `quality`: the true quality, the share of hidden checks passed (0 to 1); below 1 on accepted work means a latent defect |
-| `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it |
-| `living_cost` | none | the agent | `agent`, `amount`, `balance` after it |
-| `defect_discovered` | none | everyone | `task_id`, `worker`, `quality` of the delivery |
-| `clawback` | none | the worker | `agent`, `task_id`, `amount` taken back, `balance` after it |
+| `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
+| `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (the code), `report` (the worker's own account) |
+| `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
+| `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
+| `credits_given` | the giver | the giver and others present | `to`, `amount`, `note`, `balances` (giver's and recipient's after it) |
+| `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
+| `defect_discovered` | none | everyone | `task_id`, `part`, `worker` who delivered it, `workers` of the task, `delivery_time`, `declaration`, `report`, `quality` of the delivery |
+| `clawback` | none | the agent | `agent`, `task_id`, `part`, `worker` who delivered the part, `amount` taken back, `balance` after it; one per worker of the task |
 | `rating` | the rater | none | `rater`, `target`, `score` (1 to 5), `reason` |
 | `esteem_updated` | none | everyone if esteem is public, else none | `esteem`: agent name to esteem (null if not yet rated) |
 | `action_rejected` | the agent | the agent | `attempt` (the action, or `{kind: "move", place}`), `reason`; nothing changed |
@@ -289,7 +306,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `intervention` | none | none | `changes` (the conditions set), `conditions` (all conditions in force after it) |
 | `evolution` | the agent | none | `agent`, `level`, `trigger` (`daily`, `weekly`, `monthly` or `self`), `commit`, `subject` |
 
-A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text` and an optional `to`; `leave`; `pass`; `claim_task` with `task_id`; `submit_work` with `task_id`, `solution` and `report`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`.
+A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`.
 
 ### `runs/{experiment}/{run}/measures.json`
 

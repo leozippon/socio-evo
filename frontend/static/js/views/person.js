@@ -13,7 +13,7 @@ import { href, sibling } from "../router.js";
 import { decisionCard } from "../town/panels.js";
 import { markers, placeById } from "../world.js";
 import { traitFigures } from "./evaluation.js";
-import { LEVELS } from "./overview.js";
+import { LEVELS, stat } from "./overview.js";
 
 const TABS = [
   ["overview", "Overview"],
@@ -47,6 +47,7 @@ export function mountPerson(root, ctx) {
   let evaluation = null;
   let charts = [];
   let token = 0;
+  let reveal = false; // the reader picked a version, so show it once loaded
 
   const agentName = () => route.agent;
   const tab = () => (TABS.some(([key]) => key === route.query.tab) ? route.query.tab : "overview");
@@ -88,34 +89,34 @@ export function mountPerson(root, ctx) {
       ),
       h(
         "div",
-        { class: "identity card" },
-        cast.badge(agent.name, 54),
+        { class: "identity" },
+        cast.badge(agent.name, 52),
         h(
           "div",
           { class: "identity-text" },
           h("h1", {}, agent.name),
-          h("p", { class: "note" }, `${agent.age} · ${agent.occupation} · lives in ${home ? home.name : agent.home}`),
+          h("p", { class: "identity-meta" }, `${agent.age} · ${agent.occupation} · lives in ${home ? home.name : agent.home}`),
           h("p", { class: "backstory" }, agent.backstory),
-        ),
-        h(
-          "div",
-          { class: "as-of" },
-          h("span", { class: "muted" }, "As of"),
-          h(
-            "div",
-            { class: "row" },
-            h("button", { type: "button", class: "tl-btn", "aria-label": "One day earlier", disabled: moment.day <= 0, onclick: () => dayLink(moment.day - 1) }, icon("chevronLeft", 16)),
-            h("b", {}, moment.day === 0 ? "Day 0, as created" : `End of day ${moment.day}`),
-            h("button", { type: "button", class: "tl-btn", "aria-label": "One day later", disabled: moment.day >= maxDay, onclick: () => dayLink(moment.day + 1) }, icon("chevron", 16)),
-          ),
-          moment.latest ? h("span", { class: "muted small-text" }, "the latest settled day") : h("button", { type: "button", class: "ghost small", onclick: () => go({ t: null }) }, "Latest"),
-          h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: moment.day ? endOf(moment.day) : `1-${hhmm(cal.start)}` } }, "town", { query: { agent: agentName() } })) }, icon("map", 14), "In town"),
         ),
       ),
       h(
         "div",
-        { class: "tabs-inline", role: "tablist" },
-        TABS.map(([key, label]) => h("a", { role: "tab", href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null } }), "aria-selected": String(tab() === key) }, label)),
+        { class: "as-of" },
+        h("span", { class: "eyebrow" }, "As of"),
+        h(
+          "div",
+          { class: "as-of-step" },
+          h("button", { type: "button", class: "icon-btn", "aria-label": "One day earlier", disabled: moment.day <= 0, onclick: () => dayLink(moment.day - 1) }, icon("chevronLeft", 18)),
+          h("b", {}, moment.day === 0 ? "Day 0, as created" : `End of day ${moment.day}`),
+          h("button", { type: "button", class: "icon-btn", "aria-label": "One day later", disabled: moment.day >= maxDay, onclick: () => dayLink(moment.day + 1) }, icon("chevron", 18)),
+        ),
+        moment.latest ? h("span", { class: "muted small-text" }, "the latest settled day") : h("button", { type: "button", class: "quiet small", onclick: () => go({ t: null }) }, "Latest"),
+        h("a", { class: "ghost small as-of-town", href: href(sibling({ ...route, query: { t: moment.day ? endOf(moment.day) : `1-${hhmm(cal.start)}` } }, "town", { query: { agent: agentName() } })) }, icon("map", 15), "See in town"),
+      ),
+      h(
+        "nav",
+        { class: "subnav", "aria-label": `${agent.name}'s file` },
+        TABS.map(([key, label]) => h("a", { href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null } }), "aria-selected": String(tab() === key) }, label)),
       ),
     );
   }
@@ -124,7 +125,7 @@ export function mountPerson(root, ctx) {
     return measures.agents.filter((row) => row.agent === agentName() && row.day <= through);
   }
 
-  function emphasisChart(title, note, field, format, options, moment) {
+  function emphasisChart(title, note, field, format, options, moment, made) {
     const lines = cast.names.map((name) => ({
       key: name,
       label: name,
@@ -135,11 +136,11 @@ export function mountPerson(root, ctx) {
     }));
     const me = lines.find((line) => line.key === agentName());
     const chart = new DayChart({ days: [1, Math.max(1, measures.society.at(-1)?.day ?? 1)], lines: [...lines.filter((l) => l !== me), me], y: { format, ...options }, markers: markers(world), cursor: moment.day + 0.5, height: 150, endLabels: true, label: title });
-    charts.push(chart);
+    made.push(chart);
     return figure({ title, note, chart });
   }
 
-  async function overview(moment, version) {
+  async function overview(moment, version, made) {
     const rows = agentRows(moment.day);
     const total = (field) => rows.reduce((a, row) => a + row[field], 0);
     const last = rows.at(-1);
@@ -165,15 +166,15 @@ export function mountPerson(root, ctx) {
     return [
       h(
         "div",
-        { class: "tiles" },
-        h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Balance"), h("div", { class: "tile-value" }, last ? fmt.credits(last.balance) : fmt.credits(world.initial_balance)), h("div", { class: "tile-sub" }, `earned ${fmt.credits(total("income") - total("clawed_back"))} in all`)),
-        h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Esteem"), h("div", { class: "tile-value" }, fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2)), h("div", { class: "tile-sub" }, `${fmt.plural(total("ratings_received"), "rating")} received`)),
-        h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Deliveries accepted"), h("div", { class: "tile-value" }, fmt.int(total("delivered"))), h("div", { class: "tile-sub" }, `${fmt.int(total("failed"))} refused · ${fmt.int(total("expired"))} lapsed`)),
-        h("div", { class: "tile truth" }, h("div", { class: "tile-label" }, "Mean true quality ", h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12))), h("div", { class: "tile-value" }, total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–"), h("div", { class: "tile-sub" }, `${fmt.int(total("defective"))} with a latent defect · ${fmt.int(total("defects_discovered"))} found`)),
-        h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Claims refused"), h("div", { class: "tile-value" }, fmt.int(rows.reduce((a, r) => a + r.rejected.claim_task, 0))), h("div", { class: "tile-sub" }, `of ${fmt.int(rows.reduce((a, r) => a + r.decisions.claim_task, 0))} attempts`)),
-        h("div", { class: "tile" }, h("div", { class: "tile-label" }, "Things said"), h("div", { class: "tile-value" }, fmt.int(total("utterances"))), h("div", { class: "tile-sub" }, `${fmt.plural(total("conversations"), "conversation")}`)),
+        { class: "stats" },
+        stat("Balance", last ? fmt.credits(last.balance) : fmt.credits(world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all`),
+        stat("Esteem", fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2), `${fmt.plural(total("ratings_received"), "rating")} received`),
+        stat("Deliveries accepted", fmt.int(total("delivered")), `${fmt.int(total("failed"))} refused · ${fmt.int(total("expired"))} lapsed`),
+        stat(h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12), "True quality"), total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–", `${fmt.int(total("defective"))} latent defects · ${fmt.int(total("defects_discovered"))} found`, "truth"),
+        stat("Claims refused", fmt.int(rows.reduce((a, r) => a + (r.rejected.claim_task ?? 0), 0)), `of ${fmt.int(rows.reduce((a, r) => a + (r.decisions.claim_task ?? 0), 0))} attempts`),
+        stat("Things said", fmt.int(total("utterances")), `${fmt.plural(total("conversations"), "conversation")}`),
       ),
-      h("div", { class: "figures" }, emphasisChart("Balance", "Credits at the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment), emphasisChart("Esteem", "As published each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment)),
+      h("div", { class: "figures" }, emphasisChart("Balance", "Credits at the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment, made), emphasisChart("Esteem", "As published each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment, made)),
       h(
         "div",
         { class: "two-col section" },
@@ -196,13 +197,13 @@ export function mountPerson(root, ctx) {
                 h(
                   "table",
                   { class: "data" },
-                  h("thead", {}, h("tr", {}, h("th", {}, "With"), h("th", {}, "Hours together"), h("th", {}, "Said to them"), h("th", {}, "Heard from them"), h("th", {}, "Rated them"), h("th", {}, "Was rated"))),
+                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Hours spent in the same scenes" }, "Hours"), h("th", { title: "Things said to them by name" }, "Said to"), h("th", { title: "Things they said to this agent by name" }, "Heard from"), h("th", { title: "Mean rating given them, and how many" }, "Rated them"), h("th", { title: "Mean rating they gave, and how many" }, "Rated by"))),
                   h(
                     "tbody",
                     {},
                     [...ties]
                       .sort((a, b) => b[1].minutes - a[1].minutes)
-                      .map(([name, t]) => h("tr", {}, h("td", {}, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.num(t.minutes / 60, 1)), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, mean(t.gave)), h("td", {}, mean(t.got)))),
+                      .map(([name, t]) => h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.num(t.minutes / 60, 1)), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, mean(t.gave)), h("td", {}, mean(t.got)))),
                   ),
                 ),
               )
@@ -257,7 +258,15 @@ export function mountPerson(root, ctx) {
           {},
           h(
             "button",
-            { type: "button", class: `commit${v.commit === selected ? " on" : ""}`, "aria-pressed": String(v.commit === selected), onclick: () => go({ v: v.commit }) },
+            {
+              type: "button",
+              class: `commit${v.commit === selected ? " on" : ""}`,
+              "aria-pressed": String(v.commit === selected),
+              onclick: () => {
+                reveal = true;
+                go({ v: v.commit });
+              },
+            },
             h("span", { class: "commit-when" }, v.time === 0 ? "created" : `day ${v.day}`),
             levelTag(v),
             h("span", { class: "commit-subject" }, v.subject),
@@ -280,6 +289,9 @@ export function mountPerson(root, ctx) {
             files.length ? files.map((file) => renderFile(file, cast)) : h("p", { class: "muted" }, "No readable change (only the episodic memory changed)."),
             h("p", { class: "note" }, `At this version: ${fmt.plural(Object.keys(found.state.skills).length, "skill note")}, ${fmt.plural(found.state.insights.length, "insight")}, ${fmt.plural(found.state.diary.length, "diary entry", "diary entries")}.`),
           );
+          // On a narrow screen the version opens below the list: bring it into view.
+          if (reveal && detail.getBoundingClientRect().top > window.innerHeight * 0.5) detail.scrollIntoView({ block: "start", behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+          reveal = false;
         },
         (error) => fill(detail, emptyState("This version could not be loaded.", error.message)),
       );
@@ -404,9 +416,9 @@ export function mountPerson(root, ctx) {
     const picker = h(
       "div",
       { class: "row" },
-      h("button", { type: "button", class: "tl-btn", disabled: day <= 1, "aria-label": "Previous day", onclick: () => go({ day: String(day - 1) }) }, icon("chevronLeft", 16)),
+      h("button", { type: "button", class: "icon-btn", disabled: day <= 1, "aria-label": "Previous day", onclick: () => go({ day: String(day - 1) }) }, icon("chevronLeft", 18)),
       h("b", {}, `Day ${day}`),
-      h("button", { type: "button", class: "tl-btn", disabled: day >= lastDay, "aria-label": "Next day", onclick: () => go({ day: String(day + 1) }) }, icon("chevron", 16)),
+      h("button", { type: "button", class: "icon-btn", disabled: day >= lastDay, "aria-label": "Next day", onclick: () => go({ day: String(day + 1) }) }, icon("chevron", 18)),
       h("span", { class: "muted" }, `${fmt.plural(mine.length, "decision")}`),
     );
     return [
@@ -428,15 +440,15 @@ export function mountPerson(root, ctx) {
     ];
   }
 
-  function traitsTab() {
+  function traitsTab(moment, version, made) {
     if (!evaluation.scores.length) return h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "Evaluate chosen days with ", h("code", {}, `python -m experiments.evaluate runs/${route.experiment}/${route.run} --days 0 7 14`), "."));
     const rows = evaluation.scores.filter((row) => row.agent === agentName());
     return [
       h("p", { class: "note" }, "Held-out probes played on frozen copies of this agent; higher means more of the trait."),
-      h("div", { class: "figures four" }, traitFigures(evaluation, cast, { only: agentName() })),
+      h("div", { class: "figures four" }, traitFigures(evaluation, cast, { only: agentName(), into: made })),
       h(
         "div",
-        { class: "card pad section" },
+        { class: "card pad section table-wrap" },
         h(
           "table",
           { class: "data text" },
@@ -461,20 +473,27 @@ export function mountPerson(root, ctx) {
     ];
   }
 
+  /**
+   * Show the file. The new content is built before anything is replaced, so the page keeps its
+   * height and scroll position instead of flashing a loading line between tabs and versions.
+   */
   async function render() {
     const ticket = ++token;
-    for (const chart of charts) chart.destroy();
-    charts = [];
+    const made = [];
     try {
       [measures, history, evaluation] = await Promise.all([source.measures(), source.versions(agentName()), source.evaluation()]);
       if (ticket !== token) return;
       const moment = asOf();
       const version = versionAt(moment.time);
-      const body = h("div", { class: "person-body" }, h("div", { class: "loading" }, "Loading…"));
-      fill(page, head(moment), body);
-      const content = await { overview, policy: policyTab, history: historyTab, mind: mindTab, decisions: decisionsTab, traits: traitsTab }[tab()](moment, version);
-      if (ticket !== token) return;
-      fill(body, content);
+      if (!page.querySelector(".person-body")) fill(page, head(moment), h("div", { class: "person-body" }, h("div", { class: "loading" }, "Loading…")));
+      const content = await { overview, policy: policyTab, history: historyTab, mind: mindTab, decisions: decisionsTab, traits: traitsTab }[tab()](moment, version, made);
+      if (ticket !== token) {
+        for (const chart of made) chart.destroy();
+        return;
+      }
+      fill(page, head(moment), h("div", { class: "person-body" }, content));
+      for (const chart of charts) chart.destroy();
+      charts = made;
     } catch (error) {
       if (ticket !== token) return;
       fill(page, h("div", { class: "card" }, emptyState(`${agentName()}'s file could not be loaded.`, error.message)));
