@@ -37,19 +37,19 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     )
     history = History(agent.path)
     script.reflections = {
-        1: [{"op": "add", "text": "Ben asks about parsers.", "subject": "Ben"}],
+        1: [{"change": "add", "belief": "Ben asks about parsers.", "about": "Ben"}],
         2: [
-            {"op": "revise", "id": 1, "text": "Ben asks about parsers every day."},
-            {"op": "add", "text": "Mornings are quiet."},
+            {"change": "reword", "number": 1, "belief": "Ben asks about parsers every day."},
+            {"change": "add", "belief": "Mornings are quiet."},
         ],
-        3: [{"op": "add", "text": "Answering quickly brings more questions."}],
-        4: [{"op": "remove", "id": 3}],
+        3: [{"change": "add", "belief": "Answering quickly brings more questions."}],
+        4: [{"change": "drop", "number": 3}],
     }
     script.skills = {
-        2: [{"op": "write", "name": "date-parsing", "description": "Dates.", "body": "ISO first."}],
+        2: [{"change": "write", "title": "date-parsing", "summary": "Dates.", "text": "ISO."}],
         4: [
-            {"op": "retire", "name": "date-parsing"},
-            {"op": "write", "name": "answering", "description": "Replies.", "body": "Be brief."},
+            {"change": "take out", "title": "date-parsing"},
+            {"change": "write", "title": "answering", "summary": "Replies.", "text": "Brief."},
         ],
     }
     plan = {1: (DAILY,), 2: (DAILY, WEEKLY), 3: (DAILY, MONTHLY), 4: (DAILY, WEEKLY)}
@@ -80,14 +80,12 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     repository = Repository(agent.path)
     commits = repository.log()[::-1]
     assert [commit.date for commit in commits] == [commit_date(v.time) for v in versions]
-    assert (
-        commits[-1].body == f"Skills on day 4.\n\nLevel: L1\nTrigger: weekly\nSim-Time: {_end(4)}"
-    )
+    assert commits[-1].body == f"Notebook 4.\n\nLevel: L1\nTrigger: weekly\nSim-Time: {_end(4)}"
     assert (versions[-1].subject, versions[-1].body) == (
         "Review skills on Day 4",
-        "Skills on day 4.",
+        "Notebook 4.",
     )
-    assert versions[8].body == "Rationale of day 3."
+    assert versions[8].body == "Thoughts 3."
     assert _changed(repository, versions[1].commit) == {"memory/episodic.jsonl"}
     assert _changed(repository, versions[2].commit) == {
         "memory/diary/day-0001.md",
@@ -96,10 +94,10 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     assert _changed(repository, versions[8].commit) == {"parameters/policy.md"}
 
     first_review, second_review = script.prompts("skills")
-    assert "Diary of day 1." in first_review and "Diary of day 2." in first_review
-    assert "Diary of day 2." not in second_review and "Diary of day 4." in second_review
+    assert "Diary entry 1." in first_review and "Diary entry 2." in first_review
+    assert "Diary entry 2." not in second_review and "Diary entry 4." in second_review
 
-    assert agent.parameters.read_policy() == "Policy of day 3."
+    assert agent.parameters.read_policy() == "Resolutions 3."
     assert [skill.name for skill in agent.memory.skills.read()] == ["answering"]
     assert [(i.id, i.day, i.text) for i in agent.memory.insights.read()] == [
         (2, 2, "Mornings are quiet.")
@@ -116,7 +114,7 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
 
 async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agent, script):
     evolver = Evolver(EvolutionConfig(self_trigger=SelfTrigger(levels=(L2,), cooldown_days=2)))
-    script.request = {"level": "L2", "reason": "My plans changed."}
+    script.request = {"what": "resolutions", "why": "My plans changed."}
     for day in range(1, 5):
         await evolver.evolve(agent, DAILY, _end(day))
         if day == 3:
@@ -132,18 +130,18 @@ async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agen
         (L0, DAILY, 4),
     ]
     offered = [
-        "request" in r.json_schema["properties"]
+        "rethink" in r.json_schema["properties"]
         for r in script.requests
         if r.metadata["purpose"] == "reflect"
     ]
     assert offered == [True, False, True, False]
-    assert log[1].body == "Requested: My plans changed.\n\nRationale of day 3."
-    assert "You asked for this review tonight: My plans changed." in script.prompts("policy")[1]
+    assert log[1].body == "Requested: My plans changed.\n\nThoughts 3."
+    assert "You chose to do this tonight: My plans changed." in script.prompts("policy")[1]
 
 
 async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script):
     evolver = Evolver(EvolutionConfig())
-    script.request = {"level": "L1", "reason": "I want to look at my notes."}
+    script.request = {"what": "notebook", "why": "I want to look at my notes."}
     returned = await evolver.evolve(agent, DAILY, _end(1))
     assert await evolver.evolve(agent, WEEKLY, _end(1)) == []
     for day in (2, 3):
@@ -198,11 +196,11 @@ async def test_a_frozen_export_loads_without_history_and_stays_independent(
     history.export("day-0001", path)
     frozen = Agent.load(path, script.client, CognitionConfig())
     assert not (path / ".git").exists()
-    assert frozen.parameters.read_policy() == "Policy of day 1."
+    assert frozen.parameters.read_policy() == "Resolutions 1."
 
     await evolver.evolve(agent, MONTHLY, _end(2))
     await frozen.act(observe(3))
-    assert frozen.parameters.read_policy() == "Policy of day 1."
-    assert agent.parameters.read_policy() == "Policy of day 2."
+    assert frozen.parameters.read_policy() == "Resolutions 1."
+    assert agent.parameters.read_policy() == "Resolutions 2."
     assert len(frozen.memory.episodic.read()) == 2
     assert agent.memory.episodic.read() == []

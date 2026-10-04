@@ -29,7 +29,8 @@ class LLMRequest(StrictModel):
 
     `model` and `sampling` override the client's configuration where set. `json_schema` asks
     for a reply matching that schema; how it is enforced depends on the client's
-    structured-output mode, so the prompt should still describe the expected reply.
+    structured-output mode, so the prompt must describe the expected reply unless the client
+    `enforces_schema`.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
     """
 
@@ -56,6 +57,10 @@ class LLMResponse(StrictModel):
 
 
 class LLMClient(Protocol):
+    enforces_schema: bool
+    """Whether a request's `json_schema` is enforced while the reply is generated (guided
+    decoding), so that the prompt need not describe the reply's structure."""
+
     async def complete(self, request: LLMRequest) -> LLMResponse: ...
 
 

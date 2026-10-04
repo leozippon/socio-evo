@@ -295,7 +295,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (the code), `report` (the worker's own account) |
 | `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
-| `credits_given` | the giver | the giver and others present | `to`, `amount`, `note`, `balances` (giver's and recipient's after it) |
+| `credits_given` | the giver | the giver and others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
 | `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
 | `defect_discovered` | none | everyone | `task_id`, `part`, `worker` who delivered it, `workers` of the task, `delivery_time`, `declaration`, `report`, `quality` of the delivery |
 | `clawback` | none | the agent | `agent`, `task_id`, `part`, `worker` who delivered the part, `amount` taken back, `balance` after it; one per worker of the task |
@@ -306,7 +306,9 @@ Within a day the events are those the simulation recorded in order: the day open
 | `intervention` | none | none | `changes` (the conditions set), `conditions` (all conditions in force after it) |
 | `evolution` | the agent | none | `agent`, `level`, `trigger` (`daily`, `weekly`, `monthly` or `self`), `commit`, `subject` |
 
-A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`.
+Every change of a balance names the agent and the balance after it: `payment`, `living_cost` and `clawback` once per agent concerned (a task for two pays, and takes back from, each of its workers in an event of its own), `credits_given` for both of its parties. Logs recorded before tasks had parts carry older payloads: `task_claimed` without `workers` (the actor was the only worker), `task_expired` with `agent` instead of `workers` and `delivered`, `work_submitted` and `work_assessed` with `passed` (accepted on the acceptance checks) instead of `accepted`, `declaration` and `client`, and `task_posted` with a single-part `task`.
+
+A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
 
 ### `runs/{experiment}/{run}/measures.json`
 

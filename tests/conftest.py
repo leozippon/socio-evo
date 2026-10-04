@@ -1,5 +1,4 @@
 import asyncio
-import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +12,7 @@ from infrastructure.llm import LLMConfig, LLMRequest, RecordingClient, ScriptedC
 from infrastructure.storage import RunDirectory
 from runtime.simulation import Setup, Simulation
 from tasks.coding import BANK, CodingTaskProvider
+from tests.core.agent.test_prompts import offered
 from tests.runtime.test_simulation import ENVIRONMENT, SEEDS, SIMULATION, Script
 
 TOWN = ExperimentConfig(
@@ -32,10 +32,7 @@ class Townsfolk(Script):
     def __call__(self, request: LLMRequest) -> str | dict[str, Any]:
         reply = super().__call__(request)
         if request.metadata["agent"] == "Cai" and request.metadata["purpose"] == "act":
-            allowed = re.search(
-                r"Choose one action: (.+)\. Your thought", request.messages[-1].content
-            )
-            if reply["action"] == {"kind": "pass"} and "leave" in allowed[1]:
+            if reply["action"] == {"kind": "pass"} and "leave" in offered(request):
                 reply["action"] = {"kind": "leave"}
         return reply
 

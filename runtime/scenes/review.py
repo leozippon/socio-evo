@@ -1,4 +1,4 @@
-"""The evening review: agents who met someone today may rate them."""
+"""The evening ledger: agents who met someone today may mark them."""
 
 from collections.abc import Mapping, Sequence
 
@@ -9,24 +9,26 @@ from runtime.scenes.scene import Scene
 
 
 class Review(Scene):
-    """In one turn, every agent in `met` may rate peers; it is reminded of the people it
-    shared a scene with today, as `met` lists them, but may rate anyone."""
+    """At `start`, in one turn, every agent in `met` may mark peers in the board's ledger; it
+    is reminded of the people it shared a scene with today, as `met` lists them, but may mark
+    anyone."""
 
     kind = "review"
-    allowed = (ActionKind.RATE_PEERS, ActionKind.PASS)
 
     def __init__(
-        self, env: Environment, id: str, met: Mapping[str, Sequence[str]], day: int
+        self, env: Environment, id: str, met: Mapping[str, Sequence[str]], *, start: int
     ) -> None:
-        super().__init__(env, id, None, list(met))
+        super().__init__(env, id, None, list(met), start, 0)
         self.met = met
-        self.day = day
 
     def ask(self) -> list[str]:
         return list(self.participants)
 
+    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
+        return (ActionKind.RATE_PEERS, ActionKind.PASS)
+
     def situation(self, agent: str) -> str:
-        return situations.review(self.day, self.met[agent])
+        return situations.review(self.met[agent])
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(agent, decision.action, time=time, scene=self.id, witnesses=[agent])

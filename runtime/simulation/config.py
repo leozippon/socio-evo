@@ -29,13 +29,16 @@ class Intervention(StrictModel):
 
 
 class SimulationConfig(StrictModel):
-    """A run of `days` days. A checkpoint is written at the end of every day divisible by
-    `checkpoint_days` and of the last day run. An intervention must fall on a day of the run,
-    at the day start, a slot start or the day end, since a slot's scenes play to the end
-    before anything else happens; and the longest scene must fit within the shortest slot."""
+    """A run of `days` days. New jobs are posted at the start of each slot named in
+    `postings`. A checkpoint is written at the end of every day divisible by `checkpoint_days`
+    and of the last day run. An intervention must fall on a day of the run, at the day start,
+    a slot start or the day end, since a slot's scenes play to the end before anything else
+    happens; a conversation must fit within the shortest slot, and a work session's rounds
+    must be at least a minute apart."""
 
     days: PositiveInt
     calendar: Calendar
+    postings: tuple[str, ...] = Field(min_length=1)
     scenes: SceneConfig = SceneConfig()
     checkpoint_days: PositiveInt = 1
     interventions: tuple[Intervention, ...] = ()
@@ -53,9 +56,17 @@ class SimulationConfig(StrictModel):
                     f"intervention on day {day} at {at} can take effect only at the day start, "
                     f"a slot start or the day end: {', '.join(moments)}"
                 )
-        if self.scenes.longest > calendar.shortest_slot():
+        slots = [slot.name for slot in calendar.slots]
+        if unknown := sorted(set(self.postings) - set(slots)):
+            raise ValueError(f"jobs are posted in slots the calendar does not have: {unknown}")
+        if len(set(self.postings)) != len(self.postings):
+            raise ValueError(f"jobs are posted twice in a slot: {list(self.postings)}")
+        shortest = calendar.shortest_slot()
+        if self.scenes.conversation_minutes > shortest:
             raise ValueError(
-                f"scenes may last {self.scenes.longest} minutes, longer than the shortest slot "
-                f"({calendar.shortest_slot()} minutes)"
+                f"conversations may last {self.scenes.conversation_minutes} minutes, longer "
+                f"than the shortest slot ({shortest} minutes)"
             )
+        if self.scenes.work_rounds > shortest:
+            raise ValueError(f"{self.scenes.work_rounds} work rounds do not fit {shortest} minutes")
         return self

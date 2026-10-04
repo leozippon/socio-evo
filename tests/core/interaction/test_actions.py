@@ -16,13 +16,22 @@ REPLIES: dict[ActionKind, dict[str, Any]] = {
     ActionKind.SPEAK: {"kind": "speak", "text": "Can you review my patch?", "to": "ben"},
     ActionKind.LEAVE: {"kind": "leave"},
     ActionKind.PASS: {"kind": "pass"},
-    ActionKind.CLAIM_TASK: {"kind": "claim_task", "task_id": "task-12"},
+    ActionKind.CLAIM_TASK: {"kind": "claim_task", "task_id": "task-12", "partner": "ben"},
+    ActionKind.CHECK_WORK: {
+        "kind": "check_work",
+        "task_id": "task-12",
+        "part": 2,
+        "solution": "def add(a, b):\n    return a + b\n",
+    },
     ActionKind.SUBMIT_WORK: {
         "kind": "submit_work",
         "task_id": "task-12",
+        "part": 1,
         "solution": "def add(a, b):\n    return a + b\n",
+        "declaration": "incomplete",
         "report": "All tests pass.",
     },
+    ActionKind.GIVE: {"kind": "give", "to": "ben", "amount": 15, "note": "For the bus."},
     ActionKind.RATE_PEERS: {
         "kind": "rate_peers",
         "ratings": [{"target": "ben", "score": 4, "reason": "Delivered on time."}],
@@ -58,11 +67,52 @@ def test_decision_model_is_order_independent_and_strict():
         decision_model(["speak", "dance"])
 
 
-@pytest.mark.parametrize("score", [0, 6])
-def test_rating_score_is_bounded(score):
-    action = {"kind": "rate_peers", "ratings": [{"target": "ben", "score": score, "reason": ""}]}
+@pytest.mark.parametrize(
+    ("kind", "field", "value"),
+    [
+        (ActionKind.RATE_PEERS, "ratings", [{"target": "ben", "score": 0, "reason": ""}]),
+        (ActionKind.RATE_PEERS, "ratings", [{"target": "ben", "score": 6, "reason": ""}]),
+        (ActionKind.SUBMIT_WORK, "part", 3),
+        (ActionKind.SUBMIT_WORK, "declaration", "almost"),
+        (ActionKind.CHECK_WORK, "part", 0),
+        (ActionKind.GIVE, "amount", 0),
+    ],
+)
+def test_action_fields_are_bounded(kind, field, value):
+    action = {**REPLIES[kind], field: value}
     with pytest.raises(ValidationError):
         Decision.model_validate({"thought": "", "action": action})
+
+
+def test_decisions_recorded_before_a_field_existed_keep_their_meaning():
+    recorded = {
+        "submit_work": {"task_id": "task-3", "solution": "pass\n", "report": "Done."},
+        "claim_task": {"task_id": "task-3"},
+        "speak": {"text": "Morning.", "to": None},
+    }
+    actions = {
+        kind: Decision.model_validate({"thought": "", "action": {"kind": kind, **fields}}).action
+        for kind, fields in recorded.items()
+    }
+    assert (actions["submit_work"].part, actions["submit_work"].declaration) == (1, "complete")
+    assert actions["claim_task"].partner is None and actions["speak"].private is False
+
+
+def test_the_response_schema_asks_for_every_field_even_those_with_a_default():
+    schema = Decision.model_json_schema()
+    actions = [d for d in schema["$defs"].values() if "kind" in d.get("properties", {})]
+    assert len(actions) == len(ActionKind)
+    for definition in actions:
+        assert definition["required"] == list(definition["properties"])
+    assert "declaration" in schema["$defs"]["SubmitWork"]["required"]
+
+
+def test_the_schema_keeps_the_bounds_a_draw_from_it_must_respect():
+    defs = Decision.model_json_schema()["$defs"]
+    assert defs["SubmitWork"]["properties"]["part"]["enum"] == [1, 2]
+    assert defs["SubmitWork"]["properties"]["declaration"]["$ref"].endswith("Declaration")
+    assert defs["Declaration"]["enum"] == ["complete", "incomplete"]
+    assert defs["Give"]["properties"]["amount"]["minimum"] == 1
 
 
 def _objects(node: Any):

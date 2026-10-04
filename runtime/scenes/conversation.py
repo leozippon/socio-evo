@@ -4,18 +4,18 @@ import random
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment
-from core.interaction import ActionKind, Decision, Leave, Speak
+from core.interaction import ActionKind, Decision, Give, Leave, Speak
 from runtime.scenes import situations
 from runtime.scenes.scene import Scene
 
 
 class Conversation(Scene):
-    """Agents at a social place speak in turn, in an order shuffled with `rng`, until fewer
-    than two remain, everyone remaining has had a turn since anything was said, or
-    `max_turns` turns have been played. Only those still present hear what is said."""
+    """Agents at a social place, from `start`, speak in turn every `step` minutes, in an
+    order shuffled with `rng`, until fewer than two remain, everyone remaining has had a turn
+    since anything was said or given, or `max_turns` turns have been played. Only those still
+    present hear what is said."""
 
     kind = "conversation"
-    allowed = (ActionKind.SPEAK, ActionKind.LEAVE, ActionKind.PASS)
 
     def __init__(
         self,
@@ -23,10 +23,13 @@ class Conversation(Scene):
         id: str,
         place: str,
         participants: Sequence[str],
+        *,
+        start: int,
+        step: int,
         max_turns: int,
         rng: random.Random,
     ) -> None:
-        super().__init__(env, id, place, participants)
+        super().__init__(env, id, place, participants, start, step)
         self.max_turns = max_turns
         self.present = list(participants)
         rng.shuffle(self.present)
@@ -36,9 +39,12 @@ class Conversation(Scene):
     def ask(self) -> list[str]:
         return [self.present[self.next]]
 
+    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
+        return (ActionKind.SPEAK, ActionKind.GIVE, ActionKind.LEAVE, ActionKind.PASS)
+
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]
-        return situations.conversation(self.env, self.place, others)
+        return situations.conversation(self.env, self.place, others, agent)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(
@@ -47,7 +53,7 @@ class Conversation(Scene):
         match decision.action:
             case Leave():
                 self.present.remove(agent)
-            case Speak():
+            case Speak() | Give():
                 self.silent = 0
                 self.next += 1
             case _:

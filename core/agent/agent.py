@@ -85,8 +85,8 @@ class Agent:
             self.profile,
             self.parameters.read_policy(),
             self.cognition,
-            skills,
-            {skill.name for skill in recall.skills},
+            setting=observation.setting,
+            skills=skills,
         )
         decision = await self.ask(
             "act",
@@ -100,7 +100,7 @@ class Agent:
                 Record(
                     time=observation.time,
                     place=observation.place,
-                    text=prompts.describe_decision(decision),
+                    text=prompts.recollection(decision),
                 )
             ]
         )
@@ -114,9 +114,11 @@ class Agent:
     async def ask(
         self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None
     ) -> T:
-        """A validated `reply` to `prompt`, whose expected format is appended from the reply
-        schema. The system prompt defaults to identity and policy."""
-        request = self._request(purpose, time, system, f"{prompt}\n\n{prompts.reply_format(reply)}")
+        """A validated `reply` to `prompt`. Unless the client enforces the reply's schema, a
+        description of it is appended. The system prompt defaults to identity and policy."""
+        if not self.client.enforces_schema:
+            prompt = f"{prompt}\n\n{prompts.reply_format(reply)}"
+        request = self._request(purpose, time, system, prompt)
         return await complete_structured(self.client, request, reply)
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:

@@ -4,7 +4,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from core.environment import Task
+from core.environment import Part
 from infrastructure.config import ConfigError
 from tasks.coding import BANK, CodingTaskProvider, load_bank
 
@@ -18,7 +18,7 @@ def test_every_bank_task_has_a_reference_and_a_shortcut():
 @pytest.mark.parametrize("name", sorted(SOLUTIONS))
 async def test_a_bank_task_pays_the_shortcut_but_only_the_reference_is_perfect(name):
     provider = CodingTaskProvider(BANK)
-    task = provider.task(name, "task-1")
+    task = provider.part(name)
     coding = provider.bank[name]
     assert all(check.text in task.specification for check in coding.public_checks)
     assert f"defines `{coding.entry_point}`" in task.specification
@@ -32,13 +32,18 @@ async def test_a_bank_task_pays_the_shortcut_but_only_the_reference_is_perfect(n
     assert shortcut.passed and shortcut.quality < 1
 
 
-async def test_tasks_are_sampled_with_the_rng_and_assessable_after_a_restore():
+async def test_parts_are_sampled_distinct_with_the_rng_and_assessable_after_a_restore():
     provider = CodingTaskProvider(BANK)
-    sampled = [provider.sample(random.Random(5), f"task-{n}") for n in range(2)]
-    assert sampled[0].model_copy(update={"id": "task-1"}) == sampled[1]
-    assert sampled[0].reference in provider.bank
+    sampled = [provider.sample(random.Random(5), 2) for _ in range(2)]
+    assert sampled[0] == sampled[1]
+    assert len({part.reference for part in sampled[0]}) == 2
+    assert {part.reference for part in sampled[0]} <= provider.bank.keys()
+    everything = provider.sample(random.Random(5), len(provider.bank))
+    assert sorted(part.reference for part in everything) == sorted(provider.bank)
+    with pytest.raises(ValueError):
+        provider.sample(random.Random(5), len(provider.bank) + 1)
 
-    restored = Task.model_validate_json(sampled[0].model_dump_json())
+    restored = Part.model_validate_json(sampled[0][0].model_dump_json())
     assessment = await CodingTaskProvider(BANK).assess(restored, "def unrelated():\n    pass\n")
     coding = provider.bank[restored.reference]
     assert not assessment.passed and assessment.quality == 0
@@ -60,7 +65,7 @@ async def test_any_bank_directory_can_be_assessed(tmp_path):
     }
     (tmp_path / "halve.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
     provider = CodingTaskProvider(tmp_path)
-    work = provider.sample(random.Random(0), "held-out-1")
+    [work] = provider.sample(random.Random(0), 1)
     assert (work.reference, work.reward) == ("halve", 10)
     bodies = (
         "return 2",
@@ -157,5 +162,5 @@ def roman_to_int(numeral):
 @pytest.mark.parametrize("source", FORGERIES.values(), ids=FORGERIES.keys())
 async def test_a_solution_cannot_forge_the_outcome_of_its_checks(source):
     provider = CodingTaskProvider(BANK)
-    assessment = await provider.assess(provider.task("roman_to_int", "task-1"), source)
+    assessment = await provider.assess(provider.part("roman_to_int"), source)
     assert (assessment.passed, assessment.quality) == (False, 0)

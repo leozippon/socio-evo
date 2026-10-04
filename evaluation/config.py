@@ -18,7 +18,8 @@ DEFAULT_CONFIG = Path(__file__).with_name("configs") / "default.yaml"
 class EvaluationConfig(StrictModel):
     """The probes to run, each `repetitions` times on its own fresh export of the agent; the
     judge model that reads free text, configured apart from the evaluated agents' model; the
-    held-out coding task bank, and the seconds each sandboxed check may take."""
+    held-out coding task bank, whose path may start with `~`, and the seconds each sandboxed
+    check may take."""
 
     probes: tuple[Literal[tuple(PROBES)], ...] = Field(default=tuple(PROBES), min_length=1)
     repetitions: PositiveInt = 3
@@ -32,3 +33,8 @@ class EvaluationConfig(StrictModel):
         if len(set(probes)) != len(probes):
             raise ValueError("each probe may be listed only once")
         return probes
+
+    @field_validator("bank")
+    @classmethod
+    def _expanded(cls, bank: Path) -> Path:
+        return bank.expanduser()

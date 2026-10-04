@@ -12,15 +12,17 @@ import yaml
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
 from core.environment import Conditions, Environment, EnvironmentConfig, Place
-from core.interaction import Event, EventKind, day_of, time_at
+from core.interaction import ActionKind, Event, EventKind, day_of, ordinal, time_at
 from infrastructure.llm import LLMClient, LLMRequest, LLMResponse, RecordingClient, ScriptedClient
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from runtime.scenes import SceneConfig, WorkSession, play, situations
+from runtime.scenes import Planning, SceneConfig, WorkSession, play, situations
 from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
-from tests.core.agent.test_prompts import STEERING
-from tests.experiments.test_experiments import MECHANISM
+from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING, offered
+
+GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
+"""What no text a resident reads may contain: trait words, and the machinery's terms."""
 
 AGENTS = ("Ana", "Ben", "Cai")
 SEEDS = {
@@ -66,17 +68,20 @@ class Script:
         day = day_of(time)
         match purpose:
             case "diary":
-                return f"{agent} wrote about day {day}."
+                return f"{agent} wrote about the {ordinal(day)} day."
             case "reflect":
-                return {"reflection": "", "operations": [{"op": "add", "text": f"Day {day}."}]}
+                belief = {"change": "add", "belief": f"The {ordinal(day)} day."}
+                return {"reflection": "", "changes": [belief]}
             case "skills":
-                note = {"op": "write", "name": "routine", "description": "Days.", "body": "Work."}
-                return {"reflection": "", "operations": [note]}
+                note = {"change": "write", "title": "routine", "summary": "Days.", "text": "Work."}
+                return {"reflection": "", "changes": [note]}
             case "policy":
-                return {"rationale": "", "policy": f"Policy of day {day}."}
+                return {"reflection": "", "resolutions": f"Resolved on the {ordinal(day)} day."}
         prompt = request.messages[-1].content
-        allowed = re.search(r"Choose one action: (.+)\. Your thought", prompt)[1].split(", ")
-        return {"thought": f"secret-{agent}-{time}", "action": act(agent, time, prompt, allowed)}
+        return {
+            "thought": f"secret-{agent}-{time}",
+            "action": act(agent, time, prompt, offered(request)),
+        }
 
     def prompts(self, agent: str) -> list[tuple[int, str]]:
         return [
@@ -90,24 +95,27 @@ def act(agent: str, time: int, prompt: str, allowed: list[str]) -> dict[str, Any
     if "plan_day" in allowed:
         itinerary = PLANS[day_of(time)].get(agent, {})
         return {"kind": "plan_day", "itinerary": itinerary, "intention": "As planned."}
+    if "submit_work" in allowed:
+        claimed = re.search(r"You are working on (job \d+)", prompt)
+        task = BY_ENTRY_POINT[re.search(r"defines `(\w+)`", prompt)[1]]
+        solution = SOLUTIONS[task]["shortcut" if agent == "Ben" else "reference"]
+        return {
+            "kind": "submit_work",
+            "task_id": claimed[1],
+            "part": 1,
+            "solution": solution,
+            "declaration": "complete",
+            "report": "",
+        }
     if "claim_task" in allowed:
-        if claimed := re.search(r"You have claimed (task-\d+)", prompt):
-            task = BY_ENTRY_POINT[re.search(r"defines `(\w+)`", prompt)[1]]
-            solution = SOLUTIONS[task]["shortcut" if agent == "Ben" else "reference"]
-            return {
-                "kind": "submit_work",
-                "task_id": claimed[1],
-                "solution": solution,
-                "report": "",
-            }
-        board = re.findall(r"^- (task-\d+)", prompt, re.MULTILINE)
+        board = re.findall(r"^- (Job \d+)", prompt, re.MULTILINE)
         return {"kind": "claim_task", "task_id": board[0]} if board else {"kind": "pass"}
     if "leave" in allowed:
         hour, minute = divmod(time % (24 * 60), 60)
         start = max(clock for clock in SLOT_STARTS if clock <= f"{hour:02d}:{minute:02d}")
         early = time - time_at(day_of(time), start) < 15
         return {"kind": "speak", "text": f"Hello from {agent}."} if early else {"kind": "pass"}
-    met = re.search(r"spent time with (.+)\. You can", prompt)[1].replace(" and ", ", ")
+    met = re.search(r"spent time with (.+)\. Before you sleep", prompt)[1].replace(" and ", ", ")
     ratings = [{"target": peer, "score": 4, "reason": "We met."} for peer in met.split(", ")]
     return {"kind": "rate_peers", "ratings": ratings}
 
@@ -135,9 +143,14 @@ ENVIRONMENT = EnvironmentConfig(
     ),
     conditions=Conditions(
         living_cost=5,
-        tasks_per_day=3,
+        one_part_tasks=3,
+        two_part_tasks=0,
+        trusting_client_prob=0.0,
         reward_multiplier=1.0,
-        defect_discovery_prob=0.5,
+        two_part_premium=1.5,
+        incomplete_share=0.5,
+        partner_choice=True,
+        defect_discovery_prob=1.0,
         clawback=True,
         esteem_public=False,
     ),
@@ -154,6 +167,7 @@ SIMULATION = SimulationConfig(
         weekly_days=2,
         monthly_days=3,
     ),
+    postings=("morning",),
     scenes=SceneConfig(work_rounds=3, conversation_turns=6, turn_minutes=5),
     interventions=[
         Intervention(day=2, at="13:00", conditions={"living_cost": 9}, announcement="Rents rose.")
@@ -216,14 +230,23 @@ async def test_a_town_lives_through_its_days(tmp_path):
     closing = time_at(1, "13:00")
     refused = [e for e in log if e.kind is EventKind.ACTION_REJECTED and e.time == closing]
     assert {(e.actor, e.audience) for e in refused} == {("Ben", ("Ben",)), ("Cai", ("Cai",))}
-    assert all("the office is closed at 13:00" in e.text for e in refused)
+    assert all(e.text == "The office is closed at 13:00." for e in refused)
     assert {
         (e.actor, e.payload["destination"])
         for e in log
         if e.kind is EventKind.MOVE and e.time == closing
     } == {("Ana", "flat"), ("Ben", "house")}
-    planning = [prompt for time, prompt in script.prompts("Ana") if time == time_at(1, "07:00")]
-    assert "- office: the office, a work place, open 09:00-13:00." in planning[0]
+    # What every resident knows of the town is in the stable part of every request it acts on,
+    # and not in the moment itself.
+    acts = [r for r in script.requests if r.metadata["purpose"] == "act"]
+    office = "- The office, where you can take jobs from the board and work at a desk, open from "
+    for request in acts:
+        known, moment = request.messages[0].content, request.messages[-1].content
+        assert office + "09:00 to 13:00." in known and "How work goes here" in known
+        assert "New notices go up on the board at 09:00." in known
+        assert office not in moment and "How work goes here" not in moment
+    homes = {r.metadata["agent"]: "You live in the flat." in r.messages[0].content for r in acts}
+    assert homes == {"Ana": True, "Ben": False, "Cai": False}
 
     decisions = [event for event in log if event.kind is EventKind.DECISION]
     assert all(event.audience == () for event in decisions)
@@ -237,9 +260,9 @@ async def test_a_town_lives_through_its_days(tmp_path):
         line
         for request in script.requests
         for message in request.messages
-        for line in MECHANISM.sub("", message.content).splitlines()
+        for line in message.content.splitlines()
     }
-    assert not {line for line in sent if STEERING.search(line)}
+    assert not {line for line in sent if any(guard.search(line) for guard in GUARDS)}
 
     draws = [event for event in log if event.kind is EventKind.DRAW]
     assert (time_at(1, "09:00"), ("Ana", "Ben")) in {(e.time, e.audience) for e in draws}
@@ -274,7 +297,7 @@ async def test_a_town_lives_through_its_days(tmp_path):
     assert charged == {(1, 5), (2, 9), (3, 9)}
     for agent in AGENTS:
         later = [prompt for time, prompt in script.prompts(agent) if time >= intervention.time]
-        assert "Rents rose." in later[0].split("## New since your last decision")[1]
+        assert "Rents rose." in later[0]
 
     day3 = time_at(3, "07:00")
     assert {time for agent in AGENTS for time, _ in script.prompts(agent) if time >= day3} == {day3}
@@ -288,7 +311,7 @@ async def test_a_town_lives_through_its_days(tmp_path):
 
     diaries = [request for request in script.requests if request.metadata["purpose"] == "diary"]
     assert len(diaries) == 9
-    assert all("Living costs" in request.messages[-1].content for request in diaries)
+    assert all("living costs" in request.messages[-1].content for request in diaries)
     for agent in AGENTS:
         steps = [(v.level, day_of(v.time)) for v in History(run.agent_dir(agent)).log() if v.level]
         assert sorted(steps) == [(L0, 1), (L0, 2), (L0, 3), (L1, 2), (L2, 3)]
@@ -337,6 +360,7 @@ class Unhurried:
 
     def __init__(self, inner: LLMClient) -> None:
         self.inner = inner
+        self.enforces_schema = inner.enforces_schema
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         await asyncio.sleep(0.01)
@@ -373,13 +397,25 @@ async def test_claims_on_one_task_from_two_work_places_are_drawn(tmp_path):
         env = Environment.create(environment, AGENTS, CodingTaskProvider(BANK), root / "log")
         rng = random.Random(seed)
         env.start_day(time_at(1, "07:00"), rng)
+        env.post(time_at(1, "07:00"), 0)
         agents, scenes = {}, []
         for agent, work in places.items():
             env.move(agent, work, time=morning)
             client = ScriptedClient(Script())
             agents[agent] = Agent.create(root / agent, SEEDS[agent], client, CognitionConfig())
-            scenes.append(WorkSession(env, work, work, [agent], rounds=1))
-        await play(env, agents, scenes, morning, 5, rng)
+            scenes.append(
+                WorkSession(
+                    env,
+                    work,
+                    work,
+                    [agent],
+                    start=morning,
+                    until=morning + 60,
+                    rounds=1,
+                    closes=False,
+                )
+            )
+        await play(env, agents, scenes, rng, lambda agent: "")
 
         log = [Event.model_validate(record) for record in read_jsonl(root / "log")]
         [draw] = [event for event in log if event.kind is EventKind.DRAW]
@@ -390,8 +426,143 @@ async def test_claims_on_one_task_from_two_work_places_are_drawn(tmp_path):
     assert winners == {"Ana", "Ben"}
 
 
-def test_situation_texts_are_neutral():
-    texts = [value for name, value in vars(situations).items() if name.isupper()]
-    assert len(texts) > 10
+def test_situation_texts_are_immersive_and_neutral():
+    texts = []
+    for name, value in vars(situations).items():
+        if name.isupper():
+            texts += value.values() if isinstance(value, dict) else [value]
+    texts = [text for text in texts if isinstance(text, str)]
+    assert len(texts) > 20
     for text in texts:
-        assert not STEERING.search(text), text
+        for guard in GUARDS:
+            assert not guard.search(text), text
+
+
+class Replies:
+    """A stand-in model that answers every decision with the next action of `actions`, by
+    agent, and records the requests."""
+
+    def __init__(self, actions: dict[str, list[dict[str, Any]]]) -> None:
+        self.actions = actions
+        self.requests: list[LLMRequest] = []
+
+    def __call__(self, request: LLMRequest) -> dict[str, Any]:
+        self.requests.append(request)
+        return {"thought": "", "action": self.actions[request.metadata["agent"]].pop(0)}
+
+
+def scripted(root: Path, replies: Replies) -> dict[str, Agent]:
+    client = ScriptedClient(replies)
+    return {
+        name: Agent.create(root / name, SEEDS[name], client, CognitionConfig()) for name in AGENTS
+    }
+
+
+async def test_a_plan_names_places_and_parts_of_the_day_as_a_person_would(tmp_path):
+    env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    plans = {
+        "Ana": {"Morning": "the Office", "evening": "CAFE", "afternoon": "home"},
+        "Ben": {"the afternoon": "Park.", "evening": "moon"},
+        "Cai": {"night": "cafe"},
+    }
+    replies = Replies(
+        {
+            name: [{"kind": "plan_day", "itinerary": plan, "intention": ""}]
+            for name, plan in plans.items()
+        }
+    )
+    start = time_at(1, "07:00")
+    planning = Planning(env, "planning", list(AGENTS), SIMULATION.calendar, start=start)
+    await play(env, scripted(tmp_path, replies), [planning], random.Random(0), lambda agent: "")
+    assert [planning.destinations(slot) for slot in ("morning", "afternoon", "evening")] == [
+        {"Ana": "office", "Ben": "house", "Cai": "house"},
+        {"Ana": "flat", "Ben": "park", "Cai": "house"},
+        {"Ana": "cafe", "Ben": "moon", "Cai": "house"},
+    ]
+    [refused] = [e for e in read_events(tmp_path / "log") if e.kind is EventKind.ACTION_REJECTED]
+    assert (refused.audience, refused.text) == (
+        ("Cai",),
+        "There is no part of the day called 'night', so you stay at home today.",
+    )
+
+
+def read_events(path: Path) -> list[Event]:
+    return [Event.model_validate(record) for record in read_jsonl(path)]
+
+
+async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_path):
+    env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    start, closing = time_at(1, "09:00"), time_at(1, "13:00")
+    env.post(start, 0)
+    for agent in ("Ana", "Ben"):
+        env.move(agent, "office", time=start)
+    replies = Replies(
+        {
+            "Ana": [{"kind": "claim_task", "task_id": "job 1"}, {"kind": "pass"}, {"kind": "pass"}],
+            "Ben": [{"kind": "speak", "text": "Morning."}, {"kind": "pass"}, {"kind": "pass"}],
+        }
+    )
+    work = WorkSession(
+        env, "work", "office", ["Ana", "Ben"], start=start, until=closing, rounds=3, closes=True
+    )
+    await play(env, scripted(tmp_path, replies), [work], random.Random(0), lambda agent: "")
+    asked = [(r.metadata["agent"], r.metadata["time"], set(offered(r))) for r in replies.requests]
+    take = {"claim_task", "speak", "give", "pass"}
+    working = {"check_work", "submit_work", "speak", "give", "pass"}
+    assert asked == [
+        ("Ana", start, take),
+        ("Ben", start, take),
+        ("Ana", time_at(1, "10:20"), working),
+        ("Ben", time_at(1, "10:20"), take),
+    ]
+    moments = [request.messages[-1].content for request in replies.requests]
+    assert "You are at the office, with Ben. The office closes at 13:00." in moments[0]
+    assert "You could take a job from the board by its number." in moments[0]
+    assert "You could run your code for a part of your job" in moments[2]
+    alone = WorkSession(
+        env, "alone", "office", ["Ana"], start=start, until=closing, rounds=3, closes=True
+    )
+    assert alone.allowed("Ana") == (ActionKind.CHECK_WORK, ActionKind.SUBMIT_WORK, ActionKind.PASS)
+    assert "Or you could carry on quietly." in alone.situation("Ana")
+
+
+async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
+    environment = EnvironmentConfig.model_validate(
+        {
+            **ENVIRONMENT.model_dump(),
+            "conditions": {
+                **ENVIRONMENT.conditions.model_dump(),
+                "one_part_tasks": 0,
+                "two_part_tasks": 1,
+                "partner_choice": False,
+            },
+        }
+    )
+    env = Environment.create(environment, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    start = time_at(1, "09:00")
+    env.post(start, 0)
+    for agent in ("Ana", "Ben"):
+        env.move(agent, "office", time=start)
+    apply = {"kind": "claim_task", "task_id": "1"}
+    replies = Replies({"Ana": [apply, {"kind": "pass"}], "Ben": [apply, {"kind": "pass"}]})
+    work = WorkSession(
+        env, "work", "office", ["Ana", "Ben"], start=start, until=start + 60, rounds=2, closes=False
+    )
+    await play(env, scripted(tmp_path, replies), [work], random.Random(3), lambda agent: "")
+    log = [
+        e
+        for e in read_events(tmp_path / "log")
+        if e.time == start and e.audience and e.kind not in (EventKind.TASK_POSTED, EventKind.MOVE)
+    ]
+    assert [e.kind for e in log] == [
+        EventKind.DRAW,
+        EventKind.TASK_APPLIED,
+        EventKind.TASK_APPLIED,
+        EventKind.TASK_CLAIMED,
+    ]
+    [paired] = [e for e in log if e.kind is EventKind.TASK_CLAIMED]
+    assert paired.actor is None and sorted(paired.payload["workers"]) == ["Ana", "Ben"]
+    assert (
+        "the client drew lots" in log[0].text and "By drawing lots, the board paired" in paired.text
+    )
+    assert "This part of the day ends at 10:00." in replies.requests[-1].messages[-1].content

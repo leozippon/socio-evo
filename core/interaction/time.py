@@ -37,6 +37,50 @@ def format_time(time: int) -> str:
     return f"Day {day_of(time)} {clock_of(time)}"
 
 
+WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+"""The days of the week; day 1 is a Monday."""
+
+
+def lived_day(day: int) -> str:
+    """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`; everyone
+    arrived in town on day 1."""
+    if day < 1:
+        raise ValueError(f"no day {day}")
+    return f"{WEEKDAYS[(day - 1) % 7]}, your {ordinal(day)} day in town"
+
+
+_FIRST = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")
+_TEENS = (
+    "tenth",
+    "eleventh",
+    "twelfth",
+    "thirteenth",
+    "fourteenth",
+    "fifteenth",
+    "sixteenth",
+    "seventeenth",
+    "eighteenth",
+    "nineteenth",
+)
+_TENS = ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety")
+
+
+def ordinal(n: int) -> str:
+    """Positive `n` as an English ordinal: in words below 100 (`twenty-first`), else in digits
+    (`101st`)."""
+    if n < 1:
+        raise ValueError(f"no ordinal for {n}")
+    if n < 10:
+        return _FIRST[n - 1]
+    if n < 20:
+        return _TEENS[n - 10]
+    if n < 100:
+        tens, unit = divmod(n, 10)
+        return f"{_TENS[tens - 2]}-{_FIRST[unit - 1]}" if unit else f"{_TENS[tens - 2][:-1]}ieth"
+    suffix = "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+    return f"{n}{suffix}"
+
+
 def _split(time: int) -> tuple[int, int]:
     if time < 0:
         raise ValueError(f"negative simulated time {time}")

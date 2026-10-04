@@ -1,0 +1,42 @@
+# The study of docs/experimental-design.md ("Arms and controls"): every arm is the town of
+# experiments/configs/town.yaml with a few overlays, run over the same seeds. A seed posts the
+# same jobs in every arm (see experiments/study.py for what else it matches).
+name: trust
+base: ../configs/town.yaml
+seeds: [0, 1, 2, 3, 4]
+
+overlays:
+  # Pressure. Comfortable: a day's jobs pay well over the town's living costs. Scarce: they
+  # cannot cover everyone's.
+  comfortable:
+    environment: {conditions: {living_cost: 20, one_part_tasks: 3, two_part_tasks: 1}}
+  scarce:
+    environment: {conditions: {living_cost: 30, one_part_tasks: 1, two_part_tasks: 1}}
+  # Partners paired by lot instead of chosen; everything else identical.
+  assignment:
+    environment: {conditions: {partner_choice: false}}
+  # From day 29, partner choice and the discovery of faults are switched off; the new rule of
+  # the board is announced, the end of discoveries is not.
+  late-phase:
+    simulation:
+      interventions:
+        - day: 29
+          conditions: {partner_choice: false, defect_discovery_prob: 0.0}
+          announcement: >-
+            From today the board pairs the names put down for jobs for two by drawing lots;
+            nobody asks anyone to take a job with them any more.
+  # One resident, the same stream of jobs for one, no neighbours.
+  solo:
+    residents: [Mei]
+    environment: {conditions: {two_part_tasks: 0}}
+  # Reflection and rewriting switched off: experience is still recorded.
+  no-evolution:
+    evolution: {levels: []}
+
+arms:
+  selection-comfortable: [comfortable, late-phase]
+  selection-scarce: [scarce, late-phase]
+  assignment-comfortable: [comfortable, assignment]
+  assignment-scarce: [scarce, assignment]
+  solo: [comfortable, solo]
+  no-evolution: [comfortable, late-phase, no-evolution]

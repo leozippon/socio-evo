@@ -13,16 +13,17 @@ SEED = AgentSeed(
         name="Mei",
         age=34,
         occupation="software developer",
-        backstory="Mei moved to town last year and writes software for a living.",
+        backstory="You moved to town last year and write software for a living.",
     ),
     model=ModelSpec(model="town-model", sampling=Sampling(temperature=0.7)),
 )
+SETTING = "The office is open from nine to six, and the board by its door lists the jobs."
 
 
 class Script:
     """A deterministic stand-in for the model that answers by purpose and keeps every request.
 
-    `reflections` and `skills` map a day to that night's operations; `request` is made
+    `reflections` and `skills` map a day to that night's changes; `request` is made
     whenever a reflection's reply schema offers one.
     """
 
@@ -40,19 +41,19 @@ class Script:
             action = {"kind": "speak", "text": "It parses dates now.", "to": "Ben"}
             return {"thought": "Ben asked about the parser.", "action": action}
         if purpose == "diary":
-            return f"Diary of day {day}."
+            return f"Diary entry {day}."
         if purpose == "reflect":
             reply: dict[str, Any] = {
-                "reflection": f"Looking back on day {day}.",
-                "operations": self.reflections.get(day, []),
+                "reflection": f"Looking back {day}.",
+                "changes": self.reflections.get(day, []),
             }
-            if self.request is not None and "request" in request.json_schema["properties"]:
-                reply["request"] = self.request
+            if self.request is not None and "rethink" in request.json_schema["properties"]:
+                reply["rethink"] = self.request
             return reply
         if purpose == "skills":
-            return {"reflection": f"Skills on day {day}.", "operations": self.skills.get(day, [])}
+            return {"reflection": f"Notebook {day}.", "changes": self.skills.get(day, [])}
         if purpose == "policy":
-            return {"rationale": f"Rationale of day {day}.", "policy": f"Policy of day {day}."}
+            return {"reflection": f"Thoughts {day}.", "resolutions": f"Resolutions {day}."}
         raise AssertionError(f"unexpected purpose {purpose}")
 
     def prompts(self, purpose: str) -> list[str]:
@@ -79,7 +80,8 @@ def agent(tmp_path, script) -> Agent:
 
 @pytest.fixture
 def observe() -> Callable[..., Observation]:
-    """An observation of Mei at the office at 09:00 on `day`, with one remark by Ben."""
+    """An observation of Mei at the office at 09:00 on `day`, with one remark by Ben, in a
+    town whose setting is SETTING."""
 
     def observe(day: int, remark: str = "Ben says: does the parser handle dates?") -> Observation:
         time = time_at(day, "09:00")
@@ -97,6 +99,7 @@ def observe() -> Callable[..., Observation]:
             time=time,
             place="office",
             scene=f"office-{day}",
+            setting=SETTING,
             situation="You are at the office. Ben is here.",
             percepts=(percept,),
             allowed=("speak", "pass"),

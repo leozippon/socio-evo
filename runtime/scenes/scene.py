@@ -1,46 +1,61 @@
-"""Scenes, and the driver that plays them turn by turn.
+"""Scenes, and the driver that plays them side by side.
 
-A scene decides who is asked in each turn, what each of them is told and what becomes of
-their decisions; what an action means stays with the Environment. The driver plays any
-number of scenes side by side, and a turn is common to all of them: it asks every agent the
-scenes name, all concurrently, records each decision as a truth-only `decision` event, and
-then has the scenes carry the decisions out one at a time in an order drawn at random. The
-agents who claimed the same task in the turn, wherever they are, are told that order. Which
-claim on the shared board succeeds is thus decided by the draw alone, never by which place
-or agent is listed first; model latency never changes what happens; and with deterministic
-replies a run is exactly reproducible. If an agent fails to decide, the others are cancelled
-before the failure propagates.
+A scene decides who is asked when, what each of them is told and may do, and what becomes of
+their decisions; what an action means stays with the Environment. Each scene keeps its own
+pace: its n-th turn takes place `step` minutes after the one before, from its `start`. The
+driver plays any number of scenes in the order of time. The turns that fall at the same time,
+whatever their scenes, are played together: everyone they ask decides concurrently, each
+decision is recorded as a truth-only `decision` event, and the decisions are carried out one
+at a time in an order drawn at random. The agents who asked for the same job at that moment,
+wherever they are, are told that order, and after every such moment the board pairs by lot
+the names put down for jobs for two. So which request on the shared board succeeds is decided
+by the draw alone, never by which place or agent is listed first; model latency never changes
+what happens; and with deterministic replies a run is exactly reproducible. If an agent fails
+to decide, the others are cancelled before the failure propagates.
 """
 
 import asyncio
 import random
 from abc import ABC, abstractmethod
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import ClassVar
 
 from core.agent import Agent
-from core.environment import Environment
+from core.environment import Environment, job_id
 from core.interaction import ActionKind, ClaimTask, Decision, EventKind, Observation
 from runtime.scenes import situations
 
 
 class Scene(ABC):
-    """Agents meeting at `place` (None for a scene each agent attends where it is).
+    """Agents meeting at `place` (None for a scene each agent attends where it is), from
+    `start`, a turn every `step` minutes.
 
     `participants` are the agents present at the start; `turns` counts the turns played.
     """
 
     kind: ClassVar[str]
-    allowed: ClassVar[tuple[ActionKind, ...]]
 
     def __init__(
-        self, env: Environment, id: str, place: str | None, participants: Sequence[str]
+        self,
+        env: Environment,
+        id: str,
+        place: str | None,
+        participants: Sequence[str],
+        start: int,
+        step: int,
     ) -> None:
         self.env = env
         self.id = id
         self.place = place
         self.participants = tuple(participants)
+        self.start = start
+        self.step = step
         self.turns = 0
+
+    @property
+    def next_time(self) -> int:
+        """When the next turn takes place."""
+        return self.start + self.turns * self.step
 
     @abstractmethod
     def ask(self) -> list[str]:
@@ -48,8 +63,12 @@ class Scene(ABC):
         over."""
 
     @abstractmethod
+    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
+        """What `agent` may do now, as the situation tells it."""
+
+    @abstractmethod
     def situation(self, agent: str) -> str:
-        """What `agent` is told about its circumstances and options now."""
+        """What `agent` is told about the moment and what it could do in it."""
 
     @abstractmethod
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
@@ -65,33 +84,36 @@ async def play(
     env: Environment,
     agents: Mapping[str, Agent],
     scenes: Sequence[Scene],
-    start: int,
-    step: int,
     rng: random.Random,
+    setting: Callable[[str], str],
 ) -> None:
-    """Play `scenes` until all are over; turn n of each takes place at `start + n * step`,
-    and `rng` draws the order in which each turn's decisions are carried out."""
+    """Play `scenes` until all are over, in the order of their turns' times; `rng` draws the
+    order in which the decisions of each moment are carried out and the board's lots, and
+    `setting` is what each agent knows of the town."""
     for scene in scenes:
         env.emit(
             EventKind.SCENE_STARTED,
             f"The {scene.kind} scene {scene.id} started with {', '.join(scene.participants)}.",
-            time=start,
+            time=scene.start,
             place=scene.place,
             scene=scene.id,
             payload={"kind": scene.kind, "participants": list(scene.participants)},
         )
-    active, time = list(scenes), start
+    active = list(scenes)
     while active:
-        asked = [(scene, agent) for scene in active for agent in scene.ask()]
+        time = min(scene.next_time for scene in active)
+        due = [scene for scene in active if scene.next_time == time]
+        asked = [(scene, agent) for scene in due for agent in scene.ask()]
         observations = [
             Observation(
                 agent=agent,
                 time=time,
                 place=env.world.locations[agent],
                 scene=scene.id,
+                setting=setting(agent),
                 situation=scene.situation(agent),
                 percepts=env.perceive(agent),
-                allowed=scene.allowed,
+                allowed=scene.allowed(agent),
             )
             for scene, agent in asked
         ]
@@ -121,14 +143,14 @@ async def play(
         _announce_draws(env, turn, time)
         for scene, agent, decision in turn:
             await scene.carry_out(agent, decision, time)
+        env.pair_applicants(time, rng)
 
-        going_on = []
-        for scene in active:
+        for scene in due:
             scene.turns += 1
             decisions = {agent: decision for owner, agent, decision in turn if owner is scene}
             if not scene.over(decisions):
-                going_on.append(scene)
                 continue
+            active.remove(scene)
             env.emit(
                 EventKind.SCENE_ENDED,
                 f"The {scene.kind} scene {scene.id} ended after {scene.turns} turns.",
@@ -137,27 +159,22 @@ async def play(
                 scene=scene.id,
                 payload={"kind": scene.kind, "turns": scene.turns},
             )
-        active, time = going_on, time + step
 
 
 def _announce_draws(
     env: Environment, turn: Sequence[tuple[Scene, str, Decision]], time: int
 ) -> None:
-    """Tell the agents who claimed the same task in `turn`, its decisions in the order
-    drawn, the order in which their claims are taken."""
+    """Tell the agents who asked for the same job at this moment, its decisions in the order
+    drawn, the order in which the client took their requests."""
     claims: dict[str, list[str]] = {}
     for _, agent, decision in turn:
         if isinstance(action := decision.action, ClaimTask):
-            claims.setdefault(action.task_id, []).append(agent)
+            claims.setdefault(job_id(action.task_id) or action.task_id, []).append(agent)
     for task, claimants in claims.items():
         if len(claimants) > 1:
             env.emit(
                 EventKind.DRAW,
-                situations.DRAW.format(
-                    people=situations.names(sorted(claimants)),
-                    task=task,
-                    order=", ".join(claimants),
-                ),
+                situations.draw(claimants, task),
                 time=time,
                 audience=claimants,
                 payload={"task_id": task, "order": claimants},

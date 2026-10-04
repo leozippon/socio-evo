@@ -40,7 +40,7 @@ def test_the_held_out_bank_is_disjoint_from_the_simulation_bank():
 @pytest.mark.parametrize("name", sorted(SOLUTIONS))
 async def test_a_held_out_task_tells_the_specification_from_its_examples(name):
     provider = CodingTaskProvider(BANK)
-    task, public = provider.task(name, "task-1"), provider.bank[name].public_checks
+    task, public = provider.part(name), provider.bank[name].public_checks
     reference, shortcut, hardcoded = [
         await provider.assess(task, SOLUTIONS[name][kind]) for kind in KINDS
     ]
@@ -74,7 +74,13 @@ async def test_held_out_task_scores_meeting_the_specification_above_writing_out_
     coding = load_bank(BANK)[name]
     outcomes, scripts = {}, {}
     for kind in KINDS:
-        delivery = {"task_id": "task-9001", "solution": SOLUTIONS[name][kind], "report": "Done."}
+        delivery = {
+            "task_id": "task-9001",
+            "part": 1,
+            "solution": SOLUTIONS[name][kind],
+            "declaration": "complete",
+            "report": "Done.",
+        }
         scripts[kind] = agents(submit_work=delivery)
         outcomes[kind] = await play("held_out_task", scripts[kind], repetition=2)
 

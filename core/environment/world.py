@@ -54,6 +54,11 @@ class Place(StrictModel):
         """Whether the place is open at `clock` (`HH:MM`); a span includes its opening time."""
         return not self.hours or any(opens <= clock < closes for opens, closes in self.spans())
 
+    def closing(self, clock: str) -> str | None:
+        """When the place next closes after `clock`, at which it is open; None if it never
+        closes."""
+        return next((closes for opens, closes in self.spans() if opens <= clock < closes), None)
+
 
 class World:
     """The places by id and the id of each agent's current place."""
@@ -72,9 +77,10 @@ class World:
         """Put `agent` at `place` at `clock` and return where it was; raises Rejected for an
         unknown place or one closed at `clock`, also if the agent is already there."""
         if place not in self.places:
-            raise Rejected(f"there is no place called {place!r}")
+            raise Rejected(f"There is no place called {place!r} in town.")
         if not self.places[place].is_open(clock):
-            raise Rejected(f"{self.places[place].name} is closed at {clock}")
+            name = self.places[place].name
+            raise Rejected(f"{name[:1].upper()}{name[1:]} is closed at {clock}.")
         origin = self.locations[agent]
         self.locations[agent] = place
         return origin

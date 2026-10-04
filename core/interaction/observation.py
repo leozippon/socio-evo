@@ -11,16 +11,20 @@ from infrastructure.config import StrictModel
 class Observation(StrictModel):
     """One agent's view at a decision point.
 
-    `situation` describes the circumstances in natural language, `percepts` are the events
-    the agent witnessed since its previous observation, and `allowed` lists the action kinds
-    it may choose from. Percepts cannot carry an event's payload or audience, and passing an
-    Event where a Percept is expected is rejected.
+    `setting` is the standing knowledge of the town that every resident has (its places and
+    their hours, how the board and the ledger work), the same from moment to moment until
+    the town's rules change; it may be empty. `situation` describes the present moment in
+    natural language, `percepts` are the events the agent witnessed since its previous
+    observation, and `allowed` lists the action kinds it may choose from. Percepts cannot
+    carry an event's payload or audience, and passing an Event where a Percept is expected is
+    rejected.
     """
 
     agent: str
     time: SimTime
     place: str
     scene: str
+    setting: str = ""
     situation: str
     percepts: tuple[Percept, ...] = ()
     allowed: tuple[ActionKind, ...] = Field(min_length=1)

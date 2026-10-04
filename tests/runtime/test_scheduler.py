@@ -85,26 +85,35 @@ def test_calendar_is_strict(changes):
         calendar(**changes)
 
 
-def test_interventions_and_scenes_must_fit_the_calendar():
+def test_interventions_postings_and_scenes_must_fit_the_calendar():
     days = calendar()
+    posted = {"days": 2, "calendar": days, "postings": ("morning",)}
     timely = [
         Intervention(day=day, at=at, announcement="Hello.")
         for day, at in ((1, None), (1, "07:00"), (2, "18:00"), (2, "22:00"))
     ]
-    SimulationConfig(
-        days=2, calendar=days, scenes=SceneConfig(turn_minutes=20), interventions=timely
-    )
+    SimulationConfig(**posted, scenes=SceneConfig(turn_minutes=20), interventions=timely)
     for interventions in (
         [{"day": 3, "announcement": "Hello."}],
         [{"day": 1, "at": "23:00", "announcement": "Hello."}],
         [{"day": 1}],
     ):
         with pytest.raises(ValidationError):
-            SimulationConfig(days=2, calendar=days, interventions=interventions)
+            SimulationConfig(**posted, interventions=interventions)
     within_a_slot = [{"day": 1, "at": "13:33", "announcement": "Hello."}]
     with pytest.raises(ValidationError, match="only at the day start, a slot start or the day"):
-        SimulationConfig(days=2, calendar=days, interventions=within_a_slot)
+        SimulationConfig(**posted, interventions=within_a_slot)
     with pytest.raises(ValidationError, match="shortest slot"):
-        SimulationConfig(
-            days=2, calendar=days, scenes=SceneConfig(conversation_turns=49, turn_minutes=5)
-        )
+        SimulationConfig(**posted, scenes=SceneConfig(conversation_turns=49, turn_minutes=5))
+    with pytest.raises(ValidationError, match="work rounds"):
+        SimulationConfig(**posted, scenes=SceneConfig(work_rounds=10_000))
+    for postings in ((), ("night",), ("morning", "morning")):
+        with pytest.raises(ValidationError):
+            SimulationConfig(**{**posted, "postings": postings})
+
+
+def test_each_slot_ends_where_the_next_begins():
+    assert calendar().slot_ends(2) == {
+        "morning": time_at(2, "18:00"),
+        "evening": time_at(2, "22:00"),
+    }

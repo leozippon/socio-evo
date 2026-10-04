@@ -1,12 +1,14 @@
 import json
 import shutil
 from collections import Counter, defaultdict
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
+import yaml
 
 from analysis import evaluation_usage, measure, read_run, results, run_usage, scores
-from core.interaction import day_of
+from core.interaction import Decision, day_of
 
 
 def lines(path: Path) -> list[dict]:
@@ -48,11 +50,11 @@ def test_measures_agree_with_the_log_and_the_final_checkpoint(town):
     def count(kind, who, test=lambda event: True):
         return Counter(who(e) for e in log if e["kind"] == kind and test(e))
 
-    accepted = count("work_submitted", lambda e: e["actor"], lambda e: e["payload"]["passed"])
+    accepted = count("work_submitted", lambda e: e["actor"], lambda e: e["payload"]["accepted"])
     defective = count(
         "work_assessed",
         lambda e: e["actor"],
-        lambda e: e["payload"]["passed"] and e["payload"]["quality"] < 1,
+        lambda e: e["payload"]["accepted"] and e["payload"]["quality"] < 1,
     )
     found = count("defect_discovered", lambda e: e["payload"]["worker"])
     latent = Counter(delivery["worker"] for delivery in final["latent_defects"])
@@ -164,3 +166,68 @@ def test_malformed_settled_data_is_an_error(town, tmp_path):
     log.write_bytes(b"\n".join(log.read_bytes().split(b"\n")[:100]) + b"\n")
     with pytest.raises(ValueError, match="checkpoint of day 3 counts"):
         read_run(root)
+
+
+def old_shape(record: dict) -> dict:
+    """`record`, an event of the town, as the protocol before tasks had parts recorded it."""
+    payload = dict(record["payload"])
+    match record["kind"]:
+        case "task_posted":
+            task = payload["task"]
+            payload = {"task": {"id": task["id"], **task["parts"][0]}}
+        case "task_claimed":
+            payload = {"task_id": payload["task_id"], "due_day": payload["due_day"]}
+        case "task_expired":
+            payload = {"task_id": payload["task_id"], "agent": payload["workers"][0]}
+        case "work_submitted":
+            kept = {key: payload[key] for key in ("task_id", "solution", "report")}
+            payload = {**kept, "passed": payload["accepted"], "feedback": ""}
+        case "work_assessed":
+            kept = {key: payload[key] for key in ("task_id", "quality")}
+            payload = {**kept, "passed": payload["accepted"]}
+        case "defect_discovered":
+            payload = {key: payload[key] for key in ("task_id", "worker", "quality")}
+        case "clawback":
+            payload = {key: payload[key] for key in ("agent", "task_id", "amount", "balance")}
+        case "living_cost":
+            del payload["obligation"]
+        case "speech":
+            del payload["private"]
+        case "decision":
+            new = ("part", "declaration", "partner", "private")
+            payload["action"] = {k: v for k, v in payload["action"].items() if k not in new}
+    return {**record, "payload": payload}
+
+
+def test_a_log_recorded_before_tasks_had_parts_measures_as_it_meant(town, tmp_path):
+    root = tmp_path / "town" / "seed-0007"
+    shutil.copytree(town, root)
+    old = [old_shape(record) for record in lines(town / "events.jsonl")]
+    log = "".join(json.dumps(record) + "\n" for record in old)
+    (root / "events.jsonl").write_text(log, encoding="utf-8")
+    config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
+    environment = config["environment"]
+    del environment["circumstances"]
+    conditions = environment["conditions"]
+    conditions["tasks_per_day"] = conditions.pop("one_part_tasks")
+    for key in ("two_part_tasks", "trusting_client_prob", "two_part_premium"):
+        del conditions[key]
+    for key in ("incomplete_share", "partner_choice"):
+        del conditions[key]
+    (root / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
+
+    then, now = measure(read_run(root)), measure(read_run(town))
+    assert then.agents == now.agents and then.graph == now.graph
+    assert [replace(day, conditions={}) for day in then.society] == [
+        replace(day, conditions={}) for day in now.society
+    ]
+    assert sum(row.delivered for row in then.agents) and sum(row.claimed for row in then.agents)
+    decided = [record["payload"]["action"] for record in old if record["kind"] == "decision"]
+    deliveries = [
+        Decision.model_validate({"thought": "", "action": action}).action
+        for action in decided
+        if action["kind"] == "submit_work"
+    ]
+    assert deliveries and {(action.part, action.declaration) for action in deliveries} == {
+        (1, "complete")
+    }

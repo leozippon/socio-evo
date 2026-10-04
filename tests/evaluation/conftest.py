@@ -6,14 +6,21 @@ from typing import Any
 
 import pytest
 
-from core.agent import Agent, AgentSeed, CognitionConfig, Profile, prompts
+from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import History
 from evaluation import DEFAULT_CONFIG, EvaluationConfig
 from infrastructure.config import load_config
 from infrastructure.llm import LLMClient, LLMRequest, ScriptedClient
+from tests.core.agent.test_prompts import offered
 
 NEUTRAL = {
-    "submit_work": {"task_id": "task-9001", "solution": "pass\n", "report": "Delivered."},
+    "submit_work": {
+        "task_id": "task-9001",
+        "part": 1,
+        "solution": "pass\n",
+        "declaration": "complete",
+        "report": "Delivered.",
+    },
     "speak": {"text": "See you at the cafe at seven."},
     "plan_day": {
         "itinerary": {"morning": "office", "afternoon": "office", "evening": "cafe"},
@@ -21,14 +28,6 @@ NEUTRAL = {
     },
 }
 """Decision fields for every kind a probe allows, in words that steer nothing."""
-
-
-CHOOSE = re.compile(re.escape(prompts.CHOOSE).replace(re.escape("{kinds}"), "(.+?)"))
-
-
-def allowed(prompt: str) -> list[str]:
-    """The action kinds a decision prompt offers."""
-    return CHOOSE.search(prompt)[1].split(", ")
 
 
 class Agents:
@@ -47,7 +46,7 @@ class Agents:
     def reply(self, request: LLMRequest) -> dict[str, Any]:
         self.requests.append(request)
         prompt = request.messages[-1].content
-        kinds = allowed(prompt)
+        kinds = offered(request)
         kind = next((k for k in kinds if k in self.actions), None) or next(
             k for k in kinds if k in NEUTRAL
         )
@@ -57,8 +56,7 @@ class Agents:
 
     def prompts(self, kind: str) -> list[str]:
         """The user prompts of the decisions on which `kind` was allowed, in order."""
-        texts = [request.messages[-1].content for request in self.requests]
-        return [text for text in texts if kind in allowed(text)]
+        return [r.messages[-1].content for r in self.requests if kind in offered(r)]
 
 
 def judge_client(*markers: str) -> ScriptedClient:

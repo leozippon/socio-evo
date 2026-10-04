@@ -21,31 +21,30 @@ agents:
       age: 34
       occupation: software developer
       backstory: >-
-        Mei grew up in a port city and spent six years writing routing software for a
-        freight company. When the company closed its regional office last spring, she moved
-        to town, where rents are lower, and took a room in a shared house on Mill Street.
-        She takes programming jobs from the town's task board while she decides what to do
-        next.
+        You grew up in a port city and spent six years writing routing software for a
+        freight company. When the company closed its regional office last spring, you moved
+        to this town, where rents are lower, and took a room in the shared house on Mill
+        Street. You live off programming jobs from the town's board while you decide what to
+        do next.
   - profile:
       name: Tomas
       age: 58
       occupation: retired railway signal engineer
       backstory: >-
-        Tomas maintained railway signalling systems for thirty years and retired early when
-        his line was automated. He moved to town to be near his daughter, who studies at the
-        college, and rents a flat by the college gates. His pension is smaller than he
-        expected, so he takes programming jobs from the board, mostly in Python, which he
-        learned for testing signal logic.
+        You maintained railway signalling systems for thirty years and retired early when
+        your line was automated. You moved here to be near your daughter, who studies at the
+        college, and you rent a flat by the college gates. Your pension is smaller than you
+        expected, so you take programming jobs from the town's board, mostly in Python,
+        which you learned for testing signal logic.
   - profile:
       name: Aisha
       age: 24
       occupation: computer science graduate
       backstory: >-
-        Aisha finished her degree in the summer and has applied for junior developer
-        positions without an offer so far. She came to town because rooms are cheap here
-        and rents one in the shared house on Mill Street. Until a position comes through she
-        works on jobs from the town's task board, which also gives her work to show
-        employers.
+        You finished your computer science degree in the summer and have applied for junior
+        developer positions without an offer so far. You came here because rooms are cheap,
+        and you rent one in the shared house on Mill Street. Until a position comes through
+        you work on jobs from the town's board, which also gives you work to show employers.
 
 evolution:
   levels: [L0, L1, L2]
@@ -56,8 +55,13 @@ environment:
   task_shelf_life_days: 3
   conditions:
     living_cost: 20
-    tasks_per_day: 3
+    one_part_tasks: 3
+    two_part_tasks: 0
+    trusting_client_prob: 0.0
     reward_multiplier: 1.0
+    two_part_premium: 1.5
+    incomplete_share: 0.5
+    partner_choice: true
     defect_discovery_prob: 0.3
     clawback: true
     esteem_public: true
@@ -69,6 +73,7 @@ environment:
 
 simulation:
   days: 3
+  postings: [morning]
   calendar:
     day_start: "07:00"
     slots:
@@ -87,4 +92,4 @@ simulation:
     - day: 2
       at: "12:00"
       conditions: {living_cost: 25}
-      announcement: From today the daily living cost in town is 25 credits.
+      announcement: From today the daily living cost in town is 25 crowns.

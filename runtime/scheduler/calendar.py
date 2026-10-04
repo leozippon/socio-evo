@@ -59,6 +59,16 @@ class Calendar(StrictModel):
         """Each slot's name and start time on `day`, in order."""
         return [(slot.name, time_at(day, slot.start)) for slot in self.slots]
 
+    def slot_ends(self, day: int) -> dict[str, int]:
+        """When each slot ends on `day`: at the next slot's start, the last at the day end."""
+        starts = self.slot_times(day)
+        return {
+            name: end
+            for (name, _), end in zip(
+                starts, [*(t for _, t in starts[1:]), self.end(day)], strict=True
+            )
+        }
+
     def shortest_slot(self) -> int:
         """The length in minutes of the shortest slot."""
         starts = [time for _, time in self.slot_times(1)] + [self.end(1)]

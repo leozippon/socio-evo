@@ -1,5 +1,6 @@
 """The Evolver: maps a trigger to the enabled operators and commits each step."""
 
+from core.agent import prompts
 from core.agent.agent import Agent
 from core.agent.evolution.config import EvolutionConfig
 from core.agent.evolution.history import History, Version
@@ -73,9 +74,9 @@ class Evolver:
         body = change.body if reason is None else f"Requested: {reason}\n\n{change.body}"
         versions = [history.commit_step(level, trigger, time, change.subject, body)]
         if change.request is not None:
-            request = change.request
+            level = Level(prompts.requested_level(change.request))
             versions += await self._step(
-                agent, history, Level(request.level), Trigger.SELF, time, request.reason
+                agent, history, level, Trigger.SELF, time, change.request.why
             )
         return versions
 

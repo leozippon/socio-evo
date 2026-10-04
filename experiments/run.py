@@ -48,8 +48,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     config = load_config(args.config, ExperimentConfig)
     if args.dry_run:
-        scripted = config.llm.model_copy(update={"backend": "scripted"})
-        config = config.model_copy(update={"name": f"{config.name}-dry-run", "llm": scripted})
+        config = as_dry_run(config)
     for seed in args.seeds:
         root, status = asyncio.run(
             run(config, seed, args.runs_root, resume=args.resume, until_day=args.until_day)
@@ -81,6 +80,12 @@ async def run(
         )
         simulation = Simulation.create(directory, parts)
     return root, await simulation.run(until_day)
+
+
+def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
+    """`config` answered by the scripted responder, as experiment `<name>-dry-run`."""
+    scripted = config.llm.model_copy(update={"backend": "scripted"})
+    return config.model_copy(update={"name": f"{config.name}-dry-run", "llm": scripted})
 
 
 def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:

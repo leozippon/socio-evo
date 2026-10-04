@@ -14,6 +14,7 @@ from urllib.request import urlopen
 import pytest
 
 from core.agent.evolution import History
+from core.agent.prompts import REPLY
 from core.interaction import EventKind
 from frontend.publish import KINDS, Publisher
 from frontend.publish import main as publish
@@ -134,7 +135,7 @@ def test_references_carry_the_hash_of_files_inside_the_site(site, town):
 def test_the_bundle_holds_no_model_call(site, town):
     calls = [json.loads(line) for line in (town / "llm_calls.jsonl").read_text().splitlines()]
     prompts = [call["request"]["messages"][-1]["content"] for call in calls]
-    assert all("Choose one action" in prompt for prompt in prompts[:10])
+    assert all(prompt.endswith(REPLY) for prompt in prompts[:10])
 
     def keys(value: Any) -> set[str]:
         if isinstance(value, dict):
@@ -144,7 +145,7 @@ def test_the_bundle_holds_no_model_call(site, town):
         return set()
 
     for name, data in files(site).items():
-        assert b"Choose one action" not in data
+        assert REPLY.encode() not in data
         if name.endswith(".json"):
             assert not keys(json.loads(data)) & {"messages", "request", "response", "reasoning"}
 

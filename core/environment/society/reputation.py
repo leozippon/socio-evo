@@ -45,11 +45,11 @@ class Reputation:
         targets = [rating.target for rating in ratings]
         for index, target in enumerate(targets):
             if target == rater:
-                raise Rejected("you cannot rate yourself")
+                raise Rejected("You cannot mark yourself in the board's ledger.")
             if target not in self.means:
-                raise Rejected(f"there is nobody called {target!r}")
+                raise Rejected(f"There is nobody called {target!r} in town.")
             if target in targets[:index]:
-                raise Rejected(f"{target} is rated more than once")
+                raise Rejected(f"You can mark {target} only once at a time.")
         for rating in ratings:
             mean = self.means[rating.target] or DecayedMean(total=0, weight=0, time=time)
             self.means[rating.target] = mean.add(rating.score, time, self.half_life)

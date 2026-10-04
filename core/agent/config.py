@@ -8,7 +8,15 @@ from infrastructure.config import StrictModel
 
 class Profile(StrictModel):
     """The identity seed; it never evolves. `name` is the agent id, its public given name,
-    and must be a single word because it is used verbatim in texts and directory names."""
+    and must be a single word because it is used verbatim in texts and directory names.
+
+    The resident reads "You are {name}. You are {age} years old." followed by `backstory`, so
+    the backstory tells the resident its own life: in the second person ("You grew up in a
+    port city ..."), past tense for the past and present tense for now, in the town's own
+    words (`docs/IMMERSION.md`), describing circumstances only. It says what the resident
+    does for a living and where it lives, because `occupation` is a label for people reading
+    the run and is not shown to the resident.
+    """
 
     name: str = Field(pattern=r"^\w+$")
     age: PositiveInt

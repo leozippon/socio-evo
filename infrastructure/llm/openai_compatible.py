@@ -25,6 +25,7 @@ class OpenAICompatibleClient:
         if not api_key:
             raise LLMConfigError(f"API key variable {config.api_key_env} is not set")
         self._config = config
+        self.enforces_schema = config.structured_output == "json_schema"
         self._client = openai.AsyncOpenAI(
             base_url=config.base_url,
             api_key=api_key,

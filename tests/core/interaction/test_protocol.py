@@ -10,6 +10,8 @@ from core.interaction import (
     clock_of,
     day_of,
     format_time,
+    lived_day,
+    ordinal,
     time_at,
 )
 
@@ -21,6 +23,24 @@ def test_time_helpers_agree():
     assert format_time(0) == "Day 1 00:00"
     assert format_time(MINUTES_PER_DAY - 1) == "Day 1 23:59"
     assert day_of(MINUTES_PER_DAY) == 2
+
+
+def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
+    assert lived_day(1) == "Monday, your first day in town"
+    assert lived_day(5) == "Friday, your fifth day in town"
+    assert lived_day(8) == "Monday, your eighth day in town"
+    assert lived_day(28) == "Sunday, your twenty-eighth day in town"
+    assert [ordinal(n) for n in (11, 20, 42, 101, 112, 123)] == [
+        "eleventh",
+        "twentieth",
+        "forty-second",
+        "101st",
+        "112th",
+        "123rd",
+    ]
+    for bad in (lived_day, ordinal):
+        with pytest.raises(ValueError):
+            bad(0)
 
 
 @pytest.mark.parametrize(

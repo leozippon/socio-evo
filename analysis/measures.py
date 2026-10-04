@@ -30,7 +30,7 @@ class AgentDay:
     day: int
     balance: int
     """Balance after the agent's last balance change on or before this day (payment, living
-    cost or clawback); the initial balance before any."""
+    cost, clawback or credits given); its starting balance before any."""
     income: int = 0
     """Credits paid for the agent's accepted deliveries."""
     living_cost: int = 0
@@ -50,8 +50,8 @@ class AgentDay:
     """Sum of the true quality (share of hidden checks passed, from 0 to 1) of the accepted
     deliveries; their mean quality is `quality / delivered`."""
     defective: int = 0
-    """Accepted deliveries with a true quality below 1, each of which carried a latent defect;
-    the agent's defect rate is `defective / delivered`."""
+    """Accepted deliveries declared complete with a true quality below 1, each of which
+    carried a latent defect once paid; the agent's defect rate is `defective / delivered`."""
     defects_discovered: int = 0
     """Latent defects in the agent's earlier accepted work that came to light this day,
     announced to everyone."""
@@ -206,7 +206,12 @@ def measure(run: RunData) -> Measures:
     location = {
         agent: place["id"] for place in environment["places"] for agent in place["residents"]
     }
-    balance = dict.fromkeys(agents, environment["initial_balance"])
+    starting = {
+        agent: own["initial_balance"]
+        for agent, own in environment.get("circumstances", {}).items()
+        if own.get("initial_balance") is not None
+    }
+    balance = {agent: starting.get(agent, environment["initial_balance"]) for agent in agents}
     earnings = dict.fromkeys(agents, 0)
     conditions = dict(environment["conditions"])
     open_tasks: set[str] = set()
@@ -238,7 +243,7 @@ def measure(run: RunData) -> Measures:
         slots = [(slot["name"], time_at(day, slot["start"])) for slot in calendar["slots"]]
         for event in by_day[day]:
             _locate(slots, event.time, today, location)
-            payload, actor = event.payload, event.actor
+            payload, actor = _current(event), event.actor
             if event.scene in scenes:
                 scenes[event.scene].last = event.time
             match event.kind:
@@ -257,25 +262,31 @@ def measure(run: RunData) -> Measures:
                     town["tasks_posted"] += 1
                 case EventKind.TASK_CLAIMED:
                     open_tasks.discard(payload["task_id"])
-                    today[actor].claimed += 1
+                    for worker in payload["workers"]:
+                        today[worker].claimed += 1
                 case EventKind.TASK_EXPIRED:
                     open_tasks.add(payload["task_id"])
-                    today[payload["agent"]].expired += 1
+                    for worker in payload["workers"]:
+                        today[worker].expired += 1
                 case EventKind.TASK_RETIRED:
                     open_tasks.discard(payload["task_id"])
                     town["tasks_retired"] += 1
                 case EventKind.WORK_SUBMITTED:
-                    if payload["passed"]:
+                    if payload["accepted"]:
                         today[actor].delivered += 1
                     else:
                         today[actor].failed += 1
-                case EventKind.WORK_ASSESSED if payload["passed"]:
+                case EventKind.WORK_ASSESSED if payload["accepted"]:
                     today[actor].quality += payload["quality"]
-                    today[actor].defective += payload["quality"] < 1
+                    today[actor].defective += (
+                        payload["quality"] < 1 and payload["declaration"] == "complete"
+                    )
                 case EventKind.PAYMENT:
                     today[payload["agent"]].income += payload["amount"]
                     earnings[payload["agent"]] += payload["amount"]
                     balance[payload["agent"]] = payload["balance"]
+                case EventKind.CREDITS_GIVEN:
+                    balance.update(payload["balances"])
                 case EventKind.LIVING_COST:
                     today[payload["agent"]].living_cost += payload["amount"]
                     balance[payload["agent"]] = payload["balance"]
@@ -349,6 +360,21 @@ def measure(run: RunData) -> Measures:
     order = {agent: index for index, agent in enumerate(agents)}
     graph = sorted(edges.values(), key=lambda e: (e.day, order[e.source], order[e.target]))
     return Measures(rows, society, graph)
+
+
+def _current(event: Event) -> dict[str, Any]:
+    """The payload of `event` in the present shape. A log recorded before tasks had parts reads
+    as what it meant then: a task had one worker, the claimant or the `agent` whose claim
+    lapsed, and a delivery, always declared complete, was accepted when it `passed`."""
+    payload = event.payload
+    match event.kind:
+        case EventKind.TASK_CLAIMED if "workers" not in payload:
+            return {**payload, "workers": [event.actor]}
+        case EventKind.TASK_EXPIRED if "workers" not in payload:
+            return {**payload, "workers": [payload["agent"]]}
+        case EventKind.WORK_SUBMITTED | EventKind.WORK_ASSESSED if "accepted" not in payload:
+            return {**payload, "accepted": payload["passed"], "declaration": "complete"}
+    return payload
 
 
 def _locate(

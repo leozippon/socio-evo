@@ -17,15 +17,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TasksConfig(StrictModel):
-    """The coding task bank, a directory relative to the project root, and how many seconds
-    each check of a delivery may run."""
+    """The coding task bank, a directory relative to the project root or an absolute one, which
+    may start with `~`, and how many seconds each check of a delivery may run."""
 
     bank: str = "tasks/coding/bank"
     timeout: PositiveFloat = 5.0
 
     @property
     def bank_path(self) -> Path:
-        return PROJECT_ROOT / self.bank
+        return PROJECT_ROOT / Path(self.bank).expanduser()
 
 
 class ExperimentConfig(StrictModel):

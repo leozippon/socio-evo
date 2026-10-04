@@ -11,7 +11,7 @@ def create_client(config: LLMConfig, responder: Responder | None = None) -> LLMC
     if config.backend == "scripted":
         if responder is None:
             raise LLMConfigError("the scripted backend needs a responder supplied in code")
-        return ScriptedClient(responder)
+        return ScriptedClient(responder, enforces_schema=config.structured_output == "json_schema")
     if responder is not None:
         raise LLMConfigError(f"a responder cannot be used with the {config.backend} backend")
     return OpenAICompatibleClient(config)

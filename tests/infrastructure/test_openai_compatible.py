@@ -72,6 +72,7 @@ async def test_request_body_and_response_mapping(monkeypatch):
         extra_body={"chat_template_kwargs": {"enable_thinking": True}},
     )
     schema = {"type": "object"}
+    assert client.enforces_schema
     response = await client.complete(
         _request(model="adapter-7", sampling=Sampling(temperature=0.0), json_schema=schema)
     )
@@ -102,6 +103,7 @@ async def test_structured_output_mode_controls_response_format(monkeypatch, mode
         return httpx2.Response(200, json=_completion("{}"))
 
     client = _client(monkeypatch, handler, structured_output=mode)
+    assert not client.enforces_schema
     await client.complete(_request(json_schema={"type": "object"}))
     await client.complete(_request())
     assert [body.get("response_format") for body in bodies] == [expected, None]

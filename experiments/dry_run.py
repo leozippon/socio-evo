@@ -5,7 +5,7 @@ Each reply is drawn at random from the request's JSON schema with a generator se
 the run seed and the request's messages, so a request always gets the same reply, in any
 order. To reach every path of a run, strings the protocol uses as references come from the
 experiment: slot names as itinerary keys, place ids as itinerary values, agent names as
-people, and task ids seen in the prompt as task ids; a solution is a stub defining the
+people, and jobs named in the prompt as task ids; a solution is a stub defining the
 function the prompt names. Lists hold at most one item, so no reply breaks a uniqueness
 rule its schema cannot express. A request without a schema gets a placeholder sentence.
 """
@@ -19,7 +19,7 @@ from typing import Any
 from experiments.config import ExperimentConfig
 from infrastructure.llm import LLMRequest
 
-_TASK_ID = re.compile(r"\btask-\d+\b")
+_JOB = re.compile(r"\bjob \d+\b", re.IGNORECASE)
 _ENTRY_POINT = re.compile(r"defines `(\w+)`")
 
 
@@ -34,7 +34,8 @@ class DryRunResponder:
             "itinerary": [place.id for place in config.environment.places],
             "target": people,
             "to": people,
-            "subject": people,
+            "partner": people,
+            "about": people,
         }
 
     def __call__(self, request: LLMRequest) -> str | dict[str, Any]:
@@ -96,7 +97,7 @@ class _Draw:
         if name in self.responder.words:
             return rng.choice(self.responder.words[name])
         if name == "task_id":
-            return rng.choice(_TASK_ID.findall(self.prompt) or ["task-1"])
+            return rng.choice(_JOB.findall(self.prompt) or ["job 1"])
         if name == "solution":
             entry = _ENTRY_POINT.search(self.prompt)
             return f"def {entry[1] if entry else 'solution'}(*args, **kwargs):\n    return None\n"

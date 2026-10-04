@@ -1,7 +1,7 @@
 import pytest
 from pydantic import ValidationError
 
-from core.agent import Agent, AgentSeed, CognitionConfig
+from core.agent import Agent, AgentSeed, CognitionConfig, prompts
 from core.agent.memory import Insight, Record, Skill
 from core.interaction import Event, Speak, time_at
 
@@ -33,7 +33,7 @@ def test_an_agent_is_a_directory_of_plain_files(tmp_path, script, seed):
         AgentSeed.model_validate({"profile": profile, "model": {"adapter": "mei-lora"}})
 
 
-async def test_act_stores_percepts_and_records_its_own_decision(agent, script, observe):
+async def test_act_stores_percepts_and_records_its_own_decision(agent, script, seed, observe):
     observation = observe(1)
     truth = Event(
         **observation.percepts[0].model_dump(),
@@ -52,7 +52,9 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, o
         text="Ben says: does the parser handle dates?",
     )
     assert (own.time, own.place, own.seq) == (observation.time, "office", None)
-    assert "Ben asked about the parser." in own.text and "It parses dates now." in own.text
+    assert (
+        own.text == 'I said to Ben: "It parses dates now." I thought: Ben asked about the parser.'
+    )
 
     (request,) = script.requests
     assert request.metadata == {
@@ -63,14 +65,22 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, o
     }
     assert (request.model, request.sampling.temperature) == ("town-model", 0.7)
     system, user = (message.content for message in request.messages)
-    assert system.startswith("You are Mei.") and "Ben says: does the parser handle dates?" in user
+    identity = f"You are Mei. You are 34 years old. {seed.profile.backstory}"
+    known = prompts.KNOWN.format(setting=observation.setting)
+    assert system == "\n\n".join([identity, known, prompts.UNRESOLVED])
+    assert "08:59: Ben says: does the parser handle dates?" in user
     assert "TRUTH-ONLY-MARKER" not in agent.memory.episodic.path.read_text() + system + user
 
     later = observe(1, "Ben says: thanks.").model_copy(update={"time": observation.time + 30})
     await agent.act(later)
-    recent, new = script.requests[-1].messages[1].content.split("## New since your last decision")
-    assert "It parses dates now." in recent and "does the parser handle dates" in recent
-    assert "thanks" in new and "It parses dates now." not in new
+    then, now = (message.content for message in script.requests[-1].messages)
+    assert then == system
+    assert (
+        now.index("does the parser handle dates")
+        < now.index('09:00: I said to Ben: "It parses dates now."')
+        < now.index("08:59: Ben says: thanks.")
+        < now.index("It is 09:30 on Monday, your first day in town. You are at the office.")
+    )
 
     with pytest.raises(ValueError):
         await agent.act(observation.model_copy(update={"agent": "Ben"}))
@@ -110,5 +120,6 @@ async def test_recall_mixes_working_context_relevant_memories_insights_and_skill
     assert "Lunch was noodles." in user and "Dan went home early." in user
     assert "Replies to messages can take a while." in user
     assert "Chloe pays" not in user and "Mornings" not in user
-    assert "Try ISO 8601 first." in system
-    assert "Rice at home." in system and "Rinse twice." not in system
+    assert "date-parsing: Parsing dates.\nTry ISO 8601 first." in user
+    assert "- cooking-rice: Rice at home.\n- date-parsing: Parsing dates." in system
+    assert "Rinse twice." not in system + user and "Try ISO" not in system

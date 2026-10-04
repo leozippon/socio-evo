@@ -1,12 +1,19 @@
 """The run loop: triggers dispatched in order, evolution at night, checkpoints.
 
 A day start opens the day in the environment, lets every agent plan, and expands into the
-day's slot triggers and its day-end trigger. A slot moves the agents as planned and plays a
-work session at every occupied work place and a conversation at every social place with
-company; nothing else costs a model call. A day end sends everyone home, holds the evening
-review, closes the day in the environment, hands every agent what it witnessed since its
-last decision, lets every agent evolve, schedules the next day and writes a checkpoint.
-Interventions change conditions or make announcements at their time.
+day's slot triggers and its day-end trigger. A slot moves the agents as planned, posts new jobs
+if it is one of the configured postings, and plays a work session at every occupied work place
+and a conversation at every social place with company; nothing else costs a model call. A day
+end sends everyone home, holds the evening ledger, closes the day in the environment, hands
+every agent what it witnessed since its last decision, lets every agent evolve, schedules the
+next day and writes a checkpoint. Interventions change conditions or make announcements at
+their time.
+
+Every decision is taken knowing the setting, what every resident knows of the town, which the
+runtime composes from the calendar, the places and the environment's rules. The jobs of a
+posting are drawn from the run's seed and the moment alone (see `Environment.post`), so the
+same seed posts the same jobs whatever the residents did; every other draw comes from the
+run's generator.
 """
 
 import asyncio
@@ -24,11 +31,11 @@ from core.agent import Agent, AgentSeed, CognitionConfig
 from core.agent.evolution import Evolver, History, Version
 from core.agent.evolution import Trigger as Cadence
 from core.environment import Environment, EnvironmentConfig, PlaceKind, TaskProvider
-from core.interaction import EventKind, day_of
+from core.interaction import EventKind, clock_of, day_of, time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMClient
 from infrastructure.storage import RunDirectory, RunStatus
-from runtime.scenes import Conversation, Planning, Review, Scene, WorkSession, play
+from runtime.scenes import Conversation, Planning, Review, Scene, WorkSession, play, situations
 from runtime.scheduler import Trigger, TriggerKind, TriggerQueue
 from runtime.simulation.config import SimulationConfig
 
@@ -74,6 +81,7 @@ class Simulation:
         day: int,
     ) -> None:
         self.directory = run
+        self.seed = run.read_manifest().seed
         self.config = setup.simulation
         self.env = env
         self.agents = agents
@@ -183,8 +191,10 @@ class Simulation:
         self._started = wall.perf_counter()
         self.env.start_day(time, self.rng)
         self._met = {agent: set() for agent in self.agents}
-        planning = Planning(self.env, f"day-{day:04d}/planning", list(self.agents), calendar, day)
-        await self._play([planning], time)
+        planning = Planning(
+            self.env, f"day-{day:04d}/planning", list(self.agents), calendar, start=time
+        )
+        await self._play([planning])
         for slot, start in calendar.slot_times(day):
             payload = {"slot": slot, "destinations": planning.destinations(slot)}
             self.queue.push(Trigger(time=start, kind=TriggerKind.SLOT, payload=payload))
@@ -192,13 +202,25 @@ class Simulation:
 
     async def _slot(self, time: int, payload: dict[str, JsonValue]) -> None:
         self._move(payload["destinations"], time)
+        if payload["slot"] in self.config.postings:
+            self.env.post(time, self.seed)
+        day, settings = day_of(time), self.config.scenes
+        prefix, ends = f"day-{day:04d}/{payload['slot']}/", self.config.calendar.slot_ends(day)
         scenes: list[Scene] = []
-        prefix, settings = f"day-{day_of(time):04d}/{payload['slot']}/", self.config.scenes
         for place in self.env.world.places.values():
             here = self.env.world.occupants(place.id)
             if place.kind is PlaceKind.WORK and here:
+                closing = place.closing(clock_of(time))
+                closes = closing is not None and time_at(day, closing) <= ends[payload["slot"]]
                 scene = WorkSession(
-                    self.env, prefix + place.id, place.id, here, settings.work_rounds
+                    self.env,
+                    prefix + place.id,
+                    place.id,
+                    here,
+                    start=time,
+                    until=time_at(day, closing) if closes else ends[payload["slot"]],
+                    rounds=settings.work_rounds,
+                    closes=closes,
                 )
             elif place.kind is PlaceKind.SOCIAL and len(here) > 1:
                 scene = Conversation(
@@ -206,15 +228,17 @@ class Simulation:
                     prefix + place.id,
                     place.id,
                     here,
-                    settings.conversation_turns,
-                    self.rng,
+                    start=time,
+                    step=settings.turn_minutes,
+                    max_turns=settings.conversation_turns,
+                    rng=self.rng,
                 )
             else:
                 continue
             scenes.append(scene)
             for agent in here:
                 self._met[agent].update(other for other in here if other != agent)
-        await self._play(scenes, time)
+        await self._play(scenes)
 
     async def _end_day(self, time: int) -> None:
         day = day_of(time)
@@ -225,7 +249,7 @@ class Simulation:
             if others
         }
         if met:
-            await self._play([Review(self.env, f"day-{day:04d}/review", met, day)], time)
+            await self._play([Review(self.env, f"day-{day:04d}/review", met, start=time)])
         self.env.end_day(time)
         for agent_id, agent in self.agents.items():
             agent.perceive(self.env.perceive(agent_id))
@@ -285,8 +309,13 @@ class Simulation:
             if moved and moved[0].kind is EventKind.ACTION_REJECTED:
                 self.env.move(agent, homes[agent], time=time)
 
-    async def _play(self, scenes: list[Scene], time: int) -> None:
-        await play(self.env, self.agents, scenes, time, self.config.scenes.turn_minutes, self.rng)
+    async def _play(self, scenes: list[Scene]) -> None:
+        await play(self.env, self.agents, scenes, self.rng, self._setting)
+
+    def _setting(self, agent: str) -> str:
+        """What `agent` knows of the town now."""
+        config = self.config
+        return situations.setting(self.env, config.calendar, config.postings, agent)
 
     async def _evolve(
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int

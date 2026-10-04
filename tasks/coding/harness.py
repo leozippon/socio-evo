@@ -2,13 +2,14 @@
 
 Run as a script by `tasks.coding.sandbox`, using only the standard library. Reads
 `{"source", "call", "limits"}` as JSON from stdin, applies the resource limits, points the
-standard streams at /dev/null, executes the solution, evaluates the call with the names the
+standard streams at /dev/null and writes an empty line to the original stdout, to say that the
+solution is about to run. Then it executes the solution, evaluates the call with the names the
 solution defines, and writes one JSON object as a line to the original stdout:
 `{"returned": <literal>}`, the returned value rebuilt from the built-in types of plain data and
 written as a Python literal; `{"raised": [<class names>], "error": <text>}` if the call raised;
 or `{"error": <text>}` if the solution failed to load or the returned value is not plain data.
 What the call should give never reaches this process. Anything written to stderr comes from this
-harness itself, never from the solution.
+harness itself before the empty line, never from the solution.
 """
 
 import json
@@ -28,6 +29,8 @@ def main() -> None:
     silence = os.open(os.devnull, os.O_RDWR)
     for stream in (0, 1, 2):
         os.dup2(silence, stream)
+    report.write("\n")
+    report.flush()
     report.write(json.dumps(_outcome(request["source"], request["call"])) + "\n")
     report.flush()
     os._exit(0)

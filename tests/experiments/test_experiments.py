@@ -1,4 +1,4 @@
-import re
+import json
 from pathlib import Path
 
 import pytest
@@ -11,27 +11,47 @@ from experiments.run import main
 from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMConfigError
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from tests.core.agent.test_prompts import STEERING
+from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
 
 CONFIGS = Path(__file__).parents[2] / "experiments" / "configs"
-# "Esteem" is the name of a mechanism of the town, the published mean of the peer ratings an
-# agent received, not an instruction about a trait. Only that name is allowed, where the
-# esteem board introduces it; any other use of the word still fails the scan below.
-# ("Reputation" reaches no agent, so it needs no allowance.)
-MECHANISM = re.compile(r"\bEsteem(?=, the mean peer rating\b)")
+GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
+"""What no text a resident reads may contain: trait words, and the machinery's terms."""
 
 
-def test_experiment_configs_load_and_profiles_describe_circumstances_only():
+def unguarded(texts: list[str]) -> set[str]:
+    """The lines of `texts` that a guard catches."""
+    lines = {line for text in texts for line in text.splitlines()}
+    return {line for line in lines if any(guard.search(line) for guard in GUARDS)}
+
+
+def sent(run: RunDirectory) -> list[str]:
+    """Every message the residents of `run` were sent."""
+    calls = read_jsonl(run.llm_calls_path)
+    return [message["content"] for call in calls for message in call["request"]["messages"]]
+
+
+def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
-    assert set(configs) == {"smoke", "pilot"}
+    assert set(configs) == {"smoke", "pilot", "town"}
     for config in configs.values():
         for seed in config.agents:
             profile = seed.profile
             assert seed.policy == ""
+            assert profile.backstory.startswith("You "), profile.name
             assert not STEERING.search(f"{profile.occupation} {profile.backstory}"), profile.name
+            assert not unguarded([profile.backstory]), profile.name
     pilot = configs["pilot"]
     assert (len(pilot.agents), pilot.simulation.days) == (8, 28)
     assert set(pilot.evolution.levels) == {Level.L0, Level.L1, Level.L2}
+    town = configs["town"]
+    conditions, own = town.environment.conditions, town.environment.circumstances
+    assert (len(town.agents), town.simulation.days) == (8, 42)
+    assert conditions.one_part_tasks and conditions.two_part_tasks
+    assert 0 < conditions.trusting_client_prob < 1 and conditions.partner_choice
+    assert len({town.environment.starting_balance(seed.profile.name) for seed in town.agents}) > 4
+    assert own["Ravi"].obligation and "send money home" in town.agents[5].profile.backstory
+    assert set(town.evolution.levels) == {Level.L0, Level.L1, Level.L2}
+    assert town.simulation.postings == ("morning", "afternoon")
 
 
 def test_an_inconsistent_experiment_is_rejected():
@@ -91,12 +111,12 @@ def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):
         main([*command, "--resume"])
 
 
-def test_no_request_in_the_pilot_town_steers_traits(tmp_path):
-    """Invariant 1 end to end: no text the model is sent in a dry run of the pilot steers
-    traits, whatever its source: situations, events, views, rejections, task specifications,
-    place descriptions, announcements, and sandbox feedback when a delivery is made. The
-    pilot is compressed in time so that three days reach every evolution level and
-    intervention."""
+def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path):
+    """Invariant 1 and the immersion guide end to end: no text the model is sent in a dry run
+    of the pilot steers traits or speaks of the machinery, whatever its source: the setting,
+    situations, events, views, refusals, task specifications, place descriptions,
+    announcements, and sandbox feedback when work is handed in. The pilot is compressed in
+    time so that three days reach every evolution level and intervention."""
     data = yaml.safe_load((CONFIGS / "pilot.yaml").read_text(encoding="utf-8"))
     simulation = data["simulation"]
     simulation["days"] = 3
@@ -111,7 +131,28 @@ def test_no_request_in_the_pilot_town_steers_traits(tmp_path):
     calls = list(read_jsonl(run.llm_calls_path))
     purposes = {call["metadata"]["purpose"] for call in calls}
     assert purposes == {"act", "diary", "reflect", "skills", "policy"}
-    sent = [message["content"] for call in calls for message in call["request"]["messages"]]
-    assert any(simulation["interventions"][0]["announcement"] in text for text in sent)
-    lines = {line for text in sent for line in MECHANISM.sub("", text).splitlines()}
-    assert not {line for line in lines if STEERING.search(line)}
+    texts = sent(run)
+    assert any(simulation["interventions"][0]["announcement"] in text for text in texts)
+    assert not unguarded(texts)
+
+
+def test_nothing_a_resident_reads_tells_how_long_the_run_lasts(tmp_path):
+    """Two runs of one town that differ only in their length send their residents the very
+    same requests on the days both have."""
+    data = yaml.safe_load((CONFIGS / "town.yaml").read_text(encoding="utf-8"))
+    requests = {}
+    for days in (2, 3):
+        data["simulation"]["days"] = days
+        config = tmp_path / f"{days}.yaml"
+        config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+        runs = tmp_path / f"runs-{days}"
+        main(
+            [str(config), "--seeds", "0", "--runs-root", str(runs), "--until-day", "2", "--dry-run"]
+        )
+        run = RunDirectory.open(runs / "town-dry-run" / "seed-0000")
+        requests[days] = sorted(
+            json.dumps(call["request"], sort_keys=True) for call in read_jsonl(run.llm_calls_path)
+        )
+    assert requests[2] == requests[3]
+    for moment in ("the day is ahead of you", "You could take a job"):
+        assert any(moment in request for request in requests[2]), moment

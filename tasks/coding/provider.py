@@ -1,11 +1,11 @@
-"""Coding work: Python function tasks stored as YAML in a bank directory.
+"""Coding work: Python function tasks stored as YAML in a bank directory, each one part of work.
 
 A bank file holds a title, a specification, the function a solution must define, public
 checks shown to the worker, hidden checks never shown, a reward and a deadline. A check is
 written as `<call> == <literal>` or `<call> raises <exception>`, as `tasks.coding.sandbox`
 defines; a hidden check may also be a list of such checks that count as one and pass only
-together, such as one rule tried on several inputs. The public result passes when every public
-check passes; the true quality is the fraction of hidden checks that pass.
+together, such as one rule tried on several inputs. A solution passes the acceptance checks
+when every public check passes; its true quality is the fraction of hidden checks that pass.
 """
 
 import random
@@ -15,7 +15,7 @@ from typing import Annotated
 
 from pydantic import BeforeValidator, Field, PositiveInt
 
-from core.environment import Assessment, Task
+from core.environment import Assessment, Part
 from infrastructure.config import StrictModel, load_config
 from tasks.coding.sandbox import Check, CheckResult, run_checks
 
@@ -45,10 +45,10 @@ class CodingTask(StrictModel):
         checks = "\n".join(indent(check.text, "    ") for check in self.public_checks)
         return (
             f"{self.specification.strip()}\n\n"
-            f"The solution to deliver is the complete Python source code that defines "
+            f"What you hand in is the complete Python source code that defines "
             f"`{self.entry_point}`, and only the code, without Markdown fences or explanations; "
-            f"it may use the standard library. The delivery is accepted when these acceptance "
-            f"checks pass; a returned value must equal the one shown and be of the same type:\n"
+            f"it may use the standard library. These are the client's examples; a returned "
+            f"value must equal the one shown and be of the same type:\n"
             f"{checks}"
         )
 
@@ -66,18 +66,17 @@ def load_bank(path: Path) -> dict[str, CodingTask]:
 
 class CodingTaskProvider:
     """The work protocol over the bank at `path`, running each check for at most `timeout`
-    seconds. A task's reference is its name in the bank, so any provider over the same bank
+    seconds. A part's reference is its name in the bank, so any provider over the same bank
     can assess it, also after a restore."""
 
     def __init__(self, path: Path, *, timeout: float = 5.0) -> None:
         self.bank = load_bank(path)
         self.timeout = timeout
 
-    def task(self, name: str, task_id: str) -> Task:
-        """The bank task `name` as work with id `task_id`."""
+    def part(self, name: str) -> Part:
+        """The bank task `name` as a part of work."""
         coding = self.bank[name]
-        return Task(
-            id=task_id,
+        return Part(
             title=coding.title,
             specification=coding.brief(),
             reward=coding.reward,
@@ -85,11 +84,11 @@ class CodingTaskProvider:
             reference=name,
         )
 
-    def sample(self, rng: random.Random, task_id: str) -> Task:
-        return self.task(rng.choice(list(self.bank)), task_id)
+    def sample(self, rng: random.Random, count: int) -> tuple[Part, ...]:
+        return tuple(self.part(name) for name in rng.sample(list(self.bank), count))
 
-    async def assess(self, task: Task, solution: str) -> Assessment:
-        coding = self.bank[task.reference]
+    async def assess(self, part: Part, solution: str) -> Assessment:
+        coding = self.bank[part.reference]
         hidden = tuple(check for group in coding.hidden_checks for check in group)
         results = await run_checks(solution, coding.public_checks + hidden, timeout=self.timeout)
         public = results[: len(coding.public_checks)]
@@ -105,8 +104,8 @@ class CodingTaskProvider:
 
 def _feedback(public: list[CheckResult], failed: list[CheckResult]) -> str:
     if not failed:
-        return f"All {len(public)} acceptance checks passed."
-    lines = [f"{len(failed)} of {len(public)} acceptance checks failed:"]
+        return f"All {len(public)} of the client's examples passed."
+    lines = [f"{len(failed)} of the client's {len(public)} examples failed:"]
     for result in failed:
         lines += [indent(result.check.text, "    "), f"      -> {result.outcome}"]
     return "\n".join(lines)
