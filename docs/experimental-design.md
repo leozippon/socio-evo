@@ -14,6 +14,8 @@ The design therefore tests three hypotheses.
 
 Nothing an agent reads tells it how to behave, and the environment never pays for a trait. Consequences reach an agent only through reality catching up with it and through what other agents then choose to do.
 
+Nor does anything it reads tell it that it is being run. In the first pilot more than half of the residents' private thoughts spoke of rounds, draws and "the system", and some of "the prompt" and "my persona": they were playing a part, and character formed while playing a part is not what this study is about. The town is therefore presented as a life being lived — in the resident's own second person, in the words of the town and never of the simulator, with memory as recollection and every rule given an in-world reason. [IMMERSION.md](IMMERSION.md) is the single source for that voice, a guard test enforces its vocabulary, and the share of private thoughts that speak of machinery is reported for every run.
+
 ## A town where trust is the economy
 
 The first society had work but no trust: every job was easy, nobody depended on anybody, and standing bought nothing. The second is built around four dilemmas, one for each trait, each with a cost now for the trait-consistent choice and a consequence later that arrives through other people.
