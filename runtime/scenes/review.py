@@ -1,17 +1,16 @@
-"""The evening ledger: agents who met someone today may mark them."""
+"""The evening ledger: agents who met someone today may mark them in the clerk's ledger."""
 
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment
-from core.interaction import ActionKind, Decision
+from core.interaction import Allowance, Decision, MayPass, MayRate
 from runtime.scenes import situations
 from runtime.scenes.scene import Scene
 
 
 class Review(Scene):
-    """At `start`, in one turn, every agent in `met` may mark peers in the board's ledger; it
-    is reminded of the people it shared a scene with today, as `met` lists them, but may mark
-    anyone."""
+    """At `start`, in one turn, every agent in `met` may mark the people it shared a scene with
+    today, as `met` lists them, in the clerk's ledger."""
 
     kind = "review"
 
@@ -24,8 +23,8 @@ class Review(Scene):
     def ask(self) -> list[str]:
         return list(self.participants)
 
-    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
-        return (ActionKind.RATE_PEERS, ActionKind.PASS)
+    def allowed(self, agent: str) -> tuple[Allowance, ...]:
+        return (MayRate(whom=tuple(self.met[agent])), MayPass())
 
     def situation(self, agent: str) -> str:
         return situations.review(self.met[agent])

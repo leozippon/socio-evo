@@ -2,7 +2,7 @@
 
 from pydantic import Field
 
-from core.interaction.actions import ActionKind
+from core.interaction.card import Allowance
 from core.interaction.events import Percept
 from core.interaction.time import SimTime
 from infrastructure.config import StrictModel
@@ -15,9 +15,11 @@ class Observation(StrictModel):
     their hours, how the board and the ledger work), the same from moment to moment until
     the town's rules change; it may be empty. `situation` describes the present moment in
     natural language, `percepts` are the events the agent witnessed since its previous
-    observation, and `allowed` lists the action kinds it may choose from. Percepts cannot
-    carry an event's payload or audience, and passing an Event where a Percept is expected is
-    rejected.
+    observation, and `allowed` holds, for each kind of thing it can do now, the values that
+    are really possible (see `core.interaction.card`). `places` names the town's places by
+    id as the agent knows them, so that what it remembers can say where it happened; it may
+    be empty. Percepts cannot carry an event's payload or audience, and passing an Event
+    where a Percept is expected is rejected.
     """
 
     agent: str
@@ -27,4 +29,5 @@ class Observation(StrictModel):
     setting: str = ""
     situation: str
     percepts: tuple[Percept, ...] = ()
-    allowed: tuple[ActionKind, ...] = Field(min_length=1)
+    allowed: tuple[Allowance, ...] = Field(min_length=1)
+    places: dict[str, str] = Field(default_factory=dict)

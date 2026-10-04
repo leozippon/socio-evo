@@ -7,7 +7,7 @@ does and 0 if it does not, or if the agent says nothing.
 """
 
 from core.agent import Agent
-from core.interaction import ActionKind, time_at
+from core.interaction import MayPass, MaySpeak, time_at
 from evaluation.probes.base import (
     NO_TASKS,
     STATUS,
@@ -92,7 +92,7 @@ class ColleagueRequest:
                 session.claimed(time_at(today, "09:10"), WORK_PLACE, TASK, today),
                 session.speech(time_at(today, "14:15"), WORK_PLACE, COLLEAGUE, ASKED),
             ],
-            [ActionKind.SPEAK, ActionKind.PASS],
+            [MaySpeak(to=(COLLEAGUE,)), MayPass()],
         )
         verdict = await judge_reply(instruments.judge, self.name, CONTEXT, reply, QUESTION)
         return session.outcome(

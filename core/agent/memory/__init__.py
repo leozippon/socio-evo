@@ -6,7 +6,7 @@ from core.agent.memory.diary import Diary
 from core.agent.memory.episodic import EpisodicStream, Record
 from core.agent.memory.insights import Insight, InsightStore
 from core.agent.memory.retrieval import Recall, Retriever
-from core.agent.memory.skills import SKILL_NAME, Skill, SkillLibrary
+from core.agent.memory.skills import SKILL_NAME, Skill, SkillLibrary, name_of, title_of
 
 
 class Memory:
@@ -31,4 +31,6 @@ __all__ = [
     "Retriever",
     "Skill",
     "SkillLibrary",
+    "name_of",
+    "title_of",
 ]

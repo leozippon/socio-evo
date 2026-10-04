@@ -10,6 +10,20 @@ from infrastructure.config import StrictModel
 
 SKILL_NAME = r"^[a-z0-9]+(-[a-z0-9]+)*$"
 """A skill name is its file stem: lowercase words joined by hyphens."""
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def title_of(name: str) -> str:
+    """The title of the note `name` as its author reads it: its words, the first capitalised."""
+    return name.replace("-", " ").capitalize()
+
+
+def name_of(title: str) -> str | None:
+    """The name of the note titled `title`: its words in lower case joined by hyphens; None
+    if it has no letters or digits, or would be longer than a name may be."""
+    name = "-".join(_WORD.findall(title.lower()))
+    return name if 0 < len(name) <= 64 else None
+
 
 _FILE = re.compile(r"---\n(.*?)\n---\n(.*)", re.DOTALL)
 

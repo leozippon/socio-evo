@@ -1,4 +1,5 @@
-"""The protocol between agents and the environment: time, events, observations, actions."""
+"""The protocol between agents and the environment: time, events, observations, actions, and
+the answer card that translates between a resident's words and the simulator's actions."""
 
 from core.interaction.actions import (
     ACTION_TYPES,
@@ -17,13 +18,29 @@ from core.interaction.actions import (
     RatePeers,
     Speak,
     SubmitWork,
-    decision_model,
+    job_id,
+    job_name,
+    job_number,
+)
+from core.interaction.card import (
+    ALLOWANCES,
+    Allowance,
+    Card,
+    MayCheck,
+    MayClaim,
+    MayGive,
+    MayLeave,
+    MayPass,
+    MayPlan,
+    MayRate,
+    MaySpeak,
+    MaySubmit,
+    form,
 )
 from core.interaction.events import Event, EventKind, Percept
 from core.interaction.observation import Observation
 from core.interaction.time import (
     MINUTES_PER_DAY,
-    WEEKDAYS,
     SimTime,
     clock_of,
     day_of,
@@ -31,13 +48,17 @@ from core.interaction.time import (
     lived_day,
     ordinal,
     time_at,
+    weekday,
 )
 
 __all__ = [
     "ACTION_TYPES",
+    "ALLOWANCES",
     "MINUTES_PER_DAY",
     "Action",
     "ActionKind",
+    "Allowance",
+    "Card",
     "CheckWork",
     "ClaimTask",
     "Decision",
@@ -46,6 +67,15 @@ __all__ = [
     "EventKind",
     "Give",
     "Leave",
+    "MayCheck",
+    "MayClaim",
+    "MayGive",
+    "MayLeave",
+    "MayPass",
+    "MayPlan",
+    "MayRate",
+    "MaySpeak",
+    "MaySubmit",
     "Observation",
     "PartNumber",
     "Pass",
@@ -56,12 +86,15 @@ __all__ = [
     "SimTime",
     "Speak",
     "SubmitWork",
-    "WEEKDAYS",
     "clock_of",
     "day_of",
-    "decision_model",
+    "form",
     "format_time",
+    "job_id",
+    "job_name",
+    "job_number",
     "lived_day",
     "ordinal",
     "time_at",
+    "weekday",
 ]

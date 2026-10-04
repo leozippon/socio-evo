@@ -41,12 +41,17 @@ WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", 
 """The days of the week; day 1 is a Monday."""
 
 
+def weekday(day: int) -> str:
+    """The day of the week of 1-based `day`."""
+    if day < 1:
+        raise ValueError(f"no day {day}")
+    return WEEKDAYS[(day - 1) % len(WEEKDAYS)]
+
+
 def lived_day(day: int) -> str:
     """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`; everyone
     arrived in town on day 1."""
-    if day < 1:
-        raise ValueError(f"no day {day}")
-    return f"{WEEKDAYS[(day - 1) % 7]}, your {ordinal(day)} day in town"
+    return f"{weekday(day)}, your {ordinal(day)} day in town"
 
 
 _FIRST = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")

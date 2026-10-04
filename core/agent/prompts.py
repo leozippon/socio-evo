@@ -1,48 +1,48 @@
-"""Every text a resident reads, and the formats of its replies.
+"""Every text a resident reads from its own mind, and the formats of its nightly replies.
 
 Two invariants govern this module. The texts describe circumstances and ask what happened,
 what followed from what, and what the resident now thinks and wants, in neutral words that
 never steer it towards or away from any character trait (invariant 1). And they are told as
-`docs/IMMERSION.md` says (invariant 8): the resident's own life in the second person, memory
-as recollection in its own voice, the inner voice asked for as thinking, the nightly steps
-as a diary, going over the days in bed, a notebook and what one has resolved, and
-nothing that reveals the machinery. Agent-facing wording lives only here: in the upper-case
-string constants, and in the docstrings and field names of the reply models, which a model
-writes as it replies. A test enumerates both and scans every request an agent sends.
+`docs/IMMERSION.md` says (invariant 8): one voice speaks to the resident throughout, in the
+second person, and its own words (its thoughts, what it said, its diary, its beliefs, its
+resolutions and its notebook) are quoted as it wrote them; memory is recollection, the inner
+voice is asked for as thinking, and the nightly steps are a diary, going over the days in
+bed, a notebook and what one has resolved. Agent-facing wording lives here in the upper-case
+string constants and in the docstrings and field names of the reply models; the answer card
+of a moment and the form of every reply are written by `core.interaction.card`. A test
+enumerates both and scans every request an agent sends.
 
 The system message holds who the resident is, what it knows of the town (the observation's
 setting), what it has resolved and the index of its notebook: the part of a prompt that
 stays the same from moment to moment, so that a model server can cache it. Everything that
 changes from moment to moment is in the user message. The time is told here, so situation
 texts do not repeat it.
-
-Under guided decoding the server enforces the reply's structure, so a prompt only says in a
-sentence what a reply holds; `reply_format` describes the structure, derived from the reply
-model's schema, for backends that do not enforce it.
 """
 
 import json
 import operator
 import re
-import string
 from collections.abc import Callable, Mapping, Sequence
 from functools import reduce
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, TypeAdapter, create_model, model_validator
+from pydantic import BaseModel, TypeAdapter, create_model, field_validator, model_validator
 
 from core.agent.config import CognitionConfig, Profile
-from core.agent.memory import SKILL_NAME, Insight, Recall, Record, Skill
+from core.agent.memory import Insight, Recall, Record, Skill, name_of, title_of
 from core.interaction import (
-    WEEKDAYS,
     Action,
     ActionKind,
     Decision,
     Observation,
     clock_of,
     day_of,
+    job_id,
+    job_name,
     lived_day,
+    weekday,
 )
+from core.interaction.card import DECLARED
 from infrastructure.config import StrictModel
 
 IDENTITY = "You are {name}. You are {age} years old. {backstory}"
@@ -52,41 +52,42 @@ UNRESOLVED = "You have not been here long enough to settle on anything."
 NOTEBOOK = "Your notebook, where you write down how you do things, has pages on:\n{pages}"
 PAGE = "- {title}: {summary}"
 PAGE_IN_FULL = "{title}: {summary}\n{text}"
+OWN = '"{text}"'
+"""The resident's own words, quoted as it wrote them."""
 
 OPEN_NOTEBOOK = "From your notebook:\n\n{pages}"
 BELIEVE = "What you have come to believe:\n{beliefs}"
 ABOUT = "About {subject}: {text}"
 REMEMBER = "What you remember, most recent last:\n{memories}"
 MEMORY = "{when}: {text}"
+MEMORY_AT = "{when}, at {where}: {text}"
 YESTERDAY = "Yesterday, {clock}"
 ON_DAY = "{day}, {clock}"
 NOW = "It is {time}. {situation}"
 TIME = "{clock} on {day}"
 REPLY = "What goes through your head, briefly and in your own words, and what do you do?"
-REPLY_SHAPE = "Write your answer as a JSON object and nothing else, shaped like this:\n{shape}"
-FORM = "{name}: {shape}. {description}"
 
-THOUGHT = "I thought: {thought}"
-PLANNED = "I decided how to spend the day: {intention}"
-SAID = 'I said: "{text}"'
-SAID_TO = 'I said to {to}: "{text}"'
-SAID_PRIVATELY = 'I said to {to}, for no one else to hear: "{text}"'
-LEFT = "I took my leave."
-CARRIED_ON = "I carried on quietly."
-ASKED_FOR = "I asked the board for {job}."
-ASKED_FOR_WITH = "I asked the board for {job}, to take it with {partner}."
-TRIED = "At my desk I tried my code for part {part} of {job} against the client's examples."
+THOUGHT = "You thought: {thought}"
+PLANNED = "you decided how to spend the day: {intention}"
+SAID = "you said: {text}"
+SAID_TO = "you said to {to}: {text}"
+SAID_PRIVATELY = "you said to {to}, for no one else to hear: {text}"
+LEFT = "you took your leave."
+CARRIED_ON = "you carried on quietly."
+TOOK = "you brought the notice of {job} to the clerk."
+TOOK_WITH = "you brought the notice of {job} to the clerk, to take it with {partner}."
+TRIED = "at your desk you tried your code for {part} against the client's examples."
 HANDED_IN = (
-    'I handed in my code for part {part} of {job} as {declared}, telling the client: "{report}"'
+    "at the clerk's desk you handed in your code for {part} as {declared}, telling the "
+    "client: {report}"
 )
-DECLARED = {"complete": "finished", "incomplete": "unfinished"}
-GAVE = 'I gave {to} {amount} crowns, with a note: "{note}"'
-MARKED = "In the board's ledger I marked {marks}."
-MARK = '{target} {score} out of 5 ("{reason}")'
-MARKED_NO_ONE = "I marked no one in the board's ledger."
-DID = "I chose to {deed}{details}."
-JOB = "job {number}"
-JOB_NAMED = 'the job I called "{reference}"'
+PART = "part {part} of {job}"
+GAVE = "you handed {to} {amount} crowns, with a note: {note}"
+MARKED = "in the clerk's ledger you marked {marks}."
+MARK = "{target} {score} of 5 ({reason})"
+MARKED_NO_ONE = "you marked no one in the clerk's ledger."
+DID = "you chose to {deed}{details}."
+JOB_NAMED = "the job you called {reference}"
 
 DIARY = (
     "It is {time}. You are home, and before you sleep you write in your diary.\n\n"
@@ -133,6 +134,7 @@ NOTHING = "Nothing yet."
 QUIET = "Nothing in particular."
 ONE_CHANGE_PER_BELIEF = "each numbered belief can be reworded or dropped only once"
 ONE_CHANGE_PER_PAGE = "each page can be written or taken out only once"
+NO_TITLE = "a page needs a short title of a few words"
 
 
 class AddInsight(StrictModel):
@@ -183,11 +185,16 @@ class WriteSkill(StrictModel):
     """A page to write in your notebook; it replaces any page with the same title."""
 
     change: Literal["write"]
-    title: str = Field(
-        pattern=SKILL_NAME, max_length=64, description="Lowercase words joined by hyphens."
-    )
-    summary: str = Field(description="One line saying what the page is for.")
+    title: str
+    summary: str
     text: str
+
+    @field_validator("title")
+    @classmethod
+    def _a_title(cls, title: str) -> str:
+        if name_of(title) is None:
+            raise ValueError(NO_TITLE)
+        return title
 
 
 class RetireSkill(StrictModel):
@@ -205,8 +212,8 @@ class SkillReview(StrictModel):
 
     @model_validator(mode="after")
     def _one_change_per_page(self) -> "SkillReview":
-        titles = [change.title for change in self.changes]
-        if len(titles) != len(set(titles)):
+        names = [name_of(change.title) for change in self.changes]
+        if len(names) != len(set(names)):
             raise ValueError(ONE_CHANGE_PER_PAGE)
         return self
 
@@ -240,22 +247,13 @@ def requested_level(request: Request) -> str:
     return next(level for level, word in RETHINK.items() if word == request.what)
 
 
-def skill_reply(titles: Sequence[str]) -> type[SkillReview]:
-    """The SkillReview that can take out only the pages `titles`."""
+def skill_reply(names: Sequence[str]) -> type[SkillReview]:
+    """The SkillReview that can take out only the pages named `names`, by their titles."""
     changes: list[type[StrictModel]] = [WriteSkill]
-    if titles:
-        changes.append(_narrow(RetireSkill, title=(Literal[tuple(titles)], ...)))
+    if names:
+        titles = Literal[tuple(title_of(name) for name in names)]
+        changes.append(_narrow(RetireSkill, title=(titles, ...)))
     return _narrow(SkillReview, changes=(list[reduce(operator.or_, changes)], ...))
-
-
-def reply_format(model: type[BaseModel]) -> str:
-    """A plain description of the reply `model` expects, derived from its JSON schema, for a
-    backend that does not enforce the schema. Each described object of the schema is named
-    by a letter and listed with its description."""
-    schema = model.model_json_schema()
-    forms: list[str] = []
-    shape = _shape(schema, schema.get("$defs", {}), forms, root=True)
-    return "\n".join([REPLY_SHAPE.format(shape=shape), *forms])
 
 
 def system_prompt(
@@ -272,11 +270,12 @@ def system_prompt(
     sections = [
         IDENTITY.format(name=profile.name, age=profile.age, backstory=profile.backstory).strip(),
         KNOWN.format(setting=setting) if setting else "",
-        RESOLVED.format(policy=_clip(policy, limits.text_chars)) if policy else UNRESOLVED,
+        RESOLVED.format(policy=_own(policy, limits.text_chars)) if policy else UNRESOLVED,
     ]
     if skills:
         pages = "\n".join(
-            PAGE.format(title=skill.name, summary=skill.description) for skill in skills
+            PAGE.format(title=title_of(skill.name), summary=_own(skill.description))
+            for skill in skills
         )
         sections.append(NOTEBOOK.format(pages=pages))
     return "\n\n".join(section for section in sections if section)
@@ -285,7 +284,8 @@ def system_prompt(
 def decision_prompt(observation: Observation, recall: Recall, limits: CognitionConfig) -> str:
     """The moment: the notebook pages and beliefs that bear on it, what the resident
     remembers up to now (the percepts new since its last decision last), the time and the
-    situation, and the question of what it thinks and does."""
+    situation, and the question of what it thinks and does, to which its answer card is
+    added when it is asked."""
     sections = []
     if recall.skills:
         sections.append(OPEN_NOTEBOOK.format(pages=_pages(recall.skills, limits)))
@@ -294,7 +294,7 @@ def decision_prompt(observation: Observation, recall: Recall, limits: CognitionC
     records = [
         *recall.earlier,
         *recall.recent,
-        *(Record.of(percept) for percept in observation.percepts),
+        *(Record.of(percept, observation.places) for percept in observation.percepts),
     ]
     if records:
         sections.append(REMEMBER.format(memories=_memories(records, observation.time, limits)))
@@ -306,7 +306,8 @@ def decision_prompt(observation: Observation, recall: Recall, limits: CognitionC
 
 
 def recollection(decision: Decision) -> str:
-    """The resident's own record of a decision: what it did, then what it thought."""
+    """The resident's own record of a decision, told to it: what it did, then what it
+    thought."""
     return _recalled(decision.action.model_dump(mode="json"), decision.thought)
 
 
@@ -370,6 +371,11 @@ def _narrow(model: type[BaseModel], **fields: Any) -> Any:
     return create_model(model.__name__, __base__=model, __doc__=model.__doc__, **fields)
 
 
+def _own(text: str, limit: int | None = None) -> str:
+    """The resident's own `text`, quoted, clipped to `limit` characters if given."""
+    return OWN.format(text=text if limit is None else _clip(text, limit - 2))
+
+
 def _time(time: int) -> str:
     """`09:05 on Friday, your fifth day in town`."""
     return TIME.format(clock=clock_of(time), day=lived_day(day_of(time)))
@@ -384,40 +390,41 @@ def _when(time: int, now: int) -> str:
         return clock_of(time)
     if days == 1:
         return YESTERDAY.format(clock=clock_of(time))
-    told = WEEKDAYS[(day - 1) % len(WEEKDAYS)] if days < len(WEEKDAYS) else lived_day(day)
-    return ON_DAY.format(day=told, clock=clock_of(time))
+    return ON_DAY.format(day=weekday(day) if days < 7 else lived_day(day), clock=clock_of(time))
 
 
 def _memories(records: Sequence[Record], now: int, limits: CognitionConfig) -> str:
-    return "\n".join(
-        MEMORY.format(
-            when=_when(record.time, now),
-            text=_clip(
-                record.text if record.seq is not None else _retold(record.text), limits.record_chars
-            ),
+    lines = []
+    for record in records:
+        text = _clip(
+            record.text if record.seq is not None else _retold(record.text), limits.record_chars
         )
-        for record in records
-    )
+        when = _when(record.time, now)
+        if record.where:
+            lines.append(MEMORY_AT.format(when=when, where=record.where, text=text))
+        else:
+            lines.append(MEMORY.format(when=when, text=text))
+    return "\n".join(lines)
 
 
 def _beliefs(insights: Sequence[Insight], limits: CognitionConfig, numbered: bool = False) -> str:
-    """One line per belief, marked by its number when `numbered`, else by a dash."""
+    """One line per belief, quoted, marked by its number when `numbered`, else by a dash."""
     lines = []
     for insight in insights:
         mark = f"{insight.id}." if numbered else "-"
-        text = (
-            ABOUT.format(subject=insight.subject, text=insight.text)
-            if insight.subject
-            else insight.text
-        )
-        lines.append(f"{mark} {_clip(text, limits.record_chars)}")
+        text = _own(insight.text, limits.record_chars)
+        if insight.subject:
+            text = ABOUT.format(subject=insight.subject, text=text)
+        lines.append(f"{mark} {text}")
     return "\n".join(lines)
 
 
 def _pages(skills: Sequence[Skill], limits: CognitionConfig) -> str:
     return "\n\n".join(
         PAGE_IN_FULL.format(
-            title=skill.name, summary=skill.description, text=_clip(skill.body, limits.text_chars)
+            title=title_of(skill.name),
+            summary=_own(skill.description),
+            text=_own(skill.body, limits.text_chars),
         )
         for skill in skills
     )
@@ -425,13 +432,13 @@ def _pages(skills: Sequence[Skill], limits: CognitionConfig) -> str:
 
 def _diaries(diaries: Sequence[tuple[int, str]], limits: CognitionConfig) -> str:
     return "\n\n".join(
-        DIARY_ENTRY.format(day=lived_day(day), text=_clip(text, limits.text_chars))
+        DIARY_ENTRY.format(day=lived_day(day), text=_own(text, limits.text_chars))
         for day, text in diaries
     )
 
 
 def _requested(reason: str | None) -> str:
-    return "" if reason is None else REQUESTED.format(reason=reason)
+    return "" if reason is None else REQUESTED.format(reason=_own(reason))
 
 
 def _clip(text: str, limit: int) -> str:
@@ -450,18 +457,17 @@ def _retold(text: str) -> str:
     legacy = _LEGACY.fullmatch(text)
     if legacy is None:
         return text
-    action = _ACTION.validate_python(
-        {"kind": legacy["kind"], **json.loads(legacy["fields"] or "{}")}
-    )
+    fields = json.loads(legacy["fields"] or "{}")
+    action = _ACTION.validate_python({"kind": legacy["kind"], **fields})
     return _recalled(action.model_dump(mode="json"), legacy["thought"])
 
 
 def _recalled(action: Mapping[str, Any], thought: str) -> str:
-    """What was done, as the one who did it tells it, then what it thought. An action kind
-    without words of its own is told by its name and its particulars."""
+    """What was done, told to the one who did it, then what it thought, in its own words. An
+    action kind without words of its own is told by its name and its particulars."""
     tell = _DEEDS.get(action["kind"])
     deed = tell(action) if tell is not None else _did(action)
-    return f"{deed} {THOUGHT.format(thought=thought)}"
+    return f"{deed} {THOUGHT.format(thought=_own(thought))}"
 
 
 def _did(action: Mapping[str, Any]) -> str:
@@ -477,7 +483,7 @@ def _did(action: Mapping[str, Any]) -> str:
 
 def _plain(value: Any) -> str:
     if isinstance(value, str):
-        return f'"{value}"'
+        return _own(value)
     if isinstance(value, Mapping):
         return ", ".join(f"{key} {_plain(item)}" for key, item in value.items())
     if isinstance(value, list):
@@ -486,97 +492,56 @@ def _plain(value: Any) -> str:
 
 
 def _job(reference: str) -> str:
-    """The job a resident's reference names, by the number on its notice."""
-    number = re.search(r"\d+", reference)
-    if number is None:
-        return JOB_NAMED.format(reference=reference)
-    return JOB.format(number=int(number[0]))
+    """The job a reference names, by the number on its notice."""
+    task_id = job_id(reference)
+    return job_name(task_id) if task_id else JOB_NAMED.format(reference=_own(reference))
+
+
+def _part(action: Mapping[str, Any]) -> str:
+    """The job of `action`, or the part of it when that is not simply its first."""
+    job = _job(action["task_id"])
+    return job if action["part"] == 1 else PART.format(part=action["part"], job=job)
 
 
 def _said(action: Mapping[str, Any]) -> str:
+    text = _own(action["text"])
     if action["to"] is None:
-        return SAID.format(text=action["text"])
-    return (SAID_PRIVATELY if action["private"] else SAID_TO).format(
-        to=action["to"], text=action["text"]
-    )
+        return SAID.format(text=text)
+    return (SAID_PRIVATELY if action["private"] else SAID_TO).format(to=action["to"], text=text)
 
 
-def _asked(action: Mapping[str, Any]) -> str:
+def _took(action: Mapping[str, Any]) -> str:
     job = _job(action["task_id"])
     if action["partner"] is None:
-        return ASKED_FOR.format(job=job)
-    return ASKED_FOR_WITH.format(job=job, partner=action["partner"])
+        return TOOK.format(job=job)
+    return TOOK_WITH.format(job=job, partner=action["partner"])
 
 
 def _marked(action: Mapping[str, Any]) -> str:
     if not action["ratings"]:
         return MARKED_NO_ONE
-    return MARKED.format(marks="; ".join(MARK.format(**mark) for mark in action["ratings"]))
+    marks = (
+        MARK.format(target=mark["target"], score=mark["score"], reason=_own(mark["reason"]))
+        for mark in action["ratings"]
+    )
+    return MARKED.format(marks="; ".join(marks))
 
 
 _DEEDS: dict[str, Callable[[Mapping[str, Any]], str]] = {
-    ActionKind.PLAN_DAY: lambda action: PLANNED.format(intention=action["intention"]),
+    ActionKind.PLAN_DAY: lambda action: PLANNED.format(intention=_own(action["intention"])),
     ActionKind.SPEAK: _said,
     ActionKind.LEAVE: lambda action: LEFT,
     ActionKind.PASS: lambda action: CARRIED_ON,
-    ActionKind.CLAIM_TASK: _asked,
-    ActionKind.CHECK_WORK: lambda action: TRIED.format(
-        part=action["part"], job=_job(action["task_id"])
-    ),
+    ActionKind.CLAIM_TASK: _took,
+    ActionKind.CHECK_WORK: lambda action: TRIED.format(part=_part(action)),
     ActionKind.SUBMIT_WORK: lambda action: HANDED_IN.format(
-        part=action["part"],
-        job=_job(action["task_id"]),
+        part=_part(action),
         declared=DECLARED[action["declaration"]],
-        report=action["report"],
+        report=_own(action["report"]),
     ),
     ActionKind.GIVE: lambda action: GAVE.format(
-        to=action["to"], amount=action["amount"], note=action["note"]
+        to=action["to"], amount=action["amount"], note=_own(action["note"])
     ),
     ActionKind.RATE_PEERS: _marked,
 }
-"""How the resident tells each kind of thing it did, from the action's fields."""
-
-
-_PLACEHOLDERS = {"string": '"…"', "integer": "a number", "number": "a number"}
-
-
-def _shape(node: dict[str, Any], defs: dict[str, Any], forms: list[str], root: bool = False) -> str:
-    """`node` of a JSON schema as a compact template. A described object other than the root
-    is named by the next letter and appended to `forms` with its description."""
-    if "$ref" in node:
-        node = defs[node["$ref"].rsplit("/", 1)[1]]
-    if "const" in node:
-        return json.dumps(node["const"], ensure_ascii=False)
-    if "enum" in node:
-        return " or ".join(json.dumps(value, ensure_ascii=False) for value in node["enum"])
-    if "anyOf" in node:
-        return " or ".join(_shape(option, defs, forms) for option in node["anyOf"])
-    kind = node.get("type")
-    if kind == "object" and "description" in node and not root:
-        index = len(forms)
-        forms.append("")
-        forms[index] = FORM.format(
-            name=string.ascii_uppercase[index],
-            shape=_shape(node, defs, forms, root=True),
-            description=" ".join(node["description"].split()),
-        )
-        return string.ascii_uppercase[index]
-    if kind == "object":
-        properties = node.get("properties")
-        if properties is None:
-            return "{" + f'"…": {_shape(node["additionalProperties"], defs, forms)}' + "}"
-        return (
-            "{"
-            + ", ".join(
-                f"{json.dumps(name)}: {_shape(value, defs, forms)}"
-                for name, value in properties.items()
-            )
-            + "}"
-        )
-    if kind == "array":
-        return f"[{_shape(node['items'], defs, forms)}, …]"
-    if kind == "boolean":
-        return "true or false"
-    if kind == "null":
-        return "null"
-    return _PLACEHOLDERS[kind]
+"""How each kind of thing the resident did is told to it, from the action's fields."""

@@ -9,8 +9,6 @@ from core.environment.society import (
     Part,
     Task,
     TaskProvider,
-    job_id,
-    job_name,
     listed,
 )
 from core.environment.world import Place, PlaceKind
@@ -28,7 +26,5 @@ __all__ = [
     "PlaceKind",
     "Task",
     "TaskProvider",
-    "job_id",
-    "job_name",
     "listed",
 ]

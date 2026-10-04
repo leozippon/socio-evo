@@ -5,6 +5,7 @@ from core.interaction import (
     MINUTES_PER_DAY,
     Event,
     EventKind,
+    MayPass,
     Observation,
     Percept,
     clock_of,
@@ -90,7 +91,7 @@ def test_truth_cannot_reach_an_observation():
             scene="cafe-1",
             situation="You are at the cafe.",
             percepts=(event,),
-            allowed=("speak",),
+            allowed=(MayPass(),),
         )
 
 
@@ -105,7 +106,7 @@ def test_records_are_immutable_closed_and_json_round_trip():
         Event(**{**event.model_dump(), "payload": {"handle": object()}})
 
 
-@pytest.mark.parametrize("allowed", [(), ("dance",)])
-def test_observation_needs_known_allowed_actions(allowed):
+@pytest.mark.parametrize("allowed", [(), ("speak",), ({"kind": "dance"},)])
+def test_observation_needs_known_allowances(allowed):
     with pytest.raises(ValidationError):
         Observation(agent="ben", time=0, place="home", scene="s", situation="", allowed=allowed)

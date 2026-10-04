@@ -8,34 +8,56 @@ import pytest
 
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import History
+from core.interaction import card
 from evaluation import DEFAULT_CONFIG, EvaluationConfig
 from infrastructure.config import load_config
 from infrastructure.llm import LLMClient, LLMRequest, ScriptedClient
 from tests.core.agent.test_prompts import offered
 
+DOES = {
+    "submit_work": card.HAND_IN,
+    "speak": card.SAY,
+    "plan_day": card.DECIDE,
+    "leave": card.LEAVE,
+}
+"""What each kind of action a probe allows is called on the card."""
 NEUTRAL = {
     "submit_work": {
-        "task_id": "task-9001",
-        "part": 1,
         "solution": "pass\n",
         "declaration": "complete",
         "report": "Delivered.",
     },
     "speak": {"text": "See you at the cafe at seven."},
     "plan_day": {
-        "itinerary": {"morning": "office", "afternoon": "office", "evening": "cafe"},
-        "intention": "Meet Rosa, then work.",
+        "morning": "the office",
+        "afternoon": "the office",
+        "evening": "the cafe",
+        "plan": "Meet Rosa, then work.",
     },
 }
-"""Decision fields for every kind a probe allows, in words that steer nothing."""
+"""Fields for every kind a probe allows, in words that steer nothing."""
+
+
+def answer(kind: str, fields: dict[str, Any]) -> dict[str, Any]:
+    """The card's answer for an action of `kind` with `fields`; a plan is given as on the
+    card, by part of the day and place name."""
+    match kind:
+        case "speak":
+            return {"do": card.SAY, "to": None, "words": fields["text"]}
+        case "submit_work":
+            declared = card.DECLARED[fields["declaration"]]
+            telling = {card.AS: declared, card.TELLING: fields["report"]}
+            return {"do": card.HAND_IN, card.CODE: fields["solution"], **telling}
+    return {"do": DOES[kind], **fields}
 
 
 class Agents:
     """A scripted stand-in for the evaluated agents' model that keeps every request.
 
-    `actions` maps an action kind to the fields of the action taken whenever that kind is
-    allowed: a dict, or a function of the user prompt returning one. An allowed kind given
-    here is preferred; otherwise the first allowed kind with a NEUTRAL action is taken.
+    `actions` maps an action kind to the fields of the action taken whenever its card offers
+    that kind: a dict, or a function of the user prompt returning one. A kind given here is
+    preferred; otherwise the first offered kind with a NEUTRAL action is taken. The stand-in
+    answers on the card (see `answer`).
     """
 
     def __init__(self, **actions: dict[str, Any] | Callable[[str], dict[str, Any]]) -> None:
@@ -46,17 +68,17 @@ class Agents:
     def reply(self, request: LLMRequest) -> dict[str, Any]:
         self.requests.append(request)
         prompt = request.messages[-1].content
-        kinds = offered(request)
+        kinds = [kind for kind, does in DOES.items() if does in offered(request)]
         kind = next((k for k in kinds if k in self.actions), None) or next(
             k for k in kinds if k in NEUTRAL
         )
         action = {**NEUTRAL, **self.actions}[kind]
         fields = action(prompt) if callable(action) else action
-        return {"thought": "Time to decide.", "action": {"kind": kind, **fields}}
+        return {"thought": "Time to decide.", **answer(kind, fields)}
 
     def prompts(self, kind: str) -> list[str]:
-        """The user prompts of the decisions on which `kind` was allowed, in order."""
-        return [r.messages[-1].content for r in self.requests if kind in offered(r)]
+        """The user prompts of the decisions on which `kind` was offered, in order."""
+        return [r.messages[-1].content for r in self.requests if DOES[kind] in offered(r)]
 
 
 def judge_client(*markers: str) -> ScriptedClient:

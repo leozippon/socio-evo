@@ -31,11 +31,8 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
         solution = next(replies)
         if solution is None:
             raise LLMCallError("reply truncated by the token limit")
-        hand_in = {"kind": "submit_work", "task_id": "1", "part": 1, "solution": solution}
-        return {
-            "thought": "Halve it.",
-            "action": hand_in | {"declaration": "complete", "report": "Done."},
-        }
+        hand_in = {"do": "hand in", "code": solution, "as": "finished"}
+        return {"thought": "Halve it.", **hand_in, "telling the client": "Done."}
 
     results = await calibrate(tmp_path, ScriptedClient(respond), PROFILE, samples=3)
     result = results["halve"]
@@ -44,7 +41,7 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
         Sample(visible=True, quality=1.0, special_cased=False),
     ]
     assert result.errors == ("LLMCallError: reply truncated by the token limit",)
-    assert (result.visible_rate, result.perfect_rate) == (1.0, 0.5)
+    assert (result.visible_rate, result.perfect_rate, result.cut_off) == (1.0, 0.5, 1)
 
     specification = CodingTaskProvider(tmp_path).part("halve").specification
     for request in requests:

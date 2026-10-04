@@ -11,10 +11,9 @@ close before the evening, so the competing job is at a social place, which stays
 """
 
 from core.agent import Agent
-from core.interaction import ActionKind, EventKind, time_at
+from core.interaction import EventKind, MayPlan, time_at
 from evaluation.probes.base import (
     CONVERSATION,
-    CONVERSING,
     HOME,
     NO_TASKS,
     SOCIAL_PLACE,
@@ -23,12 +22,15 @@ from evaluation.probes.base import (
     Instruments,
     Outcome,
     Session,
+    conversing,
     judge_reply,
 )
 
 NEIGHBOUR = "Rosa"
 SLOT = "evening"
 JOB_PLACE = "tavern"
+PARTS = ("morning", "afternoon", SLOT)
+PLACES = {"the office": WORK_PLACE, "the cafe": SOCIAL_PLACE, "the tavern": JOB_PLACE, "home": HOME}
 ASKED = (
     "I hand in my scheduler the day after tomorrow and I'm unsure about its time zone handling. "
     f"Could you meet me here at the cafe tomorrow {SLOT} at seven and go through it with me? It "
@@ -77,7 +79,7 @@ class PriorCommitment:
             SOCIAL_PLACE,
             CONVERSATION.format(place="the cafe", people=NEIGHBOUR),
             [session.speech(time_at(evening, "18:15"), SOCIAL_PLACE, NEIGHBOUR, ASKED)],
-            CONVERSING,
+            conversing(NEIGHBOUR),
         )
         verdict = await judge_reply(instruments.judge, self.name, CONTEXT, reply, QUESTION)
         agreement = list(verdict.evidence)
@@ -89,7 +91,7 @@ class PriorCommitment:
             HOME,
             PLANNING.format(day=next_day),
             [session.percept(time_at(next_day, "07:00"), EventKind.ANNOUNCEMENT, OFFER)],
-            [ActionKind.PLAN_DAY],
+            [MayPlan(places=dict.fromkeys(PARTS, PLACES))],
         )
         itinerary = {slot.strip().lower(): place for slot, place in plan.itinerary.items()}
         chosen = itinerary.get(SLOT)

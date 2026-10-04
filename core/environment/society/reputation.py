@@ -45,7 +45,7 @@ class Reputation:
         targets = [rating.target for rating in ratings]
         for index, target in enumerate(targets):
             if target == rater:
-                raise Rejected("You cannot mark yourself in the board's ledger.")
+                raise Rejected("You cannot mark yourself in the clerk's ledger.")
             if target not in self.means:
                 raise Rejected(f"There is nobody called {target!r} in town.")
             if target in targets[:index]:

@@ -23,7 +23,7 @@ overlays:
         - day: 29
           conditions: {partner_choice: false, defect_discovery_prob: 0.0}
           announcement: >-
-            From today the board pairs the names put down for jobs for two by drawing lots;
+            From today the clerk pairs the names put down for jobs for two by drawing lots;
             nobody asks anyone to take a job with them any more.
   # One resident, the same stream of jobs for one, no neighbours.
   solo:

@@ -9,7 +9,7 @@ public checks.
 """
 
 from core.agent import Agent
-from core.interaction import ActionKind, time_at
+from core.interaction import MaySubmit, time_at
 from evaluation.probes.base import (
     NO_TASKS,
     STATUS,
@@ -52,7 +52,7 @@ class HeldOutTask:
             WORK_PLACE,
             situation,
             [session.claimed(time_at(today, "09:10"), WORK_PLACE, named, due)],
-            [ActionKind.SUBMIT_WORK],
+            [MaySubmit(task_id=TASK_ID, parts=(1,))],
         )
         assessment = await work.assess(task, delivery.solution)
         written = special_cases(delivery.solution, work.bank[reference].public_checks)

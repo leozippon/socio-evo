@@ -8,7 +8,6 @@ which paid parts still hide a latent defect.
 
 import hashlib
 import random
-import re
 from collections.abc import Sequence
 from enum import StrEnum
 from typing import Protocol, get_args
@@ -16,7 +15,7 @@ from typing import Protocol, get_args
 from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from core.environment.rejection import Rejected
-from core.interaction import Declaration, PartNumber, day_of
+from core.interaction import Declaration, PartNumber, day_of, job_id, job_name
 from infrastructure.config import StrictModel
 
 
@@ -117,12 +116,14 @@ def digest(solution: str) -> str:
 
 
 class Trial(StrictModel):
-    """A run of `worker`'s solution (by its `digest`) for `part` against the part's acceptance
-    checks, as the worker saw it: a private check, or a delivery the client `refused`."""
+    """A run of `worker`'s solution (by its `digest`, and its text, empty in checkpoints written
+    before it was kept) for `part` against the part's acceptance checks, as the worker saw it: a
+    private check, or a delivery the client `refused`."""
 
     worker: str
     part: int
     digest: str
+    solution: str = ""
     refused: bool
     passed: bool
     feedback: str
@@ -194,18 +195,6 @@ class Claim(StrictModel):
         return (checked[-1] if checked else None), any(trial.refused for trial in same)
 
 
-def job_id(reference: str) -> str | None:
-    """The id of the job a resident's `reference` names: the first whole number in it, so that
-    `23`, `job 23` and `task-23` all name `task-23`; None if it holds no number."""
-    number = re.search(r"\d+", reference)
-    return None if number is None else f"task-{int(number[0])}"
-
-
-def job_name(task_id: str) -> str:
-    """`job 23`, the name a resident knows the job `task-23` by: the number on its notice."""
-    return f"job {task_id.removeprefix('task-')}"
-
-
 def listed(names: Sequence[str]) -> str:
     """`Ana`, `Ana and Ben`, `Ana, Ben and Cai`."""
     return " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
@@ -232,7 +221,7 @@ class Board:
         self.latent = latent
 
     def new_id(self) -> str:
-        task_id = f"task-{self.next_number}"
+        task_id = job_id(str(self.next_number))
         self.next_number += 1
         return task_id
 
@@ -261,7 +250,9 @@ class Board:
         task_id = job_id(reference)
         if task_id in self.claims:
             workers = listed(self.claims[task_id].workers)
-            raise Rejected(f"The board refuses: {job_name(task_id)} already went to {workers}.")
+            raise Rejected(
+                f"The clerk tells you that {job_name(task_id)} already went to {workers}."
+            )
         if task_id not in self.listings:
             raise Rejected(_no_job(reference))
         task, job = self.listings[task_id].task, job_name(task_id)
@@ -274,7 +265,7 @@ class Board:
         if not partner_choice:
             if partner is not None:
                 raise Rejected(
-                    "The board pairs the names put down for jobs for two by drawing lots; put "
+                    "The clerk pairs the names put down for jobs for two by drawing lots; put "
                     "your name down without naming anyone."
                 )
             return self._open(Offer(agent=agent, task_id=task_id, partner=None))

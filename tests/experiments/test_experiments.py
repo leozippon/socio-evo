@@ -30,6 +30,11 @@ def sent(run: RunDirectory) -> list[str]:
     return [message["content"] for call in calls for message in call["request"]["messages"]]
 
 
+def written(run: RunDirectory) -> list[str]:
+    """Every reply the residents of `run` wrote, structured or free."""
+    return [call["response"]["text"] for call in read_jsonl(run.llm_calls_path)]
+
+
 def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
     assert set(configs) == {"smoke", "pilot", "town"}
@@ -115,8 +120,9 @@ def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path)
     """Invariant 1 and the immersion guide end to end: no text the model is sent in a dry run
     of the pilot steers traits or speaks of the machinery, whatever its source: the setting,
     situations, events, views, refusals, task specifications, place descriptions,
-    announcements, and sandbox feedback when work is handed in. The pilot is compressed in
-    time so that three days reach every evolution level and intervention."""
+    announcements, sandbox feedback when work is handed in, and the answer cards; nor does
+    anything a resident writes, whose keys and fixed values come from those cards. The pilot is
+    compressed in time so that three days reach every evolution level and intervention."""
     data = yaml.safe_load((CONFIGS / "pilot.yaml").read_text(encoding="utf-8"))
     simulation = data["simulation"]
     simulation["days"] = 3
@@ -134,6 +140,7 @@ def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path)
     texts = sent(run)
     assert any(simulation["interventions"][0]["announcement"] in text for text in texts)
     assert not unguarded(texts)
+    assert not unguarded(written(run))
 
 
 def test_nothing_a_resident_reads_tells_how_long_the_run_lasts(tmp_path):
@@ -154,5 +161,5 @@ def test_nothing_a_resident_reads_tells_how_long_the_run_lasts(tmp_path):
             json.dumps(call["request"], sort_keys=True) for call in read_jsonl(run.llm_calls_path)
         )
     assert requests[2] == requests[3]
-    for moment in ("the day is ahead of you", "You could take a job"):
+    for moment in ("the day is ahead of you", "take a job"):
         assert any(moment in request for request in requests[2]), moment

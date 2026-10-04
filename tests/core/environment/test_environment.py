@@ -237,7 +237,7 @@ REJECTIONS = {
     "take a taken job": (
         "Ben",
         ClaimTask(task_id="1"),
-        "The board refuses: job 1 already went to Ana.",
+        "The clerk tells you that job 1 already went to Ana.",
     ),
     "take a job not on the board": (
         "Ben",
@@ -315,7 +315,7 @@ REJECTIONS = {
         "To say something privately, say it to someone here by name.",
     ),
     "speak to someone absent": ("Ana", Speak(text="Hello.", to="Cai"), "Cai is not here."),
-    "rate oneself": ("Ana", rate("Ana", 5), "You cannot mark yourself in the board's ledger."),
+    "rate oneself": ("Ana", rate("Ana", 5), "You cannot mark yourself in the clerk's ledger."),
     "rate an unknown agent": (
         "Ana",
         RatePeers(ratings=(*rate("Ben", 4).ratings, *rate("Zed", 1).ratings)),
@@ -416,8 +416,12 @@ async def test_each_client_pays_each_declaration_by_its_own_rule(
     else:
         assert submitted.audience == ("Ana",) and SECRET in submitted.text
         assert EventKind.PAYMENT not in kinds(events)
-        refused = f"The last time you handed it in, the client handed it back:\n{SECRET}"
+        refused = (
+            "The last time you handed it in, the clerk handed it back with what the client "
+            f"found:\n{SECRET}"
+        )
         assert refused in env.status_view("Ana")
+        assert env.status_view("Ana").endswith("the code you handed in:\n```\ndraft\n```")
         assert SECRET not in env.status_view("Ben")
 
     discovered = env.start_day(time_at(2, "07:00"), rng)
@@ -465,8 +469,12 @@ async def test_private_checks_reach_only_the_worker_and_are_known_at_delivery(ma
     assert env.economy.balances == balances and "task-1" in env.board.claims
     assert f"against the client's examples:\n{SECRET}" in env.status_view("Ana")
     assert not any(SECRET in env.status_view(other) for other in AGENTS if other != "Ana")
+    draft = "The draft on your desk, the code you tried:\n```\ndraft\n```"
+    assert env.status_view("Ana").endswith(draft)
+    assert not any("draft" in env.status_view(other) for other in AGENTS if other != "Ana")
 
     await act(env, "Ana", CheckWork(task_id="task-1", part=1, solution="perfect"))
+    assert env.status_view("Ana").endswith("the code you tried:\n```\nperfect\n```")
     events = await act(env, "Ana", deliver("task-1", "draft", report="All checks pass."))
     known = only(events, EventKind.WORK_ASSESSED).payload
     assert (known["accepted"], known["passed"], known["tested"]) == (True, False, False)
@@ -547,7 +555,7 @@ async def test_a_proposal_can_be_ignored_raced_replaced_or_withdrawn(env):
     [won] = await act(env, "Dan", ClaimTask(task_id="task-3"), day=2)
     assert won.payload["workers"] == ["Cai", "Dan"]
     [raced] = await act(env, "Ben", ClaimTask(task_id="task-3"), day=2)
-    assert raced.text == "The board refuses: job 3 already went to Cai and Dan."
+    assert raced.text == "The clerk tells you that job 3 already went to Cai and Dan."
     assert not env.board.offers and "You have asked" not in env.status_view("Ana")
 
     env.post(time_at(2, "12:00"), 0)
@@ -597,7 +605,7 @@ async def applicants(env: Environment, rng: random.Random) -> None:
 async def test_random_assignment_pairs_applicants_by_the_draw_alone(make_env):
     env = make_env(partner_choice=False, two_part_tasks=2)
     open_day(env, random.Random(0))
-    assert "The board pairs the names put down by drawing lots" in env.rules_view()
+    assert "The clerk pairs the names put down by drawing lots" in env.rules_view()
     [refused] = await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"))
     assert "put your name down without naming anyone" in refused.text
 
@@ -616,7 +624,7 @@ async def test_random_assignment_pairs_applicants_by_the_draw_alone(make_env):
         for event in formed[0]:
             first, second = event.payload["workers"]
             assert event.payload["task_id"] in (APPLIED[first], APPLIED[second])
-            paired = f"By drawing lots, the board paired {first} and {second} for job"
+            paired = f"By drawing lots, the clerk paired {first} and {second} for job"
             assert event.actor is None and paired in event.text
             assert {first, second} <= set(event.audience)
         paired = [agent for event in formed[0] for agent in event.payload["workers"]]
@@ -670,7 +678,7 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
         (("Ana",), first + second),
         (("Ben",), first + second),
     ]
-    assert "Both parts of job 3, " in paid[0].text and '", are in; you and Ben were each paid' in (
+    assert "Both parts of job 3, " in paid[0].text and '", are in; the clerk paid you and Ben' in (
         paid[0].text
     )
     assert env.economy.balances["Ana"] == env.economy.balances["Ben"] == 100 + first + second
@@ -925,9 +933,9 @@ async def test_every_condition_changes_through_one_validated_recorded_interventi
     paid = await act(env, "Ben", deliver("task-3", "flawed", part=2))
     assert [e.payload["amount"] for e in paid if e.kind is EventKind.PAYMENT] == [low + full] * 2
 
-    assert "ask someone by name to take it with you" in env.rules_view()
+    assert "name the neighbour you mean to take it with" in env.rules_view()
     env.change_conditions({"partner_choice": False}, time=time_at(1, "09:00"))
-    assert "put your name down for it without naming anyone" in env.rules_view()
+    assert "put your name down for it with the clerk, without naming anyone" in env.rules_view()
     [applied] = await act(env, "Cai", ClaimTask(task_id="task-2"))
     assert applied.kind is EventKind.TASK_APPLIED
     env.change_conditions({"partner_choice": True}, time=time_at(1, "09:30"))

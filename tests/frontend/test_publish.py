@@ -135,7 +135,7 @@ def test_references_carry_the_hash_of_files_inside_the_site(site, town):
 def test_the_bundle_holds_no_model_call(site, town):
     calls = [json.loads(line) for line in (town / "llm_calls.jsonl").read_text().splitlines()]
     prompts = [call["request"]["messages"][-1]["content"] for call in calls]
-    assert all(prompt.endswith(REPLY) for prompt in prompts[:10])
+    assert all(REPLY in prompt for prompt in prompts[:10])
 
     def keys(value: Any) -> set[str]:
         if isinstance(value, dict):

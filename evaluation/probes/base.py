@@ -19,9 +19,12 @@ from pydantic import Field, JsonValue
 from core.agent import Agent
 from core.interaction import (
     Action,
-    ActionKind,
+    Allowance,
     Decision,
     EventKind,
+    MayLeave,
+    MayPass,
+    MaySpeak,
     Observation,
     Percept,
     Speak,
@@ -34,8 +37,7 @@ from tasks.coding import CodingTaskProvider
 Score = Annotated[float, Field(ge=0, le=1)]
 
 WORK_PLACE, SOCIAL_PLACE, HOME = "office", "cafe", "home"
-CONVERSING = (ActionKind.SPEAK, ActionKind.LEAVE, ActionKind.PASS)
-"""What an agent may do in a conversation, as in the simulation."""
+
 CONVERSATION = (
     "You are at {place} with {people}. On your turn you can say something, to everyone or to "
     "one person by name, let the turn pass, or leave the conversation."
@@ -43,6 +45,11 @@ CONVERSATION = (
 CLAIMED = "{agent} claimed {task}, due by the end of Day {due}."
 STATUS = "You have claimed {task}, paying {reward} credits; deliver it by the end of Day {due}."
 NO_TASKS = "There are no open tasks."
+
+
+def conversing(*peers: str) -> tuple[Allowance, ...]:
+    """What an agent may do in a conversation with `peers`, as in the simulation."""
+    return (MaySpeak(to=peers), MayLeave(), MayPass())
 
 
 class Dimension(StrEnum):
@@ -126,9 +133,9 @@ class Session:
         place: str,
         situation: str,
         percepts: Iterable[Percept],
-        allowed: Sequence[ActionKind],
+        allowed: Sequence[Allowance],
     ) -> Action:
-        """The action the agent takes, one of `allowed`."""
+        """The action the agent takes, as `allowed` allows."""
         observation = Observation(
             agent=self.agent.id,
             time=time,

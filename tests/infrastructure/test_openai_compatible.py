@@ -72,7 +72,6 @@ async def test_request_body_and_response_mapping(monkeypatch):
         extra_body={"chat_template_kwargs": {"enable_thinking": True}},
     )
     schema = {"type": "object"}
-    assert client.enforces_schema
     response = await client.complete(
         _request(model="adapter-7", sampling=Sampling(temperature=0.0), json_schema=schema)
     )
@@ -103,7 +102,6 @@ async def test_structured_output_mode_controls_response_format(monkeypatch, mode
         return httpx2.Response(200, json=_completion("{}"))
 
     client = _client(monkeypatch, handler, structured_output=mode)
-    assert not client.enforces_schema
     await client.complete(_request(json_schema={"type": "object"}))
     await client.complete(_request())
     assert [body.get("response_format") for body in bodies] == [expected, None]
@@ -114,15 +112,23 @@ async def test_structured_output_mode_controls_response_format(monkeypatch, mode
     "reply",
     [
         httpx2.Response(500, json={"error": {"message": "overloaded"}}),
-        httpx2.Response(200, json=_completion('{"a": ', finish_reason="length")),
         httpx2.Response(200, json=_completion(None, reasoning_content="Thinking...")),
     ],
-    ids=["server-error", "truncated", "empty"],
+    ids=["server-error", "empty"],
 )
 async def test_unusable_replies_raise(monkeypatch, reply):
     client = _client(monkeypatch, lambda request: reply)
     with pytest.raises(LLMCallError):
         await client.complete(_request())
+
+
+async def test_a_reply_cut_off_by_the_token_limit_is_returned_marked(monkeypatch):
+    for text, finish_reason in (('{"a": ', "length"), (None, "length"), ("{}", "stop")):
+        reply = httpx2.Response(200, json=_completion(text, finish_reason=finish_reason))
+        response = await _client(monkeypatch, lambda request, reply=reply: reply).complete(
+            _request()
+        )
+        assert (response.text, response.truncated) == (text or "", finish_reason == "length")
 
 
 async def test_concurrency_is_bounded(monkeypatch):

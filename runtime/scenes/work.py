@@ -3,25 +3,19 @@
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment
-from core.interaction import ActionKind, Decision, Pass
+from core.interaction import (
+    Allowance,
+    Decision,
+    MayCheck,
+    MayClaim,
+    MayGive,
+    MayPass,
+    MaySpeak,
+    MaySubmit,
+    Pass,
+)
 from runtime.scenes import situations
 from runtime.scenes.scene import Scene
-
-TAKING = (
-    ActionKind.CLAIM_TASK,
-    ActionKind.SPEAK,
-    ActionKind.GIVE,
-    ActionKind.PASS,
-)
-"""What someone who works on no job may do at a work place."""
-WORKING = (
-    ActionKind.CHECK_WORK,
-    ActionKind.SUBMIT_WORK,
-    ActionKind.SPEAK,
-    ActionKind.GIVE,
-    ActionKind.PASS,
-)
-"""What someone working on a job may do at a work place."""
 
 
 class WorkSession(Scene):
@@ -53,11 +47,30 @@ class WorkSession(Scene):
     def ask(self) -> list[str]:
         return list(self.participants)
 
-    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
-        kinds = TAKING if self.env.board.claim_of(agent) is None else WORKING
-        if len(self.participants) > 1:
-            return kinds
-        return tuple(kind for kind in kinds if kind not in (ActionKind.SPEAK, ActionKind.GIVE))
+    def allowed(self, agent: str) -> tuple[Allowance, ...]:
+        """Someone working on no job may take one from the board, if any is there; someone
+        working on one may try and hand in the parts not yet in. Anyone may talk to and hand
+        crowns to the others here, or carry on quietly."""
+        env, allowed = self.env, []
+        claim = env.board.claim_of(agent)
+        if claim is None:
+            tasks = [listing.task for listing in env.board.listings.values()]
+            alone = tuple(task.id for task in tasks if len(task.parts) == 1)
+            together = tuple(task.id for task in tasks if len(task.parts) > 1)
+            neighbours = tuple(other for other in env.agents if other != agent)
+            partners = neighbours if env.conditions.partner_choice else None
+            if alone or (together and partners != ()):
+                allowed.append(MayClaim(alone=alone, together=together, partners=partners))
+        else:
+            task = claim.task
+            parts = tuple(n for n in range(1, len(task.parts) + 1) if claim.delivery(n) is None)
+            allowed += [
+                MayCheck(task_id=task.id, parts=parts),
+                MaySubmit(task_id=task.id, parts=parts),
+            ]
+        if others := tuple(other for other in self.participants if other != agent):
+            allowed += [MaySpeak(to=others), MayGive(to=others)]
+        return (*allowed, MayPass())
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.participants if other != agent]

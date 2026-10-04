@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from core.agent import Agent, AgentSeed, CognitionConfig, prompts
 from core.agent.memory import Insight, Record, Skill
-from core.interaction import Event, Speak, time_at
+from core.interaction import Card, Event, Speak, form, time_at
 
 
 def test_an_agent_is_a_directory_of_plain_files(tmp_path, script, seed):
@@ -48,12 +48,18 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
     assert percept == Record(
         time=truth.time,
         place="office",
+        where="the office",
         seq=truth.seq,
         text="Ben says: does the parser handle dates?",
     )
-    assert (own.time, own.place, own.seq) == (observation.time, "office", None)
-    assert (
-        own.text == 'I said to Ben: "It parses dates now." I thought: Ben asked about the parser.'
+    assert (own.time, own.place, own.where, own.seq) == (
+        observation.time,
+        "office",
+        "the office",
+        None,
+    )
+    assert own.text == (
+        'you said to Ben: "It parses dates now." You thought: "Ben asked about the parser."'
     )
 
     (request,) = script.requests
@@ -68,7 +74,8 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
     identity = f"You are Mei. You are 34 years old. {seed.profile.backstory}"
     known = prompts.KNOWN.format(setting=observation.setting)
     assert system == "\n\n".join([identity, known, prompts.UNRESOLVED])
-    assert "08:59: Ben says: does the parser handle dates?" in user
+    assert "08:59, at the office: Ben says: does the parser handle dates?" in user
+    assert user.endswith(form(Card(observation.allowed).model))
     assert "TRUTH-ONLY-MARKER" not in agent.memory.episodic.path.read_text() + system + user
 
     later = observe(1, "Ben says: thanks.").model_copy(update={"time": observation.time + 30})
@@ -77,8 +84,8 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
     assert then == system
     assert (
         now.index("does the parser handle dates")
-        < now.index('09:00: I said to Ben: "It parses dates now."')
-        < now.index("08:59: Ben says: thanks.")
+        < now.index('09:00, at the office: you said to Ben: "It parses dates now."')
+        < now.index("08:59, at the office: Ben says: thanks.")
         < now.index("It is 09:30 on Monday, your first day in town. You are at the office.")
     )
 
@@ -120,6 +127,6 @@ async def test_recall_mixes_working_context_relevant_memories_insights_and_skill
     assert "Lunch was noodles." in user and "Dan went home early." in user
     assert "Replies to messages can take a while." in user
     assert "Chloe pays" not in user and "Mornings" not in user
-    assert "date-parsing: Parsing dates.\nTry ISO 8601 first." in user
-    assert "- cooking-rice: Rice at home.\n- date-parsing: Parsing dates." in system
+    assert 'Date parsing: "Parsing dates."\n"Try ISO 8601 first."' in user
+    assert '- Cooking rice: "Rice at home."\n- Date parsing: "Parsing dates."' in system
     assert "Rinse twice." not in system + user and "Try ISO" not in system

@@ -4,7 +4,17 @@ import random
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment
-from core.interaction import ActionKind, Decision, Give, Leave, Speak
+from core.interaction import (
+    Allowance,
+    Decision,
+    Give,
+    Leave,
+    MayGive,
+    MayLeave,
+    MayPass,
+    MaySpeak,
+    Speak,
+)
 from runtime.scenes import situations
 from runtime.scenes.scene import Scene
 
@@ -39,8 +49,9 @@ class Conversation(Scene):
     def ask(self) -> list[str]:
         return [self.present[self.next]]
 
-    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
-        return (ActionKind.SPEAK, ActionKind.GIVE, ActionKind.LEAVE, ActionKind.PASS)
+    def allowed(self, agent: str) -> tuple[Allowance, ...]:
+        others = tuple(other for other in self.present if other != agent)
+        return (MaySpeak(to=others), MayGive(to=others), MayLeave(), MayPass())
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]

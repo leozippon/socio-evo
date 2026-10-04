@@ -5,7 +5,7 @@ import pytest
 
 from core.agent import Agent, AgentSeed, CognitionConfig, ModelSpec, Profile
 from core.agent.evolution import History
-from core.interaction import EventKind, Observation, Percept, day_of, time_at
+from core.interaction import EventKind, MayPass, MaySpeak, Observation, Percept, day_of, time_at
 from infrastructure.llm import LLMRequest, Sampling, ScriptedClient
 
 SEED = AgentSeed(
@@ -38,8 +38,8 @@ class Script:
         self.requests.append(request)
         purpose, day = request.metadata["purpose"], day_of(request.metadata["time"])
         if purpose == "act":
-            action = {"kind": "speak", "text": "It parses dates now.", "to": "Ben"}
-            return {"thought": "Ben asked about the parser.", "action": action}
+            said = {"do": "say", "to": "Ben", "words": "It parses dates now."}
+            return {"thought": "Ben asked about the parser.", **said}
         if purpose == "diary":
             return f"Diary entry {day}."
         if purpose == "reflect":
@@ -102,7 +102,8 @@ def observe() -> Callable[..., Observation]:
             setting=SETTING,
             situation="You are at the office. Ben is here.",
             percepts=(percept,),
-            allowed=("speak", "pass"),
+            allowed=(MaySpeak(to=("Ben",)), MayPass()),
+            places={"office": "the office"},
         )
 
     return observe

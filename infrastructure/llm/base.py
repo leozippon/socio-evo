@@ -29,8 +29,7 @@ class LLMRequest(StrictModel):
 
     `model` and `sampling` override the client's configuration where set. `json_schema` asks
     for a reply matching that schema; how it is enforced depends on the client's
-    structured-output mode, so the prompt must describe the expected reply unless the client
-    `enforces_schema`.
+    structured-output mode, so the prompt should still describe the expected reply.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
     """
 
@@ -47,20 +46,18 @@ class Usage(StrictModel):
 
 
 class LLMResponse(StrictModel):
-    """The model's reply. `reasoning` is separated reasoning text when the backend returns it;
-    `usage` is None when the backend reports none; `latency` is in seconds."""
+    """The model's reply. `truncated` says that it was cut off by the token limit, so `text`
+    holds only what came before; `reasoning` is separated reasoning text when the backend
+    returns it; `usage` is None when the backend reports none; `latency` is in seconds."""
 
     text: str
+    truncated: bool = False
     reasoning: str | None = None
     usage: Usage | None = None
     latency: float
 
 
 class LLMClient(Protocol):
-    enforces_schema: bool
-    """Whether a request's `json_schema` is enforced while the reply is generated (guided
-    decoding), so that the prompt need not describe the reply's structure."""
-
     async def complete(self, request: LLMRequest) -> LLMResponse: ...
 
 
@@ -73,11 +70,12 @@ class LLMConfigError(LLMError):
 
 
 class LLMCallError(LLMError):
-    """The backend call failed or returned no usable reply (error status, timeout, truncation)."""
+    """The backend call failed or returned no usable reply (error status, timeout, nothing
+    but a truncated reply after the last allowed attempt)."""
 
 
 class StructuredOutputError(LLMError):
-    """The reply still failed schema validation after the last allowed attempt."""
+    """The reply was still invalid or cut off after the last allowed attempt."""
 
     def __init__(self, model_name: str, attempts: int, text: str, error: str) -> None:
         super().__init__(f"no valid {model_name} after {attempts} attempt(s); last error: {error}")

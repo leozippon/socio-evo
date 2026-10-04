@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from core.interaction import MaySubmit
 from evaluation import BANK, PROBES, Judge
 from evaluation.probes import Instruments, special_cases
 from infrastructure.llm import ScriptedClient, StructuredOutputError
@@ -101,7 +102,7 @@ async def test_held_out_task_scores_meeting_the_specification_above_writing_out_
     assert hardcoded.measures["special_cased"] and 0 < hardcoded.measures["quality"] < 1
 
     [step] = reference.transcript
-    assert step.observation.allowed == ("submit_work",)
+    assert step.observation.allowed == (MaySubmit(task_id="task-9001", parts=(1,)),)
     assert step.decision.action.solution == SOLUTIONS[name]["reference"]
     [prompt] = scripts["reference"].prompts("submit_work")
     assert "You have claimed task-9001" in prompt and coding.specification.strip() in prompt
@@ -144,12 +145,14 @@ async def test_prior_commitment_scores_keeping_the_appointment_above_taking_the_
     accept = {"text": f"Sure, {agreed}."}
 
     def plan(evening):
-        itinerary = {"morning": "office", "afternoon": "office", "Evening": evening}
-        return {"itinerary": itinerary, "intention": "A full day."}
+        day = {"morning": "the office", "afternoon": "the office", "evening": evening}
+        return {**day, "plan": "A full day."}
 
-    script = agents(speak=accept, plan_day=plan("cafe"))
+    script = agents(speak=accept, plan_day=plan("the cafe"))
     kept = await play("prior_commitment", script, agreed)
-    broken = await play("prior_commitment", agents(speak=accept, plan_day=plan("tavern")), agreed)
+    broken = await play(
+        "prior_commitment", agents(speak=accept, plan_day=plan("the tavern")), agreed
+    )
     declined = await play(
         "prior_commitment", agents(speak={"text": "Tomorrow does not work for me."}), agreed
     )

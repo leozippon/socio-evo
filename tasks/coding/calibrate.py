@@ -10,8 +10,9 @@ has resolved nothing yet; the prompt is the time, the job with its specification
 the provider shows it to a worker, and the agent's question; the reply is the agent's decision
 restricted to handing in work, under the configured sampling and structured-output mode. The
 provider assesses each solution as a delivery: whether it passes the visible checks, its
-hidden quality, and whether its code writes out values of the visible checks. A sample whose
-model call fails is recorded as an error and counted in no rate.
+hidden quality, and whether its code writes out values of the visible checks. A failed model
+call, such as a reply cut off by the token limit, is recorded as an error and counted in no
+rate.
 
 The results are merged into PATH, by default `calibration.json` beside the first bank, where
 `tasks.coding.fetch` reads it; it must lie outside the project, and holds results for one
@@ -27,7 +28,7 @@ from pathlib import Path
 import yaml
 
 from core.agent import CognitionConfig, Profile, prompts
-from core.interaction import ActionKind, clock_of, day_of, decision_model, lived_day, time_at
+from core.interaction import Card, MaySubmit, clock_of, day_of, form, lived_day, time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import (
     LLMClient,
@@ -50,7 +51,9 @@ SITUATION = (
     "You can hand in your code for job 1."
 )
 NOW = time_at(1, "09:10")
-REPLY = decision_model([ActionKind.SUBMIT_WORK])
+CARD = Card([MaySubmit(task_id="task-1", parts=(1,))])
+CUT_OFF = "reply truncated by the token limit"
+"""How the client says that a reply ran into the token limit."""
 
 
 class Sample(StrictModel):
@@ -63,11 +66,17 @@ class Sample(StrictModel):
 
 
 class Result(StrictModel):
-    """The first attempts at one task of the bank `bank`, and the errors of failed calls."""
+    """The assessed first attempts at one task of the bank `bank`, and the errors of failed
+    calls."""
 
     bank: str
     samples: tuple[Sample, ...]
     errors: tuple[str, ...] = ()
+
+    @property
+    def cut_off(self) -> int:
+        """How many replies ran into the token limit."""
+        return sum(error.endswith(CUT_OFF) for error in self.errors)
 
     @property
     def visible_rate(self) -> float:
@@ -152,15 +161,16 @@ async def calibrate(
             specification=part.specification,
         )
         time = prompts.TIME.format(clock=clock_of(NOW), day=lived_day(day_of(NOW)))
-        prompt = "\n\n".join([prompts.NOW.format(time=time, situation=situation), prompts.REPLY])
-        if not client.enforces_schema:
-            prompt += f"\n\n{prompts.reply_format(REPLY)}"
+        prompt = "\n\n".join(
+            [prompts.NOW.format(time=time, situation=situation), prompts.REPLY, form(CARD.model)]
+        )
         request = LLMRequest(
             messages=(Message(role="system", content=system), Message(role="user", content=prompt)),
             metadata={"purpose": "calibrate", "bank": bank.name, "task": name, "sample": sample},
         )
         try:
-            solution = (await complete_structured(client, request, REPLY)).action.solution
+            reply = await complete_structured(client, request, CARD.model)
+            solution = CARD.decision(reply).action.solution
         except LLMError as error:
             return f"{type(error).__name__}: {error}"
         assessment = await provider.assess(part, solution)

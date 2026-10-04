@@ -6,9 +6,22 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+import yaml
 
 from tasks.coding import CodingTaskProvider, fetch, special_cases
-from tasks.coding.fetch import BankIndex, build, convert, held_out
+from tasks.coding.calibrate import CUT_OFF, Result, Sample
+from tasks.coding.fetch import (
+    TOWN_MIX,
+    BankIndex,
+    Difficulty,
+    Entry,
+    Origin,
+    build,
+    convert,
+    held_out,
+    measured_difficulty,
+    town,
+)
 
 STATEMENT = (
     "You are given an integer array nums and an integer k.\r\n"
@@ -96,15 +109,16 @@ async def test_a_function_call_problem_becomes_a_task_with_weak_public_and_stron
     assert len(hidden) == 6 and hidden == [check for check in candidates if check in hidden]
     assert convert([tmp_path / "test.jsonl"])[0][0].task == task
 
-    build(tmp_path, problems, {})
-    bank = tmp_path / ("held-out" if held_out(problem.origin) else "pool")
-    provider = CodingTaskProvider(bank)
+    (tmp_path / "bank").mkdir()
+    (tmp_path / "bank" / "scale-it.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
+    provider = CodingTaskProvider(tmp_path / "bank")
     reference = await provider.assess(provider.part("scale-it"), REFERENCE)
     assert (reference.passed, reference.quality) == (True, 1.0)
 
 
 async def test_the_split_is_by_problem_and_held_out_tasks_get_impossible_variants(tmp_path):
-    records = [record(str(id), f"scale-{id}") for id in range(1, 31)]
+    labels = ("easy", "medium", "hard")
+    records = [record(str(id), f"scale-{id}", difficulty=labels[id % 3]) for id in range(1, 31)]
     problems, _ = convert([source(tmp_path / "test.jsonl", records)])
     entries = build(tmp_path, problems, {})
     held = {problem.name for problem in problems if held_out(problem.origin)}
@@ -155,3 +169,52 @@ def test_private_tests_are_unpickled_without_running_anything(tmp_path):
     with pytest.raises(pickle.UnpicklingError, match="refused"):
         convert([source(tmp_path / "test.jsonl", records)])
     assert not target.exists()
+
+
+def result(*attempts: tuple[bool, float], cut_off: int = 0) -> Result:
+    samples = [
+        Sample(visible=visible, quality=quality, special_cased=False)
+        for visible, quality in attempts
+    ]
+    return Result(bank="pool", samples=samples, errors=(f"LLMCallError: {CUT_OFF}",) * cut_off)
+
+
+def test_difficulty_follows_the_first_attempts_and_the_label_only_among_solved_tasks():
+    perfect, defective, failed = (True, 1.0), (True, 0.9), (False, 0.0)
+    cases = [
+        (result(perfect, perfect, perfect), Difficulty.EASY, Difficulty.EASY),
+        (result(perfect, perfect, perfect), Difficulty.HARD, Difficulty.MEDIUM),
+        (result(perfect, defective, perfect), Difficulty.EASY, Difficulty.MEDIUM),
+        (result(perfect, failed, perfect), Difficulty.EASY, Difficulty.HARD),
+        (result(perfect, perfect, cut_off=1), Difficulty.EASY, Difficulty.EASY),
+        (result(failed, failed, cut_off=1), Difficulty.EASY, Difficulty.UNSOLVED),
+    ]
+    for measured, label, difficulty in cases:
+        assert measured_difficulty(measured, label) is difficulty
+
+
+def test_the_town_takes_the_pool_in_the_mix_and_leaves_unsolved_tasks_out():
+    origin = Origin(
+        source="livecodebench",
+        revision="r",
+        id="1",
+        slug="s",
+        platform="leetcode",
+        contest="c",
+        date="2024-07-06",
+        label="easy",
+    )
+    counts = {Difficulty.EASY: 9, Difficulty.MEDIUM: 5, Difficulty.HARD: 7, Difficulty.UNSOLVED: 4}
+    pool = {
+        f"{difficulty}-{n}": ({}, Entry(origin=origin, difficulty=difficulty, measured=True))
+        for difficulty, count in counts.items()
+        for n in range(count)
+    }
+    chosen = town(pool)
+    scale = min(counts[difficulty] / share for difficulty, share in TOWN_MIX.items())
+    assert Counter(entry.difficulty for _, entry in chosen.values()) == {
+        difficulty: int(scale * share) for difficulty, share in TOWN_MIX.items()
+    }
+    assert town(dict(reversed(pool.items()))) == chosen
+    with pytest.raises(ValueError, match="no hard task"):
+        town({name: item for name, item in pool.items() if not name.startswith("hard")})

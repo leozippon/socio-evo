@@ -7,7 +7,7 @@ from typing import Protocol
 from core.agent import prompts
 from core.agent.agent import Agent
 from core.agent.evolution.levels import Level, Trigger
-from core.agent.memory import Insight, Skill
+from core.agent.memory import Insight, Skill, name_of
 from core.interaction import MINUTES_PER_DAY, day_of
 
 
@@ -103,12 +103,11 @@ class SkillOperator:
             prompts.skill_reply([skill.name for skill in skills]),
         )
         for change in reply.changes:
+            name = name_of(change.title)
             if isinstance(change, prompts.WriteSkill):
-                memory.skills.write(
-                    Skill(name=change.title, description=change.summary, body=change.text)
-                )
+                memory.skills.write(Skill(name=name, description=change.summary, body=change.text))
             else:
-                memory.skills.remove(change.title)
+                memory.skills.remove(name)
         return Change(subject=f"Review skills on Day {day}", body=reply.reflection)
 
 

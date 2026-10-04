@@ -1,6 +1,6 @@
 """An agent: a directory of human-readable files, and the cognition that reads them."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TypeVar
 
@@ -11,9 +11,15 @@ from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.parameters import Parameters
-from core.interaction import Decision, Observation, Percept, decision_model
+from core.interaction import Card, Decision, Observation, Percept, form
 from infrastructure.config import load_config
-from infrastructure.llm import LLMClient, LLMRequest, Message, complete_structured
+from infrastructure.llm import (
+    LLMClient,
+    LLMRequest,
+    Message,
+    complete_structured,
+    complete_text,
+)
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -70,7 +76,8 @@ class Agent:
         return self.profile.name
 
     async def act(self, observation: Observation) -> Decision:
-        """Store the new percepts, recall memories, decide, and record the decision.
+        """Store the new percepts, recall memories, answer on the moment's card, and record
+        the decision the answer means.
 
         Raises ValueError if the observation is addressed to another agent.
         """
@@ -78,7 +85,7 @@ class Agent:
             raise ValueError(f"observation for {observation.agent!r} given to {self.id!r}")
         memory = self.memory
         earlier = memory.episodic.read()
-        self.perceive(observation.percepts)
+        self.perceive(observation.percepts, observation.places)
         skills = memory.skills.read()
         recall = self._retriever.recall(observation, earlier, memory.insights.read(), skills)
         system = prompts.system_prompt(
@@ -88,42 +95,47 @@ class Agent:
             setting=observation.setting,
             skills=skills,
         )
-        decision = await self.ask(
+        card = Card(observation.allowed)
+        reply = await self.ask(
             "act",
             observation.time,
             prompts.decision_prompt(observation, recall, self.cognition),
-            decision_model(observation.allowed),
+            card.model,
             system=system,
         )
+        decision = card.decision(reply)
         memory.episodic.append(
             [
                 Record(
                     time=observation.time,
                     place=observation.place,
+                    where=observation.places.get(observation.place),
                     text=prompts.recollection(decision),
                 )
             ]
         )
         return decision
 
-    def perceive(self, percepts: Iterable[Percept]) -> None:
-        """Store percepts in the episodic stream; `act` does so for an observation's percepts,
-        and this is for those witnessed when no decision follows, such as late in the day."""
-        self.memory.episodic.append(Record.of(percept) for percept in percepts)
+    def perceive(
+        self, percepts: Iterable[Percept], places: Mapping[str, str] | None = None
+    ) -> None:
+        """Store percepts in the episodic stream, naming their places as `places` (by id) do;
+        `act` does so for an observation's percepts, and this is for those witnessed when no
+        decision follows, such as late in the day."""
+        self.memory.episodic.append(Record.of(percept, places) for percept in percepts)
 
     async def ask(
         self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None
     ) -> T:
-        """A validated `reply` to `prompt`. Unless the client enforces the reply's schema, a
-        description of it is appended. The system prompt defaults to identity and policy."""
-        if not self.client.enforces_schema:
-            prompt = f"{prompt}\n\n{prompts.reply_format(reply)}"
-        request = self._request(purpose, time, system, prompt)
+        """A validated `reply` to `prompt`, after which the form of the reply is shown. The
+        system prompt defaults to identity and policy."""
+        request = self._request(purpose, time, system, f"{prompt}\n\n{form(reply)}")
         return await complete_structured(self.client, request, reply)
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
         """Free text in reply to `prompt`, with identity and policy as the system prompt."""
-        return (await self.client.complete(self._request(purpose, time, None, prompt))).text.strip()
+        text = await complete_text(self.client, self._request(purpose, time, None, prompt))
+        return text.strip()
 
     def _request(self, purpose: str, time: int, system: str | None, prompt: str) -> LLMRequest:
         spec = self.parameters.read_model()

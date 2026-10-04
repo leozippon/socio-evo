@@ -17,7 +17,6 @@ class RecordingClient:
     def __init__(self, inner: LLMClient, path: Path) -> None:
         self._inner = inner
         self._path = path
-        self.enforces_schema = inner.enforces_schema
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         try:

@@ -12,14 +12,24 @@ import yaml
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
 from core.environment import Conditions, Environment, EnvironmentConfig, Place
-from core.interaction import ActionKind, Event, EventKind, day_of, ordinal, time_at
+from core.interaction import (
+    Event,
+    EventKind,
+    MayCheck,
+    MayPass,
+    MaySubmit,
+    card,
+    day_of,
+    ordinal,
+    time_at,
+)
 from infrastructure.llm import LLMClient, LLMRequest, LLMResponse, RecordingClient, ScriptedClient
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
 from runtime.scenes import Planning, SceneConfig, WorkSession, play, situations
 from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
-from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING, offered
+from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING, choices, offered
 
 GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
 """What no text a resident reads may contain: trait words, and the machinery's terms."""
@@ -36,25 +46,26 @@ BY_ENTRY_POINT = {task.entry_point: name for name, task in CodingTaskProvider(BA
 SLOT_STARTS = {"09:00": "morning", "13:00": "afternoon", "18:00": "evening"}
 PLANS = {
     1: {
-        "Ana": {"morning": "office", "evening": "cafe"},
-        "Ben": {"morning": "office", "afternoon": "office", "evening": "cafe"},
-        "Cai": {"afternoon": "office", "evening": "cafe"},
+        "Ana": {"morning": "the office", "evening": "the cafe"},
+        "Ben": {"morning": "the office", "evening": "the cafe"},
+        "Cai": {"evening": "the cafe"},
     },
     2: {
-        "Ana": {"morning": "office", "afternoon": "cafe"},
-        "Ben": {"afternoon": "cafe", "evening": "park"},
-        "Cai": {"morning": "office"},
+        "Ana": {"morning": "the office", "afternoon": "the cafe"},
+        "Ben": {"afternoon": "the cafe", "evening": "the park"},
+        "Cai": {"morning": "the office"},
     },
-    3: {"Ben": {"morning": "moon"}, "Cai": {"night": "cafe"}},
+    3: {},
 }
 L0, L1, L2 = Level.L0, Level.L1, Level.L2
 
 
 class Script:
-    """A scripted townsperson. It plans by PLANS; at work it claims the first open task and
-    delivers its reference solution (Ben, the shortcut); in a conversation it speaks during
-    the first three turns and passes after; at night it rates everyone it met. Its thoughts
-    carry its name, so a leak shows. `fail` picks a request to raise on."""
+    """A scripted townsperson, answering on its card. It plans by PLANS; at work it takes the
+    first job on the board and hands in its reference solution (Ben, the shortcut); in a
+    conversation it speaks during the first fifteen minutes and carries on quietly after; at
+    night it marks everyone it met. Its thoughts carry its name, so a leak shows. `fail` picks
+    a request to raise on."""
 
     def __init__(self, fail: Callable[[LLMRequest], bool] = lambda request: False) -> None:
         self.requests: list[LLMRequest] = []
@@ -77,11 +88,7 @@ class Script:
                 return {"reflection": "", "changes": [note]}
             case "policy":
                 return {"reflection": "", "resolutions": f"Resolved on the {ordinal(day)} day."}
-        prompt = request.messages[-1].content
-        return {
-            "thought": f"secret-{agent}-{time}",
-            "action": act(agent, time, prompt, offered(request)),
-        }
+        return {"thought": f"secret-{agent}-{time}", **act(agent, time, request)}
 
     def prompts(self, agent: str) -> list[tuple[int, str]]:
         return [
@@ -91,33 +98,29 @@ class Script:
         ]
 
 
-def act(agent: str, time: int, prompt: str, allowed: list[str]) -> dict[str, Any]:
-    if "plan_day" in allowed:
-        itinerary = PLANS[day_of(time)].get(agent, {})
-        return {"kind": "plan_day", "itinerary": itinerary, "intention": "As planned."}
-    if "submit_work" in allowed:
-        claimed = re.search(r"You are working on (job \d+)", prompt)
+def act(agent: str, time: int, request: LLMRequest) -> dict[str, Any]:
+    can, prompt = offered(request), request.messages[-1].content
+    if card.DECIDE in can:
+        plan = PLANS[day_of(time)].get(agent, {})
+        parts = [part for part in choices(request, card.DECIDE) if part != card.PLAN]
+        days = {part: plan.get(part, "home") for part in parts}
+        return {"do": card.DECIDE, **days, card.PLAN: "As planned."}
+    if card.HAND_IN in can:
         task = BY_ENTRY_POINT[re.search(r"defines `(\w+)`", prompt)[1]]
         solution = SOLUTIONS[task]["shortcut" if agent == "Ben" else "reference"]
-        return {
-            "kind": "submit_work",
-            "task_id": claimed[1],
-            "part": 1,
-            "solution": solution,
-            "declaration": "complete",
-            "report": "",
-        }
-    if "claim_task" in allowed:
-        board = re.findall(r"^- (Job \d+)", prompt, re.MULTILINE)
-        return {"kind": "claim_task", "task_id": board[0]} if board else {"kind": "pass"}
-    if "leave" in allowed:
+        return {"do": card.HAND_IN, card.CODE: solution, card.AS: "finished", card.TELLING: ""}
+    if card.TAKE in can:
+        return {"do": card.TAKE, card.JOB: choices(request, card.TAKE)[card.JOB][0]}
+    if card.LEAVE in can:
         hour, minute = divmod(time % (24 * 60), 60)
         start = max(clock for clock in SLOT_STARTS if clock <= f"{hour:02d}:{minute:02d}")
-        early = time - time_at(day_of(time), start) < 15
-        return {"kind": "speak", "text": f"Hello from {agent}."} if early else {"kind": "pass"}
-    met = re.search(r"spent time with (.+)\. Before you sleep", prompt)[1].replace(" and ", ", ")
-    ratings = [{"target": peer, "score": 4, "reason": "We met."} for peer in met.split(", ")]
-    return {"kind": "rate_peers", "ratings": ratings}
+        if time - time_at(day_of(time), start) < 15:
+            return {"do": card.SAY, card.TO: None, card.WORDS: f"Hello from {agent}."}
+    if card.MARK in can:
+        met = re.search(r"spent time with (.+?)\. ", prompt)[1].replace(" and ", ", ")
+        marks = [{"who": peer, "mark": 4, "because": "We met."} for peer in met.split(", ")]
+        return {"do": card.MARK, card.MARKS: marks}
+    return {"do": card.CARRY_ON}
 
 
 def place(id: str, kind: str, *residents: str, hours: tuple[str, ...] = ()) -> Place:
@@ -228,9 +231,12 @@ async def test_a_town_lives_through_its_days(tmp_path):
         assert set(kinds[ended + 1 :]) == {EventKind.EVOLUTION}
 
     closing = time_at(1, "13:00")
-    refused = [e for e in log if e.kind is EventKind.ACTION_REJECTED and e.time == closing]
-    assert {(e.actor, e.audience) for e in refused} == {("Ben", ("Ben",)), ("Cai", ("Cai",))}
-    assert all(e.text == "The office is closed at 13:00." for e in refused)
+    # On the card a resident can only choose what is there; a choice that goes stale within
+    # the moment, a notice someone else won by lot, is refused in the town's words.
+    drawn = {(e.time, agent) for e in log if e.kind is EventKind.DRAW for agent in e.audience}
+    refused = [e for e in log if e.kind is EventKind.ACTION_REJECTED]
+    assert refused and all((e.time, e.actor) in drawn for e in refused)
+    assert all("The clerk tells you that job" in e.text for e in refused)
     assert {
         (e.actor, e.payload["destination"])
         for e in log
@@ -263,6 +269,8 @@ async def test_a_town_lives_through_its_days(tmp_path):
         for line in message.content.splitlines()
     }
     assert not {line for line in sent if any(guard.search(line) for guard in GUARDS)}
+    written = [call["response"]["text"] for call in read_jsonl(run.llm_calls_path)]
+    assert not [text for text in written if MACHINERY.search(text)]
 
     draws = [event for event in log if event.kind is EventKind.DRAW]
     assert (time_at(1, "09:00"), ("Ana", "Ben")) in {(e.time, e.audience) for e in draws}
@@ -301,12 +309,6 @@ async def test_a_town_lives_through_its_days(tmp_path):
 
     day3 = time_at(3, "07:00")
     assert {time for agent in AGENTS for time, _ in script.prompts(agent) if time >= day3} == {day3}
-    assert {
-        (e.actor, e.audience) for e in log if e.kind is EventKind.ACTION_REJECTED and e.time >= day3
-    } == {
-        ("Cai", ("Cai",)),
-        ("Ben", ("Ben",)),
-    }
     assert all(time != time_at(1, "09:00") for time, _ in script.prompts("Cai"))
 
     diaries = [request for request in script.requests if request.metadata["purpose"] == "diary"]
@@ -360,7 +362,6 @@ class Unhurried:
 
     def __init__(self, inner: LLMClient) -> None:
         self.inner = inner
-        self.enforces_schema = inner.enforces_schema
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         await asyncio.sleep(0.01)
@@ -439,16 +440,19 @@ def test_situation_texts_are_immersive_and_neutral():
 
 
 class Replies:
-    """A stand-in model that answers every decision with the next action of `actions`, by
-    agent, and records the requests."""
+    """A stand-in model that answers every decision with the next of `answers`, by agent, on
+    its card, and records the requests."""
 
-    def __init__(self, actions: dict[str, list[dict[str, Any]]]) -> None:
-        self.actions = actions
+    def __init__(self, answers: dict[str, list[dict[str, Any]]]) -> None:
+        self.answers = answers
         self.requests: list[LLMRequest] = []
 
     def __call__(self, request: LLMRequest) -> dict[str, Any]:
         self.requests.append(request)
-        return {"thought": "", "action": self.actions[request.metadata["agent"]].pop(0)}
+        return {"thought": "", **self.answers[request.metadata["agent"]].pop(0)}
+
+
+QUIETLY = {"do": card.CARRY_ON}
 
 
 def scripted(root: Path, replies: Replies) -> dict[str, Agent]:
@@ -458,32 +462,32 @@ def scripted(root: Path, replies: Replies) -> dict[str, Agent]:
     }
 
 
-async def test_a_plan_names_places_and_parts_of_the_day_as_a_person_would(tmp_path):
+async def test_the_day_is_planned_on_a_card_of_the_places_open_in_each_part(tmp_path):
     env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
-    plans = {
-        "Ana": {"Morning": "the Office", "evening": "CAFE", "afternoon": "home"},
-        "Ben": {"the afternoon": "Park.", "evening": "moon"},
-        "Cai": {"night": "cafe"},
-    }
-    replies = Replies(
-        {
-            name: [{"kind": "plan_day", "itinerary": plan, "intention": ""}]
-            for name, plan in plans.items()
-        }
-    )
     start = time_at(1, "07:00")
     planning = Planning(env, "planning", list(AGENTS), SIMULATION.calendar, start=start)
+    social = {"the cafe": "cafe", "the park": "park"}
+    [allowed] = planning.allowed("Ana")
+    assert allowed.places == {
+        "morning": {"the office": "office", **social, "home": "flat"},
+        "afternoon": {**social, "home": "flat"},
+        "evening": {**social, "home": "flat"},
+    }
+    day = {"do": card.DECIDE, "plan": ""}
+    replies = Replies(
+        {
+            "Ana": [{**day, "morning": "the office", "afternoon": "home", "evening": "the cafe"}],
+            "Ben": [{**day, "morning": "home", "afternoon": "the park", "evening": "home"}],
+            "Cai": [{**day, "morning": "home", "afternoon": "home", "evening": "home"}],
+        }
+    )
     await play(env, scripted(tmp_path, replies), [planning], random.Random(0), lambda agent: "")
     assert [planning.destinations(slot) for slot in ("morning", "afternoon", "evening")] == [
         {"Ana": "office", "Ben": "house", "Cai": "house"},
         {"Ana": "flat", "Ben": "park", "Cai": "house"},
-        {"Ana": "cafe", "Ben": "moon", "Cai": "house"},
+        {"Ana": "cafe", "Ben": "house", "Cai": "house"},
     ]
-    [refused] = [e for e in read_events(tmp_path / "log") if e.kind is EventKind.ACTION_REJECTED]
-    assert (refused.audience, refused.text) == (
-        ("Cai",),
-        "There is no part of the day called 'night', so you stay at home today.",
-    )
+    assert not [e for e in read_events(tmp_path / "log") if e.kind is EventKind.ACTION_REJECTED]
 
 
 def read_events(path: Path) -> list[Event]:
@@ -496,10 +500,11 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
     env.post(start, 0)
     for agent in ("Ana", "Ben"):
         env.move(agent, "office", time=start)
+    said = {"do": card.SAY, "to": None, "words": "Morning."}
     replies = Replies(
         {
-            "Ana": [{"kind": "claim_task", "task_id": "job 1"}, {"kind": "pass"}, {"kind": "pass"}],
-            "Ben": [{"kind": "speak", "text": "Morning."}, {"kind": "pass"}, {"kind": "pass"}],
+            "Ana": [{"do": card.TAKE, "job": 1}, QUIETLY, QUIETLY],
+            "Ben": [said, QUIETLY, QUIETLY],
         }
     )
     work = WorkSession(
@@ -507,8 +512,8 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
     )
     await play(env, scripted(tmp_path, replies), [work], random.Random(0), lambda agent: "")
     asked = [(r.metadata["agent"], r.metadata["time"], set(offered(r))) for r in replies.requests]
-    take = {"claim_task", "speak", "give", "pass"}
-    working = {"check_work", "submit_work", "speak", "give", "pass"}
+    around = {card.SAY, card.SAY_PRIVATELY, card.HAND_OVER, card.CARRY_ON}
+    take, working = {card.TAKE, *around}, {card.TRY, card.HAND_IN, *around}
     assert asked == [
         ("Ana", start, take),
         ("Ben", start, take),
@@ -517,13 +522,14 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
     ]
     moments = [request.messages[-1].content for request in replies.requests]
     assert "You are at the office, with Ben. The office closes at 13:00." in moments[0]
-    assert "You could take a job from the board by its number." in moments[0]
-    assert "You could run your code for a part of your job" in moments[2]
+    assert all("You could" not in moment for moment in moments)
+    assert '"do": "take a job", "job": 1, 2 or 3}' in moments[0]
+    assert '"do": "take a job", "job": 2 or 3}' in moments[3]
     alone = WorkSession(
         env, "alone", "office", ["Ana"], start=start, until=closing, rounds=3, closes=True
     )
-    assert alone.allowed("Ana") == (ActionKind.CHECK_WORK, ActionKind.SUBMIT_WORK, ActionKind.PASS)
-    assert "Or you could carry on quietly." in alone.situation("Ana")
+    working_on = {"task_id": "task-1", "parts": (1,)}
+    assert alone.allowed("Ana") == (MayCheck(**working_on), MaySubmit(**working_on), MayPass())
 
 
 async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
@@ -543,8 +549,8 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
     env.post(start, 0)
     for agent in ("Ana", "Ben"):
         env.move(agent, "office", time=start)
-    apply = {"kind": "claim_task", "task_id": "1"}
-    replies = Replies({"Ana": [apply, {"kind": "pass"}], "Ben": [apply, {"kind": "pass"}]})
+    apply = {"do": card.PUT_NAME_DOWN, "job": 1}
+    replies = Replies({"Ana": [apply, QUIETLY], "Ben": [apply, QUIETLY]})
     work = WorkSession(
         env, "work", "office", ["Ana", "Ben"], start=start, until=start + 60, rounds=2, closes=False
     )
@@ -563,6 +569,6 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
     [paired] = [e for e in log if e.kind is EventKind.TASK_CLAIMED]
     assert paired.actor is None and sorted(paired.payload["workers"]) == ["Ana", "Ben"]
     assert (
-        "the client drew lots" in log[0].text and "By drawing lots, the board paired" in paired.text
+        "the clerk drew lots" in log[0].text and "By drawing lots, the clerk paired" in paired.text
     )
     assert "This part of the day ends at 10:00." in replies.requests[-1].messages[-1].content

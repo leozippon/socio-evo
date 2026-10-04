@@ -1,25 +1,19 @@
-"""Actions an agent can take, and the decision that carries one.
+"""Actions an agent can take, the decision that carries one, and how jobs are named.
 
-The JSON schema of a decision model is the response schema handed to the LLM, so class
-docstrings (which become schema descriptions) may be shown to agents: they stay neutral and
-speak as `docs/IMMERSION.md` says a resident is spoken to.
-The schema is shaped for guided decoding: every object is closed, every field of an action is
-required and its `kind` comes first, `thought` precedes `action`, and the action union is a
-plain `anyOf`, without the OpenAPI `discriminator` keyword that pydantic emits by default.
+These are the simulator's own terms: decisions are recorded, logged and carried out in them.
+A resident never reads or writes them; it answers on the card of `core.interaction.card`,
+which translates its reply into a Decision.
 
 A field added to an action after runs were recorded has a default meaning what the action
 meant before it existed (a delivery of part 1 declared complete, a claim naming no partner, a
-remark heard by everyone present), so recorded decisions keep validating with their meaning;
-the response schema still requires it, so a model always states it.
+remark heard by everyone present), so recorded decisions keep validating with their meaning.
 """
 
-import operator
-from collections.abc import Iterable
+import re
 from enum import StrEnum
-from functools import cache, reduce
-from typing import Annotated, Any, Literal, get_args
+from typing import Annotated, Literal, get_args
 
-from pydantic import ConfigDict, Field, create_model
+from pydantic import Field
 
 from infrastructure.config import StrictModel
 
@@ -47,15 +41,7 @@ PartNumber = Literal[1, 2]
 """The number of a part within its task; a task has one part or two."""
 
 
-def _require_every_field(schema: dict[str, Any]) -> None:
-    schema["required"] = list(schema["properties"])
-
-
-class _Action(StrictModel):
-    model_config = ConfigDict(json_schema_extra=_require_every_field)
-
-
-class PlanDay(_Action):
+class PlanDay(StrictModel):
     """Decide where to spend each part of the day."""
 
     kind: Literal[ActionKind.PLAN_DAY] = ActionKind.PLAN_DAY
@@ -64,7 +50,7 @@ class PlanDay(_Action):
     intention: str
 
 
-class Speak(_Action):
+class Speak(StrictModel):
     """Say something to the people here, or to one of them by name; said privately, only that
     person hears it."""
 
@@ -74,19 +60,19 @@ class Speak(_Action):
     private: bool = False
 
 
-class Leave(_Action):
+class Leave(StrictModel):
     """Take your leave."""
 
     kind: Literal[ActionKind.LEAVE] = ActionKind.LEAVE
 
 
-class Pass(_Action):
+class Pass(StrictModel):
     """Carry on quietly."""
 
     kind: Literal[ActionKind.PASS] = ActionKind.PASS
 
 
-class ClaimTask(_Action):
+class ClaimTask(StrictModel):
     """Take a job from the board; for a job for two, name the person you take it with."""
 
     kind: Literal[ActionKind.CLAIM_TASK] = ActionKind.CLAIM_TASK
@@ -94,7 +80,7 @@ class ClaimTask(_Action):
     partner: str | None = None
 
 
-class CheckWork(_Action):
+class CheckWork(StrictModel):
     """At your desk, try your code for one part of the job you are working on against the
     client's examples, without handing it in; only you see how it goes."""
 
@@ -104,7 +90,7 @@ class CheckWork(_Action):
     solution: str
 
 
-class SubmitWork(_Action):
+class SubmitWork(StrictModel):
     """Hand in your code for one part of the job you are working on, as finished or as
     unfinished, with what you tell the client about it."""
 
@@ -116,7 +102,7 @@ class SubmitWork(_Action):
     report: str
 
 
-class Give(_Action):
+class Give(StrictModel):
     """Hand someone here some of your crowns, with a short note."""
 
     kind: Literal[ActionKind.GIVE] = ActionKind.GIVE
@@ -133,7 +119,7 @@ class PeerRating(StrictModel):
     reason: str
 
 
-class RatePeers(_Action):
+class RatePeers(StrictModel):
     """Mark neighbours in the board's ledger."""
 
     kind: Literal[ActionKind.RATE_PEERS] = ActionKind.RATE_PEERS
@@ -150,38 +136,25 @@ ACTION_TYPES: dict[ActionKind, type[StrictModel]] = {
 }
 
 
-def _plain_union(schema: dict[str, Any]) -> None:
-    action = schema["properties"]["action"]
-    if "oneOf" in action:
-        action["anyOf"] = action.pop("oneOf")
-        del action["discriminator"]
-
-
 class Decision(StrictModel):
-    """What is going through your head, then the one thing you do."""
-
-    model_config = ConfigDict(json_schema_extra=_plain_union)
+    """A private thought, then one action."""
 
     thought: str
     action: Action
 
 
-def decision_model(allowed: Iterable[ActionKind | str]) -> type[Decision]:
-    """The Decision subclass whose action is restricted to the `allowed` kinds.
-
-    Its JSON schema is the response schema for a decision point. The result does not depend
-    on the order of `allowed`; an unknown kind or an empty set raises ValueError.
-    """
-    requested = {ActionKind(kind) for kind in allowed}
-    if not requested:
-        raise ValueError("at least one action kind must be allowed")
-    return _restricted_decision(tuple(kind for kind in ActionKind if kind in requested))
+def job_id(reference: str) -> str | None:
+    """The id of the job a person's `reference` names: the first whole number in it, so that
+    `23`, `job 23` and `task-23` all name `task-23`; None if it holds no number."""
+    number = re.search(r"\d+", reference)
+    return None if number is None else f"task-{int(number[0])}"
 
 
-@cache
-def _restricted_decision(kinds: tuple[ActionKind, ...]) -> type[Decision]:
-    union = reduce(operator.or_, (ACTION_TYPES[kind] for kind in kinds))
-    action = union if len(kinds) == 1 else Annotated[union, Field(discriminator="kind")]
-    return create_model(
-        "Decision", __base__=Decision, __doc__=Decision.__doc__, action=(action, ...)
-    )
+def job_number(task_id: str) -> int:
+    """The number on the notice of the job `task_id`."""
+    return int(task_id.removeprefix("task-"))
+
+
+def job_name(task_id: str) -> str:
+    """`job 23`, the name a resident knows the job `task-23` by."""
+    return f"job {job_number(task_id)}"

@@ -8,11 +8,13 @@ from infrastructure.llm import (
     LLMConfig,
     LLMConfigError,
     LLMRequest,
+    LLMResponse,
     Message,
     RecordingClient,
     ScriptedClient,
     StructuredOutputError,
     complete_structured,
+    complete_text,
     create_client,
 )
 from infrastructure.storage import read_jsonl
@@ -57,6 +59,36 @@ async def test_structured_completion_gives_up_after_bounded_attempts():
         await complete_structured(client, _request(), Verdict, attempts=2)
     assert len(requests) == 2
     assert failure.value.attempts == 2 and "answer" in failure.value.error
+
+
+class Cutting:
+    """A client whose first `cut` replies are cut off by the token limit."""
+
+    def __init__(self, cut: int, text: str) -> None:
+        self.cut, self.text = cut, text
+        self.requests: list[LLMRequest] = []
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        self.requests.append(request)
+        truncated = len(self.requests) <= self.cut
+        return LLMResponse(
+            text=self.text[:3] if truncated else self.text, truncated=truncated, latency=0
+        )
+
+
+async def test_a_reply_cut_off_is_asked_for_again_within_the_bounded_attempts():
+    client = Cutting(2, '{"answer": 7}')
+    assert await complete_structured(client, _request(), Verdict) == Verdict(answer=7)
+    assert [request.messages for request in client.requests] == [_request().messages] * 3
+    assert [request.metadata["attempt"] for request in client.requests] == [1, 2, 3]
+    with pytest.raises(StructuredOutputError, match="cut off"):
+        await complete_structured(Cutting(3, '{"answer": 7}'), _request(), Verdict)
+
+    text = Cutting(1, "A whole entry.")
+    assert await complete_text(text, _request()) == "A whole entry."
+    assert [request.json_schema for request in text.requests] == [None, None]
+    with pytest.raises(LLMCallError, match="cut off"):
+        await complete_text(Cutting(2, "A whole entry."), _request(), attempts=2)
 
 
 async def test_scripted_client_reports_no_usage_and_encodes_dicts():

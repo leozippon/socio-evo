@@ -15,9 +15,10 @@ from infrastructure.llm.config import LLMConfig
 class OpenAICompatibleClient:
     """Async chat-completions client with at most `max_concurrency` calls in flight.
 
-    The SDK retries transient failures up to `max_retries` times. A remaining failure, a
-    reply cut off by the token limit or an empty reply raises LLMCallError. Separated
-    reasoning text (`reasoning_content`, or `reasoning`) is captured when the server sends it.
+    The SDK retries transient failures up to `max_retries` times. A remaining failure, or an
+    empty reply that was not cut off, raises LLMCallError; a reply cut off by the token limit
+    is returned marked `truncated`, for the caller to ask again. Separated reasoning text
+    (`reasoning_content`, or `reasoning`) is captured when the server sends it.
     """
 
     def __init__(self, config: LLMConfig, *, http_client: httpx2.AsyncClient | None = None) -> None:
@@ -25,7 +26,6 @@ class OpenAICompatibleClient:
         if not api_key:
             raise LLMConfigError(f"API key variable {config.api_key_env} is not set")
         self._config = config
-        self.enforces_schema = config.structured_output == "json_schema"
         self._client = openai.AsyncOpenAI(
             base_url=config.base_url,
             api_key=api_key,
@@ -57,14 +57,14 @@ class OpenAICompatibleClient:
                 raise LLMCallError(f"{type(exc).__name__}: {exc}") from exc
             latency = time.perf_counter() - started
         choice = completion.choices[0]
-        if choice.finish_reason == "length":
-            raise LLMCallError("reply truncated by the token limit")
-        if not choice.message.content:
+        truncated = choice.finish_reason == "length"
+        if not choice.message.content and not truncated:
             raise LLMCallError("reply has no content")
         extra = choice.message.model_extra or {}
         usage = completion.usage
         return LLMResponse(
-            text=choice.message.content,
+            text=choice.message.content or "",
+            truncated=truncated,
             reasoning=extra.get("reasoning_content") or extra.get("reasoning"),
             usage=None
             if usage is None

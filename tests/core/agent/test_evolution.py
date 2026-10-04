@@ -48,7 +48,7 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     script.skills = {
         2: [{"change": "write", "title": "date-parsing", "summary": "Dates.", "text": "ISO."}],
         4: [
-            {"change": "take out", "title": "date-parsing"},
+            {"change": "take out", "title": "Date parsing"},
             {"change": "write", "title": "answering", "summary": "Replies.", "text": "Brief."},
         ],
     }
@@ -136,7 +136,7 @@ async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agen
     ]
     assert offered == [True, False, True, False]
     assert log[1].body == "Requested: My plans changed.\n\nThoughts 3."
-    assert "You chose to do this tonight: My plans changed." in script.prompts("policy")[1]
+    assert 'You chose to do this tonight: "My plans changed."' in script.prompts("policy")[1]
 
 
 async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script):

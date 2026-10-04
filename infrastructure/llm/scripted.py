@@ -13,14 +13,10 @@ Responder = Callable[[LLMRequest], str | dict[str, Any]]
 
 class ScriptedClient:
     """Answers every request with `responder(request)`. This is not a model: it reasons about
-    nothing and reports no token usage. Exceptions raised by the responder propagate.
+    nothing and reports no token usage. Exceptions raised by the responder propagate."""
 
-    `enforces_schema` says which structured-output mode it stands in for: by default guided
-    decoding, as in every experiment."""
-
-    def __init__(self, responder: Responder, *, enforces_schema: bool = True) -> None:
+    def __init__(self, responder: Responder) -> None:
         self._responder = responder
-        self.enforces_schema = enforces_schema
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         started = time.perf_counter()

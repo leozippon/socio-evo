@@ -17,7 +17,7 @@ from infrastructure.llm.factory import create_client
 from infrastructure.llm.openai_compatible import OpenAICompatibleClient
 from infrastructure.llm.recording import RecordingClient
 from infrastructure.llm.scripted import Responder, ScriptedClient
-from infrastructure.llm.structured import complete_structured
+from infrastructure.llm.structured import complete_structured, complete_text
 
 __all__ = [
     "LLMCallError",
@@ -36,5 +36,6 @@ __all__ = [
     "StructuredOutputError",
     "Usage",
     "complete_structured",
+    "complete_text",
     "create_client",
 ]

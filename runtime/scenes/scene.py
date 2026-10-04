@@ -1,7 +1,9 @@
 """Scenes, and the driver that plays them side by side.
 
-A scene decides who is asked when, what each of them is told and may do, and what becomes of
-their decisions; what an action means stays with the Environment. Each scene keeps its own
+A scene decides who is asked when, what each of them is told, what each may do with the
+values that are really possible at that moment (the allowances of the answer card), and what
+becomes of their decisions; what an action means stays with the Environment, which still
+refuses, in the town's words, a choice that went stale within the moment. Each scene keeps its own
 pace: its n-th turn takes place `step` minutes after the one before, from its `start`. The
 driver plays any number of scenes in the order of time. The turns that fall at the same time,
 whatever their scenes, are played together: everyone they ask decides concurrently, each
@@ -21,8 +23,8 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import ClassVar
 
 from core.agent import Agent
-from core.environment import Environment, job_id
-from core.interaction import ActionKind, ClaimTask, Decision, EventKind, Observation
+from core.environment import Environment
+from core.interaction import Allowance, ClaimTask, Decision, EventKind, Observation, job_id
 from runtime.scenes import situations
 
 
@@ -63,8 +65,8 @@ class Scene(ABC):
         over."""
 
     @abstractmethod
-    def allowed(self, agent: str) -> tuple[ActionKind, ...]:
-        """What `agent` may do now, as the situation tells it."""
+    def allowed(self, agent: str) -> tuple[Allowance, ...]:
+        """What `agent` may do now, with the values that are really possible."""
 
     @abstractmethod
     def situation(self, agent: str) -> str:
@@ -114,6 +116,7 @@ async def play(
                 situation=scene.situation(agent),
                 percepts=env.perceive(agent),
                 allowed=scene.allowed(agent),
+                places=situations.place_names(env, agent),
             )
             for scene, agent in asked
         ]
@@ -164,8 +167,8 @@ async def play(
 def _announce_draws(
     env: Environment, turn: Sequence[tuple[Scene, str, Decision]], time: int
 ) -> None:
-    """Tell the agents who asked for the same job at this moment, its decisions in the order
-    drawn, the order in which the client took their requests."""
+    """Tell the agents who reached for the same notice at this moment, its decisions in the
+    order drawn, the order in which the clerk drew their names."""
     claims: dict[str, list[str]] = {}
     for _, agent, decision in turn:
         if isinstance(action := decision.action, ClaimTask):

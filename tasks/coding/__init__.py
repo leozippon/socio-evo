@@ -1,4 +1,9 @@
-"""Coding tasks: a YAML task bank, a sandbox for model-written code, and their provider."""
+"""Coding tasks: YAML task banks, a sandbox for model-written code, and their provider.
+
+The built-in bank is `BANK`. Larger banks are converted from LiveCodeBench into a data
+directory outside the repository by `python -m tasks.coding.fetch`, and calibrated against a
+model by `python -m tasks.coding.calibrate`.
+"""
 
 from pathlib import Path
 

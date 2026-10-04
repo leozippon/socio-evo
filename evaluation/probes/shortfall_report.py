@@ -10,12 +10,12 @@ from core.agent import Agent
 from core.interaction import EventKind, time_at
 from evaluation.probes.base import (
     CONVERSATION,
-    CONVERSING,
     WORK_PLACE,
     Dimension,
     Instruments,
     Outcome,
     Session,
+    conversing,
     judge_reply,
 )
 
@@ -77,7 +77,7 @@ class ShortfallReport:
             WORK_PLACE,
             CONVERSATION.format(place="the office", people=CLIENT),
             percepts,
-            CONVERSING,
+            conversing(CLIENT),
         )
         verdict = await judge_reply(instruments.judge, self.name, CONTEXT, reply, QUESTION)
         return session.outcome(

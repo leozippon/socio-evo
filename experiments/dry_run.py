@@ -3,11 +3,11 @@
 This is a pipeline check, not a behavioural model: it understands nothing it is asked.
 Each reply is drawn at random from the request's JSON schema with a generator seeded by
 the run seed and the request's messages, so a request always gets the same reply, in any
-order. To reach every path of a run, strings the protocol uses as references come from the
-experiment: slot names as itinerary keys, place ids as itinerary values, agent names as
-people, and jobs named in the prompt as task ids; a solution is a stub defining the
-function the prompt names. Lists hold at most one item, so no reply breaks a uniqueness
-rule its schema cannot express. A request without a schema gets a placeholder sentence.
+order. A moment's answer card enumerates every reference (jobs, people, places, parts), so
+the draw picks among the real choices; the one free reference, whom a new belief is about,
+is drawn from the experiment's residents, and code is a stub defining the function the
+prompt names. Lists hold at most one item, so no reply breaks a uniqueness rule its schema
+cannot express. A request without a schema gets a placeholder sentence.
 """
 
 import hashlib
@@ -16,10 +16,10 @@ import random
 import re
 from typing import Any
 
+from core.interaction.card import CODE
 from experiments.config import ExperimentConfig
 from infrastructure.llm import LLMRequest
 
-_JOB = re.compile(r"\bjob \d+\b", re.IGNORECASE)
 _ENTRY_POINT = re.compile(r"defines `(\w+)`")
 
 
@@ -27,16 +27,8 @@ class DryRunResponder:
     """Schema-driven replies for the run of `config` with `seed`; see the module docstring."""
 
     def __init__(self, config: ExperimentConfig, seed: int) -> None:
-        people = [agent.profile.name for agent in config.agents]
         self.seed = seed
-        self.keys = {"itinerary": [slot.name for slot in config.simulation.calendar.slots]}
-        self.words = {
-            "itinerary": [place.id for place in config.environment.places],
-            "target": people,
-            "to": people,
-            "partner": people,
-            "about": people,
-        }
+        self.words = {"about": [agent.profile.name for agent in config.agents]}
 
     def __call__(self, request: LLMRequest) -> str | dict[str, Any]:
         messages = json.dumps([message.model_dump() for message in request.messages])
@@ -75,15 +67,11 @@ class _Draw:
                     for key, child in schema["properties"].items()
                     if key in required or rng.random() < 0.5
                 }
-            case "object":
-                keys = self.responder.keys[name]
-                chosen = rng.sample(keys, rng.randint(0, len(keys)))
-                return {key: self.value(schema["additionalProperties"], name) for key in chosen}
             case "array":
                 count = max(schema.get("minItems", 0), rng.randint(0, 1))
                 return [self.value(schema["items"], name) for _ in range(count)]
             case "string":
-                return self.string(schema, name)
+                return self.string(name)
             case "integer":
                 return rng.randint(schema.get("minimum", 0), schema.get("maximum", 9))
             case "boolean":
@@ -92,20 +80,13 @@ class _Draw:
                 return None
         raise ValueError(f"the dry run cannot draw {name!r} from the schema {schema}")
 
-    def string(self, schema: dict[str, Any], name: str) -> str:
+    def string(self, name: str) -> str:
         rng = self.rng
         if name in self.responder.words:
             return rng.choice(self.responder.words[name])
-        if name == "task_id":
-            return rng.choice(_JOB.findall(self.prompt) or ["job 1"])
-        if name == "solution":
+        if name == CODE:
             entry = _ENTRY_POINT.search(self.prompt)
             return f"def {entry[1] if entry else 'solution'}(*args, **kwargs):\n    return None\n"
-        if "pattern" in schema:
-            slug = f"note-{rng.randrange(100)}"
-            if not re.fullmatch(schema["pattern"], slug):
-                raise ValueError(f"the dry run cannot draw {name!r} matching {schema['pattern']}")
-            return slug
         return _placeholder(rng)
 
 

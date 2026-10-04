@@ -1,6 +1,6 @@
 """The episodic stream: the agent's experience in the order it happened."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from pydantic import NonNegativeInt
@@ -12,16 +12,27 @@ from infrastructure.storage import append_jsonl, read_jsonl
 
 class Record(StrictModel):
     """One experience: a witnessed event, with its event `seq`, or one of the agent's own
-    decisions, with `seq` None. `text` is what the agent perceived or did."""
+    decisions, with `seq` None. `text` is what the agent perceived or did; `place` is the id
+    of where it happened, and `where` the name the agent knows that place by, when it was
+    known as the record was made (records made before names were kept have none)."""
 
     time: SimTime
     place: str | None = None
+    where: str | None = None
     seq: NonNegativeInt | None = None
     text: str
 
     @classmethod
-    def of(cls, percept: Percept) -> "Record":
-        return cls(time=percept.time, place=percept.place, seq=percept.seq, text=percept.text)
+    def of(cls, percept: Percept, names: Mapping[str, str] | None = None) -> "Record":
+        """The record of `percept`, naming its place as `names` (by place id) do."""
+        where = None if names is None or percept.place is None else names.get(percept.place)
+        return cls(
+            time=percept.time,
+            place=percept.place,
+            where=where,
+            seq=percept.seq,
+            text=percept.text,
+        )
 
 
 class EpisodicStream:

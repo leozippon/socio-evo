@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from core.agent.evolution import EvolutionConfig, Evolver, History, SelfTrigger
+from core.interaction import card
 from evaluation import Dimension, Outcome, ProbeResult, version_at
 from evaluation.results import AgentResult, write_result
 from experiments.config import ExperimentConfig
@@ -32,8 +33,8 @@ class Townsfolk(Script):
     def __call__(self, request: LLMRequest) -> str | dict[str, Any]:
         reply = super().__call__(request)
         if request.metadata["agent"] == "Cai" and request.metadata["purpose"] == "act":
-            if reply["action"] == {"kind": "pass"} and "leave" in offered(request):
-                reply["action"] = {"kind": "leave"}
+            if reply["do"] == card.CARRY_ON and card.LEAVE in offered(request):
+                reply["do"] = card.LEAVE
         return reply
 
 

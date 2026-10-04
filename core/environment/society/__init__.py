@@ -17,8 +17,6 @@ from core.environment.society.work import (
     TaskProvider,
     Trial,
     digest,
-    job_id,
-    job_name,
     listed,
 )
 
@@ -40,7 +38,5 @@ __all__ = [
     "TaskProvider",
     "Trial",
     "digest",
-    "job_id",
-    "job_name",
     "listed",
 ]

@@ -37,10 +37,10 @@ negated, a string's last character replaced, a list's first element changed so),
 hidden checks as the truth; the index records the change.
 
 A task's difficulty is the measured one (`measured_difficulty`) where the calibration file
-`DIR/livecodebench/calibration.json` of `tasks.coding.calibrate` covers it, and else the
-benchmark's label. Reward and deadline follow difficulty (`TERMS`). The town bank takes the
-pool's tasks of each difficulty in proportion to `TOWN_MIX`, as many as the scarcest
-difficulty allows, choosing by hash.
+`DIR/livecodebench/calibration.json` of `tasks.coding.calibrate` holds at least `MIN_ATTEMPTS`
+assessed first attempts at it, and else the benchmark's label. Reward and deadline follow
+difficulty (`TERMS`). The town bank takes the pool's tasks of each difficulty in proportion to
+`TOWN_MIX`, as many as the scarcest difficulty allows, choosing by hash.
 """
 
 import argparse
@@ -88,21 +88,30 @@ HELD_OUT_SHARE = 0.2
 MAX_HIDDEN = 20
 MIN_HIDDEN = 5
 MAX_CHECK_CHARS = 10_000
+MIN_ATTEMPTS = 2
 CALIBRATION = "calibration.json"
 INDEX = "index.json"
 
 
 class Difficulty(StrEnum):
+    """The benchmark's labels, and `unsolved`, which only a measurement gives."""
+
     EASY = "easy"
     MEDIUM = "medium"
     HARD = "hard"
+    UNSOLVED = "unsolved"
 
 
-TERMS = {Difficulty.EASY: (20, 1), Difficulty.MEDIUM: (30, 2), Difficulty.HARD: (40, 2)}
+TERMS = {
+    Difficulty.EASY: (20, 1),
+    Difficulty.MEDIUM: (30, 2),
+    Difficulty.HARD: (40, 2),
+    Difficulty.UNSOLVED: (40, 2),
+}
 """The reward and the deadline in days of a task of each difficulty."""
 
 TOWN_MIX = {Difficulty.EASY: 1, Difficulty.MEDIUM: 1, Difficulty.HARD: 1}
-"""The relative number of town tasks of each difficulty."""
+"""The relative number of town tasks of each difficulty; the others are left out."""
 
 _TYPES = {"int", "float", "str", "bool", "List"}
 _ANY_ORDER = re.compile(r"\bany order\b", re.IGNORECASE)
@@ -177,7 +186,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     measured = {
         problem.name: measured_difficulty(results[problem.name], problem.origin.label)
         for problem in problems
-        if problem.name in results and results[problem.name].samples
+        if problem.name in results and len(results[problem.name].samples) >= MIN_ATTEMPTS
     }
     for bank, entries in build(root, problems, measured).items():
         print(f"{bank}: {len(entries)} tasks")
@@ -406,27 +415,42 @@ def _contradict(value: object) -> object:
 
 def measured_difficulty(result: Result, label: Difficulty) -> Difficulty:
     """The difficulty of a task from the first attempts in `result` and the benchmark's
-    `label`."""
-    raise NotImplementedError
+    `label`: unsolved if no attempt passed the visible checks; hard if some did and some did
+    not; easy if every attempt was perfect on a task the benchmark calls easy; and medium if
+    every attempt passed the visible checks but one missed a hidden check or the benchmark
+    calls the task harder."""
+    if result.visible_rate == 0:
+        return Difficulty.UNSOLVED
+    if result.visible_rate < 1:
+        return Difficulty.HARD
+    if result.perfect_rate == 1 and label is Difficulty.EASY:
+        return Difficulty.EASY
+    return Difficulty.MEDIUM
 
 
 def table(entries: dict[str, Entry], results: dict[str, Result]) -> list[str]:
-    """For each difficulty among `entries`: the tasks, and over the first attempts that
-    `results` hold for them, the visible pass rate, the mean hidden quality, and the share
-    that passed the visible checks but not every hidden one."""
+    """For each difficulty among `entries`: the tasks, the share of their calibration replies
+    cut off by the token limit, and over the first attempts that `results` hold for them, the
+    visible pass rate, the mean hidden quality, and the share that passed the visible checks
+    but not every hidden one."""
     lines = []
     for difficulty in Difficulty:
         names = [name for name, entry in entries.items() if entry.difficulty is difficulty]
-        samples = [sample for name in names if name in results for sample in results[name].samples]
+        if not names:
+            continue
+        measured = [results[name] for name in names if name in results]
+        attempts = [sample for result in measured for sample in result.samples]
         line = f"{difficulty.value:<8} {len(names):>4} tasks"
-        if samples:
+        if attempts:
+            cut_off = sum(result.cut_off for result in measured)
             line += (
-                f", {len(samples):>4} attempts: visible {_mean(s.visible for s in samples):.2f}, "
-                f"quality {_mean(s.quality for s in samples):.2f}, visible but defective "
-                f"{_mean(s.visible and s.quality < 1 for s in samples):.2f}"
+                f", {len(attempts):>4} attempts ({cut_off / (len(attempts) + cut_off):.2f} more "
+                f"cut off): "
+                f"visible {_mean(a.visible for a in attempts):.2f}, "
+                f"quality {_mean(a.quality for a in attempts):.2f}, "
+                f"visible but defective {_mean(a.visible and a.quality < 1 for a in attempts):.2f}"
             )
-        if names:
-            lines.append(line)
+        lines.append(line)
     return lines
 
 
@@ -473,10 +497,18 @@ def build(
 
 def town(pool: dict[str, tuple[dict[str, Any], Entry]]) -> dict[str, tuple[dict[str, Any], Entry]]:
     """The tasks of `pool` in the proportions of `TOWN_MIX`, as many as the scarcest
-    difficulty allows, the first of each difficulty by hash of their name."""
+    difficulty allows, the first of each difficulty by hash of their name.
+
+    Raises ValueError if the pool has no task of a difficulty in the mix.
+    """
     by_difficulty = {difficulty: [] for difficulty in TOWN_MIX}
     for name in sorted(pool, key=lambda name: _hash(f"town:{name}")):
-        by_difficulty[pool[name][1].difficulty].append(name)
+        difficulty = pool[name][1].difficulty
+        if difficulty in by_difficulty:
+            by_difficulty[difficulty].append(name)
+    missing = [difficulty.value for difficulty, names in by_difficulty.items() if not names]
+    if missing:
+        raise ValueError(f"the pool has no {' or '.join(missing)} task for the town")
     scale = min(len(by_difficulty[difficulty]) / share for difficulty, share in TOWN_MIX.items())
     chosen = {
         name
