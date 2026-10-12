@@ -34,10 +34,9 @@ class WorkPlan(StrictModel):
 
 
 class Work:
-    """The banks under `root` that the jobs of the work file `plan` name, each check running for
-    at most `timeout` seconds isolated as `isolation` says. A part's reference is its job's
-    `<bank>/<task>`. The provider does not take an isolation of its own yet, so assessment
-    through it always runs isolated."""
+    """The banks under `root` that the jobs of the work file `plan` name, each check, of a draft
+    or of what is handed in, running for at most `timeout` seconds isolated as `isolation` says.
+    A part's reference is its job's `<bank>/<task>`."""
 
     def __init__(
         self, root: Path, plan: Path, *, timeout: float, isolation: Isolation = Isolation.BUBBLEWRAP
@@ -51,7 +50,10 @@ class Work:
             for reference in (job.task, job.other)
             if reference is not None
         }
-        self.banks = {name: CodingTaskProvider(root / name, timeout=timeout) for name in names}
+        self.banks = {
+            name: CodingTaskProvider(root / name, timeout=timeout, isolation=isolation)
+            for name in names
+        }
         self.timeout = timeout
         self.isolation = isolation
 

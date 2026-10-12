@@ -11,6 +11,7 @@ from evaluation.judge import Verdict
 from evaluation.probes import Work
 from evaluation.runner import _backdrop
 from infrastructure.llm import ScriptedClient, StructuredOutputError
+from tasks.coding import Isolation
 from tests.core.agent.test_prompts import STEERING
 from tests.evaluation.conftest import HERE, SOLUTIONS, Resident, stake, town
 
@@ -278,6 +279,21 @@ async def test_families_refuse_work_and_towns_they_cannot_be_played_with(
     )
     with pytest.raises(ValueError, match="appointment"):
         await FAMILIES["appointment"].ready(Work(banks, work_file, timeout=5.0), lonely)
+
+
+async def test_held_out_work_is_checked_and_assessed_isolated_as_the_evaluation_names(
+    banks, work_file, monkeypatch, tmp_path
+):
+    monkeypatch.setenv("PATH", str(tmp_path))  # a machine without bubblewrap
+    reference = SOLUTIONS["slugify"]["reference"]
+    isolated = Work(banks, work_file, timeout=5.0)
+    part = isolated.part("held-out/slugify", reward=20, deadline_days=1)
+    with pytest.raises(RuntimeError, match="bubblewrap"):
+        await isolated.assess(part, reference)
+    bare = Work(banks, work_file, timeout=5.0, isolation=Isolation.NONE)
+    assert await bare.failing("held-out/slugify", reference) == []
+    assessment = await bare.assess(part, reference)
+    assert (assessment.passed, assessment.quality) == (True, 1.0)
 
 
 async def test_every_text_a_probe_shows_is_neutral_and_of_the_town(play):
