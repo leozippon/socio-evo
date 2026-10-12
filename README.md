@@ -35,7 +35,7 @@ python -m experiments.run experiments/configs/smoke.yaml --seeds 0
 # convert, measure the model's first attempts at the town's pool, then fetch again so that
 # the town bank follows the measured difficulty
 python -m tasks.coding.fetch
-python -m tasks.coding.calibrate ~/.cache/socio-evo/banks/livecodebench/pool --config experiments/configs/town.yaml
+python -m tasks.calibrate ~/.cache/socio-evo/banks/livecodebench/pool --config experiments/configs/town.yaml
 python -m tasks.coding.fetch
 
 # The town of the experimental design, stopped after its first week (--resume continues it)

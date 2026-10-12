@@ -34,11 +34,11 @@ ARMS = ("selection-comfortable", "assignment-comfortable")
 SHARED = {"Count": "counts", "Share": "shares", "Column": "values"}
 """The README's tables of fields that several objects share, by the field that holds them."""
 OLD_MEASURES = {
-    "runs/pilot/seed-0000": "1ed6c738eb85fe95",
-    "runs/smoke/seed-0000": "087742a7084d5432",
+    "runs/v1/pilot/seed-0000": "1ed6c738eb85fe95",
+    "runs/v1/smoke/seed-0000": "087742a7084d5432",
 }
 """The first 16 hex digits of the SHA-256 of the published measures of the runs of the first
-town, kept on the machine where they ran, as they were before the second town."""
+town, archived under runs/v1 on the machine where they ran, as they were before the second town."""
 
 
 def files(root: Path) -> dict[str, bytes]:
