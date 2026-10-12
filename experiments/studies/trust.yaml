@@ -6,6 +6,10 @@ base: ../configs/town.yaml
 seeds: [0, 1, 2, 3, 4]
 
 overlays:
+  # The study is the controlled design: no arm holds the base town's meetings, whose effects
+  # its residents decide. (An arm with the late phase replaces them with it in any case.)
+  controlled:
+    simulation: {interventions: []}
   # Pressure. Comfortable: a day's jobs pay well over the town's living costs. Scarce: they
   # cannot cover everyone's.
   comfortable:
@@ -34,9 +38,9 @@ overlays:
     evolution: {levels: []}
 
 arms:
-  selection-comfortable: [comfortable, late-phase]
-  selection-scarce: [scarce, late-phase]
-  assignment-comfortable: [comfortable, assignment]
-  assignment-scarce: [scarce, assignment]
-  solo: [comfortable, solo]
-  no-evolution: [comfortable, late-phase, no-evolution]
+  selection-comfortable: [controlled, comfortable, late-phase]
+  selection-scarce: [controlled, scarce, late-phase]
+  assignment-comfortable: [controlled, comfortable, assignment]
+  assignment-scarce: [controlled, scarce, assignment]
+  solo: [controlled, comfortable, solo]
+  no-evolution: [controlled, comfortable, late-phase, no-evolution]

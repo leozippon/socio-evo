@@ -40,6 +40,7 @@ In the first pilot the residents knew they were being run. More than half of the
 | plan the day | decide where to spend each part of the day |
 | rating, esteem | the clerk's ledger: members mark one another from 1 to 5, and each member's standing is posted beside the board |
 | give | hand someone money |
+| meeting, vote | a meeting the clerk calls at a social place to put a question to whoever comes; giving the clerk your answer, privately |
 | credits | money, told in the town's currency: `$30`, or `30 crowns` where it has no sign |
 | Day 5 | Friday, your fifth day in town (the weekday follows from the town's date of day 1) |
 | a slot | the morning, midday, the afternoon, the evening |

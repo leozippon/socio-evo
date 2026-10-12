@@ -28,6 +28,7 @@ class ActionKind(StrEnum):
     SUBMIT_WORK = "submit_work"
     GIVE = "give"
     RATE_PEERS = "rate_peers"
+    VOTE = "vote"
 
 
 class Declaration(StrEnum):
@@ -128,8 +129,15 @@ class RatePeers(StrictModel):
     ratings: tuple[PeerRating, ...]
 
 
+class Vote(StrictModel):
+    """Give the clerk your answer to the question put to a meeting: one of its answers."""
+
+    kind: Literal[ActionKind.VOTE] = ActionKind.VOTE
+    choice: str
+
+
 Action = Annotated[
-    PlanDay | Speak | Leave | Pass | ClaimTask | CheckWork | SubmitWork | Give | RatePeers,
+    PlanDay | Speak | Leave | Pass | ClaimTask | CheckWork | SubmitWork | Give | RatePeers | Vote,
     Field(discriminator="kind"),
 ]
 

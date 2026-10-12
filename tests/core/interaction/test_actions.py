@@ -35,6 +35,7 @@ REPLIES: dict[ActionKind, dict[str, Any]] = {
         "kind": "rate_peers",
         "ratings": [{"target": "ben", "score": 4, "reason": "Delivered on time."}],
     },
+    ActionKind.VOTE: {"kind": "vote", "choice": "no"},
 }
 
 

@@ -37,7 +37,7 @@ def study(tmp_path_factory) -> tuple[Path, Path]:
         "base": str(TOWN),
         "seeds": [0, 1],
         "overlays": {
-            "short": {"simulation": {"days": 3}},
+            "short": {"simulation": {"days": 3, "interventions": []}},
             "late-phase": {"simulation": {"interventions": [{"day": 3, "conditions": late}]}},
             "assignment": {"environment": {"conditions": {"partner_choice": False}}},
         },

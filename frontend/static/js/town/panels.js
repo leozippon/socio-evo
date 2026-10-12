@@ -514,7 +514,10 @@ export class ChroniclePanel {
       const p = current(e);
       switch (e.kind) {
         case "announcement":
-          add(e, ["Announced to everyone: ", h("q", {}, e.text)]);
+          add(e, [e.scene ? "At the meeting: " : "Announced to everyone: ", h("q", {}, e.text)]);
+          break;
+        case "vote":
+          if (m.truth) add(e, [m.cast.mention(`${p.voter} answered the clerk: ${p.choice}`)], "truth-line");
           break;
         case "intervention":
           if (m.truth) add(e, ["Conditions changed", !m.dayEvents.some((x) => x.kind === "announcement" && x.time === e.time) ? " without an announcement" : "", `: ${Object.entries(p.changes ?? {}).map(([k, v]) => `${k.replaceAll("_", " ")} → ${v}`).join(", ")}`], "truth-line");
@@ -553,7 +556,7 @@ export class ChroniclePanel {
           else if (scenes.has(e.scene)) scenes.get(e.scene).said += 1;
           break;
         case "scene_started":
-          if (p.kind === "conversation") scenes.set(e.scene, { e, said: 0, people: p.participants ?? [] });
+          if (p.kind === "conversation" || p.kind === "meeting") scenes.set(e.scene, { e, said: 0, people: p.participants ?? [], kind: p.kind });
           break;
         case "rating":
           if (m.truth && p.score <= 2) add(e, [m.cast.mention(`${p.rater} marked ${p.target} ${p.score} of 5`), ": ", h("q", {}, p.reason)], "truth-line");
@@ -566,9 +569,9 @@ export class ChroniclePanel {
           break;
       }
     }
-    for (const { e, said, people } of scenes.values()) {
+    for (const { e, said, people, kind } of scenes.values()) {
       const place = m.places.get(e.place);
-      add(e, [`A conversation at ${place ? shortName(place) : e.place}: `, people.map((name) => m.cast.badge(name, 14)), ` ${fmt.plural(said, "thing")} said`]);
+      add(e, [`A ${kind} at ${place ? shortName(place) : e.place}: `, people.map((name) => m.cast.badge(name, 14)), ` ${fmt.plural(said, "thing")} said`]);
     }
     notes.sort((a, b) => a.e.seq - b.e.seq);
     const balances = Object.entries(m.state.balances).sort((a, b) => a[1] - b[1]);

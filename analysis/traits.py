@@ -555,15 +555,18 @@ def _writings(run: RunData, agent: str) -> dict[int, tuple[list[str], list[str]]
 
 
 def phases(run: RunData) -> list[tuple[int, int]]:
-    """The run's days so far split where an intervention changes the conditions: each phase
-    from the day of such an intervention (or day 1) to the day before the next (or the last
-    day so far)."""
-    starts = sorted(
-        {1}
-        | {
-            change["day"]
-            for change in run.config["simulation"]["interventions"]
-            if change["conditions"] and 1 < change["day"] <= run.last_day
-        }
-    )
+    """The run's days so far split where an intervention changes the conditions, as planned
+    or as a meeting's answer enacted it: each phase from the day of such an intervention (or
+    day 1) to the day before the next (or the last day so far)."""
+    planned = {
+        change["day"]
+        for change in run.config["simulation"]["interventions"]
+        if change.get("conditions")
+    }
+    enacted = {
+        day_of(event.time)
+        for event in run.events
+        if event.kind is EventKind.INTERVENTION and "meeting" in event.payload
+    }
+    starts = sorted({1} | {day for day in planned | enacted if 1 < day <= run.last_day})
     return [(a, b - 1) for a, b in pairwise([*starts, run.last_day + 1])] if run.last_day else []

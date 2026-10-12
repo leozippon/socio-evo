@@ -39,6 +39,8 @@ OLD_MEASURES = {
 }
 """The first 16 hex digits of the SHA-256 of the published measures of the runs of the first
 town, archived under runs/v1 on the machine where they ran, as they were before the second town."""
+LATER_KINDS = ("vote",)
+"""Kinds of decision added since the first town, which its measures count as none."""
 
 
 def files(root: Path) -> dict[str, bytes]:
@@ -466,5 +468,8 @@ def test_the_measures_of_the_first_town_are_unchanged(run):
     if not root.is_dir():
         pytest.skip(f"{run} is not on this machine")
     found = read_run(root)
-    data = encode(bundle.measures(measure(found), run_usage(found)))
-    assert hashlib.sha256(data).hexdigest()[:16] == OLD_MEASURES[run]
+    document = bundle.measures(measure(found), run_usage(found))
+    for row in (*document["agents"], *document["society"]):
+        for counts in (row["decisions"], row.get("rejected", {})):
+            assert all(counts.pop(kind) == 0 for kind in LATER_KINDS if kind in counts)
+    assert hashlib.sha256(encode(document)).hexdigest()[:16] == OLD_MEASURES[run]

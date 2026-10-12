@@ -9,6 +9,8 @@ from typing import Any
 import pytest
 import yaml
 
+from analysis import meetings as meetings_of
+from analysis import read_run
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
 from core.environment import Conditions, Environment, EnvironmentConfig, Place
@@ -28,7 +30,15 @@ from core.interaction import (
 )
 from infrastructure.llm import LLMClient, LLMRequest, LLMResponse, RecordingClient, ScriptedClient
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from runtime.scenes import Conversation, Planning, SceneConfig, WorkSession, play, situations
+from runtime.scenes import (
+    Conversation,
+    Meeting,
+    Planning,
+    SceneConfig,
+    WorkSession,
+    play,
+    situations,
+)
 from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
@@ -778,3 +788,148 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
         "the clerk drew lots" in log[0].text and "By drawing lots, the clerk paired" in paired.text
     )
     assert "This part of the day ends at 10:00." in replies.requests[-1].messages[-1].content
+
+
+async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_morning(tmp_path):
+    """On day 1 everyone goes to the meeting at the cafe, has a word, and Ana and Ben answer
+    yes while Cai gives no answer: two of three carry it, so the clerk pairs by lot from the
+    next morning. Nobody goes to the meeting at the park on day 2, which changes nothing."""
+    question = "Should the clerk pair people for jobs for two by drawing lots?"
+    meetings = [
+        {
+            "day": day,
+            "at": "evening",
+            "kind": "meeting",
+            "place": place,
+            "question": question,
+            "options": ["yes", "no"],
+            "enacts": {"yes": {"partner_choice": False}},
+        }
+        for day, place in ((1, "cafe"), (2, "park"))
+    ]
+    simulation = SimulationConfig.model_validate(
+        {**SIMULATION.model_dump(), "days": 2, "interventions": meetings}
+    )
+    said, night = set(), Script()
+
+    def townsfolk(request: LLMRequest) -> str | dict[str, Any]:
+        agent, time = request.metadata["agent"], request.metadata["time"]
+        if request.metadata["purpose"] != "act":
+            return night(request)
+        can = offered(request)
+        if card.DECIDE in can:
+            parts = [part for part in choices(request, card.DECIDE) if part != card.PLAN]
+            evening = "the cafe" if day_of(time) == 1 else "home"
+            plan = {part: evening if part == "evening" else "home" for part in parts}
+            return {"thought": "", "do": card.DECIDE, **plan, card.PLAN: ""}
+        if card.GIVE_ANSWER in can and agent != "Cai":
+            return {"thought": "", "do": card.GIVE_ANSWER, card.REPLY_GIVEN: "yes"}
+        if card.SAY in can and agent not in said:
+            said.add(agent)
+            return {"thought": "", "do": card.SAY, card.TO: None, card.WORDS: "Lots, I say."}
+        return {"thought": "", "do": card.CARRY_ON}
+
+    run = RunDirectory.create(tmp_path, "town", 7, config=simulation, code_revision="test")
+    parts = replace(
+        setup(run, Script()),
+        simulation=simulation,
+        client=RecordingClient(ScriptedClient(townsfolk), run.llm_calls_path),
+    )
+    assert await Simulation.create(run, parts).run() is RunStatus.COMPLETED
+    log, held = events(run), "day-0001/evening/cafe"
+    said_at = {e.payload.get("meeting"): e for e in log if e.kind is EventKind.ANNOUNCEMENT}
+
+    notices = [e for e in log if e.kind is EventKind.ANNOUNCEMENT and "question" in e.payload]
+    assert [(e.time, e.audience, e.payload["place"]) for e in notices] == [
+        (time_at(1, "07:00"), AGENTS, "cafe"),
+        (time_at(2, "07:00"), AGENTS, "park"),
+    ]
+    planned = min(e.seq for e in log if e.kind is EventKind.DECISION)
+    assert notices[0].seq < planned
+    notice = "The clerk has put up a notice: a meeting at the cafe at 18:00 today, on the question:"
+    plans = [r for r in script_requests(run) if r["metadata"]["time"] == time_at(1, "07:00")]
+    assert len(plans) == 3 and all(notice in r["messages"][-1]["content"] for r in plans)
+
+    [opening] = [e for e in log if e.kind is EventKind.ANNOUNCEMENT and e.scene == held]
+    assert (opening.time, sorted(opening.audience)) == (time_at(1, "18:00"), list(AGENTS))
+    assert opening.text.startswith("The clerk opens the meeting and reads out the question:")
+    [started] = [e for e in log if e.kind is EventKind.SCENE_STARTED and e.scene == held]
+    assert started.payload["kind"] == "meeting"
+    votes = [e for e in log if e.kind is EventKind.VOTE]
+    assert {(e.actor, e.payload["choice"], e.audience, e.scene) for e in votes} == {
+        ("Ana", "yes", (), held),
+        ("Ben", "yes", (), held),
+    }
+    asked = [r for r in script_requests(run) if '"give the clerk your answer"' in str(r)]
+    assert len(asked) == 3 and all(
+        "and the talk is over. The clerk asks each person here, privately, for an answer to "
+        f"the question: {question} The answers are yes or no." in r["messages"][-1]["content"]
+        for r in asked
+    )
+    count = said_at[held]
+    assert count.time == time_at(1, "22:00") and count.audience == AGENTS
+    assert sorted(count.payload["asked"]) == list(AGENTS)
+    assert (count.payload["counts"], count.payload["carried"]) == ({"yes": 2, "no": 0}, "yes")
+    assert count.text.endswith(
+        "2 answered yes, 0 answered no and 1 gave no answer. The answer yes carries, from "
+        "tomorrow morning."
+    )
+
+    [enacted] = [e for e in log if e.kind is EventKind.INTERVENTION]
+    assert (enacted.time, enacted.payload["meeting"]) == (time_at(2, "07:00"), held)
+    assert enacted.payload["changes"] == {"partner_choice": False}
+    day_two = next(e for e in log if e.kind is EventKind.DAY_STARTED and day_of(e.time) == 2)
+    assert enacted.seq < day_two.seq
+    nobody = said_at["day-0002/evening/park"]
+    assert nobody.payload == {
+        "meeting": "day-0002/evening/park",
+        "asked": [],
+        "counts": {"yes": 0, "no": 0},
+        "carried": None,
+    }
+    assert nobody.text.endswith("Nobody came, so things stay as they are.")
+
+    found = meetings_of(read_run(run.root))
+    assert [(m.meeting, m.carried, m.votes, m.enacted) for m in found] == [
+        (held, "yes", {"Ana": "yes", "Ben": "yes"}, {"partner_choice": False}),
+        ("day-0002/evening/park", None, {}, None),
+    ]
+
+
+def script_requests(run: RunDirectory) -> list[dict[str, Any]]:
+    """The decision requests of `run`, as recorded."""
+    return [
+        call["request"] | {"metadata": call["metadata"]}
+        for call in read_jsonl(run.llm_calls_path)
+        if call["metadata"]["purpose"] == "act"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("voters", "votes", "carried"),
+    [
+        (["Ana", "Ben"], {"Ana": "yes", "Ben": "no"}, None),
+        (["Ana", "Ben", "Cai"], {"Ana": "no"}, None),
+        (["Ana", "Ben", "Cai"], {"Ana": "no", "Ben": "no"}, "no"),
+        (["Ana"], {"Ana": "yes"}, "yes"),
+    ],
+)
+def test_an_answer_carries_only_if_more_than_half_of_those_asked_give_it(
+    tmp_path, voters, votes, carried
+):
+    env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    meeting = Meeting(
+        env,
+        "meeting",
+        "cafe",
+        voters,
+        start=0,
+        step=5,
+        max_turns=6,
+        until=60,
+        rng=random.Random(0),
+        question="Should it?",
+        options=("yes", "no"),
+    )
+    meeting.voters, meeting.votes = voters, votes
+    assert meeting.carried() == carried

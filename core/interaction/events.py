@@ -43,6 +43,8 @@ class EventKind(StrEnum):
     DEFECT_DISCOVERED = "defect_discovered"
     CLAWBACK = "clawback"
     RATING = "rating"
+    VOTE = "vote"
+    """An answer given to the clerk at a meeting; truth-only."""
     ESTEEM_UPDATED = "esteem_updated"
     ACTION_REJECTED = "action_rejected"
     """An action reality could not honour; private to the actor, nothing changed."""

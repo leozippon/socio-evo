@@ -43,6 +43,7 @@ from core.interaction.actions import (
     RatePeers,
     Speak,
     SubmitWork,
+    Vote,
     job_number,
 )
 from infrastructure.config import StrictModel
@@ -59,6 +60,7 @@ TRY = "try your code"
 HAND_IN = "hand in"
 HAND_OVER = "hand over money"
 MARK = "mark people in the ledger"
+GIVE_ANSWER = "give the clerk your answer"
 
 THOUGHT = "thought"
 DOES = "do"
@@ -73,6 +75,7 @@ AS = "as"
 TELLING = "telling the client"
 NOTE = "note"
 MARKS = "marks"
+REPLY_GIVEN = "answer"
 WHO = "who"
 MARK_GIVEN = "mark"
 BECAUSE = "because"
@@ -316,8 +319,28 @@ class MayRate(_Allowance):
         return [_Form(MARK, {MARKS: (list[mark], None)}, rate)]
 
 
+class MayVote(_Allowance):
+    """Giving the clerk one's answer to the question put to a meeting, one of `options`."""
+
+    kind: Literal[ActionKind.VOTE] = ActionKind.VOTE
+    options: tuple[str, ...] = Field(min_length=2)
+
+    def forms(self) -> list[_Form]:
+        fields: Fields = {REPLY_GIVEN: (_one_of(self.options), None)}
+        return [_Form(GIVE_ANSWER, fields, lambda reply: Vote(choice=reply[REPLY_GIVEN]))]
+
+
 Allowance = Annotated[
-    MayPlan | MaySpeak | MayLeave | MayPass | MayClaim | MayCheck | MaySubmit | MayGive | MayRate,
+    MayPlan
+    | MaySpeak
+    | MayLeave
+    | MayPass
+    | MayClaim
+    | MayCheck
+    | MaySubmit
+    | MayGive
+    | MayRate
+    | MayVote,
     Field(discriminator="kind"),
 ]
 """What a resident can do of one kind at a moment, with the values that are really possible."""

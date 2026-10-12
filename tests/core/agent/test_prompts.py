@@ -254,6 +254,7 @@ SAMPLES = {
         {"ratings": [{"target": "Ben", "score": 4, "reason": "He explained the parser."}]},
         'in the clerk\'s ledger you marked Ben 4 of 5 ("He explained the parser.").',
     ),
+    ActionKind.VOTE: ({"choice": "no"}, "you gave the clerk your answer: no."),
 }
 
 

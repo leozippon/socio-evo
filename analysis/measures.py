@@ -16,8 +16,8 @@ from typing import Any
 from analysis.run import RunData
 from core.interaction import ActionKind, Event, EventKind, day_of, time_at
 
-MEETINGS = ("work", "conversation")
-"""The kinds of scene in which agents meet at a place."""
+MEETINGS = ("work", "conversation", "meeting")
+"""The kinds of scene in which agents meet at a place; a meeting counts as a conversation."""
 DECISIONS = tuple(str(kind) for kind in ActionKind)
 ATTEMPTS = (*DECISIONS, "move")
 """What an agent can attempt and reality refuse: an action, or a move."""
@@ -466,3 +466,54 @@ def gini(values: list[int]) -> float | None:
         return None
     differences = sum(abs(a - b) for a, b in permutations(values, 2))
     return differences / (2 * len(values) ** 2 * mean)
+
+
+@dataclass(frozen=True)
+class MeetingCount:
+    """A meeting as the log tells it: its `question`, `place` and `options`; the people asked
+    for their answers at its end (`asked`) and each one's answer (`votes`, truth the residents
+    never see); the answer that carried, if one did; and the conditions its enactment changed
+    the next morning, if it changed any."""
+
+    meeting: str
+    day: int
+    place: str
+    question: str
+    options: tuple[str, ...]
+    asked: tuple[str, ...]
+    votes: dict[str, str]
+    carried: str | None
+    enacted: dict[str, Any] | None
+
+
+def meetings(run: RunData) -> list[MeetingCount]:
+    """Every meeting of `run` whose count has been announced, in order."""
+    called, votes, enacted, counted = {}, defaultdict(dict), {}, []
+    for event in run.events:
+        payload = event.payload
+        match event.kind:
+            case EventKind.ANNOUNCEMENT if "question" in payload:
+                called[payload["meeting"]] = (event, payload)
+            case EventKind.VOTE:
+                votes[event.scene][payload["voter"]] = payload["choice"]
+            case EventKind.INTERVENTION if "meeting" in payload:
+                enacted[payload["meeting"]] = payload["changes"]
+            case EventKind.ANNOUNCEMENT if "counts" in payload:
+                counted.append(payload)
+    found = []
+    for count in counted:
+        notice, about = called[count["meeting"]]
+        found.append(
+            MeetingCount(
+                meeting=count["meeting"],
+                day=day_of(notice.time),
+                place=about["place"],
+                question=about["question"],
+                options=tuple(about["options"]),
+                asked=tuple(count["asked"]),
+                votes=votes[count["meeting"]],
+                carried=count["carried"],
+                enacted=enacted.get(count["meeting"]),
+            )
+        )
+    return found

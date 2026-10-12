@@ -11,6 +11,12 @@ every agent what it witnessed since its last decision, lets every agent evolve, 
 next day and writes a checkpoint. Interventions change conditions or make announcements at
 their time.
 
+A meeting is put up as a notice to everyone when its day starts, before anyone plans the
+day. At its slot the clerk opens it to those at its place, who hold it as a `Meeting` scene in
+place of the conversation there; its count is announced to everyone when the day ends, and
+the enactment of an answer that carried is queued as an intervention for the next day's
+start, so that it takes effect before anything else and is kept with the checkpoint.
+
 A reply of an agent's that cannot be obtained in the bounded attempts does not end the run: the
 moment passes without the agent doing anything, or the night step is skipped with nothing
 committed for it, and either is recorded as a `lapse` event. A run whose lapses exceed the
@@ -41,13 +47,14 @@ from pydantic import JsonValue, NonNegativeInt
 from core.agent import Agent, AgentSeed, CognitionConfig
 from core.agent.evolution import Evolver, History, Lapse, Version
 from core.agent.evolution import Trigger as Cadence
-from core.environment import Environment, EnvironmentConfig, PlaceKind, TaskProvider
+from core.environment import Environment, EnvironmentConfig, Place, PlaceKind, TaskProvider
 from core.interaction import EventKind, clock_of, day_of, time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMClient
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.scenes import (
     Conversation,
+    Meeting,
     Planning,
     Review,
     Scene,
@@ -57,6 +64,7 @@ from runtime.scenes import (
     situations,
 )
 from runtime.scheduler import Trigger, TriggerKind, TriggerQueue
+from runtime.simulation.config import Meeting as Called
 from runtime.simulation.config import SimulationConfig
 
 log = logging.getLogger(__name__)
@@ -116,6 +124,8 @@ class Simulation:
         """The last day completed."""
         self._stop = self.config.days
         self._met: dict[str, set[str]] = {}
+        self._held: list[tuple[Called, Meeting | None]] = []
+        """Today's meetings so far, each with its scene, None if nobody came."""
         self._started = wall.perf_counter()
         self._kinds: Counter[str] = Counter()
         """The kinds of the events in the first `_read` bytes of the event log."""
@@ -136,7 +146,7 @@ class Simulation:
                 agents[agent.id] = agent
             calendar = setup.simulation.calendar
             queue = TriggerQueue([Trigger(time=calendar.start(1), kind=TriggerKind.DAY_START)])
-            for intervention in setup.simulation.interventions:
+            for intervention in setup.simulation.changes:
                 queue.push(
                     Trigger(
                         time=intervention.time(calendar),
@@ -217,7 +227,22 @@ class Simulation:
         day, calendar = day_of(time), self.config.calendar
         self._started = wall.perf_counter()
         self.env.start_day(time, self.rng)
-        self._met = {agent: set() for agent in self.agents}
+        self._met, self._held = {agent: set() for agent in self.agents}, []
+        starts = dict(calendar.slot_times(day))
+        for called in self._meetings(day):
+            clock = clock_of(starts[called.at])
+            self.env.emit(
+                EventKind.ANNOUNCEMENT,
+                situations.notice(self.env, called.place, clock, called.question, called.options),
+                time=time,
+                audience=self.env.agents,
+                payload={
+                    "meeting": called.id,
+                    "place": called.place,
+                    "question": called.question,
+                    "options": list(called.options),
+                },
+            )
         planning = Planning(
             self.env, f"day-{day:04d}/planning", list(self.agents), calendar, start=time
         )
@@ -233,10 +258,39 @@ class Simulation:
             self.env.post(time, self.seed)
         day, settings = day_of(time), self.config.scenes
         prefix, ends = f"day-{day:04d}/{payload['slot']}/", self.config.calendar.slot_ends(day)
+        slot = payload["slot"]
+        due = {called.place: called for called in self._meetings(day) if called.at == slot}
         scenes: list[Scene] = []
         for place in self.env.world.places.values():
             here = self.env.world.occupants(place.id)
-            if place.kind is PlaceKind.WORK and here:
+            if (called := due.get(place.id)) is not None:
+                if not here:
+                    self._held.append((called, None))
+                    continue
+                self.env.emit(
+                    EventKind.ANNOUNCEMENT,
+                    situations.opening(called.question, called.options),
+                    time=time,
+                    audience=here,
+                    place=place.id,
+                    scene=called.id,
+                    payload={"meeting": called.id},
+                )
+                scene = Meeting(
+                    self.env,
+                    called.id,
+                    place.id,
+                    here,
+                    start=time,
+                    step=settings.turn_minutes,
+                    max_turns=settings.conversation_turns,
+                    until=self._closing(place, time),
+                    rng=self.rng,
+                    question=called.question,
+                    options=called.options,
+                )
+                self._held.append((called, scene))
+            elif place.kind is PlaceKind.WORK and here:
                 closing = place.closing(clock_of(time))
                 closes = closing is not None and time_at(day, closing) <= ends[payload["slot"]]
                 scene = WorkSession(
@@ -250,8 +304,6 @@ class Simulation:
                     closes=closes,
                 )
             elif place.kind is PlaceKind.SOCIAL and len(here) > 1:
-                closing = place.closing(clock_of(time))
-                closes = self.config.calendar.end(day) if closing is None else time_at(day, closing)
                 scene = Conversation(
                     self.env,
                     prefix + place.id,
@@ -260,7 +312,7 @@ class Simulation:
                     start=time,
                     step=settings.turn_minutes,
                     max_turns=settings.conversation_turns,
-                    until=closes,
+                    until=self._closing(place, time),
                     rng=self.rng,
                 )
             else:
@@ -272,6 +324,8 @@ class Simulation:
 
     async def _end_day(self, time: int) -> None:
         day = day_of(time)
+        for called, scene in self._held:
+            self._count(called, scene, time)
         end = self.config.calendar.day_end
         closing = {
             place.id
@@ -333,9 +387,44 @@ class Simulation:
             self._kinds[EventKind.DECISION],
         )
 
+    def _closing(self, place: Place, time: int) -> int:
+        """When `place`, open at `time`, closes: at the end of its span, or, for a place
+        without hours, when the day ends."""
+        day, closes = day_of(time), place.closing(clock_of(time))
+        return self.config.calendar.end(day) if closes is None else time_at(day, closes)
+
+    def _meetings(self, day: int) -> list[Called]:
+        return [called for called in self.config.meetings if called.day == day]
+
+    def _count(self, called: Called, scene: Meeting | None, time: int) -> None:
+        """Announce the count of the meeting `called`, held as `scene` (None if nobody came),
+        and queue the enactment of the answer that carried, if it has one, for the next day's
+        start."""
+        asked = [] if scene is None else scene.voters or []
+        counts = {option: 0 if scene is None else scene.count(option) for option in called.options}
+        carried = None if scene is None else scene.carried()
+        self.env.emit(
+            EventKind.ANNOUNCEMENT,
+            situations.count(self.env, called.place, called.question, counts, len(asked), carried),
+            time=time,
+            audience=self.env.agents,
+            payload={
+                "meeting": called.id,
+                "asked": asked,
+                "counts": counts,
+                "carried": carried,
+            },
+        )
+        if changes := called.enacts.get(carried or ""):
+            start = self.config.calendar.start(day_of(time) + 1)
+            enactment = {"conditions": changes, "announcement": None, "meeting": called.id}
+            self.queue.push(Trigger(time=start, kind=TriggerKind.INTERVENTION, payload=enactment))
+
     def _intervene(self, time: int, payload: dict[str, JsonValue]) -> None:
         if payload["conditions"]:
-            self.env.change_conditions(payload["conditions"], time=time)
+            self.env.change_conditions(
+                payload["conditions"], time=time, meeting=payload.get("meeting")
+            )
         if payload["announcement"] is not None:
             self.env.emit(
                 EventKind.ANNOUNCEMENT, payload["announcement"], time=time, audience=self.env.agents

@@ -3,7 +3,7 @@
 # who try the examples and clients who pay on the worker's word, partner choice, notices
 # posted morning and afternoon, two social places, and delivered code in the sandbox.
 # Cadences are compressed so that the weekly (L1) step runs on day 2 and the monthly (L2)
-# step on day 3; one intervention on day 2.
+# step on day 3; one intervention and one meeting on day 2.
 name: smoke
 
 llm:
@@ -115,3 +115,10 @@ simulation:
       at: "12:00"
       conditions: {living_cost: 25}
       announcement: From today the daily living cost in town is $25.
+    - day: 2
+      at: evening
+      kind: meeting
+      place: tavern
+      question: Should the clerk go on posting everyone's standing beside the board?
+      options: ["yes", "no"]
+      enacts: {"no": {esteem_public: false}}

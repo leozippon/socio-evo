@@ -19,6 +19,7 @@ from core.interaction.actions import (
     RatePeers,
     Speak,
     SubmitWork,
+    Vote,
     job_id,
     job_name,
     job_number,
@@ -36,6 +37,7 @@ from core.interaction.card import (
     MayRate,
     MaySpeak,
     MaySubmit,
+    MayVote,
     form,
 )
 from core.interaction.events import Event, EventKind, Percept
@@ -83,6 +85,7 @@ __all__ = [
     "MayRate",
     "MaySpeak",
     "MaySubmit",
+    "MayVote",
     "Observation",
     "PartNumber",
     "Pass",
@@ -95,6 +98,7 @@ __all__ = [
     "Speak",
     "SubmitWork",
     "Telling",
+    "Vote",
     "Witness",
     "capital",
     "clock_of",

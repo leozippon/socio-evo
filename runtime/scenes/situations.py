@@ -59,6 +59,33 @@ REVIEW = (
     "clerk's ledger is open to you."
 )
 
+NOTICE = (
+    "The clerk has put up a notice: a meeting at {place} at {clock} today, on the question: "
+    "{question} Whoever comes can have their say. At the end the clerk asks each person there, "
+    "privately, for an answer, {options}; an answer given by more than half of them carries, "
+    "and holds from the next morning."
+)
+OPENING = (
+    "The clerk opens the meeting and reads out the question: {question} The answers are {options}."
+)
+ANSWERS = (
+    "You are at {place}, and the talk is over. The clerk asks each person here, privately, for "
+    "an answer to the question: {question} The answers are {options}. An answer given by more "
+    "than half of those here carries."
+)
+COUNT = (
+    "The clerk has posted the count from the meeting at {place} on the question: {question} "
+    "{count}. {outcome}"
+)
+COUNTED = "{number} answered {option}"
+UNANSWERED = "{number} gave no answer"
+CARRIED = "The answer {option} carries, from tomorrow morning."
+UNDECIDED = "No answer was given by more than half of those there, so things stay as they are."
+NOBODY_CAME = (
+    "The clerk has posted a word on the meeting at {place} on the question: {question} Nobody "
+    "came, so things stay as they are."
+)
+
 DRAW = (
     "{people} reached for the notice of {job} at the same moment, and the clerk drew lots: {order}."
 )
@@ -141,6 +168,44 @@ def review(people: Sequence[str]) -> str:
     return REVIEW.format(people=listed(people))
 
 
+def notice(env: Environment, place: str, clock: str, question: str, options: Sequence[str]) -> str:
+    """The notice of a meeting at `place` at `clock` today on `question`, put up at dawn."""
+    name = env.world.places[place].name
+    return NOTICE.format(place=name, clock=clock, question=question, options=_either(options))
+
+
+def opening(question: str, options: Sequence[str]) -> str:
+    """The clerk's opening of a meeting, for those present."""
+    return OPENING.format(question=question, options=_either(options))
+
+
+def answers(env: Environment, place: str, question: str, options: Sequence[str]) -> str:
+    """The moment the clerk asks those still at a meeting for their answers."""
+    return ANSWERS.format(
+        place=env.world.places[place].name, question=question, options=_either(options)
+    )
+
+
+def count(
+    env: Environment,
+    place: str,
+    question: str,
+    counts: dict[str, int],
+    asked: int,
+    carried: str | None,
+) -> str:
+    """The count of a meeting at `place` on `question`, posted that night: `counts` of each
+    answer among the `asked` people still there at the end, and the answer that `carried`."""
+    name = env.world.places[place].name
+    if not asked:
+        return NOBODY_CAME.format(place=name, question=question)
+    told = [COUNTED.format(number=n, option=option) for option, n in counts.items()]
+    if unanswered := asked - sum(counts.values()):
+        told.append(UNANSWERED.format(number=unanswered))
+    outcome = UNDECIDED if carried is None else CARRIED.format(option=carried)
+    return COUNT.format(place=name, question=question, count=capital(listed(told)), outcome=outcome)
+
+
 def draw(order: Sequence[str], task_id: str) -> Telling:
     """The news that the agents in `order` asked for one job at once, and in what order the
     lots put them, as each of them is told it."""
@@ -153,6 +218,11 @@ def draw(order: Sequence[str], task_id: str) -> Telling:
         )
 
     return drawn
+
+
+def _either(options: Sequence[str]) -> str:
+    """`yes or no`, `lot, choice or neither`."""
+    return " or ".join([", ".join(options[:-1]), options[-1]])
 
 
 def _parts(calendar: Calendar) -> str:

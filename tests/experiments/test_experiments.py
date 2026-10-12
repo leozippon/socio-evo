@@ -1,4 +1,5 @@
 import json
+import re
 import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -44,6 +45,8 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     assert set(configs) == {"smoke", "pilot", "town"}
     for config in configs.values():
         assert not unguarded([config.environment.setting.backdrop]), config.name
+        for meeting in config.simulation.meetings:
+            assert not unguarded([meeting.question, *meeting.options]), meeting.id
         for seed in config.agents:
             profile = seed.profile
             assert seed.policy == ""
@@ -120,6 +123,30 @@ def test_an_inconsistent_experiment_is_rejected():
             ExperimentConfig.model_validate(broken)
 
 
+@pytest.mark.parametrize(
+    ("changes", "refusal"),
+    [
+        ({"enacts": {"maybe": {"esteem_public": False}}}, "enacts answers it lacks: ['maybe']"),
+        ({"options": ["yes"]}, "at least 2 items"),
+        ({"options": ["yes", "yes"]}, "repeats an answer"),
+        ({"options": ["yes", "not now"]}, "should match pattern"),
+        ({"at": "midday"}, "tavern is not open from 12:00 until after 12:40"),
+        ({"at": "night"}, "not a slot"),
+        ({"place": "workshop"}, "no social place workshop"),
+        ({"enacts": {"no": {"esteem_public": "never"}}}, "esteem_public"),
+        ({"day": 4}, "after the last day 3"),
+    ],
+)
+def test_a_meeting_is_refused_unless_it_can_be_held_and_its_answers_enacted(changes, refusal):
+    data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+    planned = data["simulation"]["interventions"]
+    [meeting] = [index for index, plan in enumerate(planned) if plan.get("kind") == "meeting"]
+    ExperimentConfig.model_validate(data)
+    planned[meeting] |= changes
+    with pytest.raises(ValidationError, match=re.escape(refusal)):
+        ExperimentConfig.model_validate(data)
+
+
 def test_a_configuration_error_leaves_no_run_behind(tmp_path, monkeypatch):
     runs = tmp_path / "runs"
     monkeypatch.delenv("VLLM_API_KEY", raising=False)
@@ -140,7 +167,7 @@ def test_a_run_needs_its_bank_and_isolation_and_a_dry_run_works_on_the_built_in_
     runs = tmp_path / "runs"
     data = yaml.safe_load((CONFIGS / "town.yaml").read_text(encoding="utf-8"))
     data["tasks"]["bank"] = str(tmp_path / "absent")
-    data["simulation"]["days"] = 1
+    data["simulation"] |= {"days": 1, "interventions": []}
     config = tmp_path / "town.yaml"
     config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
     with pytest.raises(FileNotFoundError, match="python -m tasks.coding.fetch"):
@@ -197,6 +224,10 @@ def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path
     assert not [text for text in texts if "crown" in text.lower()]
     assert any("You have $" in text for text in texts) and any("pays $" in text for text in texts)
     assert any("Wednesday, your first day in town" in text for text in texts)
+    notice = "The clerk has put up a notice: a meeting at the Anchor at 18:00 today, on the "
+    assert any(notice in text for text in texts)
+    counted = "The clerk has posted "  # its count, or that nobody came
+    assert any(counted in text and "meeting at the Anchor" in text for text in texts)
     assert not any("Monday, your first day" in text for text in texts)
     assert not unguarded(texts)
     assert not unguarded(written(run))
@@ -235,6 +266,7 @@ def test_nothing_a_resident_reads_tells_how_long_the_run_lasts(tmp_path):
     """Two runs of one town that differ only in their length send their residents the very
     same requests on the days both have."""
     data = yaml.safe_load((CONFIGS / "town.yaml").read_text(encoding="utf-8"))
+    data["simulation"]["interventions"] = []  # the town's meetings come later
     requests = {}
     for days in (2, 3):
         data["simulation"]["days"] = days

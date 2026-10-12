@@ -29,6 +29,8 @@ def world(run: RunData) -> dict[str, Any]:
     config = run.config
     environment, simulation, llm = config["environment"], config["simulation"], config["llm"]
     calendar = simulation["calendar"]
+    starts = {slot["name"]: slot["start"] for slot in calendar["slots"]}
+    planned = simulation["interventions"]
     homes = {agent: place["id"] for place in environment["places"] for agent in place["residents"]}
     circumstances = environment.get("circumstances", {})
 
@@ -68,7 +70,20 @@ def world(run: RunData) -> dict[str, Any]:
                 "conditions": intervention["conditions"],
                 "announcement": intervention["announcement"],
             }
-            for intervention in simulation["interventions"]
+            for intervention in planned
+            if intervention.get("kind") != "meeting"
+        ],
+        "meetings": [
+            {
+                "day": meeting["day"],
+                "time": time_at(meeting["day"], starts[meeting["at"]]),
+                "place": meeting["place"],
+                "question": meeting["question"],
+                "options": meeting["options"],
+                "enacts": meeting["enacts"],
+            }
+            for meeting in planned
+            if meeting.get("kind") == "meeting"
         ],
         "evolution": config["evolution"],
         "model": {"backend": llm["backend"], "name": llm["model"], "sampling": llm["sampling"]},

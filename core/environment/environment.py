@@ -54,6 +54,7 @@ from core.interaction import (
     Speak,
     SubmitWork,
     Telling,
+    Vote,
     Witness,
     capital,
     clock_of,
@@ -306,7 +307,8 @@ class Environment:
         its addressee alone); `leave` takes the agent home, as a move seen by the others at
         the place and at home; `pass` leaves no trace. `give` moves credits to someone present
         before them all. `claim_task`, `check_work`, `submit_work` and
-        `rate_peers` change society. An action that reality cannot honour changes nothing and
+        `rate_peers` change society; `vote` records the answer the agent gave the clerk, for
+        the meeting of `scene` to count. An action that reality cannot honour changes nothing and
         yields a private `action_rejected` event. `plan_day` is the runtime's to interpret
         and raises ValueError here.
         """
@@ -332,6 +334,8 @@ class Environment:
                     return [self._give(agent, action, others, **where)]
                 case RatePeers():
                     return self._rate(agent, action, **where)
+                case Vote():
+                    return [self._vote(agent, action, **where)]
                 case _:
                     raise TypeError(f"not an action: {action!r}")
         except Rejected as rejection:
@@ -443,19 +447,23 @@ class Environment:
         events.append(self.emit(EventKind.DAY_ENDED, ended, time=time))
         return events
 
-    def change_conditions(self, changes: Mapping[str, JsonValue], *, time: int) -> Event:
-        """Turn the knobs named in `changes` and record the intervention as a truth-only event.
+    def change_conditions(
+        self, changes: Mapping[str, JsonValue], *, time: int, meeting: str | None = None
+    ) -> Event:
+        """Turn the knobs named in `changes` and record the intervention as a truth-only event,
+        which names the `meeting` whose answer enacted it, if one did.
 
         Raises pydantic.ValidationError, changing nothing, for an unknown knob or bad value.
         """
         self.conditions = Conditions.model_validate({**self.conditions.model_dump(), **changes})
         applied = {key: getattr(self.conditions, key) for key in changes}
         listed_changes = ", ".join(f"{key} = {value}" for key, value in applied.items())
+        payload = {"changes": applied, "conditions": self.conditions.model_dump(mode="json")}
         return self.emit(
             EventKind.INTERVENTION,
             f"Conditions changed: {listed_changes}.",
             time=time,
-            payload={"changes": applied, "conditions": self.conditions.model_dump(mode="json")},
+            payload=payload if meeting is None else {**payload, "meeting": meeting},
         )
 
     def rules_view(self) -> str:
@@ -895,6 +903,15 @@ class Environment:
             )
             for rating in action.ratings
         ]
+
+    def _vote(self, agent: str, action: Vote, **where) -> Event:
+        return self.emit(
+            EventKind.VOTE,
+            f"{agent} answered the clerk: {action.choice}.",
+            actor=agent,
+            payload={"voter": agent, "choice": action.choice},
+            **where,
+        )
 
     def _defect(self, defect: Defect, time: int) -> list[Event]:
         task, worker = defect.task, defect.worker

@@ -91,6 +91,7 @@ GAVE = "you handed {to} {amount}, with a note: {note}"
 MARKED = "in the clerk's ledger you marked {marks}."
 MARK = "{target} {score} of 5 ({reason})"
 MARKED_NO_ONE = "you marked no one in the clerk's ledger."
+VOTED = "you gave the clerk your answer: {choice}."
 DID = "you chose to {deed}{details}."
 JOB_NAMED = "the job you called {reference}"
 
@@ -584,6 +585,7 @@ _DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
         to=action["to"], amount=currency.tell(action["amount"]), note=_own(action["note"])
     ),
     ActionKind.RATE_PEERS: lambda action, _: _marked(action),
+    ActionKind.VOTE: lambda action, _: VOTED.format(choice=action["choice"]),
 }
 """How each kind of thing the resident did is told to it, from the action's fields and the
 town's currency."""

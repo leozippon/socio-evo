@@ -22,12 +22,14 @@ from core.interaction import (
     MayRate,
     MaySpeak,
     MaySubmit,
+    MayVote,
     Pass,
     PeerRating,
     PlanDay,
     RatePeers,
     Speak,
     SubmitWork,
+    Vote,
     form,
 )
 from core.interaction.card import UNREAD, UNREADABLE, correction
@@ -91,6 +93,11 @@ ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
         },
         RatePeers(ratings=(PeerRating(target="Aisha", score=4, reason="Kind."),)),
     ),
+    ActionKind.VOTE: (
+        MayVote(options=("yes", "no")),
+        {"do": "give the clerk your answer", "answer": "no"},
+        Vote(choice="no"),
+    ),
 }
 
 
@@ -153,6 +160,19 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
 def test_a_reply_can_only_name_what_is_really_there(answer):
     with pytest.raises(ValidationError):
         Card(WORK).model.model_validate({"thought": "", **answer})
+
+
+def test_an_answer_to_the_clerk_is_one_of_the_meetings_answers():
+    meeting = Card([MayVote(options=("yes", "no")), MayPass()])
+    assert form(meeting.model).splitlines()[1] == (
+        '{"thought": "…", "do": "give the clerk your answer", "answer": "no" or "yes"}'
+    )
+    with pytest.raises(ValidationError):
+        meeting.model.model_validate(
+            {"thought": "", "do": "give the clerk your answer", "answer": "maybe"}
+        )
+    with pytest.raises(ValidationError):
+        MayVote(options=("yes",))
 
 
 def test_a_card_is_the_same_whatever_order_the_moment_listed_its_choices_in():

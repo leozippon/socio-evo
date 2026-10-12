@@ -17,7 +17,8 @@ conditions in any of its arms takes effect (the late phase of the selection arms
 is the days before it and `late` the days from it on, the same days in every arm, so an arm
 without the intervention shows over `late` how much changes anyway. Without such an
 intervention there is only `main`. A day an intervention changes in the middle belongs to
-`late`.
+`late`. A meeting does not split the windows, since whether it changes anything depends on
+how its residents answer.
 
 Probes. A run's held-out score of a trait over a window is the mean, over residents and the
 trait's probe families, of the families' scores (as their results give them) for the full
@@ -139,7 +140,7 @@ def windows(configs: Iterable[dict[str, Any]]) -> list[Window]:
         change["day"]
         for config in configs
         for change in config["simulation"]["interventions"]
-        if change["conditions"] and change["day"] > 1
+        if change.get("conditions") and change["day"] > 1
     ]
     if not cuts:
         return [Window("main", 1, None)]

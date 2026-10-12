@@ -6,8 +6,9 @@ from typing import Any
 import pytest
 import yaml
 
+from experiments.config import ExperimentConfig
 from experiments.study import load_study, main
-from infrastructure.config import ConfigError
+from infrastructure.config import ConfigError, load_config
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
 from tests.experiments.test_experiments import sent, unguarded
 
@@ -39,6 +40,9 @@ def test_the_study_derives_every_arm_from_the_town_by_its_overlays():
         "no-evolution",
     }
     assert {config.name for config in arms.values()} == {f"trust-{arm}" for arm in arms}
+    # The base town's meetings are for the town on its own; the study is the controlled design.
+    assert len(load_config(TOWN, ExperimentConfig).simulation.meetings) == 2
+    assert not any(config.simulation.meetings for config in arms.values())
 
     selection = dumps["selection-comfortable"]
     [late] = arms["selection-comfortable"].simulation.interventions
@@ -110,7 +114,7 @@ def test_a_study_runs_its_grid_resumes_skips_and_matches_its_seeds(tmp_path, cap
         "base": str(TOWN),
         "seeds": [0],
         "overlays": {
-            "short": {"simulation": {"days": 2}},
+            "short": {"simulation": {"days": 2, "interventions": []}},
             "assignment": {"environment": {"conditions": {"partner_choice": False}}},
             "scarce": {"environment": {"conditions": {"living_cost": 30, "one_part_tasks": 1}}},
             "solo": {"residents": ["Mei"], "environment": {"conditions": {"two_part_tasks": 0}}},

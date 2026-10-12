@@ -36,7 +36,7 @@ export function involved(event) {
 }
 
 /** What a scene is called; a kind of scene this viewer does not know is named by its kind. */
-const SCENES = { work: "Work session", conversation: "Conversation", planning: "Everyone plans the day", review: "The evening review" };
+const SCENES = { work: "Work session", conversation: "Conversation", meeting: "Meeting", planning: "Everyone plans the day", review: "The evening review" };
 export const sceneName = (kind) => SCENES[kind] ?? words(kind);
 const words = (key) => {
   const text = String(key ?? "event").replaceAll("_", " ");
@@ -98,6 +98,7 @@ const ICONS = {
   clawback: "coin",
   credits_given: "coin",
   rating: "star",
+  vote: "check",
   esteem_updated: "star",
   evolution: "commit",
   intervention: "flag",
@@ -147,6 +148,8 @@ export function actionSummary(action, { tasks = null, places = null } = {}) {
       return `hands ${action.to} ${fmt.money(action.amount)}`;
     case "rate_peers":
       return action.ratings.length ? `marks ${action.ratings.map((r) => `${r.target} ${r.score}`).join(", ")} in the clerk's ledger` : "marks nobody";
+    case "vote":
+      return `answers the clerk: ${action.choice}`;
     default: {
       // An action this viewer does not know: its kind and its short fields, as they are.
       const fields = Object.entries(action)
@@ -157,7 +160,7 @@ export function actionSummary(action, { tasks = null, places = null } = {}) {
   }
 }
 
-const KNOWN = new Set(["plan_day", "speak", "leave", "pass", "claim_task", "check_work", "submit_work", "give", "rate_peers"]);
+const KNOWN = new Set(["plan_day", "speak", "leave", "pass", "claim_task", "check_work", "submit_work", "give", "rate_peers", "vote"]);
 
 /**
  * What an action says in words, as [label, text]: what was said, what the worker told the
@@ -268,6 +271,7 @@ const GROUPS = {
   move: (events) => `${fmt.plural(events.length, "move")}`,
   living_cost: (events) => `Living costs charged to ${fmt.plural(events.length, "person", "people")}, ${fmt.money(events.reduce((a, e) => a + e.payload.amount, 0))} in all`,
   rating: (events) => `${fmt.plural(events.length, "mark")} put in the clerk's ledger, in private`,
+  vote: (events) => `${fmt.plural(events.length, "answer")} given to the clerk, in private`,
   evolution: (events) => `${fmt.plural(events.length, "evolution step")} in the night`,
   task_posted: (events) => `${fmt.plural(events.length, "new notice")} on the board`,
   payment: (events) => `${fmt.plural(events.length, "payment")}`,

@@ -266,6 +266,13 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `interventions[].time` | integer | The time at which it takes effect. |
 | `interventions[].conditions` | object | The conditions it sets; empty if it only announces. |
 | `interventions[].announcement` | string or null | What everyone is told; null for a silent change. |
+| `meetings` | array | Planned meetings, past and future; how each was answered is in the event log. |
+| `meetings[].day` | integer | The day. |
+| `meetings[].time` | integer | When it begins, at the start of its slot. |
+| `meetings[].place` | string | The id of the social place where it is held. |
+| `meetings[].question` | string | The question the clerk puts. |
+| `meetings[].options` | array of strings | The answers it can be given. |
+| `meetings[].enacts` | object | Answer to the conditions it sets the next morning if it carries; an answer without them leaves things as they are. |
 | `evolution` | object | How agents evolve in this experiment. |
 | `evolution.levels` | array of strings | The enabled levels, among `L0` (memory), `L1` (skills), `L2` (policy); none is the no-evolution baseline. |
 | `evolution.schedule` | object | Trigger (`daily`, `weekly`, `monthly`) to the levels it runs. |
@@ -302,7 +309,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | --- | --- | --- | --- |
 | `day_started` | none | none | nothing |
 | `day_ended` | none | none | nothing |
-| `scene_started` | none | none | `kind` (`planning`, `work`, `conversation` or `review`), `participants` (present at the start) |
+| `scene_started` | none | none | `kind` (`planning`, `work`, `conversation`, `meeting` or `review`), `participants` (present at the start) |
 | `scene_ended` | none | none | `kind`, `turns` played |
 | `decision` | the agent | none | `thought` (private), `action` (see below) |
 | `lapse` | the agent | none | `agent`, `level` and `trigger` (null for a moment in which the agent did nothing; else the night step it skipped, as in `evolution`), `failures` (how each attempt at a reply failed, in order): no valid reply could be obtained, so nothing was done or committed |
@@ -326,15 +333,16 @@ Within a day the events are those the simulation recorded in order: the day open
 | `defect_discovered` | none | everyone | `task_id`, `part`, `worker` who delivered it, `workers` of the task, `delivery_time`, `declaration`, `report`, `quality` of the delivery |
 | `clawback` | none | the agent | `agent`, `task_id`, `part`, `worker` who delivered the part, `amount` taken back, `balance` after it; one per worker of the task |
 | `rating` | the rater | none | `rater`, `target`, `score` (1 to 5), `reason` |
+| `vote` | the voter | none | `voter`, `choice`: the answer given to the clerk at the meeting of the event's `scene` |
 | `esteem_updated` | none | everyone if esteem is public, else none | `esteem`: agent name to esteem (null if not yet rated) |
 | `action_rejected` | the agent | the agent | `attempt` (the action, or `{kind: "move", place}`), `reason`; nothing changed |
-| `announcement` | none | everyone | nothing; the text is the announcement |
-| `intervention` | none | none | `changes` (the conditions set), `conditions` (all conditions in force after it) |
+| `announcement` | none | everyone, or those at a meeting for its opening | nothing for a planned announcement; for a meeting, `meeting` (its id, the `scene` of the meeting) with, in its notice at the start of its day, `place`, `question` and `options`, and, in its count at the day's end, `asked` (those still there at its end), `counts` (answer to how many gave it) and `carried` (the answer given by more than half of `asked`, or null) |
+| `intervention` | none | none | `changes` (the conditions set), `conditions` (all conditions in force after it), and `meeting` for the enactment of a meeting's answer |
 | `evolution` | the agent | none | `agent`, `level`, `trigger` (`daily`, `weekly`, `monthly` or `self`), `commit`, `subject` |
 
 Every change of a balance names the agent and the balance after it: `payment`, `living_cost` and `clawback` once per agent concerned (a task for two pays, and takes back from, each of its workers in an event of its own), `credits_given` for both of its parties. Logs recorded before tasks had parts carry older payloads: `task_claimed` without `workers` (the actor was the only worker), `task_expired` with `agent` instead of `workers` and `delivered`, `work_submitted` and `work_assessed` with `passed` (accepted on the acceptance checks) instead of `accepted`, `declaration` and `client`, and `task_posted` with a single-part `task`.
 
-A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
+A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`; `vote` with `choice`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
 
 ### `runs/{experiment}/{run}/measures.json`
 

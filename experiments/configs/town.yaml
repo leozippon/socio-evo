@@ -1,7 +1,8 @@
 # The town of docs/experimental-design.md, where trust is the economy: eight residents for six
 # weeks, jobs for one and for two, clients who try the examples and clients who pay on the
 # worker's word, and residents in different circumstances. This is the selection arm in a
-# comfortable town; experiments/studies/trust.yaml derives every arm of the study from it.
+# comfortable town, with two meetings whose questions divide the residents;
+# experiments/studies/trust.yaml derives every arm of the study from it, without the meetings.
 # Profiles describe circumstances only; initial policies are empty.
 name: town
 
@@ -181,3 +182,22 @@ simulation:
     work_rounds: 3
     conversation_turns: 12
     turn_minutes: 5
+  interventions:
+    # Those marked well and those marked poorly have different stakes in the posted standings;
+    # those asked often and those passed over, in how partners for jobs for two are found.
+    - day: 12
+      at: evening
+      kind: meeting
+      place: tavern
+      question: Should the clerk go on posting everyone's standing beside the board?
+      options: ["yes", "no"]
+      enacts: {"no": {esteem_public: false}}
+    - day: 26
+      at: evening
+      kind: meeting
+      place: tavern
+      question: >-
+        Should the clerk pair people for jobs for two by drawing lots, instead of letting each
+        person ask the neighbour they choose?
+      options: ["yes", "no"]
+      enacts: {"yes": {partner_choice: false}}
