@@ -58,6 +58,14 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     assert own["Ravi"].obligation and "send money home" in town.agents[5].profile.backstory
     assert set(town.evolution.levels) == {Level.L0, Level.L1, Level.L2}
     assert town.simulation.postings == ("morning", "afternoon")
+    smoke = configs["smoke"]  # the town in small, against the model on the built-in bank
+    assert (len(smoke.agents), smoke.simulation.days) == (3, 3)
+    assert smoke.environment.conditions == town.environment.conditions.model_copy(
+        update={"one_part_tasks": 2, "defect_discovery_prob": 0.3}
+    )
+    assert sum(place.kind == "social" for place in smoke.environment.places) == 2
+    assert smoke.simulation.postings == town.simulation.postings
+    assert (smoke.llm, smoke.tasks.isolation) == (town.llm, town.tasks.isolation)
 
 
 def test_an_inconsistent_experiment_is_rejected():

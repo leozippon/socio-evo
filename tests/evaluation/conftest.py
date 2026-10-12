@@ -1,6 +1,6 @@
 """Fixtures of the evaluation tests: held-out banks in the layout of `tasks.coding.fetch` made
 from the test bank, a work file whose drafts come from `solutions.yaml`, a small run of the
-smoke town with a second social place, and scripted residents and judges."""
+smoke town, and scripted residents and judges."""
 
 import random
 import re
@@ -32,24 +32,14 @@ from tasks.coding.fetch import INDEX, BankIndex, Entry, Origin, impossible
 HERE = Path(__file__).parent
 SOLUTIONS = yaml.safe_load((HERE / "solutions.yaml").read_text(encoding="utf-8"))
 SMOKE = HERE.parents[1] / "experiments" / "configs" / "smoke.yaml"
-ANCHOR = {
-    "id": "tavern",
-    "kind": "social",
-    "name": "the Anchor",
-    "description": "A tavern by the river.",
-    "x": 6,
-    "y": 1,
-}
 NEAR = ("slugify", "to_base", "count_islands")
 RIGHT = ("slugify", "to_base", "summarize_ranges")
 PAIRS = (("slugify", "to_base"), ("to_base", "split_csv_line"), ("summarize_ranges", "slugify"))
 
 
 def town() -> ExperimentConfig:
-    """The smoke town with a second social place, so that every family can be played in it."""
-    data = yaml.safe_load(SMOKE.read_text(encoding="utf-8"))
-    data["environment"]["places"].append(ANCHOR)
-    return ExperimentConfig.model_validate(data)
+    """The smoke town, whose two social places let every family be played in it."""
+    return load_config(SMOKE, ExperimentConfig)
 
 
 @pytest.fixture(scope="session")

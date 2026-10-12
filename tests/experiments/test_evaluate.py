@@ -7,7 +7,7 @@ from experiments.run import main as run_experiment
 from infrastructure.config import load_config
 from infrastructure.llm import ScriptedClient
 from infrastructure.storage import RunDirectory, read_jsonl
-from tests.evaluation.conftest import ANCHOR, SMOKE, build_banks, write_work
+from tests.evaluation.conftest import SMOKE, build_banks, write_work
 
 
 def _outside_evaluation(run: RunDirectory) -> dict[str, bytes]:
@@ -21,11 +21,7 @@ def _outside_evaluation(run: RunDirectory) -> dict[str, bytes]:
 def test_evaluating_a_dry_run_prints_its_cost_and_scores_and_changes_nothing_else(
     tmp_path, monkeypatch, capsys
 ):
-    town = yaml.safe_load(SMOKE.read_text(encoding="utf-8"))
-    town["environment"]["places"].append(ANCHOR)
-    experiment = tmp_path / "town.yaml"
-    experiment.write_text(yaml.safe_dump(town), encoding="utf-8")
-    run_experiment([str(experiment), "--seeds", "1", "--runs-root", str(tmp_path), "--dry-run"])
+    run_experiment([str(SMOKE), "--seeds", "1", "--runs-root", str(tmp_path), "--dry-run"])
     run = RunDirectory.open(tmp_path / "smoke-dry-run" / "seed-0001")
     agents = sorted(path.name for path in run.agents_dir.iterdir())
     default = load_config(DEFAULT_CONFIG, EvaluationConfig).model_dump(mode="json")
