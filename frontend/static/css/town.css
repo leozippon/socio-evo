@@ -199,17 +199,17 @@ body[data-view="town"] { overflow: hidden; }
 
 /* The map and its layers -------------------------------------------------------------------- */
 .map {
-  position: relative; overflow: hidden; background: var(--m-grass); cursor: grab;
+  position: relative; overflow: hidden; isolation: isolate; background: var(--m-grass); cursor: grab;
   touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none;
 }
 .map.grabbing { cursor: grabbing; }
 .map-world { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
-.map-world.moving { will-change: transform; }
+.map.moving .map-world { will-change: transform; }
 .map-world > svg, .map-world > div { position: absolute; left: 0; top: 0; }
 .map-world > svg { overflow: visible; }
-.map-light { width: 100%; height: 100%; mix-blend-mode: multiply; opacity: var(--sky-strength); pointer-events: none; }
+.map-light { position: absolute; inset: 0; mix-blend-mode: multiply; opacity: var(--sky-strength); pointer-events: none; }
 .map-glow, .map-actors { pointer-events: none; }
-.map-ambient { width: 100%; height: 100%; overflow: hidden; pointer-events: none; }
+.map-ambient { width: 100%; height: 100%; pointer-events: none; }
 
 .scenery .ground { fill: var(--m-grass); }
 .scenery .patch { opacity: 0.8; }

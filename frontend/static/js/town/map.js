@@ -65,18 +65,21 @@ export class TownMap {
     this.sites = places;
 
     const { width, height } = this.plan;
+    const layer = (...parts) => h("div", { class: "map-world", style: { width: `${width}px`, height: `${height}px` } }, parts);
     this.light = h("div", { class: "map-light" });
     this.glow = s("svg", { class: "map-glow", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
     this.ties = s("svg", { class: "map-ties", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
     this.actors = s("svg", { class: "map-actors", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
     this.ambient = h("div", { class: "map-ambient", "aria-hidden": "true" }, h("div", { class: "cloud one" }), h("div", { class: "cloud two" }));
-    this.worldEl = h("div", { class: "map-world", style: { width: `${width}px`, height: `${height}px` } }, svg, this.ambient, this.light, this.glow, this.ties, this.actors);
+    // The light of the hour falls on the whole map, also beyond the drawn town, so the town is
+    // two layers that move together: the scenery under the light, the residents above it.
+    this.worlds = [layer(svg, this.ambient), layer(this.glow, this.ties, this.actors)];
     this.overlay = h("div", { class: "map-overlay", "aria-hidden": "true" });
     this.notices = h("div", { class: "map-notices", "aria-hidden": "true" });
     this.curtain = h("div", { class: "map-curtain", hidden: true });
     const zoomButton = (glyph, label, action) => h("button", { type: "button", class: "map-btn", "aria-label": label, title: label, onclick: action }, icon(glyph, 18));
     this.controls = h("div", { class: "map-controls" }, zoomButton("plus", "Zoom in", () => this.zoomBy(1.6)), zoomButton("minus", "Zoom out", () => this.zoomBy(1 / 1.6)), zoomButton("fit", "Show the whole town", () => this.fitView(true)));
-    this.el = h("div", { class: "map", role: "img", "aria-label": "Map of the town" }, this.worldEl, this.overlay, this.notices, this.controls, this.curtain);
+    this.el = h("div", { class: "map", role: "img", "aria-label": "Map of the town" }, this.worlds[0], this.light, this.worlds[1], this.overlay, this.notices, this.controls, this.curtain);
 
     this.view = { s: 1, x: 0, y: 0 };
     this.auto = true; // the view fits the town until the reader pans or zooms
@@ -201,7 +204,8 @@ export class TownMap {
   setView(view) {
     this.view = this.clamp(view);
     const { s: scale, x, y } = this.view;
-    this.worldEl.style.transform = `translate(${x.toFixed(2)}px,${y.toFixed(2)}px) scale(${scale.toFixed(4)})`;
+    const transform = `translate(${x.toFixed(2)}px,${y.toFixed(2)}px) scale(${scale.toFixed(4)})`;
+    for (const world of this.worlds) world.style.transform = transform;
     const k = Math.max(SCALE, MIN_FIGURE / (FIGURE * scale));
     if (Math.abs(k - (this.k ?? 0)) > 0.01) {
       this.k = k;
@@ -247,7 +251,7 @@ export class TownMap {
     const end = this.clamp(target);
     if (reduced.matches) return this.setView(end);
     this.animation = { from: { ...this.view }, to: end, start: performance.now() };
-    this.worldEl.classList.add("moving");
+    this.el.classList.add("moving");
   }
 
   gestures() {
@@ -257,9 +261,9 @@ export class TownMap {
     let lastTap = 0;
     let idle = null;
     const moving = () => {
-      this.worldEl.classList.add("moving");
+      this.el.classList.add("moving");
       clearTimeout(idle);
-      idle = setTimeout(() => this.worldEl.classList.remove("moving"), 180);
+      idle = setTimeout(() => this.el.classList.remove("moving"), 180);
     };
     const local = (event) => {
       const r = el.getBoundingClientRect();
@@ -572,7 +576,7 @@ export class TownMap {
       this.setView({ s: from.s + (to.s - from.s) * e, x: from.x + (to.x - from.x) * e, y: from.y + (to.y - from.y) * e });
       if (t >= 1) {
         this.animation = null;
-        this.worldEl.classList.remove("moving");
+        this.el.classList.remove("moving");
       }
     }
     let walking = false;
