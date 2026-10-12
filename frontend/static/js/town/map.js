@@ -164,7 +164,8 @@ export class TownMap {
     for (const place of this.world.places) {
       const name = h("span", { class: "label-name" }, shortName(place));
       const status = h("span", { class: "label-status" });
-      const el = h("div", { class: `place-label ${place.kind}`, "data-place": place.id }, name, status);
+      // Hidden until the first moment places it, so names do not pile up in a corner meanwhile.
+      const el = h("div", { class: `place-label ${place.kind}`, "data-place": place.id, style: { visibility: "hidden" } }, name, status);
       this.overlay.append(el);
       this.boxes.labels.set(place.id, { el, name, status, text: "", size: null, compact: null, priority: 0 });
     }
