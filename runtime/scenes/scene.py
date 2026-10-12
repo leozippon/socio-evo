@@ -12,8 +12,13 @@ at a time in an order drawn at random. The agents who asked for the same job at 
 wherever they are, are told that order, and after every such moment the board pairs by lot
 the names put down for jobs for two. So which request on the shared board succeeds is decided
 by the draw alone, never by which place or agent is listed first; model latency never changes
-what happens; and with deterministic replies a run is exactly reproducible. If an agent fails
-to decide, the others are cancelled before the failure propagates.
+what happens; and with deterministic replies a run is exactly reproducible.
+
+An agent whose reply could not be obtained in the bounded attempts either lapses, if the
+driver is asked to let it (a run does): the moment passes without it doing anything, recorded
+as a truth-only `lapse` event that says how each attempt failed, and its scene is told
+(`Scene.lapsed`); or its failure propagates, as any other failure does, after the others
+are cancelled.
 """
 
 import asyncio
@@ -25,6 +30,7 @@ from typing import ClassVar
 from core.agent import Agent
 from core.environment import Environment
 from core.interaction import Allowance, ClaimTask, Decision, EventKind, Observation, job_id
+from infrastructure.llm import StructuredOutputError
 from runtime.scenes import situations
 
 
@@ -79,7 +85,11 @@ class Scene(ABC):
     @abstractmethod
     def over(self, decisions: Mapping[str, Decision]) -> bool:
         """Whether the scene ends with the turn just played, the `turns`-th, all of whose
-        `decisions` have been carried out."""
+        `decisions` have been carried out; an agent that lapsed has none."""
+
+    def lapsed(self, agent: str) -> None:  # noqa: B027 - a hook most scenes leave as it is
+        """`agent` did nothing in this turn, for want of a reply. Nothing follows unless a
+        scene keeps track of whose turn it is."""
 
 
 async def play(
@@ -88,10 +98,13 @@ async def play(
     scenes: Sequence[Scene],
     rng: random.Random,
     setting: Callable[[str], str],
+    *,
+    lapses: bool = False,
 ) -> None:
     """Play `scenes` until all are over, in the order of their turns' times; `rng` draws the
     order in which the decisions of each moment are carried out and the board's lots, and
-    `setting` is what each agent knows of the town."""
+    `setting` is what each agent knows of the town. With `lapses`, an agent whose reply could
+    not be obtained lapses instead of failing the play."""
     for scene in scenes:
         env.emit(
             EventKind.SCENE_STARTED,
@@ -122,14 +135,16 @@ async def play(
         ]
         async with asyncio.TaskGroup() as group:
             deciding = [
-                group.create_task(agents[observation.agent].act(observation))
+                group.create_task(_decide(agents[observation.agent], observation, lapses))
                 for observation in observations
             ]
-        turn = [
-            (scene, agent, task.result())
-            for (scene, agent), task in zip(asked, deciding, strict=True)
-        ]
-        for scene, agent, decision in turn:
+        turn = []
+        for (scene, agent), task in zip(asked, deciding, strict=True):
+            decision = task.result()
+            if isinstance(decision, StructuredOutputError):
+                lapse(env, agent, decision, time=time, scene=scene.id)
+                scene.lapsed(agent)
+                continue
             env.emit(
                 EventKind.DECISION,
                 f"{agent} chose {decision.action.kind}.",
@@ -142,6 +157,7 @@ async def play(
                     "action": decision.action.model_dump(mode="json"),
                 },
             )
+            turn.append((scene, agent, decision))
         rng.shuffle(turn)
         _announce_draws(env, turn, time)
         for scene, agent, decision in turn:
@@ -162,6 +178,48 @@ async def play(
                 scene=scene.id,
                 payload={"kind": scene.kind, "turns": scene.turns},
             )
+
+
+def lapse(
+    env: Environment,
+    agent: str,
+    error: StructuredOutputError,
+    *,
+    time: int,
+    scene: str | None = None,
+    level: str | None = None,
+    trigger: str | None = None,
+) -> None:
+    """Record that `agent` lapsed for want of a reply (`error` says how each attempt failed):
+    in the moment of `scene`, or in the night step of `level` on `trigger`."""
+    what = "did nothing" if level is None else f"skipped {level} ({trigger})"
+    env.emit(
+        EventKind.LAPSE,
+        f"{agent} {what}: no valid reply after {error.attempts} attempt(s).",
+        time=time,
+        actor=agent,
+        place=env.world.locations[agent] if level is None else None,
+        scene=scene,
+        payload={
+            "agent": agent,
+            "level": level,
+            "trigger": trigger,
+            "failures": list(error.failures),
+        },
+    )
+
+
+async def _decide(
+    agent: Agent, observation: Observation, lapses: bool
+) -> Decision | StructuredOutputError:
+    """`agent`'s decision on `observation`, or, if `lapses`, the error that says no reply could
+    be obtained."""
+    try:
+        return await agent.act(observation)
+    except StructuredOutputError as error:
+        if not lapses:
+            raise
+        return error
 
 
 def _announce_draws(

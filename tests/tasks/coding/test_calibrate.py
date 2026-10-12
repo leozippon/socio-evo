@@ -1,7 +1,7 @@
 import yaml
 
 from core.agent import Profile
-from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient
+from infrastructure.llm import LLMRequest, LLMResponse, ScriptedClient
 from tasks.coding import CodingTaskProvider
 from tasks.coding.calibrate import Sample, calibrate
 
@@ -21,26 +21,36 @@ SOLUTIONS = {
 PROFILE = Profile(name="Mei", age=34, occupation="software developer", backstory="She codes.")
 
 
+class CutOff:
+    """Replies as `inner` does, except to the third sample, whose every reply is cut off by
+    the token limit."""
+
+    def __init__(self, inner: ScriptedClient) -> None:
+        self.inner = inner
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        if request.metadata["sample"] == 2:
+            return LLMResponse(text='{"thought": "Halve', truncated=True, latency=0.0)
+        return await self.inner.complete(request)
+
+
 async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_path):
     (tmp_path / "halve.yaml").write_text(yaml.safe_dump(HALVE), encoding="utf-8")
-    replies = iter([*SOLUTIONS.values(), None])
+    replies = iter(SOLUTIONS.values())
     requests: list[LLMRequest] = []
 
     def respond(request: LLMRequest) -> dict[str, object]:
         requests.append(request)
-        solution = next(replies)
-        if solution is None:
-            raise LLMCallError("reply truncated by the token limit")
-        hand_in = {"do": "hand in", "code": solution, "as": "finished"}
+        hand_in = {"do": "hand in", "code": next(replies), "as": "finished"}
         return {"thought": "Halve it.", **hand_in, "telling the client": "Done."}
 
-    results = await calibrate(tmp_path, ScriptedClient(respond), PROFILE, samples=3)
+    results = await calibrate(tmp_path, CutOff(ScriptedClient(respond)), PROFILE, samples=3)
     result = results["halve"]
     assert sorted(result.samples, key=lambda sample: sample.quality) == [
         Sample(visible=True, quality=1 / 3, special_cased=False),
         Sample(visible=True, quality=1.0, special_cased=False),
     ]
-    assert result.errors == ("LLMCallError: reply truncated by the token limit",)
+    assert len(result.errors) == 1
     assert (result.visible_rate, result.perfect_rate, result.cut_off) == (1.0, 0.5, 1)
 
     specification = CodingTaskProvider(tmp_path).part("halve").specification

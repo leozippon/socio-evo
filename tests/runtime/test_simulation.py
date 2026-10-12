@@ -30,6 +30,7 @@ from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING, choices, offered
+from tests.core.environment.test_environment import as_told_to
 
 GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
 """What no text a resident reads may contain: trait words, and the machinery's terms."""
@@ -65,16 +66,24 @@ class Script:
     first job on the board and hands in its reference solution (Ben, the shortcut); in a
     conversation it speaks during the first fifteen minutes and carries on quietly after; at
     night it marks everyone it met. Its thoughts carry its name, so a leak shows. `fail` picks
-    a request to raise on."""
+    a request to raise on, as a server that went away does; `garble` picks a request to answer
+    with nothing that can be read, every time it is asked."""
 
-    def __init__(self, fail: Callable[[LLMRequest], bool] = lambda request: False) -> None:
+    def __init__(
+        self,
+        fail: Callable[[LLMRequest], bool] = lambda request: False,
+        garble: Callable[[LLMRequest], bool] = lambda request: False,
+    ) -> None:
         self.requests: list[LLMRequest] = []
         self.fail = fail
+        self.garble = garble
 
     def __call__(self, request: LLMRequest) -> str | dict[str, Any]:
         self.requests.append(request)
         if self.fail(request):
             raise RuntimeError("the model server went away")
+        if self.garble(request):
+            return "" if request.json_schema is None else "Hmm, let me think about that."
         agent, purpose, time = (request.metadata[key] for key in ("agent", "purpose", "time"))
         day = day_of(time)
         match purpose:
@@ -275,6 +284,14 @@ async def test_a_town_lives_through_its_days(tmp_path):
     draws = [event for event in log if event.kind is EventKind.DRAW]
     assert (time_at(1, "09:00"), ("Ana", "Ben")) in {(e.time, e.audience) for e in draws}
     assert all(sorted(e.audience) == sorted(e.payload["order"]) for e in draws)
+    # A resident is told about itself as `you`, in what it witnesses and in each moment.
+    for event in log:
+        for witness in event.audience:
+            assert event.percept(witness).text == as_told_to(event.text, witness)
+    assert all(draw.personal.keys() == set(draw.audience) for draw in draws)
+    for agent in AGENTS:
+        for _, prompt in script.prompts(agent):
+            assert not re.search(rf"\b{agent}\b", re.sub(r'"[^"]*"', "", prompt)), prompt
     assessed = [event for event in log if event.kind is EventKind.WORK_ASSESSED]
     accepted = {(e.actor, e.payload["quality"] == 1) for e in assessed if e.payload["passed"]}
     assert accepted == {("Ana", True), ("Ben", False), ("Cai", True)}
@@ -333,21 +350,103 @@ async def test_a_town_lives_through_its_days(tmp_path):
     ]
 
 
+def lapsing(request: LLMRequest) -> bool:
+    """The replies that cannot be obtained in the runs of these tests: Ben's plan for the
+    second day, Cai's every word in the first evening's conversation, and Ana's reflection on
+    the first night."""
+    agent, purpose, time = (request.metadata[key] for key in ("agent", "purpose", "time"))
+    return (
+        (agent, purpose, time) == ("Ben", "act", time_at(2, "07:00"))
+        or (
+            agent == "Cai"
+            and purpose == "act"
+            and time_at(1, "18:00") <= time < time_at(1, "19:00")
+        )
+        or (agent, purpose, time) == ("Ana", "reflect", time_at(1, "22:00"))
+    )
+
+
+async def test_a_reply_that_cannot_be_obtained_is_a_recorded_lapse_and_the_town_goes_on(tmp_path):
+    run, parts = new_run(tmp_path, Script(garble=lapsing))
+    assert await Simulation.create(run, parts).run() is RunStatus.COMPLETED
+    log = events(run)
+    lapses = [event for event in log if event.kind is EventKind.LAPSE]
+    assert all(event.audience == () for event in lapses)
+    assert all(
+        len(e.payload["failures"]) == 3
+        and all(f.startswith("invalid:") for f in e.payload["failures"])
+        for e in lapses
+    )
+    moments = [e for e in lapses if e.payload["level"] is None]
+    assert {(e.actor, e.scene) for e in moments} == {
+        ("Ben", "day-0002/planning"),
+        ("Cai", "day-0001/evening/cafe"),
+    }
+    decided = {(e.actor, e.time) for e in log if e.kind is EventKind.DECISION}
+    assert all((e.actor, e.time) not in decided for e in moments)
+    # Ben planned nothing for the second day, so he spent it at home; the first evening's
+    # conversation went on without Cai's words.
+    assert not [
+        e for e in log if e.kind is EventKind.MOVE and e.actor == "Ben" and day_of(e.time) == 2
+    ]
+    evening = [e for e in log if e.scene == "day-0001/evening/cafe"]
+    assert {e.actor for e in evening if e.kind is EventKind.SPEECH} == {"Ana", "Ben"}
+    assert evening[-1].kind is EventKind.SCENE_ENDED
+    # Ana's first night was skipped: nothing committed, her diary of that night discarded.
+    [night] = [e for e in lapses if e.payload["level"] is not None]
+    assert (night.actor, night.time, night.payload["level"], night.payload["trigger"]) == (
+        "Ana",
+        time_at(1, "22:00"),
+        "L0",
+        "daily",
+    )
+    history = History(run.agent_dir("Ana"))
+    assert not [v for v in history.log() if v.level and day_of(v.time) == 1]
+    assert not (run.agent_dir("Ana") / "memory" / "diary" / "day-0001.md").exists()
+    assert (run.agent_dir("Ana") / "memory" / "diary" / "day-0002.md").exists()
+    assert [day_of(e.time) for e in log if e.kind is EventKind.EVOLUTION and e.actor == "Ana"] == [
+        2,
+        2,
+        3,
+        3,
+    ]
+
+
+async def test_a_run_whose_lapses_exceed_their_share_fails(tmp_path):
+    def anas(request: LLMRequest) -> bool:
+        """Every moment of Ana's but her plans, so that she is out and about."""
+        metadata = request.metadata
+        return (metadata["agent"], metadata["purpose"]) == ("Ana", "act") and (
+            card.DECIDE not in offered(request)
+        )
+
+    run, parts = new_run(tmp_path / "a", Script(garble=anas))
+    lenient = replace(parts, simulation=SIMULATION.model_copy(update={"max_lapse_share": 0.5}))
+    assert await Simulation.create(run, lenient).run() is RunStatus.COMPLETED
+    lapsed = [e for e in events(run) if e.kind is EventKind.LAPSE]
+    assert len(lapsed) >= 10 and {e.actor for e in lapsed} == {"Ana"}
+
+    run, parts = new_run(tmp_path / "b", Script(garble=anas))
+    with pytest.raises(RuntimeError, match="lapsed for want of a valid reply"):
+        await Simulation.create(run, parts).run()
+    assert run.read_manifest().status is RunStatus.FAILED
+
+
 async def test_a_failed_day_resumes_from_its_checkpoint_to_the_same_end(tmp_path):
-    uninterrupted, parts = new_run(tmp_path / "a", Script())
+    uninterrupted, parts = new_run(tmp_path / "a", Script(garble=lapsing))
     await Simulation.create(uninterrupted, parts).run()
 
-    def mid_conversation(request: LLMRequest) -> bool:
-        return request.metadata["time"] == time_at(2, "13:05")
+    def at_work(request: LLMRequest) -> bool:
+        return (request.metadata["agent"], request.metadata["time"]) == ("Cai", time_at(2, "09:00"))
 
-    run, parts = new_run(tmp_path / "b", Script(fail=mid_conversation))
+    run, parts = new_run(tmp_path / "b", Script(fail=at_work, garble=lapsing))
     with pytest.RaisesGroup(pytest.RaisesExc(RuntimeError, match="went away")):
         await Simulation.create(run, parts).run()
     assert run.read_manifest().status is RunStatus.FAILED
     assert run.latest_checkpoint() == run.checkpoint_path(1)
     calls = len(list(read_jsonl(run.llm_calls_path)))
 
-    parts = setup(run, Script())
+    parts = setup(run, Script(garble=lapsing))
     assert await Simulation.resume(run, parts).run() is RunStatus.COMPLETED
     assert run.read_manifest().status is RunStatus.COMPLETED
     assert run.events_path.read_bytes() == uninterrupted.events_path.read_bytes()

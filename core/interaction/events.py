@@ -48,6 +48,9 @@ class EventKind(StrEnum):
     INTERVENTION = "intervention"
     DECISION = "decision"
     """An agent's private thought and chosen action, recorded before it is executed; truth-only."""
+    LAPSE = "lapse"
+    """A moment in which an agent did nothing, or a night step it skipped, because no valid
+    reply of its could be obtained, with how each attempt failed; truth-only."""
     DRAW = "draw"
     """The random order in which simultaneous claims on a task are taken; told to the claimants."""
     EVOLUTION = "evolution"
@@ -56,7 +59,8 @@ class EventKind(StrEnum):
 
 
 class Percept(StrictModel):
-    """A witness's view of an event: every event field except `payload` and `audience`."""
+    """A witness's view of an event: every event field except `payload`, `audience` and
+    `personal`, with the text as that witness is told it."""
 
     seq: NonNegativeInt
     time: SimTime
@@ -71,8 +75,10 @@ class Event(StrictModel):
     """Something that happened, numbered by `seq` in the event log.
 
     `audience` holds the ids of the agents who witnessed it and is empty for truth-only
-    events. `text` is what a witness perceives. `payload` is structured truth for analysis
-    and replay; it never reaches an agent.
+    events. `text` is what a witness perceives, naming everyone in it by name; `personal`
+    holds, by agent id, the wording for each witness the text names, which says the same of
+    that witness as `you` and is what it perceives instead (see `core.interaction.telling`).
+    `payload` is structured truth for analysis and replay; it never reaches an agent.
     """
 
     seq: NonNegativeInt
@@ -83,8 +89,10 @@ class Event(StrictModel):
     scene: str | None = None
     audience: tuple[str, ...] = ()
     text: str
+    personal: dict[str, str] = Field(default_factory=dict)
     payload: dict[str, JsonValue] = Field(default_factory=dict)
 
-    def percept(self) -> Percept:
-        """This event as its witnesses perceive it."""
-        return Percept.model_validate(self.model_dump(exclude={"payload", "audience"}))
+    def percept(self, witness: str) -> Percept:
+        """This event as `witness` perceives it: in its own wording, if it has one."""
+        seen = self.model_dump(exclude={"payload", "audience", "personal"})
+        return Percept.model_validate({**seen, "text": self.personal.get(witness, self.text)})

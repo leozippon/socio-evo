@@ -34,7 +34,8 @@ class SimulationConfig(StrictModel):
     and of the last day run. An intervention must fall on a day of the run, at the day start,
     a slot start or the day end, since a slot's scenes play to the end before anything else
     happens; a conversation must fit within the shortest slot, and a work session's rounds
-    must be at least a minute apart."""
+    must be at least a minute apart. The run fails once more than `max_lapse_share` of its
+    decisions and night steps have lapsed for want of a valid reply (see `Simulation`)."""
 
     days: PositiveInt
     calendar: Calendar
@@ -42,6 +43,7 @@ class SimulationConfig(StrictModel):
     scenes: SceneConfig = SceneConfig()
     checkpoint_days: PositiveInt = 1
     interventions: tuple[Intervention, ...] = ()
+    max_lapse_share: float = Field(default=0.01, ge=0, le=1)
 
     @model_validator(mode="after")
     def _fits(self) -> "SimulationConfig":

@@ -8,11 +8,14 @@ from core.interaction import (
     MayPass,
     Observation,
     Percept,
+    Witness,
+    capital,
     clock_of,
     day_of,
     format_time,
     lived_day,
     ordinal,
+    tell,
     time_at,
 )
 
@@ -73,10 +76,31 @@ def _event() -> Event:
     )
 
 
-def test_percept_is_the_event_without_truth_fields():
+def test_percept_is_the_event_without_truth_fields_as_its_witness_is_told_it():
     event = _event()
-    assert set(Percept.model_fields) == set(Event.model_fields) - {"payload", "audience"}
-    assert event.percept().model_dump() == event.model_dump(exclude={"payload", "audience"})
+    hidden = {"payload", "audience", "personal"}
+    assert set(Percept.model_fields) == set(Event.model_fields) - hidden
+    assert event.percept("ben").model_dump() == event.model_dump(exclude=hidden)
+
+    told = event.model_copy(update={"personal": {"ben": "Ana says to you: good morning."}})
+    assert told.percept("ben").text == "Ana says to you: good morning."
+    assert told.percept("cai").model_dump() == event.model_dump(exclude=hidden)
+
+
+def test_a_telling_names_its_witness_you_where_its_name_stood():
+    def drawn(you: Witness) -> str:
+        return (
+            f"{capital(you.listed(['Ana', 'Ben', 'Cai']))} reached for it. "
+            f"{capital(you('Cai'))} got it, and the clerk took {you.whose('Cai')} name."
+        )
+
+    text, personal = tell(drawn, ["Ana", "Cai", "Dan"])
+    assert text == "Ana, Ben and Cai reached for it. Cai got it, and the clerk took Cai's name."
+    assert personal == {
+        "Ana": "You, Ben and Cai reached for it. Cai got it, and the clerk took Cai's name.",
+        "Cai": "Ana, Ben and you reached for it. You got it, and the clerk took your name.",
+    }
+    assert tell("Ana left.", ["Ben"]) == ("Ana left.", {})
 
 
 def test_truth_cannot_reach_an_observation():

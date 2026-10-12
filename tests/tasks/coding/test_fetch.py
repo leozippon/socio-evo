@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 import yaml
 
+from infrastructure.llm.structured import TRUNCATED
 from tasks.coding import CodingTaskProvider, fetch, special_cases
-from tasks.coding.calibrate import CUT_OFF, Result, Sample
+from tasks.coding.calibrate import Result, Sample
 from tasks.coding.fetch import (
-    TOWN_MIX,
     BankIndex,
     Difficulty,
     Entry,
@@ -176,7 +176,11 @@ def result(*attempts: tuple[bool, float], cut_off: int = 0) -> Result:
         Sample(visible=visible, quality=quality, special_cased=False)
         for visible, quality in attempts
     ]
-    return Result(bank="pool", samples=samples, errors=(f"LLMCallError: {CUT_OFF}",) * cut_off)
+    return Result(
+        bank="pool",
+        samples=samples,
+        errors=(f"StructuredOutputError: last error: {TRUNCATED}",) * cut_off,
+    )
 
 
 def test_difficulty_follows_the_first_attempts_and_the_label_only_among_solved_tasks():
@@ -193,7 +197,7 @@ def test_difficulty_follows_the_first_attempts_and_the_label_only_among_solved_t
         assert measured_difficulty(measured, label) is difficulty
 
 
-def test_the_town_takes_the_pool_in_the_mix_and_leaves_unsolved_tasks_out():
+def test_the_town_takes_the_pool_in_the_mix_with_every_unsolved_task_in_the_hard_tier():
     origin = Origin(
         source="livecodebench",
         revision="r",
@@ -211,10 +215,14 @@ def test_the_town_takes_the_pool_in_the_mix_and_leaves_unsolved_tasks_out():
         for n in range(count)
     }
     chosen = town(pool)
-    scale = min(counts[difficulty] / share for difficulty, share in TOWN_MIX.items())
     assert Counter(entry.difficulty for _, entry in chosen.values()) == {
-        difficulty: int(scale * share) for difficulty, share in TOWN_MIX.items()
+        Difficulty.EASY: 5,
+        Difficulty.MEDIUM: 5,
+        Difficulty.UNSOLVED: 4,
+        Difficulty.HARD: 1,
     }
     assert town(dict(reversed(pool.items()))) == chosen
+    unsolved_only = {name: item for name, item in pool.items() if not name.startswith("hard")}
+    assert Counter(e.difficulty for _, e in town(unsolved_only).values())[Difficulty.UNSOLVED] == 4
     with pytest.raises(ValueError, match="no hard task"):
-        town({name: item for name, item in pool.items() if not name.startswith("hard")})
+        town({name: item for name, item in unsolved_only.items() if "unsolved" not in name})

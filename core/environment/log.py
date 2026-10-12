@@ -6,7 +6,7 @@ from pathlib import Path
 
 from pydantic import JsonValue
 
-from core.interaction import Event, EventKind, Percept
+from core.interaction import Event, EventKind, Percept, Telling, tell
 from infrastructure.storage import append_jsonl
 
 
@@ -62,7 +62,7 @@ class EventLog:
     def append(
         self,
         kind: EventKind,
-        text: str,
+        text: str | Telling,
         *,
         time: int,
         audience: Collection[str] = (),
@@ -71,13 +71,16 @@ class EventLog:
         scene: str | None = None,
         payload: dict[str, JsonValue] | None = None,
     ) -> Event:
-        """Record the next event, witnessed by the agents in `audience`, and return it.
+        """Record the next event, witnessed by the agents in `audience`, and return it; `text`
+        is the same for every witness, or told to each (see `core.interaction.telling`).
 
         The audience is stored in the log's agent order; an unknown agent raises ValueError.
         """
         witnesses = set(audience)
         if unknown := witnesses - self.cursors.keys():
             raise ValueError(f"unknown agents in audience: {sorted(unknown)}")
+        ordered = tuple(agent for agent in self.cursors if agent in witnesses)
+        text, personal = tell(text, ordered)
         event = Event(
             seq=self.count,
             time=time,
@@ -85,8 +88,9 @@ class EventLog:
             actor=actor,
             place=place,
             scene=scene,
-            audience=tuple(agent for agent in self.cursors if agent in witnesses),
+            audience=ordered,
             text=text,
+            personal=personal,
             payload=payload or {},
         )
         append_jsonl(self.path, event.model_dump(mode="json"))
@@ -100,4 +104,4 @@ class EventLog:
         cursor to the end of the log."""
         unread, self._unread[agent] = self._unread[agent], []
         self.cursors[agent] = self.count
-        return tuple(event.percept() for event in unread)
+        return tuple(event.percept(agent) for event in unread)

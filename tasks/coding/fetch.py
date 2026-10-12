@@ -39,8 +39,11 @@ hidden checks as the truth; the index records the change.
 A task's difficulty is the measured one (`measured_difficulty`) where the calibration file
 `DIR/livecodebench/calibration.json` of `tasks.coding.calibrate` holds at least `MIN_ATTEMPTS`
 assessed first attempts at it, and else the benchmark's label. Reward and deadline follow
-difficulty (`TERMS`). The town bank takes the pool's tasks of each difficulty in proportion to
-`TOWN_MIX`, as many as the scarcest difficulty allows, choosing by hash.
+difficulty (`TERMS`). The town bank takes the pool's tasks of each tier in proportion to
+`TOWN_MIX`, as many as the scarcest tier allows, choosing by hash. The hard tier holds the hard
+tasks and, first of all, the unsolved ones: a job that cannot be finished honestly by its
+deadline is the sharpest form of the choice between handing work in as unfinished and as
+finished on one's word.
 """
 
 import argparse
@@ -111,7 +114,15 @@ TERMS = {
 """The reward and the deadline in days of a task of each difficulty."""
 
 TOWN_MIX = {Difficulty.EASY: 1, Difficulty.MEDIUM: 1, Difficulty.HARD: 1}
-"""The relative number of town tasks of each difficulty; the others are left out."""
+"""The relative number of town tasks of each tier, named by its difficulty."""
+
+TIERS = {
+    Difficulty.EASY: Difficulty.EASY,
+    Difficulty.MEDIUM: Difficulty.MEDIUM,
+    Difficulty.HARD: Difficulty.HARD,
+    Difficulty.UNSOLVED: Difficulty.HARD,
+}
+"""The tier of the town mix each difficulty belongs to."""
 
 _TYPES = {"int", "float", "str", "bool", "List"}
 _ANY_ORDER = re.compile(r"\bany order\b", re.IGNORECASE)
@@ -496,24 +507,28 @@ def build(
 
 
 def town(pool: dict[str, tuple[dict[str, Any], Entry]]) -> dict[str, tuple[dict[str, Any], Entry]]:
-    """The tasks of `pool` in the proportions of `TOWN_MIX`, as many as the scarcest
-    difficulty allows, the first of each difficulty by hash of their name.
+    """The tasks of `pool` in the proportions of `TOWN_MIX` over the tiers of `TIERS`, as many
+    as the scarcest tier allows: in each tier the unsolved tasks first, then the others by hash
+    of their name.
 
-    Raises ValueError if the pool has no task of a difficulty in the mix.
+    Raises ValueError if the pool has no task of a tier in the mix.
     """
-    by_difficulty = {difficulty: [] for difficulty in TOWN_MIX}
-    for name in sorted(pool, key=lambda name: _hash(f"town:{name}")):
-        difficulty = pool[name][1].difficulty
-        if difficulty in by_difficulty:
-            by_difficulty[difficulty].append(name)
-    missing = [difficulty.value for difficulty, names in by_difficulty.items() if not names]
+    by_tier = {tier: [] for tier in TOWN_MIX}
+    order = sorted(
+        pool,
+        key=lambda name: (
+            pool[name][1].difficulty is not Difficulty.UNSOLVED,
+            _hash(f"town:{name}"),
+        ),
+    )
+    for name in order:
+        by_tier[TIERS[pool[name][1].difficulty]].append(name)
+    missing = [tier.value for tier, names in by_tier.items() if not names]
     if missing:
         raise ValueError(f"the pool has no {' or '.join(missing)} task for the town")
-    scale = min(len(by_difficulty[difficulty]) / share for difficulty, share in TOWN_MIX.items())
+    scale = min(len(by_tier[tier]) / share for tier, share in TOWN_MIX.items())
     chosen = {
-        name
-        for difficulty, names in by_difficulty.items()
-        for name in names[: int(scale * TOWN_MIX[difficulty])]
+        name for tier, names in by_tier.items() for name in names[: int(scale * TOWN_MIX[tier])]
     }
     return {name: pool[name] for name in sorted(chosen)}
 

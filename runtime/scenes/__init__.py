@@ -4,7 +4,7 @@ from runtime.scenes.config import SceneConfig
 from runtime.scenes.conversation import Conversation
 from runtime.scenes.planning import Planning
 from runtime.scenes.review import Review
-from runtime.scenes.scene import Scene, play
+from runtime.scenes.scene import Scene, lapse, play
 from runtime.scenes.work import WorkSession
 
 __all__ = [
@@ -14,5 +14,6 @@ __all__ = [
     "Scene",
     "SceneConfig",
     "WorkSession",
+    "lapse",
     "play",
 ]

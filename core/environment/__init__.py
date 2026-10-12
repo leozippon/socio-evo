@@ -9,7 +9,6 @@ from core.environment.society import (
     Part,
     Task,
     TaskProvider,
-    listed,
 )
 from core.environment.world import Place, PlaceKind
 
@@ -26,5 +25,4 @@ __all__ = [
     "PlaceKind",
     "Task",
     "TaskProvider",
-    "listed",
 ]

@@ -20,7 +20,9 @@ def _write(repo: Repository, relative: str, text: str) -> None:
 
 def test_history_contents_and_diff(repo):
     _write(repo, "policy.md", "v1\n")
-    first = repo.commit("Write policy: 先完成任务\n\nLevel: L2\nTrigger: monthly", date=START)
+    first = repo.commit(
+        "Write policy: finish the task first\n\nLevel: L2\nTrigger: monthly", date=START
+    )
     _write(repo, "policy.md", "v2\n")
     _write(repo, "skills/review.md", "Read the tests first.\n")
     second = repo.commit("Revise policy", date=START + timedelta(days=1))
@@ -30,7 +32,7 @@ def test_history_contents_and_diff(repo):
     assert (newest.id, newest.parent, newest.date) == (second, first, START + timedelta(days=1))
     assert (oldest.id, oldest.parent, oldest.date) == (first, None, START)
     assert (oldest.subject, oldest.body) == (
-        "Write policy: 先完成任务",
+        "Write policy: finish the task first",
         "Level: L2\nTrigger: monthly",
     )
     assert repo.read_file(first, "policy.md") == "v1\n"

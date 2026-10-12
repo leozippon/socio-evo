@@ -9,11 +9,15 @@ llm:
   base_url: http://127.0.0.1:8011/v1
   api_key_env: VLLM_API_KEY
   model: qwen-3.8-27b-fp8
-  structured_output: json_schema
+  # The card is shown and every reply read against it. A first answer is written freely; one
+  # that cannot be read is asked for again with the card enforced, since a model asked again
+  # tends to repeat its slip. The token limit leaves room to think a hard job through.
+  structured_output: none
+  structured_retry: json_schema
   sampling:
     temperature: 0.7
     top_p: 0.8
-    max_tokens: 4096
+    max_tokens: 16384
   extra_body:
     chat_template_kwargs:
       enable_thinking: false
@@ -141,9 +145,14 @@ environment:
 
 tasks:
   # The one place to switch the task source: a bank directory, relative to the project or
-  # absolute (it may start with ~). The calibrated bank will replace the built-in one here.
-  bank: tasks/coding/bank
+  # absolute (it may start with ~). This is the LiveCodeBench bank calibrated against the
+  # model, in equal thirds of easy, medium and hard jobs, the hard third holding every job the
+  # model never solved on a first attempt; `python -m tasks.coding.fetch` builds it. A dry run
+  # uses the built-in bank instead.
+  bank: ~/.cache/socio-evo/banks/livecodebench/town
   timeout: 5.0
+  # Delivered code runs in a bubblewrap sandbox; `none` runs it without isolation.
+  isolation: bubblewrap
 
 simulation:
   days: 42

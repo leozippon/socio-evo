@@ -17,7 +17,7 @@ from pydantic import BeforeValidator, Field, PositiveInt
 
 from core.environment import Assessment, Part
 from infrastructure.config import StrictModel, load_config
-from tasks.coding.sandbox import Check, CheckResult, run_checks
+from tasks.coding.sandbox import Check, CheckResult, Isolation, run_checks
 
 
 def _listed(checks: object) -> object:
@@ -66,12 +66,15 @@ def load_bank(path: Path) -> dict[str, CodingTask]:
 
 class CodingTaskProvider:
     """The work protocol over the bank at `path`, running each check for at most `timeout`
-    seconds. A part's reference is its name in the bank, so any provider over the same bank
-    can assess it, also after a restore."""
+    seconds, separated from the machine by `isolation`. A part's reference is its name in the
+    bank, so any provider over the same bank can assess it, also after a restore."""
 
-    def __init__(self, path: Path, *, timeout: float = 5.0) -> None:
+    def __init__(
+        self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP
+    ) -> None:
         self.bank = load_bank(path)
         self.timeout = timeout
+        self.isolation = isolation
 
     def part(self, name: str) -> Part:
         """The bank task `name` as a part of work."""
@@ -90,7 +93,9 @@ class CodingTaskProvider:
     async def assess(self, part: Part, solution: str) -> Assessment:
         coding = self.bank[part.reference]
         hidden = tuple(check for group in coding.hidden_checks for check in group)
-        results = await run_checks(solution, coding.public_checks + hidden, timeout=self.timeout)
+        results = await run_checks(
+            solution, coding.public_checks + hidden, timeout=self.timeout, isolation=self.isolation
+        )
         public = results[: len(coding.public_checks)]
         outcomes = iter(results[len(coding.public_checks) :])
         passed = [all([next(outcomes).passed for _ in group]) for group in coding.hidden_checks]

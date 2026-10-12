@@ -4,11 +4,13 @@ A moment's `Observation.allowed` holds an allowance for each kind of thing the r
 do now, with the values that are really possible: the jobs on the board, the people present,
 the parts of its own job, the places open in each part of the day. One definition turns the
 allowances into the forms of a reply, and the forms into three things that cannot disagree:
-the card a resident reads, the JSON schema of the same forms that a server enforces under
-guided decoding, and the translation of a reply into the `Decision` the town carries out.
-Every form opens with the resident's thought and then says what it does (`do`) in plain
-words, with fields named and valued as the town names them, so the code's names for actions
-and fields never reach a resident, not even in what it writes.
+the card a resident reads, the JSON schema of the same forms that every reply is validated
+against (and that a server may enforce under guided decoding), and the translation of a
+reply into the `Decision` the town carries out. `correction` tells a resident whose answer
+could not be read what was wrong, in the card's words. Every form opens with the resident's
+thought and then says what it does (`do`) in plain words, with fields named and valued as
+the town names them, so the code's names for actions and fields never reach a resident, not
+even in what it writes.
 
 The wording here is agent-facing: invariant 1 and invariant 8 (`docs/IMMERSION.md`) govern it,
 and tests scan the upper-case constants and every card. Each action kind has exactly one
@@ -23,7 +25,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Union, get_args
 
-from pydantic import BaseModel, Field, RootModel, create_model, model_validator
+from pydantic import BaseModel, Field, RootModel, ValidationError, create_model, model_validator
 
 from core.interaction.actions import (
     Action,
@@ -86,6 +88,15 @@ NUMBER = "a whole number"
 TRUTH = "true or false"
 NOTHING = "null"
 MORE = "…"
+
+UNREAD = "That answer could not be read: {problems}. Answer again, written as shown above."
+UNREADABLE = (
+    "That answer could not be read as it was written. Answer again, written as shown above."
+)
+MISSING = '"{key}" is missing'
+NOT_IN_FORM = '"{key}" is not part of that form'
+NOT_A_CHOICE = '"{key}" is not one of the choices shown'
+NOT_AS_SHOWN = '"{key}" is not written as shown'
 
 Fields = dict[str, tuple[Any, str | None]]
 """A form's fields after `thought` and `do`: its key, as the resident writes it, to the type
@@ -350,6 +361,74 @@ def form(model: type[BaseModel]) -> str:
     defs, notes = schema.get("$defs", {}), []
     lines = [_shape(option, defs, notes, top=True) for option in schema.get("anyOf", [schema])]
     return "\n".join([ANSWERS if len(lines) > 1 else ANSWER, *lines, *notes])
+
+
+def correction(model: type[BaseModel], error: ValidationError) -> str:
+    """What a resident is told when its answer could not be read as a reply to `model`: what
+    was wrong, by the keys it writes and in the card's plain words (a choice not shown, a
+    missing key, a key that is not part of the form, or the rule of a nightly reply it
+    broke), or that the answer as a whole could not be read; then to answer again. The
+    choices themselves are not repeated, so that the correction cannot lean towards one."""
+    keys = _keys(model.model_json_schema())
+    problems = []
+    for problem in _closest(error.errors(), keys):
+        if problem["type"] == "value_error":
+            problems.append(str(problem["ctx"]["error"]))
+            continue
+        key = next((part for part in reversed(problem["loc"]) if part in keys), None)
+        if key is None:
+            return UNREADABLE
+        problems.append(_PROBLEMS.get(problem["type"], NOT_AS_SHOWN).format(key=key))
+    return UNREAD.format(problems="; ".join(dict.fromkeys(problems)))
+
+
+_PROBLEMS = {
+    "missing": MISSING,
+    "extra_forbidden": NOT_IN_FORM,
+    "literal_error": NOT_A_CHOICE,
+    "enum": NOT_A_CHOICE,
+}
+"""How each kind of validation problem with a key is told; any other is NOT_AS_SHOWN."""
+
+
+def _keys(schema: Any) -> set[str]:
+    """Every key an object of `schema`, or nested in it, can have."""
+    if isinstance(schema, list):
+        return {key for item in schema for key in _keys(item)}
+    if not isinstance(schema, dict):
+        return set()
+    own = set(schema["properties"]) if isinstance(schema.get("properties"), dict) else set()
+    return own | {key for value in schema.values() for key in _keys(value)}
+
+
+def _closest(problems: list[Any], keys: set[str]) -> list[Any]:
+    """The problems of an answer that fits no member of a union, which validation reports for
+    every member under the member's name, kept for the members it came closest to: those
+    with the fewest problems, and of those the fewest values that are not a choice (an answer
+    to one form that holds a key too many is closer to it than to a form it names wrongly)."""
+    members: dict[tuple[Any, ...], list[Any]] = {}
+    kept = []
+    for problem in problems:
+        loc = problem["loc"]
+        at = next(
+            (i for i, part in enumerate(loc) if isinstance(part, str) and part not in keys), None
+        )
+        if at is None:
+            kept.append(problem)
+        else:
+            members.setdefault(loc[: at + 1], []).append(problem)
+
+    def distance(found: list[Any]) -> tuple[int, int]:
+        return len(found), sum(problem["type"] == "literal_error" for problem in found)
+
+    nearest: dict[tuple[Any, ...], tuple[int, int]] = {}
+    for member, found in members.items():
+        union = member[:-1]
+        nearest[union] = min(nearest.get(union, distance(found)), distance(found))
+    closest = (
+        found for member, found in members.items() if distance(found) == nearest[member[:-1]]
+    )
+    return kept + [problem for found in closest for problem in found]
 
 
 def _one_of(values: Iterable[Any]) -> Any:

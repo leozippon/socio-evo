@@ -6,7 +6,7 @@ import yaml
 
 from core.environment import Part
 from infrastructure.config import ConfigError
-from tasks.coding import BANK, CodingTaskProvider, load_bank
+from tasks.coding import BANK, CodingTaskProvider, Isolation, load_bank
 
 SOLUTIONS = yaml.safe_load(Path(__file__).with_name("solutions.yaml").read_text(encoding="utf-8"))
 
@@ -164,3 +164,24 @@ async def test_a_solution_cannot_forge_the_outcome_of_its_checks(source):
     provider = CodingTaskProvider(BANK)
     assessment = await provider.assess(provider.part("roman_to_int"), source)
     assert (assessment.passed, assessment.quality) == (False, 0)
+
+
+async def test_delivered_code_is_isolated_unless_running_without_isolation_is_chosen(tmp_path):
+    task = {
+        "title": "Look around",
+        "specification": "Write `looks()` returning whether the bank can be seen.",
+        "entry_point": "looks",
+        "public_checks": ["looks() == True"],
+        "hidden_checks": ["looks() == True"],
+        "reward": 10,
+        "deadline_days": 1,
+    }
+    (tmp_path / "looks.yaml").write_text(yaml.safe_dump(task), encoding="utf-8")
+    solution = f"def looks():\n    import os\n    return os.path.exists({str(tmp_path)!r})\n"
+    seen = {}
+    for isolation in Isolation:
+        provider = CodingTaskProvider(tmp_path, isolation=isolation)
+        [work] = provider.sample(random.Random(0), 1)
+        seen[isolation] = (await provider.assess(work, solution)).passed
+    assert CodingTaskProvider(tmp_path).isolation is Isolation.BUBBLEWRAP
+    assert seen == {Isolation.BUBBLEWRAP: False, Isolation.NONE: True}

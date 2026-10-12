@@ -1,5 +1,7 @@
 """The Evolver: maps a trigger to the enabled operators and commits each step."""
 
+from dataclasses import dataclass
+
 from core.agent import prompts
 from core.agent.agent import Agent
 from core.agent.evolution.config import EvolutionConfig
@@ -14,6 +16,18 @@ from core.agent.evolution.operators import (
 )
 from core.interaction import day_of
 from infrastructure.config import ConfigError
+from infrastructure.llm import StructuredOutputError
+
+
+@dataclass(frozen=True)
+class Lapse:
+    """A step skipped because no valid reply of the agent's could be obtained; `error` says
+    how each attempt failed. Nothing was committed for it, and whatever it had written was
+    discarded."""
+
+    level: Level
+    trigger: Trigger
+    error: StructuredOutputError
 
 
 class Evolver:
@@ -31,9 +45,10 @@ class Evolver:
         self.config = config
         self._operators = operators
 
-    async def evolve(self, agent: Agent, trigger: Trigger, time: int) -> list[Version]:
+    async def evolve(self, agent: Agent, trigger: Trigger, time: int) -> list[Version | Lapse]:
         """Apply the enabled levels `trigger` schedules, in level order, each as one commit,
-        followed by any step the agent requested in its reflection; returns those commits.
+        followed by any step the agent requested in its reflection; returns those commits,
+        and the lapse of each step for which no valid reply could be obtained.
 
         If any level applies, pending experience is committed first so that each step's commit
         holds only that step's changes; a step that changes no file is an empty commit. A level
@@ -47,7 +62,7 @@ class Evolver:
             return []
         history = History(agent.path)
         history.commit_experience(time)
-        versions: list[Version] = []
+        versions: list[Version | Lapse] = []
         for level in levels:
             if not any(v.level is level and v.time == time for v in history.log()):
                 versions += await self._step(agent, history, level, trigger, time, None)
@@ -61,7 +76,7 @@ class Evolver:
         trigger: Trigger,
         time: int,
         reason: str | None,
-    ) -> list[Version]:
+    ) -> list[Version | Lapse]:
         log = history.log()
         context = Context(
             trigger=trigger,
@@ -70,9 +85,15 @@ class Evolver:
             requestable=self._requestable(log, time) if level is Level.L0 else (),
             reason=reason,
         )
-        change = await self._operators[level].apply(agent, context)
+        try:
+            change = await self._operators[level].apply(agent, context)
+        except StructuredOutputError as error:
+            history.reset(history.head())
+            return [Lapse(level, trigger, error)]
         body = change.body if reason is None else f"Requested: {reason}\n\n{change.body}"
-        versions = [history.commit_step(level, trigger, time, change.subject, body)]
+        versions: list[Version | Lapse] = [
+            history.commit_step(level, trigger, time, change.subject, body)
+        ]
         if change.request is not None:
             level = Level(prompts.requested_level(change.request))
             versions += await self._step(

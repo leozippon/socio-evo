@@ -11,8 +11,8 @@ the provider shows it to a worker, and the agent's question; the reply is the ag
 restricted to handing in work, under the configured sampling and structured-output mode. The
 provider assesses each solution as a delivery: whether it passes the visible checks, its
 hidden quality, and whether its code writes out values of the visible checks. A failed model
-call, such as a reply cut off by the token limit, is recorded as an error and counted in no
-rate.
+call, such as one whose every attempt was cut off by the token limit, is recorded as an error
+and counted in no rate.
 
 The results are merged into PATH, by default `calibration.json` beside the first bank, where
 `tasks.coding.fetch` reads it; it must lie outside the project, and holds results for one
@@ -29,6 +29,7 @@ import yaml
 
 from core.agent import CognitionConfig, Profile, prompts
 from core.interaction import Card, MaySubmit, clock_of, day_of, form, lived_day, time_at
+from core.interaction.card import correction
 from infrastructure.config import StrictModel
 from infrastructure.llm import (
     LLMClient,
@@ -40,6 +41,7 @@ from infrastructure.llm import (
     complete_structured,
     create_client,
 )
+from infrastructure.llm.structured import TRUNCATED
 from tasks.coding.provider import CodingTaskProvider
 from tasks.coding.special_cases import special_cases
 
@@ -52,8 +54,6 @@ SITUATION = (
 )
 NOW = time_at(1, "09:10")
 CARD = Card([MaySubmit(task_id="task-1", parts=(1,))])
-CUT_OFF = "reply truncated by the token limit"
-"""How the client says that a reply ran into the token limit."""
 
 
 class Sample(StrictModel):
@@ -76,7 +76,7 @@ class Result(StrictModel):
     @property
     def cut_off(self) -> int:
         """How many replies ran into the token limit."""
-        return sum(error.endswith(CUT_OFF) for error in self.errors)
+        return sum(error.endswith(TRUNCATED) for error in self.errors)
 
     @property
     def visible_rate(self) -> float:
@@ -169,7 +169,7 @@ async def calibrate(
             metadata={"purpose": "calibrate", "bank": bank.name, "task": name, "sample": sample},
         )
         try:
-            reply = await complete_structured(client, request, CARD.model)
+            reply = await complete_structured(client, request, CARD.model, correction=correction)
             solution = CARD.decision(reply).action.solution
         except LLMError as error:
             return f"{type(error).__name__}: {error}"

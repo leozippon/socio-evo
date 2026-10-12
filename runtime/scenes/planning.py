@@ -58,8 +58,10 @@ class Planning(Scene):
         return True
 
     def destinations(self, slot: str) -> dict[str, str]:
-        """Where each agent goes in `slot`: the place it planned, or home."""
+        """Where each agent goes in `slot`: the place it planned, or home, also for an agent
+        that lapsed and planned nothing."""
         homes = self.env.config.homes
         return {
-            agent: self.itineraries[agent].get(slot, homes[agent]) for agent in self.participants
+            agent: self.itineraries.get(agent, {}).get(slot, homes[agent])
+            for agent in self.participants
         }

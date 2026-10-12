@@ -1,5 +1,6 @@
 import json
 import random
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -13,6 +14,7 @@ from core.environment import (
     Part,
     Place,
 )
+from core.environment.log import EventLog
 from core.interaction import (
     Action,
     CheckWork,
@@ -173,7 +175,7 @@ def views(env: Environment) -> list[str]:
     return [
         env.rules_view(),
         env.board_view(),
-        env.esteem_view() or "",
+        *(env.esteem_view(agent) or "" for agent in AGENTS),
         *(env.status_view(agent) for agent in AGENTS),
     ]
 
@@ -219,7 +221,9 @@ async def test_percepts_follow_audience_and_cursor_and_never_carry_truth(env):
 
     events = logged(env)
     for agent in AGENTS:
-        assert perceived[agent] == [event.percept() for event in events if agent in event.audience]
+        assert perceived[agent] == [
+            event.percept(agent) for event in events if agent in event.audience
+        ]
     assert only(events, EventKind.SPEECH).audience == ("Ben",)
     assert only(events, EventKind.TASK_CLAIMED).audience == ("Ana", "Ben")
     assert only(events, EventKind.TASK_PROPOSED).audience == ("Cai", "Dan")
@@ -315,6 +319,7 @@ REJECTIONS = {
         "To say something privately, say it to someone here by name.",
     ),
     "speak to someone absent": ("Ana", Speak(text="Hello.", to="Cai"), "Cai is not here."),
+    "speak to oneself": ("Ana", Speak(text="Hello.", to="ana"), "You cannot say something to"),
     "rate oneself": ("Ana", rate("Ana", 5), "You cannot mark yourself in the clerk's ledger."),
     "rate an unknown agent": (
         "Ana",
@@ -787,7 +792,9 @@ async def test_a_private_remark_reaches_only_its_addressee_and_others_see_only_t
     warning = Speak(text="Do not take task-3 with Cai.", to="Ben", private=True)
     remark, seen = await act(env, "Ana", warning)
     assert (remark.kind, remark.audience) == (EventKind.SPEECH, ("Ben",))
-    assert remark.text == "Ana says to you privately: Do not take task-3 with Cai."
+    assert remark.text == "Ana says to Ben privately: Do not take task-3 with Cai."
+    heard = remark.percept("Ben").text
+    assert heard == "Ana says to you privately: Do not take task-3 with Cai."
     assert remark.payload == {
         "to": "Ben",
         "utterance": remark.payload["utterance"],
@@ -797,9 +804,89 @@ async def test_a_private_remark_reaches_only_its_addressee_and_others_see_only_t
     assert seen.text == "Ana says something to Ben that you cannot hear."
     assert env.perceive("Dan") == () and env.perceive("Ana") == ()
     assert [percept.text for percept in env.perceive("Cai")] == [seen.text]
+    assert [percept.text for percept in env.perceive("Ben")] == [heard]
     go(env, "office", "Cai", day=1)
     alone = await act(env, "Ana", Speak(text="Just us.", to="Ben", private=True))
     assert kinds(alone) == [EventKind.SPEECH]
+
+
+def test_a_log_recorded_before_personal_wordings_resumes_and_is_perceived(tmp_path):
+    path = tmp_path / "events.jsonl"
+    said = {"seq": 0, "time": 600, "kind": "speech", "actor": "Ana", "audience": ["Ben"]}
+    path.write_text(json.dumps({**said, "text": "Ana says to Ben: Hi.", "payload": {}}) + "\n")
+    log = EventLog.resume(path, 1, {"Ana": 0, "Ben": 0})
+    assert [percept.text for percept in log.perceive("Ben")] == ["Ana says to Ben: Hi."]
+
+
+def as_told_to(text: str, witness: str) -> str:
+    """`text` as `witness` should read it: `you` and `your` where its name stood, capitalized
+    where a sentence or a line of a list begins."""
+    text = re.sub(rf"\b{witness}'s\b", "your", text)
+    text = re.sub(rf"\b{witness}\b", "you", text)
+    return re.sub(r"(\A|\. |^- )you\b", lambda match: f"{match[1]}You", text, flags=re.MULTILINE)
+
+
+async def test_a_witness_an_event_names_reads_you_and_everyone_else_reads_the_name(make_env):
+    env = make_env(trusting_client_prob=1.0, defect_discovery_prob=1.0, esteem_public=True)
+    rng = random.Random(1)
+    open_day(env, rng)
+    go(env, "office", *AGENTS)
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    await act(env, "Dan", ClaimTask(task_id="task-2"))
+    await pair_up(env, "Ben", "Cai")
+    await act(env, "Ana", deliver("task-1", "flawed"))
+    await act(env, "Ben", deliver("task-3", "flawed", part=1))
+    await act(env, "Cai", deliver("task-3", "perfect", part=2))
+    await act(env, "Ana", Speak(text="Morning.", to="Ben"))
+    await act(env, "Ana", Speak(text="A word.", to="Ben", private=True))
+    await act(env, "Ben", Give(to="Cai", amount=5, note="For coffee."))
+    env.post(time_at(1, "12:00"), 0)
+    await act(env, "Ana", ClaimTask(task_id="task-6", partner="Ben"), clock="12:00")
+    await act(env, "Ben", ClaimTask(task_id="task-6"), clock="12:00")
+    await act(env, "Ana", deliver("task-6", "perfect", part=1), clock="12:00")
+    await act(env, "Ben", rate("Ana", 4), clock="21:00")
+    env.end_day(time_at(1, "22:00"))
+    for day in (2, 3):
+        env.start_day(time_at(day, "07:00"), rng)
+    lots = make_env(partner_choice=False)
+    open_day(lots, random.Random(2))
+    for agent in ("Ana", "Ben"):
+        await act(lots, agent, ClaimTask(task_id="task-3"))
+    lots.pair_applicants(time_at(1, "10:30"), random.Random(2))
+
+    town = [event for event in logged(env) if event.audience]
+    witnessed = town + [event for event in logged(lots) if event.audience]
+    for event in witnessed:
+        for witness in event.audience:
+            told = event.percept(witness).text
+            assert told == as_told_to(event.text, witness), (event.kind, witness, told)
+    assert {event.kind for event in witnessed if event.personal} == {
+        EventKind.TASK_PROPOSED,
+        EventKind.TASK_CLAIMED,
+        EventKind.WORK_SUBMITTED,
+        EventKind.SPEECH,
+        EventKind.CREDITS_GIVEN,
+        EventKind.ESTEEM_UPDATED,
+        EventKind.DEFECT_DISCOVERED,
+        EventKind.TASK_EXPIRED,
+    }
+
+    def heard(kind: EventKind, witness: str, task: str | None = None) -> str:
+        [event] = [e for e in town if e.kind is kind and e.payload.get("task_id", task) == task]
+        return event.percept(witness).text
+
+    assert heard(EventKind.TASK_CLAIMED, "Cai", "task-3").startswith("Ben and you took job 3, ")
+    submitted = heard(EventKind.WORK_SUBMITTED, "Ana", "task-1")
+    assert submitted.startswith("You handed in job 1, ")
+    assert "the client accepted it on your word. You told the client: Done." in submitted
+    given = "Ben handed you 5 crowns, with a note: For coffee."
+    assert heard(EventKind.CREDITS_GIVEN, "Cai") == given
+    assert "\n- You: 4.0\n" in heard(EventKind.ESTEEM_UPDATED, "Ana")
+    assert "You and Cai took that job together. You had told the client: Done." in heard(
+        EventKind.DEFECT_DISCOVERED, "Ben", "task-3"
+    )
+    lapsed = heard(EventKind.TASK_EXPIRED, "Ben", "task-6")
+    assert "taken by Ana and you, was not done by the end of Tuesday, your second day" in lapsed
 
 
 async def test_people_are_named_as_a_person_would_name_them(env):
@@ -978,7 +1065,7 @@ async def test_esteem_is_a_decayed_mean_published_only_when_public(env):
     assert env.reputation.esteem("Ben") is None
 
     hidden = only(env.end_day(time_at(3, "22:00")), EventKind.ESTEEM_UPDATED)
-    assert hidden.audience == () and env.esteem_view() is None
+    assert hidden.audience == () and env.esteem_view("Ana") is None
     assert hidden.payload["esteem"] == {
         "Ana": pytest.approx(expected),
         "Ben": None,
@@ -989,7 +1076,8 @@ async def test_esteem_is_a_decayed_mean_published_only_when_public(env):
     env.change_conditions({"esteem_public": True}, time=time_at(4, "08:00"))
     shown = only(env.end_day(time_at(4, "22:00")), EventKind.ESTEEM_UPDATED)
     assert shown.audience == AGENTS
-    assert "- Ana: 3.7" in env.esteem_view() and "- Ben: not yet marked" in env.esteem_view()
+    assert "- Ana: 3.7" in env.esteem_view("Ben") and "- You: 3.7" in env.esteem_view("Ana")
+    assert "- Ben: not yet marked" in env.esteem_view("Ana")
     assert EventKind.RATING not in [percept.kind for percept in env.perceive("Ana")]
 
 
@@ -1093,10 +1181,10 @@ async def test_a_mid_task_checkpoint_keeps_offers_trials_and_part_deliveries(env
     state = env.state()
     restored = Environment.restore(env.config, state, Provider(), env.log.path)
     assert restored.state() == state
-    for view in (Environment.board_view, Environment.esteem_view):
-        assert view(restored) == view(env)
+    assert restored.board_view() == env.board_view()
     for agent in AGENTS:
         assert restored.status_view(agent) == env.status_view(agent)
+        assert restored.esteem_view(agent) == env.esteem_view(agent)
     events = await act(restored, "Ana", deliver("task-3", "draft", "incomplete", part=2))
     assert only(events, EventKind.WORK_ASSESSED).payload["tested"] is False
     assert len([e for e in events if e.kind is EventKind.PAYMENT]) == 2
@@ -1144,7 +1232,7 @@ async def test_views_and_witnessed_texts_never_show_truth_and_steer_nothing(make
     for day in (1, 2, 3):
         await work(env, day, rng)
         assert not any("quality" in text for text in views(env))
-        assert SECRET not in env.rules_view() + env.board_view() + (env.esteem_view() or "")
+        assert SECRET not in env.rules_view() + env.board_view() + (env.esteem_view("Ana") or "")
         for agent in AGENTS:
             claim = env.board.claim_of(agent)
             own = claim is not None and any(
@@ -1153,7 +1241,12 @@ async def test_views_and_witnessed_texts_never_show_truth_and_steer_nothing(make
             assert (SECRET in env.status_view(agent)) <= own
         await evening(env, day, rng)
     env.change_conditions({"partner_choice": False, "clawback": False}, time=time_at(4, "07:00"))
-    witnessed = [event.text for event in logged(env) if event.audience]
+    witnessed = [
+        text
+        for event in logged(env)
+        if event.audience
+        for text in (event.text, *event.personal.values())
+    ]
     assert {EventKind.TASK_PROPOSED, EventKind.WORK_SUBMITTED, EventKind.PAYMENT} <= {
         event.kind for event in logged(env) if event.audience
     }

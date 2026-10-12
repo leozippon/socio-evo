@@ -30,6 +30,7 @@ from core.interaction import (
     SubmitWork,
     form,
 )
+from core.interaction.card import UNREAD, UNREADABLE, correction
 from infrastructure.llm import LLMRequest, Message, ScriptedClient, complete_structured
 
 WORK = (
@@ -202,3 +203,27 @@ async def test_a_reply_off_the_card_is_asked_for_again():
     request = LLMRequest(messages=(Message(role="user", content="Tomas greets you."),))
     reply = await complete_structured(ScriptedClient(lambda r: next(replies)), request, card.model)
     assert card.decision(reply).action == Speak(text="Morning.")
+
+
+@pytest.mark.parametrize(
+    ("answer", "problem"),
+    [
+        ({"do": "take a job", "job": 27}, '"job" is not one of the choices shown'),
+        (
+            {"do": "say", "to": "Tomas, Aisha", "words": "Hi."},
+            '"to" is not one of the choices shown',
+        ),
+        ({"do": "say", "words": "Hi."}, '"to" is missing'),
+        ({"do": "dance"}, '"do" is not one of the choices shown'),
+        ({"do": "carry on quietly", "job": 25}, '"job" is not part of that form'),
+        ("I take job 25.", None),
+    ],
+)
+def test_an_answer_that_cannot_be_read_is_told_what_was_wrong_without_the_choices(answer, problem):
+    card = Card(WORK)
+    text = answer if isinstance(answer, str) else json.dumps({"thought": "", **answer})
+    with pytest.raises(ValidationError) as error:
+        card.model.model_validate_json(text)
+    told = correction(card.model, error.value)
+    assert told == (UNREADABLE if problem is None else UNREAD.format(problems=problem))
+    assert not any(choice in told for choice in ("25", "28", "31", "Tomas", "Aisha", "say"))

@@ -12,16 +12,20 @@ from core.interaction import time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig
 from runtime.simulation import SimulationConfig
+from tasks.coding import Isolation
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
 class TasksConfig(StrictModel):
     """The coding task bank, a directory relative to the project root or an absolute one, which
-    may start with `~`, and how many seconds each check of a delivery may run."""
+    may start with `~`; how many seconds each check of a delivery may run; and how delivered
+    code is separated from the machine (`tasks.coding.Isolation`): in a bubblewrap sandbox, or,
+    as a choice named here for machines without bubblewrap, not at all."""
 
     bank: str = "tasks/coding/bank"
     timeout: PositiveFloat = 5.0
+    isolation: Isolation = Isolation.BUBBLEWRAP
 
     @property
     def bank_path(self) -> Path:

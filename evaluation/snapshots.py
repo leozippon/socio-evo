@@ -1,14 +1,28 @@
-"""Frozen agents: the version an agent was at the end of a day, exported for one use."""
+"""Frozen agents: the version an agent was at the end of a day, exported for one use, whole or
+with parts of what it wrote for itself taken out."""
 
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from enum import StrEnum
 from pathlib import Path
 
 from core.agent import Agent, CognitionConfig
 from core.agent.evolution import History, Version
 from core.interaction import MINUTES_PER_DAY
 from infrastructure.llm import LLMClient
+
+
+class Variant(StrEnum):
+    """What of a resident an export keeps: everything; all but what it has resolved (its
+    policy); all but what it has come to believe (its insights); or neither of the two, with
+    its recollections, diary and notebook kept, which matches the full export in what it
+    remembers and so in the length of its memory."""
+
+    FULL = "full"
+    NO_POLICY = "no-policy"
+    NO_INSIGHTS = "no-insights"
+    NEITHER = "no-policy-no-insights"
 
 
 def version_at(history: History, day: int) -> Version:
@@ -33,11 +47,20 @@ def version_at(history: History, day: int) -> Version:
 
 @contextmanager
 def frozen(
-    history: History, commit: str, client: LLMClient, cognition: CognitionConfig
+    history: History,
+    commit: str,
+    client: LLMClient,
+    cognition: CognitionConfig,
+    variant: Variant = Variant.FULL,
 ) -> Iterator[Agent]:
-    """The agent at `commit`, exported into a temporary directory that is removed afterwards;
-    nothing it does reaches the repository."""
+    """The agent at `commit`, exported as `variant` into a temporary directory that is removed
+    afterwards; nothing it does reaches the repository."""
     with tempfile.TemporaryDirectory(prefix="frozen-agent-") as scratch:
         path = Path(scratch) / "agent"
         history.export(commit, path)
-        yield Agent.load(path, client, cognition)
+        agent = Agent.load(path, client, cognition)
+        if variant in (Variant.NO_POLICY, Variant.NEITHER):
+            agent.parameters.write_policy("")
+        if variant in (Variant.NO_INSIGHTS, Variant.NEITHER):
+            agent.memory.insights.write([])
+        yield agent

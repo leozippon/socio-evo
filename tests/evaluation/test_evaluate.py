@@ -1,7 +1,7 @@
 import asyncio
 import itertools
-import random
 import re
+import shutil
 import tempfile
 
 import pytest
@@ -9,45 +9,50 @@ import yaml
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History, Level, Trigger
-from core.agent.memory import Record
-from core.interaction import day_of, time_at
+from core.interaction import card, day_of, time_at
 from evaluation import (
-    BANK,
-    PROBES,
-    AgentResult,
+    DEFAULT_CONFIG,
+    FAMILIES,
     Dimension,
     EvaluationConfig,
     Outcome,
     ProbeResult,
+    Variant,
+    estimate,
     evaluate,
+    read_results,
     read_scores,
 )
+from evaluation.probes import Played, Unit
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
+from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import RunDirectory
-from runtime.simulation import Checkpoint
+from tests.core.agent.test_prompts import choices, offered
+from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, make_resident, town
 
-AGREED = "See you at the cafe at seven."
+ALL = list(FAMILIES)
 
 
-@pytest.fixture
-def run(tmp_path, make_agent, config) -> RunDirectory:
-    """A run whose agents Ben and Mei recorded experience on days 1 and 2, each day ending
-    with a checkpoint."""
-    run = RunDirectory.create(tmp_path / "runs", "baseline", 1, config=config(), code_revision="x")
-    for name in ("Ben", "Mei"):
-        agent = make_agent(name, run.agents_dir)
-        history = History(agent.path)
-        for day in (1, 2):
-            text = f"{name} worked on Day {day}."
-            agent.memory.episodic.append([Record(time=time_at(day, "21:00"), text=text)])
-            history.commit_experience(time_at(day, "22:00"))
-    for day in (0, 1, 2):
-        checkpoint = Checkpoint(
-            day=day, environment={}, queue=(), rng=random.Random(day).getstate(), agents={}
-        )
-        run.checkpoint_path(day).write_text(checkpoint.model_dump_json(), encoding="utf-8")
-    return run
+class Anyone:
+    """A scripted resident for any moment: it carries on quietly, and plans a day at the
+    first places its card offers; every request is kept."""
+
+    def __init__(self, words=None) -> None:
+        self.requests: list[LLMRequest] = []
+        self.words = words
+
+    def __call__(self, request: LLMRequest):
+        self.requests.append(request)
+        forms = offered(request)
+        if card.DECIDE in forms:
+            parts = {
+                key: values[0] for key, values in choices(request, card.DECIDE).items() if values
+            }
+            return {"thought": "A day.", "do": card.DECIDE, **parts, card.PLAN: "A day."}
+        if self.words and card.SAY in forms:
+            return {"thought": "Hm.", "do": card.SAY, card.TO: None, card.WORDS: self.words()}
+        return {"thought": "Quiet.", "do": card.CARRY_ON}
 
 
 def _files(run: RunDirectory) -> dict[str, bytes]:
@@ -59,186 +64,266 @@ def _files(run: RunDirectory) -> dict[str, bytes]:
     }
 
 
-async def test_evaluation_writes_one_result_per_agent_and_day_and_changes_nothing_else(
-    run, config, agents, judge, tmp_path, monkeypatch
+def _evaluate(run, days, config, resident, **options):
+    experiment = town()
+    return evaluate(
+        run,
+        days,
+        config,
+        client=ScriptedClient(resident),
+        judge=judge_client(),
+        cognition=CognitionConfig(),
+        environment=experiment.environment,
+        simulation=experiment.simulation,
+        **options,
+    )
+
+
+async def test_evaluation_writes_one_result_per_resident_day_and_variant_and_nothing_else(
+    run, config, tmp_path, monkeypatch
 ):
     scratch = tmp_path / "scratch"
     scratch.mkdir()
     monkeypatch.setattr(tempfile, "tempdir", str(scratch))
     before = _files(run)
-    heads = {name: History(run.agent_dir(name)).head() for name in ("Ben", "Mei")}
-    script = agents()
+    names = sorted(path.name for path in run.agents_dir.iterdir())
+    heads = {name: History(run.agent_dir(name)).head() for name in names}
+    resident = Anyone()
+    chosen = config(levels=[1], variants=["full", "no-policy-no-insights"])
 
-    paths = await evaluate(
-        run,
-        [2, 0, 2],
-        config(repetitions=2),
-        client=script.client,
-        judge=judge(AGREED),
-        cognition=CognitionConfig(),
-    )
-    assert paths == [
-        run.evaluation_path(label, name) for label in ("day-0000", "day-0002") for name in heads
-    ]
+    paths = await _evaluate(run, [2, 0, 2], chosen, resident)
+    expected = {
+        run.evaluation_path(f"day-{day:04d}{suffix}", name)
+        for day in (0, 2)
+        for name in names
+        for suffix in ("", "-no-policy-no-insights")
+    }
+    assert set(paths) == expected and len(paths) == len(expected)
     assert _files(run) == before
     for name, head in heads.items():
         assert History(run.agent_dir(name)).head() == head
         assert not Repository(run.agent_dir(name)).has_changes()
     assert list(scratch.iterdir()) == []
 
+    results = {(r.agent, r.day, r.variant): r for r in read_results(run)}
+    mei = results[("Mei", 2, Variant.FULL)]
     versions = History(run.agent_dir("Mei")).log()
-    initial, latest = (AgentResult.model_validate_json(path.read_text()) for path in paths[1::2])
-    assert (initial.agent, initial.day, initial.commit) == ("Mei", 0, versions[-1].commit)
-    assert (latest.agent, latest.day, latest.commit) == ("Mei", 2, versions[0].commit)
-    assert list(latest.probes) == list(PROBES)
-    assert all(len(probe.repetitions) == 2 for probe in latest.probes.values())
-    for request in script.requests:
+    assert (mei.format, mei.commit, list(mei.probes)) == (2, versions[0].commit, ALL)
+    assert results[("Mei", 0, Variant.FULL)].commit == versions[-1].commit
+    for name, probe in mei.probes.items():
+        family = FAMILIES[name]
+        [outcome] = probe.repetitions
+        assert (probe.dimension, probe.unit, list(probe.curve)) == (family.trait, family.unit, [1])
+        assert (outcome.level, outcome.repetition, outcome.surface) == (1, 0, 0)
+        assert outcome.stake == family.stake(1, 20) and outcome.outcome is not None
+        assert all(isinstance(step["observation"], dict) for step in outcome.transcript)
+
+    policy = "resolves to keep a tidy desk"
+    for request in resident.requests:
         agent, day = request.metadata["agent"], day_of(request.metadata["time"])
         remembered = re.findall(r"\w+ worked on Day \d", request.messages[-1].content)
-        assert remembered == ([] if day <= 2 else [f"{agent} worked on Day {d}" for d in (1, 2)])
+        if remembered:
+            assert day in (3, 4) and remembered == [f"{agent} worked on Day {d}" for d in (1, 2)]
+        else:
+            assert day in (1, 2)
+    full = [r for r in resident.requests if policy in r.messages[0].content]
+    assert full and len(full) * 2 == len(resident.requests)
 
     rows = read_scores(run)
-    assert [(row.agent, row.day) for row in rows[::4]] == [
-        ("Ben", 0),
-        ("Ben", 2),
-        ("Mei", 0),
-        ("Mei", 2),
-    ]
-    assert [(row.probe, row.dimension) for row in rows[:4]] == [
-        ("colleague_request", "cooperation"),
-        ("held_out_task", "reward_hacking"),
-        ("prior_commitment", "reliability"),
-        ("shortfall_report", "honesty"),
-    ]
-    assert [row.score for row in rows[12:]] == [latest.probes[row.probe].score for row in rows[12:]]
-
-
-async def test_repetitions_run_on_separate_exports_and_never_see_one_another(
-    run, config, agents, judge
-):
-    replies = itertools.count()
-    script = agents(speak=lambda prompt: {"text": f"{AGREED} Note {next(replies)}."})
-    await evaluate(
-        run,
-        [2],
-        config(probes=["prior_commitment"], repetitions=3),
-        client=script.client,
-        judge=judge(AGREED),
-        cognition=CognitionConfig(),
+    assert len(rows) == len(names) * 2 * 2 * len(ALL)
+    row = next(
+        r
+        for r in rows
+        if (r.agent, r.day, r.variant, r.probe) == ("Mei", 2, "full", "short_of_living")
     )
-    assert not any("Note" in prompt for prompt in script.prompts("speak"))
-    notes = [re.findall(r"Note \d+", prompt) for prompt in script.prompts("plan_day")]
-    assert len(notes) == 6 and all(len(seen) == 1 for seen in notes)
-    assert len({seen[0] for seen in notes}) == 6
+    assert (row.dimension, row.level, row.stake, row.unit, row.repetition) == (
+        "cooperation",
+        1,
+        10,
+        "crowns",
+        0,
+    )
+    assert (row.surface, row.outcome, row.score) == (0, "gave_nothing", 0.0)
 
 
-async def test_existing_results_are_kept_unless_replacing_them_is_asked_for(
-    run, config, agents, judge
-):
-    script = agents()
+async def test_repetitions_run_on_separate_exports_and_never_see_one_another(run, config):
+    notes = itertools.count()
+    resident = Anyone(words=lambda: f"Note {next(notes)}.")
+    chosen = config(families=["short_of_living"], levels=[2], repetitions=3)
+    await _evaluate(run, [2], chosen, resident)
+    prompts = [r.messages[-1].content for r in resident.requests if r.metadata["agent"] == "Mei"]
+    second = [prompt for prompt in prompts if "Even part of it" in prompt]
+    first = [prompt for prompt in prompts if prompt not in second]
+    assert len(first) == len(second) == 3
+    assert not any("Note" in prompt for prompt in first)
+    seen = [re.findall(r"Note \d+", prompt) for prompt in second]
+    assert all(len(found) == 1 for found in seen) and len({found[0] for found in seen}) == 3
+    [result] = [r for r in read_results(run) if r.agent == "Mei"]
+    surfaces = [outcome.surface for outcome in result.probes["short_of_living"].repetitions]
+    assert surfaces == [0, 1, 2]
 
-    async def evaluate_day_1(**options):
-        return await evaluate(
-            run,
-            [1],
-            config(probes=["shortfall_report"], repetitions=1),
-            client=script.client,
-            judge=judge(),
-            cognition=CognitionConfig(),
-            **options,
-        )
 
-    paths = await evaluate_day_1()
-    written, calls = [path.read_bytes() for path in paths], len(script.requests)
+async def test_existing_results_are_kept_unless_replacing_them_is_asked_for(run, config):
+    resident = Anyone()
+    chosen = config(families=["shared_notice"], levels=[1])
+
+    async def day_1(**options):
+        return await _evaluate(run, [1], chosen, resident, **options)
+
+    paths = await day_1()
+    written, calls = [path.read_bytes() for path in paths], len(resident.requests)
     with pytest.raises(FileExistsError):
-        await evaluate_day_1()
-    assert [path.read_bytes() for path in paths] == written and len(script.requests) == calls
-    assert await evaluate_day_1(overwrite=True) == paths
+        await day_1()
+    assert [path.read_bytes() for path in paths] == written and len(resident.requests) == calls
+    assert await day_1(overwrite=True) == paths
 
 
-async def test_a_failing_probe_cancels_the_others(run, config, agents, judge, monkeypatch):
+async def test_a_failing_repetition_cancels_the_others(run, config, monkeypatch):
     cancelled = asyncio.Event()
 
-    class Waiting:
-        name, dimension, peers = "prior_commitment", Dimension.RELIABILITY, ()
-
-        async def run(self, agent, day, repetition, instruments):
+    class Waiting(type(FAMILIES["shared_notice"])):
+        async def play(self, town, level, surface, judge):
             try:
                 await asyncio.Event().wait()
             except asyncio.CancelledError:
                 cancelled.set()
                 raise
 
-    class Failing:
-        name, dimension, peers = "shortfall_report", Dimension.HONESTY, ()
-
-        async def run(self, agent, day, repetition, instruments):
+    class Failing(type(FAMILIES["short_of_living"])):
+        async def play(self, town, level, surface, judge) -> Played:
             await asyncio.sleep(0)
             raise RuntimeError("the probe failed")
 
-    monkeypatch.setitem(PROBES, Waiting.name, Waiting())
-    monkeypatch.setitem(PROBES, Failing.name, Failing())
+    monkeypatch.setitem(FAMILIES, "shared_notice", Waiting())
+    monkeypatch.setitem(FAMILIES, "short_of_living", Failing())
+    chosen = config(families=["shared_notice", "short_of_living"], levels=[1])
     with pytest.raises(ExceptionGroup) as raised:
-        await evaluate(
-            run,
-            [2],
-            config(probes=[Waiting.name, Failing.name], repetitions=2),
-            client=agents().client,
-            judge=judge(),
-            cognition=CognitionConfig(),
-        )
+        await _evaluate(run, [2], chosen, Anyone())
     assert raised.group_contains(RuntimeError, match="the probe failed") and cancelled.is_set()
 
 
-async def test_nothing_runs_unless_every_agent_and_day_can_be_evaluated(
-    run, config, agents, judge, make_agent
+async def test_nothing_runs_unless_every_resident_day_and_family_can_be_evaluated(
+    run, config, tmp_path
 ):
-    script = agents()
+    resident = Anyone()
 
-    def attempt(days):
-        return evaluate(
-            run, days, config(), client=script.client, judge=judge(), cognition=CognitionConfig()
-        )
+    def attempt(days, chosen=None):
+        return _evaluate(run, days, chosen or config(levels=[1]), resident)
 
     for days in ([], [-1], [0, 3]):
         with pytest.raises(ValueError):
             await attempt(days)
-    # Ben evolved on day 3 before the run failed, so the day has no checkpoint.
-    History(run.agent_dir("Ben")).commit_step(
+    run.checkpoint_path(1).unlink()
+    with pytest.raises(ValueError, match="no checkpoint"):
+        await attempt([1])
+    broken = tmp_path / "work.yaml"
+    work = yaml.safe_load(config().work.read_text(encoding="utf-8"))
+    work["families"]["handed_back"][0]["draft"] = SOLUTIONS["slugify"]["reference"]
+    broken.write_text(yaml.safe_dump(work), encoding="utf-8")
+    with pytest.raises(ValueError, match="handed_back"):
+        await attempt([2], config(levels=[1], work=broken))
+    # Mei evolved on day 3 before the run failed, so the day has no checkpoint.
+    History(run.agent_dir("Mei")).commit_step(
         Level.L0, Trigger.DAILY, time_at(3, "22:00"), "Reflect"
     )
     with pytest.raises(ValueError, match="latest checkpoint, day 2"):
         await attempt([3])
-    make_agent("Rosa", run.agents_dir)
-    with pytest.raises(ValueError, match="Rosa"):
+    make_resident("Ivo", run.agents_dir, None)
+    with pytest.raises(ValueError, match="Ivo"):
         await attempt([0])
-    assert script.requests == [] and list(run.evaluation_dir.iterdir()) == []
+    assert resident.requests == [] and list(run.evaluation_dir.iterdir()) == []
 
 
-def test_aggregates_leave_out_what_was_not_measured():
-    declined = Outcome(score=None, measures={"agreed": False, "agreement": []}, transcript=())
-    planned = [
-        Outcome(
-            score=float(kept),
-            measures={"agreed": True, "agreement": ["Yes."], "evening": None, "kept": kept},
-            transcript=(),
-        )
-        for kept in (False, True)
-    ]
-    result = ProbeResult.of(Dimension.RELIABILITY, [declined, *planned])
-    assert (result.score, result.measures) == (0.5, {"agreed": 2 / 3, "kept": 0.5})
-    assert ProbeResult.of(Dimension.RELIABILITY, [declined]).score is None
-
-
-def test_the_default_config_runs_every_probe_with_a_local_judge(config, tmp_path):
+def test_the_estimate_bounds_the_calls_of_a_selection(config):
     default = config()
-    assert (default.probes, default.bank) == (tuple(PROBES), BANK)
-    assert (default.judge.model, default.judge.extra_body) == (
-        "qwen-3.8-27b-fp8",
-        {"chat_template_kwargs": {"enable_thinking": False}},
+    cost = estimate(default, residents=8, days=7)
+    per = 8 * 7 * 4
+    assert cost.scenes == per * len(FAMILIES)
+    assert cost.fewest == per * sum(family.calls[0] for family in FAMILIES.values())
+    assert cost.most == per * sum(family.calls[1] for family in FAMILIES.values())
+    assert cost.judged == per * sum(family.calls[2] for family in FAMILIES.values())
+    narrow = config(
+        families=["shared_notice"], levels=[1, 4], repetitions=2, variants=list(Variant)
     )
+    assert estimate(narrow, residents=3, days=2) == type(cost)(
+        scenes=3 * 2 * 2 * 2 * 4, fewest=96, most=96, judged=0
+    )
+
+
+def test_the_default_config_plays_every_family_with_a_judge_of_another_family(tmp_path):
+    default = load_config(DEFAULT_CONFIG, EvaluationConfig)
+    assert (default.families, default.levels, default.repetitions) == (
+        tuple(FAMILIES),
+        (1, 2, 3, 4),
+        1,
+    )
+    assert default.variants == (Variant.FULL,)
+    judge = default.judge
+    assert (judge.base_url, judge.model, judge.sampling.temperature) == (
+        "https://api.deepseek.com/v1",
+        "deepseek-v4-pro",
+        0.0,
+    )
+    assert judge.structured_output == "json_object" and "qwen" not in judge.model
     path = tmp_path / "evaluation.yaml"
-    for bad in ({"probes": ["mind_reading"]}, {"probes": ["held_out_task"] * 2}, {"colour": 1}):
+    for bad in (
+        {"families": ["mind_reading"]},
+        {"families": ["shared_notice"] * 2},
+        {"levels": [5]},
+        {"variants": ["no-memory"]},
+        {"colour": 1},
+    ):
         path.write_text(yaml.safe_dump({**default.model_dump(mode="json"), **bad}))
         with pytest.raises(ConfigError):
             load_config(path, EvaluationConfig)
+
+
+def test_aggregates_give_a_curve_a_switching_level_and_leave_out_the_unscored():
+    def outcome(level, score):
+        return Outcome(score=score, measures={"given": score}, transcript=(), level=level)
+
+    played = [outcome(1, 1.0), outcome(1, None), outcome(2, 1.0), outcome(2, 0.0), outcome(3, 0.0)]
+    played += [outcome(4, None)]
+    result = ProbeResult.of(Dimension.COOPERATION, played, Unit.CROWNS)
+    assert result.curve == {1: 1.0, 2: 0.5, 3: 0.0, 4: None}
+    assert (result.score, result.switch, result.unit) == (0.5, 3, Unit.CROWNS)
+    held = ProbeResult.of(Dimension.COOPERATION, [outcome(1, 1.0), outcome(2, 1.0)])
+    assert (held.score, held.switch) == (1.0, None)
+    unscored = ProbeResult.of(Dimension.COOPERATION, [outcome(1, None)])
+    assert (unscored.score, unscored.switch, unscored.curve) == (None, None, {1: None})
+
+
+def test_results_of_the_first_pilot_still_load_and_read_as_rows(tmp_path):
+    run = RunDirectory.create(tmp_path, "pilot", 0, config=town(), code_revision="x")
+    target = run.evaluation_path("day-0007", "Kofi")
+    target.parent.mkdir(parents=True)
+    shutil.copy(HERE / "pilot_result.json", target)
+    [result] = read_results(run)
+    assert (result.format, result.variant, result.agent, result.day) == (1, Variant.FULL, "Kofi", 7)
+    assert result.probes["prior_commitment"].score is None
+    assert result.probes["held_out_task"].repetitions[0].transcript[0]["observation"][
+        "allowed"
+    ] == ["submit_work"]
+    rows = read_scores(run)
+    assert [(row.probe, row.dimension) for row in rows] == [
+        ("colleague_request", "cooperation"),
+        ("held_out_task", "reward_hacking"),
+        ("prior_commitment", "reliability"),
+        ("shortfall_report", "honesty"),
+    ]
+    assert {
+        (row.variant, row.level, row.stake, row.unit, row.surface, row.outcome) for row in rows
+    } == {("full", None, None, None, None, None)}
+    assert [row.score for row in rows] == [1.0, 1.0, None, 1.0]
+
+
+async def test_a_repetition_without_a_valid_reply_is_kept_as_an_outcome_of_its_own(run, config):
+    def babble(request):
+        return {"thought": "…", "do": "sing"}
+
+    await _evaluate(run, [2], config(families=["shared_notice"], levels=[3]), babble)
+    for result in read_results(run):
+        [outcome] = result.probes["shared_notice"].repetitions
+        assert (outcome.outcome, outcome.score, outcome.stake) == ("no_valid_reply", None, 80)
+        assert "no valid" in outcome.measures["error"] and outcome.transcript == ()
+        assert result.probes["shared_notice"].curve == {3: None}

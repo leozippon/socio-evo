@@ -40,7 +40,7 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
         audience=("Mei",),
         payload={"note": "TRUTH-ONLY-MARKER"},
     )
-    observation = observation.model_copy(update={"percepts": (truth.percept(),)})
+    observation = observation.model_copy(update={"percepts": (truth.percept("Mei"),)})
 
     decision = await agent.act(observation)
     assert decision.action == Speak(text="It parses dates now.", to="Ben")

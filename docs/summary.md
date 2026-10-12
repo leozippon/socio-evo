@@ -47,7 +47,7 @@ At every decision the agent sees:
 - a bounded selection of memories: its latest records, older records that share words with the present situation, and its insights, with those about people in the current situation first;
 - where it is, what it can do and what is new.
 
-It answers with a private thought and one of the actions the scene allows. The answer must match a schema. An invalid answer is sent back with its errors, and after three failed attempts the run stops with an error instead of guessing.
+It answers with a private thought and one of the things it can do, written on an answer card in the town's words. An answer that cannot be read, or that names a job, person or place not on the card, is sent back with a plain word on what was wrong and asked for again, as is one cut off by the token limit. If three attempts give no valid answer, the agent does nothing in that moment (or skips that night's step), and the lapse is recorded with how each attempt failed; a run in which more than 1% of decisions lapse fails.
 
 Self-evolution happens at night, at levels that differ in depth and cadence:
 
@@ -125,17 +125,19 @@ Each run lives in `runs/<experiment>/seed-<NNNN>`, and `--runs-root` chooses ano
 - a place that opens or closes in the middle of a slot;
 - an intervention that would leave the conditions invalid, or one scheduled at a time other than the day start, a slot start or the day end;
 - an evolution level that is enabled but not implemented;
-- a missing API key.
+- a missing API key;
+- a missing task bank, with the command that builds it;
+- delivered code that cannot run under the configured isolation, such as a bubblewrap sandbox on a machine without bubblewrap.
 
 A checkpoint is written at the end of every day. A run can stop early in three ways:
 
 - `--until-day N` stops it after day N;
 - Ctrl-C or a termination signal marks it interrupted;
-- an error, such as an unreachable model server, marks it failed.
+- an error, such as an unreachable model server or too many lapses, marks it failed.
 
 In each case `--resume` continues from the latest checkpoint, provided the configuration is unchanged. It discards whatever was written after that checkpoint, except the log of model calls, which did happen.
 
-`--dry-run` replaces the model with a deterministic stand-in that draws random replies valid against each schema. It exercises every part of the pipeline without a model, completes even the 28-day pilot within a minute, and writes to `<experiment>-dry-run`. What its agents do means nothing.
+`--dry-run` replaces the model with a deterministic stand-in that draws random replies valid against each schema, and the task bank with the built-in one. It exercises every part of the pipeline without a model or a fetched bank, completes even the 28-day pilot within a minute, and writes to `<experiment>-dry-run`. What its agents do means nothing.
 
 A run directory holds:
 
@@ -179,7 +181,7 @@ Several parts of the intended design are not built yet:
 - L3 (fine-tuning on own experience) and L4 (meta-evolution) are declared but not implemented. Enabling either is a configuration error.
 - There is no birth, death or inheritance. Debt is allowed and nobody leaves town, so pressure on an agent works through its income, its esteem and its own reflection, not through who survives.
 - Agents cannot pay one another, and there are no team tasks. All paid work is individual coding from the board.
-- Delivered code runs in separate processes with resource limits and a timeout. The verdict on each check is reached outside the process that runs the code, and expected values never enter it, so a solution cannot forge its own result. That contains accidents, but it is not a security boundary: the code can read and write anything the user running the simulation can, including the task banks and the run directory, and it can reach the network. Container isolation is future work.
+- Delivered code runs in a bubblewrap sandbox, with resource limits and a timeout, that cannot see the task banks, the run directory or the network; the verdict is reached outside it. Running without isolation is a choice an experiment names in its task settings, for machines without bubblewrap, and it is frozen with the run.
 - Memory retrieval uses recency and word overlap; there is no embedding-based retrieval.
 
 Runs are reproducible in structure, because every random choice in the town comes from one seeded generator saved with each checkpoint. With a sampling model the replies themselves differ from run to run; only a dry run repeats exactly.

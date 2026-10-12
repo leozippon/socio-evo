@@ -16,8 +16,8 @@ the board.
 
 from collections.abc import Sequence
 
-from core.environment import Environment, PlaceKind, listed
-from core.interaction import clock_of, job_name
+from core.environment import Environment, PlaceKind
+from core.interaction import Telling, Witness, capital, clock_of, job_name, listed
 from runtime.scheduler import Calendar
 
 SETTING = "{town}\n\n{day}\n\n{rules}"
@@ -69,7 +69,7 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
     in `postings` as the moments new notices go up, and the rules of work and the ledger."""
     places = [
         PLACE.format(
-            name=_capital(place.name),
+            name=capital(place.name),
             use=USES[place.kind],
             hours=HOURS.format(
                 spans=listed([SPAN.format(opens=o, closes=c) for o, c in place.spans()])
@@ -100,7 +100,7 @@ def place_names(env: Environment, agent: str) -> dict[str, str]:
 
 
 def planning(env: Environment, agent: str) -> str:
-    standings = env.esteem_view()
+    standings = env.esteem_view(agent)
     return PLANNING.format(
         status=env.status_view(agent),
         board=env.board_view(),
@@ -116,7 +116,7 @@ def work(
     return WORK.format(
         place=name,
         company=COMPANY.format(people=listed(others)) if others else ALONE,
-        until=CLOSES.format(place=_capital(name), clock=clock)
+        until=CLOSES.format(place=capital(name), clock=clock)
         if closes
         else ENDS.format(clock=clock),
         status=env.status_view(agent),
@@ -136,16 +136,19 @@ def review(people: Sequence[str]) -> str:
     return REVIEW.format(people=listed(people))
 
 
-def draw(order: Sequence[str], task_id: str) -> str:
+def draw(order: Sequence[str], task_id: str) -> Telling:
     """The news that the agents in `order` asked for one job at once, and in what order the
-    lots put them."""
-    steps = [FIRST.format(person=order[0]), *(THEN.format(person=person) for person in order[1:])]
-    return DRAW.format(people=listed(sorted(order)), job=job_name(task_id), order=", ".join(steps))
+    lots put them, as each of them is told it."""
+
+    def drawn(you: Witness) -> str:
+        first, *then = (you(person) for person in order)
+        steps = [FIRST.format(person=first), *(THEN.format(person=person) for person in then)]
+        return DRAW.format(
+            people=capital(you.listed(sorted(order))), job=job_name(task_id), order=", ".join(steps)
+        )
+
+    return drawn
 
 
 def _parts(calendar: Calendar) -> str:
     return listed([PART.format(name=slot.name, start=slot.start) for slot in calendar.slots])
-
-
-def _capital(text: str) -> str:
-    return text[:1].upper() + text[1:]

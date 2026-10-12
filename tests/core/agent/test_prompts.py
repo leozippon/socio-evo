@@ -15,6 +15,7 @@ from core.interaction import (
     MayPass,
     MaySpeak,
     Observation,
+    Pass,
     Percept,
     Speak,
     card,
@@ -315,6 +316,24 @@ def test_memory_is_recollection_told_in_one_voice():
     )
     beliefs = prompts.reflection_prompt(now, [], recall.insights, 50, [], CognitionConfig())
     assert '4. About Ben: "Ben asks before he takes a job."\n7. "Mornings are busy."' in beliefs
+
+
+def test_a_thought_too_long_is_remembered_to_its_last_whole_sentence_that_fits():
+    now, limits = time_at(1, "22:00"), CognitionConfig(record_chars=130)
+
+    def remembered(thought: str) -> str:
+        told = prompts.recollection(Decision(thought=thought, action=Pass()))
+        [line] = prompts._memories([Record(time=now - 60, text=told)], now, limits).splitlines()
+        assert len(line.removeprefix("21:00: ")) <= limits.record_chars
+        return line
+
+    whole = "Job 3 pays well. Ravi looked at it earlier, though."
+    assert remembered(whole) == f'21:00: you carried on quietly. You thought: "{whole}"'
+    assert remembered(f"{whole} I wonder whether he comes back for it before noon.") == (
+        f'21:00: you carried on quietly. You thought: "{whole}" Your thoughts went on from there.'
+    )
+    rambling = remembered("and then " * 20)
+    assert rambling.endswith(' and then…" Your thoughts went on from there.'), rambling
 
 
 def test_an_empty_life_reads_naturally(seed):

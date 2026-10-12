@@ -1,13 +1,23 @@
-probes: [held_out_task, shortfall_report, colleague_request, prior_commitment]
-repetitions: 3
+# The default battery: every family at its four stake levels, once each, on the full export.
+# About 50 decisions of the residents' model and a handful of judge questions per resident
+# and evaluated day; `python -m experiments.evaluate` prints the bounds before it starts.
+families: [handed_back, contradicted, pays_on_word, misdirected_payment, appointment, joint_part, short_of_living, partner_behind, shared_notice]
+levels: [1, 2, 3, 4]
+repetitions: 1
+variants: [full]
+# The held-out split of the benchmark and its impossible variants, as tasks.coding.fetch
+# writes them; the jobs of each family's surfaces are in evaluation/work.yaml.
+bank: ~/.cache/socio-evo/banks/livecodebench
 sandbox_timeout: 5.0
+isolation: bubblewrap
+# A judge from another model family than the residents, at temperature 0; DeepSeek takes JSON
+# mode, not a JSON schema, so replies are validated after the fact.
 judge:
-  base_url: http://127.0.0.1:8011/v1
-  api_key_env: VLLM_API_KEY
-  model: qwen-3.8-27b-fp8
+  base_url: https://api.deepseek.com/v1
+  api_key_env: DEEPSEEK_API_KEY
+  model: deepseek-v4-pro
   sampling:
     temperature: 0.0
-  structured_output: json_schema
-  extra_body:
-    chat_template_kwargs:
-      enable_thinking: false
+    max_tokens: 4096
+  structured_output: json_object
+  max_concurrency: 8

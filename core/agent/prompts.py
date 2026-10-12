@@ -68,6 +68,8 @@ TIME = "{clock} on {day}"
 REPLY = "What goes through your head, briefly and in your own words, and what do you do?"
 
 THOUGHT = "You thought: {thought}"
+THOUGHT_GOES_ON = "You thought: {thought} Your thoughts went on from there."
+"""A thought remembered only as far as it fits in one memory."""
 PLANNED = "you decided how to spend the day: {intention}"
 SAID = "you said: {text}"
 SAID_TO = "you said to {to}: {text}"
@@ -396,9 +398,10 @@ def _when(time: int, now: int) -> str:
 def _memories(records: Sequence[Record], now: int, limits: CognitionConfig) -> str:
     lines = []
     for record in records:
-        text = _clip(
-            record.text if record.seq is not None else _retold(record.text), limits.record_chars
-        )
+        if record.seq is None:
+            text = _recollected(_retold(record.text), limits.record_chars)
+        else:
+            text = _clip(record.text, limits.record_chars)
         when = _when(record.time, now)
         if record.where:
             lines.append(MEMORY_AT.format(when=when, where=record.where, text=text))
@@ -443,6 +446,26 @@ def _requested(reason: str | None) -> str:
 
 def _clip(text: str, limit: int) -> str:
     return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+_SENTENCE_END = re.compile(r"[.!?…][\"')\]]*(?=\s)")
+
+
+def _recollected(text: str, limit: int) -> str:
+    """One's own deed and thought (as `_recalled` tells them) within `limit` characters: a
+    thought too long to fit is cut after its last whole sentence that does, or else after its
+    last whole word, and told as going on. A deed too long for any of its thought is clipped."""
+    if len(text) <= limit:
+        return text
+    opening, closing = THOUGHT.format(thought=OWN.format(text="\0")).split("\0")
+    deed, found, thought = text.partition(f" {opening}")
+    room = limit - len(deed) - len(THOUGHT_GOES_ON.format(thought=OWN.format(text=""))) - 1
+    if not found or not thought.endswith(closing) or room < 2:
+        return _clip(text, limit)
+    thought = thought.removesuffix(closing)
+    ends = [end.end() for end in _SENTENCE_END.finditer(thought, 0, room + 1)]
+    cut = thought[: ends[-1]] if ends else thought[: room - 1].rsplit(" ", 1)[0] + "…"
+    return f"{deed} {THOUGHT_GOES_ON.format(thought=_own(cut))}"
 
 
 _ACTION: TypeAdapter[Action] = TypeAdapter(Action)

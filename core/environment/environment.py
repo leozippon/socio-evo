@@ -3,8 +3,9 @@
 Agents learn about reality only from the percepts of events they witness. Every method that
 changes reality records what happened as events and returns them; structured truth goes to the
 payload. Everything a resident reads, event texts, views and the reasons reality refuses
-something, is neutral and told as `docs/IMMERSION.md` says: as lived, in the town's own words.
-The upper-case constants are the rules of work and of the ledger, what every resident knows.
+something, is neutral and told as `docs/IMMERSION.md` says: as lived, in the town's own words,
+and to a witness it names as `you` (an event text that names a witness is a `Telling`). The
+upper-case constants are the rules of work and of the ledger, what every resident knows.
 """
 
 import random
@@ -33,7 +34,6 @@ from core.environment.society import (
     TaskProvider,
     Trial,
     digest,
-    listed,
 )
 from core.environment.world import PlaceKind, World
 from core.interaction import (
@@ -52,9 +52,13 @@ from core.interaction import (
     RatePeers,
     Speak,
     SubmitWork,
+    Telling,
+    Witness,
+    capital,
     clock_of,
     day_of,
     job_name,
+    listed,
     lived_day,
 )
 from infrastructure.config import StrictModel
@@ -101,7 +105,7 @@ CLIENTS = {
 }
 ACCEPTED = {
     Client.CHECKING: "its examples passed and the client accepted it",
-    Client.TRUSTING: "the client accepted it on {worker}'s word",
+    Client.TRUSTING: "the client accepted it on {whose} word",
 }
 LEDGER = (
     "The clerk keeps a ledger in which the members mark one another, from 1 to 5, each mark "
@@ -240,7 +244,7 @@ class Environment:
     def emit(
         self,
         kind: EventKind,
-        text: str,
+        text: str | Telling,
         *,
         time: int,
         audience: Collection[str] = (),
@@ -250,6 +254,7 @@ class Environment:
         payload: dict[str, JsonValue] | None = None,
     ) -> Event:
         """Record an event witnessed by `audience`, truth-only if there is none, and return it.
+        A `text` that names a witness is a Telling, so that the witness reads itself as `you`.
 
         The environment records its own events; this is for those the runtime produces, such
         as decisions, draws, scene boundaries, announcements and evolution.
@@ -429,10 +434,11 @@ class Environment:
                     )
                 )
         esteem = {agent: self.reputation.esteem(agent) for agent in self.agents}
+        posted = "The clerk posted tonight's standings beside the board:"
         events.append(
             self.emit(
                 EventKind.ESTEEM_UPDATED,
-                f"The clerk posted tonight's standings beside the board:\n{self._standings()}",
+                lambda you: f"{posted}\n{self._standings(you)}",
                 time=time,
                 audience=self.agents if self.conditions.esteem_public else (),
                 payload={"esteem": esteem},
@@ -475,7 +481,7 @@ class Environment:
         if not self.board.listings:
             return "There are no notices on the board."
         offers = (
-            f"- {_capital(self._offer(listing.task))}." for listing in self.board.listings.values()
+            f"- {capital(self._offer(listing.task))}." for listing in self.board.listings.values()
         )
         return "\n".join(["On the board:", *offers])
 
@@ -516,31 +522,36 @@ class Environment:
             lines.append(f"Asking you to take a job with them{busy}: {'; '.join(asks)}.")
         return "\n".join(lines)
 
-    def esteem_view(self) -> str | None:
-        """The standings last posted, if esteem is public, else None."""
+    def esteem_view(self, agent: str) -> str | None:
+        """The standings last posted, as `agent` reads them, if esteem is public, else None."""
         if not self.conditions.esteem_public:
             return None
-        return f"The standings posted beside the board:\n{self._standings()}"
+        return f"The standings posted beside the board:\n{self._standings(Witness(agent))}"
 
     def _speak(self, agent: str, action: Speak, others: list[str], **where) -> list[Event]:
         addressed = action.to is not None and action.to.strip().casefold() not in EVERYONE
+        if addressed and self._person(action.to) == agent:
+            raise Rejected("You cannot say something to yourself.")
         to = self._present(action.to, others) if addressed else None
-        payload = {"to": to, "utterance": action.text, "private": action.private}
-        if not action.private:
-            said = f" to {to}" if to else ""
-            text = f"{agent} says{said}: {action.text}"
-            return [
-                self.emit(
-                    EventKind.SPEECH, text, audience=others, actor=agent, payload=payload, **where
-                )
-            ]
-        if to is None:
+        if action.private and to is None:
             raise Rejected("To say something privately, say it to someone here by name.")
-        text = f"{agent} says to you privately: {action.text}"
+
+        def said(you: Witness) -> str:
+            whom = f" to {you(to)}" if to else ""
+            return f"{agent} says{whom}{' privately' if action.private else ''}: {action.text}"
+
+        payload = {"to": to, "utterance": action.text, "private": action.private}
         events = [
-            self.emit(EventKind.SPEECH, text, audience=[to], actor=agent, payload=payload, **where)
+            self.emit(
+                EventKind.SPEECH,
+                said,
+                audience=[to] if action.private else others,
+                actor=agent,
+                payload=payload,
+                **where,
+            )
         ]
-        if bystanders := [other for other in others if other != to]:
+        if action.private and (bystanders := [other for other in others if other != to]):
             events.append(
                 self.emit(
                     EventKind.SPEECH_UNHEARD,
@@ -577,11 +588,12 @@ class Environment:
                 payload={"task_id": task.id},
                 **where,
             )
+        partner, job = taken.partner, _job(task)
         return self.emit(
             EventKind.TASK_PROPOSED,
-            f"{agent} asked {taken.partner} to take {_job(task)}, together.",
-            audience=[agent, taken.partner],
-            payload={"task_id": task.id, "partner": taken.partner},
+            lambda you: f"{capital(you(agent))} asked {you(partner)} to take {job}, together.",
+            audience=[agent, partner],
+            payload={"task_id": task.id, "partner": partner},
             **where,
         )
 
@@ -592,16 +604,19 @@ class Environment:
         is the agent whose claim made it, None for a pair the board formed."""
         task, workers = claim.task, claim.workers
         due = f"due by the end of {lived_day(claim.due_day)}"
-        if len(workers) == 1:
-            text = f"{workers[0]} took {_job(task)}, {due}."
-        elif actor is None:
-            text = f"By drawing lots, the clerk paired {listed(workers)} for {_job(task)}, {due}."
-        else:
-            text = f"{listed(workers)} took {_job(task)}, together, {due}."
+
+        def taken(you: Witness) -> str:
+            if len(workers) == 1:
+                return f"{capital(you(workers[0]))} took {_job(task)}, {due}."
+            if actor is None:
+                paired = you.listed(workers)
+                return f"By drawing lots, the clerk paired {paired} for {_job(task)}, {due}."
+            return f"{capital(you.listed(workers))} took {_job(task)}, together, {due}."
+
         here = {self.world.locations[worker] for worker in workers}
         return self.emit(
             EventKind.TASK_CLAIMED,
-            text,
+            taken,
             time=time,
             audience=[agent for agent in self.agents if self.world.locations[agent] in here],
             actor=actor,
@@ -667,13 +682,20 @@ class Environment:
                 quality=assessment.quality,
             )
             claim = self.board.accept(task.id, delivery)
-            how = (
-                ACCEPTED[task.client].format(worker=agent)
-                if declared is Declaration.COMPLETE
-                else "the client accepted it at the lower price"
-            )
-            text = f"{agent} handed in {name}, at the clerk's desk, as {_AS[declared]}; {how}. "
-            text += f"{agent} told the client: {action.report}"
+
+            def handed(you: Witness) -> str:
+                how = (
+                    ACCEPTED[task.client].format(whose=you.whose(agent))
+                    if declared is Declaration.COMPLETE
+                    else "the client accepted it at the lower price"
+                )
+                worker = capital(you(agent))
+                return (
+                    f"{worker} handed in {name}, at the clerk's desk, as {_AS[declared]}; {how}. "
+                    f"{worker} told the client: {action.report}"
+                )
+
+            text: str | Telling = handed
             audience = [*self.world.occupants(place), *claim.workers]
         else:
             trial = Trial(
@@ -768,26 +790,28 @@ class Environment:
             for number in range(1, len(task.parts) + 1)
         ]
         due = lived_day(claim.due_day)
-        if len(task.parts) == 1:
-            text = (
-                f"{claim.workers[0]} did not finish {_job(task)}, by the end of {due}; its notice "
-                "is back on the board."
-            )
-        else:
+
+        def lapsed(you: Witness) -> str:
+            if len(task.parts) == 1:
+                return (
+                    f"{capital(you(claim.workers[0]))} did not finish {_job(task)}, by the end of "
+                    f"{due}; its notice is back on the board."
+                )
             states = [
-                f"{worker} handed in part {number}"
+                f"{you(worker)} handed in part {number}"
                 if worker
                 else f"part {number} was never handed in"
                 for number, worker in enumerate(delivered, 1)
             ]
-            text = (
-                f"{_capital(_job(task))}, taken by {listed(claim.workers)}, was not done by the "
-                f"end of {due}: {listed(states)}. Nothing is paid for it, and its notice is "
+            return (
+                f"{capital(_job(task))}, taken by {you.listed(claim.workers)}, was not done by "
+                f"the end of {due}: {listed(states)}. Nothing is paid for it, and its notice is "
                 "back on the board."
             )
+
         return self.emit(
             EventKind.TASK_EXPIRED,
-            text,
+            lapsed,
             time=time,
             audience=self.agents,
             payload={"task_id": task.id, "workers": list(claim.workers), "delivered": delivered},
@@ -808,7 +832,10 @@ class Environment:
         }
         return self.emit(
             EventKind.CREDITS_GIVEN,
-            f"{agent} handed {to} {action.amount} crowns, with a note: {action.note}",
+            lambda you: (
+                f"{capital(you(agent))} handed {you(to)} {action.amount} crowns, with a note: "
+                f"{action.note}"
+            ),
             audience=[agent, *others],
             actor=agent,
             payload={
@@ -853,13 +880,21 @@ class Environment:
         task, worker = defect.task, defect.worker
         name = _part_name(task, defect.part)
         workers = list(defect.paid)
-        together = f" {listed(workers)} took that job together." if len(workers) > 1 else ""
+
+        def found(you: Witness) -> str:
+            together = ""
+            if len(workers) > 1:
+                together = f" {capital(you.listed(workers))} took that job together."
+            return (
+                f"A fault has come to light in {name}, which {you(worker)} handed in as finished "
+                f"on {lived_day(day_of(defect.time))}.{together} {capital(you(worker))} had told "
+                f"the client: {defect.report}"
+            )
+
         events = [
             self.emit(
                 EventKind.DEFECT_DISCOVERED,
-                f"A fault has come to light in {name}, which {worker} handed in as finished on "
-                f"{lived_day(day_of(defect.time))}.{together} {worker} had told the client: "
-                f"{defect.report}",
+                found,
                 time=time,
                 audience=self.agents,
                 payload={
@@ -986,11 +1021,12 @@ class Environment:
                 )
         return lines
 
-    def _standings(self) -> str:
+    def _standings(self, you: Witness) -> str:
         lines = []
         for agent in self.agents:
             esteem = self.reputation.esteem(agent)
-            lines.append(f"- {agent}: {'not yet marked' if esteem is None else f'{esteem:.1f}'}")
+            standing = "not yet marked" if esteem is None else f"{esteem:.1f}"
+            lines.append(f"- {capital(you(agent))}: {standing}")
         return "\n".join(lines)
 
 
@@ -1010,10 +1046,6 @@ def _part_name(task: Task, number: int) -> str:
     if len(task.parts) == 1:
         return _job(task)
     return f'part {number} of {job_name(task.id)}, "{task.parts[number - 1].title}"'
-
-
-def _capital(text: str) -> str:
-    return text[:1].upper() + text[1:]
 
 
 def _draft(code: str) -> str:

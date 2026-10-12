@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -94,6 +95,29 @@ def test_a_configuration_error_leaves_no_run_behind(tmp_path, monkeypatch):
     with pytest.raises(ConfigError, match="L3"):
         main([str(unimplemented), "--seeds", "0", "--runs-root", str(runs), "--dry-run"])
     assert not runs.exists()
+
+
+def test_a_run_needs_its_bank_and_isolation_and_a_dry_run_works_on_the_built_in_bank(
+    tmp_path, monkeypatch
+):
+    runs = tmp_path / "runs"
+    data = yaml.safe_load((CONFIGS / "town.yaml").read_text(encoding="utf-8"))
+    data["tasks"]["bank"] = str(tmp_path / "absent")
+    data["simulation"]["days"] = 1
+    config = tmp_path / "town.yaml"
+    config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    with pytest.raises(FileNotFoundError, match="python -m tasks.coding.fetch"):
+        main([str(config), "--seeds", "0", "--runs-root", str(runs)])
+    with monkeypatch.context() as patch:
+        patch.setattr(shutil, "which", lambda name: None)
+        with pytest.raises(RuntimeError, match="bubblewrap"):
+            main([str(config), "--seeds", "0", "--runs-root", str(runs), "--dry-run"])
+    assert not runs.exists()
+
+    main([str(config), "--seeds", "0", "--runs-root", str(runs), "--dry-run"])
+    frozen = RunDirectory.open(runs / "town-dry-run" / "seed-0000").config_path
+    tasks = yaml.safe_load(frozen.read_text(encoding="utf-8"))["tasks"]
+    assert (tasks["bank"], tasks["isolation"]) == ("tasks/coding/bank", "bubblewrap")
 
 
 def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):

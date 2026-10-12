@@ -7,7 +7,12 @@ Each seed runs in `<runs-root>/<experiment>/seed-NNNN`, with every model call re
 its `llm_calls.jsonl`. Creating a run that exists fails; `--resume` continues a run from its
 latest checkpoint and requires the configuration frozen in it. `--until-day` stops after
 that day, leaving the run interrupted and resumable. `--dry-run` replaces the model with the
-scripted responder of `experiments.dry_run` and runs as experiment `<experiment>-dry-run`.
+scripted responder of `experiments.dry_run` and the task bank with the built-in one, and runs
+as experiment `<experiment>-dry-run`; so a dry run needs neither the model nor a fetched bank.
+
+Before a run is created or resumed, its task bank must exist (a bank converted from
+LiveCodeBench is built by `python -m tasks.coding.fetch`) and delivered code must run under the
+configured isolation; otherwise nothing is created.
 """
 
 import argparse
@@ -25,9 +30,12 @@ from infrastructure.git import Repository
 from infrastructure.llm import LLMClient, RecordingClient, create_client
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.simulation import Setup, Simulation
-from tasks.coding import CodingTaskProvider
+from tasks.coding import BANK, Check, CodingTaskProvider, run_checks
 
 log = logging.getLogger(__name__)
+
+PROBE = Check.model_validate("len('ready') == 5")
+"""A check any sandbox runs, to find out before a run whether delivered code can be run."""
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -66,6 +74,7 @@ async def run(
     revision = code_revision()
     root = RunDirectory.root_of(runs_root, config.name, seed)
     parts = setup(config, seed, RunDirectory(root).llm_calls_path)
+    await run_checks("", (PROBE,), isolation=config.tasks.isolation)
     if resume:
         directory = RunDirectory.open(root)
         if load_config(directory.config_path, ExperimentConfig) != config:
@@ -83,20 +92,35 @@ async def run(
 
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
-    """`config` answered by the scripted responder, as experiment `<name>-dry-run`."""
+    """`config` answered by the scripted responder on the built-in task bank, as experiment
+    `<name>-dry-run`."""
     scripted = config.llm.model_copy(update={"backend": "scripted"})
-    return config.model_copy(update={"name": f"{config.name}-dry-run", "llm": scripted})
+    tasks = config.tasks.model_copy(update={"bank": BANK.relative_to(PROJECT_ROOT).as_posix()})
+    return config.model_copy(
+        update={"name": f"{config.name}-dry-run", "llm": scripted, "tasks": tasks}
+    )
 
 
 def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
-    """The parts of the run of `config` with `seed`, recording model calls in `llm_calls`."""
+    """The parts of the run of `config` with `seed`, recording model calls in `llm_calls`.
+
+    Raises FileNotFoundError, naming the command that builds it, if the task bank is missing.
+    """
+    tasks = config.tasks
+    if not tasks.bank_path.is_dir():
+        raise FileNotFoundError(
+            f"the task bank {tasks.bank_path} is missing; a bank converted from LiveCodeBench "
+            "is built by `python -m tasks.coding.fetch` (see tasks/coding/fetch.py)"
+        )
     return Setup(
         simulation=config.simulation,
         environment=config.environment,
         agents=config.agents,
         cognition=config.cognition,
         evolver=Evolver(config.evolution),
-        provider=CodingTaskProvider(config.tasks.bank_path, timeout=config.tasks.timeout),
+        provider=CodingTaskProvider(
+            tasks.bank_path, timeout=tasks.timeout, isolation=tasks.isolation
+        ),
         client=RecordingClient(agent_client(config, seed), llm_calls),
     )
 

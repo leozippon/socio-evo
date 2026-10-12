@@ -1,5 +1,6 @@
-"""The protocol between agents and the environment: time, events, observations, actions, and
-the answer card that translates between a resident's words and the simulator's actions."""
+"""The protocol between agents and the environment: time, events and how each witness is told
+them, observations, actions, and the answer card that translates between a resident's words
+and the simulator's actions."""
 
 from core.interaction.actions import (
     ACTION_TYPES,
@@ -39,6 +40,7 @@ from core.interaction.card import (
 )
 from core.interaction.events import Event, EventKind, Percept
 from core.interaction.observation import Observation
+from core.interaction.telling import Telling, Witness, capital, listed, tell
 from core.interaction.time import (
     MINUTES_PER_DAY,
     SimTime,
@@ -86,6 +88,9 @@ __all__ = [
     "SimTime",
     "Speak",
     "SubmitWork",
+    "Telling",
+    "Witness",
+    "capital",
     "clock_of",
     "day_of",
     "form",
@@ -93,8 +98,10 @@ __all__ = [
     "job_id",
     "job_name",
     "job_number",
+    "listed",
     "lived_day",
     "ordinal",
+    "tell",
     "time_at",
     "weekday",
 ]

@@ -8,14 +8,13 @@ which paid parts still hide a latent defect.
 
 import hashlib
 import random
-from collections.abc import Sequence
 from enum import StrEnum
 from typing import Protocol, get_args
 
 from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from core.environment.rejection import Rejected
-from core.interaction import Declaration, PartNumber, day_of, job_id, job_name
+from core.interaction import Declaration, PartNumber, day_of, job_id, job_name, listed
 from infrastructure.config import StrictModel
 
 
@@ -193,11 +192,6 @@ class Claim(StrictModel):
         ]
         checked = [trial.passed for trial in same if not trial.refused]
         return (checked[-1] if checked else None), any(trial.refused for trial in same)
-
-
-def listed(names: Sequence[str]) -> str:
-    """`Ana`, `Ana and Ben`, `Ana, Ben and Cai`."""
-    return " and ".join([", ".join(names[:-1]), names[-1]] if len(names) > 1 else names)
 
 
 class Board:

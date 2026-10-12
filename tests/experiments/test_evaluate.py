@@ -1,16 +1,13 @@
-from pathlib import Path
-
 import pytest
 import yaml
 
 import experiments.evaluate as cli
-from evaluation import DEFAULT_CONFIG, PROBES, EvaluationConfig
+from evaluation import DEFAULT_CONFIG, FAMILIES, EvaluationConfig
 from experiments.run import main as run_experiment
 from infrastructure.config import load_config
 from infrastructure.llm import ScriptedClient
 from infrastructure.storage import RunDirectory, read_jsonl
-
-SMOKE = Path(__file__).parents[2] / "experiments" / "configs" / "smoke.yaml"
+from tests.evaluation.conftest import ANCHOR, SMOKE, build_banks, write_work
 
 
 def _outside_evaluation(run: RunDirectory) -> dict[str, bytes]:
@@ -21,28 +18,51 @@ def _outside_evaluation(run: RunDirectory) -> dict[str, bytes]:
     }
 
 
-def test_evaluating_a_dry_run_writes_and_prints_scores_and_changes_nothing_else(
+def test_evaluating_a_dry_run_prints_its_cost_and_scores_and_changes_nothing_else(
     tmp_path, monkeypatch, capsys
 ):
-    run_experiment([str(SMOKE), "--seeds", "1", "--runs-root", str(tmp_path), "--dry-run"])
+    town = yaml.safe_load(SMOKE.read_text(encoding="utf-8"))
+    town["environment"]["places"].append(ANCHOR)
+    experiment = tmp_path / "town.yaml"
+    experiment.write_text(yaml.safe_dump(town), encoding="utf-8")
+    run_experiment([str(experiment), "--seeds", "1", "--runs-root", str(tmp_path), "--dry-run"])
     run = RunDirectory.open(tmp_path / "smoke-dry-run" / "seed-0001")
     agents = sorted(path.name for path in run.agents_dir.iterdir())
     default = load_config(DEFAULT_CONFIG, EvaluationConfig).model_dump(mode="json")
     config = tmp_path / "evaluation.yaml"
     judge = {**default["judge"], "backend": "scripted"}
-    config.write_text(yaml.safe_dump({**default, "judge": judge, "repetitions": 1}))
+    bank = build_banks(tmp_path / "banks")
+    work = write_work(tmp_path / "work.yaml")
+    changes = {"judge": judge, "bank": str(bank), "work": str(work)}
+    config.write_text(yaml.safe_dump({**default, **changes}), encoding="utf-8")
 
     # The CLI builds only the judge itself, and no code supplies a scripted judge's responder.
     judge_reply = {"evidence": [], "answer": False}
     monkeypatch.setattr(cli, "create_client", lambda llm: ScriptedClient(lambda r: judge_reply))
     before = _outside_evaluation(run)
-    command = [str(run.root), "--days", "0", "3", "--config", str(config)]
+    command = [str(run.root), "--days", "0", "3", "--config", str(config), "--levels", "2"]
+    command += ["--traits", "cooperation", "honesty"]
     capsys.readouterr()
 
     cli.main(command)
-    header, *rows = capsys.readouterr().out.splitlines()
-    assert header.split() == ["agent", "day", "dimension", "probe", "score"]
-    assert len(rows) == len(agents) * 2 * len(PROBES)
+    cost, header, *rows = capsys.readouterr().out.splitlines()
+    chosen = [
+        name for name, family in FAMILIES.items() if family.trait in ("cooperation", "honesty")
+    ]
+    scenes = len(agents) * 2 * len(chosen)
+    assert cost.startswith(f"{scenes} scenes: between ")
+    assert header.split() == [
+        "agent",
+        "day",
+        "variant",
+        "trait",
+        "family",
+        "score",
+        "curve",
+        "switch",
+    ]
+    assert len(rows) == scenes
+    assert {row.split()[4] for row in rows} == set(chosen)
     results = [run.evaluation_path(f"day-{day:04d}", agent) for day in (0, 3) for agent in agents]
     assert all(path.exists() for path in results)
     purposes = {record["metadata"]["purpose"] for record in read_jsonl(run.evaluation_calls_path)}

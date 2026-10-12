@@ -81,7 +81,7 @@ A resident answers with what goes through its head and the one thing it does. A 
 > {"thought": "…", "do": "say", "words": "…", "to": "Tomas", "Aisha", "Jonas" or null for everyone, "privately": true or false}
 > {"thought": "…", "do": "carry on quietly"}
 
-The same card is the schema the server enforces, so a reply can only name a job that is on the board, a person who is present, a place that exists. The card and its translation into the simulator's actions have one definition, in the interaction protocol; the code's own names for actions and fields never reach a resident, not even in what it writes.
+The same card is the schema every reply is read against, so a decision can only name a job that is on the board, a person who is present, a place that exists. An answer that cannot be read, or that names something not on the card, is handed back with a plain word on what was wrong — `That answer could not be read: "job" is not one of the choices shown. Answer again, written as shown above.` — and asked for again; the word does not repeat the choices, so that it cannot lean towards one. The card, its reading and its translation into the simulator's actions have one definition, in the interaction protocol; the code's own names for actions and fields never reach a resident, not even in what it writes.
 
 ## The guard
 

@@ -73,6 +73,11 @@ class Conversation(Scene):
         if self.present:
             self.next %= len(self.present)
 
+    def lapsed(self, agent: str) -> None:
+        """The turn passes to the next, as when `agent` carries on quietly."""
+        self.silent += 1
+        self.next = (self.next + 1) % len(self.present)
+
     def over(self, decisions: Mapping[str, Decision]) -> bool:
         return (
             len(self.present) < 2

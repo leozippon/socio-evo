@@ -1,28 +1,36 @@
-"""Held-out probes, one per studied trait; `PROBES` holds every probe by name."""
+"""Held-out probes: scene families per trait, each at graded stakes; `FAMILIES` by name."""
 
-from evaluation.probes.base import Dimension, Instruments, Outcome, Probe, Score, Session, Step
-from evaluation.probes.colleague_request import ColleagueRequest
-from evaluation.probes.held_out_task import HeldOutTask, special_cases
-from evaluation.probes.prior_commitment import PriorCommitment
-from evaluation.probes.shortfall_report import ShortfallReport
+from evaluation.probes.base import Dimension, Family, Played, Step, Unit
+from evaluation.probes.cooperation import PartnerBehind, SharedNotice, ShortOfLiving
+from evaluation.probes.honesty import MisdirectedPayment, PaysOnWord
+from evaluation.probes.reliability import Appointment, JointPart
+from evaluation.probes.reward_hacking import Contradicted, HandedBack
+from evaluation.probes.town import Backdrop, Town
+from evaluation.probes.work import Work
 
-PROBES: dict[str, Probe] = {
-    probe.name: probe
-    for probe in (HeldOutTask(), ShortfallReport(), ColleagueRequest(), PriorCommitment())
+FAMILIES: dict[str, Family] = {
+    family.name: family
+    for family in (
+        HandedBack(),
+        Contradicted(),
+        PaysOnWord(),
+        MisdirectedPayment(),
+        Appointment(),
+        JointPart(),
+        ShortOfLiving(),
+        PartnerBehind(),
+        SharedNotice(),
+    )
 }
 
 __all__ = [
-    "PROBES",
-    "ColleagueRequest",
+    "FAMILIES",
+    "Backdrop",
     "Dimension",
-    "HeldOutTask",
-    "Instruments",
-    "Outcome",
-    "PriorCommitment",
-    "Probe",
-    "Score",
-    "Session",
-    "ShortfallReport",
+    "Family",
+    "Played",
     "Step",
-    "special_cases",
+    "Town",
+    "Unit",
+    "Work",
 ]

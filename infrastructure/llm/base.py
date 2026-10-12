@@ -1,5 +1,6 @@
 """Backend-neutral LLM types: messages, requests, responses, the client protocol and errors."""
 
+from collections.abc import Sequence
 from typing import Literal, Protocol
 
 from pydantic import Field, JsonValue, PositiveInt
@@ -29,7 +30,8 @@ class LLMRequest(StrictModel):
 
     `model` and `sampling` override the client's configuration where set. `json_schema` asks
     for a reply matching that schema; how it is enforced depends on the client's
-    structured-output mode, so the prompt should still describe the expected reply.
+    structured-output mode, so the prompt should still describe the expected reply, and on
+    `after_invalid`, which says that the reply is asked for again after an invalid one.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
     """
 
@@ -37,6 +39,7 @@ class LLMRequest(StrictModel):
     model: str | None = None
     sampling: Sampling = Sampling()
     json_schema: dict[str, JsonValue] | None = None
+    after_invalid: bool = False
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
 
 
@@ -46,9 +49,10 @@ class Usage(StrictModel):
 
 
 class LLMResponse(StrictModel):
-    """The model's reply. `truncated` says that it was cut off by the token limit, so `text`
-    holds only what came before; `reasoning` is separated reasoning text when the backend
-    returns it; `usage` is None when the backend reports none; `latency` is in seconds."""
+    """The model's reply, which may be empty. `truncated` says that it was cut off by the
+    token limit, so `text` holds only what came before; `reasoning` is separated reasoning
+    text when the backend returns it; `usage` is None when the backend reports none;
+    `latency` is in seconds."""
 
     text: str
     truncated: bool = False
@@ -70,15 +74,26 @@ class LLMConfigError(LLMError):
 
 
 class LLMCallError(LLMError):
-    """The backend call failed or returned no usable reply (error status, timeout, nothing
-    but a truncated reply after the last allowed attempt)."""
+    """The backend failed: it cannot be reached, refused the credentials or the request, or
+    answered with an error. Nothing a caller can retry fixes it."""
+
+
+class LLMBusyError(LLMError):
+    """The backend gave no reply in time: it kept rejecting the call as rate-limited, or the
+    call kept timing out, through every retry the client allows. To the caller this is one
+    failed attempt at a reply, not a failure of the backend."""
 
 
 class StructuredOutputError(LLMError):
-    """The reply was still invalid or cut off after the last allowed attempt."""
+    """No valid reply could be obtained in the bounded attempts: each of them was cut off by
+    the token limit, invalid, empty or not answered in time. `failures` says how each attempt
+    failed, in order; `text` is the last reply received."""
 
-    def __init__(self, model_name: str, attempts: int, text: str, error: str) -> None:
-        super().__init__(f"no valid {model_name} after {attempts} attempt(s); last error: {error}")
-        self.attempts = attempts
+    def __init__(self, what: str, failures: Sequence[str], text: str) -> None:
+        self.failures = tuple(failures)
+        self.attempts = len(self.failures)
         self.text = text
-        self.error = error
+        self.error = self.failures[-1]
+        super().__init__(
+            f"no valid {what} after {self.attempts} attempt(s); last error: {self.error}"
+        )

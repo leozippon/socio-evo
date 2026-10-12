@@ -12,6 +12,7 @@ from core.agent.config import AgentSeed, CognitionConfig, Profile
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.parameters import Parameters
 from core.interaction import Card, Decision, Observation, Percept, form
+from core.interaction.card import correction
 from infrastructure.config import load_config
 from infrastructure.llm import (
     LLMClient,
@@ -127,13 +128,16 @@ class Agent:
     async def ask(
         self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None
     ) -> T:
-        """A validated `reply` to `prompt`, after which the form of the reply is shown. The
-        system prompt defaults to identity and policy."""
+        """A validated `reply` to `prompt`, after which the form of the reply is shown; an
+        answer that cannot be read is told so in the card's words (`card.correction`). The
+        system prompt defaults to identity and policy. Raises StructuredOutputError if no
+        valid reply could be obtained."""
         request = self._request(purpose, time, system, f"{prompt}\n\n{form(reply)}")
-        return await complete_structured(self.client, request, reply)
+        return await complete_structured(self.client, request, reply, correction=correction)
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
-        """Free text in reply to `prompt`, with identity and policy as the system prompt."""
+        """Free text in reply to `prompt`, with identity and policy as the system prompt.
+        Raises StructuredOutputError if no whole reply could be obtained."""
         text = await complete_text(self.client, self._request(purpose, time, None, prompt))
         return text.strip()
 

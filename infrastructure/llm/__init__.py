@@ -1,6 +1,7 @@
 """LLM access: backend-neutral types, clients and structured completion."""
 
 from infrastructure.llm.base import (
+    LLMBusyError,
     LLMCallError,
     LLMClient,
     LLMConfigError,
@@ -20,6 +21,7 @@ from infrastructure.llm.scripted import Responder, ScriptedClient
 from infrastructure.llm.structured import complete_structured, complete_text
 
 __all__ = [
+    "LLMBusyError",
     "LLMCallError",
     "LLMClient",
     "LLMConfig",

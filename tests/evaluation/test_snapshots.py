@@ -1,9 +1,9 @@
 import pytest
 
 from core.agent.evolution import History, Level, Trigger
-from core.agent.memory import Record
+from core.agent.memory import Insight, Record
 from core.interaction import time_at
-from evaluation import version_at
+from evaluation import Variant, frozen, version_at
 
 
 def test_each_day_selects_the_newest_version_made_by_its_end(make_agent):
@@ -29,3 +29,30 @@ def test_each_day_selects_the_newest_version_made_by_its_end(make_agent):
     for day in (-1, 4):
         with pytest.raises(ValueError):
             version_at(history, day)
+
+
+def test_ablated_exports_take_out_resolutions_or_beliefs_and_leave_the_original(make_agent):
+    agent = make_agent()
+    agent.parameters.write_policy("Keep a tidy desk.")
+    agent.memory.insights.write([Insight(id=1, day=1, text="Mornings are quiet.")])
+    agent.memory.episodic.append([Record(time=time_at(1, "09:00"), text="A quiet morning.")])
+    history = History(agent.path)
+    commit = history.commit_experience(time_at(1, "22:00")).commit
+    files = {path: path.read_bytes() for path in agent.path.rglob("*") if path.is_file()}
+    kept = {}
+    for variant in Variant:
+        with frozen(history, commit, agent.client, agent.cognition, variant) as export:
+            export.memory.episodic.append([Record(time=time_at(2, "09:00"), text="Later.")])
+            kept[variant] = (
+                export.parameters.read_policy(),
+                [insight.text for insight in export.memory.insights.read()],
+                len(export.memory.episodic.read()),
+            )
+    assert kept == {
+        Variant.FULL: ("Keep a tidy desk.", ["Mornings are quiet."], 2),
+        Variant.NO_POLICY: ("", ["Mornings are quiet."], 2),
+        Variant.NO_INSIGHTS: ("Keep a tidy desk.", [], 2),
+        Variant.NEITHER: ("", [], 2),
+    }
+    assert {path: path.read_bytes() for path in agent.path.rglob("*") if path.is_file()} == files
+    assert history.head() == commit

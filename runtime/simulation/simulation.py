@@ -9,6 +9,13 @@ every agent what it witnessed since its last decision, lets every agent evolve, 
 next day and writes a checkpoint. Interventions change conditions or make announcements at
 their time.
 
+A reply of an agent's that cannot be obtained in the bounded attempts does not end the run: the
+moment passes without the agent doing anything, or the night step is skipped with nothing
+committed for it, and either is recorded as a `lapse` event. A run whose lapses exceed the
+configured share of its decisions and lapses fails, since it no longer shows what its
+residents would do; any other failure of the model, such as an unreachable server, fails the
+run at once.
+
 Every decision is taken knowing the setting, what every resident knows of the town, which the
 runtime composes from the calendar, the places and the environment's rules. The jobs of a
 posting are drawn from the run's seed and the moment alone (see `Environment.post`), so the
@@ -17,10 +24,12 @@ run's generator.
 """
 
 import asyncio
+import json
 import logging
 import os
 import random
 import time as wall
+from collections import Counter
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -28,18 +37,31 @@ from datetime import UTC, datetime
 from pydantic import JsonValue, NonNegativeInt
 
 from core.agent import Agent, AgentSeed, CognitionConfig
-from core.agent.evolution import Evolver, History, Version
+from core.agent.evolution import Evolver, History, Lapse, Version
 from core.agent.evolution import Trigger as Cadence
 from core.environment import Environment, EnvironmentConfig, PlaceKind, TaskProvider
 from core.interaction import EventKind, clock_of, day_of, time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMClient
 from infrastructure.storage import RunDirectory, RunStatus
-from runtime.scenes import Conversation, Planning, Review, Scene, WorkSession, play, situations
+from runtime.scenes import (
+    Conversation,
+    Planning,
+    Review,
+    Scene,
+    WorkSession,
+    lapse,
+    play,
+    situations,
+)
 from runtime.scheduler import Trigger, TriggerKind, TriggerQueue
 from runtime.simulation.config import SimulationConfig
 
 log = logging.getLogger(__name__)
+
+MIN_LAPSES = 10
+"""Lapses a run may have whatever their share, so that a short run or a small town is not
+judged on its first one or two."""
 
 
 @dataclass(frozen=True)
@@ -93,6 +115,9 @@ class Simulation:
         self._stop = self.config.days
         self._met: dict[str, set[str]] = {}
         self._started = wall.perf_counter()
+        self._kinds: Counter[str] = Counter()
+        """The kinds of the events in the first `_read` bytes of the event log."""
+        self._read = 0
 
     @classmethod
     def create(cls, run: RunDirectory, setup: Setup) -> "Simulation":
@@ -261,20 +286,25 @@ class Simulation:
                 for agent in self.agents.values()
             ]
         for agent, steps in zip(self.agents, evolving, strict=True):
-            for version in steps.result():
+            for step in steps.result():
+                if isinstance(step, Lapse):
+                    level, trigger = str(step.level), str(step.trigger)
+                    lapse(self.env, agent, step.error, time=time, level=level, trigger=trigger)
+                    continue
                 self.env.emit(
                     EventKind.EVOLUTION,
-                    f"{agent}: {version.subject}",
+                    f"{agent}: {step.subject}",
                     time=time,
                     actor=agent,
                     payload={
                         "agent": agent,
-                        "level": str(version.level),
-                        "trigger": str(version.trigger),
-                        "commit": version.commit,
-                        "subject": version.subject,
+                        "level": str(step.level),
+                        "trigger": str(step.trigger),
+                        "commit": step.commit,
+                        "subject": step.subject,
                     },
                 )
+        self._bound_lapses()
 
         if day < self.config.days:
             self.queue.push(
@@ -284,10 +314,12 @@ class Simulation:
         if day % self.config.checkpoint_days == 0 or day == self._stop:
             self._checkpoint()
         log.info(
-            "%s: day %d done in %.0f s",
+            "%s: day %d done in %.0f s; %d lapses in %d decisions so far",
             self.directory.root,
             day,
             wall.perf_counter() - self._started,
+            self._kinds[EventKind.LAPSE],
+            self._kinds[EventKind.DECISION],
         )
 
     def _intervene(self, time: int, payload: dict[str, JsonValue]) -> None:
@@ -310,7 +342,24 @@ class Simulation:
                 self.env.move(agent, homes[agent], time=time)
 
     async def _play(self, scenes: list[Scene]) -> None:
-        await play(self.env, self.agents, scenes, self.rng, self._setting)
+        await play(self.env, self.agents, scenes, self.rng, self._setting, lapses=True)
+        self._bound_lapses()
+
+    def _bound_lapses(self) -> None:
+        """Raise RuntimeError if the run's lapses, counted in its event log, exceed the
+        configured share of its decisions and lapses and number at least MIN_LAPSES."""
+        with self.directory.events_path.open("rb") as events:
+            events.seek(self._read)
+            for line in events:
+                self._kinds[json.loads(line)["kind"]] += 1
+            self._read = events.tell()
+        lapses = self._kinds[EventKind.LAPSE]
+        asked = lapses + self._kinds[EventKind.DECISION]
+        if lapses >= MIN_LAPSES and lapses > self.config.max_lapse_share * asked:
+            raise RuntimeError(
+                f"{lapses} of {asked} decisions and night steps lapsed for want of a valid reply, "
+                f"more than the {self.config.max_lapse_share:.1%} a run may lose"
+            )
 
     def _setting(self, agent: str) -> str:
         """What `agent` knows of the town now."""
@@ -319,10 +368,10 @@ class Simulation:
 
     async def _evolve(
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int
-    ) -> list[Version]:
+    ) -> list[Version | Lapse]:
         """Commit the day's experience, then evolve on each due cadence in turn."""
         History(agent.path).commit_experience(time)
-        versions = []
+        versions: list[Version | Lapse] = []
         for cadence in cadences:
             versions += await self.evolver.evolve(agent, cadence, time)
         return versions
