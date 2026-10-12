@@ -3,10 +3,10 @@
 //   #/                                    every experiment and run
 //   #/compare/<experiment>                the seeds of an experiment side by side
 //   #/study/<study>                       the arms of a study compared; ?window=&contrast=
-//   #/run/<experiment>/<run>              the run's dashboard
-//   #/run/<experiment>/<run>/town         the town; ?t=<day>-<HH:MM>&e=<seq>&agent=&truth=0&panel=
-//   #/run/<experiment>/<run>/people/<agent>   one person; ?t=&tab=&v=<commit>
-//   #/run/<experiment>/<run>/evaluation   held-out evaluation; ?agent=&day=&probe=
+//   #/run/<experiment>/<run>              the run's dashboard; ?section=
+//   #/run/<experiment>/<run>/town         the town; ?t=<day>-<HH:MM>&agent=&truth=0&as=1&only=1&panel=&speed=
+//   #/run/<experiment>/<run>/people/<agent>   one person; ?t=&tab=&v=<commit>&day=
+//   #/run/<experiment>/<run>/evaluation   held-out evaluation; ?agent=&day=&probe=&dimension=&variant=
 
 const VIEWS = { "": "overview", town: "town", people: "person", evaluation: "evaluation" };
 
