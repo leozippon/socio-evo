@@ -36,27 +36,22 @@ export class Timeline {
     this.dayStrip = s("svg", { class: "strip day-strip", height: DAY_H, width: "100%", "aria-hidden": "true" });
     this.runWrap = h("div", { class: "strip-wrap run", tabindex: "0", role: "slider", "aria-label": "The whole run" }, this.runStrip);
     this.dayWrap = h("div", { class: "strip-wrap day", tabindex: "0", role: "slider", "aria-label": "This day" }, this.dayStrip);
-    this.el = h(
+    this.controls = h(
       "div",
-      { class: "timeline" },
+      { class: "tl-controls" },
       h(
         "div",
-        { class: "tl-controls" },
-        h(
-          "div",
-          { class: "tl-transport" },
-          button("start", "Previous day (Shift+←)", () => onStep("day", -1), "tl-day"),
-          button("back", "Previous moment (←)", () => onStep("moment", -1)),
-          this.playButton,
-          button("forward", "Next moment (→)", () => onStep("moment", 1)),
-          button("end", "Next day (Shift+→)", () => onStep("day", 1), "tl-day"),
-        ),
-        this.clock,
-        h("div", { class: "tl-right" }, this.liveButton, this.speedButton, this.truthButton),
+        { class: "tl-transport" },
+        button("start", "Previous day (Shift+←)", () => onStep("day", -1), "tl-day"),
+        button("back", "Previous moment (←)", () => onStep("moment", -1)),
+        this.playButton,
+        button("forward", "Next moment (→)", () => onStep("moment", 1)),
+        button("end", "Next day (Shift+→)", () => onStep("day", 1), "tl-day"),
       ),
-      this.runWrap,
-      this.dayWrap,
+      this.clock,
+      h("div", { class: "tl-right" }, this.liveButton, this.speedButton, this.truthButton),
     );
+    this.el = h("div", { class: "timeline" }, this.controls, this.runWrap, this.dayWrap);
     this.drag(this.runWrap, (x) => this.runTime(x));
     this.drag(this.dayWrap, (x) => this.dayTime(x));
     this.stop = onWidth(this.runWrap, (width) => {

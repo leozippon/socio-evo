@@ -174,17 +174,36 @@ function lamp(l) {
 }
 
 /**
+ * A path carried straight on past its open end, and with `both` past its start too, `far`
+ * further along its own direction: what leaves the town, the river and the roads out, runs off
+ * the map instead of ending in the grass where the map shows more than the drawing.
+ */
+function onward(d, line, far, both = false) {
+  const past = (a, b) => {
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return `${f(b.x + ((b.x - a.x) / len) * far)},${f(b.y + ((b.y - a.y) / len) * far)}`;
+  };
+  const n = line.length;
+  const tail = `L${past(line[n - 2], line[n - 1])}`;
+  return both ? `M${past(line[1], line[0])}L${d.slice(1)}${tail}` : `${d}${tail}`;
+}
+
+/**
  * Draw the plan. Returns the SVG and, by place, what the light layer and the ambient layer need:
  * windows and doors to light, and where chimneys smoke.
  */
 export function drawScenery(plan) {
   const parts = [];
   parts.push(s("rect", { class: "ground", x: 0, y: 0, width: plan.width, height: plan.height }));
+  // The map's view keeps its centre over the town and zooms out only a little past the fitted
+  // scale, so it never shows more than a few town-widths beyond the drawing.
+  const far = 4 * Math.max(plan.width, plan.height);
   for (const hill of plan.hills)
     for (let k = 0; k < 3; k++) parts.push(s("ellipse", { class: `hill h${k}`, cx: f(hill.x), cy: f(hill.y - k * 6), rx: f(hill.rx * (1 - k * 0.24)), ry: f(hill.ry * (1 - k * 0.26)) }));
   for (const patch of plan.patches) parts.push(s("ellipse", { class: `patch p${patch.tone}`, cx: f(patch.x), cy: f(patch.y), rx: f(patch.rx), ry: f(patch.ry) }));
   if (plan.river) {
-    const { d, width } = plan.river;
+    const { width } = plan.river;
+    const d = onward(plan.river.d, plan.river.line, far, true);
     parts.push(s("path", { class: "bank", d, "stroke-width": width + 12 }));
     parts.push(s("path", { class: "water", d, "stroke-width": width }));
     parts.push(s("path", { class: "water-hi", d, "stroke-width": 1.4, transform: "translate(0,-4)" }));
@@ -197,7 +216,7 @@ export function drawScenery(plan) {
     for (let y = q.y0 + 10; y < q.y1 - 4; y += 10) lines += `M${f(q.x0 + 3)},${f(y)}H${f(q.x1 - 3)}`;
     parts.push(s("path", { class: "paving", d: lines }));
   }
-  const ordered = [...plan.roads].sort((a, b) => (a.kind === "street") - (b.kind === "street"));
+  const ordered = [...plan.roads].sort((a, b) => (a.kind === "street") - (b.kind === "street")).map((road) => (road.to === null ? { ...road, d: onward(road.d, road.line, far) } : road));
   for (const road of ordered) parts.push(s("path", { class: `road-edge ${road.kind}`, d: road.d }));
   for (const road of ordered) parts.push(s("path", { class: `road ${road.kind}`, d: road.d }));
   for (const road of ordered) if (road.kind === "street") parts.push(s("path", { class: "cobbles", d: road.d }));

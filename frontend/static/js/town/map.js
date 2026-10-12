@@ -735,9 +735,9 @@ export class TownMap {
     }
 
     // Names of places, the busiest first, beside their building and clear of speech, other
-    // names and people, and of buildings where they can be; a name that finds no room drops its
-    // status line, and then, until there is room again, itself. The names of places where
-    // something is going on come before what residents just did, the rest after it.
+    // names, people and buildings; a name that finds no room drops its status line, and then,
+    // until there is room again, itself. The names of places where something is going on come
+    // before what residents just did, the rest after it.
     labels.sort((a, b) => b[1].priority - a[1].priority);
     const placeLabel = ([id, label]) => {
       const p = this.plan.byId.get(id);
@@ -755,8 +755,8 @@ export class TownMap {
           // At the edge of the map a name may slide along it, a little.
           const r = clampBox(raw);
           const shift = Math.abs(r.x0 - raw.x0) + Math.abs(r.y0 - raw.y0);
-          if (shift > w * 0.6 || placed.some((o) => area(grow(r, GAP / 2), o.box)) || heads.some((head) => area(r, head.box) > 4)) return;
-          const score = order * 30 + shift * 2 + buildings.reduce((sum, b) => sum + area(r, b), 0);
+          if (shift > w * 0.6 || placed.some((o) => area(grow(r, GAP / 2), o.box)) || heads.some((head) => area(r, head.box) > 4) || buildings.some((b) => area(r, b) > 4)) return;
+          const score = order * 30 + shift * 2;
           if (!best || score < best.score) best = { r, score };
         });
         chosen = best?.r ?? null;

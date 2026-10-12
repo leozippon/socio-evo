@@ -30,6 +30,7 @@ const PANELS = [
   ["day", "Day"],
 ];
 const WIDE = matchMedia("(min-width: 1000px)");
+const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
 export function mountTown(root, ctx) {
   const { source, world, cast } = ctx;
@@ -119,7 +120,10 @@ export function mountTown(root, ctx) {
       return;
     }
     sheet.full = page.clientHeight;
-    sheet.peek = grip.offsetHeight + timeline.el.offsetHeight + panelTabs.offsetHeight;
+    // The sheet peeks down to its tabs; on a phone held sideways, only to the transport row,
+    // so that the map keeps most of the little height there is.
+    const end = SIDEWAYS.matches ? timeline.controls : panelTabs;
+    sheet.peek = end.offsetTop + end.offsetHeight;
     page.style.setProperty("--peek", `${sheet.peek}px`);
     setSheet(sheet.state, false);
   }
@@ -412,7 +416,7 @@ export function mountTown(root, ctx) {
   let marksTimer = null;
   function dayLoaded() {
     timeline.setRun({ loaded: new Set(replay.days.keys()) });
-    if (view.selected) renderSelected();
+    if (view.selected && shownSeq !== null) renderSelected();
     clearTimeout(marksTimer);
     marksTimer = setTimeout(() => {
       const evolution = [];
@@ -615,8 +619,8 @@ export function mountTown(root, ctx) {
   async function start() {
     replay.expect(source.doc.event_days.map((d) => d.day));
     timeline.setRun({ eventDays: source.doc.event_days, last: source.doc.last_time, running: running(), loaded: new Set() });
-    renderSelected();
-    showPanel(view.panel);
+    // The selection and the panels are drawn once the moment is shown, not for the empty town
+    // before it: the first paint draws them.
     if (!source.doc.event_days.length) {
       replay.seek(0);
       paint(false);
