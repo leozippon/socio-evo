@@ -241,4 +241,3 @@ def test_a_log_recorded_before_tasks_had_parts_measures_as_it_meant(town, tmp_pa
     assert deliveries and {(action.part, action.declaration) for action in deliveries} == {
         (1, "complete")
     }
-
