@@ -10,9 +10,10 @@ import { emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { frontMatter, markdown } from "../markdown.js";
 import { href, sibling } from "../router.js";
+import { bystanders } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { markers, placeById } from "../world.js";
-import { traitFigures } from "./evaluation.js";
+import { traitFigures, variantOf } from "./evaluation.js";
 import { LEVELS, stat } from "./overview.js";
 
 const TABS = [
@@ -45,6 +46,7 @@ export function mountPerson(root, ctx) {
   let measures = null;
   let history = null;
   let evaluation = null;
+  let traits = null;
   let charts = [];
   let token = 0;
   let reveal = false; // the reader picked a version, so show it once loaded
@@ -147,11 +149,17 @@ export function mountPerson(root, ctx) {
     const state = version ? (await source.version(agentName(), version.commit)).state : null;
     const rewrites = history.versions.filter((v) => v.day <= moment.day && v.changes.some((c) => c.path === "parameters/policy.md") && v.level);
     const ties = new Map();
+    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, gave: [0, 0], got: [0, 0], asked: 0, askedBy: 0, jobs: 0, crownsTo: 0, crownsFrom: 0 }).get(other);
+    for (const row of traits?.pairs ?? []) {
+      if (row.day > moment.day) continue;
+      if (row.source === agentName()) Object.assign(tie(row.target), { asked: tie(row.target).asked + row.asked, jobs: tie(row.target).jobs + row.joint_taken, crownsTo: tie(row.target).crownsTo + row.crowns });
+      if (row.target === agentName()) Object.assign(tie(row.source), { askedBy: tie(row.source).askedBy + row.asked, crownsFrom: tie(row.source).crownsFrom + row.crowns });
+    }
     for (const edge of measures.graph) {
       if (edge.day > moment.day) continue;
       const other = edge.source === agentName() ? edge.target : edge.target === agentName() ? edge.source : null;
       if (!other) continue;
-      const t = ties.get(other) ?? { minutes: 0, toThem: 0, fromThem: 0, gave: [0, 0], got: [0, 0] };
+      const t = tie(other);
       if (edge.source === agentName()) {
         t.minutes += edge.minutes;
         t.toThem += edge.addressed;
@@ -160,21 +168,21 @@ export function mountPerson(root, ctx) {
         t.fromThem += edge.addressed;
         t.got = [t.got[0] + edge.ratings, t.got[1] + edge.ratings_sum];
       }
-      ties.set(other, t);
     }
     const mean = ([n, total]) => (n ? `${fmt.num(total / n, 1)} (${n})` : "–");
+    const pairsOf = Boolean(traits);
     return [
       h(
         "div",
         { class: "stats" },
-        stat("Balance", last ? fmt.credits(last.balance) : fmt.credits(world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all`),
-        stat("Esteem", fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2), `${fmt.plural(total("ratings_received"), "rating")} received`),
-        stat("Deliveries accepted", fmt.int(total("delivered")), `${fmt.int(total("failed"))} refused · ${fmt.int(total("expired"))} lapsed`),
-        stat(h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12), "True quality"), total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–", `${fmt.int(total("defective"))} latent defects · ${fmt.int(total("defects_discovered"))} found`, "truth"),
-        stat("Claims refused", fmt.int(rows.reduce((a, r) => a + (r.rejected.claim_task ?? 0), 0)), `of ${fmt.int(rows.reduce((a, r) => a + (r.decisions.claim_task ?? 0), 0))} attempts`),
+        stat("Crowns", last ? fmt.credits(last.balance) : fmt.credits(cast.agent(agentName()).initial_balance ?? world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all${cast.agent(agentName()).obligation ? ` · owes ${cast.agent(agentName()).obligation} a day` : ""}`),
+        stat("Standing", fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2), `${fmt.plural(total("ratings_received"), "mark")} received`),
+        stat("Hand-ins accepted", fmt.int(total("delivered")), `${fmt.int(total("failed"))} handed back · ${fmt.int(total("expired"))} jobs lapsed`),
+        stat(h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12), "True quality"), total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–", `${fmt.int(total("defective"))} latent faults · ${fmt.int(total("defects_discovered"))} came to light`, "truth"),
+        stat("Takings refused", fmt.int(rows.reduce((a, r) => a + (r.rejected.claim_task ?? 0), 0)), `of ${fmt.int(rows.reduce((a, r) => a + (r.decisions.claim_task ?? 0), 0))} attempts to take a job`),
         stat("Things said", fmt.int(total("utterances")), `${fmt.plural(total("conversations"), "conversation")}`),
       ),
-      h("div", { class: "figures" }, emphasisChart("Balance", "Credits at the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment, made), emphasisChart("Esteem", "As published each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment, made)),
+      h("div", { class: "figures" }, emphasisChart("Crowns", "At the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment, made), emphasisChart("Standing", "As posted each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment, made)),
       h(
         "div",
         { class: "two-col section" },
@@ -189,7 +197,7 @@ export function mountPerson(root, ctx) {
           "section",
           { class: "card pad" },
           h("h2", {}, "Relationships"),
-          h("p", { class: "note" }, `Through day ${moment.day}. Ratings are private; mean score and count.`),
+          h("p", { class: "note" }, `Through day ${moment.day}. Marks are private; mean mark and count.${pairsOf ? " Askings are jobs for two proposed by name." : ""}`),
           ties.size
             ? h(
                 "div",
@@ -197,13 +205,39 @@ export function mountPerson(root, ctx) {
                 h(
                   "table",
                   { class: "data" },
-                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Hours spent in the same scenes" }, "Hours"), h("th", { title: "Things said to them by name" }, "Said to"), h("th", { title: "Things they said to this agent by name" }, "Heard from"), h("th", { title: "Mean rating given them, and how many" }, "Rated them"), h("th", { title: "Mean rating they gave, and how many" }, "Rated by"))),
+                  h(
+                    "thead",
+                    {},
+                    h(
+                      "tr",
+                      {},
+                      h("th", { class: "sticky-col" }, "With"),
+                      h("th", { title: "Hours spent in the same scenes" }, "Hours"),
+                      h("th", { title: "Things said to them by name" }, "Said to"),
+                      h("th", { title: "Things they said to this resident by name" }, "Heard from"),
+                      h("th", { title: "Mean mark given them, and how many" }, "Marked them"),
+                      h("th", { title: "Mean mark they gave, and how many" }, "Marked by"),
+                      pairsOf ? [h("th", { title: "Askings made to them, and askings received from them" }, "Asked / by"), h("th", { title: "Jobs for two taken together" }, "Jobs"), h("th", { title: "Crowns handed to them, and received from them" }, "Crowns to / from")] : null,
+                    ),
+                  ),
                   h(
                     "tbody",
                     {},
                     [...ties]
                       .sort((a, b) => b[1].minutes - a[1].minutes)
-                      .map(([name, t]) => h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.num(t.minutes / 60, 1)), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, mean(t.gave)), h("td", {}, mean(t.got)))),
+                      .map(([name, t]) =>
+                        h(
+                          "tr",
+                          {},
+                          h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))),
+                          h("td", {}, fmt.num(t.minutes / 60, 1)),
+                          h("td", {}, fmt.int(t.toThem)),
+                          h("td", {}, fmt.int(t.fromThem)),
+                          h("td", {}, mean(t.gave)),
+                          h("td", {}, mean(t.got)),
+                          pairsOf ? [h("td", {}, `${t.asked} / ${t.askedBy}`), h("td", {}, fmt.int(t.jobs)), h("td", {}, `${t.crownsTo} / ${t.crownsFrom}`)] : null,
+                        ),
+                      ),
                   ),
                 ),
               )
@@ -322,14 +356,14 @@ export function mountPerson(root, ctx) {
     return h(
       "dl",
       { class: "behaviour" },
-      h("dt", {}, "deliveries"),
-      h("dd", {}, `${fmt.int(sum("delivered"))} accepted, ${fmt.int(sum("failed"))} refused, ${fmt.int(sum("expired"))} lapsed`),
+      h("dt", {}, "hand-ins"),
+      h("dd", {}, `${fmt.int(sum("delivered"))} accepted, ${fmt.int(sum("failed"))} handed back, ${fmt.int(sum("expired"))} jobs lapsed`),
       h("dt", { class: "truth-dt" }, icon("eye", 12), "true quality"),
-      h("dd", {}, sum("delivered") ? `${fmt.num(sum("quality") / sum("delivered"), 2)} mean · ${fmt.int(sum("defective"))} defective · ${fmt.int(sum("defects_discovered"))} found` : "–"),
-      h("dt", {}, "esteem"),
-      h("dd", {}, `${fmt.num(esteem, 2)} · ${fmt.plural(sum("ratings_received"), "rating")} received`),
+      h("dd", {}, sum("delivered") ? `${fmt.num(sum("quality") / sum("delivered"), 2)} mean · ${fmt.int(sum("defective"))} with a latent fault · ${fmt.int(sum("defects_discovered"))} came to light` : "–"),
+      h("dt", {}, "standing"),
+      h("dd", {}, `${fmt.num(esteem, 2)} · ${fmt.plural(sum("ratings_received"), "mark")} received`),
       h("dt", {}, `with ${agentName()}`),
-      h("dd", {}, `${fmt.num(together / 60, 1)} h together${myRatings[0] ? ` · rated by ${agentName()} ${fmt.num(myRatings[1] / myRatings[0], 1)} on average` : ""}`),
+      h("dd", {}, `${fmt.num(together / 60, 1)} h together${myRatings[0] ? ` · marked by ${agentName()} ${fmt.num(myRatings[1] / myRatings[0], 1)} on average` : ""}`),
     );
   }
 
@@ -411,7 +445,7 @@ export function mountPerson(root, ctx) {
     const day = Number(route.query.day) || Math.max(1, Math.min(lastDay, time !== null ? dayOf(time) : moment.day || 1));
     const events = await source.eventDay(day);
     const tasks = new Map(events.filter((e) => e.kind === "task_posted").map((e) => [e.payload.task.id, e]));
-    const m = { cast, places, lookups: { tasks, places }, truth: true, select: (name) => ctx.navigate({ ...route, agent: name }) };
+    const m = { cast, places, lookups: { tasks, places }, truth: true, reader: null, bystanders: bystanders(events), select: (name) => ctx.navigate({ ...route, agent: name }) };
     const mine = events.filter((e) => e.kind === "decision" && e.actor === agentName());
     const picker = h(
       "div",
@@ -442,7 +476,7 @@ export function mountPerson(root, ctx) {
 
   function traitsTab(moment, version, made) {
     if (!evaluation.scores.length) return h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "Evaluate chosen days with ", h("code", {}, `python -m experiments.evaluate runs/${route.experiment}/${route.run} --days 0 7 14`), "."));
-    const rows = evaluation.scores.filter((row) => row.agent === agentName());
+    const rows = evaluation.scores.filter((row) => row.agent === agentName() && variantOf(row) === "full");
     return [
       h("p", { class: "note" }, "Held-out probes played on frozen copies of this agent; higher means more of the trait."),
       h("div", { class: "figures four" }, traitFigures(evaluation, cast, { only: agentName(), into: made })),
@@ -452,7 +486,7 @@ export function mountPerson(root, ctx) {
         h(
           "table",
           { class: "data text" },
-          h("thead", {}, h("tr", {}, h("th", {}, "Day"), h("th", {}, "Trait"), h("th", {}, "Score"), h("th", {}, "Measures"), h("th", {}, ""))),
+          h("thead", {}, h("tr", {}, h("th", {}, "Day"), h("th", {}, "Trait"), h("th", {}, "Probe family"), h("th", {}, "Score"), h("th", {}, "Measures"), h("th", {}, ""))),
           h(
             "tbody",
             {},
@@ -462,8 +496,9 @@ export function mountPerson(root, ctx) {
                 {},
                 h("td", {}, String(row.day)),
                 h("td", {}, row.dimension.replaceAll("_", " ")),
-                h("td", {}, row.score === null ? "unscored" : fmt.num(row.score, 2)),
-                h("td", {}, Object.entries(row.measures).map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "number" ? fmt.num(v, 2) : v}`).join(" · ")),
+                h("td", {}, String(row.probe).replaceAll("_", " ")),
+                h("td", {}, typeof row.score === "number" ? fmt.num(row.score, 2) : "unscored"),
+                h("td", {}, Object.entries(row.measures ?? {}).map(([k, v]) => `${k.replaceAll("_", " ")} ${typeof v === "number" ? fmt.num(v, 2) : typeof v === "object" ? JSON.stringify(v) : v}`).join(" · ")),
                 h("td", {}, h("a", { href: href(sibling(route, "evaluation", { query: { agent: agentName(), day: String(row.day), probe: row.probe } })) }, "transcripts")),
               ),
             ),
@@ -481,7 +516,7 @@ export function mountPerson(root, ctx) {
     const ticket = ++token;
     const made = [];
     try {
-      [measures, history, evaluation] = await Promise.all([source.measures(), source.versions(agentName()), source.evaluation()]);
+      [measures, history, evaluation, traits] = await Promise.all([source.measures(), source.versions(agentName()), source.evaluation(), source.traits()]);
       if (ticket !== token) return;
       const moment = asOf();
       const version = versionAt(moment.time);

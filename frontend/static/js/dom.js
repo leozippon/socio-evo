@@ -51,6 +51,49 @@ export const fmt = {
 /** A quiet message for a view or panel with nothing to show yet, and why. */
 export const emptyState = (title, ...detail) => h("div", { class: "empty" }, h("p", { class: "empty-title" }, title), detail.length ? h("p", {}, ...detail) : null);
 
+/**
+ * A technical term with its one-line definition on the spot: tap or click it to read the
+ * definition beside it, tap anywhere else or press Escape to close it. Without a definition, the
+ * label alone.
+ */
+export function term(label, definition) {
+  if (!definition) return h("span", {}, label);
+  return h("button", { type: "button", class: "term", "aria-expanded": "false", onclick: (event) => openTerm(event.currentTarget, definition) }, label);
+}
+
+let pop = null;
+function closeTerm() {
+  if (!pop) return;
+  pop.box.remove();
+  pop.anchor.setAttribute("aria-expanded", "false");
+  document.removeEventListener("pointerdown", pop.outside, true);
+  document.removeEventListener("keydown", pop.key, true);
+  window.removeEventListener("scroll", closeTerm, true);
+  window.removeEventListener("resize", closeTerm);
+  pop = null;
+}
+function openTerm(anchor, definition) {
+  const again = pop?.anchor === anchor;
+  closeTerm();
+  if (again) return;
+  const box = h("div", { class: "term-pop", role: "tooltip" }, definition);
+  document.body.append(box);
+  const r = anchor.getBoundingClientRect();
+  const width = Math.min(320, window.innerWidth - 24);
+  box.style.width = `${width}px`;
+  box.style.left = `${Math.max(12, Math.min(window.innerWidth - width - 12, r.left))}px`;
+  const below = r.bottom + 6;
+  box.style.top = `${below + box.offsetHeight > window.innerHeight - 8 ? Math.max(8, r.top - box.offsetHeight - 6) : below}px`;
+  anchor.setAttribute("aria-expanded", "true");
+  const outside = (event) => event.target !== anchor && !box.contains(event.target) && closeTerm();
+  const key = (event) => event.key === "Escape" && closeTerm();
+  pop = { box, anchor, outside, key };
+  document.addEventListener("pointerdown", outside, true);
+  document.addEventListener("keydown", key, true);
+  window.addEventListener("scroll", closeTerm, true);
+  window.addEventListener("resize", closeTerm);
+}
+
 /** Observe the width of `element`, calling `fn(width)` when it settles on a new value. */
 export function onWidth(element, fn) {
   let last = -1;

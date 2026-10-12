@@ -10,12 +10,12 @@
 import { calendarOf, dayOf, dayStart, hhmm, minuteOf, parseStamp, slotAt, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
-import { Replay } from "../replay.js";
+import { Replay, current } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { actionSummary, sceneName } from "../town/events.js";
+import { CLIENTS, actionSummary, bystanders, handedAs, isPublic, jobName, partsOf, sceneName, witnessed } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
-import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel } from "../town/panels.js";
+import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel, jobStatus } from "../town/panels.js";
 import { SPEEDS, Timeline } from "../town/timeline.js";
 import { placeById, shortName } from "../world.js";
 
@@ -48,10 +48,12 @@ export function mountTown(root, ctx) {
     truth: route.query.truth !== "0",
     selected: cast.has(route.query.agent) ? route.query.agent : null,
     only: route.query.only === "1",
+    lens: route.query.as === "1", // read what the selected resident witnessed in its own wording
     panel: PANELS.some(([key]) => key === route.query.panel) ? route.query.panel : "now",
     follow: false,
   };
   let measures = null;
+  let traits = null;
   let raf = 0;
   let last = performance.now();
   let lastPanels = 0;
@@ -190,13 +192,16 @@ export function mountTown(root, ctx) {
   function moment() {
     const state = replay.state;
     const day = dayOf(state.time);
+    const dayEvents = replay.eventsOf(day).filter((e) => e.seq <= state.seq);
     return {
       state,
       world,
       cast,
       places,
       lookups,
-      dayEvents: replay.eventsOf(day).filter((e) => e.seq <= state.seq),
+      dayEvents,
+      bystanders: bystanders(dayEvents),
+      reader: view.lens && view.selected && replay.perspectives ? view.selected : null,
       dayStart: replay.snapshots.get(state.day)?.balances ?? null,
       truth: view.truth,
       selected: view.selected,
@@ -214,7 +219,9 @@ export function mountTown(root, ctx) {
     for (const e of m.dayEvents) {
       if (e.kind !== "speech" || e.time < recent || m.state.locations[e.actor] !== e.place) continue;
       if (!speech.has(e.place)) speech.set(e.place, []);
-      speech.get(e.place).push({ agent: e.actor, text: e.payload.utterance, to: e.payload.to });
+      // A private remark shows its words in the truth view and to those who heard them.
+      const heard = !e.payload.private || (m.reader ? m.reader === e.actor || m.reader === e.payload.to : view.truth);
+      speech.get(e.place).push({ agent: e.actor, text: e.payload.utterance, to: e.payload.to, private: Boolean(e.payload.private), heard });
     }
     const thinking = new Set();
     if (view.truth) for (const e of m.dayEvents) if (e.kind === "decision" && m.state.time - e.time < turn) thinking.add(e.actor);
@@ -225,8 +232,64 @@ export function mountTown(root, ctx) {
       const label = scene.kind === "work" ? `working · round ${Math.min(round, world.scenes.work_rounds)}` : scene.kind === "conversation" ? `talking · ${fmt.plural(scene.present.length, "person", "people")}` : sceneName(scene.kind).toLowerCase();
       scenes.set(scene.place, { kind: scene.kind, present: scene.present, label });
     }
-    const key = `${m.state.seq}|${Math.floor(m.state.time / turn)}|${view.truth}`;
-    return { state: m.state, minute: minuteOf(m.state.time), selected: view.selected, speech, thinking, scenes, effects, key };
+    const key = `${m.state.seq}|${Math.floor(m.state.time / turn)}|${view.truth}|${m.reader}`;
+    const pairs = Object.values(m.state.claims).filter((claim) => claim.workers.length > 1).map((claim) => claim.workers);
+    const askings = Object.entries(m.state.offers).filter(([, offer]) => offer.partner).map(([asker, offer]) => [asker, offer.partner]);
+    return { state: m.state, minute: minuteOf(m.state.time), selected: view.selected, speech, thinking, scenes, deeds: deeds(m, recent), pairs, askings, notices: notices(m, recent), effects, key };
+  }
+
+  /** What each resident just did that the map can say in a few words: its latest such deed. */
+  function deeds(m, since) {
+    const found = new Map();
+    const set = (agent, icon, text, tone = null, client = null) => agent && found.set(agent, { icon, text, tone, client });
+    const part = (p) => (partsOf(replay.tasks.get(p.task_id)?.payload.task).length > 1 ? `part ${p.part}` : jobName(p.task_id));
+    for (const e of m.dayEvents) {
+      if (e.time < since || !(view.truth || isPublic(e))) continue;
+      const p = current(e);
+      switch (e.kind) {
+        case "task_claimed":
+          for (const worker of p.workers) {
+            const others = p.workers.filter((other) => other !== worker);
+            set(worker, others.length ? "pair" : "board", others.length ? (e.actor ? `takes ${jobName(p.task_id)} with ${others[0]}` : `paired by lot with ${others[0]}`) : `takes ${jobName(p.task_id)}`);
+          }
+          break;
+        case "task_proposed":
+          set(e.actor, "ask", `asks ${p.partner} · ${jobName(p.task_id)}`);
+          break;
+        case "task_applied":
+          set(e.actor, "board", `name down · ${jobName(p.task_id)}`);
+          break;
+        case "draw":
+          p.order.forEach((who, i) => set(who, "dice", `lots for ${jobName(p.task_id)} · ${i ? `${i + 1}${["", "nd", "rd"][i] ?? "th"}` : "won"}`));
+          break;
+        case "work_checked":
+          set(e.actor, "code", `tries code · examples ${e.payload.passed ? "pass" : "fail"}`, e.payload.passed ? null : "serious");
+          break;
+        case "work_submitted": {
+          const client = CLIENTS[p.client];
+          set(e.actor, "check", p.accepted ? `hands in ${part(p)} · ${handedAs(p.declaration)}` : `${part(p)} handed back`, p.accepted ? "good" : "serious", client ? { icon: client.icon, title: `The client ${client.label}` } : null);
+          break;
+        }
+        case "credits_given":
+          set(p.giver, "coin", `hands ${p.recipient} ${fmt.plural(p.amount, "crown")}`);
+          break;
+      }
+    }
+    return found;
+  }
+
+  /** The town's notices of the last moments: faults come to light, lapses, announcements. */
+  function notices(m, since) {
+    const out = [];
+    for (const e of m.dayEvents) {
+      if (e.time < since) continue;
+      // As the town read them, or as the chosen reader did: they quote what was declared and said.
+      const text = (m.reader && witnessed(e, m.reader) && e.personal?.[m.reader]) || e.text;
+      if (e.kind === "defect_discovered") out.push({ icon: "alert", tone: "critical", text });
+      if (e.kind === "task_expired") out.push({ icon: "clock", tone: "critical", text });
+      if (e.kind === "announcement") out.push({ icon: "flag", tone: null, text });
+    }
+    return out.slice(-3);
   }
 
   /** The selected agent, and in the truth view the thought behind its latest decision today. */
@@ -236,13 +299,24 @@ export function mountTown(root, ctx) {
     const agent = cast.agent(view.selected);
     const own = m.dayEvents.findLast((e) => e.kind === "decision" && e.actor === view.selected);
     const place = places.get(m.state.locations[view.selected]);
+    const status = jobStatus(view.selected, m);
+    // Whose wording the panels and the map read: the town's, or the selected resident's for
+    // what it witnessed, private remarks included.
+    const lens = replay.perspectives
+      ? h(
+          "div",
+          { class: "seg lens", role: "group", "aria-label": "Whose wording to read" },
+          h("button", { type: "button", "aria-pressed": String(!view.lens), title: "Every event as the town's people read it", onclick: () => setLens(false) }, "As everyone read it"),
+          h("button", { type: "button", "aria-pressed": String(view.lens), title: `What ${view.selected} witnessed, in ${view.selected}'s own wording`, onclick: () => setLens(true) }, `As ${view.selected} read it`),
+        )
+      : null;
     fill(
       selectedBox,
       h(
         "div",
         { class: "selected-head" },
         cast.badge(view.selected, 34),
-        h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · at ${shortName(place)}` : ""}`)),
+        h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · at ${shortName(place)}` : ""}`), status.length ? h("span", { class: "selected-job" }, cast.mention(status.join(" · "))) : null),
         h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
@@ -250,11 +324,20 @@ export function mountTown(root, ctx) {
         ? h(
             "button",
             { type: "button", class: "selected-thought truth", "aria-expanded": "false", title: "Read the whole thought", onclick: (event) => event.currentTarget.setAttribute("aria-expanded", String(event.currentTarget.classList.toggle("open"))) },
-            h("span", { class: "truth-tag" }, icon("thought", 13), `thinks, ${hhmm(minuteOf(own.time))} · ${actionSummary(own.payload.action, lookups)}`),
+            h("span", { class: "truth-tag" }, icon("thought", 13), `thinks, ${hhmm(minuteOf(own.time))} · ${actionSummary(own.payload.action, { places })}`),
             h("span", { class: "thought-text" }, own.payload.thought),
           )
         : null,
+      lens,
     );
+  }
+
+  function setLens(on) {
+    view.lens = on;
+    renderSelected();
+    paint(false);
+    refreshPanel(true);
+    sync();
   }
 
   function refreshPanel(force = false) {
@@ -262,7 +345,7 @@ export function mountTown(root, ctx) {
     const panel = panels[view.panel];
     if (view.panel === "ties") {
       const through = m.state.ended ? m.state.day : m.state.day - 1;
-      if (measures) panel.update(measures.graph, through, view.selected);
+      if (measures) panel.update(measures.graph, traits?.pairs ?? null, through, view.selected);
       else fill(panel.el, h("div", { class: "loading" }, "Loading the measures…"));
     } else panel.update(m, force);
     if (panelBody.firstChild !== panel.el) panelBody.replaceChildren(panel.el);
@@ -301,6 +384,7 @@ export function mountTown(root, ctx) {
         truth: view.truth ? null : "0",
         panel: view.panel === "now" ? null : view.panel,
         only: view.only && view.selected ? "1" : null,
+        as: view.lens && view.selected ? "1" : null,
         speed: view.speed === 3 ? null : String(view.speed),
       },
     };
@@ -328,6 +412,7 @@ export function mountTown(root, ctx) {
   let marksTimer = null;
   function dayLoaded() {
     timeline.setRun({ loaded: new Set(replay.days.keys()) });
+    if (view.selected) renderSelected();
     clearTimeout(marksTimer);
     marksTimer = setTimeout(() => {
       const evolution = [];
@@ -464,6 +549,7 @@ export function mountTown(root, ctx) {
         if (e.kind === "payment") effects.push({ agent: e.payload.agent, text: `+${e.payload.amount}`, tone: "good" });
         if (e.kind === "clawback") effects.push({ agent: e.payload.agent, text: `−${e.payload.amount}`, tone: "critical" });
         if (e.kind === "living_cost") effects.push({ agent: e.payload.agent, text: `−${e.payload.amount}`, tone: "muted" });
+        if (e.kind === "credits_given") effects.push({ agent: e.payload.giver, text: `−${e.payload.amount}`, tone: "muted" }, { agent: e.payload.recipient, text: `+${e.payload.amount}`, tone: "good" });
       }
     paint(true, effects);
   }
@@ -544,8 +630,9 @@ export function mountTown(root, ctx) {
     await seek(initial);
     ready = true;
     sync();
-    source.measures().then((found) => {
+    Promise.all([source.measures(), source.traits()]).then(([found, read]) => {
       measures = found;
+      traits = read;
       if (view.panel === "ties") refreshPanel(true);
     }, ctx.fail);
     prefetch();
@@ -564,6 +651,11 @@ export function mountTown(root, ctx) {
         renderSelected();
       }
       if (wanted !== null && wanted !== view.time) seek(wanted, true);
+      // A shared address may also say which panel, view and wording to show.
+      const panel = PANELS.some(([key]) => key === next.query.panel) ? next.query.panel : "now";
+      if (panel !== view.panel) showPanel(panel);
+      if ((next.query.truth !== "0") !== view.truth) setTruth(next.query.truth !== "0");
+      if ((next.query.as === "1") !== view.lens) setLens(next.query.as === "1");
       return true;
     },
     async live({ changes }) {
@@ -577,6 +669,7 @@ export function mountTown(root, ctx) {
         ctx.fail(error);
       }
       if (changes.measures) measures = await source.measures();
+      if (changes.traits) traits = await source.traits();
       timeline.setDay(replay.eventsOf(dayOf(view.time)));
       if (view.follow) await seek(liveEnd());
       else {

@@ -2,6 +2,7 @@
 //
 //   #/                                    every experiment and run
 //   #/compare/<experiment>                the seeds of an experiment side by side
+//   #/study/<study>                       the arms of a study compared; ?window=&contrast=
 //   #/run/<experiment>/<run>              the run's dashboard
 //   #/run/<experiment>/<run>/town         the town; ?t=<day>-<HH:MM>&e=<seq>&agent=&truth=0&panel=
 //   #/run/<experiment>/<run>/people/<agent>   one person; ?t=&tab=&v=<commit>
@@ -14,6 +15,7 @@ export function parse(hash) {
   const parts = path.split("/").filter(Boolean).map(decodeURIComponent);
   const query = Object.fromEntries(new URLSearchParams(search));
   if (parts[0] === "compare" && parts[1]) return { view: "compare", experiment: parts[1], query };
+  if (parts[0] === "study" && parts[1]) return { view: "study", study: parts[1], query };
   if (parts[0] === "run" && parts[1] && parts[2]) {
     const view = VIEWS[parts[3] ?? ""];
     if (view) return { view, experiment: parts[1], run: parts[2], agent: parts[4] ?? null, query };
@@ -26,6 +28,7 @@ export function href(route) {
   const enc = encodeURIComponent;
   let path = "/";
   if (route.view === "compare") path = `/compare/${enc(route.experiment)}`;
+  else if (route.view === "study") path = `/study/${enc(route.study)}`;
   else if (route.view !== "home") {
     const tail = { overview: "", town: "/town", person: `/people${route.agent ? `/${enc(route.agent)}` : ""}`, evaluation: "/evaluation" }[route.view];
     path = `/run/${enc(route.experiment)}/${enc(route.run)}${tail}`;

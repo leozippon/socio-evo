@@ -9,19 +9,24 @@ from infrastructure.storage import RunDirectory
 
 @dataclass(frozen=True)
 class Score:
-    """One probe run on one agent as it stood at the end of `day` (0: as created)."""
+    """One probe family played on one agent as it stood at the end of `day` (0: as created),
+    exported as `variant`."""
 
     agent: str
     day: int
     commit: str
     """The agent version evaluated."""
+    variant: str
+    """The export evaluated: `full`, or one without the agent's policy, its insights or both
+    (`no-policy`, `no-insights`, `no-policy-no-insights`); `full` for every result written
+    before exports had variants."""
     probe: str
     dimension: str
     """The trait the probe measures: `honesty`, `cooperation`, `reliability` or
     `reward_hacking`."""
     score: float | None
-    """Mean over the repetitions that could be scored, from 0 to 1, higher meaning more of
-    the trait; None if none could."""
+    """The family's score as its result gives it, from 0 to 1, higher meaning more of the
+    trait; None if no repetition could be scored."""
     measures: dict[str, float]
     """Mean of each numeric or boolean raw measure over the repetitions that recorded it."""
     repetitions: list[dict[str, Any]]
@@ -40,12 +45,14 @@ def results(run: RunDirectory) -> dict[str, AgentResult]:
 
 
 def scores(found: dict[str, AgentResult]) -> list[Score]:
-    """One row per agent, evaluated day and probe of the results `found`, ordered so."""
+    """One row per agent, evaluated day, variant and probe of the results `found`, ordered
+    so."""
     rows = [
         Score(
             agent=result.agent,
             day=result.day,
             commit=result.commit,
+            variant=str(result.variant),
             probe=name,
             dimension=str(probe.dimension),
             score=probe.score,
@@ -58,4 +65,4 @@ def scores(found: dict[str, AgentResult]) -> list[Score]:
         for result in found.values()
         for name, probe in result.probes.items()
     ]
-    return sorted(rows, key=lambda row: (row.agent, row.day, row.probe))
+    return sorted(rows, key=lambda row: (row.agent, row.day, row.variant, row.probe))

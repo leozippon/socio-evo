@@ -67,14 +67,16 @@ export class TownMap {
     const { width, height } = this.plan;
     this.light = h("div", { class: "map-light" });
     this.glow = s("svg", { class: "map-glow", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
+    this.ties = s("svg", { class: "map-ties", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
     this.actors = s("svg", { class: "map-actors", width, height, viewBox: `0 0 ${width} ${height}`, "aria-hidden": "true" });
     this.ambient = h("div", { class: "map-ambient", "aria-hidden": "true" }, h("div", { class: "cloud one" }), h("div", { class: "cloud two" }));
-    this.worldEl = h("div", { class: "map-world", style: { width: `${width}px`, height: `${height}px` } }, svg, this.ambient, this.light, this.glow, this.actors);
+    this.worldEl = h("div", { class: "map-world", style: { width: `${width}px`, height: `${height}px` } }, svg, this.ambient, this.light, this.glow, this.ties, this.actors);
     this.overlay = h("div", { class: "map-overlay", "aria-hidden": "true" });
+    this.notices = h("div", { class: "map-notices", "aria-hidden": "true" });
     this.curtain = h("div", { class: "map-curtain", hidden: true });
     const zoomButton = (glyph, label, action) => h("button", { type: "button", class: "map-btn", "aria-label": label, title: label, onclick: action }, icon(glyph, 18));
     this.controls = h("div", { class: "map-controls" }, zoomButton("plus", "Zoom in", () => this.zoomBy(1.6)), zoomButton("minus", "Zoom out", () => this.zoomBy(1 / 1.6)), zoomButton("fit", "Show the whole town", () => this.fitView(true)));
-    this.el = h("div", { class: "map", role: "img", "aria-label": "Map of the town" }, this.worldEl, this.overlay, this.controls, this.curtain);
+    this.el = h("div", { class: "map", role: "img", "aria-label": "Map of the town" }, this.worldEl, this.overlay, this.notices, this.controls, this.curtain);
 
     this.view = { s: 1, x: 0, y: 0 };
     this.auto = true; // the view fits the town until the reader pans or zooms
@@ -84,7 +86,7 @@ export class TownMap {
     this.tokens = new Map();
     this.spots = new Map();
     this.placesState = new Map(); // id -> {open, occupied, scene}
-    this.boxes = { labels: new Map(), bubbles: [], tag: null };
+    this.boxes = { labels: new Map(), bubbles: [], deeds: [], tag: null };
     this.animation = null;
     this.drawLights();
     this.drawActors();
@@ -350,8 +352,10 @@ export class TownMap {
 
   /**
    * Show a moment. `frame`: {state, minute, selected, thinking: Set of agents deciding now,
-   * speech: Map(place -> [{agent, text, to}]), scenes: Map(place -> {kind, present, label}),
-   * effects: [{agent, text, tone}], key}. `walk` lets residents who moved walk there.
+   * speech: Map(place -> [{agent, text, to, private, heard}]), scenes: Map(place -> {kind,
+   * present, label}), deeds: Map(agent -> {icon, text, tone, client}), pairs: [[a, b]] who
+   * work on a job together, askings: [[asker, partner]] standing, notices: [{icon, text,
+   * tone}], effects: [{agent, text, tone}], key}. `walk` lets residents who moved walk there.
    */
   update(frame, walk) {
     const previous = this.frame;
@@ -388,6 +392,8 @@ export class TownMap {
     }
     if (frame.key !== previous?.key || labelsChanged || frame.selected !== previous?.selected) {
       this.bubbles(frame);
+      this.drawNotices(frame);
+      this.drawTies();
       this.placeOverlay();
     }
     for (const effect of frame.effects ?? []) this.effect(effect);
@@ -488,6 +494,39 @@ export class TownMap {
       this.pose(token, now);
     }
     this.sortActors();
+    this.drawTies();
+  }
+
+  /**
+   * Who works on a job with whom: a low rope between the two when they stand together, and,
+   * for the selected resident, a faint line to a partner elsewhere. An asking that stands is
+   * a dotted line from the one who asked to the one asked, where both are in one place or one
+   * of them is selected.
+   */
+  drawTies() {
+    if (!this.frame) return;
+    const { pairs = [], askings = [], selected } = this.frame;
+    const k = this.k ?? 1;
+    const at = (name) => {
+      const token = this.tokens.get(name);
+      return token && token.x !== null && this.spots.has(name) && !token.asleep ? token : null;
+    };
+    const parts = [];
+    const link = (a, b, cls, together) => {
+      const p = at(a);
+      const q = at(b);
+      if (!p || !q) return;
+      const lit = selected === a || selected === b;
+      if (!together(p, q) && !lit) return;
+      const near = p.place === q.place;
+      const sag = Math.max(p.y, q.y) + 9 * k;
+      const d = cls === "pair" && near ? `M${f(p.x)},${f(p.y - 3 * k)}Q${f((p.x + q.x) / 2)},${f(sag)} ${f(q.x)},${f(q.y - 3 * k)}` : `M${f(p.x)},${f(p.y - 14 * k)}Q${f((p.x + q.x) / 2)},${f(Math.min(p.y, q.y) - (near ? 34 : 60) * k)} ${f(q.x)},${f(q.y - 14 * k)}`;
+      parts.push(s("path", { class: `tie-${cls}${near ? "" : " apart"}${lit ? " lit" : ""}`, d, "vector-effect": "non-scaling-stroke" }));
+      if (cls === "ask") parts.push(s("circle", { class: `tie-ask-end${lit ? " lit" : ""}`, cx: f(q.x), cy: f(q.y - 14 * k), r: f(2.6 * k) }));
+    };
+    for (const [a, b] of pairs) link(a, b, "pair", (p, q) => p.place === q.place);
+    for (const [a, b] of askings) link(a, b, "ask", (p, q) => p.place === q.place);
+    this.ties.replaceChildren(...parts);
   }
 
   /** Place a resident's drawing: position, size, facing and, while walking, their stride. */
@@ -542,16 +581,19 @@ export class TownMap {
         walking = true;
         this.pose(token, now);
       }
-    if (walking) this.sortActors();
-    else if (this.wasWalking) this.placeOverlay();
+    if (walking) {
+      this.sortActors();
+      this.drawTies();
+    } else if (this.wasWalking) this.placeOverlay();
     this.wasWalking = walking;
   }
 
   // Floating boxes ------------------------------------------------------------------------------
 
   bubbles(frame) {
-    for (const old of this.boxes.bubbles) old.el.remove();
+    for (const old of [...this.boxes.bubbles, ...this.boxes.deeds]) old.el.remove();
     this.boxes.bubbles = [];
+    this.boxes.deeds = [];
     for (const [id, lines] of frame.speech) {
       if (!lines.length) continue;
       const el = h(
@@ -561,14 +603,19 @@ export class TownMap {
           h(
             "div",
             { class: "bubble-line" },
-            h("div", { class: "bubble-who" }, this.cast.badge(line.agent, 14), h("b", {}, line.agent), line.to ? h("span", { class: "bubble-to" }, `to ${line.to}`) : null),
-            h("p", { class: "bubble-text" }, line.text),
+            h("div", { class: "bubble-who" }, this.cast.badge(line.agent, 14), h("b", {}, line.agent), line.to ? h("span", { class: "bubble-to" }, line.private ? [icon("lock", 11), `privately to ${line.to}`] : `to ${line.to}`) : null),
+            line.heard === false ? h("p", { class: "bubble-text unheard" }, "says something nobody else hears") : h("p", { class: "bubble-text" }, line.text),
           ),
         ),
         h("span", { class: "tail" }),
       );
       this.overlay.append(el);
       this.boxes.bubbles.push({ el, place: id, speakers: [...new Set(lines.slice(-2).map((line) => line.agent))], size: null });
+    }
+    for (const [agent, deed] of frame.deeds ?? []) {
+      const el = h("div", { class: `deed${deed.tone ? ` tone-${deed.tone}` : ""}` }, icon(deed.icon, 12), h("span", {}, deed.text), deed.client ? h("span", { class: "deed-client", title: deed.client.title }, icon(deed.client.icon, 12)) : null);
+      this.overlay.append(el);
+      this.boxes.deeds.push({ el, agent, size: null });
     }
     const selected = frame.selected;
     this.tag.hidden = !selected;
@@ -600,7 +647,7 @@ export class TownMap {
         const text = Math.max(label.name.offsetWidth, label.status.offsetWidth);
         label.size = { w, h: label.el.offsetHeight, compact: w - text + label.name.offsetWidth, nameH: label.name.offsetHeight + (label.el.offsetHeight - label.name.offsetHeight - (label.text ? label.status.offsetHeight : 0)) };
       }
-    for (const bubble of this.boxes.bubbles) if (!bubble.size) bubble.size = { w: bubble.el.offsetWidth, h: bubble.el.offsetHeight };
+    for (const bubble of [...this.boxes.bubbles, ...this.boxes.deeds]) if (!bubble.size) bubble.size = { w: bubble.el.offsetWidth, h: bubble.el.offsetHeight };
     if (!this.tag.hidden && !this.tagSize) this.tagSize = { w: this.tag.offsetWidth, h: this.tag.offsetHeight };
 
     // Residents' heads are hard obstacles for names; speech may only lean on them a little.
@@ -684,9 +731,10 @@ export class TownMap {
 
     // Names of places, the busiest first, beside their building and clear of speech, other
     // names and people, and of buildings where they can be; a name that finds no room drops its
-    // status line, and then, until there is room again, itself.
+    // status line, and then, until there is room again, itself. The names of places where
+    // something is going on come before what residents just did, the rest after it.
     labels.sort((a, b) => b[1].priority - a[1].priority);
-    for (const [id, label] of labels) {
+    const placeLabel = ([id, label]) => {
       const p = this.plan.byId.get(id);
       const top = screen(p.x, p.top);
       const left = screen(p.rect.x0, (p.top + p.base) / 2);
@@ -713,10 +761,41 @@ export class TownMap {
         }
       }
       label.el.style.visibility = chosen ? "" : "hidden";
-      if (!chosen) continue;
+      if (!chosen) return;
       placed.push({ box: chosen });
       this.position(label.el, chosen);
+    };
+    for (const entry of labels) if (entry[1].priority >= 3) placeLabel(entry);
+
+    // What each resident just did, in a pill under their feet or over their head, if it finds
+    // room clear of speech, names, other pills and other people; otherwise left to the panels.
+    for (const deed of this.boxes.deeds) {
+      const spot = this.spots.get(deed.agent);
+      const token = this.tokens.get(deed.agent);
+      let chosen = null;
+      if (spot && token && !spot.asleep) {
+        const at = token.walk ? token : spot;
+        const foot = screen(at.x, at.y);
+        const top = screen(at.x, at.y - FIGURE * k);
+        const mid = (top.y + foot.y) / 2;
+        const { w, h: hgt } = deed.size;
+        const options = [box(foot.x - w / 2, foot.y + 5, w, hgt), box(top.x - w / 2, top.y - hgt - 5, w, hgt), box(foot.x + 12, mid - hgt / 2, w, hgt), box(foot.x - 12 - w, mid - hgt / 2, w, hgt)];
+        chosen = options.find((r) => inside(r) && !placed.some((o) => area(grow(r, GAP / 2), o.box)) && !heads.some((head) => head.name !== deed.agent && area(r, head.box) > 4)) ?? null;
+      }
+      deed.el.style.visibility = chosen ? "" : "hidden";
+      if (!chosen) continue;
+      placed.push({ box: chosen });
+      this.position(deed.el, chosen);
     }
+
+    for (const entry of labels) if (entry[1].priority < 3) placeLabel(entry);
+  }
+
+  /** The town's notices of the moment, at the top of the map: faults, lapses, announcements. */
+  drawNotices(frame) {
+    const notices = frame.notices ?? [];
+    this.notices.hidden = !notices.length;
+    this.notices.replaceChildren(...notices.map((notice) => h("div", { class: `notice${notice.tone ? ` tone-${notice.tone}` : ""}` }, icon(notice.icon, 14), h("span", {}, this.cast.mention(notice.text)))));
   }
 
   position(el, r) {

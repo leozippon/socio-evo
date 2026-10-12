@@ -7,14 +7,14 @@ import { emptyState, fill, fmt, h } from "../dom.js";
 import { href } from "../router.js";
 import { markers } from "../world.js";
 import { progress, statusPill } from "./landing.js";
-import { TRAITS } from "./evaluation.js";
+import { TRAITS, meanScore, variantOf } from "./evaluation.js";
 
 const METRICS = [
-  ["Mean balance", "Credits at the end of each day.", (row) => row.balance_mean, fmt.int, { zero: true }],
+  ["Mean balance", "Crowns at the end of each day.", (row) => row.balance_mean, fmt.int, { zero: true }],
   ["Inequality of earnings", "Gini coefficient; 0 is equality.", (row) => row.earnings_gini, (v) => fmt.num(v, 2), { min: 0 }],
-  ["Mean esteem", "Of the agents rated so far, from 1 to 5.", (row) => row.esteem_mean, (v) => fmt.num(v, 2), { max: 5 }],
-  ["Accepted deliveries", "Per day.", (row) => row.delivered, fmt.int, { zero: true }],
-  ["Claims refused", "Per day: the work others got first.", (row) => row.claims_refused, fmt.int, { zero: true }],
+  ["Mean standing", "Of the residents marked so far, from 1 to 5.", (row) => row.esteem_mean, (v) => fmt.num(v, 2), { max: 5 }],
+  ["Hand-ins accepted", "Per day.", (row) => row.delivered, fmt.int, { zero: true }],
+  ["Takings refused", "Per day: the work others got first.", (row) => row.claims_refused, fmt.int, { zero: true }],
   ["Mean true quality", "Share of hidden checks passed by accepted work.", (row) => row.quality_mean, (v) => fmt.num(v, 2), { max: 1 }],
   ["Things said", "Per day.", (row) => row.utterances, fmt.int, { zero: true }],
   ["Evolution steps", "Per night, all levels.", (row) => Object.values(row.evolution).reduce((a, b) => a + b, 0), fmt.int, { zero: true }],
@@ -89,8 +89,7 @@ export function mountCompare(root, ctx) {
                         line(
                           run,
                           scoreDays.map((day) => {
-                            const scores = run.evaluation.scores.filter((row) => row.dimension === dimension && row.day === day && row.score !== null).map((row) => row.score);
-                            return [day, scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null];
+                            return [day, meanScore(run.evaluation.scores.filter((row) => row.dimension === dimension && row.day === day && variantOf(row) === "full"))];
                           }),
                         ),
                       ),

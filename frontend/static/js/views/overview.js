@@ -1,6 +1,7 @@
 // A run's dashboard, from the published measures. What matters first leads: the run itself, a
 // few key figures and the conditions it ran under. Everything else is one tap away, in
-// sections: money, the task market, social life, evolution, the held-out traits, model usage.
+// sections: money, work, social life, character in the town, evolution, the held-out traits,
+// model usage.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
 import { emptyState, fill, fmt, h, s } from "../dom.js";
@@ -8,6 +9,7 @@ import { icon } from "../icons.js";
 import { href, sibling } from "../router.js";
 import { conditionLabel, conditionValue, interventions, markers } from "../world.js";
 import { progress } from "./landing.js";
+import { characterSection, emphasise } from "./character.js";
 import { traitFigures } from "./evaluation.js";
 
 export const PURPOSES = [
@@ -23,12 +25,13 @@ const SECTIONS = [
   ["money", "Money"],
   ["work", "Work"],
   ["social", "Social life"],
+  ["character", "Character"],
   ["evolution", "Evolution"],
-  ["traits", "Traits"],
+  ["traits", "Held-out traits"],
   ["usage", "Model usage"],
 ];
-/** Sections whose charts draw one line per agent, so the emphasis legend applies. */
-const BY_AGENT = new Set(["money", "social", "traits"]);
+/** Sections whose charts draw one mark per agent, so the emphasis legend applies. */
+const BY_AGENT = new Set(["money", "social", "character", "traits"]);
 
 export const stat = (label, value, sub = null, cls = "") => h("div", { class: `stat ${cls}` }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), sub ? h("div", { class: "stat-sub" }, sub) : null);
 const sum = (rows, field) => rows.reduce((total, row) => total + row[field], 0);
@@ -40,9 +43,10 @@ export function mountOverview(root, ctx) {
   let route = ctx.route;
   const page = h("div", { class: "page overview" });
   root.append(page);
-  const view = { highlight: null, pinned: null, multiples: false, matrix: "rating" };
+  const view = { highlight: null, pinned: null, multiples: false, matrix: "rating", window: null };
   let measures = null;
   let evaluation = null;
+  let traits = null;
   let agentFigures = [];
   let charts = [];
 
@@ -52,6 +56,7 @@ export function mountOverview(root, ctx) {
     if (pin) view.pinned = name;
     else view.highlight = name;
     for (const entry of agentFigures) entry.refresh();
+    emphasise(page, emphasis());
     for (const legend of page.querySelectorAll(".agent-legend .legend-item")) {
       const on = legend.dataset.agent === view.pinned;
       legend.classList.toggle("on", on);
@@ -172,9 +177,9 @@ export function mountOverview(root, ctx) {
       { class: "stats" },
       stat("Mean balance", fmt.credits(Math.round(last.balance_mean)), `${fmt.credits(last.balance_min)} to ${fmt.credits(last.balance_max)}, day ${last.day}`),
       stat("Earnings Gini", fmt.num(last.earnings_gini, 2), "0 is equal earnings"),
-      stat("Mean esteem", fmt.num(esteem, 2), "of 5, as last published"),
-      stat("Accepted deliveries", fmt.int(delivered), delivered ? `true quality ${fmt.num(sum(rows, "quality") / delivered, 2)}` : null),
-      stat("Defects found", fmt.int(sum(rows, "defects_discovered")), `of ${fmt.int(sum(rows, "defective"))} latent · ${fmt.credits(sum(rows, "clawed_back"))} back`),
+      stat("Mean standing", fmt.num(esteem, 2), "of 5, as last posted"),
+      stat("Hand-ins accepted", fmt.int(delivered), delivered ? ["true quality ", fmt.num(sum(rows, "quality") / delivered, 2)] : null),
+      stat("Faults come to light", fmt.int(sum(rows, "defects_discovered")), `of ${fmt.int(sum(rows, "defective"))} latent · ${fmt.credits(sum(rows, "clawed_back"))} taken back`),
     );
   }
 
@@ -221,8 +226,8 @@ export function mountOverview(root, ctx) {
 
   function matrix() {
     const options = {
-      rating: ["Mean rating", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]],
-      ratings: ["Ratings", (e) => e.ratings || null, fmt.int, null],
+      rating: ["Mean mark", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]],
+      ratings: ["Marks", (e) => e.ratings || null, fmt.int, null],
       minutes: ["Hours together", (e) => (e.minutes ? e.minutes / 60 : null), (v) => fmt.num(v, 1), null],
       addressed: ["Addressed", (e) => e.addressed || null, fmt.int, null],
     };
@@ -253,7 +258,7 @@ export function mountOverview(root, ctx) {
               if (from === to) return h("td", { class: "self" }, "");
               const edge = totals.get(`${from}>${to}`);
               const v = edge ? value(edge) : null;
-              const detail = edge ? `${from} → ${to}: ${fmt.num(edge.minutes / 60, 1)} h together, ${edge.addressed} addressed by name, ${edge.ratings} ratings${edge.ratings ? ` averaging ${fmt.num(edge.ratings_sum / edge.ratings, 2)}` : ""}` : `${from} and ${to} never shared a scene`;
+              const detail = edge ? `${from} → ${to}: ${fmt.num(edge.minutes / 60, 1)} h together, ${edge.addressed} addressed by name, ${edge.ratings} marks${edge.ratings ? ` averaging ${fmt.num(edge.ratings_sum / edge.ratings, 2)}` : ""}` : `${from} and ${to} never shared a scene`;
               return h("td", { class: v === null ? "none" : `heat-${level(v)}`, title: detail }, v === null ? "" : format(v));
             }),
           ),
@@ -281,7 +286,7 @@ export function mountOverview(root, ctx) {
     return h(
       "figure",
       { class: "figure wide" },
-      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, "Rows act on columns. Ratings are private: no agent ever sees who rated whom. Darker cells hold more.")),
+      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, "Rows act on columns. Marks are private: no resident ever sees who marked whom. Darker cells hold more.")),
       h("div", { class: "table-wrap" }, table),
     );
   }
@@ -289,16 +294,24 @@ export function mountOverview(root, ctx) {
   const SECTION_CONTENT = {
     money() {
       const rows = measures.society;
+      const starts = new Set(world.agents.map((agent) => agent.initial_balance ?? world.initial_balance));
+      const owe = world.agents.filter((agent) => agent.obligation);
       return [
-        h("p", { class: "note section-note" }, "Everyone starts equal and pays the same living cost, so the spread of balances is the spread of what they earned and lost."),
+        h(
+          "p",
+          { class: "note section-note" },
+          starts.size === 1 && !owe.length
+            ? "Everyone starts with the same crowns and pays the same living cost, so the spread of balances is the spread of what they earned and lost."
+            : `Residents start from different circumstances: ${world.agents.map((agent) => `${agent.name} ${agent.initial_balance ?? world.initial_balance}`).join(", ")} crowns${owe.length ? `; ${owe.map((agent) => `${agent.name} owes ${agent.obligation}`).join(", ")} a day on top of the living cost` : ""}.`,
+        ),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Balance", note: "Credits at the end of each day; balances may go negative.", field: "balance", format: fmt.int, zero: true }),
+          agentFigure({ title: "Crowns", note: "Each resident's balance at the end of each day; balances may go negative.", field: "balance", format: fmt.int, zero: true }),
           dayFigure({ title: "Inequality of earnings", note: "Gini coefficient of cumulative payments minus clawbacks; 0 is equality.", lines: [{ key: "gini", label: "Gini", color: "var(--ink-2)", points: series(rows, "earnings_gini") }], format: (v) => fmt.num(v, 2), min: 0 }),
           dayFigure({
-            title: "Credits paid and charged",
-            note: "Paid for accepted work, against living costs charged, per day.",
+            title: "Crowns paid and charged",
+            note: "Paid for jobs done, against living costs and obligations charged, per day.",
             stacks: [{ key: "income", label: "paid for work", color: "var(--o2)", values: valuesOf(rows, "income") }],
             lines: [{ key: "living", label: "living costs", color: "var(--ink)", points: series(rows, "living_cost") }],
             legend: swatchLegend([["paid for work", "var(--o2)"], ["living costs", "var(--ink)", "line"]]),
@@ -309,37 +322,37 @@ export function mountOverview(root, ctx) {
     work() {
       const rows = measures.society;
       return [
-        h("p", { class: "note section-note" }, `Work is scarce by design: more people want tasks than the board offers, and a draw decides contested claims. ${fmt.int(sum(rows, "claims_refused"))} of ${fmt.int(sum(rows, "claim_attempts"))} claims were refused; ${fmt.plural(sum(rows, "contested"), "draw")} decided.`),
+        h("p", { class: "note section-note" }, `Work is scarce by design: more people want jobs than the board offers, and when several reach for one notice at once the clerk draws lots. ${fmt.int(sum(rows, "claims_refused"))} of ${fmt.int(sum(rows, "claim_attempts"))} attempts to take a job were refused; the clerk drew lots ${fmt.plural(sum(rows, "contested"), "time")}.`),
         h(
           "div",
           { class: "figures" },
           dayFigure({
             title: "Demand for work",
-            note: "Claims taken and refused, against tasks posted.",
+            note: "Jobs taken (once per worker) and attempts refused, against notices posted.",
             stacks: [
-              { key: "claimed", label: "claims taken", color: "var(--o3)", values: valuesOf(rows, "claimed") },
-              { key: "refused", label: "claims refused", color: "var(--o1)", values: valuesOf(rows, "claims_refused") },
+              { key: "claimed", label: "taken", color: "var(--o3)", values: valuesOf(rows, "claimed") },
+              { key: "refused", label: "refused", color: "var(--o1)", values: valuesOf(rows, "claims_refused") },
             ],
-            lines: [{ key: "posted", label: "tasks posted", color: "var(--ink)", points: series(rows, "tasks_posted") }],
-            legend: swatchLegend([["claims taken", "var(--o3)"], ["refused", "var(--o1)"], ["tasks posted", "var(--ink)", "line"]]),
+            lines: [{ key: "posted", label: "notices posted", color: "var(--ink)", points: series(rows, "tasks_posted") }],
+            legend: swatchLegend([["taken", "var(--o3)"], ["refused", "var(--o1)"], ["notices posted", "var(--ink)", "line"]]),
           }),
           dayFigure({
             title: "What became of the work",
-            note: "Deliveries accepted, attempts the checks refused, and claims that lapsed.",
+            note: "Hand-ins accepted, hand-ins the client handed back, and jobs that lapsed (once per worker).",
             stacks: [
               { key: "delivered", label: "accepted", color: "var(--good)", values: valuesOf(rows, "delivered") },
-              { key: "failed", label: "refused by checks", color: "var(--serious)", values: valuesOf(rows, "failed") },
+              { key: "failed", label: "handed back", color: "var(--serious)", values: valuesOf(rows, "failed") },
               { key: "expired", label: "lapsed", color: "var(--critical)", values: valuesOf(rows, "expired") },
             ],
-            legend: swatchLegend([["accepted", "var(--good)"], ["refused by checks", "var(--serious)"], ["lapsed", "var(--critical)"]]),
+            legend: swatchLegend([["accepted", "var(--good)"], ["handed back", "var(--serious)"], ["lapsed", "var(--critical)"]]),
           }),
-          dayFigure({ title: "True quality of accepted work", note: "Mean share of hidden checks passed; nobody in town sees it.", lines: [{ key: "quality", label: "mean true quality", color: "var(--ink-2)", points: series(rows, "quality_mean") }], format: (v) => fmt.num(v, 2), min: 0, max: 1 }),
+          dayFigure({ title: "True quality of accepted work", note: "Mean share of the hidden checks passed; nobody in town sees it.", lines: [{ key: "quality", label: "mean true quality", color: "var(--ink-2)", points: series(rows, "quality_mean") }], format: (v) => fmt.num(v, 2), min: 0, max: 1 }),
           dayFigure({
-            title: "Latent defects",
-            note: "Accepted deliveries that carry a defect, and defects that came to light.",
-            stacks: [{ key: "defective", label: "defective deliveries", color: "var(--o2)", values: valuesOf(rows, "defective") }],
-            lines: [{ key: "found", label: "defects found", color: "var(--critical)", points: series(rows, "defects_discovered") }],
-            legend: swatchLegend([["defective deliveries", "var(--o2)"], ["found", "var(--critical)", "line"]]),
+            title: "Latent faults",
+            note: "Hand-ins accepted as finished with true quality below 1, and faults that came to light.",
+            stacks: [{ key: "defective", label: "accepted with a fault", color: "var(--o2)", values: valuesOf(rows, "defective") }],
+            lines: [{ key: "found", label: "came to light", color: "var(--critical)", points: series(rows, "defects_discovered") }],
+            legend: swatchLegend([["accepted with a fault", "var(--o2)"], ["came to light", "var(--critical)", "line"]]),
           }),
         ),
       ];
@@ -347,11 +360,11 @@ export function mountOverview(root, ctx) {
     social() {
       const rows = measures.society;
       return [
-        h("p", { class: "note section-note" }, `Esteem is the mean of the ratings an agent received, recent ones counting more; it is published to everyone each night. ${fmt.plural(sum(rows, "utterances"), "thing")} said in ${fmt.plural(sum(rows, "conversations"), "conversation")} and ${fmt.plural(sum(rows, "work_sessions"), "work session")}.`),
+        h("p", { class: "note section-note" }, `Residents mark one another from 1 to 5 in the clerk's ledger each evening; a resident's standing, posted beside the board, is the mean of the marks it received, recent ones counting more (esteem in the code). ${fmt.plural(sum(rows, "utterances"), "thing")} said in ${fmt.plural(sum(rows, "conversations"), "conversation")} and ${fmt.plural(sum(rows, "work_sessions"), "work session")}.`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Esteem", note: "As published at the end of each day, from 1 to 5.", field: "esteem", format: (v) => fmt.num(v, 2), zero: false, max: 5 }),
+          agentFigure({ title: "Standing", note: "As posted at the end of each day, from 1 to 5.", field: "esteem", format: (v) => fmt.num(v, 2), zero: false, max: 5 }),
           dayFigure({
             title: "Talk and gatherings",
             note: "The scenes held each day, and the things said in them.",
@@ -363,8 +376,8 @@ export function mountOverview(root, ctx) {
             legend: swatchLegend([["work sessions", "var(--o1)"], ["conversations", "var(--o3)"], ["things said", "var(--ink)", "line"]]),
           }),
           dayFigure({
-            title: "Peer ratings",
-            note: "Mean score of the ratings given each evening, from 1 to 5.",
+            title: "Marks in the ledger",
+            note: "Mean of the marks given each evening, from 1 to 5.",
             lines: [{ key: "mean", label: "mean rating", color: "var(--ink-2)", points: rows.map((row) => [row.day, row.ratings ? row.ratings_sum / row.ratings : null]) }],
             format: (v) => fmt.num(v, 2),
             zero: false,
@@ -374,6 +387,19 @@ export function mountOverview(root, ctx) {
           matrix(),
         ),
       ];
+    },
+    character() {
+      return characterSection({
+        traits,
+        measures,
+        cast,
+        state: view,
+        onWindow: (name) => {
+          view.window = name;
+          renderSection();
+        },
+        into: charts,
+      });
     },
     evolution() {
       const rows = measures.society;
@@ -440,6 +466,7 @@ export function mountOverview(root, ctx) {
     legendHolder.hidden = !BY_AGENT.has(key);
     fill(legendHolder, h("span", { class: "muted legend-lead" }, "Emphasise"), agentLegend(cast, cast.names, { selected: view.pinned, onPick: pick }));
     fill(sectionBody, SECTION_CONTENT[key]());
+    emphasise(sectionBody, emphasis());
     for (const tab of page.querySelectorAll(".run-sections [data-section]")) tab.setAttribute("aria-selected", String(tab.dataset.section === key));
   }
 
@@ -476,7 +503,7 @@ export function mountOverview(root, ctx) {
   async function load() {
     page.replaceChildren(h("div", { class: "loading" }, "Loading the run's measures…"));
     try {
-      [measures, evaluation] = await Promise.all([source.measures(), source.evaluation()]);
+      [measures, evaluation, traits] = await Promise.all([source.measures(), source.evaluation(), source.traits()]);
       render();
     } catch (error) {
       page.replaceChildren(h("div", { class: "card" }, emptyState("The run's measures could not be loaded.", error.message)));
@@ -494,8 +521,8 @@ export function mountOverview(root, ctx) {
     },
     async live({ changes }) {
       if (!changes) return;
-      if (changes.measures || changes.evaluation || changes.status) {
-        [measures, evaluation] = await Promise.all([source.measures(), source.evaluation()]);
+      if (changes.measures || changes.evaluation || changes.status || changes.traits) {
+        [measures, evaluation, traits] = await Promise.all([source.measures(), source.evaluation(), source.traits()]);
         const y = window.scrollY;
         render();
         window.scrollTo(0, y);

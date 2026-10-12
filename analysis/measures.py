@@ -34,13 +34,15 @@ class AgentDay:
     income: int = 0
     """Credits paid for the agent's accepted deliveries."""
     living_cost: int = 0
-    """Credits charged as living cost."""
+    """Credits charged as living cost, together with the agent's own daily obligation."""
     clawed_back: int = 0
     """Credits taken back for defects discovered in the agent's earlier work."""
     claimed: int = 0
     """Tasks the agent claimed successfully."""
     delivered: int = 0
-    """Deliveries accepted: they passed the acceptance checks and were paid."""
+    """Deliveries accepted by the client: a part handed in as finished whose acceptance checks
+    passed (checking client) or that was taken on the declaration (trusting client), or a part
+    handed in as unfinished. A job is paid once all its parts are accepted."""
     failed: int = 0
     """Delivery attempts not accepted; the claim stays open until its deadline."""
     expired: int = 0
@@ -101,8 +103,8 @@ class SocietyDay:
     balance_min: int
     balance_max: int
     balance_sd: float
-    """Population standard deviation of the balances. Every agent starts with the same
-    balance and pays the same living cost, so this is also the spread of what they earned."""
+    """Population standard deviation of the balances. Where every agent starts with the same
+    balance and pays the same living cost, this is also the spread of what they earned."""
     earnings_gini: float | None
     """Gini coefficient of cumulative net earnings (payments minus clawbacks since day 1):
     the mean absolute difference over all ordered pairs of agents divided by twice the mean;
@@ -161,9 +163,12 @@ class Edge:
     source: str
     target: str
     minutes: int = 0
-    """Simulated minutes both spent in the same work session or conversation: the turns in
-    which both were present times the turn length. Agents present at a scene's start stay
-    until it ends or they leave it. Symmetric."""
+    """Simulated minutes both spent in the same work session or conversation, from its start
+    to the end of the last turn at which both were present. A scene's turns are the moments
+    at which its decisions were taken; each lasts until the scene's next turn and the last as
+    long as the one before it. A scene of a single turn, whose length the log does not show,
+    lasts the configured turn length. Agents present at a scene's start stay until it ends or
+    they leave it, which they do at the end of the turn in which they left. Symmetric."""
     scenes: int = 0
     """Work sessions and conversations both took part in. Symmetric."""
     addressed: int = 0
@@ -188,13 +193,25 @@ class Measures:
 
 @dataclass
 class _Scene:
-    kind: str
+    """A meeting as the log tells it: its participants at the start, the times of its turns
+    (the first at its start) and when anyone left."""
+
     day: int
-    start: int
     participants: list[str]
-    last: int
-    turns: int | None = None
+    turns: list[int]
     left: dict[str, int] = field(default_factory=dict)
+
+    def ends(self, single: int) -> dict[str, int]:
+        """When each participant's time in the scene ended: at the end of the turn in which
+        it left, or of the scene's last turn. A turn ends at the next; the last lasts as long
+        as the one before it, or `single` minutes if it is the only one."""
+        turns = self.turns
+        last = turns[-1] + (turns[-1] - turns[-2] if len(turns) > 1 else single)
+        after = dict(zip(turns, [*turns[1:], last], strict=True))
+        return {
+            agent: after[self.left[agent]] if agent in self.left else last
+            for agent in self.participants
+        }
 
 
 def measure(run: RunData) -> Measures:
@@ -244,8 +261,6 @@ def measure(run: RunData) -> Measures:
         for event in by_day[day]:
             _locate(slots, event.time, today, location)
             payload, actor = _current(event), event.actor
-            if event.scene in scenes:
-                scenes[event.scene].last = event.time
             match event.kind:
                 case EventKind.MOVE:
                     location[actor] = payload["destination"]
@@ -317,6 +332,8 @@ def measure(run: RunData) -> Measures:
                     conditions = dict(payload["conditions"])
                 case EventKind.DECISION:
                     today[actor].decisions[payload["action"]["kind"]] += 1
+                    if (scene := scenes.get(event.scene)) and scene.turns[-1] != event.time:
+                        scene.turns.append(event.time)
                 case EventKind.DRAW:
                     town["contested"] += 1
                 case EventKind.EVOLUTION:
@@ -325,17 +342,13 @@ def measure(run: RunData) -> Measures:
                     evolution[step] = evolution.get(step, 0) + 1
                 case EventKind.SCENE_STARTED if payload["kind"] in MEETINGS:
                     participants = list(payload["participants"])
-                    scenes[event.scene] = _Scene(
-                        payload["kind"], day, event.time, participants, event.time
-                    )
+                    scenes[event.scene] = _Scene(day, participants, [event.time])
                     town[f"{payload['kind']}_scenes"] += 1
                     for agent in participants:
                         if payload["kind"] == "work":
                             today[agent].work_sessions += 1
                         else:
                             today[agent].conversations += 1
-                case EventKind.SCENE_ENDED if event.scene in scenes:
-                    scenes[event.scene].turns = payload["turns"]
         _locate(
             slots, end + 1 if day == run.last_day else time_at(day + 1, "00:00"), today, location
         )
@@ -345,13 +358,9 @@ def measure(run: RunData) -> Measures:
         society.append(_society(day, list(today.values()), town, conditions, open_tasks, earnings))
 
     for scene in scenes.values():
-        turns = scene.turns or (scene.last - scene.start) // turn + 1
-        present = {
-            agent: (scene.left[agent] - scene.start) // turn + 1 if agent in scene.left else turns
-            for agent in scene.participants
-        }
+        ends = scene.ends(turn)
         for first, second in combinations(scene.participants, 2):
-            together = min(present[first], present[second]) * turn
+            together = min(ends[first], ends[second]) - scene.turns[0]
             for source, target in ((first, second), (second, first)):
                 tie = edge(scene.day, source, target)
                 tie.minutes += together

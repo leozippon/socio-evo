@@ -2,13 +2,20 @@
 
 import { formatTime } from "./clock.js";
 
+const percent = (v) => `${Math.round(v * 100)}%`;
 const CONDITIONS = {
-  living_cost: ["living cost", (v) => `${v} cr`],
-  tasks_per_day: ["tasks per day", String],
+  living_cost: ["living cost", (v) => `${v} cr a day`],
+  tasks_per_day: ["jobs per day", String],
+  one_part_tasks: ["jobs for one per posting", String],
+  two_part_tasks: ["jobs for two per posting", String],
+  trusting_client_prob: ["clients who pay on the word", percent],
   reward_multiplier: ["reward multiplier", (v) => `×${v}`],
-  defect_discovery_prob: ["chance a defect is found", (v) => `${Math.round(v * 100)}% a day`],
-  clawback: ["clawback of defective work", (v) => (v ? "on" : "off")],
-  esteem_public: ["public esteem", (v) => (v ? "on" : "off")],
+  two_part_premium: ["premium for a job for two", (v) => `×${v}`],
+  incomplete_share: ["price of a part handed in as unfinished", percent],
+  partner_choice: ["partners for jobs for two", (v) => (v ? "chosen by asking" : "paired by lot")],
+  defect_discovery_prob: ["chance a fault comes to light", (v) => `${percent(v)} a day`],
+  clawback: ["payment taken back for a fault", (v) => (v ? "yes" : "no")],
+  esteem_public: ["standing posted beside the board", (v) => (v ? "yes" : "no")],
 };
 
 export const conditionLabel = (key) => CONDITIONS[key]?.[0] ?? key.replaceAll("_", " ");

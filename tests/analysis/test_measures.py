@@ -78,24 +78,33 @@ def test_measures_agree_with_the_log_and_the_final_checkpoint(town):
     assert rows["Ben", 1].slots == {"morning": "office", "afternoon": "house", "evening": "cafe"}
 
     # The graph, edge by edge: ratings, speech, and minutes in shared scenes enumerated turn
-    # by turn.
+    # by turn, a turn lasting until the scene's next and the last as long as the one before.
+    # Work sessions keep the clock: three rounds over the office's four hours.
     expected = defaultdict(Counter)
-    turn = 5
     scenes = {e["scene"]: e for e in log if e["kind"] == "scene_started"}
     ended = {e["scene"]: e for e in log if e["kind"] == "scene_ended"}
     left = {(e["scene"], e["actor"]): e["time"] for e in log if e["kind"] == "left"}
+    turns = defaultdict(set)
+    for e in log:
+        if e["kind"] == "decision":
+            turns[e["scene"]].add(e["time"])
     assert left
+    paces = defaultdict(set)
     for scene, started in scenes.items():
-        if started["payload"]["kind"] not in ("work", "conversation"):
+        kind = started["payload"]["kind"]
+        if kind not in ("work", "conversation"):
             continue
         day, people = day_of(started["time"]), started["payload"]["participants"]
-        for k in range(ended[scene]["payload"]["turns"]):
-            at = started["time"] + k * turn
+        times = sorted(turns[scene])
+        assert times[0] == started["time"] and len(times) == ended[scene]["payload"]["turns"]
+        lengths = [later - at for at, later in zip(times, times[1:], strict=False)]
+        paces[kind] |= set(lengths)
+        for at, length in zip(times, [*lengths, lengths[-1] if lengths else 5], strict=True):
             here = [p for p in people if left.get((scene, p), at) >= at]
             for source in here:
                 for target in here:
                     if source != target:
-                        expected[day, source, target]["minutes"] += turn
+                        expected[day, source, target]["minutes"] += length
         for source in people:
             for target in people:
                 if source != target:
@@ -110,6 +119,7 @@ def test_measures_agree_with_the_log_and_the_final_checkpoint(town):
                 expected[day_of(e["time"]), e["actor"], listener]["heard"] += 1
             if e["payload"]["to"]:
                 expected[day_of(e["time"]), e["actor"], e["payload"]["to"]]["addressed"] += 1
+    assert paces == {"work": {80}, "conversation": {5}}
     fields = ("minutes", "scenes", "addressed", "heard", "ratings", "ratings_sum")
     assert {
         (edge.day, edge.source, edge.target): Counter(
@@ -231,3 +241,4 @@ def test_a_log_recorded_before_tasks_had_parts_measures_as_it_meant(town, tmp_pa
     assert deliveries and {(action.part, action.declaration) for action in deliveries} == {
         (1, "complete")
     }
+

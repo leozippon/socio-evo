@@ -1,7 +1,7 @@
 // The application: reads the bundle, routes the URL to a view, keeps the header, follows live
 // runs by polling the index, and says plainly what failed when something does.
 
-import { FormatError, RunSource, readIndex, readManifest, runKey } from "./data.js";
+import { FormatError, RunSource, readIndex, readManifest, runKey, studyOf } from "./data.js";
 import { fill, fmt, h } from "./dom.js";
 import { icon } from "./icons.js";
 import { Cast } from "./identity.js";
@@ -11,10 +11,11 @@ import { mountEvaluation } from "./views/evaluation.js";
 import { mountLanding, statusPill } from "./views/landing.js";
 import { mountOverview } from "./views/overview.js";
 import { mountPerson } from "./views/person.js";
+import { mountStudy, studyLabel } from "./views/study.js";
 import { mountTown } from "./views/town.js";
 
 const POLL_MS = 5000;
-const VIEWS = { home: mountLanding, compare: mountCompare, overview: mountOverview, town: mountTown, person: mountPerson, evaluation: mountEvaluation };
+const VIEWS = { home: mountLanding, compare: mountCompare, study: mountStudy, overview: mountOverview, town: mountTown, person: mountPerson, evaluation: mountEvaluation };
 const $ = (id) => document.getElementById(id);
 
 const app = {
@@ -50,14 +51,20 @@ function header() {
   const r = app.route;
   const entry = r.experiment && app.index?.runs.find((run) => run.experiment === r.experiment && (!r.run || run.run === r.run));
   const crumbs = [];
-  if (r.view !== "home") {
-    crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }) }, r.experiment));
+  const study = r.view === "study" ? null : studyOf(app.index, r.experiment);
+  if (r.view === "study") crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "study", study: r.study }) }, studyLabel(r.study)));
+  else if (r.view !== "home") {
+    if (study) {
+      const arm = study.arms.find((found) => found.experiment === r.experiment).arm;
+      crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb study-crumb", href: href({ view: "study", study: `${study.study}${study.dry_run ? "-dry-run" : ""}` }) }, studyLabel(`${study.study}${study.dry_run ? "-dry-run" : ""}`)));
+      crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }), title: r.experiment }, arm));
+    } else crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }) }, r.experiment));
     if (r.run) crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: `${r.experiment} · ${r.run}` }, r.run));
   }
   fill($("crumbs"), crumbs);
   document.body.classList.toggle("in-run", Boolean(r.run && entry));
   document.body.dataset.view = r.view;
-  document.title = r.run ? `${r.experiment} · ${r.run} · socio-evo` : r.experiment ? `${r.experiment} · socio-evo` : "socio-evo";
+  document.title = r.run ? `${r.experiment} · ${r.run} · socio-evo` : r.experiment ? `${r.experiment} · socio-evo` : r.study ? `${studyLabel(r.study)} · socio-evo` : "socio-evo";
   if (r.run && entry) {
     const tab = (view, label, glyph) =>
       h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));
@@ -102,7 +109,7 @@ async function route(force = false) {
       r.agent = run.cast.names[0];
     }
     header();
-    const key = r.run ? `${r.experiment}/${r.run}` : r.experiment ?? "";
+    const key = r.run ? `${r.experiment}/${r.run}` : r.experiment ?? r.study ?? "";
     if (!force && app.view?.kind === r.view && app.view.key === key && app.view.handle.update?.(r)) return;
     app.view?.handle.destroy?.();
     const main = $("main");

@@ -1,7 +1,8 @@
 // Checks the viewer's replay module against a published run: the town it reconstructs at the
-// end of every day and at the start of every slot must equal what the bundle's measures say,
-// whatever order the event days arrive in, however the cursor jumps, and after a day that was
-// not settled is replaced.
+// end of every day and at the start of every slot must equal what the bundle's measures and
+// traits say (balances, who works on a job, the open notices, every asking and what became of
+// it, conditions, standing, places), whatever order the event days arrive in, however the
+// cursor jumps, and after a day that was not settled is replaced.
 //
 //   node tests/frontend/replay_check.mjs SITE RUN_PATH
 //
@@ -14,7 +15,7 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { Replay, initialState } = await viewer("replay.js");
+const { Replay, holdings, initialState } = await viewer("replay.js");
 const { DAY, calendarOf, dayStart } = await viewer("clock.js");
 
 const read = (path) => JSON.parse(readFileSync(join(site, runPath, path.split("?")[0]), "utf8"));
@@ -43,6 +44,58 @@ for (const row of measures.society) {
   check(`conditions at the end of day ${row.day}`, state.conditions, row.conditions);
   checks += 2;
 }
+
+// Every change of a balance names the balance after it: the replayed balance just before it,
+// changed by its amount, must be that. A living cost sets every balance each evening, so the
+// end of a day alone would not show a gift, a shared clawback or a starting balance missed.
+const changes = { payment: 1, living_cost: -1, clawback: -1 };
+for (const day of Object.keys(days).map(Number).sort((a, b) => a - b))
+  for (const event of days[day]) {
+    const p = event.payload;
+    if (!(event.kind in changes) && event.kind !== "credits_given") continue;
+    const before = event.seq ? replay.seekSeq(event.seq - 1).balances : initialState(world).balances;
+    const expected = event.kind === "credits_given" ? { [p.giver]: before[p.giver] - p.amount, [p.recipient]: before[p.recipient] + p.amount } : { [p.agent]: before[p.agent] + changes[event.kind] * p.amount };
+    const after = event.kind === "credits_given" ? p.balances : { [p.agent]: p.balance };
+    check(`balances after event ${event.seq} (${event.kind})`, expected, after);
+    checks += 1;
+  }
+
+// The job each resident works on at the end of a day: every job it took so far, less those
+// that ended (paid, or lapsed the morning after their due day). The town's traits count the jobs
+// that ended; a run of the first town, whose jobs had one part, has a job end with its one
+// accepted delivery or its lapse.
+const traits = run.traits ? read(run.traits) : null;
+const endedOn = new Map((traits?.agents ?? []).map((row) => [`${row.agent}/${row.day}`, row.counts.solo_ended + row.counts.joint_ended]));
+const held = new Map();
+for (const row of measures.agents) {
+  const ended = traits ? endedOn.get(`${row.agent}/${row.day}`) : row.delivered + row.expired;
+  held.set(row.agent, (held.get(row.agent) ?? 0) + row.claimed - ended);
+  const state = replay.seek(endOf(row.day));
+  const job = holdings(state)[row.agent] ?? null;
+  check(`${row.agent} works on a job at the end of day ${row.day}`, job === null ? 0 : 1, held.get(row.agent));
+  checks += 1;
+}
+
+// Every asking of a day and what became of it, by who asked whom: the askings made, those taken
+// up, and those still open when the day ended, as the town's traits count them.
+if (traits) {
+  const days = [...new Set(measures.society.map((row) => row.day))];
+  for (const day of days) {
+    const state = replay.seek(endOf(day));
+    const replayed = {};
+    for (const asking of state.day === day ? state.askings : []) {
+      const pair = (replayed[`${asking.asker}>${asking.partner}`] ??= { asked: 0, taken_up: 0, let_lapse: 0 });
+      pair.asked += 1;
+      pair.taken_up += asking.fate === "taken up";
+      pair.let_lapse += asking.fate === "lapsed";
+    }
+    const counted = {};
+    for (const row of traits.pairs.filter((found) => found.day === day && found.asked)) counted[`${row.source}>${row.target}`] = { asked: row.asked, taken_up: row.taken_up, let_lapse: row.let_lapse };
+    check(`askings of day ${day} and what became of them`, Object.fromEntries(Object.entries(replayed).sort()), Object.fromEntries(Object.entries(counted).sort()));
+    checks += 1;
+  }
+}
+
 for (const row of measures.agents) {
   let state = replay.seek(endOf(row.day));
   check(`${row.agent}'s balance at the end of day ${row.day}`, state.balances[row.agent], row.balance);

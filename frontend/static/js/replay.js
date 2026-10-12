@@ -8,20 +8,22 @@
 
 import { dayOf } from "./clock.js";
 
-/** The state before the first event: everyone at home with the initial balance. */
+/** The state before the first event: everyone at home with their starting balance. */
 export function initialState(world) {
   const home = {};
   for (const place of world.places) for (const name of place.residents) home[name] = place.id;
-  const each = (value) => Object.fromEntries(world.agents.map(({ name }) => [name, value(name)]));
+  const each = (value) => Object.fromEntries(world.agents.map((agent) => [agent.name, value(agent)]));
   return {
     seq: -1, // the last event applied
     time: 0, // the moment shown; at or after the last event applied
-    locations: each((name) => home[name]),
-    balances: each(() => world.initial_balance),
+    locations: each((agent) => home[agent.name]),
+    balances: each((agent) => agent.initial_balance ?? world.initial_balance),
     esteem: each(() => null), // as last published; null until first rated
     conditions: { ...world.conditions },
     open: {}, // task id -> time it (re)appeared on the board
-    claims: {}, // task id -> {agent, due_day, time}
+    claims: {}, // task id -> {workers, actor, due_day, time, parts: [{worker, declaration, time} | null]}
+    offers: {}, // agent -> its open bid for a job for two: {task_id, partner (null: name put down), time}
+    askings: [], // today's askings, each {seq, time, asker, partner, task_id, fate, at}
     scenes: {}, // scene id -> {kind, place, participants, present, start}
     said: {}, // agent -> seq of its latest speech
     decided: {}, // agent -> seq of its latest decision
@@ -30,15 +32,65 @@ export function initialState(world) {
   };
 }
 
+/**
+ * What became of an asking: `open` while it stands; `taken up` when the two took the job
+ * together; `withdrawn` when the one who asked asked about another job, put their name down or
+ * took a job; `ended` when the job went to others or came down; `lapsed` when the day ended
+ * with it still open (frontend/README.md, traits.json `let_lapse`).
+ */
+function settle(asking, fate, event) {
+  asking.fate = fate;
+  asking.at = event.seq;
+}
+
+/** A new bid replaces its maker's open one; an asking it replaces is withdrawn. */
+function bid(state, event, partner) {
+  const actor = event.actor;
+  const before = state.offers[actor];
+  if (before?.partner) {
+    const asking = state.askings.findLast((found) => found.asker === actor && found.fate === "open");
+    if (asking) settle(asking, "withdrawn", event);
+  }
+  state.offers[actor] = { task_id: event.payload.task_id, partner, time: event.time };
+  if (partner) state.askings.push({ seq: event.seq, time: event.time, asker: actor, partner, task_id: event.payload.task_id, fate: "open", at: null });
+}
+
+/** Drop the open bids that `drop(agent, offer)` names, settling their askings with `fate(offer)`. */
+function dropOffers(state, event, drop, fate) {
+  for (const [agent, offer] of Object.entries(state.offers)) {
+    if (!drop(agent, offer)) continue;
+    delete state.offers[agent];
+    if (!offer.partner) continue;
+    const asking = state.askings.findLast((found) => found.asker === agent && found.fate === "open");
+    if (asking) settle(asking, fate(agent, offer), event);
+  }
+}
+
+/**
+ * The payload of `event` in its present shape: a log recorded before tasks had parts reads as
+ * what it meant then (one worker, the claimant or the `agent` whose claim lapsed; a delivery
+ * declared complete, accepted when it `passed`).
+ */
+export function current(event) {
+  const p = event.payload ?? {};
+  if (event.kind === "task_claimed" && !p.workers) return { ...p, workers: [event.actor] };
+  if (event.kind === "task_expired" && !p.workers) return { ...p, workers: [p.agent], delivered: [null] };
+  if ((event.kind === "work_submitted" || event.kind === "work_assessed") && p.accepted === undefined) return { ...p, part: 1, declaration: "complete", accepted: p.passed };
+  return p;
+}
+
 /** Apply one event to `state` in place. */
 export function apply(state, event) {
-  const p = event.payload;
+  const p = current(event);
   switch (event.kind) {
     case "day_started":
       state.day = dayOf(event.time);
       state.ended = false;
+      state.askings = [];
       break;
     case "day_ended":
+      // Open proposals and applications lapse when the day closes.
+      dropOffers(state, event, () => true, () => "lapsed");
       state.ended = true;
       break;
     case "move":
@@ -70,24 +122,49 @@ export function apply(state, event) {
     case "task_posted":
       state.open[p.task.id] = event.time;
       break;
-    case "task_claimed":
-      delete state.open[p.task_id];
-      state.claims[p.task_id] = { agent: event.actor, due_day: p.due_day, time: event.time };
+    case "task_proposed":
+      bid(state, event, p.partner);
       break;
+    case "task_applied":
+      bid(state, event, null);
+      break;
+    case "task_claimed": {
+      // Its workers' own bids go, and every bid for the job: an asking between the two is taken
+      // up, one by a worker is withdrawn, any other ends with the job going to others.
+      const workers = p.workers;
+      dropOffers(
+        state,
+        event,
+        (agent, offer) => workers.includes(agent) || offer.task_id === p.task_id,
+        (agent, offer) => (offer.task_id === p.task_id && workers.includes(offer.partner) && workers.includes(agent) ? "taken up" : workers.includes(agent) ? "withdrawn" : "ended"),
+      );
+      delete state.open[p.task_id];
+      state.claims[p.task_id] = { workers: [...workers], actor: event.actor, due_day: p.due_day, time: event.time, parts: workers.map(() => null) };
+      break;
+    }
     case "task_expired":
       delete state.claims[p.task_id];
       state.open[p.task_id] = event.time;
       break;
     case "task_retired":
       delete state.open[p.task_id];
+      dropOffers(state, event, (agent, offer) => offer.task_id === p.task_id, () => "ended");
       break;
-    case "work_submitted":
-      if (p.passed) delete state.claims[p.task_id];
+    case "work_submitted": {
+      const claim = state.claims[p.task_id];
+      if (!claim || !p.accepted) break;
+      claim.parts[p.part - 1] = { worker: event.actor, declaration: p.declaration, time: event.time };
+      // A job is paid, and leaves the board, once every part is in.
+      if (claim.parts.every(Boolean)) delete state.claims[p.task_id];
       break;
+    }
     case "payment":
     case "living_cost":
     case "clawback":
       state.balances[p.agent] = p.balance;
+      break;
+    case "credits_given":
+      Object.assign(state.balances, p.balances);
       break;
     case "esteem_updated":
       state.esteem = { ...state.esteem, ...p.esteem };
@@ -110,6 +187,7 @@ export class Replay {
     this.expected = []; // the days the run has, as last published
     this.snapshots = new Map(); // day -> state before its first event
     this.tasks = new Map(); // task id -> its task_posted event
+    this.perspectives = false; // whether some witness read some loaded event its own way
     this.state = initialState(world);
     this.cached = null; // the day array the last lookup hit
   }
@@ -134,7 +212,11 @@ export class Replay {
     this.days.set(day, events);
     this.firsts.set(events[0].seq, day);
     this.forget(day, old ? Math.min(old[0].seq, events[0].seq) : events[0].seq);
-    for (const event of events) if (event.kind === "task_posted") this.tasks.set(event.payload.task.id, event);
+    for (const event of events) {
+      if (event.kind === "task_posted") this.tasks.set(event.payload.task.id, event);
+      // Whether witnesses can have read an event differently: their own wording, or a private remark.
+      if (!this.perspectives && (Object.keys(event.personal ?? {}).length || (event.kind === "speech" && event.payload.private))) this.perspectives = true;
+    }
   }
 
   /** Drop what was derived from events from `seq` on, which belong to `day` or later. */
@@ -247,7 +329,7 @@ export class Replay {
   }
 }
 
-/** The task each agent holds in `state`, by agent. */
+/** The job each agent works on in `state`, by agent. */
 export function holdings(state) {
-  return Object.fromEntries(Object.entries(state.claims).map(([id, claim]) => [claim.agent, id]));
+  return Object.fromEntries(Object.entries(state.claims).flatMap(([id, claim]) => claim.workers.map((worker) => [worker, id])));
 }

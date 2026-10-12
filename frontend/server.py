@@ -1,7 +1,7 @@
 """Serve the published site locally, publishing it again as the runs change.
 
-    python -m frontend.server --runs-root runs [--host 127.0.0.1] [--port 8765]
-                              [--site DIR] [--interval SECONDS]
+    python -m frontend.server --runs-root runs [--study STUDY ...] [--host 127.0.0.1]
+                              [--port 8765] [--site DIR] [--interval SECONDS]
 
 The server publishes the runs with `frontend.publish`, exactly as for a deployment, and
 serves the site directory as static files, so a browser gets the published documents at the
@@ -75,13 +75,16 @@ def main(argv: list[str] | None = None) -> None:
         prog="python -m frontend.server", description="Serve the published runs locally."
     )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
+    parser.add_argument(
+        "--study", type=Path, action="append", default=[], help="a study file to compare"
+    )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--site", type=Path, help="keep the published site in this directory")
     parser.add_argument("--interval", type=float, default=5.0, metavar="SECONDS")
     args = parser.parse_args(argv)
     with tempfile.TemporaryDirectory(prefix="socio-evo-site-") as scratch:
-        publisher = Publisher(args.runs_root, args.site or Path(scratch))
+        publisher = Publisher(args.runs_root, args.site or Path(scratch), args.study)
         server = DevServer((args.host, args.port), publisher, args.interval)
         print(f"Serving {args.runs_root} at http://{args.host}:{server.server_address[1]}/")
         try:

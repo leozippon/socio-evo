@@ -1,6 +1,7 @@
 import json
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,15 +12,63 @@ from tests.frontend.test_publish import RUN, in_progress
 NODE = shutil.which("node")
 CHECK = Path(__file__).with_name("replay_check.mjs")
 PLAN_CHECK = Path(__file__).with_name("plan_check.mjs")
+STUDY = Path(__file__).parents[2] / "experiments" / "studies" / "trust.yaml"
+TRUST_ARMS = ("selection-scarce", "assignment-scarce")
+"""Arms of the study whose four-day dry runs hold askings let lapse and withdrawn, names put down
+and pairs by lot, crowns handed over, jobs that lapsed, and a job for two paid whose fault is
+then clawed back from both its workers."""
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
-def replay_check(site: Path) -> tuple[int, dict]:
-    """Run the viewer's replay module against the published run under `site`."""
-    result = subprocess.run([NODE, str(CHECK), str(site), RUN], capture_output=True, text=True)
+def replay_check(site: Path, run: str = RUN) -> tuple[int, dict]:
+    """Run the viewer's replay module against the published run `run` under `site`."""
+    result = subprocess.run([NODE, str(CHECK), str(site), run], capture_output=True, text=True)
     assert result.stdout, result.stderr
     return result.returncode, json.loads(result.stdout)
+
+
+@pytest.fixture(scope="module")
+def trust(tmp_path_factory) -> Path:
+    """A site with four-day dry runs of two arms of the trust study."""
+    root = tmp_path_factory.mktemp("trust")
+    runs = root / "runs"
+    command = [sys.executable, "-m", "experiments.study", str(STUDY), "--dry-run", "--seeds", "0"]
+    command += ["--until-day", "4", "--runs-root", str(runs), "--arms", *TRUST_ARMS]
+    subprocess.run(command, check=True, capture_output=True)
+    site = root / "site"
+    Publisher(runs, site, [STUDY]).publish()
+    return site
+
+
+def trust_run(arm: str) -> str:
+    return f"data/runs/trust-{arm}-dry-run/seed-0000"
+
+
+@pytest.mark.parametrize("arm", TRUST_ARMS)
+def test_the_replay_reconstructs_a_town_of_jobs_for_two_askings_and_gifts(trust, arm):
+    code, summary = replay_check(trust, trust_run(arm))
+    assert code == 0, summary["failures"]
+    kinds = summary["kinds"]
+    asks = "task_proposed" if arm.startswith("selection") else "task_applied"
+    assert kinds.get(asks) and kinds.get("credits_given") and kinds.get("task_expired"), kinds
+
+
+def test_the_check_fails_when_an_asking_is_counted_otherwise(trust, tmp_path):
+    site = tmp_path / "site"
+    shutil.copytree(trust, site)
+    run_dir = site / trust_run("selection-scarce")
+    run = json.loads((run_dir / "run.json").read_bytes())
+    path = run_dir / run["traits"].split("?")[0]
+    traits = json.loads(path.read_bytes())
+    row = next(row for row in traits["pairs"] if row["asked"])
+    row["let_lapse"] += 1
+    path.write_text(json.dumps(traits))
+    code, summary = replay_check(site, trust_run("selection-scarce"))
+    assert code == 1
+    assert [failure["what"] for failure in summary["failures"]] == [
+        f"askings of day {row['day']} and what became of them"
+    ]
 
 
 def test_the_replay_reconstructs_the_town_the_measures_describe(town, tmp_path):

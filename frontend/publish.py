@@ -1,6 +1,7 @@
 """Publish runs as a static site: the viewer, and a bundle of JSON documents under `data/`.
 
-    python -m frontend.publish --runs-root runs --out SITE [--watch SECONDS]
+    python -m frontend.publish --runs-root runs --out SITE [--study STUDY ...]
+                               [--watch SECONDS]
 
 The site is self-contained and every URL in it is relative, so any static web server can
 serve it under any base path; nothing on the server computes anything. `frontend/README.md`
@@ -12,7 +13,9 @@ atomically. Every document is written before the documents that refer to it, and
 carries the hash of the content it refers to, so a reader never meets a torn file or a
 reference to a file not yet written. Files no longer referred to are removed last. Publishing
 reads run directories and never writes into one. `--watch` publishes again every SECONDS,
-skipping runs whose files have not changed, until interrupted.
+skipping runs whose files have not changed, until interrupted. Each `--study`, a study file of
+`experiments.study`, adds the comparison of its arms over the runs of the study found under
+the runs root, and of its dry runs.
 """
 
 import argparse
@@ -23,7 +26,7 @@ import os
 import re
 import time
 import traceback
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from functools import partial
@@ -31,14 +34,33 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from analysis import evaluation_usage, measure, read_run, results, run_usage, scores
+from analysis import (
+    Measures,
+    RunData,
+    Score,
+    Traits,
+    evaluation_usage,
+    measure,
+    read_run,
+    recorded_with_parts,
+    results,
+    run_usage,
+    scores,
+    traits,
+)
+from analysis.study import Measured, Study, document, read_study, table
 from frontend import bundle
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
 
 FORMAT = 1
-"""The version of the bundle format. Bump it whenever the shape of any document changes:
-publishing into a bundle of another format rebuilds it instead of keeping its settled files."""
+"""The version of the bundle format, which a viewer checks before it reads anything. Bump it
+whenever a document changes so that a viewer of the previous format would misread it: a field
+removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,
+since a viewer ignores what it does not know. Settled files are kept only from a site whose
+manifest is exactly the one this publisher writes, so a new kind of file rebuilds them; a
+field added to a settled document (a world, an event day, an agent's day) without a new kind
+must bump the format, or sites published before would keep the files without it."""
 KINDS = {
     "manifest": "manifest.json",
     "index": "index.json",
@@ -50,8 +72,11 @@ KINDS = {
     "events": "runs/{experiment}/{run}/events/day-{day}.json",
     "versions": "runs/{experiment}/{run}/agents/{agent}/versions.json",
     "agent_day": "runs/{experiment}/{run}/agents/{agent}/day-{day}.json",
+    "traits": "runs/{experiment}/{run}/traits.json",
+    "study": "studies/{study}.json",
 }
 """Every kind of file under `data/`, by the path pattern of its files."""
+MANIFEST = {"format": FORMAT, "files": [{"kind": k, "path": p} for k, p in KINDS.items()]}
 STATIC = Path(__file__).parent / "static"
 _EXPERIMENT = re.compile(r"[\w.-]+")
 _SEED = re.compile(r"seed-\d+")
@@ -75,7 +100,8 @@ class Site:
     def __init__(self, root: Path, reuse: bool) -> None:
         self.root = root
         self.reuse = reuse
-        """Whether the site already holds a bundle of this format, whose settled files stay."""
+        """Whether the site already holds a bundle with this manifest, whose settled files
+        stay."""
         self.kept: set[str] = set()
         self.written: list[str] = []
         self.removed: list[str] = []
@@ -112,24 +138,38 @@ class Site:
 
 
 @dataclass(frozen=True)
+class Analysed:
+    """A published run as the comparison of a study reads it; `traits` is None for a run
+    recorded before tasks had parts."""
+
+    run: RunData
+    traits: Traits | None
+    measures: Measures
+    scores: list[Score]
+
+
+@dataclass(frozen=True)
 class _Published:
     fingerprint: tuple[tuple[str, int, int], ...]
     entry: dict[str, Any]
     paths: frozenset[str]
+    analysed: Analysed
 
 
 class Publisher:
-    """Publishes the runs under `runs_root` into the site directory `out`, again and again.
-    Between publishes it remembers each run's files, so a run whose files have not changed
-    since is not read again."""
+    """Publishes the runs under `runs_root` into the site directory `out`, again and again,
+    with the comparison of the arms of each study file in `studies`. Between publishes it
+    remembers each run's files, so a run whose files have not changed since is not read
+    again."""
 
-    def __init__(self, runs_root: Path, out: Path) -> None:
+    def __init__(self, runs_root: Path, out: Path, studies: Sequence[Path] = ()) -> None:
         self.runs_root = runs_root.resolve()
         self.out = out.resolve()
         if not self.runs_root.is_dir():
             raise FileNotFoundError(f"runs root {runs_root} is not a directory")
         if self.out.is_relative_to(self.runs_root):
             raise ValueError(f"{out} is inside the runs root; publishing never writes there")
+        self.studies = [read_study(path) for path in studies]
         self._published: dict[Path, _Published] = {}
 
     def publish(self) -> Site:
@@ -143,23 +183,30 @@ class Publisher:
         if any(self.out.iterdir()) and not manifest.is_file():
             raise FileExistsError(f"{self.out} is neither empty nor a published site")
         with _locked(self.out):
-            reuse = manifest.is_file() and json.loads(manifest.read_bytes())["format"] == FORMAT
+            reuse = manifest.is_file() and json.loads(manifest.read_bytes()) == MANIFEST
             if not reuse:
                 self._published.clear()
             site = Site(self.out, reuse)
-            entries = [self._run(site, root) for root in _runs(self.runs_root)]
-            site.put("data/index.json", {"format": FORMAT, "runs": entries})
-            site.put(
-                "data/manifest.json",
-                {"format": FORMAT, "files": [{"kind": k, "path": p} for k, p in KINDS.items()]},
-            )
+            published = {root: self._run(site, root) for root in _runs(self.runs_root)}
+            analysed = {
+                (root.parent.name, root.name): found.analysed for root, found in published.items()
+            }
+            studies = [
+                entry
+                for study in self.studies
+                for dry_run in (False, True)
+                if (entry := publish_study(site, study, dry_run, analysed))
+            ]
+            entries = [found.entry for found in published.values()]
+            site.put("data/index.json", {"format": FORMAT, "runs": entries, "studies": studies})
+            site.put("data/manifest.json", MANIFEST)
             for path in sorted(STATIC.rglob("*")):
                 if path.is_file():
                     site.write(path.relative_to(STATIC).as_posix(), path.read_bytes())
             site.prune()
         return site
 
-    def _run(self, site: Site, root: Path) -> dict[str, Any]:
+    def _run(self, site: Site, root: Path) -> _Published:
         fingerprint = _fingerprint(RunDirectory(root))
         last = self._published.get(root)
         if (
@@ -168,19 +215,21 @@ class Publisher:
             and all((site.root / path).is_file() for path in last.paths)
         ):
             site.kept |= last.paths
-            return last.entry
+            return last
         before = set(site.kept)
         try:
-            entry = publish_run(site, root)
+            entry, analysed = publish_run(site, root)
         except Exception as error:
             error.add_note(f"while publishing {root}")
             raise
-        self._published[root] = _Published(fingerprint, entry, frozenset(site.kept - before))
-        return entry
+        published = _Published(fingerprint, entry, frozenset(site.kept - before), analysed)
+        self._published[root] = published
+        return published
 
 
-def publish_run(site: Site, root: Path) -> dict[str, Any]:
-    """Write every file of the run at `root` into `site`; returns its entry in the index."""
+def publish_run(site: Site, root: Path) -> tuple[dict[str, Any], Analysed]:
+    """Write every file of the run at `root` into `site`; returns its entry in the index and
+    the run as the comparison of a study reads it."""
     run = read_run(root)
     experiment, name = root.parent.name, root.name
     base = f"data/runs/{experiment}/{name}"
@@ -245,14 +294,18 @@ def publish_run(site: Site, root: Path) -> dict[str, Any]:
     for key, result in found.items():
         digest = put(f"evaluation/{key}.json", partial(result.model_dump, mode="json"))
         urls[key] = ref(f"evaluation/{key}.json", digest, False)
-    evaluation = bundle.evaluation(scores(found), urls, found, evaluation_usage(run))
+    rows = scores(found)
+    evaluation = bundle.evaluation(rows, urls, found, evaluation_usage(run))
     measured, usage = measure(run), run_usage(run)
+    character = traits(run) if recorded_with_parts(run) else None
     world = bundle.world(run)
     digests = {
         "world": put("world.json", lambda: world, 0),
         "measures": put("measures.json", partial(bundle.measures, measured, usage)),
         "evaluation": put("evaluation.json", lambda: evaluation),
     }
+    if character is not None:
+        digests["traits"] = put("traits.json", partial(bundle.traits, run, character, measured))
     document = {
         "experiment": experiment,
         "run": name,
@@ -265,11 +318,12 @@ def publish_run(site: Site, root: Path) -> dict[str, Any]:
         "world": ref("world.json", digests["world"], True),
         "measures": ref("measures.json", digests["measures"], False),
         "evaluation": ref("evaluation.json", digests["evaluation"], False),
+        "traits": ref("traits.json", digests["traits"], False) if character else None,
         "event_days": event_days,
         "agents": agents,
     }
     digest = put("run.json", lambda: document)
-    return {
+    entry = {
         "experiment": experiment,
         "run": name,
         "url": ref(f"runs/{experiment}/{name}/run.json", digest, False),
@@ -284,6 +338,35 @@ def publish_run(site: Site, root: Path) -> dict[str, Any]:
         "model": world["model"]["name"],
         "dry_run": world["model"]["backend"] == "scripted",
         "headline": bundle.headline(measured.society, usage, found),
+    }
+    return entry, Analysed(run, character, measured, rows)
+
+
+def publish_study(
+    site: Site, study: Study, dry_run: bool, analysed: dict[tuple[str, str], Analysed]
+) -> dict[str, Any] | None:
+    """Write the comparison of the arms of `study`, or of its dry runs, over the runs of it in
+    `analysed` (by experiment and run name) into `site`; returns its entry in the index, None
+    if none of its runs is there. Raises ValueError for a run of it recorded before tasks had
+    parts."""
+    experiments = {arm: study.experiment(arm, dry_run) for arm in study.arms}
+    runs = []
+    for arm, experiment in experiments.items():
+        for (name, _), found in sorted(analysed.items()):
+            if name != experiment:
+                continue
+            if found.traits is None:
+                raise ValueError(f"{found.run.directory.root} was recorded before tasks had parts")
+            runs.append(Measured(arm, found.run, found.traits, found.measures, found.scores))
+    if not runs:
+        return None
+    path = f"studies/{study.name}{'-dry-run' if dry_run else ''}.json"
+    digest = site.put(f"data/{path}", document(table(study, dry_run, runs)))
+    return {
+        "study": study.name,
+        "dry_run": dry_run,
+        "url": ref(path, digest, False),
+        "arms": [{"arm": arm, "experiment": name} for arm, name in experiments.items()],
     }
 
 
@@ -344,10 +427,13 @@ def main(argv: list[str] | None = None) -> None:
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
     parser.add_argument("--out", type=Path, required=True, help="the site directory")
     parser.add_argument(
+        "--study", type=Path, action="append", default=[], help="a study file to compare"
+    )
+    parser.add_argument(
         "--watch", type=float, metavar="SECONDS", help="publish again every SECONDS"
     )
     args = parser.parse_args(argv)
-    publisher = Publisher(args.runs_root, args.out)
+    publisher = Publisher(args.runs_root, args.out, args.study)
     try:
         while True:
             try:

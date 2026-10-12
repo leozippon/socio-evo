@@ -12,21 +12,33 @@ from urllib.parse import quote, urljoin, urlsplit
 from urllib.request import urlopen
 
 import pytest
+import yaml
 
+from analysis import measure, read_run, run_usage
 from core.agent.evolution import History
 from core.agent.prompts import REPLY
 from core.interaction import EventKind
-from frontend.publish import KINDS, Publisher
+from frontend import bundle
+from frontend.publish import KINDS, Publisher, encode
 from frontend.publish import main as publish
 from frontend.server import DevServer
 from infrastructure.storage import RunDirectory
-from tests.analysis.test_measures import truncate_mid_day
+from tests.analysis.test_measures import old_shape, truncate_mid_day
 from tests.conftest import TOWN
 
 PROJECT = Path(__file__).parents[2]
 README = PROJECT / "frontend" / "README.md"
 PUSH = PROJECT / "frontend" / "deploy" / "push.sh"
 RUN = "data/runs/town/seed-0007"
+ARMS = ("selection-comfortable", "assignment-comfortable")
+SHARED = {"Count": "counts", "Share": "shares", "Column": "values"}
+"""The README's tables of fields that several objects share, by the field that holds them."""
+OLD_MEASURES = {
+    "runs/pilot/seed-0000": "1ed6c738eb85fe95",
+    "runs/smoke/seed-0000": "087742a7084d5432",
+}
+"""The first 16 hex digits of the SHA-256 of the published measures of the runs of the first
+town, kept on the machine where they ran, as they were before the second town."""
 
 
 def files(root: Path) -> dict[str, bytes]:
@@ -46,9 +58,24 @@ def stamps(root: Path) -> dict[str, tuple[int, int]]:
 
 
 @pytest.fixture(scope="module")
-def site(town, tmp_path_factory) -> Path:
+def published(town, tmp_path_factory) -> tuple[Path, Path]:
+    """A runs root holding the town and a study of two arms, each the town again, and the
+    study's file."""
+    root = tmp_path_factory.mktemp("published")
+    runs = root / "runs"
+    for experiment in ("town", *(f"pair-{arm}" for arm in ARMS)):
+        shutil.copytree(town, runs / experiment / "seed-0007")
+    study = root / "pair.yaml"
+    arms = {arm: [] for arm in ARMS}
+    study.write_text(yaml.safe_dump({"name": "pair", "arms": arms}, sort_keys=False))
+    return runs, study
+
+
+@pytest.fixture(scope="module")
+def site(published, tmp_path_factory) -> Path:
     out = tmp_path_factory.mktemp("site")
-    Publisher(town.parents[1], out).publish()
+    runs, study = published
+    Publisher(runs, out, [study]).publish()
     return out
 
 
@@ -71,13 +98,16 @@ def complete(town: Path, root: Path) -> None:
         shutil.copy(checkpoint, root / "checkpoints")
 
 
-def contract() -> dict[str, list[str]]:
-    """The README's file kinds: each path pattern with the fields its table documents."""
+def contract(header: str = "Field") -> dict[str, list[str]]:
+    """The README's file kinds: each path pattern with the fields its table headed `header`
+    documents, for the kinds that have one."""
     documented = {}
     for section in re.split(r"^### ", README.read_text(encoding="utf-8"), flags=re.M)[1:]:
         heading, _, body = section.partition("\n")
-        table = re.search(r"^\| Field \|.*\n\|[- |]+\n((?:\|.*\n)+)", body, flags=re.M)
-        documented[heading.strip().strip("`")] = re.findall(r"^\| `([^`]+)` \|", table[1], re.M)
+        table = re.search(rf"^\| {header} \|.*\n\|[- |]+\n((?:\|.*\n)+)", body, flags=re.M)
+        if table:
+            fields = re.findall(r"^\| `([^`]+)` \|", table[1], re.M)
+            documented[heading.strip().strip("`")] = fields
     return documented
 
 
@@ -94,6 +124,10 @@ def values_at(document: Any, path: str) -> list[Any]:
 def test_every_file_has_exactly_the_documented_fields(site):
     documented = contract()
     assert set(documented) == set(KINDS.values())
+    shared = {
+        SHARED[header]: set(fields) for header in SHARED for fields in contract(header).values()
+    }
+    assert set(shared) == set(SHARED.values())
     for pattern, fields in documented.items():
         paths = sorted((site / "data").glob(re.sub(r"\{\w+\}", "*", pattern)))
         assert paths, pattern
@@ -101,6 +135,8 @@ def test_every_file_has_exactly_the_documented_fields(site):
         for field in fields:
             parent, _, name = field.rpartition(".")
             children[parent].add(name)
+            if name in shared:
+                children[field] = shared[name]
         for path in paths:
             document = json.loads(path.read_bytes())
             for parent, names in children.items():
@@ -117,10 +153,10 @@ def test_every_file_has_exactly_the_documented_fields(site):
     assert len(seen) >= 20
 
 
-def test_references_carry_the_hash_of_files_inside_the_site(site, town):
+def test_references_carry_the_hash_of_files_inside_the_site(site, published):
     for name, data in files(site).items():
         assert not (site / name).is_symlink()
-        assert str(town.parents[1]) not in data.decode()
+        assert str(published[0]) not in data.decode()
         if not name.endswith(".json"):
             continue
         document = data.decode()
@@ -274,8 +310,9 @@ def test_publishing_refuses_unsafe_targets_and_malformed_runs(town, tmp_path):
     assert any(str(root) in note for note in error.value.__notes__)
 
 
-def test_the_dev_server_serves_exactly_the_published_site(town, site, tmp_path):
-    server = DevServer(("127.0.0.1", 0), Publisher(town.parents[1], tmp_path / "served"), 0.1)
+def test_the_dev_server_serves_exactly_the_published_site(published, site, tmp_path):
+    runs, study = published
+    server = DevServer(("127.0.0.1", 0), Publisher(runs, tmp_path / "served", [study]), 0.1)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{server.server_address[1]}/"
 
@@ -341,3 +378,84 @@ def test_push_uploads_only_what_changed_and_switches_the_site_at_once(town, tmp_
     assert sorted(path.name for path in (server / "releases").iterdir()) == sorted(
         [old.name, new.name]
     )
+
+
+def test_a_study_and_the_traits_of_its_runs_are_published(site):
+    index = json.loads((site / "data" / "index.json").read_bytes())
+    [entry] = index["studies"]
+    assert (entry["study"], entry["dry_run"]) == ("pair", False)
+    assert entry["arms"] == [{"arm": arm, "experiment": f"pair-{arm}"} for arm in ARMS]
+    study = json.loads((site / "data" / urlsplit(entry["url"]).path).read_bytes())
+    assert [(w["name"], w["first"], w["last"]) for w in study["windows"]] == [
+        ("main", 1, 1),
+        ("late", 2, None),
+    ]
+    assert [(row["arm"], row["seed"], row["window"]) for row in study["runs"]] == [
+        (arm, 7, window) for arm in ARMS for window in ("main", "late")
+    ]
+    between = [row for row in study["contrasts"] if row["contrast"].startswith("selection")]
+    assert {row["window"] for row in between} == {"main", "late"}
+    for row in between:  # the two arms are the same run
+        assert row["differences"] in ([], [{"seed": 7, "difference": 0}])
+        assert row["p"] in (None, 1.0)
+
+    run = json.loads((site / RUN / "run.json").read_bytes())
+    traits = json.loads((site / RUN / urlsplit(run["traits"]).path).read_bytes())
+    assert [(w["name"], w["first_day"], w["last_day"]) for w in traits["windows"]] == [
+        ("run", 1, 3),
+        ("phase-1", 1, 1),
+        ("phase-2", 2, 3),  # the rent rose at 13:00 on day 2
+    ]
+    world = json.loads((site / RUN / urlsplit(run["world"]).path).read_bytes())
+    assert {(a["name"], a["initial_balance"], a["obligation"]) for a in world["agents"]} == {
+        (agent, 100, 0) for agent in ("Ana", "Ben", "Cai")
+    }
+
+
+def test_a_run_recorded_before_tasks_had_parts_is_published_without_traits(town, tmp_path):
+    runs = tmp_path / "runs"
+    root = runs / "pair-solo" / "seed-0007"
+    shutil.copytree(town, root)
+    log = root / "events.jsonl"
+    records = [old_shape(json.loads(line)) for line in log.read_text().splitlines()]
+    log.write_text("".join(json.dumps(record) + "\n" for record in records))
+    config = yaml.safe_load((root / "config.yaml").read_text())
+    conditions = config["environment"]["conditions"]
+    conditions["tasks_per_day"] = conditions.pop("one_part_tasks")
+    del conditions["two_part_tasks"]
+    (root / "config.yaml").write_text(yaml.safe_dump(config))
+    Publisher(runs, tmp_path / "site").publish()
+    run = json.loads((tmp_path / "site" / "data/runs/pair-solo/seed-0007/run.json").read_bytes())
+    assert run["traits"] is None and not (root.parent / "traits.json").exists()
+
+    study = tmp_path / "pair.yaml"
+    study.write_text(yaml.safe_dump({"name": "pair", "arms": {"solo": []}}))
+    with pytest.raises(ValueError, match="before tasks had parts"):
+        Publisher(runs, tmp_path / "other", [study]).publish()
+
+
+def test_a_site_published_with_another_manifest_is_rebuilt(town, tmp_path):
+    out = tmp_path / "site"
+    Publisher(town.parents[1], out).publish()
+    day = out / RUN / "events" / "day-0001.json"
+    original = day.read_bytes()
+    day.write_bytes(original.replace(b'"day":1', b'"day":1 '))
+    Publisher(town.parents[1], out).publish()
+    assert day.read_bytes() != original  # a settled file of this very bundle is kept
+
+    manifest = out / "data" / "manifest.json"
+    document = json.loads(manifest.read_bytes())
+    document["files"] = [kind for kind in document["files"] if kind["kind"] != "traits"]
+    manifest.write_text(json.dumps(document))
+    Publisher(town.parents[1], out).publish()
+    assert day.read_bytes() == original
+
+
+@pytest.mark.parametrize("run", sorted(OLD_MEASURES))
+def test_the_measures_of_the_first_town_are_unchanged(run):
+    root = PROJECT / run
+    if not root.is_dir():
+        pytest.skip(f"{run} is not on this machine")
+    found = read_run(root)
+    data = encode(bundle.measures(measure(found), run_usage(found)))
+    assert hashlib.sha256(data).hexdigest()[:16] == OLD_MEASURES[run]

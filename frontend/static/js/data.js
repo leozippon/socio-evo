@@ -72,10 +72,32 @@ export async function readIndex() {
   const url = here("data/index.json");
   const index = await getJSON(url, true);
   if (index.format !== FORMAT) throw new FormatError(`The run index has format ${index.format}, but this viewer reads format ${FORMAT}.`);
-  return { url, runs: index.runs };
+  return { url, runs: index.runs, studies: index.studies ?? [] };
 }
 
 export const runKey = (entry) => `${entry.experiment}/${entry.run}`;
+
+/** A study's name in addresses and files: its own, with `-dry-run` for the comparison of its dry runs. */
+export const studyKey = (entry) => `${entry.study}${entry.dry_run ? "-dry-run" : ""}`;
+
+/** The study of the index whose arms include `experiment`, if any. */
+export const studyOf = (index, experiment) => index?.studies.find((study) => study.arms.some((arm) => arm.experiment === experiment)) ?? null;
+
+/** A study's comparison of its arms; a 404 means the index has moved on, so it is read again once. */
+export async function readStudy(key) {
+  const attempt = async () => {
+    const index = await readIndex();
+    const entry = index.studies.find((found) => studyKey(found) === key);
+    if (!entry) throw new FetchError(index.url, 404, `— there is no study ${key} in this bundle`);
+    return { index, entry, doc: await load(resolve(entry.url, index.url)) };
+  };
+  try {
+    return await attempt();
+  } catch (error) {
+    if (!(error instanceof FetchError) || error.status !== 404 || error.message.includes("no study")) throw error;
+    return attempt();
+  }
+}
 
 /**
  * One run as currently published. `update(index)` follows the index: when the run's reference
@@ -116,6 +138,7 @@ export class RunSource {
     return {
       status: before.status !== after.status,
       measures: before.measures !== after.measures,
+      traits: before.traits !== after.traits,
       evaluation: before.evaluation !== after.evaluation,
       days: after.event_days.filter((day) => days.get(day.day) !== day.url).map((day) => day.day),
       dropped: [...days.keys()].filter((day) => !after.event_days.some((found) => found.day === day)),
@@ -160,6 +183,12 @@ export class RunSource {
 
   evaluation() {
     return this.follow(() => resolve(this.doc.evaluation, this.url));
+  }
+
+  /** What residents did in the town's dilemmas; null for a run of the first town, which has none. */
+  async traits() {
+    if (!this.doc.traits) return null;
+    return this.follow(() => resolve(this.doc.traits, this.url));
   }
 
   /** The events of `day`, which must be one the run has begun. */

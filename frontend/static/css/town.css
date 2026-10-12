@@ -560,3 +560,97 @@ body[data-view="town"] { overflow: hidden; }
 .ties-svg .node.selected .node-hit { fill: var(--accent-soft); }
 .ties-svg .node-name { font-size: 11.5px; fill: var(--ink); font-weight: 550; }
 .ties-list { margin: 4px 0 0; padding-left: 1.1em; font-size: 12.5px; }
+
+/* The town of jobs for two ------------------------------------------------------------------ */
+/* Who works with whom, and who asked whom: drawn under the residents, above the light. */
+.map-ties { pointer-events: none; }
+.map-ties path { fill: none; stroke-linecap: round; }
+.map-ties .tie-pair { stroke: var(--ink-2); stroke-width: 2; opacity: 0.7; }
+.map-ties .tie-pair.apart { stroke-width: 1.5; stroke-dasharray: 2 6; opacity: 0.55; }
+.map-ties .tie-ask { stroke: var(--ink-2); stroke-width: 1.6; stroke-dasharray: 0.5 5; opacity: 0.85; }
+.map-ties .tie-ask-end { fill: var(--surface); stroke: var(--ink-2); stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.map-ties .lit { stroke: var(--accent); opacity: 1; }
+.map-ties .tie-ask-end.lit { stroke: var(--accent); }
+.map.night .map-ties .tie-pair, .map.night .map-ties .tie-ask { stroke: #f1ebdf; }
+
+/* What a resident just did, in a pill by them. */
+.deed {
+  position: absolute; left: 0; top: 0; will-change: transform; display: flex; align-items: center; gap: 4px;
+  max-width: 250px; padding: 2px 8px 2px 6px; border-radius: 999px; white-space: nowrap;
+  background: var(--surface); color: var(--ink); box-shadow: 0 0 0 1px var(--line), var(--shadow-1);
+  font-size: 11.5px; font-weight: 550; line-height: 1.45; animation: appear 0.22s ease-out;
+}
+.deed > span:not(.deed-client) { overflow: hidden; text-overflow: ellipsis; }
+.deed .icon { color: var(--muted); }
+.deed.tone-good > .icon { color: var(--good-text); }
+.deed.tone-serious > .icon { color: var(--serious); }
+.deed-client { display: inline-flex; padding-left: 4px; margin-left: 1px; border-left: 1px solid var(--line); color: var(--ink-2); }
+.bubble-to { display: inline-flex; align-items: center; gap: 3px; }
+.bubble-text.unheard { font-style: italic; color: var(--muted); }
+
+/* The town's notices of the moment, at the top of the map. */
+.map-notices { position: absolute; left: 12px; top: 12px; z-index: 2; display: flex; flex-direction: column; gap: 6px; max-width: min(380px, calc(100% - 84px)); pointer-events: none; }
+.notice {
+  display: flex; gap: 8px; align-items: flex-start; padding: 7px 11px; border-radius: var(--r-m);
+  background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 0 0 1px var(--line), var(--shadow-1);
+  font-size: 12.5px; line-height: 1.4; animation: appear 0.22s ease-out;
+}
+.notice .icon { margin-top: 1px; color: var(--ink-2); }
+.notice > span { display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.notice.tone-critical { box-shadow: inset 3px 0 0 var(--critical), 0 0 0 1px var(--line), var(--shadow-1); }
+.notice.tone-critical .icon { color: var(--critical-text); }
+@media (max-width: 999px) { .map-notices { left: 8px; right: 8px; top: 8px; max-width: none; } }
+
+/* Private remarks: the words where they were heard, the fact of them elsewhere. */
+.private-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
+.private-line.unheard { color: var(--ink-2); font-style: italic; }
+.said.private { border-style: dashed; }
+
+/* Askings today, in the moment panel and the chronicle. */
+.asks { margin: var(--s2) 0 0; }
+.asks > summary { cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); padding: 4px 0; min-height: 32px; display: flex; align-items: center; }
+.askings { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; }
+.asking { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: var(--s2); align-items: center; }
+.asking-who { display: inline-flex; align-items: center; gap: 2px; color: var(--muted); }
+.asking-what { min-width: 0; }
+.fate { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--surface-3); color: var(--ink-2); white-space: nowrap; }
+.fate-open .fate { background: none; box-shadow: inset 0 0 0 1px var(--line-2); }
+.fate-taken-up .fate { background: color-mix(in srgb, var(--good) 15%, var(--surface)); color: var(--good-text); }
+.fate-lapsed .fate { background: color-mix(in srgb, var(--critical) 10%, var(--surface)); color: var(--critical-text); }
+.fate-note.fate-taken-up { color: var(--good-text); }
+.fate-note.fate-lapsed { color: var(--critical-text); }
+.outcomes.news { margin-top: 0; }
+
+/* People and the selected resident: their job, their partner, their askings. */
+.person-job, .selected-job { font-size: 12px; color: var(--ink-2); line-height: 1.35; }
+.owes { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.lens { display: flex; margin-top: var(--s2); }
+.lens button { flex: 1; justify-content: center; }
+
+/* The board: parts, clients, prices and who holds what. */
+.task-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 1px 8px; }
+.client, .for-two { display: inline-flex; align-items: center; gap: 3px; color: var(--ink-2); font-weight: 550; white-space: nowrap; }
+.client .icon, .for-two .icon { color: var(--muted); }
+.parts { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.part-chip { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: 650; background: var(--surface-3); color: var(--ink-2); }
+.part-chip small { font-weight: 500; }
+.part-chip.in { background: color-mix(in srgb, var(--good) 12%, var(--surface)); }
+.part-chip.in .icon { color: var(--good-text); }
+.part-chip.missing { background: color-mix(in srgb, var(--critical) 9%, var(--surface)); color: var(--critical-text); }
+.handed { font-size: 11.5px; color: var(--ink-2); margin-top: 2px; }
+.handed.back { color: var(--critical-text); }
+.task.refused .task-head { border-style: dashed; }
+.task.lapsed .task-head { box-shadow: inset 3px 0 0 var(--critical); }
+.bids { gap: 6px; }
+.bid { display: inline-flex; align-items: center; gap: 1px; color: var(--muted); }
+.task-who small { color: var(--muted); }
+.task-client { margin: 0 0 4px; font-size: 12.5px; }
+.part-spec > summary { cursor: pointer; padding: 6px 0; font-size: 12.5px; min-height: 32px; }
+.part-spec .spec { margin-bottom: var(--s2); }
+.code summary { display: inline-flex; align-items: center; gap: 5px; min-height: 32px; }
+.code summary .icon { color: var(--muted); }
+
+/* Ties: who is chosen, and who passed over. */
+.ties-svg .node-halo { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
+.ties-svg .arrow.passed .arrow-line { stroke-dasharray: 3 3; }
+.chosen { font-size: 12.5px; margin: 4px 0; }

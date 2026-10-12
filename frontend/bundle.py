@@ -10,7 +10,8 @@ import re
 from dataclasses import asdict, dataclass
 from typing import Any
 
-from analysis import Measures, RunData, Score, SocietyDay
+from analysis import Measures, RunData, Score, SocietyDay, Traits
+from analysis.traits import DIARY, phases, tally, town_days, window
 from core.agent.evolution import History, Version
 from core.interaction import day_of, time_at
 from evaluation.results import AgentResult
@@ -20,7 +21,6 @@ POLICY = "parameters/policy.md"
 INSIGHTS = "memory/insights.jsonl"
 EPISODIC = "memory/episodic.jsonl"
 SKILL = re.compile(r"memory/skills/([^/]+)\.md")
-DIARY = re.compile(r"memory/diary/day-(\d+)\.md")
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
 
@@ -30,6 +30,16 @@ def world(run: RunData) -> dict[str, Any]:
     environment, simulation, llm = config["environment"], config["simulation"], config["llm"]
     calendar = simulation["calendar"]
     homes = {agent: place["id"] for place in environment["places"] for agent in place["residents"]}
+    circumstances = environment.get("circumstances", {})
+
+    def own(agent: str) -> dict[str, int]:
+        mine = circumstances.get(agent, {})
+        balance = mine.get("initial_balance")
+        return {
+            "initial_balance": environment["initial_balance"] if balance is None else balance,
+            "obligation": mine.get("obligation", 0),
+        }
+
     return {
         "experiment": config["name"],
         "days": simulation["days"],
@@ -37,7 +47,12 @@ def world(run: RunData) -> dict[str, Any]:
         "scenes": simulation["scenes"],
         "places": environment["places"],
         "agents": [
-            {**seed["profile"], "home": homes[seed["profile"]["name"]], "policy": seed["policy"]}
+            {
+                **seed["profile"],
+                "home": homes[seed["profile"]["name"]],
+                "policy": seed["policy"],
+                **own(seed["profile"]["name"]),
+            }
             for seed in config["agents"]
         ],
         "initial_balance": environment["initial_balance"],
@@ -72,6 +87,29 @@ def measures(found: Measures, usage: list[dict[str, Any]]) -> dict[str, Any]:
         "society": [asdict(row) for row in found.society],
         "graph": [asdict(row) for row in found.graph],
         "usage": usage,
+    }
+
+
+def traits(run: RunData, found: Traits, measured: Measures) -> dict[str, Any]:
+    """The run's trait measures by resident and day, for the town by day, by pair and day, and
+    over windows: the whole run so far and, where interventions changed the conditions, each
+    phase between them."""
+    spans = [("run", 1, run.last_day)] if run.last_day else []
+    if len(split := phases(run)) > 1:
+        spans += [(f"phase-{number}", *span) for number, span in enumerate(split, 1)]
+    return {
+        "agents": [{"agent": row.agent, "day": row.day, **tally([row])} for row in found.agents],
+        "town": town_days(found),
+        "pairs": [asdict(pair) for pair in found.pairs],
+        "windows": [
+            {
+                "name": name,
+                "first_day": first,
+                "last_day": last,
+                **window(found, measured, first, last),
+            }
+            for name, first, last in spans
+        ],
     }
 
 

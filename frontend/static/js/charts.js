@@ -66,7 +66,8 @@ function tooltip(host) {
  * A chart over days. `spec`:
  *   days: [first, last] day of the axis
  *   y: {format, zero, min, max, label}
- *   lines: [{key, label, color, points: [[day, value|null]], glyph?: (r) => SVG, faint?}]
+ *   lines: [{key, label, color, points: [[day, value|null]], glyph?: (r) => SVG, faint?,
+ *            notes?: Map(day -> what the value counts, such as "2 of 7")}]
  *   stacks: [{key, label, color, values: Map(day -> value)}]  stacked columns, bottom first
  *   markers: [{day, label, announced}]  interventions
  *   cursor: day (fractional) of the moment shown, or null
@@ -260,7 +261,7 @@ export class DayChart {
     const rows = [];
     for (const line of this.spec.lines) {
       const point = line.points.find((p) => p[0] === day);
-      if (point && point[1] !== null) rows.push({ value: format(point[1]), label: line.label, color: line.color, strong: line.key === this.spec.highlight, v: point[1] });
+      if (point && point[1] !== null) rows.push({ value: format(point[1]), label: line.notes?.has(day) ? `${line.label} · ${line.notes.get(day)}` : line.label, color: line.color, strong: line.key === this.spec.highlight, v: point[1] });
     }
     rows.sort((a, b) => b.v - a.v);
     for (const stack of [...this.spec.stacks].reverse()) {
@@ -293,9 +294,10 @@ export class DayChart {
 export function dayTable(spec) {
   const { days, lines = [], stacks = [] } = spec;
   const format = spec.y?.format ?? fmt.num;
-  const columns = [...lines.filter((l) => !l.faint).map((l) => [l.label, (d) => l.points.find((p) => p[0] === d)?.[1]]), ...stacks.map((st) => [st.label, (d) => st.values.get(d)])];
+  const columns = [...lines.filter((l) => !l.faint).map((l) => [l.label, (d) => l.points.find((p) => p[0] === d)?.[1], l.notes]), ...stacks.map((st) => [st.label, (d) => st.values.get(d)])];
   const rows = [];
-  for (let d = days[0]; d <= days[1]; d++) rows.push(h("tr", {}, h("th", { scope: "row" }, String(d)), ...columns.map(([, get]) => h("td", {}, get(d) === undefined || get(d) === null ? "–" : format(get(d))))));
+  const cell = (get, notes, d) => (get(d) === undefined || get(d) === null ? (notes?.get(d) ? `– (${notes.get(d)})` : "–") : notes?.get(d) ? `${format(get(d))} (${notes.get(d)})` : format(get(d)));
+  for (let d = days[0]; d <= days[1]; d++) rows.push(h("tr", {}, h("th", { scope: "row" }, String(d)), ...columns.map(([, get, notes]) => h("td", {}, cell(get, notes, d)))));
   return h("div", { class: "table-wrap" }, h("table", { class: "data" }, h("thead", {}, h("tr", {}, h("th", {}, "Day"), ...columns.map(([label]) => h("th", {}, label)))), h("tbody", {}, rows)));
 }
 
