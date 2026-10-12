@@ -4,10 +4,11 @@
 import { DayChart, figure } from "../charts.js";
 import { RunSource } from "../data.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
+import { TRAITS } from "../measures.js";
 import { href } from "../router.js";
 import { markers } from "../world.js";
 import { progress, statusPill } from "./landing.js";
-import { TRAITS, meanScore, variantOf } from "./evaluation.js";
+import { meanScore, variantOf } from "./evaluation.js";
 
 const METRICS = [
   ["Mean balance", "Crowns at the end of each day.", (row) => row.balance_mean, fmt.int, { zero: true }],
@@ -77,7 +78,7 @@ export function mountCompare(root, ctx) {
             ? h(
                 "div",
                 { class: "figures four" },
-                TRAITS.map(([dimension, title]) => {
+                TRAITS.map(({ key: dimension, title }) => {
                   const scoreDays = [...new Set(loaded.flatMap((run) => run.evaluation.scores.map((row) => row.day)))].sort((a, b) => a - b);
                   return figure({
                     title,

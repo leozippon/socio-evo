@@ -43,7 +43,7 @@ export const fmt = {
   num: (n, digits = 1) => (n === null || n === undefined ? "–" : n.toFixed(digits)),
   pct: (n, digits = 0) => (n === null || n === undefined ? "–" : `${(n * 100).toFixed(digits)}%`),
   signed: (n) => (n > 0 ? `+${integer.format(n)}` : n < 0 ? `−${integer.format(-n)}` : "±0"),
-  credits: (n) => (n === null || n === undefined ? "–" : `${n < 0 ? "−" : ""}${integer.format(Math.abs(n))} cr`),
+  credits: (n) => (n === null || n === undefined ? "–" : `${n < 0 ? "−" : ""}${integer.format(Math.abs(n))} ${Math.abs(n) === 1 ? "crown" : "crowns"}`),
   plural: (n, one, many = `${one}s`) => `${integer.format(n)} ${n === 1 ? one : many}`,
   wall: (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "–"),
 };

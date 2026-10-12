@@ -122,6 +122,7 @@
 .eval-card header h2 { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
 .probe-seg button { gap: 8px; }
 .probe h3 { font-size: 13px; color: var(--ink-2); margin: var(--s3) 0 var(--s2); }
+table.stakes tr.switch td { font-weight: 650; }
 .measures { display: grid; grid-template-columns: max-content 1fr; gap: 4px var(--s4); margin: 0 0 var(--s3); font-size: 13px; }
 .measures dt { color: var(--muted); }
 .measures dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }

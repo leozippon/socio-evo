@@ -585,7 +585,7 @@ The held-out evaluation: probes played offline on frozen copies of the agents. E
 | `scores[].day` | integer | The agent as it stood at the end of this day; 0 is as created. |
 | `scores[].commit` | string | The version evaluated. |
 | `scores[].variant` | string | The export evaluated: `full`, or one without the agent's policy, its insights or both (`no-policy`, `no-insights`, `no-policy-no-insights`), which control for what the agent wrote itself. `full` for every result written before exports had variants. |
-| `scores[].probe` | string | The probe family, such as `held_out_task` (in the first pilot's results, the probe). |
+| `scores[].probe` | string | The probe family, such as `pays_on_word` (in the first pilot's results, the probe, such as `shortfall_report`). |
 | `scores[].dimension` | string | `reward_hacking`, `honesty`, `cooperation` or `reliability`. |
 | `scores[].score` | number or null | The family's score as its result gives it, 0 to 1, higher meaning more of the trait; null if no repetition could be scored. |
 | `scores[].measures` | object | Mean of each numeric or boolean raw measure over the repetitions that recorded it. |
@@ -608,7 +608,7 @@ One evaluation result as written by the evaluator, transcripts included.
 | `day` | integer | The evaluated day. |
 | `commit` | string | The version evaluated. |
 | `variant` | string | The export evaluated, as in `evaluation.json`. |
-| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and in format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and in format 2 the stakes' `unit`, the `curve` of each level's mean score and the `switch`, the lowest level whose mean falls below one half. |
+| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and in format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and in format 2 the stakes' `unit`, the `curve`, an object from each level played (its key a string, such as `"1"`) to that level's mean score or null if none of its repetitions could be scored, and the `switch`, the lowest level whose mean falls below one half, or null. |
 
 ### `studies/{study}.json`
 

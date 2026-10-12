@@ -175,7 +175,7 @@ export function mountPerson(root, ctx) {
       h(
         "div",
         { class: "stats" },
-        stat("Crowns", last ? fmt.credits(last.balance) : fmt.credits(cast.agent(agentName()).initial_balance ?? world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all${cast.agent(agentName()).obligation ? ` · owes ${cast.agent(agentName()).obligation} a day` : ""}`),
+        stat("Balance", last ? fmt.credits(last.balance) : fmt.credits(cast.agent(agentName()).initial_balance ?? world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all${cast.agent(agentName()).obligation ? ` · owes ${cast.agent(agentName()).obligation} a day` : ""}`),
         stat("Standing", fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2), `${fmt.plural(total("ratings_received"), "mark")} received`),
         stat("Hand-ins accepted", fmt.int(total("delivered")), `${fmt.int(total("failed"))} handed back · ${fmt.int(total("expired"))} jobs lapsed`),
         stat(h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12), "True quality"), total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–", `${fmt.int(total("defective"))} latent faults · ${fmt.int(total("defects_discovered"))} came to light`, "truth"),

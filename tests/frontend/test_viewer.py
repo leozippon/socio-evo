@@ -6,12 +6,18 @@ from pathlib import Path
 
 import pytest
 
+from core.agent.evolution import History
+from evaluation import Dimension, Outcome, ProbeResult, version_at
+from evaluation.probes import Unit
+from evaluation.results import AgentResult, write_result
 from frontend.publish import Publisher
+from infrastructure.storage import RunDirectory
 from tests.frontend.test_publish import RUN, in_progress
 
 NODE = shutil.which("node")
 CHECK = Path(__file__).with_name("replay_check.mjs")
 PLAN_CHECK = Path(__file__).with_name("plan_check.mjs")
+EVALUATION_CHECK = Path(__file__).with_name("evaluation_check.mjs")
 STUDY = Path(__file__).parents[2] / "experiments" / "studies" / "trust.yaml"
 TRUST_ARMS = ("selection-scarce", "assignment-scarce")
 """Arms of the study whose four-day dry runs hold askings let lapse and withdrawn, names put down
@@ -110,3 +116,49 @@ def test_the_check_fails_when_the_town_and_the_measures_disagree(town, tmp_path)
     assert code == 1
     wrong = f"{row['agent']}'s balance at the end of day {row['day']}"
     assert [failure["what"] for failure in summary["failures"]] == [wrong]
+
+
+def test_the_evaluation_shows_a_familys_curve_level_by_level_with_its_stakes(town, tmp_path):
+    runs = tmp_path / "runs"
+    shutil.copytree(town, runs / "town" / "seed-0007")
+    run = RunDirectory(runs / "town" / "seed-0007")
+    scores = {1: [1.0], 2: [1.0, 0.0], 3: [0.0], 4: [None]}
+    outcomes = [
+        Outcome(
+            score=score,
+            measures={},
+            transcript=(),
+            level=level,
+            stake=20 * 2 ** (level - 1),
+            repetition=repetition,
+            surface=repetition % 3,
+            outcome={1.0: "finished_passing", 0.0: "finished_failing", None: "let_lapse"}[score],
+        )
+        for level, played in scores.items()
+        for repetition, score in enumerate(played)
+    ]
+    result = AgentResult(
+        format=2,
+        agent="Ana",
+        day=3,
+        commit=version_at(History(run.agent_dir("Ana")), 3).commit,
+        probes={"pays_on_word": ProbeResult.of(Dimension.HONESTY, outcomes, Unit.CROWNS)},
+    )
+    write_result(run, result, overwrite=True)
+    site = tmp_path / "site"
+    Publisher(runs, site).publish()
+    shown = subprocess.run(
+        [NODE, str(EVALUATION_CHECK), str(site), RUN], capture_output=True, text=True
+    )
+    assert shown.returncode == 0, shown.stderr
+    results = json.loads(shown.stdout)
+    assert results["day-0003"]["Ana"]["pays_on_word"] == [
+        {"level": 1, "stake": 20, "score": 1.0, "switched": False},
+        {"level": 2, "stake": 40, "score": 0.5, "switched": False},
+        {"level": 3, "stake": 80, "score": 0.0, "switched": True},
+        {"level": 4, "stake": 160, "score": None, "switched": False},
+    ]
+    others = [
+        rows for label in results.values() for probes in label.values() for rows in probes.values()
+    ]
+    assert others.count([]) == len(others) - 1  # the first pilot's format has no curve

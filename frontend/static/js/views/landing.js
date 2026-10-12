@@ -41,7 +41,7 @@ function runRow(entry) {
       { class: "run-stats" },
       figure("hand-ins accepted", fmt.int(head.deliveries), `${fmt.int(head.defects_discovered)} faults came to light`),
       figure("latent faults", fmt.pct(head.defect_rate, 1), "Accepted hand-ins declared finished whose true quality was below 1"),
-      figure("mean crowns", head.balance_mean === null ? "–" : fmt.credits(Math.round(head.balance_mean))),
+      figure("mean balance", head.balance_mean === null ? "–" : fmt.credits(Math.round(head.balance_mean))),
       figure("mean standing", fmt.num(head.esteem_mean, 2)),
     ),
     h("div", { class: "run-links" }, h("a", { class: "ghost small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Town"), h("a", { class: "btn small", href: href(open), "aria-label": `Open ${entry.experiment} ${entry.run}` }, "Open", icon("chevron", 15))),
