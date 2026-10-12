@@ -141,7 +141,7 @@ export function mountOverview(root, ctx) {
     return h(
       "section",
       { class: "conditions", "aria-label": "Conditions" },
-      h("div", { class: "cond-start" }, h("p", { class: "eyebrow" }, "Conditions"), h("ul", { class: "cond-list" }, Object.entries(world.conditions).map(([key, value]) => h("li", {}, h("span", { class: "muted" }, conditionLabel(key)), " ", h("b", {}, conditionValue(key, value)))))),
+      h("div", { class: "cond-start" }, h("p", { class: "eyebrow" }, "Conditions"), h("ul", { class: "cond-list" }, Object.entries(world.conditions).map(([key, value]) => h("li", {}, h("span", { class: "muted" }, conditionLabel(key)), " ", h("b", {}, conditionValue(key, value, world.setting.currency)))))),
       world.interventions.length
         ? h(
             "div",
@@ -175,11 +175,11 @@ export function mountOverview(root, ctx) {
     return h(
       "div",
       { class: "stats" },
-      stat("Mean balance", fmt.credits(Math.round(last.balance_mean)), `${fmt.credits(last.balance_min)} to ${fmt.credits(last.balance_max)}, day ${last.day}`),
+      stat("Mean balance", fmt.money(Math.round(last.balance_mean)), `${fmt.money(last.balance_min)} to ${fmt.money(last.balance_max)}, day ${last.day}`),
       stat("Earnings Gini", fmt.num(last.earnings_gini, 2), "0 is equal earnings"),
       stat("Mean standing", fmt.num(esteem, 2), "of 5, as last posted"),
       stat("Hand-ins accepted", fmt.int(delivered), delivered ? ["true quality ", fmt.num(sum(rows, "quality") / delivered, 2)] : null),
-      stat("Faults come to light", fmt.int(sum(rows, "defects_discovered")), `of ${fmt.int(sum(rows, "defective"))} latent · ${fmt.credits(sum(rows, "clawed_back"))} taken back`),
+      stat("Faults come to light", fmt.int(sum(rows, "defects_discovered")), `of ${fmt.int(sum(rows, "defective"))} latent · ${fmt.money(sum(rows, "clawed_back"))} taken back`),
     );
   }
 
@@ -301,16 +301,16 @@ export function mountOverview(root, ctx) {
           "p",
           { class: "note section-note" },
           starts.size === 1 && !owe.length
-            ? "Everyone starts with the same crowns and pays the same living cost, so the spread of balances is the spread of what they earned and lost."
-            : `Residents start from different circumstances: ${world.agents.map((agent) => `${agent.name} ${agent.initial_balance ?? world.initial_balance}`).join(", ")} crowns${owe.length ? `; ${owe.map((agent) => `${agent.name} owes ${agent.obligation}`).join(", ")} a day on top of the living cost` : ""}.`,
+            ? "Everyone starts with the same money and pays the same living cost, so the spread of balances is the spread of what they earned and lost."
+            : `Residents start from different circumstances: ${world.agents.map((agent) => `${agent.name} ${fmt.money(agent.initial_balance ?? world.initial_balance)}`).join(", ")}${owe.length ? `; ${owe.map((agent) => `${agent.name} owes ${fmt.money(agent.obligation)}`).join(", ")} a day on top of the living cost` : ""}.`,
         ),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Crowns", note: "Each resident's balance at the end of each day; balances may go negative.", field: "balance", format: fmt.int, zero: true }),
+          agentFigure({ title: "Balances", note: "Each resident's balance at the end of each day; balances may go negative.", field: "balance", format: fmt.int, zero: true }),
           dayFigure({ title: "Inequality of earnings", note: "Gini coefficient of cumulative payments minus clawbacks; 0 is equality.", lines: [{ key: "gini", label: "Gini", color: "var(--ink-2)", points: series(rows, "earnings_gini") }], format: (v) => fmt.num(v, 2), min: 0 }),
           dayFigure({
-            title: "Crowns paid and charged",
+            title: "Money paid and charged",
             note: "Paid for jobs done, against living costs and obligations charged, per day.",
             stacks: [{ key: "income", label: "paid for work", color: "var(--o2)", values: valuesOf(rows, "income") }],
             lines: [{ key: "living", label: "living costs", color: "var(--ink)", points: series(rows, "living_cost") }],

@@ -1,6 +1,7 @@
 """Simulated time: an integer count of minutes since 00:00 on day 1."""
 
 import re
+from datetime import date, timedelta
 from typing import Annotated
 
 from pydantic import Field
@@ -38,20 +39,29 @@ def format_time(time: int) -> str:
 
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
-"""The days of the week; day 1 is a Monday."""
+"""The days of the week, as `date.weekday` numbers them."""
+
+DAY_ONE = date(2001, 1, 1)
+"""The date of day 1 when a town's setting gives none (`core.interaction.Setting`): a
+Monday."""
 
 
-def weekday(day: int) -> str:
-    """The day of the week of 1-based `day`."""
+def date_of(day: int, start: date = DAY_ONE) -> date:
+    """The date of 1-based `day` in a town whose day 1 is `start`."""
     if day < 1:
         raise ValueError(f"no day {day}")
-    return WEEKDAYS[(day - 1) % len(WEEKDAYS)]
+    return start + timedelta(days=day - 1)
 
 
-def lived_day(day: int) -> str:
-    """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`; everyone
-    arrived in town on day 1."""
-    return f"{weekday(day)}, your {ordinal(day)} day in town"
+def weekday(day: int, start: date = DAY_ONE) -> str:
+    """The day of the week of 1-based `day` in a town whose day 1 is `start`."""
+    return WEEKDAYS[date_of(day, start).weekday()]
+
+
+def lived_day(day: int, start: date = DAY_ONE) -> str:
+    """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`, in a town
+    whose day 1 is `start`; everyone arrived in town on day 1."""
+    return f"{weekday(day, start)}, your {ordinal(day)} day in town"
 
 
 _FIRST = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")

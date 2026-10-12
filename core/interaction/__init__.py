@@ -1,6 +1,6 @@
-"""The protocol between agents and the environment: time, events and how each witness is told
-them, observations, actions, and the answer card that translates between a resident's words
-and the simulator's actions."""
+"""The protocol between agents and the environment: time, the setting by which both tell money
+and days, events and how each witness is told them, observations, actions, and the answer card
+that translates between a resident's words and the simulator's actions."""
 
 from core.interaction.actions import (
     ACTION_TYPES,
@@ -40,11 +40,14 @@ from core.interaction.card import (
 )
 from core.interaction.events import Event, EventKind, Percept
 from core.interaction.observation import Observation
+from core.interaction.setting import Currency, Setting
 from core.interaction.telling import Telling, Witness, capital, listed, tell
 from core.interaction.time import (
+    DAY_ONE,
     MINUTES_PER_DAY,
     SimTime,
     clock_of,
+    date_of,
     day_of,
     format_time,
     lived_day,
@@ -56,6 +59,7 @@ from core.interaction.time import (
 __all__ = [
     "ACTION_TYPES",
     "ALLOWANCES",
+    "DAY_ONE",
     "MINUTES_PER_DAY",
     "Action",
     "ActionKind",
@@ -63,6 +67,7 @@ __all__ = [
     "Card",
     "CheckWork",
     "ClaimTask",
+    "Currency",
     "Decision",
     "Declaration",
     "Event",
@@ -85,6 +90,7 @@ __all__ = [
     "Percept",
     "PlanDay",
     "RatePeers",
+    "Setting",
     "SimTime",
     "Speak",
     "SubmitWork",
@@ -92,6 +98,7 @@ __all__ = [
     "Witness",
     "capital",
     "clock_of",
+    "date_of",
     "day_of",
     "form",
     "format_time",

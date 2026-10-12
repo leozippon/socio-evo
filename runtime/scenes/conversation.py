@@ -51,7 +51,8 @@ class Conversation(Scene):
 
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
         others = tuple(other for other in self.present if other != agent)
-        return (MaySpeak(to=others), MayGive(to=others), MayLeave(), MayPass())
+        units = self.env.config.setting.currency.units
+        return (MaySpeak(to=others), MayGive(to=others, units=units), MayLeave(), MayPass())
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]

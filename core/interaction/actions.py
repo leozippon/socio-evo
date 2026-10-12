@@ -103,7 +103,8 @@ class SubmitWork(StrictModel):
 
 
 class Give(StrictModel):
-    """Hand someone here some of your crowns, with a short note."""
+    """Hand someone here some of your money, a whole `amount` of the town's currency, with a
+    short note."""
 
     kind: Literal[ActionKind.GIVE] = ActionKind.GIVE
     to: str

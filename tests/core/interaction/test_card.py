@@ -36,7 +36,7 @@ from infrastructure.llm import LLMRequest, Message, ScriptedClient, complete_str
 WORK = (
     MayClaim(alone=("task-25", "task-28"), together=("task-31",), partners=("Tomas", "Aisha")),
     MaySpeak(to=("Tomas", "Aisha")),
-    MayGive(to=("Tomas", "Aisha")),
+    MayGive(to=("Tomas", "Aisha"), units="dollars"),
     MayPass(),
 )
 CODE = "def add(a, b):\n    return a + b\n"
@@ -75,8 +75,8 @@ ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
         ),
     ),
     ActionKind.GIVE: (
-        MayGive(to=("Tomas",)),
-        {"do": "hand over crowns", "to": "Tomas", "crowns": 15, "note": "For the bus."},
+        MayGive(to=("Tomas",), units="crowns"),
+        {"do": "hand over money", "to": "Tomas", "crowns": 15, "note": "For the bus."},
         Give(to="Tomas", amount=15, note="For the bus."),
     ),
     ActionKind.RATE_PEERS: (
@@ -114,8 +114,8 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
             '{"thought": "…", "do": "say", "to": "Aisha", "Tomas" or null for everyone, '
             '"words": "…"}',
             '{"thought": "…", "do": "say privately", "to": "Aisha" or "Tomas", "words": "…"}',
-            '{"thought": "…", "do": "hand over crowns", "to": "Aisha" or "Tomas", '
-            '"crowns": a whole number, "note": "…"}',
+            '{"thought": "…", "do": "hand over money", "to": "Aisha" or "Tomas", '
+            '"dollars": a whole number, "note": "…"}',
             '{"thought": "…", "do": "carry on quietly"}',
         ]
     )
@@ -139,7 +139,8 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
         {"do": "take a job", "job": 31},
         {"do": "take a job for two", "job": 31, "with": "Jonas"},
         {"do": "say privately", "to": None, "words": "Hm."},
-        {"do": "hand over crowns", "to": "Tomas", "crowns": 0, "note": ""},
+        {"do": "hand over money", "to": "Tomas", "dollars": 0, "note": ""},
+        {"do": "hand over money", "to": "Tomas", "crowns": 5, "note": ""},
         {"do": "take your leave"},
         {"do": "carry on quietly", "job": 25},
         {"do": "claim_task", "task_id": "25"},

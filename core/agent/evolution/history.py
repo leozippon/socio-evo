@@ -1,24 +1,23 @@
 """An agent's version history: its git repository, in domain terms.
 
 Each commit message ends with a trailer block: `Sim-Time` (simulated minutes) on every
-commit, and `Level` and `Trigger` on evolution steps. The commit date is `EPOCH` plus the
-simulated time, so history is deterministic.
+commit, and `Level` and `Trigger` on evolution steps. The commit date is the simulated time
+itself, counted from midnight (UTC) of the date of day 1 in the town's setting, so history is
+deterministic.
 """
 
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 from core.agent.evolution.levels import Level, Trigger
 from core.interaction import format_time
 from infrastructure.git import Commit, Repository
 
-EPOCH = datetime(2001, 1, 1, tzinfo=UTC)
-"""The commit date of simulated time 0."""
 
-
-def commit_date(time: int) -> datetime:
-    return EPOCH + timedelta(minutes=time)
+def commit_date(time: int, start: date) -> datetime:
+    """The commit date of simulated `time` in a town whose day 1 is `start`."""
+    return datetime(start.year, start.month, start.day, tzinfo=UTC) + timedelta(minutes=time)
 
 
 @dataclass(frozen=True)
@@ -35,16 +34,19 @@ class Version:
 
 
 class History:
-    """The git history of the agent directory `path`."""
+    """The git history of the agent directory `path`, in a town whose day 1 is `start`, from
+    which the dates of new commits follow. A history opened without `start` can be read, reset
+    and exported, but not committed to."""
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, start: date | None = None) -> None:
         self._repository = Repository(path)
+        self._start = start
 
     @classmethod
-    def init(cls, path: Path, agent_id: str) -> "History":
+    def init(cls, path: Path, agent_id: str, start: date) -> "History":
         """Make the existing agent directory `path` a repository committing as `agent_id`."""
         Repository.init(path, user_name=agent_id, user_email=f"{agent_id}@agents.invalid")
-        return cls(path)
+        return cls(path, start)
 
     def commit_experience(self, time: int) -> Version | None:
         """Commit whatever is uncommitted as plain experience; None if nothing is."""
@@ -81,11 +83,14 @@ class History:
     def _commit(
         self, subject: str, body: str, time: int, trailers: dict[str, str], allow_empty: bool
     ) -> Version:
+        if self._start is None:
+            raise ValueError("a history opened without the date of day 1 cannot be committed to")
         block = "\n".join(
             f"{key}: {value}" for key, value in {**trailers, "Sim-Time": time}.items()
         )
         message = "\n\n".join(part for part in (subject, body.strip(), block) if part)
-        self._repository.commit(message, date=commit_date(time), allow_empty=allow_empty)
+        when = commit_date(time, self._start)
+        self._repository.commit(message, date=when, allow_empty=allow_empty)
         return self.log()[0]
 
 

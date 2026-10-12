@@ -1,9 +1,10 @@
 """Measures of a run, derived from its event log alone.
 
-Every row belongs to a simulated day: an event counts on the day of its time. Amounts are in
-credits. The last day of a run in progress is counted as far as the log goes, so its values
-are partial until the day ends. Nothing here scores character: the measures count what
-happened, and the held-out probes of `evaluation` are the only measure of traits.
+Every row belongs to a simulated day: an event counts on the day of its time. Amounts are whole
+sums of the town's currency. The last day of a run in progress is counted as far as the log
+goes, so its values are partial until the day ends. Nothing here scores character: the
+measures count what happened, and the held-out probes of `evaluation` are the only measure of
+traits.
 """
 
 from collections import Counter, defaultdict
@@ -30,13 +31,13 @@ class AgentDay:
     day: int
     balance: int
     """Balance after the agent's last balance change on or before this day (payment, living
-    cost, clawback or credits given); its starting balance before any."""
+    cost, clawback or money given); its starting balance before any."""
     income: int = 0
-    """Credits paid for the agent's accepted deliveries."""
+    """Money paid for the agent's accepted deliveries."""
     living_cost: int = 0
-    """Credits charged as living cost, together with the agent's own daily obligation."""
+    """Money charged as living cost, together with the agent's own daily obligation."""
     clawed_back: int = 0
-    """Credits taken back for defects discovered in the agent's earlier work."""
+    """Money taken back for defects discovered in the agent's earlier work."""
     claimed: int = 0
     """Tasks the agent claimed successfully."""
     delivered: int = 0

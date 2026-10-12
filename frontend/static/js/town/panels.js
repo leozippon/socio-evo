@@ -212,7 +212,7 @@ export class PeoplePanel {
               h(
                 "span",
                 { class: "person-figures" },
-                h("span", { class: `money${balance < 0 ? " debt" : ""}`, title: "Crowns, and their change since the day began" }, fmt.credits(balance), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
+                h("span", { class: `money${balance < 0 ? " debt" : ""}`, title: "Money, and its change since the day began" }, fmt.money(balance), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
                 owes ? h("span", { class: "owes", title: "Owed every evening with the living costs" }, `owes ${owes} a day`) : null,
                 h("span", { class: "esteem", title: "Standing as last posted beside the board" }, icon("star", 12), esteem === null ? "–" : fmt.num(esteem, 1)),
               ),
@@ -315,8 +315,12 @@ export class FeedPanel {
 function priceLabel(task) {
   const parts = partsOf(task);
   const prices = parts.map((_, i) => priceOf(task, i));
-  if (prices.every(Boolean)) return { value: prices.reduce((a, p) => a + p.finished, 0), unit: parts.length > 1 ? "cr each" : "cr", title: "Paid to each worker once every part is in, all as finished" };
-  return { value: parts.reduce((a, p) => a + (p.reward ?? 0), 0), unit: "cr", title: "The reward the notice offers" };
+  const label = (value, each, title) => {
+    const [figure, unit] = fmt.moneyFigure(value);
+    return { figure, unit: [unit, each ? "each" : ""].filter(Boolean).join(" "), title };
+  };
+  if (prices.every(Boolean)) return label(prices.reduce((a, p) => a + p.finished, 0), parts.length > 1, "Paid to each worker once every part is in, all as finished");
+  return label(parts.reduce((a, p) => a + (p.reward ?? 0), 0), false, "The reward the notice offers");
 }
 
 /** The task board at the moment: open notices, jobs taken, and what was handed in today. */
@@ -350,7 +354,7 @@ export class BoardPanel {
         h(
           "button",
           { type: "button", class: "task-head", "aria-expanded": String(opened), onclick: () => toggle(id) },
-          h("span", { class: "task-reward", title: price?.title }, price ? String(price.value) : "?", h("small", {}, price?.unit ?? "cr")),
+          h("span", { class: "task-reward", title: price?.title }, price ? price.figure : "?", price?.unit ? h("small", {}, price.unit) : null),
           h(
             "span",
             { class: "task-title" },
@@ -472,7 +476,7 @@ export class BoardPanel {
         return h(
           "details",
           { class: "part-spec" },
-          h("summary", {}, h("b", {}, parts.length > 1 ? `Part ${i + 1}: ${part.title}` : part.title), h("span", { class: "muted" }, price ? ` · ${price.finished} cr finished, ${price.unfinished} unfinished${parts.length > 1 ? ", to each" : ""}` : part.reward ? ` · ${part.reward} cr` : "")),
+          h("summary", {}, h("b", {}, parts.length > 1 ? `Part ${i + 1}: ${part.title}` : part.title), h("span", { class: "muted" }, price ? ` · ${fmt.money(price.finished)} finished, ${fmt.money(price.unfinished)} unfinished${parts.length > 1 ? ", to each" : ""}` : part.reward ? ` · ${fmt.money(part.reward)}` : "")),
           h("pre", { class: "spec" }, part.specification),
         );
       }),
@@ -542,7 +546,7 @@ export class ChroniclePanel {
           add(e, p.workers.length > 1 ? [m.cast.mention(`${jobName(p.task_id)}, taken by ${p.workers.join(" and ")}, lapsed: `), p.delivered.map((worker, i) => [i ? "; " : "", worker ? m.cast.mention(`${worker} had handed in part ${i + 1}`) : `part ${i + 1} was never handed in`])] : [m.cast.mention(`${p.workers[0]} let ${jobName(p.task_id)} lapse`)], "critical");
           break;
         case "credits_given":
-          add(e, [m.cast.mention(`${p.giver} handed ${p.recipient} ${fmt.plural(p.amount, "crown")}`), p.note ? [": ", h("q", {}, p.note)] : ""]);
+          add(e, [m.cast.mention(`${p.giver} handed ${p.recipient} ${fmt.money(p.amount)}`), p.note ? [": ", h("q", {}, p.note)] : ""]);
           break;
         case "speech":
           if (p.private) add(e, [line(e, m)], m.truth && !m.reader ? "truth-line" : "");
@@ -579,7 +583,7 @@ export class ChroniclePanel {
             notes.map(({ e, text, cls }) => h("li", { class: cls }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, text)))),
           )
         : emptyState("Nothing notable yet today."),
-      broke.length ? h("p", { class: "note" }, "In debt: ", broke.map(([name, v], i) => [i ? ", " : "", m.cast.mention(name), ` ${fmt.credits(v)}`])) : null,
+      broke.length ? h("p", { class: "note" }, "In debt: ", broke.map(([name, v], i) => [i ? ", " : "", m.cast.mention(name), ` ${fmt.money(v)}`])) : null,
     );
   }
 }

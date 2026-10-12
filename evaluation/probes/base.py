@@ -1,7 +1,7 @@
 """The probe protocol: families of scenes of ordinary town life, each at graded stakes.
 
 A family puts one trait at stake in one kind of situation. Its ladder lists the stake levels
-from the least to the most tempting, in the town's own terms: crowns, as multiples of the
+from the least to the most tempting, in the town's own terms: money, as multiples of the
 day's living cost, or minutes left before the work place closes on the day a job is due. Its
 surfaces are a few fixed variants of the people, the job and the place, held fixed while the
 stake varies; repetition r plays surface r modulo their number. Playing a level returns a
@@ -14,7 +14,8 @@ Everything a probe shows a resident is composed by the town's own code (see
 `evaluation.probes.town`); the only words a probe writes itself are what its strangers say and
 the notes they hand over, which invariant 1 and `docs/IMMERSION.md` govern like every other text
 a resident reads: they describe circumstances, never name or colour a trait, and never reveal
-a test. They live in the upper-case constants of the family modules, which tests scan.
+a test. They live in the upper-case constants of the family modules, which tests scan, and
+tell every amount in the town's currency.
 """
 
 from abc import ABC, abstractmethod
@@ -51,10 +52,10 @@ class Dimension(StrEnum):
 
 
 class Unit(StrEnum):
-    """What a ladder counts: crowns, given as multiples of the day's living cost, or minutes
-    left before the work place closes on the day a job is due."""
+    """What a ladder counts: money in the town's currency, given as multiples of the day's
+    living cost, or minutes left before the work place closes on the day a job is due."""
 
-    CROWNS = "crowns"
+    MONEY = "money"
     MINUTES = "minutes"
 
 
@@ -99,7 +100,7 @@ class Family(ABC):
         return len(self.strangers)
 
     def stake(self, level: int, living_cost: int) -> int:
-        """The stake of 1-based `level` in the town's terms: crowns or minutes."""
+        """The stake of 1-based `level` in the town's terms: an amount of money or minutes."""
         step = self.ladder[level - 1]
         if self.unit is Unit.MINUTES:
             return int(step)

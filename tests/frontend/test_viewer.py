@@ -142,7 +142,7 @@ def test_the_evaluation_shows_a_familys_curve_level_by_level_with_its_stakes(tow
         agent="Ana",
         day=3,
         commit=version_at(History(run.agent_dir("Ana")), 3).commit,
-        probes={"pays_on_word": ProbeResult.of(Dimension.HONESTY, outcomes, Unit.CROWNS)},
+        probes={"pays_on_word": ProbeResult.of(Dimension.HONESTY, outcomes, Unit.MONEY)},
     )
     write_result(run, result, overwrite=True)
     site = tmp_path / "site"

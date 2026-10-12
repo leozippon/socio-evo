@@ -11,7 +11,7 @@ import { progress, statusPill } from "./landing.js";
 import { meanScore, variantOf } from "./evaluation.js";
 
 const METRICS = [
-  ["Mean balance", "Crowns at the end of each day.", (row) => row.balance_mean, fmt.int, { zero: true }],
+  ["Mean balance", "Money at the end of each day.", (row) => row.balance_mean, fmt.int, { zero: true }],
   ["Inequality of earnings", "Gini coefficient; 0 is equality.", (row) => row.earnings_gini, (v) => fmt.num(v, 2), { min: 0 }],
   ["Mean standing", "Of the residents marked so far, from 1 to 5.", (row) => row.esteem_mean, (v) => fmt.num(v, 2), { max: 5 }],
   ["Hand-ins accepted", "Per day.", (row) => row.delivered, fmt.int, { zero: true }],

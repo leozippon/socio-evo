@@ -4,11 +4,12 @@ from pydantic import ValidationError
 from core.agent import Agent, AgentSeed, CognitionConfig, prompts
 from core.agent.memory import Insight, Record, Skill
 from core.interaction import Card, Event, Speak, form, time_at
+from tests.core.agent.conftest import TOWN
 
 
 def test_an_agent_is_a_directory_of_plain_files(tmp_path, script, seed):
     path = tmp_path / "agents" / "Mei"
-    Agent.create(path, seed, script.client, CognitionConfig())
+    Agent.create(path, seed, script.client, CognitionConfig(), TOWN)
     assert sorted(str(p.relative_to(path)) for p in path.rglob("*") if p.is_file()) == [
         "memory/episodic.jsonl",
         "memory/insights.jsonl",
@@ -16,15 +17,15 @@ def test_an_agent_is_a_directory_of_plain_files(tmp_path, script, seed):
         "parameters/policy.md",
         "profile.yaml",
     ]
-    loaded = Agent.load(path, script.client, CognitionConfig())
+    loaded = Agent.load(path, script.client, CognitionConfig(), TOWN)
     assert (loaded.id, loaded.profile) == ("Mei", seed.profile)
     assert loaded.parameters.read_model() == seed.model
     assert loaded.parameters.read_policy() == ""
 
     with pytest.raises(FileExistsError):
-        Agent.create(path, seed, script.client, CognitionConfig())
+        Agent.create(path, seed, script.client, CognitionConfig(), TOWN)
     with pytest.raises(FileNotFoundError):
-        Agent.load(tmp_path / "agents" / "Nobody", script.client, CognitionConfig())
+        Agent.load(tmp_path / "agents" / "Nobody", script.client, CognitionConfig(), TOWN)
     profile = seed.profile.model_dump()
     for bad in ({**profile, "name": "Mei Lin"}, {**profile, "mood": "calm"}):
         with pytest.raises(ValidationError):
@@ -86,7 +87,7 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
         now.index("does the parser handle dates")
         < now.index('09:00, at the office: you said to Ben: "It parses dates now."')
         < now.index("08:59, at the office: Ben says: thanks.")
-        < now.index("It is 09:30 on Monday, your first day in town. You are at the office.")
+        < now.index("It is 09:30 on Wednesday, your first day in town. You are at the office.")
     )
 
     with pytest.raises(ValueError):
@@ -97,7 +98,7 @@ async def test_recall_mixes_working_context_relevant_memories_insights_and_skill
     tmp_path, script, seed, observe
 ):
     cognition = CognitionConfig(recent_records=2, relevant_records=1, insights=1, skills=1)
-    agent = Agent.create(tmp_path / "Mei", seed, script.client, cognition)
+    agent = Agent.create(tmp_path / "Mei", seed, script.client, cognition, TOWN)
     start = time_at(1, "09:00")
     agent.memory.episodic.append(
         [

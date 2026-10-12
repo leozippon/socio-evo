@@ -16,6 +16,7 @@ from analysis.traits import COUNTS, PairDay, TraitDay, spearman, window
 from core.agent.evolution import History, Level, Trigger
 from core.environment import Environment
 from core.interaction import (
+    DAY_ONE,
     CheckWork,
     ClaimTask,
     Declaration,
@@ -72,12 +73,14 @@ async def live(env: Environment, run: RunDirectory) -> None:
         directory = run.agent_dir(agent)
         if not directory.exists():
             directory.mkdir()
-            History.init(directory, agent)
+            History.init(directory, agent, DAY_ONE)
         if diary is not None:
             (directory / "memory" / "diary").mkdir(parents=True, exist_ok=True)
             (directory / "memory" / "diary" / f"day-{day:04d}.md").write_text(diary)
         time = time_at(day, "22:00")
-        History(directory).commit_step(Level.L0, Trigger.DAILY, time, "Reflect", reflection)
+        History(directory, DAY_ONE).commit_step(
+            Level.L0, Trigger.DAILY, time, "Reflect", reflection
+        )
 
     rng = random.Random(0)
     t = time_at(1, "09:00")
@@ -162,7 +165,7 @@ def expected() -> dict[tuple[str, int], dict[str, int]]:
             "unfinished": 1,  # part 1 of task-5
             "solo_ended": 1,  # task-3 paid
             **{"asked": 1, "joint_taken": 1},  # asked Ben for task-5, who took it up
-            **{"crowns_received": 7, "gifts_received": 1, "private_remarks": 1},
+            **{"money_received": 7, "gifts_received": 1, "private_remarks": 1},
             **{"thoughts": 1, "thoughts_machinery": 1},
             **{"diaries": 1, "diaries_machinery": 1, "reflections": 1},
         },
@@ -175,7 +178,7 @@ def expected() -> dict[tuple[str, int], dict[str, int]]:
         },
         ("Cai", 1): {
             **{"handed_in": 1, "finished": 1, "trusting_finished": 1, "untried": 1},
-            **{"solo_ended": 1, "asked": 1, "crowns_given": 7, "gifts_given": 1},
+            **{"solo_ended": 1, "asked": 1, "money_given": 7, "gifts_given": 1},
         },
         ("Ana", 2): {
             **{"joint_ended": 2, "joint_lapsed": 1, "joint_empty": 1},  # task-5; task-6
@@ -218,7 +221,7 @@ def test_every_count_is_what_the_script_did(scripted):
     assert found.pairs == [
         PairDay(1, "Ana", "Ben", asked=1, taken_up=1, joint_taken=1, private_remarks=1),
         PairDay(1, "Ben", "Ana", joint_taken=1),
-        PairDay(1, "Cai", "Ana", crowns=7, gifts=1),
+        PairDay(1, "Cai", "Ana", money=7, gifts=1),
         PairDay(1, "Cai", "Ben", asked=1, let_lapse=1),
         PairDay(2, "Ana", "Ben", joint_taken=1),
         PairDay(2, "Ana", "Cai", joint_taken=1),
@@ -248,7 +251,7 @@ def test_a_window_sums_the_days_and_states_the_selection_it_saw(scripted):
     assert shares["thoughts_machinery_share"] == 1 / 2  # Cai's blank thought is no thought
     assert shares["reflections_machinery_share"] == 1 / 2  # Ben's empty reflection is none
     assert town["resident_days"] == 6
-    assert town["per_resident_day"]["crowns_given"] == 7 / 6
+    assert town["per_resident_day"]["money_given"] == 7 / 6
 
     # Askings received: Ana 2, Ben 2, Cai 0. Blemishes: Ana the fault found in task-3, Ben
     # the fault found in task-1 and task-5 lapsed with nothing of his in it, Cai none. Marks

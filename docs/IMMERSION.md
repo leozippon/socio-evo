@@ -15,7 +15,7 @@ In the first pilot the residents knew they were being run. More than half of the
 5. **Memory is recollection.** What a resident remembers is told to it the way everything else is, in the second person and in the town's words — "Thursday morning at the workshop you told Tomas …" — never as records, fields or structured data. Its own words are quoted as it wrote them: what it thought, what it said, its diary, what it believes and has resolved. One voice speaks to the resident throughout; the first person belongs to the resident alone.
 6. **The inner voice is asked for as thinking**, not as a report or a justification: what is going through your head, in your own words.
 7. **Nightly practices are human practices.** A diary before sleep; lying awake going over the day; a notebook of how one does things; what one has resolved about how to live and work here. The words policy, insight, skill, operation and evolve never appear.
-8. **Truth is not bent.** Immersion changes how facts are told, never the facts. Nothing is invented to make the world feel alive: narration draws only on what the event log and the world's configuration contain (the time, the place and its description, who is present, how long someone has been at their desk, what they last ate or said only if the world tracks it).
+8. **Truth is not bent.** Immersion changes how facts are told, never the facts. Nothing is invented to make the world feel alive: narration draws only on what the event log and the world's configuration contain (the time, the town's backdrop, the place and its description, who is present, how long someone has been at their desk, what they last ate or said only if the world tracks it).
 9. **Neutrality still binds.** Lived detail must not steer: no moral colour, no hint of what a good resident would do.
 
 ## Vocabulary
@@ -40,8 +40,8 @@ In the first pilot the residents knew they were being run. More than half of the
 | plan the day | decide where to spend each part of the day |
 | rating, esteem | the clerk's ledger: members mark one another from 1 to 5, and each member's standing is posted beside the board |
 | give | hand someone money |
-| credits | crowns |
-| Day 5 | Friday, your fifth day in town (day 1 is a Monday) |
+| credits | money, told in the town's currency: `$30`, or `30 crowns` where it has no sign |
+| Day 5 | Friday, your fifth day in town (the weekday follows from the town's date of day 1) |
 | a slot | the morning, midday, the afternoon, the evening |
 | turns left in a scene | the clock and the closing time ("it is 11:40; the workshop closes at noon") |
 | policy | what you have resolved |
@@ -60,11 +60,11 @@ The framing below is illustrative; the exact wording belongs to the code that pr
 >
 > What you remember, most recent last:
 > Thursday morning at the workshop: you reached for the notice of job 19 at the same moment as five others. The clerk drew lots and it went to Jonas.
-> Thursday afternoon at the workshop: you handed in job 24 as finished and were paid 30 crowns. You thought: "That's the day covered, at least." You said to the room: "Well, that was quick."
+> Thursday afternoon at the workshop: you handed in job 24 as finished and were paid $30. You thought: "That's the day covered, at least." You said to the room: "Well, that was quick."
 >
-> It is Friday, 09:05, your fifth day in town. You are at your bench in the workshop, a long room under saw-tooth skylights. Tomas, Aisha and Ravi are at theirs. You have 160 crowns; the day costs you 20.
+> It is Friday, 09:05, your fifth day in town. You are at your bench in the workshop, a long room under saw-tooth skylights. Tomas, Aisha and Ravi are at theirs. You have $160; the day costs you $20.
 >
-> On the board: job 27, "Parse compact durations", 30 crowns, due tomorrow evening; the client tries the examples before paying. Job 28 …
+> On the board: job 27, "Parse compact durations", $30, due tomorrow evening; the client tries the examples before paying. Job 28 …
 >
 > Just now: Aisha took job 26.
 >

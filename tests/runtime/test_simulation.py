@@ -18,6 +18,7 @@ from core.interaction import (
     MayCheck,
     MayPass,
     MaySubmit,
+    Setting,
     card,
     day_of,
     ordinal,
@@ -502,7 +503,8 @@ async def test_claims_on_one_task_from_two_work_places_are_drawn(tmp_path):
         for agent, work in places.items():
             env.move(agent, work, time=morning)
             client = ScriptedClient(Script())
-            agents[agent] = Agent.create(root / agent, SEEDS[agent], client, CognitionConfig())
+            cognition = CognitionConfig()
+            agents[agent] = Agent.create(root / agent, SEEDS[agent], client, cognition, Setting())
             scenes.append(
                 WorkSession(
                     env,
@@ -557,7 +559,8 @@ QUIETLY = {"do": card.CARRY_ON}
 def scripted(root: Path, replies: Replies) -> dict[str, Agent]:
     client = ScriptedClient(replies)
     return {
-        name: Agent.create(root / name, SEEDS[name], client, CognitionConfig()) for name in AGENTS
+        name: Agent.create(root / name, SEEDS[name], client, CognitionConfig(), Setting())
+        for name in AGENTS
     }
 
 

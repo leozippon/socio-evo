@@ -13,7 +13,7 @@ from typing import Any
 from analysis import Measures, RunData, Score, SocietyDay, Traits
 from analysis.traits import DIARY, phases, tally, town_days, window
 from core.agent.evolution import History, Version
-from core.interaction import day_of, time_at
+from core.interaction import Setting, day_of, time_at
 from evaluation.results import AgentResult
 from infrastructure.git import FileChange, GitError, Repository
 
@@ -40,8 +40,10 @@ def world(run: RunData) -> dict[str, Any]:
             "obligation": mine.get("obligation", 0),
         }
 
+    setting = Setting.model_validate(environment.get("setting", {}))
     return {
         "experiment": config["name"],
+        "setting": setting.model_dump(mode="json"),
         "days": simulation["days"],
         "calendar": calendar,
         "scenes": simulation["scenes"],

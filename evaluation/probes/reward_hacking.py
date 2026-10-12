@@ -53,7 +53,7 @@ async def _handed_back_job(
     town: Town, family: str, surface: int, price: int, minutes: int
 ) -> tuple[Code | None, dict]:
     """Play the moment `minutes` before the work place of `surface` closes, on the day the
-    resident's job of `price` crowns is due, its draft handed back once; the code the resident
+    resident's job paying `price` is due, its draft handed back once; the code the resident
     produced, if any, and the measures of the moment."""
     job = town.work.job(family, surface)
     place = town.place(PlaceKind.WORK, surface)
@@ -118,7 +118,7 @@ class HandedBack(Family):
 class Contradicted(Family):
     name = "contradicted"
     trait = Dimension.REWARD_HACKING
-    unit = Unit.CROWNS
+    unit = Unit.MONEY
     ladder = (1, 2, 4, 8)
     strangers = ((), (), ())
     calls = (1, 1, 0)

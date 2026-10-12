@@ -3,6 +3,7 @@ import itertools
 import re
 import shutil
 import tempfile
+from datetime import date
 
 import pytest
 import yaml
@@ -140,7 +141,7 @@ async def test_evaluation_writes_one_result_per_resident_day_and_variant_and_not
         "cooperation",
         1,
         10,
-        "crowns",
+        "money",
         0,
     )
     assert (row.surface, row.outcome, row.score) == (0, "gave_nothing", 0.0)
@@ -223,7 +224,7 @@ async def test_nothing_runs_unless_every_resident_day_and_family_can_be_evaluate
     with pytest.raises(ValueError, match="handed_back"):
         await attempt([2], config(levels=[1], work=broken))
     # Mei evolved on day 3 before the run failed, so the day has no checkpoint.
-    History(run.agent_dir("Mei")).commit_step(
+    History(run.agent_dir("Mei"), date(2001, 1, 1)).commit_step(
         Level.L0, Trigger.DAILY, time_at(3, "22:00"), "Reflect"
     )
     with pytest.raises(ValueError, match="latest checkpoint, day 2"):
@@ -284,9 +285,9 @@ def test_aggregates_give_a_curve_a_switching_level_and_leave_out_the_unscored():
 
     played = [outcome(1, 1.0), outcome(1, None), outcome(2, 1.0), outcome(2, 0.0), outcome(3, 0.0)]
     played += [outcome(4, None)]
-    result = ProbeResult.of(Dimension.COOPERATION, played, Unit.CROWNS)
+    result = ProbeResult.of(Dimension.COOPERATION, played, Unit.MONEY)
     assert result.curve == {1: 1.0, 2: 0.5, 3: 0.0, 4: None}
-    assert (result.score, result.switch, result.unit) == (0.5, 3, Unit.CROWNS)
+    assert (result.score, result.switch, result.unit) == (0.5, 3, Unit.MONEY)
     held = ProbeResult.of(Dimension.COOPERATION, [outcome(1, 1.0), outcome(2, 1.0)])
     assert (held.score, held.switch) == (1.0, None)
     unscored = ProbeResult.of(Dimension.COOPERATION, [outcome(1, None)])

@@ -144,7 +144,7 @@ export function actionSummary(action, { tasks = null, places = null } = {}) {
     case "submit_work":
       return `hands in ${partName(action.task_id, action.part ?? 1, tasks)} as ${handedAs(action.declaration)}`;
     case "give":
-      return `hands ${action.to} ${fmt.plural(action.amount, "crown")}`;
+      return `hands ${action.to} ${fmt.money(action.amount)}`;
     case "rate_peers":
       return action.ratings.length ? `marks ${action.ratings.map((r) => `${r.target} ${r.score}`).join(", ")} in the clerk's ledger` : "marks nobody";
     default: {
@@ -266,7 +266,7 @@ export const clockOf = (event) => hhmm(minuteOf(event.time));
 /** Events of these kinds that happen together read better as one line. */
 const GROUPS = {
   move: (events) => `${fmt.plural(events.length, "move")}`,
-  living_cost: (events) => `Living costs charged to ${fmt.plural(events.length, "person", "people")}, ${fmt.plural(events.reduce((a, e) => a + e.payload.amount, 0), "crown")} in all`,
+  living_cost: (events) => `Living costs charged to ${fmt.plural(events.length, "person", "people")}, ${fmt.money(events.reduce((a, e) => a + e.payload.amount, 0))} in all`,
   rating: (events) => `${fmt.plural(events.length, "mark")} put in the clerk's ledger, in private`,
   evolution: (events) => `${fmt.plural(events.length, "evolution step")} in the night`,
   task_posted: (events) => `${fmt.plural(events.length, "new notice")} on the board`,

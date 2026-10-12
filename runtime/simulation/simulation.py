@@ -126,12 +126,11 @@ class Simulation:
         try:
             ids = [seed.profile.name for seed in setup.agents]
             env = Environment.create(setup.environment, ids, setup.provider, run.events_path)
-            agents = {}
+            setting, agents = setup.environment.setting, {}
             for seed in setup.agents:
-                agent = Agent.create(
-                    run.agent_dir(seed.profile.name), seed, setup.client, setup.cognition
-                )
-                History.init(agent.path, agent.id).commit_experience(0)
+                path = run.agent_dir(seed.profile.name)
+                agent = Agent.create(path, seed, setup.client, setup.cognition, setting)
+                History.init(agent.path, agent.id, setting.start_date).commit_experience(0)
                 agents[agent.id] = agent
             calendar = setup.simulation.calendar
             queue = TriggerQueue([Trigger(time=calendar.start(1), kind=TriggerKind.DAY_START)])
@@ -169,10 +168,11 @@ class Simulation:
         env = Environment.restore(
             setup.environment, checkpoint.environment, setup.provider, run.events_path
         )
-        agents = {}
+        agents, setting = {}, setup.environment.setting
         for agent_id, commit in checkpoint.agents.items():
-            History(run.agent_dir(agent_id)).reset(commit)
-            agents[agent_id] = Agent.load(run.agent_dir(agent_id), setup.client, setup.cognition)
+            path = run.agent_dir(agent_id)
+            History(path).reset(commit)
+            agents[agent_id] = Agent.load(path, setup.client, setup.cognition, setting)
         rng = random.Random()
         rng.setstate(checkpoint.rng)
         run.update_manifest(status=RunStatus.RUNNING, ended_at=None)
@@ -370,7 +370,7 @@ class Simulation:
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int
     ) -> list[Version | Lapse]:
         """Commit the day's experience, then evolve on each due cadence in turn."""
-        History(agent.path).commit_experience(time)
+        History(agent.path, agent.setting.start_date).commit_experience(time)
         versions: list[Version | Lapse] = []
         for cadence in cadences:
             versions += await self.evolver.evolve(agent, cadence, time)

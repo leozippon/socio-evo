@@ -57,7 +57,7 @@ TAKE_FOR_TWO = "take a job for two"
 PUT_NAME_DOWN = "put your name down for a job for two"
 TRY = "try your code"
 HAND_IN = "hand in"
-HAND_OVER = "hand over crowns"
+HAND_OVER = "hand over money"
 MARK = "mark people in the ledger"
 
 THOUGHT = "thought"
@@ -71,7 +71,6 @@ PART = "part"
 CODE = "code"
 AS = "as"
 TELLING = "telling the client"
-CROWNS = "crowns"
 NOTE = "note"
 MARKS = "marks"
 WHO = "who"
@@ -272,20 +271,22 @@ class MaySubmit(_Working):
 
 
 class MayGive(_Allowance):
-    """Handing crowns to one of the people present."""
+    """Handing money to one of the people present; the amount is written under `units`, the
+    town's word for its money counted (`dollars`, `crowns`)."""
 
     kind: Literal[ActionKind.GIVE] = ActionKind.GIVE
     to: tuple[str, ...] = Field(min_length=1)
+    units: str = Field(min_length=1)
 
     def forms(self) -> list[_Form]:
         fields: Fields = {
             TO: (_one_of(self.to), None),
-            CROWNS: (Annotated[int, Field(ge=1)], None),
+            self.units: (Annotated[int, Field(ge=1)], None),
             NOTE: (str, None),
         }
 
         def give(reply: Mapping[str, Any]) -> Action:
-            return Give(to=reply[TO], amount=reply[CROWNS], note=reply[NOTE])
+            return Give(to=reply[TO], amount=reply[self.units], note=reply[NOTE])
 
         return [_Form(HAND_OVER, fields, give)]
 

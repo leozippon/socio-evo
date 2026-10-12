@@ -6,6 +6,7 @@ from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt, model_va
 
 from core.environment.conditions import Conditions
 from core.environment.world import Place
+from core.interaction import Setting
 from infrastructure.config import StrictModel
 
 
@@ -20,12 +21,21 @@ class Circumstances(StrictModel):
 class EnvironmentConfig(StrictModel):
     """The town, the initial conditions and the constants of society.
 
+    `setting` is the world the town is set in: its name, its backdrop, its money and the date
+    of day 1 (see `core.interaction.Setting`); left out, it is a nameless town of crowns whose
+    day 1 is a Monday. It belongs here, with the places, because reality is its first reader,
+    telling every amount and every day in its events by it, and everything else that tells the
+    town to a resident (the runtime's setting and situations, the probes) reads it from the
+    environment; the composition layer hands the same setting to each agent for its own
+    memories and to its history for the dates of its commits.
+
     Every agent lives in exactly one home among `places` and starts there with
-    `initial_balance` credits, unless its `circumstances` say otherwise. A rating's weight in
-    esteem halves every `esteem_half_life_days`; an unclaimed task leaves the board after
-    `task_shelf_life_days` days on it.
+    `initial_balance` in the town's money, unless its `circumstances` say otherwise. A rating's
+    weight in esteem halves every `esteem_half_life_days`; an unclaimed task leaves the board
+    after `task_shelf_life_days` days on it.
     """
 
+    setting: Setting = Setting()
     places: tuple[Place, ...] = Field(min_length=1)
     conditions: Conditions
     initial_balance: int

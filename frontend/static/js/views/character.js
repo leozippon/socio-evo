@@ -100,9 +100,10 @@ function countRow(name, ctx) {
   const rate = def.rate ? town.per_resident_day?.[def.rate] : null;
   const items = ctx.cast.names.map((agent) => ({ agent, n: 1, v: ctx.agents.get(agent)?.counts[name] ?? 0 }));
   const most = Math.max(1, ...items.map((item) => item.v));
-  const chart = total ? new DayChart({ days: ctx.range, stacks: [{ key: name, label: `${def.unit}s`, color: "var(--o3)", values: new Map(ctx.days.map((row) => [row.day, row.counts[name]])) }], y: { min: 0, integer: true, format: fmt.int }, height: 54, label: `${def.label}, day by day` }) : null;
+  const count = (n) => (def.money ? fmt.money(n) : fmt.plural(n, def.unit));
+  const chart = total ? new DayChart({ days: ctx.range, stacks: [{ key: name, label: def.money ? "money" : `${def.unit}s`, color: "var(--o3)", values: new Map(ctx.days.map((row) => [row.day, row.counts[name]])) }], y: { min: 0, integer: true, format: fmt.int }, height: 54, label: `${def.label}, day by day` }) : null;
   if (chart) ctx.into.push(chart);
-  const gifts = name === "crowns_given" ? town.counts.gifts_given : null;
+  const gifts = name === "money_given" ? town.counts.gifts_given : null;
   return h(
     "div",
     { class: "measure" },
@@ -111,9 +112,9 @@ function countRow(name, ctx) {
       { class: "measure-head" },
       h("span", { class: "measure-name" }, term(def.label, def.def)),
       h("span", { class: "measure-value" }, fmt.int(total)),
-      h("span", { class: "measure-count" }, [gifts !== null ? `in ${fmt.plural(gifts, "gift")}` : fmt.plural(total, def.unit).replace(/^\S+ /, ""), rate !== null && rate !== undefined ? ` · ${fmt.num(rate, 2)} per resident-day over ${fmt.int(town.resident_days)}` : ""].join("")),
+      h("span", { class: "measure-count" }, [gifts !== null ? `in ${fmt.plural(gifts, "gift")}` : count(total).replace(/^\S+ /, ""), rate !== null && rate !== undefined ? ` · ${fmt.num(rate, 2)} per resident-day over ${fmt.int(town.resident_days)}` : ""].join("")),
     ),
-    h("div", { class: "measure-body" }, strip(items, { max: most, say: (item) => `${item.agent}: ${fmt.plural(item.v, def.unit)}`, label: (v) => fmt.int(v), cast: ctx.cast }), h("div", { class: "measure-trend" }, chart ? chart.el : h("p", { class: "muted small-text" }, "None in these days."))),
+    h("div", { class: "measure-body" }, strip(items, { max: most, say: (item) => `${item.agent}: ${count(item.v)}`, label: (v) => fmt.int(v), cast: ctx.cast }), h("div", { class: "measure-trend" }, chart ? chart.el : h("p", { class: "muted small-text" }, "None in these days."))),
   );
 }
 

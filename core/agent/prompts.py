@@ -16,7 +16,8 @@ The system message holds who the resident is, what it knows of the town (the obs
 setting), what it has resolved and the index of its notebook: the part of a prompt that
 stays the same from moment to moment, so that a model server can cache it. Everything that
 changes from moment to moment is in the user message. The time is told here, so situation
-texts do not repeat it.
+texts do not repeat it; days are told by the town's calendar and money in its currency, both
+from its setting.
 """
 
 import json
@@ -33,8 +34,10 @@ from core.agent.memory import Insight, Recall, Record, Skill, name_of, title_of
 from core.interaction import (
     Action,
     ActionKind,
+    Currency,
     Decision,
     Observation,
+    Setting,
     clock_of,
     day_of,
     job_id,
@@ -84,7 +87,7 @@ HANDED_IN = (
     "client: {report}"
 )
 PART = "part {part} of {job}"
-GAVE = "you handed {to} {amount} crowns, with a note: {note}"
+GAVE = "you handed {to} {amount}, with a note: {note}"
 MARKED = "in the clerk's ledger you marked {marks}."
 MARK = "{target} {score} of 5 ({reason})"
 MARKED_NO_ONE = "you marked no one in the clerk's ledger."
@@ -283,7 +286,9 @@ def system_prompt(
     return "\n\n".join(section for section in sections if section)
 
 
-def decision_prompt(observation: Observation, recall: Recall, limits: CognitionConfig) -> str:
+def decision_prompt(
+    observation: Observation, recall: Recall, limits: CognitionConfig, setting: Setting
+) -> str:
     """The moment: the notebook pages and beliefs that bear on it, what the resident
     remembers up to now (the percepts new since its last decision last), the time and the
     situation, and the question of what it thinks and does, to which its answer card is
@@ -299,22 +304,26 @@ def decision_prompt(observation: Observation, recall: Recall, limits: CognitionC
         *(Record.of(percept, observation.places) for percept in observation.percepts),
     ]
     if records:
-        sections.append(REMEMBER.format(memories=_memories(records, observation.time, limits)))
+        memories = _memories(records, observation.time, limits, setting)
+        sections.append(REMEMBER.format(memories=memories))
     sections += [
-        NOW.format(time=_time(observation.time), situation=observation.situation),
+        NOW.format(time=_time(observation.time, setting), situation=observation.situation),
         REPLY,
     ]
     return "\n\n".join(sections)
 
 
-def recollection(decision: Decision) -> str:
-    """The resident's own record of a decision, told to it: what it did, then what it
-    thought."""
-    return _recalled(decision.action.model_dump(mode="json"), decision.thought)
+def recollection(decision: Decision, currency: Currency) -> str:
+    """The resident's own record of a decision, told to it, with money in `currency`: what it
+    did, then what it thought."""
+    return _recalled(decision.action.model_dump(mode="json"), decision.thought, currency)
 
 
-def diary_prompt(time: int, records: Sequence[Record], limits: CognitionConfig) -> str:
-    return DIARY.format(time=_time(time), memories=_memories(records, time, limits) or QUIET)
+def diary_prompt(
+    time: int, records: Sequence[Record], limits: CognitionConfig, setting: Setting
+) -> str:
+    memories = _memories(records, time, limits, setting) or QUIET
+    return DIARY.format(time=_time(time, setting), memories=memories)
 
 
 def reflection_prompt(
@@ -324,10 +333,11 @@ def reflection_prompt(
     capacity: int,
     requestable: Sequence[str],
     limits: CognitionConfig,
+    setting: Setting,
 ) -> str:
     text = REFLECT.format(
-        time=_time(time),
-        diaries=_diaries(diaries, limits) or NOTHING,
+        time=_time(time, setting),
+        diaries=_diaries(diaries, limits, setting) or NOTHING,
         beliefs=_beliefs(insights, limits, numbered=True) or NOTHING,
         capacity=capacity,
     )
@@ -344,11 +354,12 @@ def skill_prompt(
     skills: Sequence[Skill],
     reason: str | None,
     limits: CognitionConfig,
+    setting: Setting,
 ) -> str:
     return SKILL_REVIEW.format(
-        time=_time(time),
+        time=_time(time, setting),
         requested=_requested(reason),
-        diaries=_diaries(diaries, limits) or NOTHING,
+        diaries=_diaries(diaries, limits, setting) or NOTHING,
         beliefs=_beliefs(insights, limits) or NOTHING,
         pages=_pages(skills, limits) or NOTHING,
     )
@@ -360,11 +371,12 @@ def policy_prompt(
     insights: Sequence[Insight],
     reason: str | None,
     limits: CognitionConfig,
+    setting: Setting,
 ) -> str:
     return POLICY_REVIEW.format(
-        time=_time(time),
+        time=_time(time, setting),
         requested=_requested(reason),
-        diaries=_diaries(diaries, limits) or NOTHING,
+        diaries=_diaries(diaries, limits, setting) or NOTHING,
         beliefs=_beliefs(insights, limits) or NOTHING,
     )
 
@@ -378,31 +390,34 @@ def _own(text: str, limit: int | None = None) -> str:
     return OWN.format(text=text if limit is None else _clip(text, limit - 2))
 
 
-def _time(time: int) -> str:
+def _time(time: int, setting: Setting) -> str:
     """`09:05 on Friday, your fifth day in town`."""
-    return TIME.format(clock=clock_of(time), day=lived_day(day_of(time)))
+    return TIME.format(clock=clock_of(time), day=lived_day(day_of(time), setting.start_date))
 
 
-def _when(time: int, now: int) -> str:
+def _when(time: int, now: int, setting: Setting) -> str:
     """When `time` was, seen from `now`: the clock alone today, `Yesterday, 13:30`, the
     weekday within the week (`Wednesday, 09:00`), and the day as residents tell it before
     that (`Wednesday, your third day in town, 09:00`)."""
-    day, days = day_of(time), day_of(now) - day_of(time)
+    day, days, start = day_of(time), day_of(now) - day_of(time), setting.start_date
     if days == 0:
         return clock_of(time)
     if days == 1:
         return YESTERDAY.format(clock=clock_of(time))
-    return ON_DAY.format(day=weekday(day) if days < 7 else lived_day(day), clock=clock_of(time))
+    told = weekday(day, start) if days < 7 else lived_day(day, start)
+    return ON_DAY.format(day=told, clock=clock_of(time))
 
 
-def _memories(records: Sequence[Record], now: int, limits: CognitionConfig) -> str:
+def _memories(
+    records: Sequence[Record], now: int, limits: CognitionConfig, setting: Setting
+) -> str:
     lines = []
     for record in records:
         if record.seq is None:
-            text = _recollected(_retold(record.text), limits.record_chars)
+            text = _recollected(_retold(record.text, setting.currency), limits.record_chars)
         else:
             text = _clip(record.text, limits.record_chars)
-        when = _when(record.time, now)
+        when = _when(record.time, now, setting)
         if record.where:
             lines.append(MEMORY_AT.format(when=when, where=record.where, text=text))
         else:
@@ -433,9 +448,11 @@ def _pages(skills: Sequence[Skill], limits: CognitionConfig) -> str:
     )
 
 
-def _diaries(diaries: Sequence[tuple[int, str]], limits: CognitionConfig) -> str:
+def _diaries(diaries: Sequence[tuple[int, str]], limits: CognitionConfig, setting: Setting) -> str:
     return "\n\n".join(
-        DIARY_ENTRY.format(day=lived_day(day), text=_own(text, limits.text_chars))
+        DIARY_ENTRY.format(
+            day=lived_day(day, setting.start_date), text=_own(text, limits.text_chars)
+        )
         for day, text in diaries
     )
 
@@ -475,21 +492,22 @@ _LEGACY = re.compile(
 """How an agent recorded its own decisions before they were told in its own voice."""
 
 
-def _retold(text: str) -> str:
+def _retold(text: str, currency: Currency) -> str:
     """An agent's record of its own decision; one stored in the earlier form is retold."""
     legacy = _LEGACY.fullmatch(text)
     if legacy is None:
         return text
     fields = json.loads(legacy["fields"] or "{}")
     action = _ACTION.validate_python({"kind": legacy["kind"], **fields})
-    return _recalled(action.model_dump(mode="json"), legacy["thought"])
+    return _recalled(action.model_dump(mode="json"), legacy["thought"], currency)
 
 
-def _recalled(action: Mapping[str, Any], thought: str) -> str:
-    """What was done, told to the one who did it, then what it thought, in its own words. An
-    action kind without words of its own is told by its name and its particulars."""
+def _recalled(action: Mapping[str, Any], thought: str, currency: Currency) -> str:
+    """What was done, told to the one who did it with money in `currency`, then what it
+    thought, in its own words. An action kind without words of its own is told by its name
+    and its particulars."""
     tell = _DEEDS.get(action["kind"])
-    deed = tell(action) if tell is not None else _did(action)
+    deed = tell(action, currency) if tell is not None else _did(action)
     return f"{deed} {THOUGHT.format(thought=_own(thought))}"
 
 
@@ -550,21 +568,22 @@ def _marked(action: Mapping[str, Any]) -> str:
     return MARKED.format(marks="; ".join(marks))
 
 
-_DEEDS: dict[str, Callable[[Mapping[str, Any]], str]] = {
-    ActionKind.PLAN_DAY: lambda action: PLANNED.format(intention=_own(action["intention"])),
-    ActionKind.SPEAK: _said,
-    ActionKind.LEAVE: lambda action: LEFT,
-    ActionKind.PASS: lambda action: CARRIED_ON,
-    ActionKind.CLAIM_TASK: _took,
-    ActionKind.CHECK_WORK: lambda action: TRIED.format(part=_part(action)),
-    ActionKind.SUBMIT_WORK: lambda action: HANDED_IN.format(
+_DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
+    ActionKind.PLAN_DAY: lambda action, _: PLANNED.format(intention=_own(action["intention"])),
+    ActionKind.SPEAK: lambda action, _: _said(action),
+    ActionKind.LEAVE: lambda action, _: LEFT,
+    ActionKind.PASS: lambda action, _: CARRIED_ON,
+    ActionKind.CLAIM_TASK: lambda action, _: _took(action),
+    ActionKind.CHECK_WORK: lambda action, _: TRIED.format(part=_part(action)),
+    ActionKind.SUBMIT_WORK: lambda action, _: HANDED_IN.format(
         part=_part(action),
         declared=DECLARED[action["declaration"]],
         report=_own(action["report"]),
     ),
-    ActionKind.GIVE: lambda action: GAVE.format(
-        to=action["to"], amount=action["amount"], note=_own(action["note"])
+    ActionKind.GIVE: lambda action, currency: GAVE.format(
+        to=action["to"], amount=currency.tell(action["amount"]), note=_own(action["note"])
     ),
-    ActionKind.RATE_PEERS: _marked,
+    ActionKind.RATE_PEERS: lambda action, _: _marked(action),
 }
-"""How each kind of thing the resident did is told to it, from the action's fields."""
+"""How each kind of thing the resident did is told to it, from the action's fields and the
+town's currency."""

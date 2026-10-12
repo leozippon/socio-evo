@@ -2,7 +2,7 @@
 
 from core.agent.evolution.config import EvolutionConfig, SelfTrigger
 from core.agent.evolution.evolver import Evolver, Lapse
-from core.agent.evolution.history import EPOCH, History, Version, commit_date
+from core.agent.evolution.history import History, Version, commit_date
 from core.agent.evolution.levels import Level, Trigger
 from core.agent.evolution.operators import (
     Change,
@@ -14,7 +14,6 @@ from core.agent.evolution.operators import (
 )
 
 __all__ = [
-    "EPOCH",
     "Change",
     "Context",
     "EvolutionConfig",

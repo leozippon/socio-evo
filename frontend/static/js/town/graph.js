@@ -1,6 +1,6 @@
 // The social fabric as a graph that changes over time: who spent time with whom, who addressed
 // whom by name, who marked whom and how, and in the town of jobs for two, who asked whom to take
-// a job together, who worked with whom, and who handed whom crowns. Counts come from the
+// a job together, who worked with whom, and who handed whom money. Counts come from the
 // published measures and traits, whole days only, through the last day that has ended at the
 // moment shown.
 
@@ -13,10 +13,10 @@ const MEASURES = {
   ratings: { label: "Marks", note: "Arrows: private marks in the clerk's ledger; width counts them, darker means a higher mean mark.", from: "graph", field: "ratings", pointed: true },
   asked: { label: "Asked", note: "Arrows: askings to take a job together; width counts them, solid ones were taken up. The halo grows with the askings a resident received.", from: "pairs", field: "asked", pointed: true },
   jobs: { label: "Jobs", note: "Line width: jobs for two the two took together, however they came to.", from: "pairs", field: "joint_taken", pointed: false },
-  crowns: { label: "Crowns", note: "Arrows: crowns handed over; width counts the crowns.", from: "pairs", field: "crowns", pointed: true },
+  money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", from: "pairs", field: "money", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
-const FIELDS = { graph: ["minutes", "addressed", "ratings", "ratings_sum"], pairs: ["asked", "taken_up", "let_lapse", "joint_taken", "crowns", "gifts", "private_remarks"] };
+const FIELDS = { graph: ["minutes", "addressed", "ratings", "ratings_sum"], pairs: ["asked", "taken_up", "let_lapse", "joint_taken", "money", "gifts", "private_remarks"] };
 
 export class TiesPanel {
   constructor({ cast, onSelect }) {
@@ -128,7 +128,7 @@ export class TiesPanel {
           addressed: () => `${fmt.plural(t.addressed, "time")}${t.private_remarks ? `, ${fmt.int(t.private_remarks)} privately` : ""}`,
           ratings: () => `${fmt.plural(t.ratings, "mark")}, mean ${fmt.num(t.ratings_sum / t.ratings, 1)}`,
           asked: () => `asked ${fmt.plural(t.asked, "time")}, ${fmt.int(t.taken_up)} taken up`,
-          crowns: () => `${fmt.plural(t.crowns, "crown")} in ${fmt.plural(t.gifts, "gift")}`,
+          money: () => `${fmt.money(t.money)} in ${fmt.plural(t.gifts, "gift")}`,
         })[measure.field]();
       for (const t of arrows) {
         const a = pos.get(t.source);

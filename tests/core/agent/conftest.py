@@ -1,11 +1,22 @@
 from collections.abc import Callable
+from datetime import date
 from typing import Any
 
 import pytest
 
 from core.agent import Agent, AgentSeed, CognitionConfig, ModelSpec, Profile
 from core.agent.evolution import History
-from core.interaction import EventKind, MayPass, MaySpeak, Observation, Percept, day_of, time_at
+from core.interaction import (
+    Currency,
+    EventKind,
+    MayPass,
+    MaySpeak,
+    Observation,
+    Percept,
+    Setting,
+    day_of,
+    time_at,
+)
 from infrastructure.llm import LLMRequest, Sampling, ScriptedClient
 
 SEED = AgentSeed(
@@ -18,6 +29,10 @@ SEED = AgentSeed(
     model=ModelSpec(model="town-model", sampling=Sampling(temperature=0.7)),
 )
 SETTING = "The office is open from nine to six, and the board by its door lists the jobs."
+TOWN = Setting(
+    currency=Currency(unit="dollar", units="dollars", symbol="$"), start_date=date(2026, 10, 14)
+)
+"""Mei's town, whose day 1 is a Wednesday."""
 
 
 class Script:
@@ -73,8 +88,8 @@ def script() -> Script:
 
 @pytest.fixture
 def agent(tmp_path, script) -> Agent:
-    agent = Agent.create(tmp_path / "Mei", SEED, script.client, CognitionConfig())
-    History.init(agent.path, agent.id).commit_experience(0)
+    agent = Agent.create(tmp_path / "Mei", SEED, script.client, CognitionConfig(), TOWN)
+    History.init(agent.path, agent.id, TOWN.start_date).commit_experience(0)
     return agent
 
 

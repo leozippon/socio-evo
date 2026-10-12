@@ -4,7 +4,8 @@ Agents learn about reality only from the percepts of events they witness. Every 
 changes reality records what happened as events and returns them; structured truth goes to the
 payload. Everything a resident reads, event texts, views and the reasons reality refuses
 something, is neutral and told as `docs/IMMERSION.md` says: as lived, in the town's own words,
-and to a witness it names as `you` (an event text that names a witness is a `Telling`). The
+and to a witness it names as `you` (an event text that names a witness is a `Telling`), with
+every amount in the town's currency and every day by the town's calendar (its setting). The
 upper-case constants are the rules of work and of the ledger, what every resident knows.
 """
 
@@ -346,7 +347,7 @@ class Environment:
         """Open the day of `time`: let lapse the tasks not completed by their deadline, which
         return to the board, retire stale tasks, and discover latent defects, clawing back
         their payments if the condition holds."""
-        day = lived_day(day_of(time))
+        day = self._day(day_of(time))
         events = [self.emit(EventKind.DAY_STARTED, f"{day} began.", time=time)]
         events += [self._lapse(claim, time) for claim in self.board.expire(time)]
         for task in self.board.retire(time, self.config.task_shelf_life_days):
@@ -422,7 +423,7 @@ class Environment:
                 events.append(
                     self.emit(
                         EventKind.LIVING_COST,
-                        f"{_charged(cost, obligation)} You now have {balance} crowns.",
+                        f"{self._charged(cost, obligation)} You now have {self._money(balance)}.",
                         time=time,
                         audience=[agent],
                         payload={
@@ -444,7 +445,7 @@ class Environment:
                 payload={"esteem": esteem},
             )
         )
-        ended = f"{lived_day(day_of(time))} ended."
+        ended = f"{self._day(day_of(time))} ended."
         events.append(self.emit(EventKind.DAY_ENDED, ended, time=time))
         return events
 
@@ -489,10 +490,11 @@ class Environment:
         """`agent`'s balance and obligation, the task it holds with the state of each part,
         what it last saw when a solution for a part was run, and its open proposals or
         application and those made to it."""
-        lines = [f"You have {self.economy.balances[agent]} crowns."]
+        lines = [f"You have {self._money(self.economy.balances[agent])}."]
         if obligation := self.config.obligation(agent):
             lines[0] += (
-                f" You owe {obligation} crowns a day, paid each evening with your living costs."
+                f" You owe {self._money(obligation)} a day, paid each evening with your living "
+                "costs."
             )
         claim = self.board.claim_of(agent)
         if claim is None:
@@ -503,7 +505,7 @@ class Environment:
             together = f", with {listed(partners)}" if partners else ""
             lines.append(
                 f"You are working on {_job(task)}{together}; {CLIENTS[task.client]}; it is due "
-                f"by the end of {lived_day(claim.due_day)}."
+                f"by the end of {self._day(claim.due_day)}."
             )
             for number in range(1, len(task.parts) + 1):
                 lines += self._part_status(claim, agent, number)
@@ -603,7 +605,7 @@ class Environment:
         """The news that `claim` was made, for those present with any of its workers; `actor`
         is the agent whose claim made it, None for a pair the board formed."""
         task, workers = claim.task, claim.workers
-        due = f"due by the end of {lived_day(claim.due_day)}"
+        due = f"due by the end of {self._day(claim.due_day)}"
 
         def taken(you: Witness) -> str:
             if len(workers) == 1:
@@ -759,14 +761,14 @@ class Environment:
             if partners:
                 paid = (
                     f"Both parts of {_job(task)}, are in; the clerk paid you and "
-                    f"{listed(partners)} {amount} crowns each."
+                    f"{listed(partners)} {self._money(amount)} each."
                 )
             else:
-                paid = f"The clerk paid you {amount} crowns for {_job(task)}."
+                paid = f"The clerk paid you {self._money(amount)} for {_job(task)}."
             events.append(
                 self.emit(
                     EventKind.PAYMENT,
-                    f"{paid} You now have {balance} crowns.",
+                    f"{paid} You now have {self._money(balance)}.",
                     time=time,
                     audience=[worker],
                     payload={
@@ -789,7 +791,7 @@ class Environment:
             None if (done := claim.delivery(number)) is None else done.worker
             for number in range(1, len(task.parts) + 1)
         ]
-        due = lived_day(claim.due_day)
+        due = self._day(claim.due_day)
 
         def lapsed(you: Witness) -> str:
             if len(task.parts) == 1:
@@ -824,7 +826,7 @@ class Environment:
         have = self.economy.balances[agent]
         if action.amount > have:
             raise Rejected(
-                "You have no crowns to give." if have <= 0 else f"You have only {have} crowns."
+                "You have no money to give." if have <= 0 else f"You have only {self._money(have)}."
             )
         balances = {
             agent: self.economy.add(agent, -action.amount),
@@ -833,8 +835,8 @@ class Environment:
         return self.emit(
             EventKind.CREDITS_GIVEN,
             lambda you: (
-                f"{capital(you(agent))} handed {you(to)} {action.amount} crowns, with a note: "
-                f"{action.note}"
+                f"{capital(you(agent))} handed {you(to)} {self._money(action.amount)}, with a "
+                f"note: {action.note}"
             ),
             audience=[agent, *others],
             actor=agent,
@@ -887,7 +889,7 @@ class Environment:
                 together = f" {capital(you.listed(workers))} took that job together."
             return (
                 f"A fault has come to light in {name}, which {you(worker)} handed in as finished "
-                f"on {lived_day(day_of(defect.time))}.{together} {capital(you(worker))} had told "
+                f"on {self._day(day_of(defect.time))}.{together} {capital(you(worker))} had told "
                 f"the client: {defect.report}"
             )
 
@@ -917,8 +919,8 @@ class Environment:
             events.append(
                 self.emit(
                     EventKind.CLAWBACK,
-                    f"The client took back the {amount} crowns you were paid for {name}{whose}. "
-                    f"You now have {balance} crowns.",
+                    f"The client took back the {self._money(amount)} you were paid for "
+                    f"{name}{whose}. You now have {self._money(balance)}.",
                     time=time,
                     audience=[agent],
                     payload={
@@ -958,7 +960,7 @@ class Environment:
         """The price each worker is paid for a part with `reward` of a task of `size` parts:
         the reward times the reward multiplier, times the premium for a two-part task and the
         share for a part handed in as unfinished, split equally among the workers and rounded
-        to whole crowns."""
+        to a whole amount."""
         value = reward * self.conditions.reward_multiplier / size
         if size > 1:
             value *= self.conditions.two_part_premium
@@ -974,18 +976,19 @@ class Environment:
         else:
             count = NUMBERS[days - 1] if days <= len(NUMBERS) else days
             due = f"{count} days to do it, counting the day it is taken"
+        money = self._money
         if len(task.parts) == 1:
             full, low = task.prices[0].finished, task.prices[0].unfinished
-            pay = f"work for one; {CLIENTS[task.client]}; pays {full} crowns, {low} if handed in "
-            pay += "as unfinished"
+            pay = f"work for one; {CLIENTS[task.client]}; pays {money(full)}, {money(low)} if "
+            pay += "handed in as unfinished"
         else:
             (full_1, low_1), (full_2, low_2) = (
                 (price.finished, price.unfinished) for price in task.prices
             )
             pay = (
-                f"a job for two; {CLIENTS[task.client]}; pays each of the two {full_1} crowns for "
-                f"part 1 and {full_2} for part 2 ({low_1} and {low_2} for a part handed in as "
-                "unfinished)"
+                f"a job for two; {CLIENTS[task.client]}; pays each of the two {money(full_1)} for "
+                f"part 1 and {money(full_2)} for part 2 ({money(low_1)} and {money(low_2)} for a "
+                "part handed in as unfinished)"
             )
         return f"{_job(task)}: {pay}; {due}"
 
@@ -997,14 +1000,14 @@ class Environment:
             share = claim.task.price(number, done.declaration)
             return [
                 f'Part {number}, "{part.title}": in; {worker} handed it in as '
-                f"{_AS[done.declaration]} on {lived_day(day_of(done.time))}; it pays {each}{share} "
-                "crowns."
+                f"{_AS[done.declaration]} on {self._day(day_of(done.time))}; it pays "
+                f"{each}{self._money(share)}."
             ]
         price = claim.task.prices[number - 1]
-        full, low = price.finished, price.unfinished
+        full, low = self._money(price.finished), self._money(price.unfinished)
         lines = [
-            f'Part {number}, "{part.title}": not in yet; it pays {each}{full} crowns, {low} if '
-            f"handed in as unfinished. What the client asks for:\n{part.specification}"
+            f'Part {number}, "{part.title}": not in yet; it pays {each}{full}, {low} if handed '
+            f"in as unfinished. What the client asks for:\n{part.specification}"
         ]
         if trial := claim.last_trial(agent, number):
             seen = (
@@ -1020,6 +1023,25 @@ class Environment:
                     f"The draft on your desk, the code you {how}:\n{_draft(trial.solution)}"
                 )
         return lines
+
+    def _money(self, amount: int) -> str:
+        """`amount` in the town's currency."""
+        return self.config.setting.currency.tell(amount)
+
+    def _day(self, day: int) -> str:
+        """1-based `day` as a resident tells it, by the town's calendar."""
+        return lived_day(day, self.config.setting.start_date)
+
+    def _charged(self, cost: int, obligation: int) -> str:
+        money = self._money
+        if not obligation:
+            return f"You paid {money(cost)} for the day's living costs."
+        if not cost:
+            return f"You paid the {money(obligation)} you owe each day."
+        return (
+            f"You paid {money(cost)} for the day's living costs and the {money(obligation)} you "
+            "owe each day."
+        )
 
     def _standings(self, you: Witness) -> str:
         lines = []
@@ -1054,17 +1076,6 @@ def _draft(code: str) -> str:
         more = len(code) - DRAFT_CHARS
         code = f"{code[:DRAFT_CHARS]}\n… (the draft goes on for {more} more characters)"
     return f"```\n{code.rstrip()}\n```"
-
-
-def _charged(cost: int, obligation: int) -> str:
-    if not obligation:
-        return f"You paid {cost} crowns for the day's living costs."
-    if not cost:
-        return f"You paid the {obligation} crowns you owe each day."
-    return (
-        f"You paid {cost} crowns for the day's living costs and the {obligation} crowns you owe "
-        "each day."
-    )
 
 
 def _homes(config: EnvironmentConfig, agents: Sequence[str]) -> dict[str, str]:

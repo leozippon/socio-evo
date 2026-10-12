@@ -101,14 +101,14 @@ class TraitDay:
     extra_parts: int = 0
     """Parts the resident delivered beyond one in a job for two: it did its partner's part as
     well (counted when the second of its parts was accepted)."""
-    crowns_given: int = 0
-    """Crowns the resident handed to others."""
-    crowns_received: int = 0
-    """Crowns others handed the resident."""
+    money_given: int = 0
+    """Money the resident handed to others, in the town's currency."""
+    money_received: int = 0
+    """Money others handed the resident."""
     gifts_given: int = 0
-    """Times the resident handed someone crowns."""
+    """Times the resident handed someone money."""
     gifts_received: int = 0
-    """Times someone handed the resident crowns."""
+    """Times someone handed the resident money."""
     private_remarks: int = 0
     """Things the resident said privately to one person."""
 
@@ -174,7 +174,7 @@ SHARES: dict[str, tuple[str, str]] = {
     "reflections_machinery_share": ("reflections_machinery", "reflections"),
 }
 """Each share by name: its numerator and its denominator among `COUNTS`."""
-RATES = ("extra_parts", "crowns_given", "private_remarks", "asked", "lapses")
+RATES = ("extra_parts", "money_given", "private_remarks", "asked", "lapses")
 """Counts the town reports per resident-day over a window (`window`'s `per_resident_day`)."""
 
 
@@ -194,10 +194,10 @@ class PairDay:
     """Of those, the ones still open when the day ended."""
     joint_taken: int = 0
     """Jobs for two the two took together. Symmetric."""
-    crowns: int = 0
-    """Crowns `source` handed `target`."""
+    money: int = 0
+    """Money `source` handed `target`, in the town's currency."""
     gifts: int = 0
-    """Times `source` handed `target` crowns."""
+    """Times `source` handed `target` money."""
     private_remarks: int = 0
     """Things `source` said privately to `target`."""
 
@@ -363,11 +363,11 @@ def traits(run: RunData) -> Traits:
                     end(worker, payload["task_id"], True, day)
             case EventKind.CREDITS_GIVEN:
                 giver, recipient, amount = payload["giver"], payload["recipient"], payload["amount"]
-                rows[giver, day].crowns_given += amount
+                rows[giver, day].money_given += amount
                 rows[giver, day].gifts_given += 1
-                rows[recipient, day].crowns_received += amount
+                rows[recipient, day].money_received += amount
                 rows[recipient, day].gifts_received += 1
-                pair(day, giver, recipient).crowns += amount
+                pair(day, giver, recipient).money += amount
                 pair(day, giver, recipient).gifts += 1
             case EventKind.SPEECH if payload["private"]:
                 rows[actor, day].private_remarks += 1

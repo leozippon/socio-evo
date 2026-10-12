@@ -50,7 +50,7 @@ class WorkSession(Scene):
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
         """Someone working on no job may take one from the board, if any is there; someone
         working on one may try and hand in the parts not yet in. Anyone may talk to and hand
-        crowns to the others here, or carry on quietly."""
+        money to the others here, or carry on quietly."""
         env, allowed = self.env, []
         claim = env.board.claim_of(agent)
         if claim is None:
@@ -69,7 +69,8 @@ class WorkSession(Scene):
                 MaySubmit(task_id=task.id, parts=parts),
             ]
         if others := tuple(other for other in self.participants if other != agent):
-            allowed += [MaySpeak(to=others), MayGive(to=others)]
+            units = env.config.setting.currency.units
+            allowed += [MaySpeak(to=others), MayGive(to=others, units=units)]
         return (*allowed, MayPass())
 
     def situation(self, agent: str) -> str:

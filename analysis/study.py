@@ -69,7 +69,7 @@ MEASURES = (
     "joint_empty_share",
     "solo_lapsed_share",
     "extra_parts_per_resident_day",
-    "crowns_given_per_resident_day",
+    "money_given_per_resident_day",
     "private_remarks_per_resident_day",
     "asked_per_resident_day",
     "lapses_per_resident_day",

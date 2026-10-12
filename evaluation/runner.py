@@ -121,7 +121,9 @@ async def evaluate(
         surface = rep % family.surfaces
         async with slots:
             with (
-                frozen(histories[agent], commit, client, cognition, variant) as resident,
+                frozen(
+                    histories[agent], commit, client, cognition, environment.setting, variant
+                ) as resident,
                 tempfile.TemporaryDirectory(prefix="probe-town-") as scratch,
             ):
                 seed = f"{family.name}:{level}:{rep}"

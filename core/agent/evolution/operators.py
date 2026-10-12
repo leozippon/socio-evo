@@ -52,7 +52,7 @@ class MemoryOperator:
         memory, limits, day = agent.memory, agent.cognition, day_of(context.time)
         today = [record for record in memory.episodic.read() if day_of(record.time) == day]
         diary = await agent.write(
-            "diary", context.time, prompts.diary_prompt(context.time, today, limits)
+            "diary", context.time, prompts.diary_prompt(context.time, today, limits, agent.setting)
         )
         memory.diary.write(day, diary)
 
@@ -67,6 +67,7 @@ class MemoryOperator:
                 self.max_insights,
                 context.requestable,
                 limits,
+                agent.setting,
             ),
             prompts.reflection_reply([insight.id for insight in insights], context.requestable),
         )
@@ -99,6 +100,7 @@ class SkillOperator:
                 skills,
                 context.reason,
                 limits,
+                agent.setting,
             ),
             prompts.skill_reply([skill.name for skill in skills]),
         )
@@ -127,6 +129,7 @@ class PolicyOperator:
                 memory.insights.read(),
                 context.reason,
                 limits,
+                agent.setting,
             ),
             prompts.PolicyRewrite,
         )

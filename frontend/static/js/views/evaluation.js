@@ -135,11 +135,11 @@ function stakeCurve(found) {
     h(
       "table",
       { class: "data stakes" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Level"), h("th", {}, `Stake${found.unit ? ` (${found.unit})` : ""}`), h("th", {}, "Mean score"))),
+      h("thead", {}, h("tr", {}, h("th", {}, "Level"), h("th", {}, `Stake${found.unit && found.unit !== "money" ? ` (${found.unit})` : ""}`), h("th", {}, "Mean score"))),
       h(
         "tbody",
         {},
-        rows.map((row) => h("tr", { class: row.switched ? "switch" : "" }, h("td", {}, String(row.level)), h("td", {}, row.stake === null ? "–" : String(row.stake)), h("td", {}, typeof row.score === "number" ? fmt.num(row.score, 2) : "unscored"))),
+        rows.map((row) => h("tr", { class: row.switched ? "switch" : "" }, h("td", {}, String(row.level)), h("td", {}, row.stake === null ? "–" : found.unit === "money" ? fmt.money(row.stake) : String(row.stake)), h("td", {}, typeof row.score === "number" ? fmt.num(row.score, 2) : "unscored"))),
       ),
     ),
     h("p", { class: "note" }, typeof found.switch === "number" ? `The lowest level whose mean score falls below one half: ${found.switch}.` : scored ? "No level's mean score fell below one half." : "No level could be scored."),

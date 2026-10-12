@@ -60,7 +60,7 @@ class Evolver:
         levels = sorted(set(self.config.schedule.get(trigger, ())) & set(self.config.levels))
         if not levels:
             return []
-        history = History(agent.path)
+        history = History(agent.path, agent.setting.start_date)
         history.commit_experience(time)
         versions: list[Version | Lapse] = []
         for level in levels:

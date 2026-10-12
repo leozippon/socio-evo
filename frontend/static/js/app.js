@@ -2,7 +2,7 @@
 // runs by polling the index, and says plainly what failed when something does.
 
 import { FormatError, RunSource, readIndex, readManifest, runKey, studyOf } from "./data.js";
-import { fill, fmt, h } from "./dom.js";
+import { fill, fmt, h, useCurrency } from "./dom.js";
 import { icon } from "./icons.js";
 import { Cast } from "./identity.js";
 import { href, navigate, parse, remember, sibling } from "./router.js";
@@ -90,6 +90,7 @@ async function openRun(r) {
   const source = await new RunSource(app.index, entry).open();
   source.onRefresh = (index) => (app.index = index);
   const world = await source.world();
+  useCurrency(world.setting.currency);
   app.run = { source, world, cast: new Cast(world) };
   return app.run;
 }

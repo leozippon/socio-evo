@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
@@ -14,6 +16,7 @@ from core.agent.evolution import (
 from core.interaction import day_of, time_at
 from infrastructure.config import ConfigError
 from infrastructure.git import Repository
+from tests.core.agent.conftest import TOWN
 
 L0, L1, L2 = Level.L0, Level.L1, Level.L2
 DAILY, WEEKLY, MONTHLY, SELF = Trigger.DAILY, Trigger.WEEKLY, Trigger.MONTHLY, Trigger.SELF
@@ -35,7 +38,7 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     evolver = Evolver(
         EvolutionConfig(self_trigger=SelfTrigger(enabled=False), retention_days=2, max_insights=2)
     )
-    history = History(agent.path)
+    history = History(agent.path, TOWN.start_date)
     script.reflections = {
         1: [{"change": "add", "belief": "Ben asks about parsers.", "about": "Ben"}],
         2: [
@@ -79,7 +82,12 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
 
     repository = Repository(agent.path)
     commits = repository.log()[::-1]
-    assert [commit.date for commit in commits] == [commit_date(v.time) for v in versions]
+    assert [commit.date for commit in commits] == [
+        commit_date(v.time, TOWN.start_date) for v in versions
+    ]
+    assert commits[0].date == datetime(2026, 10, 14, tzinfo=UTC)
+    with pytest.raises(ValueError, match="date of day 1"):
+        History(agent.path).commit_step(L0, DAILY, _end(5), "Unanchored")
     assert commits[-1].body == f"Notebook 4.\n\nLevel: L1\nTrigger: weekly\nSim-Time: {_end(4)}"
     assert (versions[-1].subject, versions[-1].body) == (
         "Review skills on Day 4",
@@ -169,7 +177,7 @@ async def test_with_every_level_disabled_only_experience_is_recorded(agent, scri
         await evolver.evolve(agent, SELF, _end(1))
     assert [request.metadata["purpose"] for request in script.requests] == ["act"]
 
-    history = History(agent.path)
+    history = History(agent.path, TOWN.start_date)
     assert len(history.log()) == 1
     version = history.commit_experience(_end(1))
     assert (version.level, version.trigger, version.time) == (None, None, _end(1))
@@ -189,12 +197,12 @@ async def test_a_frozen_export_loads_without_history_and_stays_independent(
     agent, script, observe, tmp_path
 ):
     evolver = Evolver(EvolutionConfig())
-    history = History(agent.path)
+    history = History(agent.path, TOWN.start_date)
     await evolver.evolve(agent, MONTHLY, _end(1))
     history.tag("day-0001")
     path = tmp_path / "evaluation" / "Mei-day-0001"
     history.export("day-0001", path)
-    frozen = Agent.load(path, script.client, CognitionConfig())
+    frozen = Agent.load(path, script.client, CognitionConfig(), TOWN)
     assert not (path / ".git").exists()
     assert frozen.parameters.read_policy() == "Resolutions 1."
 

@@ -11,7 +11,7 @@ from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.parameters import Parameters
-from core.interaction import Card, Decision, Observation, Percept, form
+from core.interaction import Card, Decision, Observation, Percept, Setting, form
 from core.interaction.card import correction
 from infrastructure.config import load_config
 from infrastructure.llm import (
@@ -26,7 +26,8 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class Agent:
-    """The agent stored at `path`.
+    """The agent stored at `path`, living in a town of `setting`, by whose calendar and
+    currency it tells itself days and money.
 
     The files are the source of truth and are read whenever needed, so the object stays valid
     when its directory is reset to an earlier commit. Every model call goes through `client`
@@ -34,12 +35,18 @@ class Agent:
     """
 
     def __init__(
-        self, path: Path, profile: Profile, client: LLMClient, cognition: CognitionConfig
+        self,
+        path: Path,
+        profile: Profile,
+        client: LLMClient,
+        cognition: CognitionConfig,
+        setting: Setting,
     ) -> None:
         self.path = path
         self.profile = profile
         self.client = client
         self.cognition = cognition
+        self.setting = setting
         self.memory = Memory(path / "memory")
         self.parameters = Parameters(path / "parameters")
         self._retriever = Retriever(cognition)
@@ -51,6 +58,7 @@ class Agent:
         seed: AgentSeed,
         client: LLMClient,
         cognition: CognitionConfig,
+        setting: Setting,
     ) -> "Agent":
         """Write a new agent directory at `path` from `seed` and open it.
 
@@ -65,12 +73,15 @@ class Agent:
         (path / "memory").mkdir()
         for store in ("episodic.jsonl", "insights.jsonl"):
             (path / "memory" / store).touch()
-        return cls.load(path, client, cognition)
+        return cls.load(path, client, cognition, setting)
 
     @classmethod
-    def load(cls, path: Path, client: LLMClient, cognition: CognitionConfig) -> "Agent":
+    def load(
+        cls, path: Path, client: LLMClient, cognition: CognitionConfig, setting: Setting
+    ) -> "Agent":
         """Open the agent directory at `path`, which need not be a git repository."""
-        return cls(path, load_config(path / "profile.yaml", Profile), client, cognition)
+        profile = load_config(path / "profile.yaml", Profile)
+        return cls(path, profile, client, cognition, setting)
 
     @property
     def id(self) -> str:
@@ -100,7 +111,7 @@ class Agent:
         reply = await self.ask(
             "act",
             observation.time,
-            prompts.decision_prompt(observation, recall, self.cognition),
+            prompts.decision_prompt(observation, recall, self.cognition, self.setting),
             card.model,
             system=system,
         )
@@ -111,7 +122,7 @@ class Agent:
                     time=observation.time,
                     place=observation.place,
                     where=observation.places.get(observation.place),
-                    text=prompts.recollection(decision),
+                    text=prompts.recollection(decision, self.setting.currency),
                 )
             ]
         )

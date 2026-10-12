@@ -127,7 +127,7 @@ def run(tmp_path) -> RunDirectory:
     names = [seed.profile.name for seed in experiment.agents]
     for name in names:
         agent = make_resident(name, run.agents_dir, ScriptedClient(lambda request: {}))
-        history = History(agent.path)
+        history = History(agent.path, agent.setting.start_date)
         agent.parameters.write_policy(f"{name} resolves to keep a tidy desk.")
         history.commit_experience(0)
         for day in (1, 2):
@@ -153,8 +153,9 @@ def make_resident(name: str, root: Path, client: LLMClient) -> Agent:
             backstory=f"You live in town and write software for a living, {name}.",
         )
     )
-    agent = Agent.create(root / name, seed, client, CognitionConfig())
-    History.init(agent.path, name)
+    setting = town().environment.setting
+    agent = Agent.create(root / name, seed, client, CognitionConfig(), setting)
+    History.init(agent.path, name, setting.start_date)
     return agent
 
 
@@ -164,7 +165,7 @@ def make_agent(tmp_path) -> Callable[[], Agent]:
 
     def make() -> Agent:
         agent = make_resident("Mei", tmp_path / "agents", ScriptedClient(lambda request: {}))
-        History(agent.path).commit_experience(0)
+        History(agent.path, agent.setting.start_date).commit_experience(0)
         return agent
 
     return make
@@ -226,7 +227,8 @@ def play(run, banks, work_file, tmp_path) -> Callable:
                 state=backdrop.state.model_copy(update=state),
             )
         probe, history = FAMILIES[family], History(run.agent_dir("Mei"))
-        with frozen(history, history.head(), resident.client, CognitionConfig()) as agent:
+        setting = stage.environment.setting
+        with frozen(history, history.head(), resident.client, CognitionConfig(), setting) as agent:
             cast = probe.strangers[surface]
             place = Town(stage, agent, cast, work, directory, f"{family}:{level}")
             return await probe.play(place, level, surface, Judge(judge_client(*markers)))

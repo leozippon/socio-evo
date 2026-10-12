@@ -1,13 +1,17 @@
+from datetime import date
+
 import pytest
 from pydantic import ValidationError
 
 from core.interaction import (
     MINUTES_PER_DAY,
+    Currency,
     Event,
     EventKind,
     MayPass,
     Observation,
     Percept,
+    Setting,
     Witness,
     capital,
     clock_of,
@@ -17,6 +21,7 @@ from core.interaction import (
     ordinal,
     tell,
     time_at,
+    weekday,
 )
 
 
@@ -45,6 +50,29 @@ def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
     for bad in (lived_day, ordinal):
         with pytest.raises(ValueError):
             bad(0)
+
+
+def test_the_weekday_of_day_one_follows_from_the_start_date():
+    wednesday = date(2026, 10, 14)
+    assert lived_day(1, wednesday) == "Wednesday, your first day in town"
+    assert lived_day(5, wednesday) == "Sunday, your fifth day in town"
+    assert weekday(8, wednesday) == weekday(1, wednesday) == "Wednesday"
+    assert lived_day(1, Setting().start_date) == "Monday, your first day in town"
+
+
+def test_an_amount_is_told_in_the_towns_currency():
+    dollars = Currency(unit="dollar", units="dollars", symbol="$")
+    assert [dollars.tell(n) for n in (30, 1, 0, -5)] == ["$30", "$1", "$0", "-$5"]
+    crowns = Setting().currency
+    assert [crowns.tell(n) for n in (30, 1, -1, 0, -12)] == [
+        "30 crowns",
+        "1 crown",
+        "-1 crown",
+        "0 crowns",
+        "-12 crowns",
+    ]
+    with pytest.raises(ValidationError):
+        Currency(units="dollars")
 
 
 @pytest.mark.parametrize(

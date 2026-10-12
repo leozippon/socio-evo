@@ -17,7 +17,7 @@ import yaml
 from analysis import measure, read_run, run_usage
 from core.agent.evolution import History
 from core.agent.prompts import REPLY
-from core.interaction import EventKind
+from core.interaction import DAY_ONE, EventKind
 from frontend import bundle
 from frontend.publish import KINDS, Publisher, encode
 from frontend.publish import main as publish
@@ -253,7 +253,7 @@ def test_a_run_in_progress_is_published_and_completed_by_a_later_publish(town, t
 def test_a_run_just_created_is_published_before_its_first_checkpoint(tmp_path):
     runs = tmp_path / "runs"
     run = RunDirectory.create(runs, TOWN.name, 7, config=TOWN, code_revision="test")
-    History.init(run.agent_dir("Ana"), "Ana")  # its first commit is still to come
+    History.init(run.agent_dir("Ana"), "Ana", DAY_ONE)  # its first commit is still to come
     Publisher(runs, tmp_path / "site").publish()
     document = json.loads((tmp_path / "site" / RUN / "run.json").read_bytes())
     assert (document["settled_day"], document["last_day"], document["events"]) == (0, 0, 0)
@@ -423,10 +423,19 @@ def test_a_run_recorded_before_tasks_had_parts_is_published_without_traits(town,
     conditions = config["environment"]["conditions"]
     conditions["tasks_per_day"] = conditions.pop("one_part_tasks")
     del conditions["two_part_tasks"]
+    del config["environment"]["setting"]  # nor did towns have a setting
     (root / "config.yaml").write_text(yaml.safe_dump(config))
     Publisher(runs, tmp_path / "site").publish()
-    run = json.loads((tmp_path / "site" / "data/runs/pair-solo/seed-0007/run.json").read_bytes())
+    published = tmp_path / "site" / "data/runs/pair-solo/seed-0007"
+    run = json.loads((published / "run.json").read_bytes())
     assert run["traits"] is None and not (root.parent / "traits.json").exists()
+    world = json.loads((published / urlsplit(run["world"]).path).read_bytes())
+    assert world["setting"] == {
+        "name": None,
+        "backdrop": "",
+        "currency": {"unit": "crown", "units": "crowns", "symbol": None},
+        "start_date": "2001-01-01",
+    }
 
     study = tmp_path / "pair.yaml"
     study.write_text(yaml.safe_dump({"name": "pair", "arms": {"solo": []}}))

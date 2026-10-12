@@ -7,7 +7,7 @@ restored from the evaluated day's checkpoint: its conditions, so the rules of wo
 resident knows them, every balance and standing, and the number the next notice will carry,
 with an empty board and nobody holding a job. What leads up to a moment is made to happen in
 that environment through its public methods: people move, notices go up, jobs are taken, code
-is tried and handed in, people speak and hand over crowns, days end and begin; so every
+is tried and handed in, people speak and hand over money, days end and begin; so every
 percept is an event the environment itself recorded and worded, told to each witness in its
 own words. The moment itself is a scene of `runtime.scenes` (a round of a work session, a turn
 of a conversation, day planning) played by `runtime.scenes.play`, which builds the observation
@@ -200,6 +200,10 @@ class Town:
     def living_cost(self) -> int:
         return self.env.conditions.living_cost
 
+    def money(self, amount: int) -> str:
+        """`amount` in the town's currency, as a resident reads it."""
+        return self.config.setting.currency.tell(amount)
+
     def balance(self, person: str) -> int:
         return self.env.economy.balances[person]
 
@@ -237,8 +241,8 @@ class Town:
         self.env.change_conditions({key: getattr(conditions, key) for key in changes}, time=time)
         return Task.model_validate(posted.payload["task"])
 
-    def reward(self, crowns: int, size: int = 1) -> int:
-        """The part reward that a posting of a job of `size` parts prices at `crowns` per part
+    def reward(self, amount: int, size: int = 1) -> int:
+        """The part reward that a posting of a job of `size` parts prices at `amount` per part
         for each worker, give or take rounding."""
         conditions = self.env.conditions
         factor = conditions.reward_multiplier / size
@@ -246,7 +250,7 @@ class Town:
             factor *= conditions.two_part_premium
         if factor <= 0:
             raise ValueError("the town pays nothing for work")
-        return max(1, round(crowns / factor))
+        return max(1, round(amount / factor))
 
     async def take_together(self, task: Task, partner: str, time: int) -> None:
         """The resident and `partner` take the job for two `task` as the town's rules have it:
@@ -343,7 +347,7 @@ class Town:
         return {key: runs[-1].payload[key] for key in ("passed", "quality")}
 
     def given(self, giver: str, recipient: str) -> int:
-        """The crowns `giver` has handed `recipient` in this town."""
+        """The money `giver` has handed `recipient` in this town."""
         return sum(
             event.payload["amount"]
             for event in self.events(EventKind.CREDITS_GIVEN)

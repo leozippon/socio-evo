@@ -149,11 +149,11 @@ export function mountPerson(root, ctx) {
     const state = version ? (await source.version(agentName(), version.commit)).state : null;
     const rewrites = history.versions.filter((v) => v.day <= moment.day && v.changes.some((c) => c.path === "parameters/policy.md") && v.level);
     const ties = new Map();
-    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, gave: [0, 0], got: [0, 0], asked: 0, askedBy: 0, jobs: 0, crownsTo: 0, crownsFrom: 0 }).get(other);
+    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, gave: [0, 0], got: [0, 0], asked: 0, askedBy: 0, jobs: 0, moneyTo: 0, moneyFrom: 0 }).get(other);
     for (const row of traits?.pairs ?? []) {
       if (row.day > moment.day) continue;
-      if (row.source === agentName()) Object.assign(tie(row.target), { asked: tie(row.target).asked + row.asked, jobs: tie(row.target).jobs + row.joint_taken, crownsTo: tie(row.target).crownsTo + row.crowns });
-      if (row.target === agentName()) Object.assign(tie(row.source), { askedBy: tie(row.source).askedBy + row.asked, crownsFrom: tie(row.source).crownsFrom + row.crowns });
+      if (row.source === agentName()) Object.assign(tie(row.target), { asked: tie(row.target).asked + row.asked, jobs: tie(row.target).jobs + row.joint_taken, moneyTo: tie(row.target).moneyTo + row.money });
+      if (row.target === agentName()) Object.assign(tie(row.source), { askedBy: tie(row.source).askedBy + row.asked, moneyFrom: tie(row.source).moneyFrom + row.money });
     }
     for (const edge of measures.graph) {
       if (edge.day > moment.day) continue;
@@ -175,14 +175,14 @@ export function mountPerson(root, ctx) {
       h(
         "div",
         { class: "stats" },
-        stat("Balance", last ? fmt.credits(last.balance) : fmt.credits(cast.agent(agentName()).initial_balance ?? world.initial_balance), `earned ${fmt.credits(total("income") - total("clawed_back"))} in all${cast.agent(agentName()).obligation ? ` · owes ${cast.agent(agentName()).obligation} a day` : ""}`),
+        stat("Balance", last ? fmt.money(last.balance) : fmt.money(cast.agent(agentName()).initial_balance ?? world.initial_balance), `earned ${fmt.money(total("income") - total("clawed_back"))} in all${cast.agent(agentName()).obligation ? ` · owes ${fmt.money(cast.agent(agentName()).obligation)} a day` : ""}`),
         stat("Standing", fmt.num(rows.findLast((r) => r.esteem !== null)?.esteem ?? null, 2), `${fmt.plural(total("ratings_received"), "mark")} received`),
         stat("Hand-ins accepted", fmt.int(total("delivered")), `${fmt.int(total("failed"))} handed back · ${fmt.int(total("expired"))} jobs lapsed`),
         stat(h("span", { class: "truth-tag", title: "Hidden from everyone in town" }, icon("eye", 12), "True quality"), total("delivered") ? fmt.num(total("quality") / total("delivered"), 2) : "–", `${fmt.int(total("defective"))} latent faults · ${fmt.int(total("defects_discovered"))} came to light`, "truth"),
         stat("Takings refused", fmt.int(rows.reduce((a, r) => a + (r.rejected.claim_task ?? 0), 0)), `of ${fmt.int(rows.reduce((a, r) => a + (r.decisions.claim_task ?? 0), 0))} attempts to take a job`),
         stat("Things said", fmt.int(total("utterances")), `${fmt.plural(total("conversations"), "conversation")}`),
       ),
-      h("div", { class: "figures" }, emphasisChart("Crowns", "At the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment, made), emphasisChart("Standing", "As posted each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment, made)),
+      h("div", { class: "figures" }, emphasisChart("Balance", "At the end of each day; the others in grey.", "balance", fmt.int, { zero: true }, moment, made), emphasisChart("Standing", "As posted each night, from 1 to 5.", "esteem", (v) => fmt.num(v, 2), { max: 5 }, moment, made)),
       h(
         "div",
         { class: "two-col section" },
@@ -217,7 +217,7 @@ export function mountPerson(root, ctx) {
                       h("th", { title: "Things they said to this resident by name" }, "Heard from"),
                       h("th", { title: "Mean mark given them, and how many" }, "Marked them"),
                       h("th", { title: "Mean mark they gave, and how many" }, "Marked by"),
-                      pairsOf ? [h("th", { title: "Askings made to them, and askings received from them" }, "Asked / by"), h("th", { title: "Jobs for two taken together" }, "Jobs"), h("th", { title: "Crowns handed to them, and received from them" }, "Crowns to / from")] : null,
+                      pairsOf ? [h("th", { title: "Askings made to them, and askings received from them" }, "Asked / by"), h("th", { title: "Jobs for two taken together" }, "Jobs"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from")] : null,
                     ),
                   ),
                   h(
@@ -235,7 +235,7 @@ export function mountPerson(root, ctx) {
                           h("td", {}, fmt.int(t.fromThem)),
                           h("td", {}, mean(t.gave)),
                           h("td", {}, mean(t.got)),
-                          pairsOf ? [h("td", {}, `${t.asked} / ${t.askedBy}`), h("td", {}, fmt.int(t.jobs)), h("td", {}, `${t.crownsTo} / ${t.crownsFrom}`)] : null,
+                          pairsOf ? [h("td", {}, `${t.asked} / ${t.askedBy}`), h("td", {}, fmt.int(t.jobs)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`)] : null,
                         ),
                       ),
                   ),

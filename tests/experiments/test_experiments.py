@@ -1,5 +1,6 @@
 import json
 import shutil
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -7,9 +8,11 @@ import yaml
 from pydantic import ValidationError
 
 from core.agent.evolution import Level
+from core.interaction import Setting
 from experiments.config import ExperimentConfig
 from experiments.run import main
 from infrastructure.config import ConfigError, load_config
+from infrastructure.git import Repository
 from infrastructure.llm import LLMConfigError
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
@@ -40,6 +43,7 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
     assert set(configs) == {"smoke", "pilot", "town"}
     for config in configs.values():
+        assert not unguarded([config.environment.setting.backdrop]), config.name
         for seed in config.agents:
             profile = seed.profile
             assert seed.policy == ""
@@ -66,6 +70,19 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     assert sum(place.kind == "social" for place in smoke.environment.places) == 2
     assert smoke.simulation.postings == town.simulation.postings
     assert (smoke.llm, smoke.tasks.isolation) == (town.llm, town.tasks.isolation)
+    dollars = town.environment.setting.currency
+    assert (dollars.tell(20), smoke.environment.setting.currency) == ("$20", dollars)
+    assert pilot.environment.setting == Setting()  # the first pilot's rules: crowns, from a Monday
+
+
+def test_a_configuration_frozen_before_towns_had_a_setting_loads_as_the_town_it_was():
+    """A run frozen before the setting existed, such as the first smoke run of the second town,
+    has no `setting`: it loads as a nameless town of crowns whose day 1 is a Monday."""
+    data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+    del data["environment"]["setting"]
+    setting = ExperimentConfig.model_validate(data).environment.setting
+    assert (setting.name, setting.backdrop, setting.currency.tell(2)) == (None, "", "2 crowns")
+    assert setting.start_date == date(2001, 1, 1) and setting.start_date.weekday() == 0
 
 
 def test_an_inconsistent_experiment_is_rejected():
@@ -146,6 +163,33 @@ def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):
     assert f"{root}: completed" in capsys.readouterr().out
     with pytest.raises(ValueError):
         main([*command, "--resume"])
+
+
+def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path):
+    """The smoke town on a Wednesday start: what every resident knows opens with the backdrop,
+    money is told in dollars and never in crowns, the first day is a Wednesday by the town's
+    calendar and by the dates of every resident's history, and nothing sent or written steers
+    traits or shows the machinery."""
+    data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+    data["environment"]["setting"]["start_date"] = "2001-01-03"
+    config = tmp_path / "smoke.yaml"
+    config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    main([str(config), "--seeds", "0", "--runs-root", str(tmp_path), "--dry-run"])
+
+    run = RunDirectory.open(tmp_path / "smoke-dry-run" / "seed-0000")
+    calls = list(read_jsonl(run.llm_calls_path))
+    acts = [call["request"]["messages"] for call in calls if call["metadata"]["purpose"] == "act"]
+    backdrop = " ".join(data["environment"]["setting"]["backdrop"].split())
+    assert all(f"town by now:\n{backdrop}\n\nYou live in" in act[0]["content"] for act in acts)
+    texts = sent(run)
+    assert not [text for text in texts if "crown" in text.lower()]
+    assert any("You have $" in text for text in texts) and any("pays $" in text for text in texts)
+    assert any("Wednesday, your first day in town" in text for text in texts)
+    assert not any("Monday, your first day" in text for text in texts)
+    assert not unguarded(texts)
+    assert not unguarded(written(run))
+    first = Repository(run.agent_dir("Mei")).log()[-1]
+    assert first.date == datetime(2001, 1, 3, tzinfo=UTC)
 
 
 def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path):

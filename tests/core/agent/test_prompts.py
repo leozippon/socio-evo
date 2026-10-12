@@ -17,12 +17,17 @@ from core.interaction import (
     Observation,
     Pass,
     Percept,
+    Setting,
     Speak,
     card,
     form,
     time_at,
 )
 from infrastructure.llm import LLMRequest
+from tests.core.agent.conftest import TOWN
+
+CROWNS = Setting()
+"""A town of the default setting: money in crowns, day 1 a Monday."""
 
 # Words that would steer an agent towards or away from a studied trait, frame its choices
 # morally, or name an incentive. Invariant 1 forbids them in anything an agent reads.
@@ -258,13 +263,19 @@ def test_a_resident_is_told_everything_it_did_as_something_it_did():
         decision = Decision.model_validate(
             {"thought": "It is time.", "action": {"kind": kind, **fields}}
         )
-        told = prompts.recollection(decision)
+        told = prompts.recollection(decision, CROWNS.currency)
         assert told == f'{deed} You thought: "It is time."', told
         assert not MACHINERY.search(told) and not SIMULATOR_TERMS.search(told), told
         assert "def f" not in told
+    gift = Decision.model_validate(
+        {"thought": "", "action": {"kind": "give", **SAMPLES[ActionKind.GIVE][0]}}
+    )
+    assert prompts.recollection(gift, TOWN.currency).startswith("you handed Ben $20, with a note")
 
     unknown = {"kind": "lend_money", "to": "Ben", "amount": 5, "until": "Friday", "openly": True}
-    told = prompts._recalled({**unknown, "note": None, "secret": False}, "He is short.")
+    told = prompts._recalled(
+        {**unknown, "note": None, "secret": False}, "He is short.", CROWNS.currency
+    )
     assert told == (
         'you chose to lend money: to "Ben"; amount 5; until "Friday"; openly yes. '
         'You thought: "He is short."'
@@ -288,7 +299,9 @@ def test_memory_is_recollection_told_in_one_voice():
                 time=now - 5,
                 place="office",
                 where="the office",
-                text=prompts.recollection(Decision(thought="Hello.", action=Speak(text="Hi."))),
+                text=prompts.recollection(
+                    Decision(thought="Hello.", action=Speak(text="Hi.")), CROWNS.currency
+                ),
             ),
         ],
         insights=[
@@ -297,7 +310,7 @@ def test_memory_is_recollection_told_in_one_voice():
         ],
         skills=[Skill(name="date-parsing", description="Dates.", body="ISO first.")],
     )
-    prompt = prompts.decision_prompt(_observation(now), recall, CognitionConfig())
+    prompt = prompts.decision_prompt(_observation(now), recall, CognitionConfig(), CROWNS)
     assert prompt == (
         "From your notebook:\n\n"
         'Date parsing: "Dates."\n"ISO first."\n\n'
@@ -314,7 +327,7 @@ def test_memory_is_recollection_told_in_one_voice():
         "It is 09:05 on Wednesday, your tenth day in town. You are at the office.\n\n"
         f"{prompts.REPLY}"
     )
-    beliefs = prompts.reflection_prompt(now, [], recall.insights, 50, [], CognitionConfig())
+    beliefs = prompts.reflection_prompt(now, [], recall.insights, 50, [], CognitionConfig(), CROWNS)
     assert '4. About Ben: "Ben asks before he takes a job."\n7. "Mornings are busy."' in beliefs
 
 
@@ -322,8 +335,9 @@ def test_a_thought_too_long_is_remembered_to_its_last_whole_sentence_that_fits()
     now, limits = time_at(1, "22:00"), CognitionConfig(record_chars=130)
 
     def remembered(thought: str) -> str:
-        told = prompts.recollection(Decision(thought=thought, action=Pass()))
-        [line] = prompts._memories([Record(time=now - 60, text=told)], now, limits).splitlines()
+        told = prompts.recollection(Decision(thought=thought, action=Pass()), CROWNS.currency)
+        records = [Record(time=now - 60, text=told)]
+        [line] = prompts._memories(records, now, limits, CROWNS).splitlines()
         assert len(line.removeprefix("21:00: ")) <= limits.record_chars
         return line
 
@@ -343,9 +357,10 @@ def test_an_empty_life_reads_naturally(seed):
         f"for a living.\n\n{prompts.UNRESOLVED}"
     )
     observation = _observation(time_at(1, "07:00")).model_copy(update={"percepts": ()})
-    prompt = prompts.decision_prompt(observation, Recall([], [], [], []), CognitionConfig())
+    prompt = prompts.decision_prompt(observation, Recall([], [], [], []), CognitionConfig(), TOWN)
     assert prompt == (
-        "It is 07:00 on Monday, your first day in town. You are at the office.\n\n" + prompts.REPLY
+        "It is 07:00 on Wednesday, your first day in town. You are at the office.\n\n"
+        + prompts.REPLY
     )
 
 

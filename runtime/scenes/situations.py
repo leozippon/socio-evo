@@ -9,9 +9,9 @@ in, so a situation says only what the card cannot. Runtime wording lives only in
 upper-case constants here, which tests scan.
 
 The setting is what every resident simply knows, the same from moment to moment until the
-town's rules change: its places, the shape of its days, and how work and the ledger go. A
-moment is short: where you are, who is here, how long until closing, your purse and job, and
-the board.
+town's rules change: the backdrop the configuration gives the town, its places, the shape of
+its days, and how work and the ledger go. A moment is short: where you are, who is here, how
+long until closing, your purse and job, and the board. Money is told in the town's currency.
 """
 
 from collections.abc import Sequence
@@ -20,8 +20,9 @@ from core.environment import Environment, PlaceKind
 from core.interaction import Telling, Witness, capital, clock_of, job_name, listed
 from runtime.scheduler import Calendar
 
-SETTING = "{town}\n\n{day}\n\n{rules}"
-TOWN = "You live in {home}. Elsewhere in town:\n{places}"
+TOWN = "You live in {home}. Elsewhere in {town}:\n{places}"
+IN_TOWN = "town"
+"""How the setting names a town that has no name."""
 PLACE = "- {name}, {use}{hours}.{description}"
 USES = {
     PlaceKind.WORK: "where you can take jobs from the board and work at a desk",
@@ -50,7 +51,7 @@ COMPANY = "with {people}"
 ALONE = "with nobody else here"
 CLOSES = "{place} closes at {clock}."
 ENDS = "This part of the day ends at {clock}."
-CONVERSATION = "You are at {place} with {people}. You have {crowns} crowns."
+CONVERSATION = "You are at {place} with {people}. You have {purse}."
 
 REVIEW = (
     "You are home for the night. Today you spent time with {people}. Before you sleep, the "
@@ -65,8 +66,9 @@ THEN = "then {person}"
 
 
 def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent: str) -> str:
-    """What `agent` knows of the town: its places, the shape of its days with the slots named
-    in `postings` as the moments new notices go up, and the rules of work and the ledger."""
+    """What `agent` knows of the town: the backdrop of its setting, if it has one; its places;
+    the shape of its days with the slots named in `postings` as the moments new notices go
+    up; and the rules of work and the ledger."""
     places = [
         PLACE.format(
             name=capital(place.name),
@@ -89,8 +91,10 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
         postings=listed([starts[slot] for slot in postings]),
     )
     home = env.world.places[env.config.homes[agent]].name
-    town = TOWN.format(home=home, places="\n".join(places))
-    return SETTING.format(town=town, day=day, rules=env.rules_view())
+    world = env.config.setting
+    town = TOWN.format(home=home, town=world.name or IN_TOWN, places="\n".join(places))
+    sections = (world.backdrop.strip(), town, day, env.rules_view())
+    return "\n\n".join(section for section in sections if section)
 
 
 def place_names(env: Environment, agent: str) -> dict[str, str]:
@@ -128,7 +132,7 @@ def conversation(env: Environment, place: str, others: Sequence[str], agent: str
     return CONVERSATION.format(
         place=env.world.places[place].name,
         people=listed(others),
-        crowns=env.economy.balances[agent],
+        purse=env.config.setting.currency.tell(env.economy.balances[agent]),
     )
 
 

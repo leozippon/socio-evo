@@ -8,7 +8,7 @@ from evaluation import Variant, frozen, version_at
 
 def test_each_day_selects_the_newest_version_made_by_its_end(make_agent):
     agent = make_agent()
-    history = History(agent.path)
+    history = History(agent.path, agent.setting.start_date)
     [initial] = history.log()
 
     def experience(time):
@@ -36,12 +36,13 @@ def test_ablated_exports_take_out_resolutions_or_beliefs_and_leave_the_original(
     agent.parameters.write_policy("Keep a tidy desk.")
     agent.memory.insights.write([Insight(id=1, day=1, text="Mornings are quiet.")])
     agent.memory.episodic.append([Record(time=time_at(1, "09:00"), text="A quiet morning.")])
-    history = History(agent.path)
+    history = History(agent.path, agent.setting.start_date)
     commit = history.commit_experience(time_at(1, "22:00")).commit
     files = {path: path.read_bytes() for path in agent.path.rglob("*") if path.is_file()}
     kept = {}
     for variant in Variant:
-        with frozen(history, commit, agent.client, agent.cognition, variant) as export:
+        frozen_as = (history, commit, agent.client, agent.cognition, agent.setting, variant)
+        with frozen(*frozen_as) as export:
             export.memory.episodic.append([Record(time=time_at(2, "09:00"), text="Later.")])
             kept[variant] = (
                 export.parameters.read_policy(),

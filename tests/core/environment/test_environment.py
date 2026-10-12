@@ -1,6 +1,7 @@
 import json
 import random
 import re
+from datetime import date
 
 import pytest
 from pydantic import ValidationError
@@ -19,12 +20,14 @@ from core.interaction import (
     Action,
     CheckWork,
     ClaimTask,
+    Currency,
     Event,
     EventKind,
     Give,
     PeerRating,
     PlanDay,
     RatePeers,
+    Setting,
     Speak,
     SubmitWork,
     time_at,
@@ -80,7 +83,15 @@ DEFAULTS = {
 }
 
 
-def make_config(circumstances=None, **conditions) -> EnvironmentConfig:
+DOLLARS = Setting(
+    currency=Currency(unit="dollar", units="dollars", symbol="$"), start_date=date(2001, 1, 3)
+)
+"""A town of dollars whose day 1 is a Wednesday."""
+CROWNS = Setting()
+"""A town of the default setting: crowns, from a Monday."""
+
+
+def make_config(circumstances=None, setting=CROWNS, **conditions) -> EnvironmentConfig:
     def place(id: str, kind: str, *residents: str, hours: tuple[str, ...] = ()) -> Place:
         return Place(
             id=id,
@@ -94,6 +105,7 @@ def make_config(circumstances=None, **conditions) -> EnvironmentConfig:
         )
 
     return EnvironmentConfig(
+        setting=setting,
         places=(
             place("flat", "home", "Ana"),
             place("house", "home", "Ben", "Cai"),
@@ -113,8 +125,8 @@ def make_config(circumstances=None, **conditions) -> EnvironmentConfig:
 def make_env(tmp_path):
     made = iter(range(100))
 
-    def make(circumstances=None, **conditions) -> Environment:
-        config = make_config(circumstances, **conditions)
+    def make(circumstances=None, setting=CROWNS, **conditions) -> Environment:
+        config = make_config(circumstances, setting, **conditions)
         path = tmp_path / f"events-{next(made)}.jsonl"
         return Environment.create(config, AGENTS, Provider(), path)
 
@@ -386,7 +398,7 @@ async def test_each_client_pays_each_declaration_by_its_own_rule(
     assert env.board.listings["task-1"].task.client == client
     go(env, "office", "Ana", "Ben")
     prices = {"full": pay(env, "task-1"), "low": pay(env, "task-1", incomplete=True), None: 0}
-    assert f"pays {prices['full']} crowns, {prices['low']} if" in env.board_view()
+    assert f"pays {prices['full']} crowns, {prices['low']} crowns if" in env.board_view()
     await act(env, "Ana", ClaimTask(task_id="task-1"))
 
     events = await act(env, "Ana", deliver("task-1", solution, declaration, report="As agreed."))
@@ -658,12 +670,12 @@ async def test_pairing_needs_two_applicants_and_draws_nothing_otherwise(make_env
 async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_its_cause(
     make_env,
 ):
-    env = make_env(defect_discovery_prob=1.0)
+    env = make_env(defect_discovery_prob=1.0, setting=DOLLARS)
     rng = random.Random(9)
     open_day(env, rng)
     go(env, "office", "Ana", "Ben", "Cai")
     first, second = pay(env, "task-3", 1), pay(env, "task-3", 2)
-    assert f"pays each of the two {first} crowns for part 1 and {second} for part 2" in (
+    assert f"pays each of the two ${first} for part 1 and ${second} for part 2" in (
         env.board_view()
     )
     await pair_up(env, "Ana", "Ben")
@@ -673,7 +685,7 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     assert EventKind.PAYMENT not in kinds(one)
     status = env.status_view("Ben")
     assert 'Part 1, "Routine' in status
-    assert "in; Ana handed it in as finished on Monday, your first day in town" in status
+    assert "in; Ana handed it in as finished on Wednesday, your first day in town" in status
     [rejected] = await act(env, "Ben", deliver("task-3", "perfect", part=1))
     assert rejected.text == "Part 1 of job 3 is already in."
 
@@ -686,13 +698,14 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     assert "Both parts of job 3, " in paid[0].text and '", are in; the clerk paid you and Ben' in (
         paid[0].text
     )
+    assert paid[0].text.endswith(f" ${first + second} each. You now have ${100 + first + second}.")
     assert env.economy.balances["Ana"] == env.economy.balances["Ben"] == 100 + first + second
 
     events = env.start_day(time_at(2, "07:00"), rng)
     notice = only(events, EventKind.DEFECT_DISCOVERED)
     assert notice.audience == AGENTS
     assert notice.text.startswith('A fault has come to light in part 1 of job 3, "Routine')
-    assert '", which Ana handed in as finished on Monday, your first day in town.' in notice.text
+    assert '", which Ana handed in as finished on Wednesday, your first day in town.' in notice.text
     assert f"Ana and Ben took that job together. Ana had told the client: {report}" in notice.text
     assert notice.payload["workers"] == ["Ana", "Ben"] and notice.payload["part"] == 1
     clawbacks = {
@@ -702,7 +715,7 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
         "Ana": ("Ana",),
         "Ben": ("Ben",),
     }
-    assert "The client took back the" in clawbacks["Ben"].text
+    assert f"The client took back the ${first} you were paid for part 1" in clawbacks["Ben"].text
     assert "which Ana handed in" in clawbacks["Ben"].text
     assert "which Ana handed in" not in clawbacks["Ana"].text
     assert env.economy.balances["Ana"] == env.economy.balances["Ben"] == 100 + second
@@ -758,7 +771,7 @@ async def test_overdue_claims_expire_publicly_and_stale_tasks_retire(env):
 
 
 async def test_credits_can_be_given_to_someone_present_but_never_beyond_ones_balance(make_env):
-    env = make_env(living_cost=150)
+    env = make_env(living_cost=150, setting=DOLLARS)
     go(env, "cafe", "Ana", "Ben", "Cai")
     [given] = await act(env, "Ana", Give(to="Ben", amount=30, note="Pay me back when you can."))
     assert (given.kind, given.actor, given.audience) == (
@@ -766,20 +779,22 @@ async def test_credits_can_be_given_to_someone_present_but_never_beyond_ones_bal
         "Ana",
         ("Ana", "Ben", "Cai"),
     )
-    assert "Ana handed Ben 30 crowns, with a note: Pay me back when you can." == given.text
+    assert "Ana handed Ben $30, with a note: Pay me back when you can." == given.text
+    [too_much] = await act(env, "Ana", Give(to="Ben", amount=71, note=""))
+    assert too_much.text == "You have only $70."
     assert given.payload["balances"] == {"Ana": 70, "Ben": 130}
     assert env.economy.balances == {"Ana": 70, "Ben": 130, "Cai": 100, "Dan": 100}
     [whole] = await act(env, "Ana", Give(to="Cai", amount=70, note="All of it."))
     assert whole.kind is EventKind.CREDITS_GIVEN and env.economy.balances["Ana"] == 0
     [nothing] = await act(env, "Ana", Give(to="Cai", amount=1, note=""))
-    assert nothing.text == "You have no crowns to give."
+    assert nothing.text == "You have no money to give."
     env.end_day(time_at(1, "22:00"))
     assert env.economy.balances["Cai"] == 20
     [indebted] = await act(env, "Dan", Give(to="Dan", amount=1, note=""), day=2)
     assert indebted.text == "You cannot hand money to yourself."
     go(env, "cafe", "Dan", day=2)
     [indebted] = await act(env, "Dan", Give(to="Ana", amount=1, note=""), day=2)
-    assert indebted.text == "You have no crowns to give."
+    assert indebted.text == "You have no money to give."
     assert env.economy.balances == {"Ana": -150, "Ben": -20, "Cai": 20, "Dan": -50}
 
 
@@ -954,6 +969,7 @@ async def test_residents_start_from_their_own_circumstances(make_env):
     assert env.economy.balances == {"Ana": 100, "Ben": -40, "Cai": 100, "Dan": 100}
     assert "obligation" not in env.status_view("Ana")
     assert "You owe 10 crowns a day" in env.status_view("Ben")
+    assert "You have -40 crowns." in env.status_view("Ben")
     charged = {
         event.payload["agent"]: event
         for event in env.end_day(time_at(1, "22:00"))
@@ -1008,12 +1024,10 @@ async def test_every_condition_changes_through_one_validated_recorded_interventi
         part.reward * 2.0 * 3.0 / 2 for part in env.board.listings["task-3"].task.parts
     )
     full, low = round(second), round(first * 0.2)
-    assert f"pays each of the two {round(first)} crowns for part 1 and {full} for part 2" in (
-        env.board_view()
-    )
-    assert (
-        f"({low} and {round(second * 0.2)} for a part handed in as unfinished)" in env.board_view()
-    )
+    board = env.board_view()
+    assert f"pays each of the two {round(first)} crowns for part 1 and {full} crowns for" in board
+    unfinished = f"({low} crowns and {round(second * 0.2)} crowns for a part handed in as"
+    assert unfinished in board
     env.change_conditions({"reward_multiplier": 0.0}, time=time_at(1, "08:30"))
     await pair_up(env, "Ana", "Ben", "task-3")
     await act(env, "Ana", deliver("task-3", "flawed", "incomplete", part=1))

@@ -9,7 +9,7 @@ from pathlib import Path
 
 from core.agent import Agent, CognitionConfig
 from core.agent.evolution import History, Version
-from core.interaction import MINUTES_PER_DAY
+from core.interaction import MINUTES_PER_DAY, Setting
 from infrastructure.llm import LLMClient
 
 
@@ -51,14 +51,15 @@ def frozen(
     commit: str,
     client: LLMClient,
     cognition: CognitionConfig,
+    setting: Setting,
     variant: Variant = Variant.FULL,
 ) -> Iterator[Agent]:
-    """The agent at `commit`, exported as `variant` into a temporary directory that is removed
-    afterwards; nothing it does reaches the repository."""
+    """The agent at `commit`, living in a town of `setting`, exported as `variant` into a
+    temporary directory that is removed afterwards; nothing it does reaches the repository."""
     with tempfile.TemporaryDirectory(prefix="frozen-agent-") as scratch:
         path = Path(scratch) / "agent"
         history.export(commit, path)
-        agent = Agent.load(path, client, cognition)
+        agent = Agent.load(path, client, cognition, setting)
         if variant in (Variant.NO_POLICY, Variant.NEITHER):
             agent.parameters.write_policy("")
         if variant in (Variant.NO_INSIGHTS, Variant.NEITHER):

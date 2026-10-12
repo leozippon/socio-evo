@@ -275,7 +275,7 @@ export function mountTown(root, ctx) {
           break;
         }
         case "credits_given":
-          set(p.giver, "coin", `hands ${p.recipient} ${fmt.plural(p.amount, "crown")}`);
+          set(p.giver, "coin", `hands ${p.recipient} ${fmt.money(p.amount)}`);
           break;
       }
     }

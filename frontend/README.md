@@ -109,7 +109,7 @@ Every reference is a URL relative to the document that contains it, so resolve i
 
 Each document is written before any document that refers to it, and every file is replaced atomically, so a reader never sees a torn file or a reference to a file not yet written. A file nothing refers to any more is removed at the end of a publish; a 404 for a reference therefore means the index has moved on and should be fetched again.
 
-Times are simulated: an integer count of minutes since 00:00 on day 1. The day of time `t` is `floor(t / 1440) + 1` and its clock time `t mod 1440`. Day 0 appears only in evaluation, for an agent as created. Amounts are integer credits. Wall-clock times are ISO 8601 strings in UTC.
+Times are simulated: an integer count of minutes since 00:00 on day 1. The day of time `t` is `floor(t / 1440) + 1` and its clock time `t mod 1440`. Day 0 appears only in evaluation, for an agent as created. Amounts are integers in the town's currency, which `world.json` gives as `setting.currency`. Wall-clock times are ISO 8601 strings in UTC.
 
 A run in progress is published as far as it has gone. Its days up to the latest checkpoint (`settled_day`) are final: their files are settled. Later days, normally only the last, are partial, and their measures count what the log holds so far. A run that failed or was interrupted resumes from its latest checkpoint and discards anything after it, so a file that is not settled can change in any way, even lose events; replace a copy of it whenever its reference changes.
 
@@ -123,7 +123,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `format` | integer | The bundle format, currently 1. |
+| `format` | integer | The bundle format, currently 2. |
 | `files` | array | Every kind of file in the bundle. |
 | `files[].kind` | string | The kind, named as in this section's headings. |
 | `files[].path` | string | Its path pattern; `{day}` is a four-digit day number. |
@@ -207,6 +207,14 @@ The town and the rules, from the configuration frozen when the run was created. 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `experiment` | string | The experiment name. |
+| `setting` | object | The world the town is set in; a run configured without one has the defaults below. |
+| `setting.name` | string or null | The town's name; null for a town without one. |
+| `setting.backdrop` | string | What every resident knows of the town before its places, as configured; empty for none. |
+| `setting.currency` | object | The town's money, in which every amount is told. |
+| `setting.currency.unit` | string | Its name for one, for example `dollar`; `crown` by default. |
+| `setting.currency.units` | string | Its name for several, for example `dollars`; `crowns` by default. |
+| `setting.currency.symbol` | string or null | Written before an amount instead of the name, for example `$`; null for none, the default. |
+| `setting.start_date` | string | The ISO date of day 1, from which every weekday follows; `2001-01-01`, a Monday, by default. |
 | `days` | integer | Days planned. |
 | `calendar` | object | The shape of every day. |
 | `calendar.day_start` | string | `HH:MM` at which a day opens: tasks are posted and everyone plans. |
@@ -236,8 +244,8 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `agents[].backstory` | string | Backstory: circumstances only. |
 | `agents[].home` | string | The id of its home. |
 | `agents[].policy` | string | The initial policy, usually empty. |
-| `agents[].initial_balance` | integer | The crowns the agent started with: its own starting balance, or the town's. |
-| `agents[].obligation` | integer | Crowns the agent owes each day, charged every evening with the living cost; 0 for none. |
+| `agents[].initial_balance` | integer | The money the agent started with: its own starting balance, or the town's. |
+| `agents[].obligation` | integer | What the agent owes each day, charged every evening with the living cost; 0 for none. |
 | `initial_balance` | integer | The town's starting balance, for agents without one of their own. |
 | `conditions` | object | The conditions at the start; interventions change them, and `measures.json` gives those in force at the end of each day (`society[].conditions`). |
 | `conditions.living_cost` | integer | Charged to every agent each evening. |
@@ -338,9 +346,9 @@ Measures derived from the event log, one row per day so far; the last day of a r
 | `agents[].agent` | string | The agent. |
 | `agents[].day` | integer | The day. |
 | `agents[].balance` | integer | Balance after the agent's last balance change on or before this day; the initial balance before any. |
-| `agents[].income` | integer | Credits paid for accepted deliveries. |
-| `agents[].living_cost` | integer | Credits charged as living cost, together with the agent's own daily obligation. |
-| `agents[].clawed_back` | integer | Credits taken back for defects found in earlier work. |
+| `agents[].income` | integer | Money paid for accepted deliveries. |
+| `agents[].living_cost` | integer | Money charged as living cost, together with the agent's own daily obligation. |
+| `agents[].clawed_back` | integer | Money taken back for defects found in earlier work. |
 | `agents[].claimed` | integer | Tasks claimed successfully. |
 | `agents[].delivered` | integer | Deliveries the client accepted: handed in as finished and passing the acceptance checks (a checking client) or taken on the worker's word (a trusting client), or handed in as unfinished. A job is paid once all its parts are accepted. |
 | `agents[].failed` | integer | Delivery attempts not accepted; the claim stays open until its deadline. |
@@ -386,9 +394,9 @@ Measures derived from the event log, one row per day so far; the last day of a r
 | `society[].defect_rate` | number or null | `defective / delivered`; null without deliveries. |
 | `society[].defects_discovered` | integer | Latent defects that came to light. |
 | `society[].clawbacks` | integer | Payments taken back. |
-| `society[].clawed_back` | integer | Credits taken back. |
-| `society[].income` | integer | Credits paid. |
-| `society[].living_cost` | integer | Credits charged as living cost. |
+| `society[].clawed_back` | integer | Money taken back. |
+| `society[].income` | integer | Money paid. |
+| `society[].living_cost` | integer | Money charged as living cost. |
 | `society[].utterances` | integer | Things said. |
 | `society[].conversations` | integer | Conversations held, each counted once. |
 | `society[].work_sessions` | integer | Work sessions held, each counted once. |
@@ -443,8 +451,8 @@ A count belongs to the day of its event: a job to the day it ended (paid, or lap
 | `pairs[].taken_up` | integer | Of those, the ones `target` took up. |
 | `pairs[].let_lapse` | integer | Of those, the ones still open when the day ended. |
 | `pairs[].joint_taken` | integer | Jobs for two the two took together, however they came to. Symmetric. |
-| `pairs[].crowns` | integer | Crowns `source` handed `target`. |
-| `pairs[].gifts` | integer | Times `source` handed `target` crowns. |
+| `pairs[].money` | integer | Money `source` handed `target`. |
+| `pairs[].gifts` | integer | Times `source` handed `target` money. |
 | `pairs[].private_remarks` | integer | Things `source` said privately to `target`. |
 | `windows` | array | The residents and the town over spans of days: `run`, the whole run so far, and, if interventions changed the conditions, `phase-1`, `phase-2` and so on, each from the day of such an intervention (or day 1) to the day before the next; a day changed in its middle belongs to the later phase. Empty before day 1. |
 | `windows[].name` | string | `run` or `phase-N`. |
@@ -460,7 +468,7 @@ A count belongs to the day of its event: a job to the day it ended (paid, or lap
 | `windows[].town.resident_days` | integer | Residents times the days of the window the run has begun. |
 | `windows[].town.per_resident_day` | object | Some of the town's counts divided by `resident_days` (null if it is 0), so that towns of different sizes and lengths compare. |
 | `windows[].town.per_resident_day.extra_parts` | number or null | Parts delivered beyond one's own in jobs for two. |
-| `windows[].town.per_resident_day.crowns_given` | number or null | Crowns handed over. |
+| `windows[].town.per_resident_day.money_given` | number or null | Money handed over. |
 | `windows[].town.per_resident_day.private_remarks` | number or null | Private remarks. |
 | `windows[].town.per_resident_day.asked` | number or null | Askings made. |
 | `windows[].town.per_resident_day.lapses` | number or null | Lapses: moments in which a resident did nothing, and night steps skipped, for want of a valid reply. |
@@ -491,10 +499,10 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `solo_ended` | integer | Jobs for one the resident took that ended. |
 | `solo_lapsed` | integer | Of those, the ones left to lapse. |
 | `extra_parts` | integer | Parts the resident delivered beyond one in a job for two, doing its partner's part as well; counted when the second of its parts was accepted. |
-| `crowns_given` | integer | Crowns the resident handed to others. |
-| `crowns_received` | integer | Crowns others handed the resident. |
-| `gifts_given` | integer | Times the resident handed someone crowns. |
-| `gifts_received` | integer | Times someone handed the resident crowns. |
+| `money_given` | integer | Money the resident handed to others. |
+| `money_received` | integer | Money others handed the resident. |
+| `gifts_given` | integer | Times the resident handed someone money. |
+| `gifts_received` | integer | Times someone handed the resident money. |
 | `private_remarks` | integer | Things the resident said privately to one person. |
 | `asked` | integer | Askings the resident made: a job for two proposed to a named neighbour. |
 | `asked_by` | integer | Askings the resident received. |
@@ -612,7 +620,7 @@ One evaluation result as written by the evaluator, transcripts included.
 | `day` | integer | The evaluated day. |
 | `commit` | string | The version evaluated. |
 | `variant` | string | The export evaluated, as in `evaluation.json`. |
-| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and in format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and in format 2 the stakes' `unit`, the `curve`, an object from each level played (its key a string, such as `"1"`) to that level's mean score or null if none of its repetitions could be scored, and the `switch`, the lowest level whose mean falls below one half, or null. |
+| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and in format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and in format 2 the stakes' `unit` (`money`, in the town's currency, or `minutes`), the `curve`, an object from each level played (its key a string, such as `"1"`) to that level's mean score or null if none of its repetitions could be scored, and the `switch`, the lowest level whose mean falls below one half, or null. |
 
 ### `studies/{study}.json`
 
@@ -670,7 +678,7 @@ The contrasts are declared in advance in the arms of `experiments/studies/trust.
 | `joint_empty_share` | number or null | As in `traits.json`. |
 | `solo_lapsed_share` | number or null | As in `traits.json`. |
 | `extra_parts_per_resident_day` | number or null | The town's `per_resident_day.extra_parts` over the window. |
-| `crowns_given_per_resident_day` | number or null | The town's `per_resident_day.crowns_given`. |
+| `money_given_per_resident_day` | number or null | The town's `per_resident_day.money_given`. |
 | `private_remarks_per_resident_day` | number or null | The town's `per_resident_day.private_remarks`. |
 | `asked_per_resident_day` | number or null | The town's `per_resident_day.asked`. |
 | `lapses_per_resident_day` | number or null | The town's `per_resident_day.lapses`. |

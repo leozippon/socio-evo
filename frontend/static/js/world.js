@@ -1,10 +1,11 @@
 // Facts about a run's world that several views show: its places and the changes of conditions.
 
 import { formatTime } from "./clock.js";
+import { money } from "./dom.js";
 
 const percent = (v) => `${Math.round(v * 100)}%`;
 const CONDITIONS = {
-  living_cost: ["living cost", (v) => `${v} cr a day`],
+  living_cost: ["living cost", (v, currency) => `${money(v, currency)} a day`],
   tasks_per_day: ["jobs per day", String],
   one_part_tasks: ["jobs for one per posting", String],
   two_part_tasks: ["jobs for two per posting", String],
@@ -19,14 +20,16 @@ const CONDITIONS = {
 };
 
 export const conditionLabel = (key) => CONDITIONS[key]?.[0] ?? key.replaceAll("_", " ");
-export const conditionValue = (key, value) => (CONDITIONS[key]?.[1] ?? String)(value);
+/** A condition's value in words; amounts in `currency`, the run's `world.setting.currency`. */
+export const conditionValue = (key, value, currency) => (CONDITIONS[key]?.[1] ?? String)(value, currency);
 
 /** The world's interventions in order, each with what it changed from what to what. */
 export function interventions(world) {
   let conditions = { ...world.conditions };
+  const currency = world.setting.currency;
   return world.interventions.map((found) => {
     const changes = Object.entries(found.conditions).map(([key, value]) => {
-      const change = { key, label: conditionLabel(key), from: conditionValue(key, conditions[key]), to: conditionValue(key, value) };
+      const change = { key, label: conditionLabel(key), from: conditionValue(key, conditions[key], currency), to: conditionValue(key, value, currency) };
       return change;
     });
     conditions = { ...conditions, ...found.conditions };

@@ -107,6 +107,14 @@ evolution:
   levels: [L0, L1, L2]
 
 environment:
+  setting:
+    # What every resident knows of the town before its places and the shape of its days.
+    backdrop: >-
+      The town stands on a slow river, with a market square, a college and a library.
+      Rents are low, and many who have come here lately live off the programming jobs that
+      clients post on the boards at the Workshop and in the library reading room.
+    currency: {unit: dollar, units: dollars, symbol: "$"}
+    start_date: 2001-01-01
   initial_balance: 100
   circumstances:
     Mei: {initial_balance: 120}

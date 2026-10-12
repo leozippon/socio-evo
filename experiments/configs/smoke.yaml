@@ -57,6 +57,14 @@ evolution:
   levels: [L0, L1, L2]
 
 environment:
+  setting:
+    # What every resident knows of the town before its places and the shape of its days.
+    backdrop: >-
+      The town stands on a slow river, with a market square and a college. Rents are low,
+      and many who have come here lately live off the programming jobs that clients post on
+      the board at the Workshop.
+    currency: {unit: dollar, units: dollars, symbol: "$"}
+    start_date: 2001-01-01
   initial_balance: 100
   esteem_half_life_days: 7
   task_shelf_life_days: 3
@@ -105,4 +113,4 @@ simulation:
     - day: 2
       at: "12:00"
       conditions: {living_cost: 25}
-      announcement: From today the daily living cost in town is 25 crowns.
+      announcement: From today the daily living cost in town is $25.
