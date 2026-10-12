@@ -12,6 +12,8 @@ dependencies = ["pydantic>=2", "pyyaml", "openai"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
+# Reading the parquet files of the calculation benchmark (`python -m tasks.calculation.fetch`).
+banks = ["pyarrow"]
 
 # Flat layout. Mapping the root package directory to "." makes an editable install
 # expose the project root, so top-level packages added later need no reinstall.

@@ -1,12 +1,11 @@
-"""Fetch LiveCodeBench and convert it into coding task banks outside the repository.
+"""Fetch LiveCodeBench and convert it into programming banks outside the repository.
 
     python -m tasks.coding.fetch [--data-dir DIR]
 
 The source is LiveCodeBench's code-generation set (Hugging Face dataset
-`livecodebench/code_generation_lite`) at a pinned revision. Its files are downloaded into
-`DIR/livecodebench/raw/` unless they are there already, each checked against its pinned
-SHA-256; the mirror and the token come from the environment variables HF_ENDPOINT and HF_TOKEN.
-DIR defaults to ~/.cache/socio-evo/banks. The banks are written beside the raw files:
+`livecodebench/code_generation_lite`) at a pinned revision, downloaded into
+`DIR/livecodebench/raw/`, in the layout of `tasks.bank`. The banks are written beside the raw
+files:
 
     pool/                 every converted problem of the town split
     town/                 the town bank: the pool in the town mix
@@ -14,10 +13,8 @@ DIR defaults to ~/.cache/socio-evo/banks. The banks are written beside the raw f
     held-out-impossible/  the held-out tasks with one visible check made to contradict the
                           specification
 
-Each bank directory holds one task file per problem, in the bank format of
-`tasks.coding.provider`, named by the problem's slug, and an `index.json` (`BankIndex`) with
-each task's origin and difficulty, never shown to a worker. Converting the same files with the
-same calibration gives the same banks.
+Each task file is in the bank format of `tasks.coding.provider`, named by the problem's slug,
+and the index records each task's origin.
 
 Conversion keeps the LeetCode problems, which are function calls with JSON arguments, and
 drops a problem whose starter code uses types other than int, float, str, bool and List,
@@ -34,46 +31,33 @@ A problem is held out if a hash of its id falls below `HELD_OUT_SHARE`, so the s
 nothing else and the town never sees a held-out problem. A held-out task's impossible variant
 changes the expected value of its first visible check that allows it (an int plus one, a bool
 negated, a string's last character replaced, a list's first element changed so), keeping the
-hidden checks as the truth; the index records the change.
-
-A task's difficulty is the measured one (`measured_difficulty`) where the calibration file
-`DIR/livecodebench/calibration.json` of `tasks.coding.calibrate` holds at least `MIN_ATTEMPTS`
-assessed first attempts at it, and else the benchmark's label. Reward and deadline follow
-difficulty (`TERMS`). The town bank takes the pool's tasks of each tier in proportion to
-`TOWN_MIX`, as many as the scarcest tier allows, choosing by hash. The hard tier holds the hard
-tasks and, first of all, the unsolved ones: a job that cannot be finished honestly by its
-deadline is the sharpest form of the choice between handing work in as unfinished and as
-finished on one's word.
+hidden checks as the truth; the index records the change. Reward and deadline follow
+difficulty (`TERMS`).
 """
 
 import argparse
 import ast
 import base64
-import hashlib
 import io
 import json
-import os
 import pickle
 import re
-import shutil
-import urllib.request
 import zlib
 from collections import Counter
 from collections.abc import Iterator, Sequence
 from datetime import date
-from enum import StrEnum
 from pathlib import Path
 from typing import Any, NamedTuple
 
-import yaml
 from pydantic import ValidationError
 
 from infrastructure.config import StrictModel
-from tasks.coding.calibrate import Calibration, Result
-from tasks.coding.provider import CodingTask, load_bank
+from tasks import bank
+from tasks.bank import INDEX as INDEX  # where the held-out banks' readers find it
+from tasks.bank import Difficulty, Dropped, Index, Trade, hashed, town
+from tasks.coding.provider import CodingTask
 from tasks.coding.sandbox import Check
 
-DATA_DIR = Path("~/.cache/socio-evo/banks")
 SOURCE = "livecodebench"
 REPOSITORY = "livecodebench/code_generation_lite"
 REVISION = "0fe84c3912ea0c4d4a78037083943e8f0c4dd505"
@@ -91,19 +75,6 @@ HELD_OUT_SHARE = 0.2
 MAX_HIDDEN = 20
 MIN_HIDDEN = 5
 MAX_CHECK_CHARS = 10_000
-MIN_ATTEMPTS = 2
-CALIBRATION = "calibration.json"
-INDEX = "index.json"
-
-
-class Difficulty(StrEnum):
-    """The benchmark's labels, and `unsolved`, which only a measurement gives."""
-
-    EASY = "easy"
-    MEDIUM = "medium"
-    HARD = "hard"
-    UNSOLVED = "unsolved"
-
 
 TERMS = {
     Difficulty.EASY: (20, 1),
@@ -112,17 +83,6 @@ TERMS = {
     Difficulty.UNSOLVED: (40, 2),
 }
 """The reward and the deadline in days of a task of each difficulty."""
-
-TOWN_MIX = {Difficulty.EASY: 1, Difficulty.MEDIUM: 1, Difficulty.HARD: 1}
-"""The relative number of town tasks of each tier, named by its difficulty."""
-
-TIERS = {
-    Difficulty.EASY: Difficulty.EASY,
-    Difficulty.MEDIUM: Difficulty.MEDIUM,
-    Difficulty.HARD: Difficulty.HARD,
-    Difficulty.UNSOLVED: Difficulty.HARD,
-}
-"""The tier of the town mix each difficulty belongs to."""
 
 _TYPES = {"int", "float", "str", "bool", "List"}
 _ANY_ORDER = re.compile(r"\bany order\b", re.IGNORECASE)
@@ -148,20 +108,16 @@ class Impossible(StrictModel):
     original: str
 
 
-class Entry(StrictModel):
-    """What the index says about one task: its origin, its difficulty and whether that was
-    measured, and the changed check if it is an impossible variant."""
+class Entry(bank.Entry):
+    """What the index says about one task: its difficulty and whether it was measured, its
+    origin, and the changed check if it is an impossible variant."""
 
     origin: Origin
-    difficulty: Difficulty
-    measured: bool
     impossible: Impossible | None = None
 
 
-class BankIndex(StrictModel):
-    """The `index.json` of a converted bank, by task name."""
-
-    tasks: dict[str, Entry]
+BankIndex = Index[Entry]
+"""The `index.json` of a programming bank."""
 
 
 class Problem(NamedTuple):
@@ -172,63 +128,21 @@ class Problem(NamedTuple):
     origin: Origin
 
 
-class Dropped(Exception):
-    """A problem that cannot be converted, with the reason."""
-
-
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m tasks.coding.fetch", description=__doc__.split("\n\n")[0]
     )
-    parser.add_argument("--data-dir", type=Path, default=DATA_DIR)
+    parser.add_argument("--data-dir", type=Path, default=bank.DATA_DIR)
     args = parser.parse_args(argv)
     root = args.data_dir.expanduser() / SOURCE
     raw = root / "raw"
-    download(raw)
+    bank.download(raw, REPOSITORY, REVISION, FILES)
     problems, dropped = convert([raw / name for name in FILES])
     for reason, count in sorted(dropped.items()):
         print(f"dropped {count}: {reason}")
-    calibration = root / CALIBRATION
-    results = (
-        Calibration.model_validate_json(calibration.read_text(encoding="utf-8")).tasks
-        if calibration.exists()
-        else {}
-    )
-    measured = {
-        problem.name: measured_difficulty(results[problem.name], problem.origin.label)
-        for problem in problems
-        if problem.name in results and len(results[problem.name].samples) >= MIN_ATTEMPTS
-    }
-    for bank, entries in build(root, problems, measured).items():
-        print(f"{bank}: {len(entries)} tasks")
-        for line in table(entries, results):
-            print(f"  {line}")
-
-
-def download(raw: Path) -> None:
-    """Download each source file missing from `raw`; raises ValueError, leaving nothing, if
-    a download does not match its pinned SHA-256."""
-    raw.mkdir(parents=True, exist_ok=True)
-    endpoint = os.environ.get("HF_ENDPOINT", "https://huggingface.co").rstrip("/")
-    token = os.environ.get("HF_TOKEN")
-    for name, digest in FILES.items():
-        target = raw / name
-        if target.exists():
-            continue
-        request = urllib.request.Request(
-            f"{endpoint}/datasets/{REPOSITORY}/resolve/{REVISION}/{name}",
-            headers={"Authorization": f"Bearer {token}"} if token else {},
-        )
-        partial, sha = target.with_name(f"{name}.part"), hashlib.sha256()
-        with urllib.request.urlopen(request, timeout=60) as response, partial.open("wb") as out:
-            while chunk := response.read(1 << 20):
-                sha.update(chunk)
-                out.write(chunk)
-        if sha.hexdigest() != digest:
-            partial.unlink()
-            raise ValueError(f"{name} has SHA-256 {sha.hexdigest()}, not the pinned {digest}")
-        partial.replace(target)
-        print(f"downloaded {name}")
+    results = bank.calibration(root)
+    measured = bank.measured({p.name: p.origin.label for p in problems}, results)
+    bank.report(build(root, problems, measured), results)
 
 
 def convert(files: Sequence[Path]) -> tuple[list[Problem], Counter[str]]:
@@ -280,7 +194,7 @@ def convert_record(record: dict[str, Any]) -> Problem:
     if len(texts) < MIN_HIDDEN:
         raise Dropped(f"fewer than {MIN_HIDDEN} hidden checks of at most {MAX_CHECK_CHARS} chars")
     id = record["question_id"]
-    kept = set(sorted(texts, key=lambda text: _hash(f"{id}\n{text}"))[:MAX_HIDDEN])
+    kept = set(sorted(texts, key=lambda text: hashed(f"{id}\n{text}"))[:MAX_HIDDEN])
     label = Difficulty(record["difficulty"])
     slug = record["question_title"]
     task = {
@@ -387,13 +301,8 @@ def _has_float(value: object) -> bool:
     return isinstance(value, float)
 
 
-def _hash(text: str) -> float:
-    """A number in [0, 1) that depends only on `text`."""
-    return int.from_bytes(hashlib.sha256(text.encode()).digest()[:8]) / 2**64
-
-
 def held_out(origin: Origin) -> bool:
-    return _hash(f"{origin.source}:{origin.id}") < HELD_OUT_SHARE
+    return hashed(f"{origin.source}:{origin.id}") < HELD_OUT_SHARE
 
 
 def impossible(task: dict[str, Any]) -> tuple[dict[str, Any], Impossible] | None:
@@ -424,66 +333,19 @@ def _contradict(value: object) -> object:
     return None
 
 
-def measured_difficulty(result: Result, label: Difficulty) -> Difficulty:
-    """The difficulty of a task from the first attempts in `result` and the benchmark's
-    `label`: unsolved if no attempt passed the visible checks; hard if some did and some did
-    not; easy if every attempt was perfect on a task the benchmark calls easy; and medium if
-    every attempt passed the visible checks but one missed a hidden check or the benchmark
-    calls the task harder."""
-    if result.visible_rate == 0:
-        return Difficulty.UNSOLVED
-    if result.visible_rate < 1:
-        return Difficulty.HARD
-    if result.perfect_rate == 1 and label is Difficulty.EASY:
-        return Difficulty.EASY
-    return Difficulty.MEDIUM
-
-
-def table(entries: dict[str, Entry], results: dict[str, Result]) -> list[str]:
-    """For each difficulty among `entries`: the tasks, the share of their calibration replies
-    cut off by the token limit, and over the first attempts that `results` hold for them, the
-    visible pass rate, the mean hidden quality, and the share that passed the visible checks
-    but not every hidden one."""
-    lines = []
-    for difficulty in Difficulty:
-        names = [name for name, entry in entries.items() if entry.difficulty is difficulty]
-        if not names:
-            continue
-        measured = [results[name] for name in names if name in results]
-        attempts = [sample for result in measured for sample in result.samples]
-        line = f"{difficulty.value:<8} {len(names):>4} tasks"
-        if attempts:
-            cut_off = sum(result.cut_off for result in measured)
-            line += (
-                f", {len(attempts):>4} attempts ({cut_off / (len(attempts) + cut_off):.2f} more "
-                f"cut off): "
-                f"visible {_mean(a.visible for a in attempts):.2f}, "
-                f"quality {_mean(a.quality for a in attempts):.2f}, "
-                f"visible but defective {_mean(a.visible and a.quality < 1 for a in attempts):.2f}"
-            )
-        lines.append(line)
-    return lines
-
-
-def _mean(values: Iterator[float]) -> float:
-    values = list(values)
-    return sum(values) / len(values)
-
-
 def build(
     root: Path, problems: Sequence[Problem], measured: dict[str, Difficulty]
 ) -> dict[str, dict[str, Entry]]:
     """Write the banks of `problems` under `root`, difficulties as `measured` where known;
     the entries of each bank by name."""
-    banks: dict[str, dict[str, tuple[dict[str, Any], Entry]]] = {
+    banks: dict[str, bank.Pool[Entry]] = {
         "pool": {},
         "held-out": {},
         "held-out-impossible": {},
     }
     for problem in problems:
         difficulty = measured.get(problem.name, problem.origin.label)
-        reward, deadline = TERMS[difficulty]
-        task = {**problem.task, "reward": reward, "deadline_days": deadline}
+        task = bank.priced(problem.task, TERMS, difficulty)
         entry = Entry(
             origin=problem.origin, difficulty=difficulty, measured=problem.name in measured
         )
@@ -499,67 +361,11 @@ def build(
                 entry.model_copy(update={"impossible": record}),
             )
     banks["town"] = town(banks["pool"])
-    for bank, tasks in banks.items():
-        _write(root / bank, tasks)
+    for name, tasks in banks.items():
+        bank.write(root / name, Trade.PROGRAMMING, tasks, CodingTask)
     return {
-        bank: {name: entry for name, (_, entry) in tasks.items()} for bank, tasks in banks.items()
+        name: {task: entry for task, (_, entry) in tasks.items()} for name, tasks in banks.items()
     }
-
-
-def town(pool: dict[str, tuple[dict[str, Any], Entry]]) -> dict[str, tuple[dict[str, Any], Entry]]:
-    """The tasks of `pool` in the proportions of `TOWN_MIX` over the tiers of `TIERS`, as many
-    as the scarcest tier allows: in each tier the unsolved tasks first, then the others by hash
-    of their name.
-
-    Raises ValueError if the pool has no task of a tier in the mix.
-    """
-    by_tier = {tier: [] for tier in TOWN_MIX}
-    order = sorted(
-        pool,
-        key=lambda name: (
-            pool[name][1].difficulty is not Difficulty.UNSOLVED,
-            _hash(f"town:{name}"),
-        ),
-    )
-    for name in order:
-        by_tier[TIERS[pool[name][1].difficulty]].append(name)
-    missing = [tier.value for tier, names in by_tier.items() if not names]
-    if missing:
-        raise ValueError(f"the pool has no {' or '.join(missing)} task for the town")
-    scale = min(len(by_tier[tier]) / share for tier, share in TOWN_MIX.items())
-    chosen = {
-        name for tier, names in by_tier.items() for name in names[: int(scale * TOWN_MIX[tier])]
-    }
-    return {name: pool[name] for name in sorted(chosen)}
-
-
-class _Dumper(yaml.SafeDumper):
-    """Writes text with line breaks as literal blocks."""
-
-
-_Dumper.add_representer(
-    str,
-    lambda dumper, text: dumper.represent_scalar(
-        "tag:yaml.org,2002:str", text, style="|" if "\n" in text else None
-    ),
-)
-
-
-def _write(path: Path, tasks: dict[str, tuple[dict[str, Any], Entry]]) -> None:
-    """Replace the bank at `path` by `tasks` and their index, after loading what was written
-    as a bank."""
-    staging = path.with_name(f".{path.name}.staging")
-    shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir(parents=True)
-    for name, (task, _) in tasks.items():
-        text = yaml.dump(task, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=1 << 30)
-        (staging / f"{name}.yaml").write_text(text, encoding="utf-8")
-    index = BankIndex(tasks={name: entry for name, (_, entry) in tasks.items()})
-    (staging / INDEX).write_text(index.model_dump_json(indent=1) + "\n", encoding="utf-8")
-    if tasks:
-        load_bank(staging)
-    shutil.rmtree(path, ignore_errors=True)
-    staging.rename(path)
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@
 
 The built-in bank is `BANK`. Larger banks are converted from LiveCodeBench into a data
 directory outside the repository by `python -m tasks.coding.fetch`, and calibrated against a
-model by `python -m tasks.coding.calibrate`.
+model by `python -m tasks.calibrate`.
 """
 
 from pathlib import Path

@@ -11,13 +11,15 @@ when every public check passes; its true quality is the fraction of hidden check
 import random
 from pathlib import Path
 from textwrap import indent
-from typing import Annotated
+from typing import Annotated, ClassVar
 
 from pydantic import BeforeValidator, Field, PositiveInt
 
 from core.environment import Assessment, Part
-from infrastructure.config import StrictModel, load_config
+from infrastructure.config import StrictModel
+from tasks import bank
 from tasks.coding.sandbox import Check, CheckResult, Isolation, run_checks
+from tasks.coding.special_cases import special_cases
 
 
 def _listed(checks: object) -> object:
@@ -58,16 +60,16 @@ def load_bank(path: Path) -> dict[str, CodingTask]:
 
     Raises ConfigError for an invalid file and ValueError if there is none.
     """
-    bank = {file.stem: load_config(file, CodingTask) for file in sorted(path.glob("*.yaml"))}
-    if not bank:
-        raise ValueError(f"no coding tasks in {path}")
-    return bank
+    return bank.load(path, CodingTask)
 
 
 class CodingTaskProvider:
     """The work protocol over the bank at `path`, running each check for at most `timeout`
     seconds, separated from the machine by `isolation`. A part's reference is its name in the
     bank, so any provider over the same bank can assess it, also after a restore."""
+
+    delivery: ClassVar[str] = "code"
+    """What a worker hands in, in the town's words."""
 
     def __init__(
         self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP
@@ -105,6 +107,10 @@ class CodingTaskProvider:
             feedback=_feedback(public, failed),
             quality=sum(passed) / len(passed),
         )
+
+    def special_cased(self, part: Part, solution: str) -> bool:
+        """Whether `solution` writes out values of the client's examples (`special_cases`)."""
+        return bool(special_cases(solution, self.bank[part.reference].public_checks))
 
 
 def _feedback(public: list[CheckResult], failed: list[CheckResult]) -> str:
