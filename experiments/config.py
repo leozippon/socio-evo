@@ -1,6 +1,5 @@
 """An experiment: one YAML file naming everything a society run is made of."""
 
-from itertools import pairwise
 from pathlib import Path
 
 from pydantic import Field, PositiveFloat, model_validator
@@ -8,7 +7,6 @@ from pydantic import Field, PositiveFloat, model_validator
 from core.agent import AgentSeed, CognitionConfig
 from core.agent.evolution import EvolutionConfig
 from core.environment import Conditions, EnvironmentConfig
-from core.interaction import time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig
 from runtime.simulation import SimulationConfig
@@ -34,8 +32,8 @@ class TasksConfig(StrictModel):
 
 class ExperimentConfig(StrictModel):
     """Everything a run is made of. The agents must be exactly the residents of the homes,
-    every intervention must leave the conditions valid, and places may open or close only
-    where no slot is under way, since agents move only when a slot starts."""
+    every intervention must leave the conditions valid, and no place may close after the day
+    ends, since whoever is still out goes home then."""
 
     name: str = Field(pattern=r"^[\w.-]+$")
     llm: LLMConfig
@@ -55,10 +53,8 @@ class ExperimentConfig(StrictModel):
         conditions = self.environment.conditions.model_dump()
         for intervention in self.simulation.interventions:
             Conditions.model_validate(conditions | intervention.conditions)
-        calendar = self.simulation.calendar
-        starts = [time for _, time in calendar.slot_times(1)] + [calendar.end(1)]
+        end = self.simulation.calendar.day_end
         for place in self.environment.places:
-            for clock in (clock for span in place.spans() for clock in span):
-                if any(start < time_at(1, clock) < end for start, end in pairwise(starts)):
-                    raise ValueError(f"{place.id} opens or closes at {clock}, within a slot")
+            if late := [closes for _, closes in place.spans() if closes > end]:
+                raise ValueError(f"{place.id} closes at {late[-1]}, after the day ends at {end}")
         return self

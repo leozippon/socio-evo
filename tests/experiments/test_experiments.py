@@ -73,6 +73,12 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     dollars = town.environment.setting.currency
     assert (dollars.tell(20), smoke.environment.setting.currency) == ("$20", dollars)
     assert pilot.environment.setting == Setting()  # the first pilot's rules: crowns, from a Monday
+    for config in (town, smoke):  # the day ends when the last place closes; evenings are social
+        places, calendar = config.environment.places, config.simulation.calendar
+        social = [place for place in places if place.kind == "social"]
+        assert all(place.hours for place in social)
+        assert calendar.day_end == max(closes for p in places for _, closes in p.spans())
+        assert all(place.is_open(calendar.slots[-1].start) for place in social)
 
 
 def test_a_configuration_frozen_before_towns_had_a_setting_loads_as_the_town_it_was():
@@ -89,11 +95,17 @@ def test_an_inconsistent_experiment_is_rejected():
     data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
     ExperimentConfig.model_validate(data)
     places = data["environment"]["places"]
-    closes_mid_slot = [
-        {**place, "hours": ["09:00-11:00"]} if place.get("hours") else place for place in places
+    with_hours = [place["id"] for place in places if place.get("hours")]
+    assert with_hours == ["workshop", "cafe", "tavern"]
+    closes_late = [
+        {**place, "hours": ["18:00-23:45"]} if place["id"] == "tavern" else place
+        for place in places
     ]
+    late = {**data, "environment": {**data["environment"], "places": closes_late}}
+    with pytest.raises(ValidationError, match="tavern closes at 23:45, after the day ends at"):
+        ExperimentConfig.model_validate(late)
     for broken in (
-        {**data, "environment": {**data["environment"], "places": closes_mid_slot}},
+        late,
         {**data, "agents": data["agents"][:2]},
         {**data, "agents": [*data["agents"], data["agents"][0]]},
         {

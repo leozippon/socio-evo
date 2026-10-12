@@ -371,7 +371,7 @@ export class TownMap {
     const dark = 1 - daylight(minute);
     let labelsChanged = false;
     for (const place of this.world.places) {
-      const open = isOpen(place, minute);
+      const open = isOpen(place, minute, this.world.calendar.day_end);
       const scene = frame.scenes.get(place.id) ?? null;
       const site = this.sites.get(place.id);
       site.group.classList.toggle("closed", !open);

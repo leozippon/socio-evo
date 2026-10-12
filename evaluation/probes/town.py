@@ -300,6 +300,8 @@ class Town:
         turn later."""
         here = self.env.world.locations[self.resident]
         present = self.env.world.occupants(here)
+        closes = self.env.world.places[here].closing(clock_of(time))
+        day = day_of(time)
         scene = Conversation(
             self.env,
             self._scene_id(time, here),
@@ -308,6 +310,9 @@ class Town:
             start=time,
             step=self.backdrop.simulation.scenes.turn_minutes,
             max_turns=len(present),
+            until=self.backdrop.simulation.calendar.end(day)
+            if closes is None
+            else time_at(day, closes),
             rng=self.rng,
         )
         return await self._play(scene)

@@ -16,17 +16,19 @@ from core.interaction import (
     Event,
     EventKind,
     MayCheck,
+    MayLeave,
     MayPass,
     MaySubmit,
     Setting,
     card,
+    clock_of,
     day_of,
     ordinal,
     time_at,
 )
 from infrastructure.llm import LLMClient, LLMRequest, LLMResponse, RecordingClient, ScriptedClient
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from runtime.scenes import Planning, SceneConfig, WorkSession, play, situations
+from runtime.scenes import Conversation, Planning, SceneConfig, WorkSession, play, situations
 from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
@@ -614,7 +616,7 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
     )
     await play(env, scripted(tmp_path, replies), [work], random.Random(0), lambda agent: "")
     asked = [(r.metadata["agent"], r.metadata["time"], set(offered(r))) for r in replies.requests]
-    around = {card.SAY, card.SAY_PRIVATELY, card.HAND_OVER, card.CARRY_ON}
+    around = {card.SAY, card.SAY_PRIVATELY, card.HAND_OVER, card.LEAVE, card.CARRY_ON}
     take, working = {card.TAKE, *around}, {card.TRY, card.HAND_IN, *around}
     assert asked == [
         ("Ana", start, take),
@@ -631,7 +633,109 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
         env, "alone", "office", ["Ana"], start=start, until=closing, rounds=3, closes=True
     )
     working_on = {"task_id": "task-1", "parts": (1,)}
-    assert alone.allowed("Ana") == (MayCheck(**working_on), MaySubmit(**working_on), MayPass())
+    assert alone.allowed("Ana") == (
+        MayCheck(**working_on),
+        MaySubmit(**working_on),
+        MayLeave(),
+        MayPass(),
+    )
+
+
+async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_nothing_more(
+    tmp_path,
+):
+    env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    morning, evening = time_at(1, "09:00"), time_at(1, "18:00")
+    for agent in ("Ana", "Ben"):
+        env.move(agent, "office", time=morning)
+    home = {"do": card.LEAVE}
+    replies = Replies({"Ana": [home], "Ben": [QUIETLY] * 9, "Cai": [QUIETLY] * 9})
+    agents = scripted(tmp_path, replies)
+    work = WorkSession(
+        env, "work", "office", ["Ana", "Ben"], start=morning, until=evening, rounds=3, closes=False
+    )
+    await play(env, agents, [work], random.Random(0), lambda agent: "")
+    assert env.world.locations["Ana"] == "flat" and work.present == ["Ben"]
+    assert [r.metadata["agent"] for r in replies.requests].count("Ana") == 1
+    log = read_events(tmp_path / "log")
+    [gone] = [e for e in log if e.kind is EventKind.MOVE and e.scene == "work"]
+    assert (gone.actor, gone.place, gone.audience) == ("Ana", "office", ("Ben",))
+    assert gone.text == "Ana left the office for home."
+    assert gone.payload == {"origin": "office", "destination": "flat"}
+
+    replies.answers["Ana"] = [home]
+    for agent in ("Ana", "Ben", "Cai"):
+        env.move(agent, "cafe", time=evening)
+    talk = Conversation(
+        env,
+        "talk",
+        "cafe",
+        ["Ana", "Ben", "Cai"],
+        start=evening,
+        step=5,
+        max_turns=12,
+        until=time_at(1, "22:00"),
+        rng=random.Random(1),
+    )
+    await play(env, agents, [talk], random.Random(0), lambda agent: "")
+    assert env.world.locations["Ana"] == "flat" and sorted(talk.present) == ["Ben", "Cai"]
+    [gone] = [
+        e for e in read_events(tmp_path / "log") if e.scene == "talk" and e.kind is EventKind.MOVE
+    ]
+    assert gone.text == "Ana left the cafe for home." and set(gone.audience) == {"Ben", "Cai"}
+    assert [r.metadata["agent"] for r in replies.requests].count("Ana") == 2
+
+
+async def test_a_conversation_ends_when_its_place_closes_and_the_day_ends_with_closing(tmp_path):
+    """The cafe closes at 18:12, within the evening's conversation; the park keeps no hours,
+    so it is open until the day ends, when everyone still out goes home: from the park as it
+    closes, from the cafe, closed since 18:12, plainly."""
+    places = [
+        place("cafe", "social", hours=("07:00-18:12",)) if p.id == "cafe" else p
+        for p in ENVIRONMENT.places
+    ]
+    environment = EnvironmentConfig.model_validate({**ENVIRONMENT.model_dump(), "places": places})
+    plans, night = {"Ana": "the cafe", "Ben": "the cafe", "Cai": "the park"}, Script()
+
+    def talker(request: LLMRequest) -> str | dict[str, Any]:
+        agent = request.metadata["agent"]
+        if request.metadata["purpose"] != "act":
+            return night(request)
+        if card.DECIDE in offered(request):
+            parts = [part for part in choices(request, card.DECIDE) if part != card.PLAN]
+            evening = {part: plans[agent] if part == "evening" else "home" for part in parts}
+            return {"thought": "", "do": card.DECIDE, **evening, card.PLAN: ""}
+        if card.SAY in offered(request):
+            return {"thought": "", "do": card.SAY, card.TO: None, card.WORDS: "Still here."}
+        return {"thought": "", "do": card.CARRY_ON}
+
+    run = RunDirectory.create(tmp_path, "town", 7, config=SIMULATION, code_revision="test")
+    parts = replace(
+        setup(run, Script()),
+        environment=environment,
+        client=RecordingClient(ScriptedClient(talker), run.llm_calls_path),
+    )
+    await Simulation.create(run, parts).run(until_day=1)
+    log = events(run)
+    turns = sorted({e.time for e in log if e.kind is EventKind.DECISION and e.place == "cafe"})
+    assert [clock_of(time) for time in turns] == ["18:00", "18:05", "18:10"]
+    end = time_at(1, "22:00")
+    home = {e.actor: e.text for e in log if e.kind is EventKind.MOVE and e.time == end}
+    assert home == {
+        "Ana": "Ana went from the cafe to the flat.",
+        "Ben": "Ben went from the cafe to the house.",
+        "Cai": "The park closed for the night, and Cai went home.",
+    }
+    known = next(call for call in read_jsonl(run.llm_calls_path))["request"]["messages"][0]
+    assert (
+        "- The park, where you can sit and talk with whoever else is there, open until 22:00."
+        in (known["content"])
+    )
+    assert (
+        "- The cafe, where you can sit and talk with whoever else is there, open from 07:00 to "
+        in (known["content"])
+    )
+    assert "goes home" not in known["content"] and "22:00 everyone" not in known["content"]
 
 
 async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):

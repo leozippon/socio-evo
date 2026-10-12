@@ -61,7 +61,8 @@ class Speak(StrictModel):
 
 
 class Leave(StrictModel):
-    """Take your leave."""
+    """Leave the place you are at and go home for the rest of this part of the day. Recorded
+    before residents chose their hours, it meant leaving a conversation for the rest of it."""
 
     kind: Literal[ActionKind.LEAVE] = ActionKind.LEAVE
 

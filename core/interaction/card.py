@@ -50,7 +50,7 @@ from infrastructure.config import StrictModel
 DECIDE = "decide the day"
 SAY = "say"
 SAY_PRIVATELY = "say privately"
-LEAVE = "take your leave"
+LEAVE = "go home for the rest of this part of the day"
 CARRY_ON = "carry on quietly"
 TAKE = "take a job"
 TAKE_FOR_TWO = "take a job for two"
@@ -156,7 +156,7 @@ class MaySpeak(_Allowance):
 
 
 class MayLeave(_Allowance):
-    """Taking one's leave of the people present."""
+    """Leaving the place for home, for the rest of this part of the day."""
 
     kind: Literal[ActionKind.LEAVE] = ActionKind.LEAVE
 

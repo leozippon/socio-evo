@@ -22,8 +22,9 @@ from runtime.scenes.scene import Scene
 class Conversation(Scene):
     """Agents at a social place, from `start`, speak in turn every `step` minutes, in an
     order shuffled with `rng`, until fewer than two remain, everyone remaining has had a turn
-    since anything was said or given, or `max_turns` turns have been played. Only those still
-    present hear what is said."""
+    since anything was said or given, `max_turns` turns have been played, or the next turn
+    would fall at or after `until`, when the place closes. Only those still present hear
+    what is said; one who leaves goes home."""
 
     kind = "conversation"
 
@@ -37,10 +38,12 @@ class Conversation(Scene):
         start: int,
         step: int,
         max_turns: int,
+        until: int,
         rng: random.Random,
     ) -> None:
         super().__init__(env, id, place, participants, start, step)
         self.max_turns = max_turns
+        self.until = until
         self.present = list(participants)
         rng.shuffle(self.present)
         self.next = 0
@@ -84,4 +87,5 @@ class Conversation(Scene):
             len(self.present) < 2
             or self.silent >= len(self.present)
             or self.turns >= self.max_turns
+            or self.next_time >= self.until
         )

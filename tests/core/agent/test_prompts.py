@@ -225,7 +225,7 @@ SAMPLES = {
         {"text": "Morning.", "to": "Ben", "private": True},
         'you said to Ben, for no one else to hear: "Morning."',
     ),
-    ActionKind.LEAVE: ({}, "you took your leave."),
+    ActionKind.LEAVE: ({}, "you left for home, for the rest of that part of the day."),
     ActionKind.PASS: ({}, "you carried on quietly."),
     ActionKind.CLAIM_TASK: (
         {"task_id": "task-27", "partner": "Ben"},

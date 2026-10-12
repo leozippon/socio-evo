@@ -221,7 +221,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `calendar.slots` | array | The parts of the day, in order, each from its start to the next slot or the day end. |
 | `calendar.slots[].name` | string | The slot name, for example `morning`. |
 | `calendar.slots[].start` | string | `HH:MM`. |
-| `calendar.day_end` | string | `HH:MM` at which everyone goes home, rates the people they met and evolves. |
+| `calendar.day_end` | string | `HH:MM` at which the day ends: whoever is still out goes home, and everyone rates the people they met and evolves. No place closes later. |
 | `calendar.weekly_days` | integer | Weekly evolution is due on days divisible by this. |
 | `calendar.monthly_days` | integer | Monthly evolution is due on days divisible by this. |
 | `scenes` | object | How long scenes last. |
@@ -236,7 +236,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `places[].x` | number | Map position. |
 | `places[].y` | number | Map position. |
 | `places[].residents` | array of strings | The agents living there (homes only). |
-| `places[].hours` | array of strings | Opening hours as `HH:MM-HH:MM` spans; empty means always open. |
+| `places[].hours` | array of strings | Opening hours as `HH:MM-HH:MM` spans; empty means open until the day ends. |
 | `agents` | array | Every agent, in the configured order. |
 | `agents[].name` | string | The agent's id and given name. |
 | `agents[].age` | integer | Age. |
@@ -307,10 +307,10 @@ Within a day the events are those the simulation recorded in order: the day open
 | `decision` | the agent | none | `thought` (private), `action` (see below) |
 | `lapse` | the agent | none | `agent`, `level` and `trigger` (null for a moment in which the agent did nothing; else the night step it skipped, as in `evolution`), `failures` (how each attempt at a reply failed, in order): no valid reply could be obtained, so nothing was done or committed |
 | `draw` | none | the claimants | `task_id`, `order`: agents who claimed one task in the same turn, in the drawn order in which their claims were taken |
-| `move` | the agent | others at origin and destination | `origin`, `destination` (place ids) |
+| `move` | the agent | others at origin and destination | `origin`, `destination` (place ids); a resident leaving a scene for home moves within that scene, at the place it left |
 | `speech` | the speaker | others present, or only `to` if private | `utterance`, `to` (an agent addressed by name, or null), `private` |
 | `speech_unheard` | the speaker | others present but the addressee | `to`: a private remark as bystanders perceive it, without the words |
-| `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place |
+| `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place (logs recorded before leaving meant going home, now a `move`) |
 | `task_posted` | none | everyone | `task`: `id`, `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
 | `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`: a proposal to take a two-person task together |
 | `task_applied` | the applicant | the applicant | `task_id` of a two-person task, for the board to pair |

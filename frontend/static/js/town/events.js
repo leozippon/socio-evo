@@ -134,7 +134,7 @@ export function actionSummary(action, { tasks = null, places = null } = {}) {
     case "speak":
       return action.private ? `says something privately to ${action.to}` : action.to ? `speaks to ${action.to}` : "speaks";
     case "leave":
-      return "takes their leave";
+      return "goes home";
     case "pass":
       return "carries on quietly";
     case "claim_task":

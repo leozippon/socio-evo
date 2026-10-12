@@ -83,7 +83,7 @@ def test_measures_agree_with_the_log_and_the_final_checkpoint(town):
     expected = defaultdict(Counter)
     scenes = {e["scene"]: e for e in log if e["kind"] == "scene_started"}
     ended = {e["scene"]: e for e in log if e["kind"] == "scene_ended"}
-    left = {(e["scene"], e["actor"]): e["time"] for e in log if e["kind"] == "left"}
+    left = {(e["scene"], e["actor"]): e["time"] for e in log if e["kind"] == "move" and e["scene"]}
     turns = defaultdict(set)
     for e in log:
         if e["kind"] == "decision":

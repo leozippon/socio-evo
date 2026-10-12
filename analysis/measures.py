@@ -265,6 +265,8 @@ def measure(run: RunData) -> Measures:
             match event.kind:
                 case EventKind.MOVE:
                     location[actor] = payload["destination"]
+                    if event.scene in scenes:  # gone home from a scene under way
+                        scenes[event.scene].left[actor] = event.time
                 case EventKind.SPEECH:
                     today[actor].utterances += 1
                     for listener in event.audience:

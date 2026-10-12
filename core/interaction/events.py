@@ -18,6 +18,8 @@ class EventKind(StrEnum):
     SPEECH_UNHEARD = "speech_unheard"
     """A private remark as the others present perceive it: who spoke to whom, not the words."""
     LEFT = "left"
+    """A conversation left, the leaver staying at the place: what leaving meant in logs
+    recorded before it meant going home, which is now a `move`."""
     TASK_POSTED = "task_posted"
     TASK_PROPOSED = "task_proposed"
     """A proposal to take a two-person task together; private to the two."""

@@ -52,7 +52,11 @@ ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
         {"do": "say privately", "to": "Tomas", "words": "Psst."},
         Speak(text="Psst.", to="Tomas", private=True),
     ),
-    ActionKind.LEAVE: (MayLeave(), {"do": "take your leave"}, Leave()),
+    ActionKind.LEAVE: (
+        MayLeave(),
+        {"do": "go home for the rest of this part of the day"},
+        Leave(),
+    ),
     ActionKind.PASS: (MayPass(), {"do": "carry on quietly"}, Pass()),
     ActionKind.CLAIM_TASK: (
         WORK[0],
@@ -141,7 +145,7 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
         {"do": "say privately", "to": None, "words": "Hm."},
         {"do": "hand over money", "to": "Tomas", "dollars": 0, "note": ""},
         {"do": "hand over money", "to": "Tomas", "crowns": 5, "note": ""},
-        {"do": "take your leave"},
+        {"do": "go home for the rest of this part of the day"},
         {"do": "carry on quietly", "job": 25},
         {"do": "claim_task", "task_id": "25"},
     ],

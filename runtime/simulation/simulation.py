@@ -3,8 +3,10 @@
 A day start opens the day in the environment, lets every agent plan, and expands into the
 day's slot triggers and its day-end trigger. A slot moves the agents as planned, posts new jobs
 if it is one of the configured postings, and plays a work session at every occupied work place
-and a conversation at every social place with company; nothing else costs a model call. A day
-end sends everyone home, holds the evening ledger, closes the day in the environment, hands
+and a conversation at every social place with company, each until the place closes at the
+latest; nothing else costs a model call. A resident who leaves either goes home until the
+next slot moves it. A day end sends whoever is still out home (told as the place closing, for
+a place that closes then), holds the evening ledger, closes the day in the environment, hands
 every agent what it witnessed since its last decision, lets every agent evolve, schedules the
 next day and writes a checkpoint. Interventions change conditions or make announcements at
 their time.
@@ -30,7 +32,7 @@ import os
 import random
 import time as wall
 from collections import Counter
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -248,6 +250,8 @@ class Simulation:
                     closes=closes,
                 )
             elif place.kind is PlaceKind.SOCIAL and len(here) > 1:
+                closing = place.closing(clock_of(time))
+                closes = self.config.calendar.end(day) if closing is None else time_at(day, closing)
                 scene = Conversation(
                     self.env,
                     prefix + place.id,
@@ -256,6 +260,7 @@ class Simulation:
                     start=time,
                     step=settings.turn_minutes,
                     max_turns=settings.conversation_turns,
+                    until=closes,
                     rng=self.rng,
                 )
             else:
@@ -267,7 +272,13 @@ class Simulation:
 
     async def _end_day(self, time: int) -> None:
         day = day_of(time)
-        self._move(self.env.config.homes, time)
+        end = self.config.calendar.day_end
+        closing = {
+            place.id
+            for place in self.env.world.places.values()
+            if place.kind is not PlaceKind.HOME and (not place.hours or place.spans()[-1][1] == end)
+        }
+        self._move(self.env.config.homes, time, closing)
         met = {
             agent: [other for other in self.agents if other in others]
             for agent, others in self._met.items()
@@ -330,14 +341,18 @@ class Simulation:
                 EventKind.ANNOUNCEMENT, payload["announcement"], time=time, audience=self.env.agents
             )
 
-    def _move(self, destinations: Mapping[str, str], time: int) -> None:
+    def _move(
+        self, destinations: Mapping[str, str], time: int, closing: Collection[str] = ()
+    ) -> None:
         """Move every agent to its destination, or home if reality refuses that move, in an
         order drawn at random: a move is seen only by those already there, so a fixed order
-        would show some agents as always early."""
+        would show some agents as always early. A move from one of the places `closing` is
+        told as that place closing."""
         order, homes = list(self.agents), self.env.config.homes
         self.rng.shuffle(order)
         for agent in order:
-            moved = self.env.move(agent, destinations[agent], time=time)
+            leaving = self.env.world.locations[agent] in closing
+            moved = self.env.move(agent, destinations[agent], time=time, closing=leaving)
             if moved and moved[0].kind is EventKind.ACTION_REJECTED:
                 self.env.move(agent, homes[agent], time=time)
 

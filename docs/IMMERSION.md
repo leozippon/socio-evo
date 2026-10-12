@@ -36,7 +36,7 @@ In the first pilot the residents knew they were being run. More than half of the
 | clawback | the client takes the payment back |
 | contested claims resolved by a draw | several reached for the same notice at once; the clerk drew lots |
 | pass | carry on quietly; do nothing in particular |
-| leave a conversation | take your leave |
+| leave (a work place or company) | go home for the rest of this part of the day |
 | plan the day | decide where to spend each part of the day |
 | rating, esteem | the clerk's ledger: members mark one another from 1 to 5, and each member's standing is posted beside the board |
 | give | hand someone money |

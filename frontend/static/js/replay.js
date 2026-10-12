@@ -93,9 +93,13 @@ export function apply(state, event) {
       dropOffers(state, event, () => true, () => "lapsed");
       state.ended = true;
       break;
-    case "move":
+    case "move": {
       state.locations[event.actor] = p.destination;
+      // Going home from a scene under way leaves it.
+      const scene = state.scenes[event.scene];
+      if (scene) scene.present = scene.present.filter((name) => name !== event.actor);
       break;
+    }
     case "scene_started":
       state.scenes[event.scene] = {
         kind: p.kind,
@@ -106,6 +110,7 @@ export function apply(state, event) {
       };
       break;
     case "left": {
+      // Recorded before leaving meant going home: the agent stayed at the place.
       const scene = state.scenes[event.scene];
       if (scene) scene.present = scene.present.filter((name) => name !== event.actor);
       break;

@@ -42,9 +42,9 @@ export function calendarOf(world) {
 /** The slot a clock minute falls in, or null before the first slot and after the day end. */
 export const slotAt = (cal, minute) => cal.slots.find((slot) => minute >= slot.start && minute < slot.end) ?? null;
 
-/** Whether a place is open at a clock minute; a place without hours never closes. */
-export function isOpen(place, minute) {
-  if (!place.hours.length) return true;
+/** Whether a place is open at a clock minute; a place without hours is open until the day ends at `dayEnd` (`HH:MM`). */
+export function isOpen(place, minute, dayEnd) {
+  if (!place.hours.length) return place.kind === "home" || minute < parseHHMM(dayEnd);
   return place.hours.some((span) => {
     const [from, to] = span.split("-").map(parseHHMM);
     return minute >= from && minute < to;

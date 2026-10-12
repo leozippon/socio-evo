@@ -275,8 +275,9 @@ class Environment:
         """The percepts of the events `agent` witnessed since it last perceived."""
         return self.log.perceive(agent)
 
-    def move(self, agent: str, place: str, *, time: int) -> list[Event]:
-        """Move `agent` to `place`, witnessed by the others at the origin and the destination.
+    def move(self, agent: str, place: str, *, time: int, closing: bool = False) -> list[Event]:
+        """Move `agent` to `place`, witnessed by the others at the origin and the destination;
+        with `closing`, the move is told as the place it leaves closing for the night.
 
         An unknown place, or one closed at `time`, is rejected, also if the agent is already
         there; otherwise moving to where the agent already is changes nothing.
@@ -290,27 +291,21 @@ class Environment:
         if place == origin:
             return []
         names = {key: self.world.places[key].name for key in (origin, place)}
-        witnesses = self.world.occupants(origin) + self.world.occupants(place)
-        return [
-            self.emit(
-                EventKind.MOVE,
-                f"{agent} went from {names[origin]} to {names[place]}.",
-                time=time,
-                audience=[witness for witness in witnesses if witness != agent],
-                actor=agent,
-                place=place,
-                payload={"origin": origin, "destination": place},
-            )
-        ]
+        if closing:
+            text = f"{capital(names[origin])} closed for the night, and {agent} went home."
+        else:
+            text = f"{agent} went from {names[origin]} to {names[place]}."
+        return [self._moved(agent, origin, text, time=time, place=place, scene=None)]
 
     async def execute(
         self, agent: str, action: Action, *, time: int, scene: str, witnesses: Collection[str]
     ) -> list[Event]:
         """Carry out `agent`'s action in `scene`, where `witnesses` are the agents present.
 
-        `speak` and `leave` are witnessed by the others among `witnesses` (a private remark
-        is heard by its addressee alone); `pass` leaves no trace. `give` moves credits to
-        someone present before them all. `claim_task`, `check_work`, `submit_work` and
+        `speak` is witnessed by the others among `witnesses` (a private remark is heard by
+        its addressee alone); `leave` takes the agent home, as a move seen by the others at
+        the place and at home; `pass` leaves no trace. `give` moves credits to someone present
+        before them all. `claim_task`, `check_work`, `submit_work` and
         `rate_peers` change society. An action that reality cannot honour changes nothing and
         yields a private `action_rejected` event. `plan_day` is the runtime's to interpret
         and raises ValueError here.
@@ -324,8 +319,7 @@ class Environment:
                 case Speak():
                     return self._speak(agent, action, others, **where)
                 case Leave():
-                    left = f"{agent} took their leave."
-                    return [self.emit(EventKind.LEFT, left, audience=others, actor=agent, **where)]
+                    return [self._go_home(agent, **where)]
                 case Pass():
                     return []
                 case ClaimTask():
@@ -529,6 +523,30 @@ class Environment:
         if not self.conditions.esteem_public:
             return None
         return f"The standings posted beside the board:\n{self._standings(Witness(agent))}"
+
+    def _go_home(self, agent: str, *, time: int, place: str, scene: str) -> Event:
+        """`agent` leaves `place` for home, in `scene`: an event of that place."""
+        self.world.move(agent, self.config.homes[agent], clock_of(time))
+        text = f"{agent} left {self.world.places[place].name} for home."
+        return self._moved(agent, place, text, time=time, place=place, scene=scene)
+
+    def _moved(
+        self, agent: str, origin: str, text: str, *, time: int, place: str, scene: str | None
+    ) -> Event:
+        """The news, told as `text`, that `agent` went from `origin` to where it is now, for
+        the others there and at `origin`, as an event of `place`."""
+        destination = self.world.locations[agent]
+        witnesses = self.world.occupants(origin) + self.world.occupants(destination)
+        return self.emit(
+            EventKind.MOVE,
+            text,
+            time=time,
+            audience=[witness for witness in witnesses if witness != agent],
+            actor=agent,
+            place=place,
+            scene=scene,
+            payload={"origin": origin, "destination": destination},
+        )
 
     def _speak(self, agent: str, action: Speak, others: list[str], **where) -> list[Event]:
         addressed = action.to is not None and action.to.strip().casefold() not in EVERYONE

@@ -30,12 +30,13 @@ USES = {
 }
 HOURS = ", open {spans}"
 SPAN = "from {opens} to {closes}"
+UNTIL = ", open until {closes}"
+"""The hours of a place that keeps none of its own: it closes when the day ends."""
 PART = "{name} from {start}"
 DAY = (
     "Your days run the same way. At {start} you decide where to spend each part of the day: "
-    "{parts}. At {end} everyone goes home for the night. New notices go up on the board at "
-    "{postings}. Before you sleep you can mark the people you spent time with that day in the "
-    "clerk's ledger."
+    "{parts}. New notices go up on the board at {postings}. Before you sleep you can mark the "
+    "people you spent time with that day in the clerk's ledger."
 )
 
 PLANNING = (
@@ -66,9 +67,10 @@ THEN = "then {person}"
 
 
 def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent: str) -> str:
-    """What `agent` knows of the town: the backdrop of its setting, if it has one; its places;
-    the shape of its days with the slots named in `postings` as the moments new notices go
-    up; and the rules of work and the ledger."""
+    """What `agent` knows of the town: the backdrop of its setting, if it has one; its places
+    with their hours, a place without hours of its own being open until the day ends; the
+    shape of its days with the slots named in `postings` as the moments new notices go up;
+    and the rules of work and the ledger."""
     places = [
         PLACE.format(
             name=capital(place.name),
@@ -77,7 +79,7 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
                 spans=listed([SPAN.format(opens=o, closes=c) for o, c in place.spans()])
             )
             if place.hours
-            else "",
+            else UNTIL.format(closes=calendar.day_end),
             description=f" {place.description.strip()}" if place.description.strip() else "",
         )
         for place in env.world.places.values()
@@ -87,7 +89,6 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
     day = DAY.format(
         start=calendar.day_start,
         parts=_parts(calendar),
-        end=calendar.day_end,
         postings=listed([starts[slot] for slot in postings]),
     )
     home = env.world.places[env.config.homes[agent]].name
