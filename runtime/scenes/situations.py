@@ -11,8 +11,10 @@ upper-case constants here, which tests scan.
 The setting is what every resident simply knows, the same from moment to moment until the
 town's rules change: the backdrop the configuration gives the town, its places, the shape of
 its days, and how work and the ledger go. A moment is short: where you are, who is here, how
-long until closing and, at work, until the next moment, your purse and job, and the board,
-which says when new notices go up if it is empty; at night, whom you spent the day with.
+long until closing and, at work, until the next moment (and, at the last moment a job due
+that day can be handed in, that it is the last and what follows if it is not), your purse and
+job, and the board, which says when new notices go up if it is empty; at night, whom you spent
+the day with.
 Money is told in the town's currency, and the words of others are quoted.
 """
 
@@ -66,6 +68,15 @@ UNTIL_CLOSING = "Whatever you do now will take you to {clock}, when {place} clos
 UNTIL_THE_END = "Whatever you do now will take you to {clock}, when this part of the day ends."
 """How long what a resident does at work takes: until the next moment it decides, or until
 the place closes or the part of the day ends."""
+LAST_CHANCE = (
+    "This is your last chance to hand in {job} today: it is due by the end of the day, and "
+    "after {clock} there is nowhere open to hand it in. Unless {done} by then, it lapses: "
+    "nothing is paid for {unpaid}, everyone hears of it the next morning, and its notice goes "
+    "back up on the board."
+)
+DONE = {1: "it is in", 2: "both its parts are in"}
+UNPAID = {1: "it", 2: "either part"}
+"""A job of one part or of two that is done, and what of it goes unpaid if it lapses."""
 NO_NOTICES = "{board} New notices go up at {clock}."
 NO_NOTICES_TOMORROW = "{board} New notices go up tomorrow at {clock}."
 """An empty board, and when the next notices go up."""
@@ -187,17 +198,26 @@ def work(
 ) -> str:
     """A moment at work at `now`: the next moment is at `following`, and the session lasts
     `until` the place closes (`closes`) or the part of the day ends; `posting` is when new
-    notices next go up, if known."""
+    notices next go up, if known. In the session's last moment, if no work place is open
+    later that day, a resident whose job is due that day is told that this is its last
+    chance to hand it in, and what follows if it does not."""
     name, clock = env.world.places[place].name, clock_of(until)
     if following < until:
         ends = (
             CLOSES.format(place=capital(name), clock=clock) if closes else ENDS.format(clock=clock)
         )
         told = f"{ends} {NEXT.format(clock=clock_of(following))}"
-    elif closes:
-        told = UNTIL_CLOSING.format(clock=clock, place=name)
     else:
-        told = UNTIL_THE_END.format(clock=clock)
+        told = (
+            UNTIL_CLOSING.format(clock=clock, place=name)
+            if closes
+            else UNTIL_THE_END.format(clock=clock)
+        )
+        claim = env.board.claim_of(agent)
+        if claim is not None and claim.due_day == day_of(now) and _closed_after(env, clock):
+            parts, job = len(claim.task.parts), job_name(claim.task.id)
+            last = LAST_CHANCE.format(job=job, clock=clock, done=DONE[parts], unpaid=UNPAID[parts])
+            told = f"{told} {last}"
     return WORK.format(
         place=name,
         company=COMPANY.format(people=listed(others)) if others else ALONE,
@@ -279,6 +299,17 @@ def _board(env: Environment, agent: str, place: str | None, now: int, posting: i
         return board
     told = NO_NOTICES if day_of(posting) == day_of(now) else NO_NOTICES_TOMORROW
     return told.format(board=board, clock=clock_of(posting))
+
+
+def _closed_after(env: Environment, clock: str) -> bool:
+    """Whether every work place is closed for the rest of the day after `clock`, so that work
+    cannot be handed in anywhere until the next day; a work place without hours of its own is
+    open until the day ends, and so taken to be open after it."""
+    return all(
+        place.hours and all(closes <= clock for _, closes in place.spans())
+        for place in env.world.places.values()
+        if place.kind is PlaceKind.WORK
+    )
 
 
 def _either(options: Sequence[str]) -> str:

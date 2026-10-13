@@ -16,6 +16,7 @@ from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
 from core.environment import Conditions, Environment, EnvironmentConfig, Place, Trade
 from core.interaction import (
+    ClaimTask,
     Event,
     EventKind,
     MayCheck,
@@ -854,6 +855,46 @@ async def test_a_try_is_remembered_as_a_try_in_the_words_of_its_trade(tmp_path):
     told = "\n".join(remembered)
     assert "Your query for job 1, " in told and "run on the client's sample rows:" in told
     assert "example" not in told and "handed in" not in told
+
+
+async def test_the_last_moment_to_hand_in_a_job_on_its_due_day_says_so(tmp_path):
+    """Only the last moment of work on the day a job is due, with no work place open later
+    that day, tells its holder that this is the last chance to hand it in and what follows if
+    it is not in: not the day before, not at an earlier moment, not one who holds no job, and
+    not while another work place opens later."""
+    later = place("library", "work", hours=("14:00-18:00",))
+
+    async def town(*places: Place) -> Environment:
+        config = ENVIRONMENT.model_copy(update={"places": (*ENVIRONMENT.places, *places)})
+        env = Environment.create(config, AGENTS, Provider(), tmp_path / f"log-{len(places)}")
+        start = time_at(1, "09:00")
+        env.post(start, 0)  # every part allows two days
+        await env.execute("Ana", ClaimTask(task_id="task-1"), time=start, scene="", witnesses=[])
+        return env
+
+    def moment(env: Environment, day: int, start: str, rounds: int, agent: str = "Ana") -> str:
+        start_at, closing = time_at(day, start), time_at(day, "13:00")
+        here = ["Ana", "Ben"]
+        work = WorkSession(
+            env, "work", "office", here, start=start_at, until=closing, rounds=rounds, closes=True
+        )
+        return work.situation(agent)
+
+    last = (
+        "Whatever you do now will take you to 13:00, when the office closes. This is your last "
+        "chance to hand in job 1 today: it is due by the end of the day, and after 13:00 there "
+        "is nowhere open to hand it in. Unless it is in by then, it lapses: nothing is paid for "
+        "it, everyone hears of it the next morning, and its notice goes back up on the board."
+    )
+    env = await town()
+    assert last in moment(env, 2, "12:00", 1)
+    told = [
+        moment(env, 1, "12:00", 1),
+        moment(env, 2, "09:00", 3),
+        moment(env, 2, "12:00", 1, "Ben"),
+        moment(await town(later), 2, "12:00", 1),
+    ]
+    assert not [moment for moment in told if "last chance" in moment]
 
 
 async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_nothing_more(
