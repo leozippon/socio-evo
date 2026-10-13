@@ -146,6 +146,11 @@ JOB_OF = {
     Trade.CALCULATION: "a calculation",
 }
 """A job of each trade, as its notice names it."""
+TOO_LATE = (
+    "This late in the day, the clerk gives out no job to be done by the end of the day it is taken."
+)
+"""Said with the notices in the last moment of a day at which work can be handed in, from which
+the jobs to be done by the end of the day they are taken are left off."""
 DELIVERY = {Trade.PROGRAMMING: CODE, Trade.QUERIES: "query", Trade.CALCULATION: "answer"}
 """What a worker of each trade hands in, in the town's words: also the name of the hand-in
 on its answer card."""
@@ -794,37 +799,47 @@ class Environment:
         ledger = LEDGER + (STANDINGS if self.conditions.esteem_public else "")
         return f"{work}\n\n{ledger}"
 
-    def notices_for(self, agent: str | None, place: str | None = None) -> list[Task]:
+    def notices_for(
+        self, agent: str | None, place: str | None = None, *, late: bool = False
+    ) -> list[Task]:
         """The tasks on the notices `agent` faces at `place` (where it is, if None): those of
         the job sheet at an establishment of which it is a member, none at one it is not,
-        and the board's elsewhere; with no agent, the board's."""
+        and the board's elsewhere; with no agent, the board's. `late` is the last moment of a
+        day at which work can be handed in, when the clerk gives out no task to be done by
+        the end of the day it is taken, since nothing taken then could be handed in that
+        day: those are left out."""
         if agent is not None and place is None:
             place = self.world.locations[agent]
         listings = self.board.listings.values()
         if place in self.firms.establishments:
             if agent not in self.firms.people(place):
                 return []
-            return [listing.task for listing in listings if listing.task.sheet == place]
-        return [listing.task for listing in listings if listing.task.sheet is None]
+            tasks = [listing.task for listing in listings if listing.task.sheet == place]
+        else:
+            tasks = [listing.task for listing in listings if listing.task.sheet is None]
+        return [task for task in tasks if not (late and task.deadline_days == 1)]
 
-    def board_view(self, agent: str | None = None, place: str | None = None) -> str:
-        """The notices `agent` faces at `place`, where it is if None (see `notices_for`): the
-        jobs, and on the board the places firms have to fill; without an agent, the board as
-        anyone sees it."""
+    def board_view(
+        self, agent: str | None = None, place: str | None = None, *, late: bool = False
+    ) -> str:
+        """The notices `agent` faces at `place`, where it is if None, at the moment `late`
+        says (see `notices_for`): the jobs, and on the board the places firms have to fill;
+        without an agent, the board as anyone sees it. Where the moment leaves jobs off, it
+        says that the clerk gives none of them out so late."""
         if agent is not None and place is None:
             place = self.world.locations[agent]
         if place in self.firms.establishments and agent not in self.firms.people(place):
             return SHEET_OF_OTHERS.format(firm=self.firms.names[place])
         sheet = place in self.firms.establishments
         where = f"{self.firms.names[place]}'s job sheet" if sheet else "the board"
-        notices = [
-            f"- {capital(self._offer(task, agent))}." for task in self.notices_for(agent, place)
-        ]
+        given = self.notices_for(agent, place, late=late)
+        notices = [f"- {capital(self._offer(task, agent))}." for task in given]
         if not sheet:
             notices += [f"- {capital(self._vacancy(firm))}." for firm in self._vacancies()]
-        if not notices:
-            return f"There are no notices on {where}."
-        return "\n".join([f"On {where}:", *notices])
+        told = [f"On {where}:", *notices] if notices else []
+        if len(given) < len(self.notices_for(agent, place)):
+            told.append(TOO_LATE)
+        return "\n".join(told) if told else f"There are no notices on {where}."
 
     def _vacancies(self) -> list[str]:
         """The establishments with a place to fill, by place id."""

@@ -429,19 +429,9 @@ class _Round(WorkSession):
         super().__init__(*args, **options)
         self.then = then
 
-    def situation(self, agent: str) -> str:
-        others = [other for other in self.present if other != agent]
-        return situations.work(
-            self.env,
-            self.place,
-            others,
-            agent,
-            now=self.start,
-            following=self.then,
-            until=self.until,
-            closes=self.closes,
-            posting=self.posting,
-        )
+    @property
+    def following(self) -> int:
+        return self.then
 
 
 def _claim(task: Task, partner: str | None) -> Action:

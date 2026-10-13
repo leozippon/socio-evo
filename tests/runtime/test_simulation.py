@@ -14,12 +14,21 @@ from analysis import meetings as meetings_of
 from analysis import read_run
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
-from core.environment import Conditions, Environment, EnvironmentConfig, Place, Trade
+from core.environment import (
+    Client,
+    Conditions,
+    Environment,
+    EnvironmentConfig,
+    Part,
+    Place,
+    Trade,
+)
 from core.interaction import (
     ClaimTask,
     Event,
     EventKind,
     MayCheck,
+    MayClaim,
     MayLeave,
     MayPass,
     MaySubmit,
@@ -895,6 +904,58 @@ async def test_the_last_moment_to_hand_in_a_job_on_its_due_day_says_so(tmp_path)
         moment(await town(later), 2, "12:00", 1),
     ]
     assert not [moment for moment in told if "last chance" in moment]
+
+
+async def test_the_last_moment_of_the_day_neither_shows_nor_offers_a_job_due_that_day(tmp_path):
+    """In the last moment of the day at which work can be handed in, the board and the card
+    leave off the job to be done by the end of the day it is taken, and the board says the
+    clerk gives none out so late, also where nothing else is left on it; an earlier moment,
+    or the last of a session after which another work place opens, shows and offers it; a
+    job allowing two days is shown and offered in every moment."""
+    later = place("library", "work", hours=("14:00-18:00",))
+    late = "This late in the day, the clerk gives out no job to be done by the end of the day"
+    today, tomorrow = 'Job 1, "Routine 1"', 'Job 2, "Routine 2"'
+
+    def town(*places: Place) -> Environment:
+        config = ENVIRONMENT.model_copy(update={"places": (*ENVIRONMENT.places, *places)})
+        env = Environment.create(config, AGENTS, Provider(), tmp_path / f"log-{len(places)}")
+        for days in (1, 2):
+            part = Part(
+                title=f"Routine {days}",
+                specification="Write it.",
+                reward=20,
+                deadline_days=days,
+                reference=f"routine-{days}",
+            )
+            env.post_task(time_at(1, "09:00"), Trade.PROGRAMMING, [part], Client.CHECKING)
+        return env
+
+    def moment(env: Environment, start: str, rounds: int) -> tuple[str, tuple[str, ...]]:
+        """What Ana reads at the office from `start` and the jobs for one its card offers."""
+        work = WorkSession(
+            env,
+            "work",
+            "office",
+            ["Ana", "Ben"],
+            start=time_at(1, start),
+            until=time_at(1, "13:00"),
+            rounds=rounds,
+            closes=True,
+        )
+        offered = [a.alone for a in work.allowed("Ana") if isinstance(a, MayClaim)]
+        return work.situation("Ana"), offered[0] if offered else ()
+
+    env = town()
+    board, jobs = moment(env, "12:00", 1)
+    assert jobs == ("task-2",) and today not in board and tomorrow in board and late in board
+    for board, jobs in (moment(env, "09:00", 3), moment(town(later), "12:00", 1)):
+        assert jobs == ("task-1", "task-2") and today in board and tomorrow in board
+        assert late not in board
+    taken = ClaimTask(task_id="task-2")
+    await env.execute("Ben", taken, time=time_at(1, "10:00"), scene="", witnesses=[])
+    board, jobs = moment(env, "12:00", 1)
+    assert jobs == () and today not in board and late in board
+    assert "There are no notices" not in board
 
 
 async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_nothing_more(

@@ -113,6 +113,15 @@ class World:
         """The agents at `place`."""
         return [agent for agent, here in self.locations.items() if here == place]
 
+    def open_after(self, kind: PlaceKind, clock: str) -> bool:
+        """Whether a place of `kind` is open after `clock` (`HH:MM`) on the same day; one
+        without hours of its own is open until the day ends."""
+        return any(
+            not place.hours or any(closes > clock for _, closes in place.spans())
+            for place in self.places.values()
+            if place.kind is kind
+        )
+
     def move(self, agent: str, place: str, clock: str) -> str:
         """Put `agent` at `place` at `clock` and return where it was; raises Rejected for an
         unknown place or one closed at `clock`, also if the agent is already there."""

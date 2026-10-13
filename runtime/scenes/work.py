@@ -58,20 +58,28 @@ class WorkSession(Scene):
     def ask(self) -> list[str]:
         return list(self.present)
 
+    @property
+    def following(self) -> int:
+        """When what an agent does in the next round takes it to: the round after, or `until`
+        in the last."""
+        return self.until if self.turns + 1 >= self.rounds else self.next_time + self.step
+
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
         """Someone working on no job may take one from the notices it faces here (the board,
         or its firm's job sheet), if any is there, a job for two with a neighbour, or with one
-        of the firm's people on its sheet; someone working on one may hand in the parts not
-        yet in, and try them where the job's trade gives something to try against. A foreman
-        at its firm may take on those who asked for its place while it has one, and dismiss
-        its staff; anyone may ask for a place or give notice (`careers`). Anyone may talk to
-        and hand money to the others here, go home for the rest of this part of the day, or
-        carry on quietly."""
+        of the firm's people on its sheet, but in the last moment of the day at which work can
+        be handed in none to be done by the end of that day (`situations.last_moment`), as the
+        board says; someone working on one may hand in the parts not yet in, and try them
+        where the job's trade gives something to try against. A foreman at its firm may take
+        on those who asked for its place while it has one, and dismiss its staff; anyone may
+        ask for a place or give notice (`careers`). Anyone may talk to and hand money to the
+        others here, go home for the rest of this part of the day, or carry on quietly."""
         env, allowed, firms = self.env, [], self.env.firms
         claim = env.board.claim_of(agent)
         firm = self.place if self.place in firms.establishments else None
         if claim is None:
-            tasks = env.notices_for(agent, self.place)
+            late = situations.last_moment(env, self.following, self.until)
+            tasks = env.notices_for(agent, self.place, late=late)
             alone = tuple(task.id for task in tasks if len(task.parts) == 1)
             together = tuple(task.id for task in tasks if len(task.parts) > 1)
             people = firms.people(firm) if firm is not None else env.agents
@@ -107,14 +115,13 @@ class WorkSession(Scene):
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]
-        last = self.turns + 1 >= self.rounds
         return situations.work(
             self.env,
             self.place,
             others,
             agent,
             now=self.next_time,
-            following=self.until if last else self.next_time + self.step,
+            following=self.following,
             until=self.until,
             closes=self.closes,
             posting=self.posting,

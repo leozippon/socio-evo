@@ -13,8 +13,9 @@ town's rules change: the backdrop the configuration gives the town, its places, 
 its days, and how work and the ledger go. A moment is short: where you are, who is here, how
 long until closing and, at work, until the next moment (and, at the last moment a job due
 that day can be handed in, that it is the last and what follows if it is not), your purse and
-job, and the board, which says when new notices go up if it is empty; at night, whom you spent
-the day with.
+job, and the board, which says when new notices go up if it is empty and, in that last moment,
+leaves off the jobs that could not be handed in that day; at night, whom you spent the day
+with.
 Money is told in the town's currency, and the words of others are quoted.
 """
 
@@ -198,10 +199,12 @@ def work(
 ) -> str:
     """A moment at work at `now`: the next moment is at `following`, and the session lasts
     `until` the place closes (`closes`) or the part of the day ends; `posting` is when new
-    notices next go up, if known. In the session's last moment, if no work place is open
-    later that day, a resident whose job is due that day is told that this is its last
-    chance to hand it in, and what follows if it does not."""
+    notices next go up, if known. In the last moment of the day at which work can be handed
+    in (`last_moment`), the board leaves off the jobs to be done by the end of the day they
+    are taken, and a resident whose job is due that day is told that this is its last chance
+    to hand it in, and what follows if it does not."""
     name, clock = env.world.places[place].name, clock_of(until)
+    late = last_moment(env, following, until)
     if following < until:
         ends = (
             CLOSES.format(place=capital(name), clock=clock) if closes else ENDS.format(clock=clock)
@@ -214,7 +217,7 @@ def work(
             else UNTIL_THE_END.format(clock=clock)
         )
         claim = env.board.claim_of(agent)
-        if claim is not None and claim.due_day == day_of(now) and _closed_after(env, clock):
+        if late and claim is not None and claim.due_day == day_of(now):
             parts, job = len(claim.task.parts), job_name(claim.task.id)
             last = LAST_CHANCE.format(job=job, clock=clock, done=DONE[parts], unpaid=UNPAID[parts])
             told = f"{told} {last}"
@@ -223,8 +226,15 @@ def work(
         company=COMPANY.format(people=listed(others)) if others else ALONE,
         until=told,
         status=env.status_view(agent),
-        board=_board(env, agent, place, now, posting),
+        board=_board(env, agent, place, now, posting, late=late),
     )
+
+
+def last_moment(env: Environment, following: int, until: int) -> bool:
+    """Whether a moment at work whose next moment is at `following`, in a session that lasts
+    `until`, is the last of its day at which work can be handed in: the session's last, with
+    no work place open after it that day."""
+    return following >= until and not env.world.open_after(PlaceKind.WORK, clock_of(until))
 
 
 def conversation(env: Environment, place: str, others: Sequence[str], agent: str) -> str:
@@ -291,25 +301,23 @@ def draw(order: Sequence[str], task_id: str) -> Telling:
     return drawn
 
 
-def _board(env: Environment, agent: str, place: str | None, now: int, posting: int | None) -> str:
-    """The notices `agent` faces at `place` (its own board, if None) at `now`; if there are
-    none and `posting` is known, when new notices go up."""
-    board = env.board_view(agent) if place is None else env.board_view(agent, place)
-    if env.notices_for(agent, place) or posting is None or not board.startswith("There are no"):
+def _board(
+    env: Environment,
+    agent: str,
+    place: str | None,
+    now: int,
+    posting: int | None,
+    *,
+    late: bool = False,
+) -> str:
+    """The notices `agent` faces at `place` (its own board, if None) at `now`, a moment that
+    is `late` or not (see `Environment.notices_for`); if there are none and `posting` is
+    known, when new notices go up."""
+    board = env.board_view(agent, place, late=late)
+    if posting is None or not board.startswith("There are no"):
         return board
     told = NO_NOTICES if day_of(posting) == day_of(now) else NO_NOTICES_TOMORROW
     return told.format(board=board, clock=clock_of(posting))
-
-
-def _closed_after(env: Environment, clock: str) -> bool:
-    """Whether every work place is closed for the rest of the day after `clock`, so that work
-    cannot be handed in anywhere until the next day; a work place without hours of its own is
-    open until the day ends, and so taken to be open after it."""
-    return all(
-        place.hours and all(closes <= clock for _, closes in place.spans())
-        for place in env.world.places.values()
-        if place.kind is PlaceKind.WORK
-    )
 
 
 def _either(options: Sequence[str]) -> str:
