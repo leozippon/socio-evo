@@ -35,7 +35,7 @@ EMPTY = "empty"
 INVALID = "invalid: {error}"
 
 _ESCAPE = re.compile(r"\\(.)", re.DOTALL)
-_ESCAPED = set('"\\/bfnrtu')
+_ESCAPED = set('"\\/ntu')
 
 Correction = Callable[[type[BaseModel], ValidationError], str]
 """What the model is told after an invalid reply, from the reply model and the reply's
@@ -80,11 +80,12 @@ async def complete_structured(
 ) -> T:
     """Ask for a reply matching `model`'s JSON schema and return it validated.
 
-    A reply is read as JSON in which a backslash that begins no escape stands for itself. A
-    reply cut off by the token limit, or not answered in time, is asked for again as it was;
-    an invalid one is sent back with `correction` of its validation error and the reply
-    requested again, this and every later request marked `after_invalid` (a client may then
-    enforce the schema). Each call's metadata gains its `attempt` number.
+    A reply is read as JSON in which a backslash stands for itself unless it begins a quote, a
+    backslash, a slash, a newline, a tab or a unicode escape. A reply cut off by the token
+    limit, or not answered in time, is asked for again as it was; an invalid one is sent back
+    with `correction` of its validation error and the reply requested again, this and every
+    later request marked `after_invalid` (a client may then enforce the schema). Each call's
+    metadata gains its `attempt` number.
     """
 
     def verdict(response: LLMResponse) -> str | None:
@@ -151,9 +152,11 @@ async def _call(client: LLMClient, request: LLMRequest, failures: list[str]) -> 
 
 
 def _lone_backslashes(text: str) -> str:
-    """`text` with every backslash that begins no JSON escape doubled, so that it stands for
-    itself as its writer meant: a reply that quotes code in a string often leaves a
-    regular expression's `\\d` as it is. Valid JSON is unchanged."""
+    """`text` with every backslash doubled that begins no JSON escape, or the escape of a
+    backspace, a form feed or a carriage return, which no reply means, so that it stands for
+    itself as its writer meant: a reply that quotes code in a string often leaves a regular
+    expression's `\\d` or `\\b` as it is, and one that writes mathematics LaTeX's `\\frac`,
+    `\\beta` or `\\right`. Other valid JSON is unchanged."""
     return _ESCAPE.sub(
         lambda escape: escape[0] if escape[1] in _ESCAPED else "\\" + escape[0], text
     )

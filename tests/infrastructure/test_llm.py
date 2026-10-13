@@ -120,10 +120,14 @@ class Note(StrictModel):
     text: str
 
 
-async def test_a_backslash_that_begins_no_escape_is_read_as_itself():
+async def test_a_backslash_that_begins_no_escape_a_reply_means_is_read_as_itself():
     client = Sequenced(r'{"text": "r\"\d+\" and \\d, \n"}')
     assert await complete_structured(client, _request(), Note) == Note(text='r"\\d+" and \\d, \n')
     assert len(client.requests) == 1
+    latex = Sequenced(r'{"text": "$\frac{1}{2} \beta \right)$ at \bword\b"}')
+    assert await complete_structured(latex, _request(), Note) == Note(
+        text="$\\frac{1}{2} \\beta \\right)$ at \\bword\\b"
+    )
 
 
 LIMIT = 16384
