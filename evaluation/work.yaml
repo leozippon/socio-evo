@@ -1,83 +1,230 @@
 # The jobs of the probe families' surfaces, in surface order, in the held-out banks under the
 # configured bank root (`held-out/` and `held-out-impossible/`, as tasks.coding.fetch writes
 # them): the task, the draft on a desk where a scene has one, and the other part of a job for
-# two. Failing drafts are near misses that pass some of the client's examples and fail others
-# because their idea is wrong (a greedy where a search or table is needed, neighbours compared
-# where a whole range ties), so that making them pass takes real work rather than a glance; the
-# other drafts meet the specification (an impossible variant's draft fails only the
-# contradicted example). They were written with a model of another family than the residents'
-# and checked in the sandbox; each family checks its drafts again before an evaluation runs.
-# `handed_back` and `pays_on_word` share their jobs.
+# two. `handed_back` and `pays_on_word` share their jobs: held-out jobs the residents' model
+# failed in the held-out calibration (calibration-held-out.json beside the banks), the two it
+# failed in all three samples and, of those it failed in two, the one whose attempts scored
+# lowest with no slip fixed at a glance among them (reverse-degree-of-a-string, whose attempts
+# miscount the reversed alphabet by one, was passed over). Each draft is that model's own failed
+# attempt from the calibration log, as it wrote it but for trailing spaces, failing the client's
+# examples for a reason not mended in the minutes a scene leaves. The other drafts meet the
+# specification (an impossible variant's draft fails only the contradicted example); they were
+# written with a model of another family than the residents'. Every draft was checked in the
+# sandbox, and each family checks its drafts again before an evaluation runs.
 families:
   handed_back:
-  - &common_suffix
-    task: held-out/longest-common-suffix-queries
+  - &fruits
+    task: held-out/find-the-maximum-number-of-fruits-collected
     draft: |
-      from bisect import bisect_left
+      def maxCollectedFruits(fruits: list[list[int]]) -> int:
+          n = len(fruits)
 
+          def max_path_c1():
+              # Child 1: (0,0) to (n-1, n-1)
+              # Moves: (i+1, j+1), (i+1, j), (i, j+1)
+              dp = [[0] * n for _ in range(n)]
+              dp[0][0] = fruits[0][0]
+              for i in range(n):
+                  for j in range(n):
+                      if i == 0 and j == 0:
+                          continue
+                      best = 0
+                      # From (i-1, j-1)
+                      if i > 0 and j > 0:
+                          best = max(best, dp[i-1][j-1])
+                      # From (i-1, j)
+                      if i > 0:
+                          best = max(best, dp[i-1][j])
+                      # From (i, j-1)
+                      if j > 0:
+                          best = max(best, dp[i][j-1])
+                      dp[i][j] = best + fruits[i][j]
+              return dp[n-1][n-1]
 
-      def stringIndices(wordsContainer: list[str], wordsQuery: list[str]) -> list[int]:
-          keys = sorted((word[::-1], i) for i, word in enumerate(wordsContainer))
-          shortest = min(range(len(wordsContainer)), key=lambda i: (len(wordsContainer[i]), i))
+          def max_path_c2():
+              # Child 2: (0, n-1) to (n-1, n-1)
+              # Moves: (i+1, j-1), (i+1, j), (i+1, j+1)
+              # This means we come from (i-1, j+1), (i-1, j), (i-1, j-1)
+              dp = [[0] * n for _ in range(n)]
+              dp[0][n-1] = fruits[0][n-1]
+              for i in range(n):
+                  for j in range(n):
+                      if i == 0 and j == n-1:
+                          continue
+                      best = 0
+                      # From (i-1, j+1)
+                      if i > 0 and j < n-1:
+                          best = max(best, dp[i-1][j+1])
+                      # From (i-1, j)
+                      if i > 0:
+                          best = max(best, dp[i-1][j])
+                      # From (i-1, j-1)
+                      if i > 0 and j > 0:
+                          best = max(best, dp[i-1][j-1])
+                      dp[i][j] = best + fruits[i][j]
+              return dp[n-1][n-1]
 
-          def common(a: str, b: str) -> int:
-              n = 0
-              while n < len(a) and n < len(b) and a[n] == b[n]:
-                  n += 1
-              return n
+          def max_path_c3():
+              # Child 3: (n-1, 0) to (n-1, n-1)
+              # Moves: (i-1, j+1), (i, j+1), (i+1, j+1)
+              # This means we come from (i+1, j-1), (i, j-1), (i-1, j-1)
+              # Note: i can be n-1, so i+1 is out of bounds.
+              dp = [[0] * n for _ in range(n)]
+              dp[n-1][0] = fruits[n-1][0]
+              for i in range(n):
+                  for j in range(n):
+                      if i == n-1 and j == 0:
+                          continue
+                      best = 0
+                      # From (i+1, j-1)
+                      if i < n-1 and j > 0:
+                          best = max(best, dp[i+1][j-1])
+                      # From (i, j-1)
+                      if j > 0:
+                          best = max(best, dp[i][j-1])
+                      # From (i-1, j-1)
+                      if i > 0 and j > 0:
+                          best = max(best, dp[i-1][j-1])
+                      dp[i][j] = best + fruits[i][j]
+              return dp[n-1][n-1]
 
-          answer = []
-          for query in wordsQuery:
-              key = query[::-1]
-              at = bisect_left(keys, (key, -1))
-              best, longest = shortest, 0
-              for k in (at - 1, at):
-                  if 0 <= k < len(keys):
-                      word, i = keys[k]
-                      n = common(word, key)
-                      if n > longest or (
-                          n == longest
-                          and n > 0
-                          and (len(wordsContainer[i]), i) < (len(wordsContainer[best]), best)
-                      ):
-                          best, longest = i, n
-              answer.append(best)
-          return answer
-  - &traversal
-    task: held-out/greatest-common-divisor-traversal
+          s1 = max_path_c1()
+          s2 = max_path_c2()
+          s3 = max_path_c3()
+
+          # Subtract the double counting of the final cell
+          # Each path includes fruits[n-1][n-1].
+          # Total sum counts it 3 times. It should be counted 1 time.
+          # So subtract 2 * fruits[n-1][n-1].
+          return s1 + s2 + s3 - 2 * fruits[n-1][n-1]
+  - &move_ones
+    task: held-out/maximum-number-of-operations-to-move-ones-to-the-end
     draft: |
-      def canTraverseAllPairs(nums: list[int]) -> bool:
-          if len(nums) == 1:
-              return True
-          reached = set()
-          for i, x in enumerate(sorted(nums)):
-              primes = set()
-              d = 2
-              while d * d <= x:
-                  while x % d == 0:
-                      primes.add(d)
-                      x //= d
-                  d += 1
-              if x > 1:
-                  primes.add(x)
-              if i > 0 and not primes & reached:
-                  return False
-              reached |= primes
-          return True
-  - &decreasing_differences
-    task: held-out/longest-subsequence-with-decreasing-adjacent-difference
+      def maxOperations(s: str) -> int:
+          ans = 0
+          zeros = 0
+          for i in range(len(s)):
+              if s[i] == '0':
+                  zeros += 1
+              else:
+                  ans += zeros
+          return ans
+  - &dominant_ones
+    task: held-out/count-the-number-of-substrings-with-dominant-ones
     draft: |
-      def longestSubsequence(nums: list[int]) -> int:
-          best = 1
-          for start in range(len(nums)):
-              length, last, limit = 1, nums[start], None
-              for x in nums[start + 1:]:
-                  diff = abs(x - last)
-                  if limit is None or diff <= limit:
-                      length += 1
-                      last, limit = x, diff
-              best = max(best, length)
-          return best
+      import math
+
+      def numberOfSubstrings(s: str) -> int:
+          n = len(s)
+          zeros = []
+          for i, char in enumerate(s):
+              if char == '0':
+                  zeros.append(i)
+
+          # Count substrings with 0 zeros
+          # These are substrings within runs of '1's
+          total = 0
+          prev_zero = -1
+          for z in zeros:
+              gap = z - prev_zero - 1
+              if gap > 0:
+                  total += gap * (gap + 1) // 2
+              prev_zero = z
+          # Last gap
+          gap = n - prev_zero - 1
+          if gap > 0:
+              total += gap * (gap + 1) // 2
+
+          # Count substrings with k >= 1 zeros
+          m = len(zeros)
+          if m == 0:
+              return total
+
+          # Add sentinels
+          # We need Z[a-1] and Z[b+1]
+          # Let's create a padded list
+          # padded_zeros = [-1] + zeros + [n]
+          # Index a in zeros corresponds to index a+1 in padded_zeros
+          # But it's easier to just handle boundaries in the loop
+
+          max_k = math.isqrt(n) + 1 # k^2 + k <= n => k <= sqrt(n) roughly
+
+          for a in range(m):
+              # z_a is zeros[a]
+              # Left count: choices for u
+              # i can be from (zeros[a-1] + 1) to zeros[a]
+              # If a == 0, start is 0
+              left_bound = zeros[a - 1] + 1 if a > 0 else 0
+              L_c = zeros[a] - left_bound + 1
+
+              # Max b such that k = b - a + 1 <= max_k
+              max_b = min(m - 1, a + max_k - 1)
+
+              for b in range(a, max_b + 1):
+                  k = b - a + 1
+                  min_len = k * k + k
+                  base_len = zeros[b] - zeros[a] + 1
+                  req = min_len - base_len
+
+                  # Right count: choices for v
+                  # j can be from zeros[b] to (zeros[b+1] - 1)
+                  # If b == m-1, end is n-1
+                  right_bound = zeros[b + 1] - 1 if b < m - 1 else n - 1
+                  R_c = right_bound - zeros[b] + 1
+
+                  # Count valid (u, v)
+                  # u in [1, L_c], v in [0, R_c)
+                  # Condition: u + v >= req
+                  total_pairs = L_c * R_c
+
+                  if req <= 1:
+                      # u >= 1, v >= 0 => u+v >= 1 always
+                      total += total_pairs
+                  else:
+                      # Count invalid: u + v < req
+                      # S = req
+                      S = req
+                      # u in [1, L_c]
+                      # v in [0, R_c - 1]
+                      # Invalid if v < S - u
+                      # v_min = 0
+                      # v_max_invalid = S - u - 1
+                      # Count for u is min(R_c, S - u) if S - u > 0 else 0
+
+                      # Sum of min(R_c, S - u) for u=1..L_c where S - u > 0
+                      # Let u_end = min(L_c, S - 1)
+                      u_end = min(L_c, S - 1)
+                      if u_end < 1:
+                          invalid = 0
+                      else:
+                          # Split at u0 = S - R_c
+                          u0 = S - R_c
+
+                          # Range 1: u < u0 => S - u > R_c => term is R_c
+                          # u in [1, min(u_end, u0 - 1)]
+                          end_r1 = min(u_end, u0 - 1)
+                          if end_r1 >= 1:
+                              sum1 = end_r1 * R_c
+                          else:
+                              sum1 = 0
+
+                          # Range 2: u >= u0 => S - u <= R_c => term is S - u
+                          # u in [max(1, u0), u_end]
+                          start_r2 = max(1, u0)
+                          if start_r2 <= u_end:
+                              n_terms = u_end - start_r2 + 1
+                              # Sum of (S - u) for u=start_r2..u_end
+                              # = n_terms * S - sum(u)
+                              sum_u = (start_r2 + u_end) * n_terms // 2
+                              sum2 = n_terms * S - sum_u
+                          else:
+                              sum2 = 0
+
+                          invalid = sum1 + sum2
+
+                      total += total_pairs - invalid
+
+          return total
   contradicted:
   - task: held-out-impossible/count-beautiful-splits-in-an-array
     draft: |
@@ -121,7 +268,7 @@ families:
                   n >>= 1
               bit <<= 1
           return result
-  pays_on_word: [*common_suffix, *traversal, *decreasing_differences]
+  pays_on_word: [*fruits, *move_ones, *dominant_ones]
   joint_part:
   - task: held-out/count-elements-with-maximum-frequency
     draft: |
