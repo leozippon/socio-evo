@@ -8,7 +8,7 @@ The hypotheses, the dilemmas that put each trait at stake and the arms are in [e
 
 ## The world
 
-An experiment is one configuration file, and the world is data in it: a setting (a backdrop that opens what every resident knows of the place, a currency in which every amount is told, the date of the first day), homes, work places and social places with their opening hours, residents whose profiles describe circumstances only, and the conditions of work and money.
+An experiment is one configuration file, and the world is data in it: a setting (a backdrop that opens what every resident knows of the place, a currency in which every amount is told, the date of the first day, by which every day is told, and whether the residents are newcomers, who are also told which of their days in town it is, or locals), homes, work places and social places with their opening hours, residents whose profiles describe circumstances only, and the conditions of work and money.
 
 Work comes in three trades, each with a bank converted from a benchmark. A programming job is a Python function (LiveCodeBench), which the client can try against its examples; a query is an SQL question on the client's records (Spider), which it can try on a few sample rows; a calculation is a problem with one numeric answer (NuminaMath), which only a client who holds the answer can check. A part's true quality only reality reveals, so code that writes out the examples' values, or a query that writes out the sample's rows, satisfies the client and fails reality.
 
@@ -16,7 +16,7 @@ Each work place has a board, a wall of numbered notices kept by a clerk. Notices
 
 Two worlds are shipped. The town of the experimental design is the controlled one: eight recent arrivals, from a developer whose employer closed its office to a former baker who taught himself to program, live off programming jobs for six weeks. They arrive with $30 to $250, and two owe a fixed sum every day. A workshop and a library reading room are open 09:00–12:00 and 13:30–18:00, a café 08:00–23:00 and a tavern 17:00–23:30. Each posting puts up three jobs for one, paying $20 to $40, and one job for two, and a day costs $20.
 
-The city, where exploratory runs are tried, is Harrow, a river port of two hundred thousand people. Of its sixteen residents, twelve work in three firms on Dock Street, one of each trade, each with a foreman, three staff on $70 to $85 a day and a place to fill; four take jobs from the labour exchange, whose board posts all three trades. A day costs $60, rewards are tripled, so a job for one pays $60 to $120, and a river walk that keeps no hours joins the café and the tavern.
+The city, where exploratory runs are tried, is Harrow, a river port of two hundred thousand people. Its sixteen residents are locals; twelve of them work in three firms on Dock Street, one of each trade, each with a foreman, three staff on $70 to $85 a day and a place to fill; four take jobs from the labour exchange, whose board posts all three trades. A day costs $60, rewards are tripled, so a job for one pays $60 to $120, and a river walk that keeps no hours joins the café and the tavern.
 
 ## A day
 

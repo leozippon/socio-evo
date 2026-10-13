@@ -40,6 +40,20 @@ def format_time(time: int) -> str:
 
 WEEKDAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 """The days of the week, as `date.weekday` numbers them."""
+MONTHS = (
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+)
 
 DAY_ONE = date(2001, 1, 1)
 """The date of day 1 when a town's setting gives none (`core.interaction.Setting`): a
@@ -59,9 +73,12 @@ def weekday(day: int, start: date) -> str:
 
 
 def lived_day(day: int, start: date) -> str:
-    """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`, in a town
-    whose day 1 is `start`; everyone arrived in town on day 1."""
-    return f"{weekday(day, start)}, your {ordinal(day)} day in town"
+    """1-based `day` as anyone in a town whose day 1 is `start` tells it, by its weekday and
+    date, e.g. `Friday, 5 January`. How long a resident has been in town is not part of it:
+    that depends on whether the town's residents are newcomers (`Setting.newcomers`), which
+    only a resident's own sense of the moment tells."""
+    told = date_of(day, start)
+    return f"{WEEKDAYS[told.weekday()]}, {told.day} {MONTHS[told.month - 1]}"
 
 
 _FIRST = ("first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth")

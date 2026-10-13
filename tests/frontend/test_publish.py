@@ -459,6 +459,7 @@ def test_a_run_recorded_before_tasks_had_parts_is_published_without_traits(town,
         "backdrop": "",
         "currency": {"unit": "crown", "units": "crowns", "symbol": None},
         "start_date": "2001-01-01",
+        "newcomers": True,
     }
 
     study = tmp_path / "pair.yaml"

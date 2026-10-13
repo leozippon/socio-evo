@@ -88,7 +88,9 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
         now.index("does the parser handle dates")
         < now.index('09:00, at the office: you said to Ben: "It parses dates now."')
         < now.index("08:59, at the office: Ben says: thanks.")
-        < now.index("It is 09:30 on Wednesday, your first day in town. You are at the office.")
+        < now.index(
+            "It is 09:30 on Wednesday, 14 October, your first day in town. You are at the office."
+        )
     )
 
     with pytest.raises(ValueError):

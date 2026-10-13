@@ -282,7 +282,7 @@ async def test_the_night_tells_what_is_still_on_the_desk(env):
     await act(env, "Ben", deliver("task-3", "perfect", part=1))
     await act(env, "Cai", SubmitWork(task_id="task-3", part=2, solution="draft", report="."))
     await act(env, "Dan", ClaimTask(task_id="task-2"))
-    due = "due by the end of Tuesday, your second day in town"
+    due = "due by the end of Tuesday, 2 January"
     assert review.situation("Ana").endswith(
         f'\n\nStill on your desk: job 1, "{_title(env, "task-1", 1)}", {due}: it is not in yet; '
         "your last try of it failed."

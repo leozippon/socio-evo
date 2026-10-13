@@ -19,7 +19,8 @@ one, and until then its profile), what it knows of the town (the observation's s
 it has resolved and the index of its notebook: the part of a prompt that stays the same from
 moment to moment, so that a model server can cache it. Everything that changes from moment to
 moment is in the user message. The time is told here, so situation texts do not repeat it;
-days are told by the town's calendar and money in its currency, both from its setting.
+days are told by the town's calendar and money in its currency, both from its setting, and a
+moment of a town of newcomers also says which of the resident's days in town it is.
 """
 
 import json
@@ -52,6 +53,7 @@ from core.interaction import (
     job_id,
     job_name,
     lived_day,
+    ordinal,
     weekday,
 )
 from core.interaction.card import DECLARED
@@ -62,7 +64,9 @@ OWN_ACCOUNT = "You are {name}. Who you are, as you wrote it down for yourself:\n
 NAMED = "You are {name}."
 KNOWN = "What you know of the town by now:\n{setting}"
 RESOLVED = "What you have resolved, as you wrote it down for yourself:\n{policy}"
-UNRESOLVED = "You have not been here long enough to settle on anything."
+UNRESOLVED = (
+    "You have not yet written down anything you have resolved about how to live and work here."
+)
 NOTEBOOK = "Your notebook, where you write down how you do things, has pages on:\n{pages}"
 PAGE = "- {title}: {summary}"
 PAGE_IN_FULL = "{title}: {summary}\n{text}"
@@ -79,6 +83,8 @@ YESTERDAY = "Yesterday, {clock}"
 ON_DAY = "{day}, {clock}"
 NOW = "It is {time}. {situation}"
 TIME = "{clock} on {day}"
+NEWCOMER_DAY = "{day}, your {count} day in town"
+"""The day of a moment as a newcomer tells it: its date, and which of its days in town it is."""
 REPLY = "What goes through your head, briefly and in your own words, and what do you do?"
 
 THOUGHT = "You thought: {thought}"
@@ -546,14 +552,18 @@ def _own(text: str, limit: int | None = None) -> str:
 
 
 def _time(time: int, setting: Setting) -> str:
-    """`09:05 on Friday, your fifth day in town`."""
-    return TIME.format(clock=clock_of(time), day=lived_day(day_of(time), setting.start_date))
+    """`09:05 on Friday, 5 January`, to which a newcomer adds `, your fifth day in town`."""
+    day = day_of(time)
+    told = lived_day(day, setting.start_date)
+    if setting.newcomers:
+        told = NEWCOMER_DAY.format(day=told, count=ordinal(day))
+    return TIME.format(clock=clock_of(time), day=told)
 
 
 def _when(time: int, now: int, setting: Setting) -> str:
     """When `time` was, seen from `now`: the clock alone today, `Yesterday, 13:30`, the
-    weekday within the week (`Wednesday, 09:00`), and the day as residents tell it before
-    that (`Wednesday, your third day in town, 09:00`)."""
+    weekday within the week (`Wednesday, 09:00`), and the weekday and date before that
+    (`Wednesday, 3 January, 09:00`)."""
     day, days, start = day_of(time), day_of(now) - day_of(time), setting.start_date
     if days == 0:
         return clock_of(time)

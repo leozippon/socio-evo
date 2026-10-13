@@ -82,8 +82,8 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
         system, prompt = (message.content for message in request.messages)
         assert system.startswith("You are Mei.") and specification in prompt
         assert "You can hand in your code for job 1." in prompt
-        assert "it pays $10 and is due by the end of Wednesday, your first day in town" in prompt
-        assert "09:10 on Wednesday, your first day in town" in prompt
+        assert "it pays $10 and is due by the end of Wednesday, 3 January" in prompt
+        assert "09:10 on Wednesday, 3 January" in prompt
         assert not any(call in prompt for call in ("halve(0)", "halve(-2)", "halve(3)"))
 
 

@@ -729,7 +729,7 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     assert EventKind.PAYMENT not in kinds(one)
     status = env.status_view("Ben")
     assert 'Part 1, "Routine' in status
-    assert "in; Ana handed it in as finished on Wednesday, your first day in town" in status
+    assert "in; Ana handed it in as finished on Wednesday, 3 January" in status
     [rejected] = await act(env, "Ben", deliver("task-3", "perfect", part=1))
     assert rejected.text == "Part 1 of job 3 is already in."
 
@@ -749,7 +749,7 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     notice = only(events, EventKind.DEFECT_DISCOVERED)
     assert notice.audience == AGENTS
     assert notice.text.startswith('A fault has come to light in part 1 of job 3, "Routine')
-    assert '", which Ana handed in as finished on Wednesday, your first day in town.' in notice.text
+    assert '", which Ana handed in as finished on Wednesday, 3 January.' in notice.text
     told = f'Ana and Ben took that job together. Ana had told the client: "{report}"'
     assert told in notice.text
     assert notice.payload["workers"] == ["Ana", "Ben"] and notice.payload["part"] == 1
@@ -782,10 +782,7 @@ async def test_a_task_for_two_not_completed_lapses_publicly_and_pays_nothing(env
         "delivered": [None, "Ben"],
     }
     assert lapsed.text.startswith('Job 3, "Routine') and "taken by Ana and Ben" in lapsed.text
-    assert (
-        "by the end of Tuesday, your second day in town: part 1 was never handed in and Ben "
-        in (lapsed.text)
-    )
+    assert "by the end of Tuesday, 2 January: part 1 was never handed in and Ben " in (lapsed.text)
     assert "handed in part 2. Nothing is paid for it" in lapsed.text
     assert env.economy.balances["Ben"] == env.economy.balances["Ana"] == 100
     assert not env.board.latent and "task-3" in env.board.listings
@@ -960,7 +957,7 @@ async def test_a_witness_an_event_names_reads_you_and_everyone_else_reads_the_na
         EventKind.DEFECT_DISCOVERED, "Ben", "task-3"
     )
     lapsed = heard(EventKind.TASK_EXPIRED, "Ben", "task-6")
-    assert "taken by Ana and you, was not done by the end of Tuesday, your second day" in lapsed
+    assert "taken by Ana and you, was not done by the end of Tuesday, 2 January" in lapsed
 
 
 async def test_people_are_named_as_a_person_would_name_them(env):

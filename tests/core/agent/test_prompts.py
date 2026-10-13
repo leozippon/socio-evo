@@ -344,13 +344,13 @@ def test_memory_is_recollection_told_in_one_voice():
         '- About Ben: "Ben asks before he takes a job."\n'
         '- "Mornings are busy."\n\n'
         "What you remember, most recent last:\n"
-        "Monday, your first day in town, 09:00: Ben took job 3.\n"
+        "Monday, 1 January, 09:00: Ben took job 3.\n"
         "Sunday, 13:30: at the clerk's desk you handed in your code for job 3 as finished, "
         'telling the client: "Done." You thought: "Ben asked twice."\n'
         'Yesterday, 18:00: you carried on quietly. You thought: "Quiet."\n'
         '09:00, at the office: you said: "Hi." You thought: "Hello."\n'
         "09:04, at the office: Ben says: morning.\n\n"
-        "It is 09:05 on Wednesday, your tenth day in town. You are at the office.\n\n"
+        "It is 09:05 on Wednesday, 10 January, your tenth day in town. You are at the office.\n\n"
         f"{prompts.REPLY}"
     )
     beliefs = prompts.reflection_prompt(now, [], recall.insights, 50, [], CognitionConfig(), CROWNS)
@@ -385,9 +385,38 @@ def test_an_empty_life_reads_naturally(seed):
     observation = _observation(time_at(1, "07:00")).model_copy(update={"percepts": ()})
     prompt = prompts.decision_prompt(observation, Recall([], [], [], []), CognitionConfig(), TOWN)
     assert prompt == (
-        "It is 07:00 on Wednesday, your first day in town. You are at the office.\n\n"
+        "It is 07:00 on Wednesday, 14 October, your first day in town. You are at the office.\n\n"
         + prompts.REPLY
     )
+
+
+ARRIVAL = re.compile(
+    r"days? in town|first day|newcomer|arrived in town|been here|long enough", re.IGNORECASE
+)
+"""Words that would tell a resident it has just come to town."""
+
+
+def test_a_town_of_locals_never_tells_its_residents_they_have_just_arrived(seed):
+    """A local reads the date of each day, its first included, and nothing about arriving or
+    having been here too short a time, in a moment, a memory, the night's diary and going
+    over it, or when it has resolved nothing; a newcomer is told which day in town it is."""
+    locals_ = TOWN.model_copy(update={"newcomers": False})
+    first, limits = time_at(1, "09:00"), CognitionConfig()
+    observation = _observation(first + 5).model_copy(update={"percepts": ()})
+    ben = [Record(time=first, seq=1, text="Ben took job 3.")]
+    memories, eighth = Recall([], ben, [], []), time_at(8, "23:30")
+    texts = [
+        prompts.system_prompt(seed.profile, "", limits),
+        prompts.decision_prompt(observation, memories, limits, locals_),
+        prompts.diary_prompt(eighth, ben, limits, locals_),
+        prompts.reflection_prompt(eighth, [(1, "A quiet day.")], [], 50, [], limits, locals_),
+        prompts.policy_prompt(eighth, [(1, "A quiet day.")], [], "", None, limits, locals_),
+    ]
+    assert not [text for text in texts if ARRIVAL.search(text.replace(seed.profile.backstory, ""))]
+    assert "It is 09:05 on Wednesday, 14 October. You are at the office." in texts[1]
+    assert "Wednesday, 14 October:" in texts[3]
+    newcomers = prompts.decision_prompt(observation, memories, limits, TOWN)
+    assert "It is 09:05 on Wednesday, 14 October, your first day in town." in newcomers
 
 
 def test_nightly_replies_can_only_name_what_exists():

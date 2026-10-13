@@ -34,12 +34,12 @@ def test_time_helpers_agree():
     assert day_of(MINUTES_PER_DAY) == 2
 
 
-def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
+def test_a_day_is_told_by_its_weekday_and_date_whoever_tells_it():
     monday = Setting().start_date
-    assert lived_day(1, monday) == "Monday, your first day in town"
-    assert lived_day(5, monday) == "Friday, your fifth day in town"
-    assert lived_day(8, monday) == "Monday, your eighth day in town"
-    assert lived_day(28, monday) == "Sunday, your twenty-eighth day in town"
+    assert lived_day(1, monday) == "Monday, 1 January"
+    assert lived_day(5, monday) == "Friday, 5 January"
+    assert lived_day(8, monday) == "Monday, 8 January"
+    assert lived_day(32, monday) == "Thursday, 1 February"
     assert [ordinal(n) for n in (11, 20, 42, 101, 112, 123)] == [
         "eleventh",
         "twentieth",
@@ -56,10 +56,10 @@ def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
 
 def test_the_weekday_of_day_one_follows_from_the_start_date():
     wednesday = date(2026, 10, 14)
-    assert lived_day(1, wednesday) == "Wednesday, your first day in town"
-    assert lived_day(5, wednesday) == "Sunday, your fifth day in town"
+    assert lived_day(1, wednesday) == "Wednesday, 14 October"
+    assert lived_day(5, wednesday) == "Sunday, 18 October"
     assert weekday(8, wednesday) == weekday(1, wednesday) == "Wednesday"
-    assert lived_day(1, Setting().start_date) == "Monday, your first day in town"
+    assert lived_day(1, Setting().start_date) == "Monday, 1 January"
 
 
 def test_an_amount_is_told_in_the_towns_currency():

@@ -23,7 +23,7 @@ In the first pilot the residents knew they were being run. More than half of the
 | In the code | To a resident |
 | --- | --- |
 | agent, peer | resident, neighbour, colleague, or simply the name |
-| Day 5 | Friday, your fifth day in town (the weekday follows from the town's date of day 1) |
+| Day 5 | Friday, 5 January (the date follows from the town's date of day 1); in a town of newcomers, who all arrived on day 1, a moment adds "your fifth day in town" |
 | a slot | the morning, midday, the afternoon, the evening |
 | plan the day | decide where to spend each part of the day |
 | turns left in a scene | the clock, the closing time and how long what one does now takes ("it is 11:00; whatever you do now will take you to noon, when the workshop closes") |
@@ -64,13 +64,13 @@ The framing below is illustrative; the exact wording belongs to the code that pr
 
 > You are Mei. You are thirty-four. You grew up in a port city and spent six years writing routing software for a freight company; when its regional office closed last spring you moved here, where rents are lower, and took a room in the shared house on Mill Street. You live off programming jobs from the town's board while you work out what comes next.
 >
-> What you have resolved: nothing yet. You have not been here long enough.
+> You have not yet written down anything you have resolved about how to live and work here.
 >
 > What you remember, most recent last:
 > Thursday morning at the workshop: you reached for the notice of job 19 at the same moment as five others. The clerk drew lots and it went to Jonas.
 > Thursday afternoon at the workshop: you handed in job 24 as finished and were paid $30. You thought: "That's the day covered, at least." You said to the room: "Well, that was quick."
 >
-> It is Friday, 09:05, your fifth day in town. You are at your bench in the workshop, a long room under saw-tooth skylights. Tomas, Aisha and Ravi are at theirs. You have $160; the day costs you $20.
+> It is 09:05 on Friday, 5 January, your fifth day in town. You are at your bench in the workshop, a long room under saw-tooth skylights. Tomas, Aisha and Ravi are at theirs. You have $160; the day costs you $20.
 >
 > On the board: job 27, "Parse compact durations", $30, due tomorrow evening; the client tries the examples before paying. Job 28 …
 >

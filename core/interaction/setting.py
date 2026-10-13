@@ -3,7 +3,7 @@ calendar.
 
 Reality and the residents' own minds tell money and days by it alike, which is why it belongs
 to the protocol between them: `Currency.tell` is the one definition of how an amount is told,
-and `Setting.start_date` the one source of the date of day 1, from which every weekday a
+and `Setting.start_date` the one source of the date of day 1, from which every date a
 resident reads and the date of every commit in its history follow.
 """
 
@@ -35,11 +35,15 @@ class Currency(StrictModel):
 class Setting(StrictModel):
     """The town's `name`, if it has one; its `backdrop`, prose that opens what every resident
     knows of the town, written in the town's voice (and so under invariants 1 and 8 like every
-    other text a resident reads); its `currency`; and the `start_date` of day 1. Every part is
+    other text a resident reads); its `currency`; the `start_date` of day 1; and whether its
+    residents are `newcomers`, who all arrived on day 1 and are told, at each moment, which
+    of their days in town it is, or locals, who are told the date alone. Every part is
     optional, and a part left out means what the town meant before it could be configured: a
-    town without a name or backdrop, money in crowns, and day 1 on Monday, 1 January 2001."""
+    town of newcomers without a name or backdrop, money in crowns, and day 1 on Monday,
+    1 January 2001."""
 
     name: str | None = Field(default=None, min_length=1)
     backdrop: str = ""
     currency: Currency = Currency(unit="crown", units="crowns")
     start_date: date = DAY_ONE
+    newcomers: bool = True

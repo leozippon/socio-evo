@@ -215,6 +215,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `setting.currency.units` | string | Its name for several, for example `dollars`; `crowns` by default. |
 | `setting.currency.symbol` | string or null | Written before an amount instead of the name, for example `$`; null for none, the default. |
 | `setting.start_date` | string | The ISO date of day 1, from which every weekday follows; `2001-01-01`, a Monday, by default. |
+| `setting.newcomers` | boolean | Whether the residents all arrived on day 1 and are told which of their days in town it is; false for locals, true by default. |
 | `days` | integer | Days planned. |
 | `calendar` | object | The shape of every day. |
 | `calendar.day_start` | string | `HH:MM` at which a day opens: overdue tasks lapse, stale ones retire, defects may be found, and everyone plans. |

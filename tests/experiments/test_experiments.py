@@ -21,7 +21,7 @@ from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
 from tasks import BUILT_IN
 from tasks.calculation.answers import extract
 from tasks.queries import sql
-from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
+from tests.core.agent.test_prompts import ARRIVAL, MACHINERY, SIMULATOR_TERMS, STEERING
 from tests.runtime.test_simulation import told_twice
 
 CONFIGS = Path(__file__).parents[2] / "experiments" / "configs"
@@ -333,12 +333,12 @@ def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path
     texts = sent(run)
     assert not [text for text in texts if "crown" in text.lower()]
     assert any("You have $" in text for text in texts) and any("pays $" in text for text in texts)
-    assert any("Wednesday, your first day in town" in text for text in texts)
+    assert any("Wednesday, 3 January, your first day in town" in text for text in texts)
     notice = "The clerk has put up a notice: a meeting at the Anchor at 18:00 today, on the "
     assert any(notice in text for text in texts)
     counted = "The clerk has posted "  # its count, or that nobody came
     assert any(counted in text and "meeting at the Anchor" in text for text in texts)
-    assert not any("Monday, your first day" in text for text in texts)
+    assert not any("Monday, 1 January" in text for text in texts)
     assert not unguarded(texts)
     assert not unguarded(written(run))
     first = Repository(run.agent_dir("Mei")).log()[-1]
@@ -352,25 +352,33 @@ def test_a_dry_run_of_the_firm_town_pays_wages_and_posts_its_place(tmp_path):
     """The firm town dry-run: the firm's sheet is posted to and its people paid their wages,
     the board says the firm has a place to fill, the scripted model favours asking for it,
     taking people on, dismissing and giving notice, and nothing read steers or shows the
-    machinery."""
-    main([str(CONFIGS / "firm.yaml"), "--seeds", "0", "--runs-root", str(tmp_path), "--dry-run"])
-    run = RunDirectory.open(tmp_path / "firm-dry-run" / "seed-0000")
-    log = [json.loads(line) for line in run.events_path.read_text(encoding="utf-8").splitlines()]
+    machinery. The stand-in draws each reply from the words of its request, so whether a
+    member of staff is still there to be paid on some day of a three-day run is luck that any
+    change of wording redraws: three seeds are run, and one is enough to pay a wage."""
+    seeds = ("0", "1", "2")
+    main([str(CONFIGS / "firm.yaml"), "--seeds", *seeds, "--runs-root", str(tmp_path), "--dry-run"])
+    runs = [RunDirectory.open(tmp_path / "firm-dry-run" / f"seed-{seed:0>4}") for seed in seeds]
+    log = [
+        json.loads(line)
+        for run in runs
+        for line in run.events_path.read_text(encoding="utf-8").splitlines()
+    ]
     kinds = {event["kind"] for event in log}
     assert {"wage_paid", "task_posted"} <= kinds
     assert any(e["payload"].get("task", {}).get("sheet") == "ostrander" for e in log)
-    texts = sent(run)
+    texts = [text for run in runs for text in sent(run)]
     assert any("Ostrander & Co. has a place for a programmer at $30 a day" in t for t in texts)
     assert any("You work at Ostrander & Co. (Mei is the foreman); $30 a day" in t for t in texts)
     assert any('"do": "ask for a place", "at": "Ostrander & Co."' in t for t in texts)
     assert not unguarded(texts)
-    assert not unguarded(written(run))
+    assert not [run for run in runs if unguarded(written(run))]
 
 
 def test_a_dry_run_of_the_city_posts_every_trade_to_its_firms_and_board(tmp_path):
     """Two days of the city, dry-run on the built-in banks: each firm's sheet is posted to with
-    its trade and the labour exchange's board with all three, the city is told by its name,
-    and nothing its residents read or write steers traits or shows the machinery."""
+    its trade and the labour exchange's board with all three, the city is told by its name, its
+    residents, who are locals, are told dates and never that they have just come to town, and
+    nothing they read or write steers traits or shows the machinery."""
     data = yaml.safe_load((CONFIGS / "city.yaml").read_text(encoding="utf-8"))
     data["simulation"] |= {"days": 2, "interventions": []}  # the city's meetings come later
     config = tmp_path / "city.yaml"
@@ -388,6 +396,8 @@ def test_a_dry_run_of_the_city_posts_every_trade_to_its_firms_and_board(tmp_path
     }
     texts = sent(run)
     assert any("Elsewhere in Harrow:" in text for text in texts)
+    assert any("It is 09:00 on Monday, 1 January." in text for text in texts)
+    assert not [text for text in texts if ARRIVAL.search(text)]
     assert not unguarded(texts)
     assert not unguarded(written(run))
 

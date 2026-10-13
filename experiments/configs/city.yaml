@@ -181,6 +181,8 @@ environment:
       their own for their people.
     currency: {unit: dollar, units: dollars, symbol: "$"}
     start_date: 2001-01-01
+    # Its residents are locals, some of them of many years: a moment tells the date alone.
+    newcomers: false
   initial_balance: 200
   circumstances:
     Margit: {initial_balance: 600}
