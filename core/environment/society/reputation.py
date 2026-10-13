@@ -36,23 +36,28 @@ class Reputation:
         self.half_life = half_life
         self.means = means
 
-    def rate(self, rater: str, ratings: Sequence[PeerRating], time: int) -> None:
-        """Record `rater`'s ratings at `time`, all or none.
+    def rate(
+        self, rater: str, ratings: Sequence[PeerRating], time: int
+    ) -> tuple[list[PeerRating], list[PeerRating]]:
+        """Record `rater`'s ratings at `time`, each agent's first: a later rating of an agent
+        rated earlier in `ratings` is a repeat, not recorded. Returns the ratings recorded and
+        the repeats.
 
-        Raises Rejected if any rating targets the rater, an unknown agent, or an agent rated
-        twice in `ratings`.
+        Raises Rejected, recording none, if any rating targets the rater or an unknown agent.
         """
-        targets = [rating.target for rating in ratings]
-        for index, target in enumerate(targets):
-            if target == rater:
-                raise Rejected("You cannot mark yourself in the clerk's ledger.")
-            if target not in self.means:
-                raise Rejected(f"There is nobody called {target!r} in town.")
-            if target in targets[:index]:
-                raise Rejected(f"You can mark {target} only once at a time.")
+        recorded: list[PeerRating] = []
+        repeated: list[PeerRating] = []
         for rating in ratings:
+            if rating.target == rater:
+                raise Rejected("You cannot mark yourself in the clerk's ledger.")
+            if rating.target not in self.means:
+                raise Rejected(f"There is nobody called {rating.target!r} in town.")
+            rated = any(earlier.target == rating.target for earlier in recorded)
+            (repeated if rated else recorded).append(rating)
+        for rating in recorded:
             mean = self.means[rating.target] or DecayedMean(total=0, weight=0, time=time)
             self.means[rating.target] = mean.add(rating.score, time, self.half_life)
+        return recorded, repeated
 
     def esteem(self, agent: str) -> float | None:
         mean = self.means[agent]

@@ -1559,8 +1559,10 @@ class Environment:
         return person
 
     def _rate(self, agent: str, action: RatePeers, **where) -> list[Event]:
-        self.reputation.rate(agent, action.ratings, where["time"])
-        return [
+        """`agent`'s entry in the ledger: each mark entered, and any later mark of someone it
+        marked earlier in the entry refused, which it is told."""
+        recorded, repeated = self.reputation.rate(agent, action.ratings, where["time"])
+        events = [
             self.emit(
                 EventKind.RATING,
                 f"{agent} marked {rating.target} {rating.score} of 5 in the clerk's ledger: "
@@ -1569,8 +1571,19 @@ class Environment:
                 payload={"rater": agent, **rating.model_dump(mode="json")},
                 **where,
             )
-            for rating in action.ratings
+            for rating in recorded
         ]
+        if repeated:
+            again = list(dict.fromkeys(rating.target for rating in repeated))
+            whom = again[0] if len(again) == 1 else "each"
+            told = (
+                f"You can mark {listed(again)} only once at a time; the clerk entered only your "
+                f"first mark of {whom}."
+            )
+            ratings = [rating.model_dump(mode="json") for rating in repeated]
+            attempt = {"kind": str(action.kind), "ratings": ratings}
+            events.append(self._reject(agent, attempt, Rejected(told), **where))
+        return events
 
     def _vote(self, agent: str, action: Vote, **where) -> Event:
         return self.emit(

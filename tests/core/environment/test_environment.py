@@ -327,11 +327,6 @@ REJECTIONS = {
         RatePeers(ratings=(*rate("Ben", 4).ratings, *rate("Zed", 1).ratings)),
         "There is nobody called 'Zed' in town.",
     ),
-    "rate someone twice": (
-        "Ana",
-        RatePeers(ratings=rate("Ben", 4).ratings * 2),
-        "You can mark Ben only once at a time.",
-    ),
     "go to an unknown place": ("Ana", "moon", "There is no place called 'moon' in town."),
     "go to a closed place": ("Cai", "office", "The office is closed at 11:00."),
     "stay at a closed place": ("Ana", "office", "The office is closed at 11:00."),
@@ -1203,6 +1198,33 @@ async def test_every_condition_changes_through_one_validated_recorded_interventi
             env.change_conditions(bad, time=time_at(3, "23:00"))
     assert env.conditions.two_part_tasks == 2 and env.conditions.partner_choice is True
     assert kinds(logged(env)).count(EventKind.INTERVENTION) == 7
+
+
+async def test_an_entry_marking_someone_twice_is_entered_with_the_first_mark(env):
+    """A readable entry in the ledger stands though it marks someone again: the first mark of
+    each member is entered, and the one who marked is told the later ones were not."""
+    first, again = (PeerRating(target="Ben", score=score, reason=".") for score in (4, 1))
+    cai = PeerRating(target="Cai", score=5, reason=".")
+    entry = RatePeers(ratings=(first, cai, again, first, cai))
+    events = await act(env, "Ana", entry, clock="22:00")
+    assert [(e.kind, e.payload.get("target")) for e in events] == [
+        (EventKind.RATING, "Ben"),
+        (EventKind.RATING, "Cai"),
+        (EventKind.ACTION_REJECTED, None),
+    ]
+    refused = events[-1]
+    assert refused.audience == ("Ana",)
+    assert refused.text == (
+        "You can mark Ben and Cai only once at a time; the clerk entered only your first mark "
+        "of each."
+    )
+    repeats = [rating.model_dump(mode="json") for rating in (again, first, cai)]
+    assert refused.payload["attempt"] == {"kind": "rate_peers", "ratings": repeats}
+    assert env.reputation.esteem("Ben") == 4 and env.reputation.esteem("Cai") == 5
+    [refused] = (await act(env, "Dan", RatePeers(ratings=(first, first)), clock="22:00"))[1:]
+    assert refused.text == (
+        "You can mark Ben only once at a time; the clerk entered only your first mark of Ben."
+    )
 
 
 async def test_esteem_is_a_decayed_mean_published_only_when_public(env):
