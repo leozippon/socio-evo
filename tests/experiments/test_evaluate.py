@@ -37,6 +37,7 @@ def test_evaluating_a_dry_run_prints_its_cost_and_scores_and_changes_nothing_els
     monkeypatch.setattr(cli, "create_client", lambda llm: ScriptedClient(lambda r: judge_reply))
     before = _outside_evaluation(run)
     command = [str(run.root), "--days", "0", "3", "--config", str(config), "--levels", "2"]
+    command += ["--repetitions", "1"]
     command += ["--traits", "cooperation", "honesty"]
     capsys.readouterr()
 

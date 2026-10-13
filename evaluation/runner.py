@@ -71,8 +71,10 @@ async def evaluate(
     another repetition. A repetition in which the resident or the judge gives no valid reply
     within the attempts the client allows is kept as the unscored outcome `no_valid_reply`, with
     the error, since one degenerate reply says nothing about the others; any other failure
-    cancels the rest. Everything runs concurrently, bounded by how many calls the clients keep
-    in flight.
+    cancels the rest. Every repetition's measures say whether the resident held a job in the
+    evaluated day's checkpoint (`held_job`): the probe town starts with nobody holding one,
+    but the resident remembers it. Everything runs concurrently, bounded by how many calls the
+    clients keep in flight.
     Everything is checked before any scene is played: ValueError for no days or no residents,
     a day after the run's latest checkpoint or without a checkpoint of its own, a day a
     history does not reach, a stranger named like a resident, or held-out work or a town that
@@ -96,6 +98,10 @@ async def evaluate(
     if clashes := sorted(strangers & set(agents)):
         raise ValueError(f"strangers of the probes share names with residents: {clashes}")
     backdrops = {day: _backdrop(run, day, environment, simulation) for day in days}
+    holding = {
+        day: {worker for claim in backdrop.state.claims for worker in claim.workers}
+        for day, backdrop in backdrops.items()
+    }
     work = Work(
         config.bank, config.work, timeout=config.sandbox_timeout, isolation=config.isolation
     )
@@ -135,7 +141,7 @@ async def evaluate(
                     played = Played(NO_VALID_REPLY, None, {"error": _message(failed)})
                 return Outcome(
                     score=played.score,
-                    measures=played.measures,
+                    measures=played.measures | {"held_job": agent in holding[day]},
                     transcript=tuple(step.model_dump(mode="json") for step in town.steps),
                     level=level,
                     stake=family.stake(level, town.living_cost),

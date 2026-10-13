@@ -136,6 +136,10 @@ class Code:
     part: int
     solution: str
 
+    def changes(self, draft: str) -> bool:
+        """Whether the code differs from `draft` other than in surrounding whitespace."""
+        return self.solution.strip() != draft.strip()
+
 
 TRIED, FINISHED, UNFINISHED = "tried", "finished", "unfinished"
 

@@ -10,6 +10,7 @@ import yaml
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History, Level, Trigger
+from core.environment import EnvironmentState
 from core.interaction import card, day_of, time_at
 from evaluation import (
     DEFAULT_CONFIG,
@@ -29,6 +30,7 @@ from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import RunDirectory
+from runtime.simulation import Checkpoint
 from tests.core.agent.test_prompts import choices, offered
 from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, make_resident, town
 
@@ -90,7 +92,7 @@ async def test_evaluation_writes_one_result_per_resident_day_and_variant_and_not
     names = sorted(path.name for path in run.agents_dir.iterdir())
     heads = {name: History(run.agent_dir(name)).head() for name in names}
     resident = Anyone()
-    chosen = config(levels=[1], variants=["full", "no-policy-no-insights"])
+    chosen = config(levels=[1], repetitions=1, variants=["full", "no-policy-no-insights"])
 
     paths = await _evaluate(run, [2, 0, 2], chosen, resident)
     expected = {
@@ -238,7 +240,7 @@ async def test_nothing_runs_unless_every_resident_day_and_family_can_be_evaluate
 def test_the_estimate_bounds_the_calls_of_a_selection(config):
     default = config()
     cost = estimate(default, residents=8, days=7)
-    per = 8 * 7 * 4
+    per = 8 * 7 * 4 * 3
     assert cost.scenes == per * len(FAMILIES)
     assert cost.fewest == per * sum(family.calls[0] for family in FAMILIES.values())
     assert cost.most == per * sum(family.calls[1] for family in FAMILIES.values())
@@ -256,8 +258,9 @@ def test_the_default_config_plays_every_family_with_a_judge_of_another_family(tm
     assert (default.families, default.levels, default.repetitions) == (
         tuple(FAMILIES),
         (1, 2, 3, 4),
-        1,
+        3,
     )
+    assert all(family.surfaces == default.repetitions for family in FAMILIES.values())
     assert default.variants == (Variant.FULL,)
     judge = default.judge
     assert (judge.base_url, judge.model, judge.sampling.temperature) == (
@@ -322,9 +325,45 @@ async def test_a_repetition_without_a_valid_reply_is_kept_as_an_outcome_of_its_o
     def babble(request):
         return {"thought": "…", "do": "sing"}
 
-    await _evaluate(run, [2], config(families=["shared_notice"], levels=[3]), babble)
+    chosen = config(families=["shared_notice"], levels=[3], repetitions=1)
+    await _evaluate(run, [2], chosen, babble)
     for result in read_results(run):
         [outcome] = result.probes["shared_notice"].repetitions
         assert (outcome.outcome, outcome.score, outcome.stake) == ("no_valid_reply", None, 80)
         assert "no valid" in outcome.measures["error"] and outcome.transcript == ()
+        assert outcome.measures["held_job"] is False
         assert result.probes["shared_notice"].curve == {3: None}
+
+
+async def test_every_repetition_says_whether_the_resident_held_a_job_at_the_checkpoint(run, config):
+    """The probe town starts with nobody holding a job, but the resident remembers the one it
+    held at the evaluated checkpoint; every repetition of every family records it."""
+    path = run.checkpoint_path(2)
+    checkpoint = Checkpoint.model_validate_json(path.read_text(encoding="utf-8"))
+    task = {
+        "id": "task-9",
+        "parts": [
+            {
+                "title": "Make slugs",
+                "specification": "Slugs.",
+                "reward": 20,
+                "deadline_days": 2,
+                "reference": "slugify",
+            }
+        ],
+        "client": "checking",
+        "prices": [{"finished": 20, "unfinished": 10}],
+    }
+    claim = {"task": task, "workers": ["Mei"], "time": time_at(2, "09:00")}
+    state = EnvironmentState.model_validate(checkpoint.environment | {"claims": [claim]})
+    claimed = checkpoint.model_copy(update={"environment": state.model_dump(mode="json")})
+    path.write_text(claimed.model_dump_json(), encoding="utf-8")
+
+    chosen = config(families=["shared_notice", "short_of_living"], levels=[1, 2], repetitions=1)
+    await _evaluate(run, [2], chosen, Anyone())
+    results = read_results(run)
+    assert len(results) == 3
+    for result in results:
+        for probe in result.probes.values():
+            held = [outcome.measures["held_job"] for outcome in probe.repetitions]
+            assert held == [result.agent == "Mei"] * 2

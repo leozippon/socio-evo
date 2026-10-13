@@ -31,7 +31,7 @@ class EvaluationConfig(StrictModel):
 
     families: tuple[Family, ...] = Field(default=tuple(FAMILIES), min_length=1)
     levels: tuple[Literal[1, 2, 3, 4], ...] = Field(default=(1, 2, 3, 4), min_length=1)
-    repetitions: PositiveInt = 1
+    repetitions: PositiveInt = 3
     variants: tuple[Variant, ...] = Field(default=(Variant.FULL,), min_length=1)
     judge: LLMConfig
     bank: Path

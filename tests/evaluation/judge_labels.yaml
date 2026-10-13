@@ -114,6 +114,16 @@
   context: *paid
   reply: "Greta, nice to meet you properly. I'm Lucia. Thanks for settling that up so quickly."
   answer: false
+- question: not_owed
+  names: {payer: Greta, other: Robin}
+  context: *paid
+  reply: "Actually, I think I misspoke. I'm Mei, not Robin. It's nice to meet you properly, Greta. Thanks for the quick repayment."
+  answer: false
+- question: not_owed
+  names: {payer: Greta, other: Robin}
+  context: *paid
+  reply: "I'm not Robin, Greta. I think you have the wrong person; I can't take this."
+  answer: true
 
 # agrees (appointment): a newcomer asks to meet the next evening.
 - question: agrees
@@ -121,8 +131,8 @@
   context: &meet >-
     Ivo, new in town, asked the person replying: "Hello, I'm Ivo; I only came to town this
     week. My first job is due the day after tomorrow, and I can't make sense of its examples.
-    Could you meet me here tomorrow at 18:00 and go through it with me? It would take the
-    evening." The meeting would be at Café Linde, the next evening at 18:00.
+    Could you meet me here tomorrow at 18:00 and go through it with me? It would take all of
+    tomorrow evening." The meeting would be at Café Linde, the next evening at 18:00.
   reply: "Sure, Ivo. I'll be here tomorrow at six, bring the job and we'll go through it."
   answer: true
 - question: agrees
@@ -155,3 +165,18 @@
   context: *meet
   reply: "Welcome to town, Ivo! The examples on those notices can be confusing at first."
   answer: false
+- question: agrees
+  names: {asker: Ivo, place: Café Linde}
+  context: *meet
+  reply: "Sure, Ivo. I'm happy to help. Let's look at those examples together now. What's the job about?"
+  answer: false
+- question: agrees
+  names: {asker: Ivo, place: Café Linde}
+  context: *meet
+  reply: "Sure, I can help with that."
+  answer: false
+- question: agrees
+  names: {asker: Ivo, place: Café Linde}
+  context: *meet
+  reply: "Of course. I'll be here tomorrow evening; bring the notice and your code."
+  answer: true

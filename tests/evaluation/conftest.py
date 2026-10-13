@@ -206,15 +206,21 @@ def judge_client(*markers: str) -> ScriptedClient:
 @pytest.fixture
 def play(run, banks, work_file, tmp_path) -> Callable:
     """Play `family` at `level` on `surface` with Mei of the test run as at the end of day 2,
-    scripted by `resident` and judged yes for replies containing one of `markers`; returns
-    what the family made of it."""
+    scripted by `resident` and judged yes for replies containing one of `markers`, or by
+    `judge` if given; returns what the family made of it."""
     work = Work(banks, work_file, timeout=5.0)
     experiment = town()
     backdrop = _backdrop(run, 2, experiment.environment, experiment.simulation)
     count = iter(range(1000))
 
     async def play(
-        family: str, resident: Resident, level: int, *markers: str, surface: int = 0, **state
+        family: str,
+        resident: Resident,
+        level: int,
+        *markers: str,
+        surface: int = 0,
+        judge: LLMClient | None = None,
+        **state,
     ) -> Played:
         directory = tmp_path / f"town-{next(count)}"
         directory.mkdir()
@@ -231,7 +237,7 @@ def play(run, banks, work_file, tmp_path) -> Callable:
         with frozen(history, history.head(), resident.client, CognitionConfig(), setting) as agent:
             cast = probe.strangers[surface]
             place = Town(stage, agent, cast, work, directory, f"{family}:{level}")
-            return await probe.play(place, level, surface, Judge(judge_client(*markers)))
+            return await probe.play(place, level, surface, Judge(judge or judge_client(*markers)))
 
     return play
 
