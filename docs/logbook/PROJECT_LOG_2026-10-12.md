@@ -48,6 +48,6 @@ A shell outage of several hours interrupted three editors, the exploratory run a
 ## Open at the end of the day
 
 - The city's seven-day run against the model was still in progress (two days done, 0 lapses); its reading, and a repeat of the eight-resident town under the new settings, are the next evidence.
-- A run recorded before a bank was rebuilt could not be published, because analysis reached into the bank for the examples; a fix making every run self-contained from its own log was in progress.
+- A run recorded before a bank was rebuilt could not be published, because analysis reached into the bank to judge special-casing. The provider's verdict is now recorded at assessment in `work_assessed`, so a run is analysed and published from its own directory alone (8d1001e), and runs recorded before the field show that share as unavailable rather than wrong. The same reading found that a second asking for a job confused the analysis and the viewer's replay (e88d9fd).
 - The `pays_on_word` ladder sits below the point where this model would misdeclare; raising its stakes is a design decision.
 - Not built, as planned: L3 and L4; an external battery of MASK-style and CoopEval-style items; parts beyond two.
