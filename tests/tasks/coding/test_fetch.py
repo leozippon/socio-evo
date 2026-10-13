@@ -15,7 +15,8 @@ from tasks.coding.fetch import BankIndex, build, convert, held_out
 STATEMENT = (
     "You are given an integer array nums and an integer k.\r\n"
     "Return nums with every element multiplied by k.\N{NO-BREAK SPACE} \n\n\n\n"
-    "Example 1:\n\nInput: nums = [1,2], k = 3\nOutput: [3,6]\n"
+    "Example 1:\n\nInput: nums = [1,2], k = 3\nOutput: [3,6]\n\n"
+    "Follow-up: Could you do it in place?\n\nWithout extra memory?\n"
 )
 STARTER = "class Solution:\n    def scale(self, nums: List[int], k: int) -> List[int]:\n        "
 REFERENCE = "def scale(nums, k):\n    return [x * k for x in nums]\n"

@@ -21,11 +21,12 @@ drops a problem whose starter code uses types other than int, float, str, bool a
 whose statement allows answers in any order, whose answers include floats, or which keeps
 fewer than `MIN_HIDDEN` hidden checks; so every check can be judged by exact, type-strict
 comparison. The method of the starter's `Solution` class becomes a plain function of the same
-name. The specification is the benchmark's statement with its signature; the statement's
-examples, the benchmark's public tests, are the public checks. The hidden checks are the
-private tests that are not public, at most `MAX_CHECK_CHARS` characters each, of which a
-deterministic sample of at most `MAX_HIDDEN` is kept. Private tests arrive pickled, and are
-unpickled by a loader that refuses every global, so that only plain values come out.
+name. The specification is the benchmark's statement with its signature, less a closing
+follow-up question, which asks for more than the checks do; the statement's examples, the
+benchmark's public tests, are the public checks. The hidden checks are the private tests that
+are not public, at most `MAX_CHECK_CHARS` characters each, of which a deterministic sample of at
+most `MAX_HIDDEN` is kept. Private tests arrive pickled, and are unpickled by a loader that
+refuses every global, so that only plain values come out.
 
 A problem is held out if a hash of its id falls below `HELD_OUT_SHARE`, so the split depends on
 nothing else and the town never sees a held-out problem. A held-out task's impossible variant
@@ -86,6 +87,7 @@ TERMS = {
 
 _TYPES = {"int", "float", "str", "bool", "List"}
 _ANY_ORDER = re.compile(r"\bany order\b", re.IGNORECASE)
+_FOLLOW_UP = re.compile(r"\n\nFollow[- ]?up\b.*", re.IGNORECASE | re.DOTALL)
 
 
 class Origin(StrictModel):
@@ -242,12 +244,14 @@ def _signature(starter: str, entry_point: str) -> tuple[int, str]:
 
 
 def _statement(text: str) -> str:
-    """The statement with trailing spaces, carriage returns and runs of blank lines removed."""
+    """The statement with trailing spaces, carriage returns, runs of blank lines and the
+    paragraphs from a follow-up question on removed."""
     lines = (
         line.rstrip()
         for line in text.replace("\N{NO-BREAK SPACE}", " ").replace("\r", "").split("\n")
     )
-    return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    statement = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return _FOLLOW_UP.sub("", statement)
 
 
 def _title(slug: str) -> str:
