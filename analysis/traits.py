@@ -327,9 +327,9 @@ def traits(run: RunData) -> Traits:
                         del offers[agent]
             case EventKind.TASK_RETIRED:
                 offers = {a: offer for a, offer in offers.items() if offer[0] != payload["task_id"]}
-            case EventKind.OFFER_ENDED if (
-                offers.get(maker := payload["agent"], (None,))[0] == (payload["task_id"])
-            ):  # the offer named, not one its maker made after it (told first)
+            case EventKind.OFFER_ENDED if payload["cause"] != "replaced" and (
+                offers.get(maker := payload["agent"], (None,))[0] == payload["task_id"]
+            ):  # a replaced offer is told ended after the one that replaced it, already held
                 _, partner = offers.pop(maker)
                 if payload["cause"] == "lapsed" and partner is not None:
                     rows[partner, day].let_lapse += 1

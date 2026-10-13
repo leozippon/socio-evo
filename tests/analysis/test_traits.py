@@ -336,6 +336,40 @@ async def test_a_hand_in_checked_for_want_of_standing_is_counted(tmp_path):
     )
 
 
+@pytest.mark.parametrize(
+    ("again", "taker"),
+    [
+        (ClaimTask(task_id="task-1", partner="Cai"), "Cai"),
+        (ClaimTask(task_id="task-1", partner="Ben", part=2), "Ben"),
+    ],
+    ids=("another-neighbour", "another-part"),
+)
+async def test_an_asking_for_the_same_job_again_stands_and_is_taken_up(tmp_path, again, taker):
+    """Ana asks Ben to take a job with her, then asks again for the same job: another
+    neighbour, or Ben for the other part. The end of her first asking is told after the second,
+    which stands until it is taken up."""
+    run = RunDirectory.create(tmp_path, "scripted", 3, config=TOWN, code_revision="test")
+    env = Environment.create(TOWN.environment, AGENTS, Queue("isbn10", "flatten"), run.events_path)
+    t = time_at(1, "09:00")
+    env.start_day(time_at(1, "07:00"), random.Random(0))
+    env.change_conditions({"one_part_tasks": 0, "two_part_tasks": 1}, time=t)
+    env.post(t, 1)
+    for agent in AGENTS:
+        env.move(agent, "office", time=t)
+    first = ClaimTask(task_id="task-1", partner="Ben", part=1)
+    for agent, action in (("Ana", first), ("Ana", again), (taker, ClaimTask(task_id="task-1"))):
+        events = await env.execute(agent, action, time=t, scene="work", witnesses=AGENTS)
+        assert all(event.kind is not EventKind.ACTION_REJECTED for event in events), events
+    run_data = read_run(run.root)
+    kinds = [event.kind for event in run_data.events]
+    asked_again = len(kinds) - 1 - kinds[::-1].index(EventKind.TASK_PROPOSED)
+    assert kinds.index(EventKind.OFFER_ENDED) > asked_again
+    found = traits(run_data)
+    assert [p for p in found.pairs if (p.source, p.target) == ("Ana", taker)] == [
+        PairDay(1, "Ana", taker, asked=1 + (taker == "Ben"), taken_up=1, joint_taken=1)
+    ]
+
+
 def test_a_run_is_measured_from_its_log_whatever_became_of_its_bank(scripted, tmp_path):
     root = tmp_path / "scripted" / "seed-0001"
     shutil.copytree(scripted, root)

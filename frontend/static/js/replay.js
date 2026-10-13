@@ -101,7 +101,9 @@ export function apply(state, event) {
       break;
     case "offer_ended": {
       const offer = state.offers[p.agent];
-      if (!offer || offer.task_id !== p.task_id) break; // told of an offer its maker replaced after making another (the new one is told first)
+      // A replaced offer is told ended after the one that replaced it, which `bid` already
+      // withdrew it for; the payload names no part, so only its cause tells it from the new one.
+      if (p.cause === "replaced" || !offer || offer.task_id !== p.task_id) break;
       delete state.offers[p.agent];
       const asking = state.askings.findLast((found) => found.asker === p.agent && found.fate === "open");
       if (!asking) break;
