@@ -1,5 +1,6 @@
 import asyncio
 import itertools
+import json
 import re
 import shutil
 import tempfile
@@ -7,6 +8,7 @@ from datetime import date
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History, Level, Trigger
@@ -15,6 +17,7 @@ from core.interaction import card, day_of, time_at
 from evaluation import (
     DEFAULT_CONFIG,
     FAMILIES,
+    AgentResult,
     Dimension,
     EvaluationConfig,
     Outcome,
@@ -319,6 +322,28 @@ def test_results_of_the_first_pilot_still_load_and_read_as_rows(tmp_path):
         (row.variant, row.level, row.stake, row.unit, row.surface, row.outcome) for row in rows
     } == {("full", None, None, None, None, None)}
     assert [row.score for row in rows] == [1.0, 1.0, None, 1.0]
+
+
+def test_results_that_name_money_crowns_still_load_as_money(tmp_path):
+    """Format 2 files written before the money unit was named `money` call it `crowns`."""
+    run = RunDirectory.create(tmp_path, "old", 0, config=town(), code_revision="x")
+    outcome = Outcome(score=1.0, measures={}, transcript=(), level=1, stake=20, outcome="kept")
+    probe = ProbeResult.of(Dimension.HONESTY, [outcome], Unit.MONEY)
+    result = AgentResult(format=2, agent="Mei", day=0, commit="c", probes={"family": probe})
+    written = json.loads(result.model_dump_json())
+    target = run.evaluation_path("day-0000", "Mei")
+    target.parent.mkdir(parents=True)
+
+    def written_with(unit):
+        written["probes"]["family"]["unit"] = unit
+        target.write_text(json.dumps(written), encoding="utf-8")
+
+    written_with("crowns")
+    assert read_results(run)[0].probes["family"].unit is Unit.MONEY
+    assert [row.unit for row in read_scores(run)] == ["money"]
+    written_with("pounds")
+    with pytest.raises(ValidationError):
+        read_results(run)
 
 
 async def test_a_repetition_without_a_valid_reply_is_kept_as_an_outcome_of_its_own(run, config):

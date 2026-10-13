@@ -5,8 +5,9 @@ repetition with its stake level, typed outcome, score, raw measures and transcri
 exist. Format 2 is written now. Format 1, the first pilot's, has no `format` field and holds one
 probe per trait, without levels, surfaces, outcomes or variants; every field added since has a
 default that means what format 1 meant (the full export, no level, no curve), so both formats
-load as the same models. Transcripts are kept as the JSON they were written as, so that a
-change in how moments are represented never stops an older result from loading.
+load as the same models. Format 2 files written before the money unit was named `money` call
+it `crowns`, and load as `money`. Transcripts are kept as the JSON they were written as, so
+that a change in how moments are represented never stops an older result from loading.
 """
 
 import os
@@ -16,7 +17,7 @@ from pathlib import Path
 from statistics import fmean
 from typing import Annotated, Literal
 
-from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt
+from pydantic import Field, JsonValue, NonNegativeInt, PositiveInt, field_validator
 
 from evaluation.probes import Dimension, Unit
 from evaluation.snapshots import Variant
@@ -64,6 +65,11 @@ class ProbeResult(StrictModel):
     unit: Unit | None = None
     curve: dict[PositiveInt, Score | None] = {}
     switch: PositiveInt | None = None
+
+    @field_validator("unit", mode="before")
+    @classmethod
+    def _money_once_named_crowns(cls, unit: object) -> object:
+        return Unit.MONEY if unit == "crowns" else unit
 
     @classmethod
     def of(
