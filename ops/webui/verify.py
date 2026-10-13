@@ -99,7 +99,7 @@ class Client:
             safe = '/api/health'
         else:
             body, _ = self.expect(200, '/data/index.json')
-            if json.loads(body).get('format') != 1:
+            if json.loads(body).get('format') != 2:
                 raise RuntimeError('unexpected socio bundle format')
             self.expect(200, '/js/app.js')
             safe = '/index.html'
