@@ -103,8 +103,17 @@ TITLES = {
 }
 """A task's title by the problem's type; any other type is just a problem."""
 
-_FIGURE = re.compile(r"!\[|\\includegraphics|\b(?:figure|diagram|picture)\b", re.IGNORECASE)
-_SECOND_PART = re.compile(r"(?:^|[\s.;:,])[(（]\s*(?:II|Ⅱ|ii|2|b)\s*[)）]")
+_FIGURE = re.compile(
+    r"!\[|\[img\]|\[asy\]|\\includegraphics"  # an image, or a drawing in code
+    r"|\b(?:fig|figure|diagram|picture|sketch)\b|\bfollowing (?:graph|shows)\b",  # one referred to
+    re.IGNORECASE,
+)
+_SECOND_PART = re.compile(
+    r"(?:^|[\s.;:,$(])[(（]\s*(?:II|Ⅱ|ii|2|b)\s*[)）]"  # (2), $(2)$, \((2)\), (II), (b)
+    r"|^\s*[1a]\s*[.)、]\s.*^\s*[2b]\s*[.)、]\s"  # lines opening 1. then 2., or a) then b)
+    r"|\[b\]\s*[2b]\s*[.)]",  # [b]b)[/b]
+    re.MULTILINE | re.DOTALL,
+)
 
 
 class Origin(StrictModel):

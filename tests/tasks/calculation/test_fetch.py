@@ -74,6 +74,32 @@ def test_valid_word_problems_with_one_number_as_answer_are_sampled_by_hash(monke
     assert {problem.name for problem in sampled} == {problem.name for problem in by_hash[:2]}
 
 
+@pytest.mark.parametrize(
+    ("problem", "reason"),
+    [
+        ("$(1)$ Find $a$;\n$(2)$ If $a=b$, find $b$.", "it has several parts"),
+        ("Calculate:$(1)\\sqrt{4}$;$(2)\\sqrt{9}$.", "it has several parts"),
+        ("\\((1)\\) Find the ellipse;\n\\((2)\\) Find the chord.", "it has several parts"),
+        ("Given $f(x)=x^2$.\n1. Find $f(1)$.\n2. Find $f(3)$.", "it has several parts"),
+        ("Two teams play.\n\na) Who wins?\n\nb) By how much?", "it has several parts"),
+        ("[b]a)[/b] Does 2012 occur?\n[b]b)[/b] Find the term.", "it has several parts"),
+        ("Place the ships on a board (see Fig. 4). Find its least side.", "it refers to a figure"),
+        ("Find $m+n$.\n\n[img]https://i.example/grid.jpg[/img]", "it refers to a figure"),
+        ("Find the radius.\n[asy]\ndraw(Circle((0,0),1));\n[/asy]", "it refers to a figure"),
+        ("Find the area. (Note that the sketch is not drawn to scale.)", "it refers to a figure"),
+        ("The following shows the graph of $y=ax^2$. Find $a$.", "it refers to a figure"),
+    ],
+)
+def test_problems_in_parts_or_on_a_figure_are_dropped_however_written(problem, reason):
+    with pytest.raises(bank.Dropped, match=reason):
+        fetch.convert_row(row(problem))
+
+
+def test_a_numbered_problem_with_one_question_is_kept():
+    problem = "2. Given $f(x)=x+1$, find $f(2)+f(3)$ (2001 Olympiad)."
+    assert fetch.convert_row(row(problem)).task["problem"] == problem
+
+
 async def test_a_calculation_is_judged_by_its_answer_alone(tmp_path):
     problems, _ = fetch.convert(ROWS)
     bank.build(tmp_path, Trade.CALCULATION, CalculationTask, fetch.TERMS, fetch.Entry, problems, {})
