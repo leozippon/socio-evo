@@ -919,6 +919,59 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
     )
 
 
+async def test_one_who_asked_and_the_one_it_asked_reaching_at_once_take_the_job_together(
+    tmp_path,
+):
+    """Ana asks Ben to take a job for two; at the next moment she reaches for its notice again
+    while he takes her asking up. Whatever order is drawn, she is not drawn against him and
+    nothing is refused: the two take it together. Had he asked Cai instead, she and he would
+    have reached for the notice apart, drawn and told as ever."""
+    environment = EnvironmentConfig.model_validate(
+        {
+            **ENVIRONMENT.model_dump(),
+            "conditions": {
+                **ENVIRONMENT.conditions.model_dump(),
+                "one_part_tasks": 0,
+                "two_part_tasks": 1,
+            },
+        }
+    )
+    start = time_at(1, "09:00")
+    reach = {"do": card.TAKE_FOR_TWO, "job": 1, "with": "Ben", "part": 1}
+    for seed, partner in [*((seed, "Ana") for seed in range(6)), (0, "Cai")]:
+        root = tmp_path / f"{seed}-{partner}"
+        root.mkdir()
+        env = Environment.create(environment, AGENTS, CodingTaskProvider(BANK), root / "log")
+        env.post(start, 0)
+        for agent in AGENTS:
+            env.move(agent, "office", time=start)
+        take_up = {"do": card.TAKE_FOR_TWO, "job": 1, "with": partner, "part": 2}
+        replies = Replies(
+            {"Ana": [reach, reach], "Ben": [QUIETLY, take_up], "Cai": [QUIETLY, QUIETLY]}
+        )
+        work = WorkSession(
+            env,
+            "work",
+            "office",
+            list(AGENTS),
+            start=start,
+            until=start + 60,
+            rounds=2,
+            closes=False,
+        )
+        await play(env, scripted(root, replies), [work], random.Random(seed), lambda agent: "")
+        log = read_events(root / "log")
+        told = [e.kind for e in log if e.kind in (EventKind.DRAW, EventKind.ACTION_REJECTED)]
+        taken = [e.payload for e in log if e.kind is EventKind.TASK_CLAIMED]
+        if partner == "Ana":
+            assert told == [] and taken == [
+                {"task_id": "task-1", "workers": ["Ana", "Ben"], "parts": {"Ana": 1, "Ben": 2}}
+                | {"due_day": taken[0]["due_day"]}
+            ]
+        else:
+            assert told == [EventKind.DRAW, EventKind.ACTION_REJECTED] and taken == []
+
+
 async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_morning(tmp_path):
     """On day 1 everyone goes to the meeting at the cafe, has a word, and Ana and Ben answer
     yes while Cai gives no answer: two of three carry it, so the clerk pairs by lot from the

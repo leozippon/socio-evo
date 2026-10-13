@@ -98,6 +98,30 @@ async def test_an_asking_names_the_part_and_stands_until_the_notice_comes_down(e
     )
 
 
+async def test_one_who_asked_and_the_one_it_asked_reaching_at_once_take_the_job_together(env):
+    """Of the claims of one moment, `together` names an asker reaching again for the job its
+    standing asking names while the neighbour it asked takes the asking up: by naming it, or
+    naming no one when it is the only one asking; not when the neighbour names another or
+    reaches for another job, nor when two have asked the neighbour and it names no one."""
+    open_day(env, random.Random(21))
+    go(env, "office", *AGENTS)
+    await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben", part=1))
+    again = ClaimTask(task_id="job 3", partner="ben", part=1)
+
+    def joined(ben: ClaimTask, ana: ClaimTask = again) -> set[str]:
+        return env.together({"Ana": ana, "Ben": ben})
+
+    assert joined(ClaimTask(task_id="task-3", partner="Ana", part=2)) == {"Ana"}
+    assert joined(ClaimTask(task_id="task-3")) == {"Ana"}
+    assert joined(ClaimTask(task_id="task-3", partner="Cai")) == set()
+    assert joined(ClaimTask(task_id="task-1")) == set()
+    assert joined(ClaimTask(task_id="task-3", partner="Ana"), ClaimTask(task_id="task-1")) == set()
+    assert env.together({"Ana": again}) == set()
+    await act(env, "Dan", ClaimTask(task_id="task-3", partner="Ben", part=2))
+    assert joined(ClaimTask(task_id="task-3")) == set()  # Ben must name which of the two
+    assert joined(ClaimTask(task_id="task-3", partner="Ana")) == {"Ana"}
+
+
 async def test_a_name_put_down_stands_overnight_too(make_env):
     env = make_env(partner_choice=False)
     rng = random.Random(22)

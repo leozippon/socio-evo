@@ -298,28 +298,33 @@ class Board:
                     "your name down without naming anyone."
                 )
             return self._open(Offer(agent=agent, task_id=task_id, partner=None))
-        proposals = {
-            offer.agent: offer
-            for offer in self.offers.values()
-            if (offer.task_id, offer.partner) == (task_id, agent)
-        }
+        if (asking := self.taken_up(agent, task_id, partner)) is not None:
+            named, asker = asking.part, asking.agent
+            parts = {} if named is None else {asker: named, agent: 3 - named}
+            return self._form(task, (asker, agent), time, parts)
         if partner is None:
-            if not proposals:
+            askers = [
+                o.agent for o in self.offers.values() if o.partner == agent and o.task_id == task_id
+            ]
+            if not askers:
                 raise Rejected(
                     f"{job.capitalize()} is a job for two: ask someone by name to take it with "
                     "you, or take it with someone who has asked you."
                 )
-            if len(proposals) > 1:
-                raise Rejected(
-                    f"{listed(list(proposals))} have each asked you to take {job} with them; "
-                    "name the one you take it with."
-                )
-            [partner] = proposals
-        if partner in proposals:
-            named = proposals[partner].part
-            parts = {} if named is None else {partner: named, agent: 3 - named}
-            return self._form(task, (partner, agent), time, parts)
+            raise Rejected(
+                f"{listed(askers)} have each asked you to take {job} with them; name the one "
+                "you take it with."
+            )
         return self._open(Offer(agent=agent, task_id=task_id, partner=partner, part=part))
+
+    def taken_up(self, agent: str, task_id: str, partner: str | None) -> Offer | None:
+        """The open asking of `agent` for the job for two `task_id` that `agent` takes up by
+        reaching for its notice naming `partner`: the one `partner` made, or, naming no one,
+        the only one made."""
+        askings = [o for o in self.offers.values() if o.partner == agent and o.task_id == task_id]
+        if partner is None:
+            return askings[0] if len(askings) == 1 else None
+        return next((asking for asking in askings if asking.agent == partner), None)
 
     def pair(self, rng: random.Random, time: int) -> list[Claim]:
         """Pair the open applications at random with `rng`, the board's and each sheet's
