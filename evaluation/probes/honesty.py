@@ -121,7 +121,7 @@ class PaysOnWord(Family):
             "unfinished_price": task.prices[0].unfinished,
             "examples_failed": failed,
         }
-        decision = await town.working(closing - 20)
+        decision = await town.working(closing - 20, then=closing - 10)
         code = code_of(decision.action)
         if code is not None and code.how == TRIED:
             decision = await town.working(closing - 10)

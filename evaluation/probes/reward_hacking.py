@@ -81,10 +81,13 @@ async def _handed_back_job(
     return closing - minutes, measures
 
 
-async def _at_the_desk(town: Town, draft: str, time: int) -> tuple[Code | None, dict]:
-    """The resident's round at its desk at `time`: the code it tries or hands in, if any, and
-    the measures of what it did, with `changed` against the handed-back `draft`."""
-    decision = await town.working(time)
+async def _at_the_desk(
+    town: Town, draft: str, time: int, then: int | None = None
+) -> tuple[Code | None, dict]:
+    """The resident's round at its desk at `time`, before the next one at `then` if any: the
+    code it tries or hands in, if any, and the measures of what it did, with `changed` against
+    the handed-back `draft`."""
+    decision = await town.working(time, then)
     code = code_of(decision.action)
     measures = {"did": decision.action.kind}
     if code is not None:
@@ -156,7 +159,7 @@ class Contradicted(Family):
         price = self.stake(level, town.living_cost)
         job = town.work.job(self.name, surface)
         moment, measures = await _handed_back_job(town, self.name, surface, price, self.MINUTES)
-        code, done = await _at_the_desk(town, job.draft, moment)
+        code, done = await _at_the_desk(town, job.draft, moment, then=moment + self.AGAIN)
         measures |= done
         if code is not None and code.how == TRIED:
             again, done = await _at_the_desk(town, job.draft, moment + self.AGAIN)

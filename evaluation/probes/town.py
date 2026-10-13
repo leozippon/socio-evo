@@ -4,14 +4,18 @@ end of the evaluated day, with the probe's strangers in it.
 Everything a resident is shown in a probe is composed by the code that composes it in a run.
 The environment is `core.environment.Environment`, built from the run's own configuration and
 restored from the evaluated day's checkpoint: its conditions, so the rules of work read as the
-resident knows them, every balance and standing, and the number the next notice will carry,
-with an empty board and nobody holding a job. What leads up to a moment is made to happen in
-that environment through its public methods: people move, notices go up, jobs are taken, code
-is tried and handed in, people speak and hand over money, days end and begin; so every
-percept is an event the environment itself recorded and worded, told to each witness in its
-own words. The moment itself is a scene of `runtime.scenes` (a round of a work session, a turn
-of a conversation, day planning) played by `runtime.scenes.play`, which builds the observation
-as in a run: the setting, the situation, the percepts and the answer card.
+resident knows them, every balance and standing, the jobs taken and the number the next notice
+will carry, with an empty board. At dawn of the probe's first day the client of every job taken
+withdraws it, which the clerk tells its workers, so that nobody holds a job and the resident
+knows why its own is gone. What leads up to a moment is made to happen in that environment
+through its public methods: people move, notices go up, jobs are taken, code is tried and
+handed in, people speak and hand over money, days end and begin; so every percept is an event
+the environment itself recorded and worded, told to each witness in its own words. The moment
+itself is a scene of `runtime.scenes` (a round of a work session, a turn of a conversation, day
+planning) played by `runtime.scenes.play`, which builds the observation as in a run: the
+setting, the situation, the percepts and the answer card. A round of work is told that what
+the resident does takes it to the probe's next moment at the desk, or to the closing, and an
+empty board when the run's notices next go up.
 
 The run's other residents are in town, at home, so that the standings and the names on a card
 are those the resident knows. The strangers live in a lodging added for them, which no text
@@ -149,7 +153,6 @@ class Town:
                 "esteem": state.esteem | dict.fromkeys(strangers),
                 "listings": (),
                 "offers": (),
-                "claims": (),
                 "latent_defects": (),
             }
         )
@@ -167,6 +170,9 @@ class Town:
         self.seed = seed
         self.rng = random.Random(seed)
         self.day = backdrop.day + 1
+        dawn = self.dawn(self.day)
+        for task_id in list(self.env.board.claims):
+            self.env.withdraw(task_id, time=dawn)
 
     # Where and when.
 
@@ -276,22 +282,28 @@ class Town:
 
     # The resident's moments.
 
-    async def working(self, time: int) -> Decision:
-        """One round of a work session at the resident's work place, at `time`, until it
-        closes, with everyone there."""
+    async def working(self, time: int, then: int | None = None) -> Decision:
+        """One round of a work session at the resident's work place, at `time`, with everyone
+        there; what the resident does takes it to `then`, the probe's next moment at the desk
+        if it may play one, or else to the closing."""
         here = self.env.world.locations[self.resident]
         closes = self.env.world.places[here].closing(clock_of(time))
         if closes is None:
             raise ValueError(f"{here} is closed at {clock_of(time)}")
-        scene = WorkSession(
+        until = time_at(day_of(time), closes)
+        if then is not None and not time < then < until:
+            raise ValueError(f"the next moment at {then} is not between {time} and {until}")
+        scene = _Round(
             self.env,
             self._scene_id(time, here),
             here,
             self.env.world.occupants(here),
             start=time,
-            until=time_at(day_of(time), closes),
+            until=until,
             rounds=1,
             closes=True,
+            posting=self._posting(time),
+            then=until if then is None else then,
         )
         return await self._play(scene)
 
@@ -325,6 +337,7 @@ class Town:
             [self.resident],
             self.backdrop.simulation.calendar,
             start=time,
+            posting=self._posting(time),
         )
         await self._play(scene)
         return scene.itineraries[self.resident]
@@ -371,6 +384,11 @@ class Town:
             raise RuntimeError(f"the scene {scene.id} asked the resident {asked} times")
         return self.steps[-1].decision
 
+    def _posting(self, time: int) -> int | None:
+        """When the run's notices next go up after `time`."""
+        simulation = self.backdrop.simulation
+        return situations.next_posting(simulation.calendar, simulation.postings, time)
+
     def _spans(self, place: str) -> list[tuple[str, str]]:
         spans = self.env.world.places[place].spans()
         if not spans:
@@ -391,6 +409,28 @@ class Town:
         if refused := [event.text for event in events if event.kind is EventKind.ACTION_REJECTED]:
             raise RuntimeError(f"the town refused a step of the probe: {refused}")
         return events
+
+
+class _Round(WorkSession):
+    """A round of a work session told that what the resident does takes it to `then`."""
+
+    def __init__(self, *args, then: int, **options) -> None:
+        super().__init__(*args, **options)
+        self.then = then
+
+    def situation(self, agent: str) -> str:
+        others = [other for other in self.present if other != agent]
+        return situations.work(
+            self.env,
+            self.place,
+            others,
+            agent,
+            now=self.start,
+            following=self.then,
+            until=self.until,
+            closes=self.closes,
+            posting=self.posting,
+        )
 
 
 def _claim(task: Task, partner: str | None) -> Action:

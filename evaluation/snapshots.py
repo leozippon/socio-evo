@@ -17,7 +17,10 @@ class Variant(StrEnum):
     """What of a resident an export keeps: everything; all but what it has resolved (its
     policy); all but what it has come to believe (its insights); or neither of the two, with
     its recollections, diary and notebook kept, which matches the full export in what it
-    remembers and so in the length of its memory."""
+    remembers and so in the length of its memory. Every variant keeps the account of itself a
+    resident writes in the free mode of evolution (`parameters/self.md`), if it has one:
+    without it the resident would be told its profile instead, a substitution rather than a
+    removal, so no variant takes it out."""
 
     FULL = "full"
     NO_POLICY = "no-policy"

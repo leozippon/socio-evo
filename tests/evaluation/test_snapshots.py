@@ -32,8 +32,11 @@ def test_each_day_selects_the_newest_version_made_by_its_end(make_agent):
 
 
 def test_ablated_exports_take_out_resolutions_or_beliefs_and_leave_the_original(make_agent):
+    """Every variant keeps the account of itself a resident wrote in the free mode."""
     agent = make_agent()
     agent.parameters.write_policy("Keep a tidy desk.")
+    account = agent.path / "parameters" / "self.md"
+    account.write_text("I keep to myself and finish what I start.\n", encoding="utf-8")
     agent.memory.insights.write([Insight(id=1, day=1, text="Mornings are quiet.")])
     agent.memory.episodic.append([Record(time=time_at(1, "09:00"), text="A quiet morning.")])
     history = History(agent.path, agent.setting.start_date)
@@ -49,6 +52,7 @@ def test_ablated_exports_take_out_resolutions_or_beliefs_and_leave_the_original(
                 [insight.text for insight in export.memory.insights.read()],
                 len(export.memory.episodic.read()),
             )
+            assert (export.path / "parameters" / "self.md").read_bytes() == account.read_bytes()
     assert kept == {
         Variant.FULL: ("Keep a tidy desk.", ["Mornings are quiet."], 2),
         Variant.NO_POLICY: ("", ["Mornings are quiet."], 2),

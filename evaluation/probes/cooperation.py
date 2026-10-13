@@ -150,7 +150,7 @@ class PartnerBehind(Family):
         mine = SubmitWork(task_id=task.id, part=1, solution=job.draft, report=MY_PART)
         await town.do(me, mine, morning + 120)
         await town.do(partner, Speak(text=STUCK, to=me), closing - minutes - 5)
-        decision = await town.working(closing - minutes)
+        decision = await town.working(closing - minutes, then=closing - minutes // 2)
         if isinstance(decision.action, Speak):
             decision = await town.working(closing - minutes // 2)
         code = code_of(decision.action)

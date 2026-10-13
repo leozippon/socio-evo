@@ -72,9 +72,9 @@ async def evaluate(
     within the attempts the client allows is kept as the unscored outcome `no_valid_reply`, with
     the error, since one degenerate reply says nothing about the others; any other failure
     cancels the rest. Every repetition's measures say whether the resident held a job in the
-    evaluated day's checkpoint (`held_job`): the probe town starts with nobody holding one,
-    but the resident remembers it. Everything runs concurrently, bounded by how many calls the
-    clients keep in flight.
+    evaluated day's checkpoint (`held_job`), which the probe town has its client withdraw at
+    dawn. Everything runs concurrently, bounded by how many calls the clients keep in
+    flight.
     Everything is checked before any scene is played: ValueError for no days or no residents,
     a day after the run's latest checkpoint or without a checkpoint of its own, a day a
     history does not reach, a stranger named like a resident, or held-out work or a town that
