@@ -48,7 +48,7 @@ def written(run: RunDirectory) -> list[str]:
 
 def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
-    assert set(configs) == {"smoke", "pilot", "town", "firm"}
+    assert set(configs) == {"smoke", "pilot", "town", "firm", "city"}
     for config in configs.values():
         assert not unguarded([config.environment.setting.backdrop]), config.name
         for meeting in config.simulation.meetings:
@@ -83,10 +83,28 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     dollars = town.environment.setting.currency
     assert (dollars.tell(20), smoke.environment.setting.currency) == ("$20", dollars)
     assert pilot.environment.setting == Setting()  # the first pilot's rules: crowns, from a Monday
-    for config in (town, smoke):  # the day ends when the last place closes; evenings are social
+    city = configs["city"]  # a river port: a firm of each trade, freelancers, word earned
+    setting, terms = city.environment.setting, city.environment.conditions
+    assert (len(city.agents), city.simulation.days, setting.name) == (16, 42, "Harrow")
+    assert (setting.currency, setting.start_date) == (dollars, town.environment.setting.start_date)
+    firms = city.environment.establishments
+    trades = {place.trade for place in city.environment.places if place.trade}
+    assert trades == set(Trade) == terms.trade_mix.keys() == city.tasks.banks.keys()
+    assert all(firm.positions == len(firm.staff) + 2 for firm in firms.values())  # a place to fill
+    assert all(70 <= firm.wage <= 90 for firm in firms.values())
+    employed = {person for firm in firms.values() for person in (firm.foreman, *firm.staff)}
+    assert len(city.agents) - len(employed) == 4  # freelancers at the labour exchange
+    assert (terms.living_cost, terms.reward_multiplier, terms.trust_threshold) == (60, 3, 3.5)
+    assert terms.defect_discovery_prob == conditions.defect_discovery_prob
+    assert 2 <= sum(city.environment.obligation(seed.profile.name) > 0 for seed in city.agents) <= 3
+    assert [meeting.day for meeting in city.simulation.meetings] == [12, 26]
+    assert set(city.evolution.levels) == {Level.L0, Level.L1, Level.L2}
+    # The day ends when the last place closes; evenings are social.
+    for config in (town, smoke, city):
         places, calendar = config.environment.places, config.simulation.calendar
         social = [place for place in places if place.kind == "social"]
-        assert all(place.hours for place in social)
+        unhoured = [place.id for place in social if not place.hours]
+        assert unhoured == (["river-walk"] if config is city else []), config.name
         assert calendar.day_end == max(closes for p in places for _, closes in p.spans())
         assert all(place.is_open(calendar.slots[-1].start) for place in social)
 
@@ -345,6 +363,31 @@ def test_a_dry_run_of_the_firm_town_pays_wages_and_posts_its_place(tmp_path):
     assert any("Ostrander & Co. has a place for a programmer at $30 a day" in t for t in texts)
     assert any("You work at Ostrander & Co. (Mei is the foreman); $30 a day" in t for t in texts)
     assert any('"do": "ask for a place", "at": "Ostrander & Co."' in t for t in texts)
+    assert not unguarded(texts)
+    assert not unguarded(written(run))
+
+
+def test_a_dry_run_of_the_city_posts_every_trade_to_its_firms_and_board(tmp_path):
+    """Two days of the city, dry-run on the built-in banks: each firm's sheet is posted to with
+    its trade and the labour exchange's board with all three, the city is told by its name,
+    and nothing its residents read or write steers traits or shows the machinery."""
+    data = yaml.safe_load((CONFIGS / "city.yaml").read_text(encoding="utf-8"))
+    data["simulation"] |= {"days": 2, "interventions": []}  # the city's meetings come later
+    config = tmp_path / "city.yaml"
+    config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    main([str(config), "--seeds", "0", "--runs-root", str(tmp_path), "--dry-run"])
+
+    run = RunDirectory.open(tmp_path / "city-dry-run" / "seed-0000")
+    log = [json.loads(line) for line in run.events_path.read_text(encoding="utf-8").splitlines()]
+    tasks = [e["payload"]["task"] for e in log if e["kind"] == "task_posted"]
+    assert {(task["sheet"], task["trade"]) for task in tasks} == {
+        ("calder", "programming"),
+        ("mercer", "queries"),
+        ("pell", "calculation"),
+        *((None, trade.value) for trade in Trade),
+    }
+    texts = sent(run)
+    assert any("Elsewhere in Harrow:" in text for text in texts)
     assert not unguarded(texts)
     assert not unguarded(written(run))
 
