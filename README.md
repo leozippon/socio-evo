@@ -60,6 +60,9 @@ python -m frontend.publish --runs-root runs --out build/site
 ## Documentation
 
 - [docs/summary.md](docs/summary.md): what the system is, why it is built this way, and how to use it.
+- [docs/experimental-design.md](docs/experimental-design.md): the hypotheses, the dilemmas, the arms and controls, and the measures.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): code layering, module contracts, run-directory layout and invariants.
+- [docs/IMMERSION.md](docs/IMMERSION.md): the voice of everything a resident reads, its rules and vocabulary.
+- [docs/reviews/](docs/reviews/): dated design reviews and plans; [docs/logbook/](docs/logbook/): the project log.
 - [frontend/README.md](frontend/README.md): the published site, its data bundle and how to deploy it.
 - [external_references/README.md](external_references/README.md): the projects the design draws on.
