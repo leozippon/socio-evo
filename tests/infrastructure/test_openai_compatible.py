@@ -88,6 +88,7 @@ async def test_request_body_and_response_mapping(monkeypatch):
         "chat_template_kwargs": {"enable_thinking": True},
     }
     assert response.text == '{"a": 1}' and response.reasoning == "Hmm."
+    assert not response.truncated and response.max_tokens == 512
     assert response.usage == Usage(prompt_tokens=11, completion_tokens=5)
     assert response.latency >= 0
 

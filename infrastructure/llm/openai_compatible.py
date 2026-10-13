@@ -38,8 +38,9 @@ class OpenAICompatibleClient:
     cannot connect or meets a server error is retried TRANSPORT_RETRIES times, after the same
     waits, and then raises LLMCallError, as does at once any other failure (the credentials
     or the request refused). A reply cut off by the token limit is returned marked `truncated`,
-    and an empty one as empty, for the caller to judge. Separated reasoning text
-    (`reasoning_content`, or `reasoning`) is captured when the server sends it.
+    and an empty one as empty, for the caller to judge, each with the token limit it was given.
+    Separated reasoning text (`reasoning_content`, or `reasoning`) is captured when the server
+    sends it.
     """
 
     def __init__(self, config: LLMConfig, *, http_client: httpx2.AsyncClient | None = None) -> None:
@@ -102,6 +103,7 @@ class OpenAICompatibleClient:
         return LLMResponse(
             text=choice.message.content or "",
             truncated=choice.finish_reason == "length",
+            max_tokens=arguments.get("max_tokens"),
             reasoning=extra.get("reasoning_content") or extra.get("reasoning"),
             usage=None
             if usage is None

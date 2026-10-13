@@ -4,11 +4,17 @@ and of structured replies that are cut off or invalid, the latter told what was 
 An attempt also fails when the client gives up on a reply that does not come in time
 (LLMBusyError). After the last attempt StructuredOutputError says how each one failed. Any
 other error of the client propagates at once: the backend itself failed.
+
+Every request carries the verdict its reply will be given, so that a log of the calls says how
+each attempt failed. Once a reply has come, every later attempt is allowed half the token limit
+the client reports that reply was given: a reply that loops until the limit cuts it off, or runs
+far beyond the usual length, tends to do so again when asked again, while the first attempt
+keeps the whole limit, since some valid replies run to thousands of tokens.
 """
 
 import re
 from collections.abc import Callable
-from typing import TypeVar
+from typing import NamedTuple, TypeVar
 
 from pydantic import BaseModel, ValidationError
 
@@ -48,16 +54,19 @@ async def complete_text(client: LLMClient, request: LLMRequest, *, attempts: int
     """The text of a reply to `request` that is neither cut off by the token limit nor empty,
     asked for as it is up to `attempts` times. Each call's metadata gains its `attempt`
     number."""
+    request = request.model_copy(update={"verdict": _text_failure})
     failures: list[str] = []
-    text = ""
+    text, limit = "", None
     for attempt in range(1, _check(attempts) + 1):
-        response = await _call(client, _attempt(request, request.messages, attempt), failures)
+        asked = _attempt(request, request.messages, attempt, limit)
+        response = await _call(client, asked, failures)
         if response is None:
             continue
-        text = response.text
-        if text.strip():
+        text, limit = response.text, limit or response.max_tokens
+        failure = _text_failure(response)
+        if failure is None:
             return text
-        failures.append(EMPTY)
+        failures.append(failure)
     raise StructuredOutputError("text", failures, text)
 
 
@@ -77,41 +86,68 @@ async def complete_structured(
     requested again, this and every later request marked `after_invalid` (a client may then
     enforce the schema). Each call's metadata gains its `attempt` number.
     """
-    schema = model.model_json_schema()
+
+    def verdict(response: LLMResponse) -> str | None:
+        reply = _read(model, response)
+        return reply.failure if isinstance(reply, _Unread) else None
+
+    request = request.model_copy(
+        update={"json_schema": model.model_json_schema(), "verdict": verdict}
+    )
     messages = request.messages
     failures: list[str] = []
-    text = ""
+    text, limit = "", None
     for attempt in range(1, _check(attempts) + 1):
-        asked = _attempt(request, messages, attempt).model_copy(update={"json_schema": schema})
-        response = await _call(client, asked, failures)
+        response = await _call(client, _attempt(request, messages, attempt, limit), failures)
         if response is None:
             continue
-        text = response.text
-        try:
-            return model.model_validate_json(_lone_backslashes(text))
-        except ValidationError as error:
-            failures.append(INVALID.format(error=describe_validation_error(error)))
+        text, limit = response.text, limit or response.max_tokens
+        reply = _read(model, response)
+        if not isinstance(reply, _Unread):
+            return reply
+        failures.append(reply.failure)
+        if reply.error is not None:
             messages = (
                 *messages,
                 Message(role="assistant", content=text),
-                Message(role="user", content=correction(model, error)),
+                Message(role="user", content=correction(model, reply.error)),
             )
             request = request.model_copy(update={"after_invalid": True})
     raise StructuredOutputError(model.__name__, failures, text)
 
 
-async def _call(client: LLMClient, request: LLMRequest, failures: list[str]) -> LLMResponse | None:
-    """The reply to `request`, or None, with the failure added to `failures`, if it was cut
-    off or did not come in time."""
+class _Unread(NamedTuple):
+    """Why a structured reply cannot be read, and its validation error if it was invalid."""
+
+    failure: str
+    error: ValidationError | None = None
+
+
+def _read(model: type[T], response: LLMResponse) -> T | _Unread:
+    """The reply in `response` validated as `model`, or why it cannot be read."""
+    if response.truncated:
+        return _Unread(TRUNCATED)
     try:
-        response = await client.complete(request)
+        return model.model_validate_json(_lone_backslashes(response.text))
+    except ValidationError as error:
+        return _Unread(INVALID.format(error=describe_validation_error(error)), error)
+
+
+def _text_failure(response: LLMResponse) -> str | None:
+    """Why a free text reply cannot be used, or None if it is whole."""
+    if response.truncated:
+        return TRUNCATED
+    return None if response.text.strip() else EMPTY
+
+
+async def _call(client: LLMClient, request: LLMRequest, failures: list[str]) -> LLMResponse | None:
+    """The reply to `request`, or None, with the failure added to `failures`, if it did not
+    come in time."""
+    try:
+        return await client.complete(request)
     except LLMBusyError as error:
         failures.append(str(error))
         return None
-    if response.truncated:
-        failures.append(TRUNCATED)
-        return None
-    return response
 
 
 def _lone_backslashes(text: str) -> str:
@@ -129,7 +165,12 @@ def _check(attempts: int) -> int:
     return attempts
 
 
-def _attempt(request: LLMRequest, messages: tuple[Message, ...], attempt: int) -> LLMRequest:
-    return request.model_copy(
-        update={"messages": messages, "metadata": {**request.metadata, "attempt": attempt}}
-    )
+def _attempt(
+    request: LLMRequest, messages: tuple[Message, ...], attempt: int, limit: int | None
+) -> LLMRequest:
+    """`request` with `messages` as attempt number `attempt`, allowed half of `limit`, the
+    token limit of the first reply, once there is one."""
+    update = {"messages": messages, "metadata": {**request.metadata, "attempt": attempt}}
+    if limit is not None:
+        update["sampling"] = request.sampling.model_copy(update={"max_tokens": (limit + 1) // 2})
+    return request.model_copy(update=update)

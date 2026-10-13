@@ -9,9 +9,11 @@ from infrastructure.storage.jsonl import append_jsonl
 class RecordingClient:
     """Delegates to `inner` and appends one record per call to `path`, failed calls included.
 
-    Record fields: `metadata`; `request` (without metadata); `response` (text, reasoning,
-    usage, latency) or null; `error` (`type`, `message`) or null. A failure is re-raised
-    after it is recorded.
+    Record fields: `metadata`; `request` (without metadata); `response` (text, whether it was
+    cut off by the token limit, the limit it was given, reasoning, usage, latency) or null;
+    `failure`, the request's verdict on the reply: how it fails, or null if it serves, there
+    is no reply or the request carries no verdict; `error` (`type`, `message`) or null. A
+    failure of the call is re-raised after it is recorded.
     """
 
     def __init__(self, inner: LLMClient, path: Path) -> None:
@@ -36,6 +38,9 @@ class RecordingClient:
                 "metadata": request.metadata,
                 "request": request.model_dump(mode="json", exclude={"metadata"}),
                 "response": None if response is None else response.model_dump(mode="json"),
+                "failure": None
+                if response is None or request.verdict is None
+                else request.verdict(response),
                 "error": None
                 if error is None
                 else {"type": type(error).__name__, "message": str(error)},

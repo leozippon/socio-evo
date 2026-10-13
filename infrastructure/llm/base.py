@@ -1,6 +1,6 @@
 """Backend-neutral LLM types: messages, requests, responses, the client protocol and errors."""
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Literal, Protocol
 
 from pydantic import Field, JsonValue, PositiveInt
@@ -25,6 +25,26 @@ class Sampling(StrictModel):
         return defaults.model_copy(update=self.model_dump(exclude_none=True))
 
 
+class Usage(StrictModel):
+    prompt_tokens: int
+    completion_tokens: int
+
+
+class LLMResponse(StrictModel):
+    """The model's reply, which may be empty. `truncated` says that it was cut off by the
+    token limit, so `text` holds only what came before; `max_tokens` is the token limit the
+    call was made with, None when none was set or the backend is no model; `reasoning` is
+    separated reasoning text when the backend returns it; `usage` is None when the backend
+    reports none; `latency` is in seconds."""
+
+    text: str
+    truncated: bool = False
+    max_tokens: int | None = None
+    reasoning: str | None = None
+    usage: Usage | None = None
+    latency: float
+
+
 class LLMRequest(StrictModel):
     """One chat completion.
 
@@ -33,6 +53,8 @@ class LLMRequest(StrictModel):
     structured-output mode, so the prompt should still describe the expected reply, and on
     `after_invalid`, which says that the reply is asked for again after an invalid one.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
+    `verdict` is how the caller will judge the reply, for a log of the calls to record with
+    it: None if the reply serves, else how it fails; it is neither sent nor logged itself.
     """
 
     messages: tuple[Message, ...] = Field(min_length=1)
@@ -41,24 +63,9 @@ class LLMRequest(StrictModel):
     json_schema: dict[str, JsonValue] | None = None
     after_invalid: bool = False
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
-
-
-class Usage(StrictModel):
-    prompt_tokens: int
-    completion_tokens: int
-
-
-class LLMResponse(StrictModel):
-    """The model's reply, which may be empty. `truncated` says that it was cut off by the
-    token limit, so `text` holds only what came before; `reasoning` is separated reasoning
-    text when the backend returns it; `usage` is None when the backend reports none;
-    `latency` is in seconds."""
-
-    text: str
-    truncated: bool = False
-    reasoning: str | None = None
-    usage: Usage | None = None
-    latency: float
+    verdict: Callable[[LLMResponse], str | None] | None = Field(
+        default=None, exclude=True, repr=False
+    )
 
 
 class LLMClient(Protocol):

@@ -13,7 +13,7 @@ Responder = Callable[[LLMRequest], str | dict[str, Any]]
 
 class ScriptedClient:
     """Answers every request with `responder(request)`. This is not a model: it reasons about
-    nothing and reports no token usage. Exceptions raised by the responder propagate."""
+    nothing and reports no token usage or limit. Exceptions raised by the responder propagate."""
 
     def __init__(self, responder: Responder) -> None:
         self._responder = responder

@@ -126,35 +126,69 @@ async def test_a_backslash_that_begins_no_escape_is_read_as_itself():
     assert len(client.requests) == 1
 
 
-class Cutting:
-    """A client whose first `cut` replies are cut off by the token limit."""
+LIMIT = 16384
+"""The token limit of the fake server, where a request sets none."""
 
-    def __init__(self, cut: int, text: str) -> None:
-        self.cut, self.text = cut, text
+
+class Server:
+    """A client that answers with `replies` in turn, None standing for a reply cut off by the
+    token limit, and reports the limit each call was made with."""
+
+    def __init__(self, *replies: str | None) -> None:
+        self.replies = list(replies)
         self.requests: list[LLMRequest] = []
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
         self.requests.append(request)
-        truncated = len(self.requests) <= self.cut
+        reply = self.replies.pop(0)
         return LLMResponse(
-            text=self.text[:3] if truncated else self.text, truncated=truncated, latency=0
+            text='{"answer' if reply is None else reply,
+            truncated=reply is None,
+            max_tokens=request.sampling.max_tokens or LIMIT,
+            latency=0,
         )
 
 
-async def test_a_reply_cut_off_is_asked_for_again_within_the_bounded_attempts():
-    client = Cutting(2, '{"answer": 7}')
+async def test_a_reply_cut_off_is_asked_for_again_with_half_the_limit():
+    client = Server(None, None, '{"answer": 7}')
     assert await complete_structured(client, _request(), Verdict) == Verdict(answer=7)
     assert [request.messages for request in client.requests] == [_request().messages] * 3
     assert [request.metadata["attempt"] for request in client.requests] == [1, 2, 3]
+    limits = [request.sampling.max_tokens for request in client.requests]
+    assert limits == [None, LIMIT // 2, LIMIT // 2]
     assert not any(request.after_invalid for request in client.requests)
-    with pytest.raises(StructuredOutputError, match="cut off"):
-        await complete_structured(Cutting(3, '{"answer": 7}'), _request(), Verdict)
+    with pytest.raises(StructuredOutputError) as failure:
+        await complete_structured(Server(None, None, None), _request(), Verdict)
+    assert failure.value.failures == ("cut off by the token limit",) * 3
 
-    text = Cutting(1, "A whole entry.")
+    text = Server(None, "A whole entry.")
     assert await complete_text(text, _request()) == "A whole entry."
     assert [request.json_schema for request in text.requests] == [None, None]
+    assert [request.sampling.max_tokens for request in text.requests] == [None, LIMIT // 2]
     with pytest.raises(StructuredOutputError, match="cut off"):
-        await complete_text(Cutting(2, "A whole entry."), _request(), attempts=2)
+        await complete_text(Server(None, None), _request(), attempts=2)
+
+
+async def test_every_attempt_is_logged_with_how_it_failed(tmp_path):
+    path = tmp_path / "llm_calls.jsonl"
+    replies = Server(None, '{"answer": "many"}', '{"answer": 3}')
+    assert await complete_structured(RecordingClient(replies, path), _request(), Verdict) == (
+        Verdict(answer=3)
+    )
+    with pytest.raises(StructuredOutputError) as failure:
+        await complete_text(RecordingClient(Server(" ", None, None), path), _request())
+
+    records = list(read_jsonl(path))
+    cut, invalid, valid = (record["failure"] for record in records[:3])
+    assert cut == "cut off by the token limit" and valid is None
+    assert invalid.startswith("invalid: answer: ")
+    assert [record["failure"] for record in records[3:]] == list(failure.value.failures)
+    assert [record["response"]["max_tokens"] for record in records[:3]] == [
+        LIMIT,
+        LIMIT // 2,
+        LIMIT // 2,
+    ]
+    assert all("verdict" not in record["request"] for record in records)
 
 
 async def test_an_empty_text_is_asked_for_again_within_the_bounded_attempts():
