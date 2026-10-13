@@ -118,6 +118,9 @@ UNREADABLE = (
 MISSING = '"{key}" is missing'
 NOT_IN_FORM = '"{key}" is not part of that form'
 NOT_A_CHOICE = '"{key}" must be one of the choices shown for it'
+NOT_HERE = '"{key}" must be one of the people here'
+"""A choice not shown for `to`, whose choices are the people present: whoever was named is
+not here."""
 NOT_AS_SHOWN = '"{key}" is not written as shown'
 
 Fields = dict[str, tuple[Any, str | None]]
@@ -488,10 +491,11 @@ def form(model: type[BaseModel]) -> str:
 
 def correction(model: type[BaseModel], error: ValidationError) -> str:
     """What a resident is told when its answer could not be read as a reply to `model`: what
-    was wrong, by the keys it writes and in the card's plain words (a choice not shown, a
-    missing key, a key that is not part of the form, or the rule of a nightly reply it
-    broke), or that the answer as a whole could not be read; then to answer again. The
-    choices themselves are not repeated, so that the correction cannot lean towards one."""
+    was wrong, by the keys it writes and in the card's plain words (a choice not shown, which
+    for whom it speaks or hands money to means someone who is not here, a missing key, a key
+    that is not part of the form, or the rule of a nightly reply it broke), or that the
+    answer as a whole could not be read; then to answer again. The choices themselves are
+    not repeated, so that the correction cannot lean towards one."""
     keys = _keys(model.model_json_schema())
     problems = []
     for problem in _closest(error.errors(), keys):
@@ -501,7 +505,8 @@ def correction(model: type[BaseModel], error: ValidationError) -> str:
         key = next((part for part in reversed(problem["loc"]) if part in keys), None)
         if key is None:
             return UNREADABLE
-        problems.append(_PROBLEMS.get(problem["type"], NOT_AS_SHOWN).format(key=key))
+        told = _PROBLEMS.get(problem["type"], NOT_AS_SHOWN)
+        problems.append((NOT_HERE if (key, told) == (TO, NOT_A_CHOICE) else told).format(key=key))
     return UNREAD.format(problems="; ".join(dict.fromkeys(problems)))
 
 

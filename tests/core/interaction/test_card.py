@@ -297,7 +297,15 @@ async def test_a_reply_off_the_card_is_asked_for_again():
         ({"do": "take a job", "job": 27}, '"job" must be one of the choices shown for it'),
         (
             {"do": "say", "to": "Tomas, Aisha", "words": "Hi."},
-            '"to" must be one of the choices shown for it',
+            '"to" must be one of the people here',
+        ),
+        (
+            {"do": "say privately", "to": "Ravi", "words": "Ravi, yes."},
+            '"to" must be one of the people here',
+        ),
+        (
+            {"do": "hand over money", "to": "Ravi", "dollars": 5, "note": ""},
+            '"to" must be one of the people here',
         ),
         ({"do": "say", "words": "Hi."}, '"to" is missing'),
         ({"do": "dance"}, '"do" must be one of the choices shown for it'),
