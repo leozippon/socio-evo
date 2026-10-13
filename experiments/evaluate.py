@@ -73,6 +73,7 @@ def main(argv: Sequence[str] | None = None) -> None:
             cognition=experiment.cognition,
             environment=experiment.environment,
             simulation=experiment.simulation,
+            trades=tuple(experiment.tasks.banks),
             overwrite=args.overwrite,
         )
     )

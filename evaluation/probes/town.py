@@ -1,24 +1,26 @@
 """The town a probe is played in: a scratch copy of the evaluated run's town as it stood at the
 end of the evaluated day, with the probe's strangers in it.
 
-Everything a resident is shown in a probe is composed by the code that composes it in a run.
-The environment is `core.environment.Environment`, built from the run's own configuration and
-restored from the evaluated day's checkpoint: its conditions, so the rules of work read as the
-resident knows them, every balance and standing, the jobs taken and the number the next notice
-will carry, with an empty board. Its firms keep their foremen, staff and places to fill, so a
-resident's place at one reads as it knows it. At dawn of the probe's first day the client of
-every job taken withdraws it, which the clerk tells its workers, so that nobody holds a job and
-the resident knows why its own is gone. What leads up to a moment is made to happen in that
-environment through its public methods: people move, the probe's job goes up on the board, jobs
-are taken, code is tried and handed in, people speak and hand over money, days end and begin;
-so every percept is an event the environment itself recorded and worded, told to each witness
-in its own words. The probe's job is the only notice that goes up, on the board of a work place
-that is no firm's, where the probe's work is done; nothing goes up on a firm's job sheet. The
-moment itself is a scene of `runtime.scenes` (a round of a work session, a turn of a
-conversation, day planning) played by `runtime.scenes.play`, which builds the observation as
-in a run: the setting, the situation, the percepts and the answer card. A round of work is
-told that what the resident does takes it to the probe's next moment at the desk, or to the
-closing, and an empty board when the run's notices next go up.
+Everything a resident is shown in a probe is composed by the code that composes it in a run. The
+environment is `core.environment.Environment`, built from the run's own configuration and
+restored from the evaluated day's checkpoint: its conditions, every balance and standing, the
+jobs taken and the number the next notice will carry, with an empty board. The held-out work
+stands in for the provider of every trade the run's town has work of, so the rules of work,
+which name each of them, read as the resident knows them, though every job a probe puts up is of
+the work's own trade and nothing is ever drawn from it. Its firms keep their foremen, staff and
+places to fill, so a resident's place at one reads as it knows it. At dawn of the probe's first
+day the client of every job taken withdraws it, which the clerk tells its workers, so that
+nobody holds a job and the resident knows why its own is gone. What leads up to a moment is made
+to happen in that environment through its public methods: people move, the probe's job goes up
+on the board, jobs are taken, code is tried and handed in, people speak and hand over money,
+days end and begin; so every percept is an event the environment itself recorded and worded,
+told to each witness in its own words. The probe's job is the only notice that goes up, on the
+board of a work place that is no firm's, where the probe's work is done; nothing goes up on a
+firm's job sheet. The moment itself is a scene of `runtime.scenes` (a round of a work session, a
+turn of a conversation, day planning) played by `runtime.scenes.play`, which builds the
+observation as in a run: the setting, the situation, the percepts and the answer card. A round
+of work is told that what the resident does takes it to the probe's next moment at the desk, or
+to the closing, and an empty board when the run's notices next go up.
 
 The run's other residents are in town, at home, so that the standings and the names on a card
 are those the resident knows. The strangers live in a lodging added for them, which no text
@@ -44,6 +46,7 @@ from core.environment import (
     Place,
     PlaceKind,
     Task,
+    Trade,
 )
 from core.interaction import (
     Action,
@@ -70,11 +73,13 @@ LODGING = "the lodging house"
 @dataclass(frozen=True)
 class Backdrop:
     """The evaluated run's town at the end of the evaluated `day`: its configuration, its days
-    (calendar, postings and scenes) and the environment state of that day's checkpoint."""
+    (calendar, postings and scenes), the `trades` it has work of and the environment state of
+    that day's checkpoint."""
 
     day: int
     environment: EnvironmentConfig
     simulation: SimulationConfig
+    trades: tuple[Trade, ...]
     state: EnvironmentState
 
     def places(self, kind: PlaceKind) -> list[str]:
@@ -87,9 +92,11 @@ class Backdrop:
         ]
 
     def require(self, family: str, *, social: int = 1, last_opening: int = 0) -> None:
-        """Raise ValueError unless the town has a work place with the board, `social` social
-        places, and every work place with the board opens last for `last_opening` minutes or
-        more."""
+        """Raise ValueError unless the town has work of the held-out work's trade, a work
+        place with the board, `social` social places, and every work place with the board
+        opens last for `last_opening` minutes or more."""
+        if Work.trade not in self.trades:
+            raise ValueError(f"{family} puts up {Work.trade.value} jobs; the town has none")
         boards = self.places(PlaceKind.WORK)
         works = [place for place in self.environment.places if place.id in boards]
         if not works or len(self.places(PlaceKind.SOCIAL)) < social:
@@ -170,8 +177,9 @@ class Town:
         )
         self.log = directory / "events.jsonl"
         self.log.touch(exist_ok=False)
+        providers = dict.fromkeys(backdrop.trades, work)
         self.env = Environment.restore(
-            self.config, restored.model_dump(mode="json"), {work.trade: work}, self.log
+            self.config, restored.model_dump(mode="json"), providers, self.log
         )
         self.work = work
         self.backdrop = backdrop

@@ -6,6 +6,7 @@ import random
 import re
 import shutil
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -215,7 +216,8 @@ def play(run, banks, work_file, tmp_path) -> Callable:
     `judge` if given; returns what the family made of it."""
     work = Work(banks, work_file, timeout=5.0)
     experiment = town()
-    backdrop = _backdrop(run, 2, experiment.environment, experiment.simulation)
+    trades = tuple(experiment.tasks.banks)
+    backdrop = _backdrop(run, 2, experiment.environment, experiment.simulation, trades)
     count = iter(range(1000))
 
     async def play(
@@ -231,12 +233,7 @@ def play(run, banks, work_file, tmp_path) -> Callable:
         directory.mkdir()
         stage = backdrop
         if state:
-            stage = type(backdrop)(
-                day=backdrop.day,
-                environment=backdrop.environment,
-                simulation=backdrop.simulation,
-                state=backdrop.state.model_copy(update=state),
-            )
+            stage = replace(backdrop, state=backdrop.state.model_copy(update=state))
         probe, history = FAMILIES[family], History(run.agent_dir("Mei"))
         setting = stage.environment.setting
         with frozen(history, history.head(), resident.client, CognitionConfig(), setting) as agent:

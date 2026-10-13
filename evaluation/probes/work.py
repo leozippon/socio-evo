@@ -37,7 +37,8 @@ class Work:
     """The banks under `root` that the jobs of the work file `plan` name, each check, of a draft
     or of what is handed in, running for at most `timeout` seconds isolated as `isolation` says.
     A part's reference is its job's `<bank>/<task>`. The banks hold programming tasks, so every
-    job is of that `trade`, and a probe town has the work as the provider of it."""
+    job is of that `trade`; a probe town has the work as the provider of every trade of its
+    town, so that the rules of work name them all, and draws nothing from it."""
 
     trade = Trade.PROGRAMMING
 

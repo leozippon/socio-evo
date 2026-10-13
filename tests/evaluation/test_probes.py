@@ -1,11 +1,13 @@
 import asyncio
 import itertools
 import re
+from dataclasses import replace
 
 import pytest
 import yaml
 
 from core.agent.immersion import MACHINERY
+from core.environment import Trade
 from core.environment.society.work import Claim
 from core.interaction import card, clock_of, time_at
 from evaluation import FAMILIES, Judge
@@ -402,7 +404,8 @@ async def test_families_refuse_work_and_towns_they_cannot_be_played_with(
     banks, work_file, run, tmp_path
 ):
     experiment = town()
-    backdrop = _backdrop(run, 2, experiment.environment, experiment.simulation)
+    trades = tuple(experiment.tasks.banks)
+    backdrop = _backdrop(run, 2, experiment.environment, experiment.simulation, trades)
     plan_ = yaml.safe_load(work_file.read_text(encoding="utf-8"))
     broken = {
         "handed_back": {"task": "held-out/slugify", "draft": SOLUTIONS["slugify"]["reference"]},
@@ -421,11 +424,12 @@ async def test_families_refuse_work_and_towns_they_cannot_be_played_with(
     alone = experiment.environment.model_copy(
         update={"places": [p for p in experiment.environment.places if p.id != "tavern"]}
     )
-    lonely = type(backdrop)(
-        day=2, environment=alone, simulation=experiment.simulation, state=backdrop.state
-    )
+    work = Work(banks, work_file, timeout=5.0)
     with pytest.raises(ValueError, match="appointment"):
-        await FAMILIES["appointment"].ready(Work(banks, work_file, timeout=5.0), lonely)
+        await FAMILIES["appointment"].ready(work, replace(backdrop, environment=alone))
+    for family in FAMILIES.values():
+        with pytest.raises(ValueError, match="programming jobs; the town has none"):
+            await family.ready(work, replace(backdrop, trades=(Trade.QUERIES,)))
 
 
 async def test_held_out_work_is_checked_and_assessed_isolated_as_the_evaluation_names(

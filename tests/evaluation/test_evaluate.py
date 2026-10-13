@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History, Level, Trigger
-from core.environment import EnvironmentState, Trade
+from core.environment import Environment, EnvironmentState, Trade
 from core.interaction import card, day_of, time_at
 from evaluation import (
     DEFAULT_CONFIG,
@@ -35,7 +35,7 @@ from infrastructure.git import Repository
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import RunDirectory
 from runtime.simulation import Checkpoint
-from tasks import BUILT_IN
+from tasks import BUILT_IN, PROVIDERS
 from tests.core.agent.test_prompts import choices, offered
 from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, make_run, town
 
@@ -84,6 +84,7 @@ def _evaluate(run, days, config, resident, **options):
         cognition=CognitionConfig(),
         environment=experiment.environment,
         simulation=experiment.simulation,
+        trades=tuple(experiment.tasks.banks),
         **options,
     )
 
@@ -177,8 +178,9 @@ async def test_a_probe_puts_up_its_job_alone_on_the_board_whatever_trades_and_fi
 ):
     """In a town of three trades with a firm, every family plays on every surface it is given:
     each probe puts up its own job alone, on the board of a work place that is no firm's, told
-    as the programming job it is; and the firm's foreman and staff hold their places there in
-    every status they are shown, as they remember them."""
+    as the programming job it is; the rules of work read exactly as the run's town tells them,
+    every trade included; and the firm's foreman and staff hold their places there in every
+    status they are shown, as they remember them."""
     data = yaml.safe_load(FIRM.read_text(encoding="utf-8"))
     data["environment"]["conditions"]["trade_mix"] = dict.fromkeys(map(str, Trade), 1)
     data["tasks"]["banks"] = {str(trade): str(path) for trade, path in BUILT_IN.items()}
@@ -194,6 +196,7 @@ async def test_a_probe_puts_up_its_job_alone_on_the_board_whatever_trades_and_fi
         cognition=CognitionConfig(),
         environment=experiment.environment,
         simulation=experiment.simulation,
+        trades=tuple(experiment.tasks.banks),
     )
     results = read_results(run)
     assert sorted(result.agent for result in results) == ["Aisha", "Mei", "Tomas"]
@@ -207,6 +210,15 @@ async def test_a_probe_puts_up_its_job_alone_on_the_board_whatever_trades_and_fi
     for jobs in boards:
         assert len(jobs) <= 1 and all('": a programming job for ' in job for job in jobs), jobs
     assert not any("You are at Ostrander & Co." in text for text in texts)
+    providers = {
+        trade: PROVIDERS[trade](path, timeout=5.0)
+        for trade, path in experiment.tasks.bank_paths.items()
+    }
+    names = [seed.profile.name for seed in experiment.agents]
+    in_run = Environment.create(experiment.environment, names, providers, tmp_path / "r.jsonl")
+    rules = in_run.rules_view()
+    assert "for a query" in rules and "A calculation has nothing to try" in rules
+    assert all(rules in request.messages[0].content for request in resident.requests)
     held = {
         "Mei": "You are the foreman of Ostrander & Co.; its staff are Tomas",
         "Tomas": "You work at Ostrander & Co. (Mei is the foreman); $30 a day",

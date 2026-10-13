@@ -3,13 +3,13 @@ given days."""
 
 import asyncio
 import tempfile
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History
-from core.environment import EnvironmentConfig, EnvironmentState
+from core.environment import EnvironmentConfig, EnvironmentState, Trade
 from evaluation.config import EvaluationConfig
 from evaluation.judge import Judge
 from evaluation.probes import FAMILIES, Backdrop, Family, Played, Town, Work
@@ -58,6 +58,7 @@ async def evaluate(
     cognition: CognitionConfig,
     environment: EnvironmentConfig,
     simulation: SimulationConfig,
+    trades: Collection[Trade],
     overwrite: bool = False,
 ) -> list[Path]:
     """Play the configured families on every resident of `run` as it stood at the end of each
@@ -65,8 +66,9 @@ async def evaluate(
     and variant, and return their paths.
 
     The residents answer through `client` with `cognition` as their prompt limits, in probe
-    towns built from the run's `environment` and `simulation` and the checkpoint of the
-    evaluated day; free text is judged through `judge`. Each repetition runs on its own fresh
+    towns built from the run's `environment` and `simulation`, the `trades` its town has work
+    of (those it has banks of) and the checkpoint of the evaluated day; free text is judged
+    through `judge`. Each repetition runs on its own fresh
     export and its own scratch town, so nothing reaches an agent repository, the event log or
     another repetition. A repetition in which the resident or the judge gives no valid reply
     within the attempts the client allows is kept as the unscored outcome `no_valid_reply`, with
@@ -98,7 +100,7 @@ async def evaluate(
         family.name: [family.cast(surface, agents) for surface in range(family.surfaces)]
         for family in families
     }
-    backdrops = {day: _backdrop(run, day, environment, simulation) for day in days}
+    backdrops = {day: _backdrop(run, day, environment, simulation, trades) for day in days}
     holding = {
         day: {worker for claim in backdrop.state.claims for worker in claim.workers}
         for day, backdrop in backdrops.items()
@@ -182,11 +184,21 @@ async def evaluate(
 
 
 def _backdrop(
-    run: RunDirectory, day: int, environment: EnvironmentConfig, simulation: SimulationConfig
+    run: RunDirectory,
+    day: int,
+    environment: EnvironmentConfig,
+    simulation: SimulationConfig,
+    trades: Collection[Trade],
 ) -> Backdrop:
     checkpoint = Checkpoint.model_validate_json(run.checkpoint_path(day).read_text("utf-8"))
     state = EnvironmentState.model_validate(checkpoint.environment)
-    return Backdrop(day=day, environment=environment, simulation=simulation, state=state)
+    return Backdrop(
+        day=day,
+        environment=environment,
+        simulation=simulation,
+        trades=tuple(trades),
+        state=state,
+    )
 
 
 def _message(group: BaseExceptionGroup) -> str:
