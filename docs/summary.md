@@ -125,11 +125,13 @@ The LiveCodeBench banks live outside the repository, under `~/.cache/socio-evo/b
 
 ```bash
 python -m tasks.coding.fetch
-python -m tasks.coding.calibrate ~/.cache/socio-evo/banks/livecodebench/pool --config experiments/configs/town.yaml
+python -m tasks.calibrate ~/.cache/socio-evo/banks/livecodebench/pool --config experiments/configs/town.yaml
 python -m tasks.coding.fetch
 ```
 
-The first fetch downloads the benchmark at a pinned revision (through `HF_ENDPOINT` and `HF_TOKEN` when set), converts the problems whose checks can be judged by exact comparison and holds out a fifth of them. It writes the town's split as `pool/`, a provisional `town/` bank by the benchmark's difficulty labels, and the held-out split as `held-out/` and `held-out-impossible/`, where one example of each task contradicts its specification. Calibration records how the model of `town.yaml` does in four first attempts at each task of the pool. The second fetch rebuilds `town/` by that measured difficulty: equal thirds of easy, medium and hard jobs paying 20, 30 and 40, the hard third holding first of all the jobs the model never solved.
+The first fetch downloads the benchmark at a pinned revision (through `HF_ENDPOINT` and `HF_TOKEN` when set), converts the problems whose checks can be judged by exact comparison and holds out a fifth of them. It writes the town's split as `pool/`, a provisional `town/` bank by the benchmark's difficulty labels, and the held-out split as `held-out/` and `held-out-impossible/`, where one example of each task contradicts its specification. Calibration records how the model of `town.yaml` does in four first attempts at each task of the pool, asked as a resident of that town would be. The second fetch rebuilds `town/` by that measured difficulty: equal thirds of easy, medium and hard jobs paying 20, 30 and 40, the hard third holding first of all the jobs the model never solved.
+
+The banks of two further trades, SQL queries from Spider and calculations from NuminaMath, can be built the same way, with `python -m tasks.queries.fetch` or `python -m tasks.calculation.fetch` (the latter needs the `banks` extra) before and after calibrating their `pool/` under `~/.cache/socio-evo/banks/spider` or `~/.cache/socio-evo/banks/numinamath`. The town does not post their jobs yet.
 
 Start a run with an experiment configuration and one or more seeds; each seed is an independent run:
 
@@ -157,7 +159,7 @@ To evaluate a run at chosen days:
 python -m experiments.evaluate runs/town/seed-0000 --days 0 7 14 21 28
 ```
 
-Day 0 is each resident as created and day N the resident as it stood at the end of day N, up to the run's latest checkpoint. `evaluation/configs/default.yaml` plays every family at its four levels once on the full export, 36 scenes per resident and day; `--config` names another file, and `--traits`, `--families`, `--levels`, `--repetitions` and `--variants` change the selection. The bounds on model calls are printed first, and nothing is played unless the held-out banks are there and every chosen family can be played in the run's town (`appointment` needs two social places). The residents answer through the run's own model, or the stand-in for a dry run, and free text always goes to the judge. Results go to `evaluation/day-NNNN/<agent>.json` inside the run (`day-NNNN-<variant>` for an ablated export) and are replaced only with `--overwrite`.
+Day 0 is each resident as created and day N the resident as it stood at the end of day N, up to the run's latest checkpoint. `evaluation/configs/default.yaml` plays every family at its four levels three times on the full export, each level once on each of the family's three surfaces: 108 scenes, 96 to 192 decisions and at most 60 judge questions per resident and day; `--config` names another file, and `--traits`, `--families`, `--levels`, `--repetitions` and `--variants` change the selection. The bounds on model calls are printed first, and nothing is played unless the held-out banks are there and every chosen family can be played in the run's town (`appointment` needs two social places). The residents answer through the run's own model, or the stand-in for a dry run, and free text always goes to the judge. Results go to `evaluation/day-NNNN/<agent>.json` inside the run (`day-NNNN-<variant>` for an ablated export) and are replaced only with `--overwrite`.
 
 A study runs the arms of the experimental design over the same seeds, each arm `town.yaml` with a few overlays, run as experiment `trust-<arm>`:
 

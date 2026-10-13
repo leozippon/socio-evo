@@ -6,15 +6,16 @@
 Each bank's trade is the one its index records, and its tasks are worked on as that trade's
 provider (`tasks.PROVIDERS`) shows them. The model of CONFIG's `llm` section, an experiment
 configuration, is asked `--samples` times for a delivery for each task, as a resident who has
-just taken the job would be, with the pieces the agent itself uses: the system prompt is
-CONFIG's first agent on its first day, who has resolved nothing yet; the prompt is the time,
-the job with its specification exactly as the provider shows it to a worker, and the agent's
-question; the reply is the agent's decision restricted to handing in work, under the
-configured sampling and structured-output mode. The provider assesses each delivery: whether
-it passes the visible checks, its hidden quality, and whether it writes out what the visible
-checks look for. A failed model call, such as one whose every attempt was cut off by the token
-limit, is recorded as an error and counted in no rate. `--limit` calibrates only that many
-tasks of each bank, the first by hash of their names.
+just taken the job would be, with the pieces the agent itself uses, in the town of CONFIG's
+setting (its money and calendar): the system prompt is CONFIG's first agent on its first day,
+who has resolved nothing yet; the prompt is the time, the job with its specification exactly
+as the provider shows it to a worker, and the agent's question; the reply is the agent's
+decision restricted to handing in work, under the configured sampling and structured-output
+mode. The provider assesses each delivery: whether it passes the visible checks, its hidden
+quality, and whether it writes out what the visible checks look for. A failed model call, such
+as one whose every attempt was cut off by the token limit, is recorded as an error and counted
+in no rate. `--limit` calibrates only that many tasks of each bank, the first by hash of their
+names.
 
 The results are merged into PATH, by default the `calibration.json` of the banks' source
 directory, where the source's fetch reads it; it must lie outside the project, and holds
@@ -31,7 +32,8 @@ from pathlib import Path
 import yaml
 
 from core.agent import CognitionConfig, Profile, prompts
-from core.interaction import Card, MaySubmit, clock_of, day_of, form, lived_day, time_at
+from core.environment import EnvironmentConfig
+from core.interaction import Card, MaySubmit, Setting, clock_of, day_of, form, lived_day, time_at
 from core.interaction.card import correction
 from infrastructure.llm import (
     LLMClient,
@@ -49,7 +51,7 @@ from tasks.bank import CALIBRATION, Calibration, Result, Sample, hashed, trade_o
 PROJECT = Path(__file__).resolve().parents[1]
 SITUATION = (
     "You are at your desk in the workshop. Nobody else is here.\n\n"
-    "You are working on job 1, {title}; it pays {reward} crowns and is due by the end of "
+    "You are working on job 1, {title}; it pays {reward} and is due by the end of "
     "{due}. The client's notice:\n{specification}\n\n"
     "You can hand in your {delivery} for job 1."
 )
@@ -81,6 +83,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.concurrency:
         llm = llm.model_copy(update={"max_concurrency": args.concurrency})
     profile = Profile.model_validate(data["agents"][0]["profile"])
+    setting = EnvironmentConfig.model_validate(data["environment"]).setting
     calibration = (
         Calibration.model_validate_json(out.read_text(encoding="utf-8"))
         if out.exists()
@@ -90,13 +93,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.error(f"{out} holds results of {calibration.model}, not {llm.model}")
     out.parent.mkdir(parents=True, exist_ok=True)
     client = RecordingClient(create_client(llm), out.with_name(f"{out.stem}-llm_calls.jsonl"))
-    asyncio.run(run(banks, client, profile, args.samples, args.limit, calibration, out))
+    asyncio.run(run(banks, client, profile, setting, args.samples, args.limit, calibration, out))
 
 
 async def run(
     banks: Sequence[Path],
     client: LLMClient,
     profile: Profile,
+    setting: Setting,
     samples: int,
     limit: int | None,
     calibration: Calibration,
@@ -107,7 +111,7 @@ async def run(
     for bank in banks:
         provider = PROVIDERS[trade_of(bank)](bank)
         names = sorted(provider.bank, key=lambda name: hashed(f"calibrate:{name}"))[:limit]
-        results = await calibrate(provider, bank.name, names, client, profile, samples)
+        results = await calibrate(provider, bank.name, names, client, profile, setting, samples)
         calibration = calibration.model_copy(update={"tasks": {**calibration.tasks, **results}})
         out.write_text(calibration.model_dump_json(indent=1) + "\n", encoding="utf-8")
         _summarize(bank.name, results)
@@ -119,21 +123,24 @@ async def calibrate(
     names: Sequence[str],
     client: LLMClient,
     profile: Profile,
+    setting: Setting,
     samples: int,
 ) -> dict[str, Result]:
-    """`samples` first attempts at each task `names` of `provider`'s bank `bank`, by name."""
+    """`samples` first attempts at each task `names` of `provider`'s bank `bank`, by name, in
+    a town of `setting`."""
     system = prompts.system_prompt(profile, "", CognitionConfig())
+    start = setting.start_date
 
     async def attempt(name: str, sample: int) -> Sample | str:
         part = provider.part(name)
         situation = SITUATION.format(
             title=part.title,
-            reward=part.reward,
-            due=lived_day(day_of(NOW) + part.deadline_days - 1),
+            reward=setting.currency.tell(part.reward),
+            due=lived_day(day_of(NOW) + part.deadline_days - 1, start),
             specification=part.specification,
             delivery=provider.delivery,
         )
-        time = prompts.TIME.format(clock=clock_of(NOW), day=lived_day(day_of(NOW)))
+        time = prompts.TIME.format(clock=clock_of(NOW), day=lived_day(day_of(NOW), start))
         prompt = "\n\n".join(
             [prompts.NOW.format(time=time, situation=situation), prompts.REPLY, form(CARD.model)]
         )

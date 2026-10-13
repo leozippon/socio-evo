@@ -35,10 +35,11 @@ def test_time_helpers_agree():
 
 
 def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
-    assert lived_day(1) == "Monday, your first day in town"
-    assert lived_day(5) == "Friday, your fifth day in town"
-    assert lived_day(8) == "Monday, your eighth day in town"
-    assert lived_day(28) == "Sunday, your twenty-eighth day in town"
+    monday = Setting().start_date
+    assert lived_day(1, monday) == "Monday, your first day in town"
+    assert lived_day(5, monday) == "Friday, your fifth day in town"
+    assert lived_day(8, monday) == "Monday, your eighth day in town"
+    assert lived_day(28, monday) == "Sunday, your twenty-eighth day in town"
     assert [ordinal(n) for n in (11, 20, 42, 101, 112, 123)] == [
         "eleventh",
         "twentieth",
@@ -47,9 +48,10 @@ def test_a_resident_tells_a_day_by_its_weekday_and_its_count_since_arriving():
         "112th",
         "123rd",
     ]
-    for bad in (lived_day, ordinal):
-        with pytest.raises(ValueError):
-            bad(0)
+    with pytest.raises(ValueError):
+        lived_day(0, monday)
+    with pytest.raises(ValueError):
+        ordinal(0)
 
 
 def test_the_weekday_of_day_one_follows_from_the_start_date():

@@ -1,6 +1,9 @@
+from datetime import date
+
 import yaml
 
 from core.agent import Profile
+from core.interaction import Currency, Setting
 from infrastructure.llm import LLMRequest, LLMResponse, ScriptedClient
 from tasks import PROVIDERS, bank
 from tasks.bank import Calibration, Sample, Trade, hashed
@@ -25,6 +28,10 @@ SOLUTIONS = {
     "shortcut": "def halve(x):\n    return {4: 2}.get(x, 0)\n",
 }
 PROFILE = Profile(name="Mei", age=34, occupation="software developer", backstory="She codes.")
+TOWN = Setting(
+    currency=Currency(unit="dollar", units="dollars", symbol="$"), start_date=date(2001, 1, 3)
+)
+"""A town of dollars whose day 1 is a Wednesday."""
 
 
 def handing_in(delivery: str) -> dict[str, str]:
@@ -57,7 +64,7 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
 
     provider = CodingTaskProvider(tmp_path)
     client = CutOff(ScriptedClient(respond))
-    results = await calibrate(provider, "bank", ["halve"], client, PROFILE, samples=3)
+    results = await calibrate(provider, "bank", ["halve"], client, PROFILE, TOWN, samples=3)
     result = results["halve"]
     assert sorted(result.samples, key=lambda sample: sample.quality) == [
         Sample(visible=True, quality=1 / 3, special_cased=False),
@@ -71,6 +78,8 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
         system, prompt = (message.content for message in request.messages)
         assert system.startswith("You are Mei.") and specification in prompt
         assert "You can hand in your code for job 1." in prompt
+        assert "it pays $10 and is due by the end of Wednesday, your first day in town" in prompt
+        assert "09:10 on Wednesday, your first day in town" in prompt
         assert not any(call in prompt for call in ("halve(0)", "halve(-2)", "halve(3)"))
 
 
@@ -101,7 +110,8 @@ async def test_each_bank_is_worked_as_its_trade_and_a_limit_takes_tasks_by_hash(
         return handing_in(f"Working it out.\nAnswer: {answer if first else 0}")
 
     out = tmp_path / "calibration.json"
-    await run(banks, ScriptedClient(respond), PROFILE, 2, 2, Calibration(model="m", tasks={}), out)
+    calibration = Calibration(model="m", tasks={})
+    await run(banks, ScriptedClient(respond), PROFILE, TOWN, 2, 2, calibration, out)
     calibration = Calibration.model_validate_json(out.read_text(encoding="utf-8"))
     for provider in providers.values():
         chosen = sorted(provider.bank, key=lambda name: hashed(f"calibrate:{name}"))[:2]

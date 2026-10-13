@@ -46,19 +46,19 @@ DAY_ONE = date(2001, 1, 1)
 Monday."""
 
 
-def date_of(day: int, start: date = DAY_ONE) -> date:
+def date_of(day: int, start: date) -> date:
     """The date of 1-based `day` in a town whose day 1 is `start`."""
     if day < 1:
         raise ValueError(f"no day {day}")
     return start + timedelta(days=day - 1)
 
 
-def weekday(day: int, start: date = DAY_ONE) -> str:
+def weekday(day: int, start: date) -> str:
     """The day of the week of 1-based `day` in a town whose day 1 is `start`."""
     return WEEKDAYS[date_of(day, start).weekday()]
 
 
-def lived_day(day: int, start: date = DAY_ONE) -> str:
+def lived_day(day: int, start: date) -> str:
     """1-based `day` as a resident tells it, e.g. `Friday, your fifth day in town`, in a town
     whose day 1 is `start`; everyone arrived in town on day 1."""
     return f"{weekday(day, start)}, your {ordinal(day)} day in town"
