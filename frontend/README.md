@@ -333,7 +333,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `checked` (whether the client ran its checks: a checking client's, or a trusting client's for a worker whose standing is below the threshold; absent in logs recorded before the threshold existed, where a checking client checked every part declared complete), `accepted`, `solution` (what was handed in: code, a query or an answer with its working; a hand-in that named the draft on the desk holds the draft), `report` (the worker's own account) |
-| `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `checked`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
+| `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `checked`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `special_cased` (whether the solution writes out what the client's examples look for instead of working it out, as the trade's provider judged when it assessed it; absent in logs recorded before it was kept), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `payment` | none | the agent, or the foreman and the workers | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once, or, for a task on an establishment's job sheet, its foreman once the whole price, with the `workers` named |
 | `credits_given` | the giver | others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
 | `wage_paid` | none | the member of staff and the foreman | `agent` (the member of staff), `foreman`, `place` (the establishment), `amount`, `balances`: the day's wage, paid at the day's end for a day the agent was at the establishment |
@@ -516,8 +516,9 @@ The three statistics of selection describe one town; they are not tests. With ei
 | Count | Type | Meaning |
 | --- | --- | --- |
 | `checked_finished` | integer | Hand-ins as finished to a client who tries the examples before paying. |
-| `special_cased` | integer | Of those, the ones whose code writes out the values of the part's examples instead of computing them, as `tasks.coding.special_cases` finds against the examples the part was posted with. |
-| `checked_accepted` | integer | Of those, the ones the client accepted: the examples passed. |
+| `special_cased_judged` | integer | Of those, the ones whose assessment says whether they write out the examples (`work_assessed` `special_cased`); hand-ins recorded before it was kept are not judged. |
+| `special_cased` | integer | Of the judged ones, those whose code writes out the values of the part's examples instead of computing them, as the trade's provider judged when it assessed the hand-in. |
+| `checked_accepted` | integer | Of the hand-ins as finished to such a client, the ones it accepted: the examples passed. |
 | `checked_quality` | number | Sum of the true quality (the share of hidden checks passed, 0 to 1) of the accepted ones. |
 | `checked_faulty` | integer | Accepted ones whose true quality is below 1: each carries a latent fault once its job is paid. |
 | `handed_in` | integer | All hand-ins, as finished or unfinished, to either kind of client. |
@@ -557,7 +558,7 @@ The three statistics of selection describe one town; they are not tests. With ei
 
 | Share | Type | Meaning |
 | --- | --- | --- |
-| `special_cased_share` | number or null | `special_cased / checked_finished`: how often code handed in to a checking client writes out the examples' values. |
+| `special_cased_share` | number or null | `special_cased / special_cased_judged`: how often code handed in to a checking client writes out the examples' values; null where no hand-in was judged. |
 | `checked_quality_mean` | number or null | `checked_quality / checked_accepted`: the mean true quality of what checking clients accepted. |
 | `checked_faulty_share` | number or null | `checked_faulty / checked_accepted`: how much of what checking clients accepted carries a fault. |
 | `knowingly_false_share` | number or null | `knowingly_false / finished`: how often work declared finished had just been seen to fail. |
