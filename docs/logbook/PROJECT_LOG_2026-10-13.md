@@ -33,7 +33,7 @@ The evaluation of the city's residents crashed in every repetition: the probe to
 
 ## Infrastructure
 
-The site was republished with seven runs (the first town's two runs, smoke, smoke-free, firm, the seven-day town and the city) and pushed to the private viewer; the repository's verifier run on the host confirmed the release, format 2. The external verifier now names a missing credentials file instead of the generic message (135dd10), and the host deployment scripts are excluded from ruff, which had reported them since they were added (05acaac). Editors sharing one working tree learned to commit with explicit paths only after one swept another's staged files; the shell's synchronisation failed twice for a few minutes and recovered. The suite stands at 606 tests.
+The site was republished with seven runs (the first town's two runs, smoke, smoke-free, firm, the seven-day town and the city) and pushed to the private viewer; the repository's verifier run on the host confirmed the release, format 2. The external verifier now names a missing credentials file instead of the generic message (135dd10), and the host deployment scripts are excluded from ruff, which had reported them since they were added (05acaac). Editors sharing one working tree learned to commit with explicit paths only after one swept another's staged files; the shell's synchronisation failed twice for a few minutes and recovered. The suite stands at 608 tests.
 
 ## Open at the end of the day
 
