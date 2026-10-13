@@ -419,6 +419,41 @@ def test_a_town_of_locals_never_tells_its_residents_they_have_just_arrived(seed)
     assert "It is 09:05 on Wednesday, 14 October, your first day in town." in newcomers
 
 
+def test_a_nightly_form_writes_out_each_change_where_it_goes():
+    """A nightly reply's form writes out each kind of change where it goes, named by the word
+    that tells it apart, with nothing standing in for one: the city's residents copied the
+    letters that once did into their answers. The answers written as shown are read; the
+    letters, or a change with a key of another kind, are still refused, with what was wrong."""
+    reply = prompts.reflection_reply([1, 2], ["L1"])
+    told = form(reply)
+    assert told.startswith(
+        'Answer in this form:\n{"reflection": "…", "changes": [one of {"change": "add", '
+        '"belief": "…", "about": "…" or null}, {"change": "reword", "number": one of 1, 2, '
+        '"belief": "…"}, {"change": "drop", "number": one of 1, 2}, …], "rethink": {"what": '
+        '"notebook", "why": "…"} or null}\n"add": A new belief;'
+    )
+    assert '\n"rethink": What you want to do tonight' in told
+    for model in (
+        reply,
+        prompts.skill_reply(["Dates"]),
+        prompts.revision_reply([1], ["Dates"], first=True),
+    ):
+        assert not re.search(r"\b[A-Z](?:,| or null|\]|: \{)", form(model)), form(model)
+    changes = [
+        {"change": "add", "belief": "Ben pays late.", "about": "Ben"},
+        {"change": "reword", "number": 1, "belief": "Mornings are quiet."},
+        {"change": "drop", "number": 2},
+    ]
+    reply.model_validate({"reflection": "", "changes": changes, "rethink": None})
+    for changes, problem in (
+        (["A", "B", "C"], '"changes" is not written as shown'),
+        ([{"change": "drop", "number": 2, "belief": "b"}], '"belief" is not part of that form'),
+    ):
+        with pytest.raises(ValidationError) as error:
+            reply.model_validate({"reflection": "", "changes": changes})
+        assert card.correction(reply, error.value) == card.UNREAD.format(problems=problem)
+
+
 def test_nightly_replies_can_only_name_what_exists():
     reply = prompts.reflection_reply([1, 2], [])
     assert "rethink" not in reply.model_fields

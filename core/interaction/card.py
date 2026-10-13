@@ -20,7 +20,6 @@ replies are shown the same way.
 """
 
 import json
-import string
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Union, get_args
@@ -100,7 +99,9 @@ DECLARED = {Declaration.COMPLETE: "finished", Declaration.INCOMPLETE: "unfinishe
 
 ANSWER = "Answer in this form:"
 ANSWERS = "Answer in one of these forms:"
-NOTED = "{name}: {shape}. {description}"
+NOTED = "{name}: {description}"
+"""What a described object written out in a form is, named by the word that tells it apart
+from the other kinds a list or a choice holds (its constant), or else by its key."""
 TEXT = '"…"'
 NUMBER = "a whole number"
 TRUTH = "true or false"
@@ -464,8 +465,9 @@ class Card:
 
 def form(model: type[BaseModel]) -> str:
     """How a reply to `model` is written, as the resident reads it: one line for each form
-    the model's JSON schema allows, then, named by capital letters, any described object
-    nested in them, with its description."""
+    the model's JSON schema allows, with every object written out where it goes, then a line
+    for each described object nested in them, saying what it is under the name it goes by.
+    Nothing stands in for an object to be filled in, which a resident would copy as it is."""
     schema = model.model_json_schema()
     defs, notes = schema.get("$defs", {}), []
     lines = [_shape(option, defs, notes, top=True) for option in schema.get("anyOf", [schema])]
@@ -554,9 +556,18 @@ def _model(index: int, form: _Form) -> type[BaseModel]:
     return create_model(f"Form{index}", __base__=StrictModel, **fields)
 
 
-def _shape(node: dict[str, Any], defs: dict[str, Any], notes: list[str], top: bool = False) -> str:
-    """`node` of a JSON schema as a template; a described object other than a top-level form
-    is named by the next letter and noted in `notes`."""
+def _shape(
+    node: dict[str, Any],
+    defs: dict[str, Any],
+    notes: list[str],
+    key: str = "",
+    top: bool = False,
+    kinds: bool = False,
+) -> str:
+    """`node` of a JSON schema, written under `key`, as a template; a described object other
+    than a top-level form is written out, and what it is noted in `notes` under its name: the
+    word that tells it apart (its constant) where it is one of the `kinds` a list or a choice
+    holds, else its key."""
     if "$ref" in node:
         node = defs[node["$ref"].rsplit("/", 1)[1]]
     if node.get("type") == "object":
@@ -566,35 +577,44 @@ def _shape(node: dict[str, Any], defs: dict[str, Any], notes: list[str], top: bo
     if node.get("type") == "object" and "description" in node and not top:
         index = len(notes)
         notes.append("")
-        shape = _shape(node, defs, notes, top=True)
+        shape = _shape(node, defs, notes, key, top=True)
+        constants = (value["const"] for value in node["properties"].values() if "const" in value)
+        name = next(constants, key) if kinds else key
         description = " ".join(node["description"].split())
-        name = string.ascii_uppercase[index]
-        notes[index] = NOTED.format(name=name, shape=shape, description=description)
-        return name
-    return _alternatives(_values(node, defs, notes)) + word
+        notes[index] = NOTED.format(
+            name=json.dumps(name, ensure_ascii=False), description=description
+        )
+        return shape
+    return _alternatives(_values(node, defs, notes, key, kinds)) + word
 
 
-def _values(node: dict[str, Any], defs: dict[str, Any], notes: list[str]) -> list[str]:
-    """The alternatives `node` allows, each as a template."""
+def _values(
+    node: dict[str, Any], defs: dict[str, Any], notes: list[str], key: str, kinds: bool = False
+) -> list[str]:
+    """The alternatives `node`, written under `key`, allows, each as a template; `kinds`
+    says whether it is an item of a list, where each kind of object goes by its word."""
     if "$ref" in node:
-        return [_shape(node, defs, notes)]
+        return [_shape(node, defs, notes, key, kinds=kinds)]
     if "const" in node:
         return [json.dumps(node["const"], ensure_ascii=False)]
     if "enum" in node:
         return [json.dumps(value, ensure_ascii=False) for value in node["enum"]]
     if "anyOf" in node:
-        return [value for option in node["anyOf"] for value in _values(option, defs, notes)]
+        options = node["anyOf"]
+        kinds = kinds or sum(option.get("type") != "null" for option in options) > 1
+        return [value for option in options for value in _values(option, defs, notes, key, kinds)]
     match node.get("type"):
         case "object" if "properties" in node:
             pairs = (
-                f"{json.dumps(key, ensure_ascii=False)}: {_shape(value, defs, notes)}"
-                for key, value in node["properties"].items()
+                f"{json.dumps(name, ensure_ascii=False)}: {_shape(value, defs, notes, name)}"
+                for name, value in node["properties"].items()
             )
             return ["{" + ", ".join(pairs) + "}"]
         case "object":
-            return ["{" + f"{TEXT}: {_shape(node['additionalProperties'], defs, notes)}" + "}"]
+            value = _shape(node["additionalProperties"], defs, notes, key)
+            return ["{" + f"{TEXT}: {value}" + "}"]
         case "array":
-            return [f"[{_shape(node['items'], defs, notes)}, {MORE}]"]
+            return [f"[{_shape(node['items'], defs, notes, key, kinds=True)}, {MORE}]"]
         case "string":
             return [TEXT]
         case "integer" | "number":

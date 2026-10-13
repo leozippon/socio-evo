@@ -213,7 +213,7 @@ class ReviseInsight(StrictModel):
 
 
 class RemoveInsight(StrictModel):
-    """One of your numbered beliefs that no longer holds."""
+    """One of your numbered beliefs that no longer holds, given by its number alone."""
 
     change: Literal["drop"]
     number: int
