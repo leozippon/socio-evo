@@ -146,7 +146,7 @@ To view the runs and a study, run `python -m frontend.server --runs-root runs --
 - Memory retrieval uses recency and word overlap, without embeddings.
 - People move only when a part of the day begins, and nobody stays out past the last closing hour.
 - A firm's attendance is counted by the wage paid; nobody is told when passed over for a place; a foreman's own hand-ins are paid into its own purse.
-- The probes' work is programming alone, whatever a resident's trade, and the default battery refuses the city, two of whose residents share names with probe strangers.
+- The probes' work is programming alone, whatever a resident's trade.
 - Every random choice comes from the seed, but with a sampling model the replies differ between runs; only a dry run repeats exactly.
 
 No run of the current design has yet gone beyond seven days. The smoke town, alone, with a firm and in the free mode, has run three days against the model without a lapse, and the probes have been played on it with the DeepSeek judge; an audit found the instrument rather than character behind most extreme scores, and the probes were reworked. An exploratory seven-day run of the town, on the code of before the wider world, accepted 52 parts of which two were faulty and saw no fault come to light at the daily chance of 0.1 it then had; askings that lapsed every night were read as slights and standing was used for nothing, which led to standing askings, the trust threshold, banks composed around faults the examples miss and the higher chance of discovery. The first town, which this design supersedes, is reviewed in the [design review](reviews/DESIGN_REVIEW_2026-10-02.md); each day's work and runs are in the [project log](logbook/).

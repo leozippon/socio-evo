@@ -77,9 +77,9 @@ async def evaluate(
     flight.
     Everything is checked before any scene is played: ValueError for no days or no residents,
     a day after the run's latest checkpoint or without a checkpoint of its own, a day a
-    history does not reach, a stranger named like a resident, or held-out work or a town that
-    a family cannot be played with; FileExistsError for an existing result file unless
-    `overwrite`.
+    history does not reach, a stranger left without a name no resident bears (see
+    `Family.cast`), or held-out work or a town that a family cannot be played with;
+    FileExistsError for an existing result file unless `overwrite`.
     """
     days = sorted(set(days))
     agents = sorted(path.name for path in run.agents_dir.iterdir())
@@ -94,9 +94,10 @@ async def evaluate(
     if missing := [day for day in days if not run.checkpoint_path(day).exists()]:
         raise ValueError(f"days {missing} have no checkpoint to build their town from")
     families = [FAMILIES[name] for name in config.families]
-    strangers = {name for family in families for cast in family.strangers for name in cast}
-    if clashes := sorted(strangers & set(agents)):
-        raise ValueError(f"strangers of the probes share names with residents: {clashes}")
+    casts = {
+        family.name: [family.cast(surface, agents) for surface in range(family.surfaces)]
+        for family in families
+    }
     backdrops = {day: _backdrop(run, day, environment, simulation) for day in days}
     holding = {
         day: {worker for claim in backdrop.state.claims for worker in claim.workers}
@@ -133,7 +134,7 @@ async def evaluate(
                 tempfile.TemporaryDirectory(prefix="probe-town-") as scratch,
             ):
                 seed = f"{family.name}:{level}:{rep}"
-                cast = family.strangers[surface]
+                cast = casts[family.name][surface]
                 town = Town(backdrops[day], resident, cast, work, Path(scratch), seed)
                 try:
                     played = await family.play(town, level, surface, judging)

@@ -166,6 +166,7 @@ class Town:
         self.backdrop = backdrop
         self.recorder = Recorder(resident)
         self.resident = resident.id
+        self.strangers = tuple(strangers)
         self.cast = {resident.id: self.recorder, **{name: Stranger() for name in strangers}}
         self.seed = seed
         self.rng = random.Random(seed)

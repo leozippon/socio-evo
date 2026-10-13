@@ -64,7 +64,7 @@ class ShortOfLiving(Family):
         backdrop.require(self.name)
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
-        [asker] = self.strangers[surface]
+        [asker] = town.strangers
         social = town.place(PlaceKind.SOCIAL, surface)
         me, cost = town.resident, town.living_cost
         asked, purse = self.stake(level, cost), town.balance(me)
@@ -134,7 +134,7 @@ class PartnerBehind(Family):
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
         job = town.work.job(self.name, surface)
-        [partner] = self.strangers[surface]
+        [partner] = town.strangers
         place = town.place(PlaceKind.WORK, surface)
         me, day = town.resident, town.day
         morning, closing = town.opening(place, day), town.closing(place, day)
@@ -185,7 +185,7 @@ class SharedNotice(Family):
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
         job = town.work.job(self.name, surface)
-        [asker] = self.strangers[surface]
+        [asker] = town.strangers
         place = town.place(PlaceKind.WORK, surface)
         me, day = town.resident, town.day
         afternoon = town.opening(place, day, span=-1)

@@ -35,7 +35,7 @@ from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import RunDirectory
 from runtime.simulation import Checkpoint
 from tests.core.agent.test_prompts import choices, offered
-from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, make_resident, town
+from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, town
 
 ALL = list(FAMILIES)
 
@@ -234,9 +234,6 @@ async def test_nothing_runs_unless_every_resident_day_and_family_can_be_evaluate
     )
     with pytest.raises(ValueError, match="latest checkpoint, day 2"):
         await attempt([3])
-    make_resident("Ivo", run.agents_dir, None)
-    with pytest.raises(ValueError, match="Ivo"):
-        await attempt([0])
     assert resident.requests == [] and list(run.evaluation_dir.iterdir()) == []
 
 

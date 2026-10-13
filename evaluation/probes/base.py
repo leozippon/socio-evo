@@ -19,6 +19,7 @@ tell every amount in the town's currency.
 """
 
 from abc import ABC, abstractmethod
+from collections.abc import Collection
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING, ClassVar
@@ -76,12 +77,21 @@ class Played:
     measures: dict[str, JsonValue]
 
 
+NAMES = (
+    *("Petra", "Greta", "Hugo", "Robin", "Emil", "Sascha", "Lena", "Kim", "Ivo", "Pavel"),
+    *("Ines", "Mira", "Bruno", "Nadia", "Anton", "Berit", "Carla", "Dario", "Elif", "Frida"),
+    *("Goran", "Hana", "Igor", "Jana", "Karim", "Lotte", "Marek", "Nina", "Oskar", "Paula"),
+)
+"""The names strangers can bear: those the families give them first, then the spare ones."""
+
+
 class Family(ABC):
     """One kind of situation that puts `trait` at stake, at the levels of `ladder` in `unit`.
 
-    `strangers` names the people a probe introduces, for each surface; nobody in a run may
-    share their names. `calls` bounds what a repetition costs: the fewest and the most
-    decisions it asks of the resident, and the most questions it puts to the judge.
+    `strangers` names the people a probe introduces, for each surface; a run whose residents
+    bear some of those names meets other strangers in their place (`cast`). `calls` bounds what
+    a repetition costs: the fewest and the most decisions it asks of the resident, and the
+    most questions it puts to the judge.
     """
 
     name: ClassVar[str]
@@ -98,6 +108,26 @@ class Family(ABC):
     @property
     def surfaces(self) -> int:
         return len(self.strangers)
+
+    def cast(self, surface: int, residents: Collection[str]) -> tuple[str, ...]:
+        """The strangers of `surface` in a town of `residents`: each keeps its name unless a
+        resident bears it, and is then named by the first name of `NAMES` that neither a
+        resident nor another stranger of the surface bears, so that runs with the same
+        residents meet the same strangers. ValueError if no such name is left."""
+        names = self.strangers[surface]
+        taken = {*residents, *names}
+        cast = []
+        for name in names:
+            if name in residents:
+                name = next((spare for spare in NAMES if spare not in taken), None)
+                if name is None:
+                    raise ValueError(
+                        f"{self.name}: no name is left for a stranger of surface "
+                        f"{surface} that no resident bears"
+                    )
+                taken.add(name)
+            cast.append(name)
+        return tuple(cast)
 
     def stake(self, level: int, living_cost: int) -> int:
         """The stake of 1-based `level` in the town's terms: an amount of money or minutes."""

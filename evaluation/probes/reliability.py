@@ -69,7 +69,7 @@ class Appointment(Family):
         backdrop.require(self.name, social=2)
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
-        asker, offerer = self.strangers[surface]
+        asker, offerer = town.strangers
         meet = town.place(PlaceKind.SOCIAL, surface)
         other = town.place(PlaceKind.SOCIAL, surface, offset=1)
         me, day = town.resident, town.day
@@ -144,7 +144,7 @@ class JointPart(Family):
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
         job = town.work.job(self.name, surface)
-        partner, offerer = self.strangers[surface]
+        partner, offerer = town.strangers
         place, social = town.place(PlaceKind.WORK, surface), town.place(PlaceKind.SOCIAL, surface)
         me, day = town.resident, town.day
         morning = town.opening(place, day)

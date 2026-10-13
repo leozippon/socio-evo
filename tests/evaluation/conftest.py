@@ -235,7 +235,7 @@ def play(run, banks, work_file, tmp_path) -> Callable:
         probe, history = FAMILIES[family], History(run.agent_dir("Mei"))
         setting = stage.environment.setting
         with frozen(history, history.head(), resident.client, CognitionConfig(), setting) as agent:
-            cast = probe.strangers[surface]
+            cast = probe.cast(surface, stage.state.cursors)
             place = Town(stage, agent, cast, work, directory, f"{family}:{level}")
             return await probe.play(place, level, surface, Judge(judge or judge_client(*markers)))
 

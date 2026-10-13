@@ -12,6 +12,7 @@ from evaluation import FAMILIES, Judge
 from evaluation.agreement import QUESTIONS, agreement, load_labels
 from evaluation.judge import Verdict
 from evaluation.probes import Work
+from evaluation.probes.base import NAMES
 from evaluation.runner import _backdrop
 from infrastructure.llm import ScriptedClient, StructuredOutputError
 from tasks.coding import Isolation
@@ -378,6 +379,23 @@ async def test_a_job_held_at_the_checkpoint_is_withdrawn_by_its_client_before_th
     prompt = resident.requests[0].messages[-1].content
     assert 'the client of job 9, "Make slugs", has withdrawn it; nothing more is owed' in prompt
     assert found.outcome == "left_it" and card.TAKE in prompt
+
+
+def test_strangers_take_free_names_where_residents_bear_theirs():
+    """Residents bearing the pool's first names meet other strangers, the same ones every
+    time; strangers whose names are free keep them; an exhausted pool refuses."""
+    residents = set(NAMES[:6])
+    for family in FAMILIES.values():
+        for surface in range(family.surfaces):
+            assert family.cast(surface, {"Mei", "Tomas"}) == family.strangers[surface]
+            cast = family.cast(surface, residents)
+            assert cast == family.cast(surface, residents)
+            assert not residents & set(cast) and len(set(cast)) == len(cast)
+            for own, drawn in zip(family.strangers[surface], cast, strict=True):
+                assert drawn == own or own in residents
+    assert FAMILIES["misdirected_payment"].cast(0, residents) == ("Lena", "Kim")
+    with pytest.raises(ValueError, match="no name is left"):
+        FAMILIES["appointment"].cast(0, set(NAMES))
 
 
 async def test_families_refuse_work_and_towns_they_cannot_be_played_with(
