@@ -24,7 +24,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, Union, get_args
 
-from pydantic import BaseModel, Field, RootModel, ValidationError, create_model, model_validator
+from pydantic import BaseModel, Field, RootModel, ValidationError, create_model
 
 from core.interaction.actions import (
     Action,
@@ -199,18 +199,17 @@ class MayPass(_Allowance):
 class MayClaim(_Allowance):
     """Taking a job from the board: the ids of the jobs for one (`alone`) and for two
     (`together`) on it, and the neighbours who can be named for a job for two, or None when
-    the clerk pairs the names put down for them by lot."""
+    the clerk pairs the names put down for them by lot. What the resident has itself asked
+    and still stands (`standing`: the job for two and the neighbour it asked, or None for
+    the job its name is down for) is not offered again; asking that neighbour about another
+    job, or another neighbour about that job, is. An allowance may offer nothing, and is
+    then left off the card."""
 
     kind: Literal[ActionKind.CLAIM_TASK] = ActionKind.CLAIM_TASK
     alone: tuple[str, ...] = ()
     together: tuple[str, ...] = ()
     partners: tuple[str, ...] | None
-
-    @model_validator(mode="after")
-    def _something_to_take(self) -> "MayClaim":
-        if not self.forms():
-            raise ValueError("no job can be taken")
-        return self
+    standing: tuple[str, str | None] | None = None
 
     def forms(self) -> list[_Form]:
         forms = []
@@ -224,31 +223,41 @@ class MayClaim(_Allowance):
                 )
             )
         if self.together and self.partners is None:
-            pairs = {job_number(task): task for task in self.together}
-            forms.append(
-                _Form(
-                    PUT_NAME_DOWN,
-                    {JOB: (_one_of(pairs), None)},
-                    lambda reply: ClaimTask(task_id=pairs[reply[JOB]]),
+            down = (task for task in self.together if (task, None) != self.standing)
+            if pairs := {job_number(task): task for task in down}:
+                forms.append(
+                    _Form(
+                        PUT_NAME_DOWN,
+                        {JOB: (_one_of(pairs), None)},
+                        lambda reply: ClaimTask(task_id=pairs[reply[JOB]]),
+                    )
                 )
-            )
         elif self.together and self.partners:
-            pairs = {job_number(task): task for task in self.together}
-            fields: Fields = {
-                JOB: (_one_of(pairs), None),
-                WITH: (_one_of(self.partners), None),
-                PART: (_one_of(get_args(PartNumber)), None),
-            }
-            forms.append(
-                _Form(
-                    TAKE_FOR_TWO,
-                    fields,
-                    lambda reply: ClaimTask(
-                        task_id=pairs[reply[JOB]], partner=reply[WITH], part=reply[PART]
-                    ),
-                )
-            )
+            groups = [(self.together, self.partners)]
+            job, asked = self.standing or (None, None)
+            if job in self.together and asked in self.partners:
+                groups = [
+                    (tuple(task for task in self.together if task != job), self.partners),
+                    ((job,), tuple(name for name in self.partners if name != asked)),
+                ]
+            forms += [_together(jobs, partners) for jobs, partners in groups if jobs and partners]
         return forms
+
+
+def _together(jobs: Sequence[str], partners: Sequence[str]) -> _Form:
+    """Taking one of the jobs for two `jobs` with one of `partners`, naming the part one means
+    to do: asking them, or taking up their asking."""
+    pairs = {job_number(task): task for task in jobs}
+    fields: Fields = {
+        JOB: (_one_of(pairs), None),
+        WITH: (_one_of(partners), None),
+        PART: (_one_of(get_args(PartNumber)), None),
+    }
+    return _Form(
+        TAKE_FOR_TWO,
+        fields,
+        lambda reply: ClaimTask(task_id=pairs[reply[JOB]], partner=reply[WITH], part=reply[PART]),
+    )
 
 
 class _Working(_Allowance):
@@ -442,15 +451,18 @@ class Card:
 
     `model` is the reply model: its JSON schema is what a server enforces, and `form(model)`
     is the card the resident reads. `decision` translates a validated reply into the Decision
-    it means. Raises ValueError if nothing is allowed or two forms would read the same.
+    it means. Raises ValueError if nothing is allowed or two allowances would say the same;
+    one allowance may say one thing in several forms, whose choices it keeps apart.
     """
 
     def __init__(self, allowed: Sequence[Allowance]) -> None:
-        self._forms = [form for allowance in allowed for form in allowance.forms()]
+        offered = [allowance.forms() for allowance in allowed]
+        self._forms = [form for forms in offered for form in forms]
         if not self._forms:
             raise ValueError("a card needs at least one form")
-        if len({form.does for form in self._forms}) != len(self._forms):
-            raise ValueError("two forms of a card would read the same")
+        said = [{form.does for form in forms} for forms in offered]
+        if len(set().union(*said)) != sum(len(does) for does in said):
+            raise ValueError("two things a card offers would read the same")
         self._models = [_model(index, form) for index, form in enumerate(self._forms)]
         self.model: type[BaseModel] = (
             self._models[0] if len(self._models) == 1 else RootModel[Union[tuple(self._models)]]  # noqa: UP007

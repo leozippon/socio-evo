@@ -173,6 +173,37 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
     )
 
 
+def test_the_card_does_not_offer_again_what_the_resident_asked_and_still_stands():
+    """The job and the neighbour of a standing asking are not offered together, each still
+    with the others; nor the job a name is down for; and an allowance left with nothing to
+    offer offers no form."""
+    asking = MayClaim(
+        together=("task-28", "task-31"), partners=("Kofi", "Aisha"), standing=("task-28", "Kofi")
+    )
+    card = Card([asking])
+    assert form(card.model).splitlines()[1:] == [
+        '{"thought": "…", "do": "take a job for two", "job": 31, '
+        '"with": one of "Aisha", "Kofi", "part": one of 1, 2}',
+        '{"thought": "…", "do": "take a job for two", "job": 28, "with": "Aisha", '
+        '"part": one of 1, 2}',
+    ]
+
+    def asked(job: int, partner: str) -> ClaimTask:
+        answer = {"thought": "", "do": "take a job for two", "job": job, "with": partner}
+        return card.decision(card.model.model_validate({**answer, "part": 1})).action
+
+    with pytest.raises(ValidationError):
+        asked(28, "Kofi")
+    assert asked(28, "Aisha") == ClaimTask(task_id="task-28", partner="Aisha", part=1)
+    assert asked(31, "Kofi") == ClaimTask(task_id="task-31", partner="Kofi", part=1)
+    by_lot = MayClaim(together=("task-28", "task-31"), partners=None, standing=("task-28", None))
+    assert form(Card([by_lot]).model).splitlines()[1:] == [
+        '{"thought": "…", "do": "put your name down for a job for two", "job": 31}'
+    ]
+    alone = MayClaim(together=("task-28",), partners=("Kofi",), standing=("task-28", "Kofi"))
+    assert alone.forms() == []
+
+
 @pytest.mark.parametrize(
     "answer",
     [
@@ -216,8 +247,8 @@ def test_a_card_needs_something_to_offer():
         Card([])
     with pytest.raises(ValueError):
         Card([MayPass(), MayPass()])
-    with pytest.raises(ValidationError):
-        MayClaim(alone=(), together=(), partners=None)
+    with pytest.raises(ValueError):
+        Card([MayClaim(alone=(), together=(), partners=None)])
     with pytest.raises(ValidationError):
         MaySpeak(to=())
 

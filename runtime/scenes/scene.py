@@ -12,10 +12,7 @@ at a time in an order drawn at random. The agents who asked for the same job at 
 wherever they are, are told that order, and after every such moment the board pairs by lot
 the names put down for jobs for two. So which request on the shared board succeeds is decided
 by the draw alone, never by which place or agent is listed first; model latency never changes
-what happens; and with deterministic replies a run is exactly reproducible. One who reaches
-for the job its standing asking names while the neighbour it asked takes the asking up is not
-drawn against that neighbour: the two take the job together by the take-up
-(`Environment.together`).
+what happens; and with deterministic replies a run is exactly reproducible.
 
 An agent whose reply could not be obtained in the bounded attempts either lapses, if the
 driver is asked to let it (a run does): the moment passes without it doing anything, recorded
@@ -194,12 +191,9 @@ async def play(
             )
             turn.append((scene, agent, decision))
         rng.shuffle(turn)
-        claims = {agent: d.action for _, agent, d in turn if isinstance(d.action, ClaimTask)}
-        joined = env.together(claims)  # taken together by the take-up of their askings
-        _announce_draws(env, [(s, agent, d) for s, agent, d in turn if agent not in joined], time)
+        _announce_draws(env, turn, time)
         for scene, agent, decision in turn:
-            if agent not in joined:
-                await scene.carry_out(agent, decision, time)
+            await scene.carry_out(agent, decision, time)
         env.pair_applicants(time, rng)
 
         for scene in due:

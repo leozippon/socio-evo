@@ -9,6 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
+from pydantic import ValidationError
 
 from analysis import meetings as meetings_of
 from analysis import read_run
@@ -958,6 +959,44 @@ async def test_the_last_moment_of_the_day_neither_shows_nor_offers_a_job_due_tha
     assert "There are no notices" not in board
 
 
+async def test_an_asking_that_stands_is_not_offered_again_and_is_refused_if_made_again(tmp_path):
+    """While Ana's asking of Ben to take a job for two with her stands, her card offers that
+    job with anyone else and Ben with any other job, but not the two together; made anyway,
+    the clerk refuses it as already asked."""
+    env = Environment.create(ENVIRONMENT, AGENTS, Provider(), tmp_path / "log")
+    start = time_at(1, "09:00")
+    parts = [
+        Part(
+            title=f"Routine {n}",
+            specification="Write it.",
+            reward=20,
+            deadline_days=2,
+            reference=f"r-{n}",
+        )
+        for n in (1, 2)
+    ]
+    for _ in range(2):
+        env.post_task(start, Trade.PROGRAMMING, parts, Client.CHECKING)
+    asking = ClaimTask(task_id="task-1", partner="Ben", part=1)
+    await env.execute("Ana", asking, time=start, scene="", witnesses=[])
+    here = ["Ana", "Ben", "Cai"]
+    work = WorkSession(
+        env, "work", "office", here, start=start, until=time_at(1, "13:00"), rounds=3, closes=True
+    )
+    offered = card.Card(work.allowed("Ana"))
+
+    def asked(job: int, partner: str) -> ClaimTask:
+        answer = {"thought": "", "do": card.TAKE_FOR_TWO, "job": job, "with": partner, "part": 1}
+        return offered.decision(offered.model.model_validate(answer)).action
+
+    with pytest.raises(ValidationError):
+        asked(1, "Ben")
+    assert (asked(1, "Cai").partner, asked(2, "Ben").task_id) == ("Cai", "task-2")
+    [refused] = await env.execute("Ana", asking, time=start + 80, scene="", witnesses=here)
+    assert refused.kind is EventKind.ACTION_REJECTED
+    assert refused.text == "You have already asked Ben to take job 1 with you."
+
+
 async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_nothing_more(
     tmp_path,
 ):
@@ -1097,59 +1136,6 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
     assert "Whatever you do now will take you to 10:00, when this part of the day ends." in (
         replies.requests[-1].messages[-1].content
     )
-
-
-async def test_one_who_asked_and_the_one_it_asked_reaching_at_once_take_the_job_together(
-    tmp_path,
-):
-    """Ana asks Ben to take a job for two; at the next moment she reaches for its notice again
-    while he takes her asking up. Whatever order is drawn, she is not drawn against him and
-    nothing is refused: the two take it together. Had he asked Cai instead, she and he would
-    have reached for the notice apart, drawn and told as ever."""
-    environment = EnvironmentConfig.model_validate(
-        {
-            **ENVIRONMENT.model_dump(),
-            "conditions": {
-                **ENVIRONMENT.conditions.model_dump(),
-                "one_part_tasks": 0,
-                "two_part_tasks": 1,
-            },
-        }
-    )
-    start = time_at(1, "09:00")
-    reach = {"do": card.TAKE_FOR_TWO, "job": 1, "with": "Ben", "part": 1}
-    for seed, partner in [*((seed, "Ana") for seed in range(6)), (0, "Cai")]:
-        root = tmp_path / f"{seed}-{partner}"
-        root.mkdir()
-        env = Environment.create(environment, AGENTS, CodingTaskProvider(BANK), root / "log")
-        env.post(start, 0)
-        for agent in AGENTS:
-            env.move(agent, "office", time=start)
-        take_up = {"do": card.TAKE_FOR_TWO, "job": 1, "with": partner, "part": 2}
-        replies = Replies(
-            {"Ana": [reach, reach], "Ben": [QUIETLY, take_up], "Cai": [QUIETLY, QUIETLY]}
-        )
-        work = WorkSession(
-            env,
-            "work",
-            "office",
-            list(AGENTS),
-            start=start,
-            until=start + 60,
-            rounds=2,
-            closes=False,
-        )
-        await play(env, scripted(root, replies), [work], random.Random(seed), lambda agent: "")
-        log = read_events(root / "log")
-        told = [e.kind for e in log if e.kind in (EventKind.DRAW, EventKind.ACTION_REJECTED)]
-        taken = [e.payload for e in log if e.kind is EventKind.TASK_CLAIMED]
-        if partner == "Ana":
-            assert told == [] and taken == [
-                {"task_id": "task-1", "workers": ["Ana", "Ben"], "parts": {"Ana": 1, "Ben": 2}}
-                | {"due_day": taken[0]["due_day"]}
-            ]
-        else:
-            assert told == [EventKind.DRAW, EventKind.ACTION_REJECTED] and taken == []
 
 
 async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_morning(tmp_path):

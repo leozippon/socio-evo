@@ -69,11 +69,12 @@ class WorkSession(Scene):
         or its firm's job sheet), if any is there, a job for two with a neighbour, or with one
         of the firm's people on its sheet, but in the last moment of the day at which work can
         be handed in none to be done by the end of that day (`situations.last_moment`), as the
-        board says; someone working on one may hand in the parts not yet in, and try them
-        where the job's trade gives something to try against. A foreman at its firm may take
-        on those who asked for its place while it has one, and dismiss its staff; anyone may
-        ask for a place or give notice (`careers`). Anyone may talk to and hand money to the
-        others here, go home for the rest of this part of the day, or carry on quietly."""
+        board says, and never again the asking or name put down of its own that stands;
+        someone working on one may hand in the parts not yet in, and try them where the job's
+        trade gives something to try against. A foreman at its firm may take on those who
+        asked for its place while it has one, and dismiss its staff; anyone may ask for a place
+        or give notice (`careers`). Anyone may talk to and hand money to the others here, go
+        home for the rest of this part of the day, or carry on quietly."""
         env, allowed, firms = self.env, [], self.env.firms
         claim = env.board.claim_of(agent)
         firm = self.place if self.place in firms.establishments else None
@@ -85,8 +86,11 @@ class WorkSession(Scene):
             people = firms.people(firm) if firm is not None else env.agents
             neighbours = tuple(other for other in people if other != agent)
             partners = neighbours if env.conditions.partner_choice else None
-            if alone or (together and partners != ()):
-                allowed.append(MayClaim(alone=alone, together=together, partners=partners))
+            offer = env.board.offers.get(agent)
+            standing = None if offer is None else (offer.task_id, offer.partner)
+            claims = MayClaim(alone=alone, together=together, partners=partners, standing=standing)
+            if claims.forms():
+                allowed.append(claims)
         else:
             task = claim.task
             parts = tuple(n for n in range(1, len(task.parts) + 1) if claim.delivery(n) is None)

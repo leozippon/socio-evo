@@ -662,27 +662,6 @@ class Environment:
         ]
         return events + self._offers_ended(open_before, time=time)
 
-    def together(self, claims: Mapping[str, ClaimTask]) -> set[str]:
-        """Of the agents reaching for notices at one moment with `claims`, those who reach for
-        the job their standing asking names, naming the neighbour they asked, while that
-        neighbour takes the asking up with its own claim: the two take the job together by the
-        take-up, so the asker's own claim neither competes with it nor is carried out."""
-        joined = set()
-        for agent, action in claims.items():
-            asking = self.board.offers.get(agent)
-            reply = None if asking is None else claims.get(asking.partner)
-            if reply is None or action.partner is None:
-                continue
-            job, asked = asking.task_id, asking.partner
-            named = None if reply.partner is None else self._named(reply.partner) or reply.partner
-            if (
-                (job_id(action.task_id), self._named(action.partner)) == (job, asked)
-                and job_id(reply.task_id) == job
-                and self.board.taken_up(asked, job, named) == asking
-            ):
-                joined.add(agent)
-        return joined
-
     def withdraw(self, task_id: str, *, time: int) -> list[Event]:
         """The client of `task_id` withdraws it: a task taken leaves its workers with nothing
         more paid or owed on it, each told so privately by the clerk; a task on the board
