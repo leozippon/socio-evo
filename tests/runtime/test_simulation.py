@@ -1042,6 +1042,37 @@ async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_no
     assert [r.metadata["agent"] for r in replies.requests].count("Ana") == 2
 
 
+def test_company_is_told_once_no_work_place_opens_again_that_day(tmp_path):
+    """A moment in company after the last work place has closed for the day says that the
+    work places, by name, are closed until tomorrow; not while one is open or is still to
+    open that day, nor where a work place keeps no hours and is open until the day ends."""
+    later = place("library", "work", hours=("14:00-18:00",))
+    always = place("yard", "work")
+
+    def told(at: str, *places: Place) -> str:
+        config = ENVIRONMENT.model_copy(update={"places": (*ENVIRONMENT.places, *places)})
+        env = Environment.create(config, AGENTS, Provider(), tmp_path / f"{at}-{len(places)}")
+        talk = Conversation(
+            env,
+            "talk",
+            "cafe",
+            ["Ana", "Ben"],
+            start=time_at(1, at),
+            step=5,
+            max_turns=4,
+            until=time_at(1, "22:00"),
+            rng=random.Random(0),
+        )
+        return talk.situation("Ana")
+
+    assert told("13:30").endswith(
+        "the day costs you 5 crowns. The office is closed until tomorrow."
+    )
+    assert "The office and the library are closed until tomorrow." in told("18:30", later)
+    for moment in (told("12:00"), told("13:30", later), told("21:00", later, always)):
+        assert "closed until tomorrow" not in moment
+
+
 async def test_a_conversation_ends_when_its_place_closes_and_the_day_ends_with_closing(tmp_path):
     """The cafe closes at 18:12, within the evening's conversation; the park keeps no hours,
     so it is open until the day ends, when everyone still out goes home: from the park as it

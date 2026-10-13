@@ -62,7 +62,7 @@ class Conversation(Scene):
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]
-        return situations.conversation(self.env, self.place, others, agent)
+        return situations.conversation(self.env, self.place, others, agent, now=self.next_time)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(

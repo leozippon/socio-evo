@@ -14,7 +14,8 @@ its days, and how work and the ledger go. A moment is short: where you are, who 
 long until closing and, at work, until the next moment (and, at the last moment a job due
 that day can be handed in, that it is the last and what follows if it is not), your purse and
 job, and the board, which says when new notices go up if it is empty and, in that last moment,
-leaves off the jobs that could not be handed in that day; at night, whom you spent the day
+leaves off the jobs that could not be handed in that day; in company, once no work place is
+open again that day, that they are closed until tomorrow; at night, whom you spent the day
 with.
 Money is told in the town's currency, and the words of others are quoted.
 """
@@ -81,7 +82,9 @@ UNPAID = {1: "it", 2: "either part"}
 NO_NOTICES = "{board} New notices go up at {clock}."
 NO_NOTICES_TOMORROW = "{board} New notices go up tomorrow at {clock}."
 """An empty board, and when the next notices go up."""
-CONVERSATION = "You are at {place} with {people}. {purse}"
+CONVERSATION = "You are at {place} with {people}. {purse}{closed}"
+CLOSED = {1: " {places} is closed until tomorrow.", 2: " {places} are closed until tomorrow."}
+"""The work places, one or more, when none of them is open again that day."""
 
 REVIEW = (
     "You are home for the night. Today you spent time with {people}. Before you sleep, the "
@@ -237,9 +240,20 @@ def last_moment(env: Environment, following: int, until: int) -> bool:
     return following >= until and not env.world.open_after(PlaceKind.WORK, clock_of(until))
 
 
-def conversation(env: Environment, place: str, others: Sequence[str], agent: str) -> str:
+def conversation(
+    env: Environment, place: str, others: Sequence[str], agent: str, *, now: int
+) -> str:
+    """A moment in company at `now`: where, with whom, `agent`'s purse and, if no work place
+    is open after `now` that day, that the work places are closed until tomorrow."""
+    names = [p.name for p in env.world.places.values() if p.kind is PlaceKind.WORK]
+    closed = ""
+    if names and not env.world.open_after(PlaceKind.WORK, clock_of(now)):
+        closed = CLOSED[min(len(names), 2)].format(places=capital(listed(names)))
     return CONVERSATION.format(
-        place=env.world.places[place].name, people=listed(others), purse=env.purse_view(agent)
+        place=env.world.places[place].name,
+        people=listed(others),
+        purse=env.purse_view(agent),
+        closed=closed,
     )
 
 
