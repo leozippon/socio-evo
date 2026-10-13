@@ -74,7 +74,15 @@ class WorkSession(Scene):
         else:
             task = claim.task
             parts = tuple(n for n in range(1, len(task.parts) + 1) if claim.delivery(n) is None)
-            working = {"task_id": task.id, "parts": parts, "delivery": DELIVERY[task.trade]}
+            drafts = tuple(
+                n for n in parts if (trial := claim.last_trial(agent, n)) and trial.solution
+            )
+            working = {
+                "task_id": task.id,
+                "parts": parts,
+                "delivery": DELIVERY[task.trade],
+                "drafts": drafts,
+            }
             if task.trade in EXAMPLES:
                 allowed.append(MayCheck(**working))
             allowed.append(MaySubmit(**working))

@@ -92,6 +92,10 @@ LEFT = "you left for home, for the rest of that part of the day."
 CARRIED_ON = "you carried on quietly."
 TOOK = "you brought the notice of {job} to the clerk."
 TOOK_WITH = "you brought the notice of {job} to the clerk, to take it with {partner}."
+TOOK_WITH_PART = (
+    "you brought the notice of {job} to the clerk, to take it with {partner}, doing part "
+    "{part} yourself."
+)
 TRIED = "at your desk you tried your code for {part} against the client's examples."
 HANDED_IN = (
     "at the clerk's desk you handed in your code for {part} as {declared}, telling the "
@@ -706,7 +710,9 @@ def _took(action: Mapping[str, Any]) -> str:
     job = _job(action["task_id"])
     if action["partner"] is None:
         return TOOK.format(job=job)
-    return TOOK_WITH.format(job=job, partner=action["partner"])
+    if (part := action.get("part")) is None:
+        return TOOK_WITH.format(job=job, partner=action["partner"])
+    return TOOK_WITH_PART.format(job=job, partner=action["partner"], part=part)
 
 
 def _marked(action: Mapping[str, Any]) -> str:

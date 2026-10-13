@@ -76,6 +76,10 @@ TRY = TRIES.format(delivery=CODE)
 """Trying one's code, the programming trade's form of TRIES."""
 AS = "as"
 TELLING = "telling the client"
+DRAFT = "the draft on your desk"
+"""What a resident writes as its code, query or answer to hand in, or try, the draft on its
+desk as it is, instead of writing it out again."""
+OR_DRAFT = '(or "{draft}", to use it as it is)'
 NOTE = "note"
 MARKS = "marks"
 REPLY_GIVEN = "answer"
@@ -220,11 +224,18 @@ class MayClaim(_Allowance):
             )
         elif self.together and self.partners:
             pairs = {job_number(task): task for task in self.together}
+            fields: Fields = {
+                JOB: (_one_of(pairs), None),
+                WITH: (_one_of(self.partners), None),
+                PART: (_one_of(get_args(PartNumber)), None),
+            }
             forms.append(
                 _Form(
                     TAKE_FOR_TWO,
-                    {JOB: (_one_of(pairs), None), WITH: (_one_of(self.partners), None)},
-                    lambda reply: ClaimTask(task_id=pairs[reply[JOB]], partner=reply[WITH]),
+                    fields,
+                    lambda reply: ClaimTask(
+                        task_id=pairs[reply[JOB]], partner=reply[WITH], part=reply[PART]
+                    ),
                 )
             )
         return forms
@@ -234,14 +245,19 @@ class _Working(_Allowance):
     """Work on the job `task_id` the resident holds, whose `parts` are not yet in; the part is
     asked for only when it is not simply the job's one part. `delivery` is what a worker of
     the job's trade hands in, in the town's words (`code`, `query`, `answer`), which names it
-    on the card."""
+    on the card; where the resident has a draft on its desk for any of the parts
+    (`drafts`), the card says it may name the draft instead of writing it out again."""
 
     task_id: str
     parts: tuple[PartNumber, ...] = Field(min_length=1)
     delivery: str = CODE
+    drafts: tuple[PartNumber, ...] = ()
 
     def _part(self) -> Fields:
         return {} if self.parts == (1,) else {PART: (_one_of(self.parts), None)}
+
+    def _delivery(self) -> Fields:
+        return {self.delivery: (str, OR_DRAFT.format(draft=DRAFT) if self.drafts else None)}
 
 
 class MayCheck(_Working):
@@ -257,7 +273,7 @@ class MayCheck(_Working):
             )
 
         does = TRIES.format(delivery=self.delivery)
-        return [_Form(does, {**self._part(), self.delivery: (str, None)}, check)]
+        return [_Form(does, {**self._part(), **self._delivery()}, check)]
 
 
 class MaySubmit(_Working):
@@ -269,7 +285,7 @@ class MaySubmit(_Working):
         declared = {word: declaration for declaration, word in DECLARED.items()}
         fields: Fields = {
             **self._part(),
-            self.delivery: (str, None),
+            **self._delivery(),
             AS: (_one_of(declared), None),
             TELLING: (str, None),
         }

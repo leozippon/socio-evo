@@ -62,8 +62,8 @@ ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
     ActionKind.PASS: (MayPass(), {"do": "carry on quietly"}, Pass()),
     ActionKind.CLAIM_TASK: (
         WORK[0],
-        {"do": "take a job for two", "job": 31, "with": "Aisha"},
-        ClaimTask(task_id="task-31", partner="Aisha"),
+        {"do": "take a job for two", "job": 31, "with": "Aisha", "part": 2},
+        ClaimTask(task_id="task-31", partner="Aisha", part=2),
     ),
     ActionKind.CHECK_WORK: (
         MayCheck(task_id="task-31", parts=(2,)),
@@ -122,7 +122,7 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
             "Answer in one of these forms:",
             '{"thought": "…", "do": "take a job", "job": one of 25, 28}',
             '{"thought": "…", "do": "take a job for two", "job": 31, '
-            '"with": one of "Aisha", "Tomas"}',
+            '"with": one of "Aisha", "Tomas", "part": one of 1, 2}',
             '{"thought": "…", "do": "say", "to": one of "Aisha", "Tomas", or null for everyone, '
             '"words": "…"}',
             '{"thought": "…", "do": "say privately", "to": one of "Aisha", "Tomas", "words": "…"}',
@@ -153,7 +153,8 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
     "answer",
     [
         {"do": "take a job", "job": 31},
-        {"do": "take a job for two", "job": 31, "with": "Jonas"},
+        {"do": "take a job for two", "job": 31, "with": "Jonas", "part": 1},
+        {"do": "take a job for two", "job": 31, "with": "Aisha"},
         {"do": "say privately", "to": None, "words": "Hm."},
         {"do": "hand over money", "to": "Tomas", "dollars": 0, "note": ""},
         {"do": "hand over money", "to": "Tomas", "crowns": 5, "note": ""},

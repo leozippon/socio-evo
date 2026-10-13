@@ -114,12 +114,15 @@ class Listing(StrictModel):
 
 
 class Offer(StrictModel):
-    """`agent`'s open bid for the two-person task `task_id`: a proposal to `partner`, or,
-    with no partner, an application for the board to pair."""
+    """`agent`'s open bid for the two-person task `task_id`: a proposal to `partner`, naming
+    the `part` the agent means to do (None where none was named), or, with no partner, an
+    application for the board to pair. An offer stands until the task is taken or leaves the
+    board, or its maker takes a task or makes another offer."""
 
     agent: str
     task_id: str
     partner: str | None
+    part: PartNumber | None = None
 
 
 def digest(solution: str) -> str:
@@ -162,12 +165,14 @@ class Defect(Delivery):
 
 
 class Claim(StrictModel):
-    """A task taken at `time` by its workers, as many as it has parts, with the parts accepted
-    so far and every trial its workers saw."""
+    """A task taken at `time` by its workers, as many as it has parts, with the part each
+    said it would do where a proposal named one (`parts`, by worker; either may still deliver
+    either), the parts accepted so far and every trial its workers saw."""
 
     task: Task
     workers: tuple[str, ...]
     time: int
+    parts: dict[str, PartNumber] = {}
     deliveries: tuple[Delivery, ...] = ()
     trials: tuple[Trial, ...] = ()
 
@@ -175,6 +180,10 @@ class Claim(StrictModel):
     def _one_worker_per_part(self) -> "Claim":
         if len(set(self.workers)) != len(self.workers) or len(self.workers) != len(self.task.parts):
             raise ValueError(f"{self.task.id} needs {len(self.task.parts)} distinct workers")
+        if self.parts and (
+            set(self.parts) != set(self.workers) or len(set(self.parts.values())) != len(self.parts)
+        ):
+            raise ValueError(f"{self.task.id}: {self.parts} is not a part for each worker")
         return self
 
     @property
@@ -240,17 +249,25 @@ class Board:
         return next((claim for claim in self.claims.values() if agent in claim.workers), None)
 
     def take(
-        self, agent: str, reference: str, partner: str | None, *, partner_choice: bool, time: int
+        self,
+        agent: str,
+        reference: str,
+        partner: str | None,
+        part: int | None = None,
+        *,
+        partner_choice: bool,
+        time: int,
     ) -> Claim | Offer:
         """`agent`'s request for the open job `reference` names (see `job_id`), naming
-        `partner` or no one; returns the claim it makes or the offer it opens, which replaces
-        `agent`'s own previous offer.
+        `partner` or no one, and the `part` it means to do if it asks; returns the claim it
+        makes or the offer it opens, which replaces `agent`'s own previous offer.
 
         A one-part task is taken alone. With `partner_choice`, a two-part task is taken by
         proposing it to `partner`, and taken up by claiming it naming the proposer, or no one
-        when exactly one proposal of it to `agent` is open. Without, claiming one is an
-        application for `pair`. Raises Rejected if `agent` works on a task, the task is not
-        open, or the claim does not fit these rules or repeats `agent`'s open offer.
+        when exactly one proposal of it to `agent` is open; a proposal that named a part gives
+        the taker the other. Without, claiming one is an application for `pair`. Raises
+        Rejected if `agent` works on a task, the task is not open, or the claim does not fit
+        these rules or repeats `agent`'s open offer.
         """
         if held := self.claim_of(agent):
             raise Rejected(f"You are already working on {job_name(held.task.id)}.")
@@ -276,26 +293,28 @@ class Board:
                     "your name down without naming anyone."
                 )
             return self._open(Offer(agent=agent, task_id=task_id, partner=None))
-        proposers = [
-            offer.agent
+        proposals = {
+            offer.agent: offer
             for offer in self.offers.values()
             if (offer.task_id, offer.partner) == (task_id, agent)
-        ]
+        }
         if partner is None:
-            if not proposers:
+            if not proposals:
                 raise Rejected(
                     f"{job.capitalize()} is a job for two: ask someone by name to take it with "
                     "you, or take it with someone who has asked you."
                 )
-            if len(proposers) > 1:
+            if len(proposals) > 1:
                 raise Rejected(
-                    f"{listed(proposers)} have each asked you to take {job} with them; name the "
-                    "one you take it with."
+                    f"{listed(list(proposals))} have each asked you to take {job} with them; "
+                    "name the one you take it with."
                 )
-            partner = proposers[0]
-        if partner in proposers:
-            return self._form(task, (partner, agent), time)
-        return self._open(Offer(agent=agent, task_id=task_id, partner=partner))
+            [partner] = proposals
+        if partner in proposals:
+            named = proposals[partner].part
+            parts = {} if named is None else {partner: named, agent: 3 - named}
+            return self._form(task, (partner, agent), time, parts)
+        return self._open(Offer(agent=agent, task_id=task_id, partner=partner, part=part))
 
     def pair(self, rng: random.Random, time: int) -> list[Claim]:
         """Pair the open applications at random with `rng`: the applicants, in the order they
@@ -370,10 +389,6 @@ class Board:
             self._drop_offers(task.id)
         return stale
 
-    def lapse_offers(self) -> None:
-        """End every open proposal and application."""
-        self.offers.clear()
-
     def withdraw(self, task_id: str) -> Claim | None:
         """Remove the task `task_id`, taken or on the board, with the offers for it; returns
         its claim if it was taken. Raises ValueError if it is neither."""
@@ -401,12 +416,14 @@ class Board:
         self.offers[offer.agent] = offer
         return offer
 
-    def _form(self, task: Task, workers: tuple[str, ...], time: int) -> Claim:
+    def _form(
+        self, task: Task, workers: tuple[str, ...], time: int, parts: dict[str, int] | None = None
+    ) -> Claim:
         del self.listings[task.id]
         for worker in workers:
             self.offers.pop(worker, None)
         self._drop_offers(task.id)
-        claim = Claim(task=task, workers=workers, time=time)
+        claim = Claim(task=task, workers=workers, time=time, parts=parts or {})
         self.claims[task.id] = claim
         return claim
 

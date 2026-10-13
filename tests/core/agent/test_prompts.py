@@ -285,6 +285,11 @@ def test_a_resident_is_told_everything_it_did_as_something_it_did():
     )
     assert prompts.recollection(gift, TOWN.currency).startswith("you handed Ben $20, with a note")
 
+    asking = {"kind": "claim_task", "task_id": "task-27", "partner": "Ben", "part": 2}
+    asked = Decision.model_validate({"thought": "", "action": asking})
+    assert prompts.recollection(asked, TOWN.currency).startswith(
+        "you brought the notice of job 27 to the clerk, to take it with Ben, doing part 2 yourself."
+    )
     unknown = {"kind": "lend_money", "to": "Ben", "amount": 5, "until": "Friday", "openly": True}
     told = prompts._recalled(
         {**unknown, "note": None, "secret": False}, "He is short.", CROWNS.currency

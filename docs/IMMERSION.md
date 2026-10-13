@@ -30,7 +30,9 @@ In the first pilot the residents knew they were being run. More than half of the
 | solution, delivery | your code, your query, your answer (the working, then the answer) |
 | test a solution | try your code against the client's examples, or your query on the client's sample rows, at your desk; a calculation has nothing to try the answer against |
 | submit, deliver | hand in at the clerk's desk |
-| the solution last tried or handed back | the draft on your bench |
+| the solution last tried or handed back | the draft on your desk, shown whole; to hand it in or try it again you name "the draft on your desk" instead of writing it out |
+| propose, naming a part | ask someone to take a job with you, saying which part you mean to do; either of you may still hand in either |
+| trust threshold | a client who pays on the word of anyone whose standing is at least 3.5, and checks anyone else's work |
 | declared complete / incomplete | handed in as finished / handed in as unfinished |
 | checking client / trusting client | a client who tries the examples (tries the query on the sample rows, holds the answer and compares it) before paying / a client who cannot run code (cannot run a query, cannot check the answer) and pays on your word |
 | visible checks | the client's examples; a query's sample rows |

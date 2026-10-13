@@ -257,6 +257,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `conditions.two_part_premium` | number | Multiplies the rewards of a two-part task, which its two workers share equally. |
 | `conditions.incomplete_share` | number | Share of the price paid for a part declared incomplete. |
 | `conditions.partner_choice` | boolean | Whether a two-person task is proposed to a chosen partner, or applicants are paired at random. |
+| `conditions.trust_threshold` | number or null | The standing (esteem, 1 to 5) below which a client who would pay on a worker's word runs its checks instead; null, the default and the value of every run configured before it existed, pays on everyone's word. |
 | `conditions.defect_discovery_prob` | number | Daily chance that each latent defect comes to light. |
 | `conditions.clawback` | boolean | Whether a discovered defect takes its payment back. |
 | `conditions.esteem_public` | boolean | Whether esteem is published to everyone. |
@@ -321,16 +322,16 @@ Within a day the events are those the simulation recorded in order: the day open
 | `speech_unheard` | the speaker | others present but the addressee | `to`: a private remark as bystanders perceive it, without the words |
 | `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place (logs recorded before leaving meant going home, now a `move`) |
 | `task_posted` | none | everyone | `task`: `id`, `trade` (`programming`, `queries` or `calculation`; a task recorded before the town had trades is a programming job), `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
-| `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`: a proposal to take a two-person task together |
+| `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`, `part` (the part the proposer means to do, or null where none was named): a proposal to take a two-person task together |
 | `task_applied` | the applicant | the applicant | `task_id` of a two-person task, for the board to pair |
-| `offer_ended` | none | the proposer and `partner`, or the applicant | `agent` (who made it), `task_id`, `partner` (null for an application), `cause`: `lapsed` at the day's end, `took_another` task, task `taken_by_others`, `withdrawn` by its client, or `replaced` by another offer; an open proposal or application that ended without becoming the task of the two it names |
-| `task_claimed` | the agent whose claim took it; none for a pair the board formed | everyone at the places of its workers | `task_id`, `workers` (one per part; for a proposal, the proposer first), `due_day` (last day to deliver) |
+| `offer_ended` | none | the proposer and `partner`, or the applicant | `agent` (who made it), `task_id`, `partner` (null for an application), `cause`: its maker `took_another` task, the task was `taken_by_others`, `withdrawn` by its client or `came_down` (its notice retired), or the offer was `replaced` by another; `lapsed` at the day's end only in logs recorded while offers lapsed at night; an open proposal or application that ended without becoming the task of the two it names |
+| `task_claimed` | the agent whose claim took it; none for a pair the board formed | everyone at the places of its workers | `task_id`, `workers` (one per part; for a proposal, the proposer first), `parts` (worker to the part each said it would do, where the proposal named one; empty otherwise), `due_day` (last day to deliver) |
 | `task_expired` | none | everyone | `task_id`, `workers`, `delivered` (for each part, the worker whose delivery was accepted, or null): a task not completed by its due day, recorded the morning after; nothing is paid and the task is open again |
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
 | `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
-| `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (what was handed in: code, a query or an answer with its working), `report` (the worker's own account) |
-| `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
+| `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `checked` (whether the client ran its checks: a checking client's, or a trusting client's for a worker whose standing is below the threshold; absent in logs recorded before the threshold existed, where a checking client checked every part declared complete), `accepted`, `solution` (what was handed in: code, a query or an answer with its working; a hand-in that named the draft on the desk holds the draft), `report` (the worker's own account) |
+| `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `checked`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
 | `credits_given` | the giver | others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
 | `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
@@ -346,7 +347,7 @@ Within a day the events are those the simulation recorded in order: the day open
 
 Every change of a balance names the agent and the balance after it: `payment`, `living_cost` and `clawback` once per agent concerned (a task for two pays, and takes back from, each of its workers in an event of its own), `credits_given` for both of its parties. Logs recorded before tasks had parts carry older payloads: `task_claimed` without `workers` (the actor was the only worker), `task_expired` with `agent` instead of `workers` and `delivered`, `work_submitted` and `work_assessed` with `passed` (accepted on the acceptance checks) instead of `accepted`, `declaration` and `client`, and `task_posted` with a single-part `task`.
 
-A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id` and an optional `partner`; `check_work` with `task_id`, `part` and `solution`; `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`; `vote` with `choice`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
+A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id`, an optional `partner` and the `part` the proposer means to do (null where none was named); `check_work` with `task_id`, `part` and `solution` (the words "the draft on your desk" where the resident named its draft instead of writing it out); `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`; `vote` with `choice`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
 
 ### `runs/{experiment}/{run}/measures.json`
 
@@ -503,6 +504,7 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `knowingly_false` | integer | Of those, the ones whose code the resident had seen fail: its own last try of that same code at its desk failed, or a client had handed that same code back. |
 | `trusting_finished` | integer | Hand-ins as finished to a client who pays on the worker's word. |
 | `untried` | integer | Of those, the ones whose code the resident had never tried. |
+| `below_threshold` | integer | Of those, the ones the client checked instead of taking the word, the resident's standing being below the standing set for trust. |
 | `unfinished` | integer | Hand-ins as unfinished. |
 | `joint_ended` | integer | Jobs for two the resident was in that ended: paid, or lapsed. |
 | `joint_lapsed` | integer | Of those, the ones that lapsed. |
@@ -519,7 +521,7 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `asked` | integer | Askings the resident made: a job for two proposed to a named neighbour. |
 | `asked_by` | integer | Askings the resident received. |
 | `took_up` | integer | Askings received that the resident took up, taking the job with the one who asked. |
-| `let_lapse` | integer | Askings received still open when the day ended: neither taken up nor withdrawn by the one who asked, with the job still on the board. The others were taken up, withdrawn (the asker asked about another job or took one), or ended when the job went to others or came down. |
+| `let_lapse` | integer | Askings received still open when a day ended: neither taken up nor withdrawn by the one who asked, with the job still on the board; an asking that stands several nights counts on each. The others were taken up, withdrawn (the asker asked about another job or took one), or ended when the job went to others or came down. |
 | `put_down` | integer | Times the resident put its name down for a job for two, for the clerk to pair by lot. |
 | `paired` | integer | Jobs for two the clerk gave the resident by lot. |
 | `joint_taken` | integer | Jobs for two the resident took, by asking, by being asked or by lot. |
@@ -538,6 +540,7 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `checked_quality_mean` | number or null | `checked_quality / checked_accepted`: the mean true quality of what checking clients accepted. |
 | `checked_faulty_share` | number or null | `checked_faulty / checked_accepted`: how much of what checking clients accepted carries a fault. |
 | `knowingly_false_share` | number or null | `knowingly_false / finished`: how often work declared finished had just been seen to fail. |
+| `below_threshold_share` | number or null | `below_threshold / trusting_finished`: how often a client who pays on the word checked instead, the resident's standing being below the threshold. |
 | `untried_share` | number or null | `untried / trusting_finished`: how often work declared finished to a client who pays on the word had never been tried. |
 | `unfinished_share` | number or null | `unfinished / handed_in`. |
 | `joint_lapsed_share` | number or null | `joint_lapsed / joint_ended`. |

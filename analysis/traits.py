@@ -84,6 +84,10 @@ class TraitDay:
     """Hand-ins as finished to a client who pays on the worker's word."""
     untried: int = 0
     """Of those, the ones whose code the resident had never tried (`tested` null)."""
+    below_threshold: int = 0
+    """Of those, the ones the client checked instead of taking the word, the resident's
+    standing being below the standing set for trust (`work_assessed` `checked` with a client
+    who pays on the word)."""
     unfinished: int = 0
     """Hand-ins as unfinished."""
 
@@ -125,9 +129,11 @@ class TraitDay:
     took_up: int = 0
     """Askings received that the resident took up, taking the job with the one who asked."""
     let_lapse: int = 0
-    """Askings received still open when the day ended: neither taken up nor withdrawn by the
-    one who asked, and the job still on the board. The rest of the askings received were
-    taken up, withdrawn, or ended when the job went to others or came down."""
+    """Askings received still open when a day ended: neither taken up nor withdrawn by the
+    one who asked, and the job still on the board; an asking that stands several nights
+    counts on each (in logs recorded while askings lapsed at night, the night it lapsed).
+    The rest of the askings received were taken up, withdrawn, or ended when the job went to
+    others or came down."""
     put_down: int = 0
     """Times the resident put its name down for a job for two, for the clerk to pair by lot."""
     paired: int = 0
@@ -166,6 +172,7 @@ SHARES: dict[str, tuple[str, str]] = {
     "checked_faulty_share": ("checked_faulty", "checked_accepted"),
     "knowingly_false_share": ("knowingly_false", "finished"),
     "untried_share": ("untried", "trusting_finished"),
+    "below_threshold_share": ("below_threshold", "trusting_finished"),
     "unfinished_share": ("unfinished", "handed_in"),
     "joint_lapsed_share": ("joint_lapsed", "joint_ended"),
     "joint_empty_share": ("joint_empty", "joint_ended"),
@@ -326,12 +333,18 @@ def traits(run: RunData) -> Traits:
                         del offers[agent]
             case EventKind.TASK_RETIRED:
                 offers = {a: offer for a, offer in offers.items() if offer[0] != payload["task_id"]}
+            case EventKind.OFFER_ENDED if (
+                offers.get(maker := payload["agent"], (None,))[0] == (payload["task_id"])
+            ):  # the offer named, not one its maker made after it (told first)
+                _, partner = offers.pop(maker)
+                if payload["cause"] == "lapsed" and partner is not None:
+                    rows[partner, day].let_lapse += 1
+                    pair(day, maker, partner).let_lapse += 1
             case EventKind.DAY_ENDED:
                 for agent, (_, partner) in offers.items():
                     if partner is not None:
                         rows[partner, day].let_lapse += 1
                         pair(day, agent, partner).let_lapse += 1
-                offers = {}
             case EventKind.WORK_SUBMITTED:
                 row, complete = rows[actor, day], payload["declaration"] == "complete"
                 row.handed_in += 1
@@ -352,6 +365,7 @@ def traits(run: RunData) -> Traits:
                 if payload["client"] == "trusting":
                     row.trusting_finished += 1
                     row.untried += payload["tested"] is None
+                    row.below_threshold += payload.get("checked", False)
                 elif payload["accepted"]:
                     row.checked_accepted += 1
                     row.checked_quality += payload["quality"]

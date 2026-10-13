@@ -75,11 +75,13 @@ class Pass(StrictModel):
 
 
 class ClaimTask(StrictModel):
-    """Take a job from the board; for a job for two, name the person you take it with."""
+    """Take a job from the board; for a job for two, name the person you take it with and,
+    when asking them, the part you mean to do (None where no part was named)."""
 
     kind: Literal[ActionKind.CLAIM_TASK] = ActionKind.CLAIM_TASK
     task_id: str
     partner: str | None = None
+    part: PartNumber | None = None
 
 
 class CheckWork(StrictModel):

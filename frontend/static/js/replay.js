@@ -23,7 +23,7 @@ export function initialState(world) {
     open: {}, // task id -> time it (re)appeared on the board
     claims: {}, // task id -> {workers, actor, due_day, time, parts: [{worker, declaration, time} | null]}
     offers: {}, // agent -> its open bid for a job for two: {task_id, partner (null: name put down), time}
-    askings: [], // today's askings, each {seq, time, asker, partner, task_id, fate, at}
+    askings: [], // the askings made today or still open at its start, each {seq, time, day, asker, partner, task_id, fate, at, atDay, nights}
     scenes: {}, // scene id -> {kind, place, participants, present, start}
     said: {}, // agent -> seq of its latest speech
     decided: {}, // agent -> seq of its latest decision
@@ -36,12 +36,17 @@ export function initialState(world) {
  * What became of an asking: `open` while it stands; `taken up` when the two took the job
  * together; `withdrawn` when the one who asked asked about another job, put their name down or
  * took a job; `ended` when the job went to others or came down; `lapsed` when the day ended
- * with it still open (frontend/README.md, traits.json `let_lapse`).
+ * with it still open, in logs recorded while askings lapsed at night. An asking that stands
+ * overnight records each such night in `nights` (frontend/README.md, traits.json `let_lapse`).
  */
 function settle(asking, fate, event) {
   asking.fate = fate;
   asking.at = event.seq;
+  asking.atDay = dayOf(event.time);
 }
+
+/** The fate an `offer_ended` event's cause gives an asking. */
+const FATES = { lapsed: "lapsed", took_another: "withdrawn", replaced: "withdrawn", taken_by_others: "ended", withdrawn: "ended", came_down: "ended" };
 
 /** A new bid replaces its maker's open one; an asking it replaces is withdrawn. */
 function bid(state, event, partner) {
@@ -52,7 +57,7 @@ function bid(state, event, partner) {
     if (asking) settle(asking, "withdrawn", event);
   }
   state.offers[actor] = { task_id: event.payload.task_id, partner, time: event.time };
-  if (partner) state.askings.push({ seq: event.seq, time: event.time, asker: actor, partner, task_id: event.payload.task_id, fate: "open", at: null });
+  if (partner) state.askings.push({ seq: event.seq, time: event.time, day: dayOf(event.time), asker: actor, partner, task_id: event.payload.task_id, fate: "open", at: null, atDay: null, nights: [] });
 }
 
 /** Drop the open bids that `drop(agent, offer)` names, settling their askings with `fate(offer)`. */
@@ -86,13 +91,24 @@ export function apply(state, event) {
     case "day_started":
       state.day = dayOf(event.time);
       state.ended = false;
-      state.askings = [];
+      state.askings = state.askings.filter((asking) => asking.fate === "open");
       break;
     case "day_ended":
-      // Open proposals and applications lapse when the day closes.
-      dropOffers(state, event, () => true, () => "lapsed");
+      // Open askings stand overnight, each night counted; in logs recorded while they lapsed at
+      // night, an `offer_ended` has lapsed them before this.
+      for (const asking of state.askings) if (asking.fate === "open") asking.nights.push(state.day);
       state.ended = true;
       break;
+    case "offer_ended": {
+      const offer = state.offers[p.agent];
+      if (!offer || offer.task_id !== p.task_id) break; // told of an offer its maker replaced after making another (the new one is told first)
+      delete state.offers[p.agent];
+      const asking = state.askings.findLast((found) => found.asker === p.agent && found.fate === "open");
+      if (!asking) break;
+      if (p.cause === "lapsed") asking.nights.push(state.day);
+      settle(asking, FATES[p.cause] ?? "ended", event);
+      break;
+    }
     case "move": {
       state.locations[event.actor] = p.destination;
       // Going home from a scene under way leaves it.

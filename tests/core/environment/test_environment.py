@@ -123,23 +123,6 @@ def make_config(circumstances=None, setting=CROWNS, **conditions) -> Environment
     )
 
 
-@pytest.fixture
-def make_env(tmp_path):
-    made = iter(range(100))
-
-    def make(circumstances=None, setting=CROWNS, **conditions) -> Environment:
-        config = make_config(circumstances, setting, **conditions)
-        path = tmp_path / f"events-{next(made)}.jsonl"
-        return Environment.create(config, AGENTS, Provider(), path)
-
-    return make
-
-
-@pytest.fixture
-def env(make_env) -> Environment:
-    return make_env()
-
-
 def open_day(env: Environment, rng: random.Random, day: int = 1, seed: int = 0) -> list[Event]:
     """Start `day` and post its tasks; with the defaults, task-1 and task-2 have one part and
     task-3 two."""
@@ -244,7 +227,8 @@ async def test_percepts_follow_audience_and_cursor_and_never_carry_truth(env):
     assert only(events, EventKind.WORK_CHECKED).audience == ("Ana",)
     assert only(events, EventKind.WORK_SUBMITTED).audience == ("Ana", "Ben")
     assert only(events, EventKind.CREDITS_GIVEN).audience == ("Ana",)  # the giver knows
-    assert only(events, EventKind.OFFER_ENDED).audience == ("Cai", "Dan")  # lapsed
+    assert EventKind.OFFER_ENDED not in kinds(events)  # Cai's asking of Dan stands overnight
+    assert env.board.offers["Cai"].partner == "Dan"
     for truth in (EventKind.WORK_ASSESSED, EventKind.RATING, EventKind.ESTEEM_UPDATED):
         assert only(events, truth).audience == ()
     texts = [percept.text for percepts in perceived.values() for percept in percepts]
@@ -414,6 +398,7 @@ async def test_each_client_pays_each_declaration_by_its_own_rule(
         "part": 1,
         "client": client,
         "declaration": declaration,
+        "checked": client == "checking" and declaration == "complete",
         "accepted": accepted,
         "passed": solution != "draft",
         "feedback": None,
@@ -542,7 +527,7 @@ async def test_a_proposal_taken_up_forms_a_task_for_two_known_to_those_present(e
         env.perceive(agent)
     [proposed] = await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"))
     assert (proposed.kind, proposed.audience) == (EventKind.TASK_PROPOSED, ("Ana", "Ben"))
-    assert proposed.payload == {"task_id": "task-3", "partner": "Ben"}
+    assert proposed.payload == {"task_id": "task-3", "partner": "Ben", "part": None}
     assert env.perceive("Cai") == () and "task-3" in env.board.listings
     asked = re.compile(
         r'^Ana has asked you to take job 3 \("[^"]+" and "[^"]+"\) together\.$', re.M
@@ -581,15 +566,12 @@ async def test_a_proposal_can_be_ignored_raced_replaced_or_withdrawn(env):
     open_day(env, rng)
     go(env, "office", *AGENTS)
     await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"))
-    assert ended(env.end_day(time_at(1, "22:00"))) == {
-        "Ana": "Your asking of Ben for job 3 lapsed at the end of the day.",
-        "Ben": "Ana's asking of you for job 3 lapsed at the end of the day.",
-    }
-    assert not env.board.offers and "has asked you" not in env.status_view("Ben")
-    [ignored] = await act(env, "Ben", ClaimTask(task_id="task-3"), day=2)
+    assert ended(env.end_day(time_at(1, "22:00"))) == {}  # an asking stands overnight
+    assert env.board.offers["Ana"].partner == "Ben"
+    assert "Ana has asked you to take job 3 (" in env.status_view("Ben")
+    [ignored] = await act(env, "Cai", ClaimTask(task_id="task-3"), day=2)
     assert "Job 3 is a job for two" in ignored.text
 
-    await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"), day=2)
     await act(env, "Cai", ClaimTask(task_id="task-3", partner="Dan"), day=2)
     won, *others = await act(env, "Dan", ClaimTask(task_id="task-3"), day=2)
     assert won.payload["workers"] == ["Cai", "Dan"]
@@ -829,6 +811,11 @@ async def test_overdue_claims_expire_publicly_and_stale_tasks_retire(env):
         ("task-2", ()),
         ("task-3", ()),
     ]
+    assert ended(events) == {
+        "Ben": "Your asking of Cai for job 3 ended, since the notice of job 3 came down.",
+        "Cai": "Ben's asking of you for job 3 ended, since the notice of job 3 came down.",
+    }
+    assert only(events, EventKind.OFFER_ENDED).payload["cause"] == "came_down"
     assert list(env.board.listings) == ["task-1"] and not env.board.offers
     assert kinds(await act(env, "Ana", ClaimTask(task_id="task-1"), day=3)) == [
         EventKind.TASK_CLAIMED
@@ -996,7 +983,7 @@ async def test_people_are_named_as_a_person_would_name_them(env):
     [absent] = await act(env, "Ana", Give(to="dan", amount=1, note=""))
     assert absent.text == "Dan is not here."
     [proposed] = await act(env, "Ana", ClaimTask(task_id="3", partner="dan"))
-    assert proposed.payload == {"task_id": "task-3", "partner": "Dan"}
+    assert proposed.payload == {"task_id": "task-3", "partner": "Dan", "part": None}
 
 
 async def test_a_move_is_told_to_each_witness_as_an_arrival_or_a_departure(env):
@@ -1358,7 +1345,7 @@ async def test_payloads_alone_replay_every_balance_exactly(make_env):
         two_part_tasks=2,
         trusting_client_prob=0.5,
     )
-    rng = random.Random(16)
+    rng = random.Random(17)
     for day in range(1, 6):
         await play(env, day, rng)
     balances = {agent: env.config.starting_balance(agent) for agent in AGENTS}

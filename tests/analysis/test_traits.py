@@ -290,6 +290,51 @@ def test_runs_recorded_before_tasks_had_parts_are_refused(town, tmp_path):
         traits(run)
 
 
+async def test_a_hand_in_checked_for_want_of_standing_is_counted(tmp_path):
+    """Under a standing threshold, a client who pays on the word checks the work of a resident
+    below it: Ana, unmarked, is checked and handed back, then accepted; Ben, marked 5, is taken
+    at his word."""
+    config = TOWN.model_copy(
+        update={
+            "environment": TOWN.environment.model_copy(
+                update={
+                    "conditions": TOWN.environment.conditions.model_copy(
+                        update={"trusting_client_prob": 1.0, "trust_threshold": 3.5}
+                    )
+                }
+            )
+        }
+    )
+    run = RunDirectory.create(tmp_path, "scripted", 2, config=config, code_revision="test")
+    queue = Queue("roman_to_int", "flatten", "isbn10")
+    env = Environment.create(config.environment, AGENTS, queue, run.events_path)
+    t = time_at(1, "09:00")
+
+    async def act(agent: str, action) -> None:
+        await env.execute(agent, action, time=t, scene="work", witnesses=AGENTS)
+
+    env.start_day(time_at(1, "07:00"), random.Random(0))
+    await act("Cai", RatePeers(ratings=(PeerRating(target="Ben", score=5, reason="."),)))
+    env.post(t, 1)
+    for agent in AGENTS:
+        env.move(agent, "office", time=t)
+    reference = {name: SOLUTIONS[name]["reference"] for name in SOLUTIONS}
+    await act("Ana", ClaimTask(task_id="task-1"))
+    await act("Ben", ClaimTask(task_id="task-2"))
+    for solution in (FAILS, reference["roman_to_int"]):  # handed back, then accepted
+        await act("Ana", SubmitWork(task_id="task-1", solution=solution, report="."))
+    await act("Ben", SubmitWork(task_id="task-2", solution=FAILS, report="."))
+    env.end_day(time_at(1, "22:00"))
+    found = traits(read_run(run.root))
+    ana, ben, _ = found.agents
+    assert (ana.trusting_finished, ana.below_threshold, ana.handed_in) == (2, 2, 2)
+    assert (ben.trusting_finished, ben.below_threshold, ben.untried) == (1, 0, 1)
+    assert (
+        window(found, measure(read_run(run.root)), 1, 1)["town"]["shares"]["below_threshold_share"]
+        == 2 / 3
+    )
+
+
 def test_a_bank_that_no_longer_holds_the_examples_is_an_error(scripted, tmp_path):
     root = tmp_path / "scripted" / "seed-0001"
     shutil.copytree(scripted, root)
