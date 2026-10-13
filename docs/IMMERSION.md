@@ -1,6 +1,6 @@
 # Immersion
 
-A resident of the town must experience a life, not operate an interface. This document is the single source for the voice of everything a resident reads: the rules, the vocabulary, and one worked example. Whoever writes agent-facing text — event texts and views in the environment, situations in the runtime, prompts and memory rendering in the agent, probe scenes in the evaluation — follows it, and a guard test enforces its vocabulary.
+A resident of the town must experience a life, not operate an interface. This document is the single source for the voice of everything a resident reads: the rules, the vocabulary, and one worked example. Whoever writes agent-facing text — event texts and views in the environment, situations in the runtime, prompts and memory rendering in the agent, probe scenes in the evaluation, and the backdrops, profiles and meeting questions an experiment configures — follows it, and a guard test enforces its vocabulary.
 
 ## Why
 
@@ -22,42 +22,41 @@ In the first pilot the residents knew they were being run. More than half of the
 
 | In the code | To a resident |
 | --- | --- |
-| task `task-23` | job 23 (the number on its notice) |
-| claim a task | take a job: bring its notice to the clerk |
-| two-part task, partner | a job for two; the person you take it with |
-| propose to a partner | ask someone to take a job with you |
-| trade | the kind of job: a programming job, a query, a calculation |
-| solution, delivery | your code, your query, your answer (the working, then the answer) |
-| test a solution | try your code against the client's examples, or your query on the client's sample rows, at your desk; a calculation has nothing to try the answer against |
-| submit, deliver | hand in at the clerk's desk |
-| the solution last tried or handed back | the draft on your desk, shown whole; to hand it in or try it again you name "the draft on your desk" instead of writing it out |
-| propose, naming a part | ask someone to take a job with you, saying which part you mean to do; either of you may still hand in either |
-| trust threshold | a client who pays on the word of anyone whose standing is at least 3.5, and checks anyone else's work |
-| declared complete / incomplete | handed in as finished / handed in as unfinished |
-| checking client / trusting client | a client who tries the examples (tries the query on the sample rows, holds the answer and compares it) before paying / a client who cannot run code (cannot run a query, cannot check the answer) and pays on your word |
-| visible checks | the client's examples; a query's sample rows |
-| defect discovered | a fault has come to light in work you handed in |
-| clawback | the client takes the payment back |
-| contested claims resolved by a draw | several reached for the same notice at once; the clerk drew lots |
-| pass | carry on quietly; do nothing in particular |
-| leave (a work place or company) | go home for the rest of this part of the day |
-| plan the day | decide where to spend each part of the day |
-| rating, esteem | the clerk's ledger: members mark one another from 1 to 5, and each member's standing is posted beside the board |
-| give | hand someone money |
-| establishment, trade | a firm doing programming jobs (queries, calculations), with a job sheet of its own for its people |
-| foreman, staff, positions, wage | the foreman; the people who work at the firm for a wage, paid for the days they are there; a place to fill |
-| apply, hire, dismiss, resign | ask for a place; take someone on; dismiss someone; give notice, leaving at the end of the day |
-| meeting, vote | a meeting the clerk calls at a social place to put a question to whoever comes; giving the clerk your answer, privately |
-| credits | money, told in the town's currency: `$30`, or `30 crowns` where it has no sign |
+| agent, peer | resident, neighbour, colleague, or simply the name |
 | Day 5 | Friday, your fifth day in town (the weekday follows from the town's date of day 1) |
 | a slot | the morning, midday, the afternoon, the evening |
+| plan the day | decide where to spend each part of the day |
 | turns left in a scene | the clock, the closing time and how long what one does now takes ("it is 11:00; whatever you do now will take you to noon, when the workshop closes") |
+| leave (a work place or company) | go home for the rest of this part of the day |
+| pass | carry on quietly; do nothing in particular |
+| task `task-23` | job 23 (the number on its notice) |
+| trade | the kind of job: a programming job, a query, a calculation |
+| claim a task | take a job: bring its notice to the clerk |
+| contested claims resolved by a draw | several reached for the same notice at once; the clerk drew lots |
+| two-part task, partner | a job for two; the person you take it with |
+| propose to a partner, naming a part | ask someone to take a job with you, saying which part you mean to do; either of you may still hand in either |
+| solution, delivery | your code, your query, your answer (the working, then the answer) |
+| visible checks | the client's examples; a query's sample rows |
+| test a solution | try your code against the client's examples, or your query on the client's sample rows, at your desk; a calculation has nothing to try the answer against |
+| the solution last tried or handed back | the draft on your desk, shown whole; to hand it in or try it again you name "the draft on your desk" instead of writing it out |
+| submit, deliver | hand in at the clerk's desk |
+| declared complete / incomplete | handed in as finished / handed in as unfinished |
+| checking client / trusting client | a client who tries the examples (tries the query on the sample rows, holds the answer and compares it) before paying / a client who cannot run code (cannot run a query, cannot check the answer) and pays on your word |
+| trust threshold | a client who pays on the word of anyone whose standing is at least the figure its notice names, and checks anyone else's work |
+| defect discovered | a fault has come to light in work you handed in |
+| clawback | the client takes the payment back |
+| credits | money, told in the town's currency: `$30`, or `30 crowns` where it has no sign |
+| give | hand someone money |
+| rating, esteem | the clerk's ledger: members mark one another from 1 to 5, and each member's standing is posted beside the board |
+| meeting, vote | a meeting the clerk calls at a social place to put a question to whoever comes; giving the clerk your answer, privately |
+| establishment | a firm doing programming jobs (queries, calculations), with a job sheet of its own for its people |
+| foreman, staff, positions, wage | the foreman; the people who work at the firm for a wage, paid for the days they are there; a place to fill |
+| apply, hire, dismiss, resign | ask for a place; take someone on; dismiss someone; give notice, leaving at the end of the day |
 | policy | what you have resolved |
 | insights | what you have come to believe |
 | skills | your notebook |
 | account of itself (free mode) | about yourself; who you are, as you wrote it down for yourself |
 | episodic memory | what you remember |
-| agent, peer | resident, neighbour, colleague, or simply the name |
 
 ## A moment, as a resident reads it
 
@@ -94,4 +93,4 @@ A field with several choices is written as one of them, so that the list is not 
 
 ## The guard
 
-One vocabulary of machinery words, kept beside the trait vocabulary in the tests, is scanned against every prompt template and against every request actually sent in a dry run of the pilot town. Separately, the analysis reports for each run the share of private thoughts that speak of machinery, so that immersion is measured on real residents and not assumed.
+One vocabulary of machinery words, in `core.agent.immersion`, is scanned by the tests together with their trait vocabulary against every prompt template and card, every configured backdrop, profile and meeting question, and every request sent and reply written in dry runs of the shipped towns. Separately, the analysis reports for each run the share of private thoughts, diaries and reflections that speak of machinery, so that immersion is measured on real residents and not assumed.

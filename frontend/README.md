@@ -57,7 +57,7 @@ The dashboard's Character section reads `traits.json`: for each of the four dile
 
 The town is reconstructed from the event log alone. Event days are fetched as they are needed, the days up to the moment shown first and the rest behind them, and a snapshot is kept at the start of every day, so a jump replays at most one day of events and playing applies only the events it crosses. Time is the main control: space plays or pauses, the arrow keys step from moment to moment and with Shift from day to day, Home and End go to the start and to the newest moment, and T switches between the truth and what the town's people perceived. Quiet stretches and nights pass quickly. What no agent perceived, such as thoughts, true quality and marks, is drawn in a dashed, cool grey style throughout. With a resident selected, the town can be read as that resident read it (`as=1`): what it witnessed reads in the wording it was told, with itself as "you", and a private remark between others is only something said privately. The choice is offered when the run's log records such wordings or private remarks. Ties between agents are counted over whole days from the measures and traits, through the last day that had ended at the moment shown.
 
-The map is drawn from the world alone, so any configuration of places renders. Each place stands at its configured position (places configured at the same point are set around it in a ring) as a building whose style its kind and words give: a library, a workshop, a café with its awning, a tavern with its sign, a cottage, a flat or a house. Streets join the places around their buildings and lead out of town; a river runs past places that say they are by one, a square lies in front of places that say they stand on one, and a hill rises behind a place named for one. Gardens, trees, lamps and benches fill the space that is left. The scenery is seeded by the world's ids, so it never jumps, and it never stands for data: the light follows the simulated hour, windows are lit and chimneys smoke only where someone is, and everything else is decoration. Residents keep their badge as their head, walk the streets between places, stand in a ring when they talk and sleep at home at night. Names of places and speech are laid out together so that none covers another, speech first. The map pans and zooms by drag and pinch, wheel, double tap, its buttons and the + − 0 keys.
+The map is drawn from the world alone, so any configuration of places renders. Each place stands at its configured position (places configured at the same point are set around it in a ring), a firm's label naming its trade and people on hover, as a building whose style its kind and words give: a library, a workshop, a café with its awning, a tavern with its sign, a cottage, a flat or a house. Streets join the places around their buildings and lead out of town; a river runs past places that say they are by one, a square lies in front of places that say they stand on one, and a hill rises behind a place named for one. Gardens, trees, lamps and benches fill the space that is left. The scenery is seeded by the world's ids, so it never jumps, and it never stands for data: the light follows the simulated hour, windows are lit and chimneys smoke only where someone is, and everything else is decoration. Residents keep their badge as their head, walk the streets between places, stand in a ring when they talk and sleep at home at night. Names of places and speech are laid out together so that none covers another, speech first. The map pans and zooms by drag and pinch, wheel, double tap, its buttons and the + − 0 keys.
 
 On a wide screen the panels stand beside the map. Below 1000 pixels a run's views move to a tab bar at the bottom of the screen, and in the town the timeline and the panels share a bottom sheet that is dragged or tapped open over the map.
 
@@ -217,7 +217,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `setting.start_date` | string | The ISO date of day 1, from which every weekday follows; `2001-01-01`, a Monday, by default. |
 | `days` | integer | Days planned. |
 | `calendar` | object | The shape of every day. |
-| `calendar.day_start` | string | `HH:MM` at which a day opens: tasks are posted and everyone plans. |
+| `calendar.day_start` | string | `HH:MM` at which a day opens: overdue tasks lapse, stale ones retire, defects may be found, and everyone plans. |
 | `calendar.slots` | array | The parts of the day, in order, each from its start to the next slot or the day end. |
 | `calendar.slots[].name` | string | The slot name, for example `morning`. |
 | `calendar.slots[].start` | string | `HH:MM`. |
@@ -308,7 +308,7 @@ The full event log of one day, truth included: this is the researcher's view, no
 | `events[].personal` | object | Agent name to the text as that witness perceived it instead, telling of itself as "you" ("You took job 2 …"); empty when every witness read `text`. Empty for every event of a run recorded before witnesses had their own wording. |
 | `events[].payload` | object | Structured truth, never shown to agents; its fields depend on the kind. |
 
-Within a day the events are those the simulation recorded in order: the day opens (`day_started`, expiries, retirements, defects found, tasks posted, the planning scene), each slot follows (moves, then the scenes at every place, turn by turn), and the day closes (everyone home, the review scene with ratings, living costs, esteem, `day_ended`, then one `evolution` event per evolution step, or a `lapse` for a step that was skipped). A moment in which an agent's reply could not be obtained has a `lapse` where its `decision` would be.
+Within a day the events are those the simulation recorded in order: the day opens (`day_started`, expiries, retirements, defects found, the notices of the day's meetings, the planning scene), each slot follows (moves, the tasks of a posting, then the scenes at every place, turn by turn), and the day closes (the counts of the day's meetings, everyone home, the review scene with ratings, wages, living costs, esteem, `day_ended`, then one `evolution` event per evolution step, or a `lapse` for a step that was skipped). A moment in which an agent's reply could not be obtained has a `lapse` where its `decision` would be.
 
 | Kind | Actor | Audience | Payload |
 | --- | --- | --- | --- |
@@ -451,7 +451,7 @@ Measures derived from the event log, one row per day so far; the last day of a r
 | `usage` | array | The run's model calls by day, agent and purpose; aggregates only. |
 | `usage[].day` | integer | The day of the calls' simulated time. |
 | `usage[].agent` | string | The agent. |
-| `usage[].purpose` | string | `act` (a decision), `diary`, `reflect` (L0), `skills` (L1) or `policy` (L2). |
+| `usage[].purpose` | string | `act` (a decision), `diary`, `reflect` (L0), `skills` (L1), `policy` (L2) or, in the free mode, `revise` (the night's one question). |
 | `usage[].calls` | integer | Calls made, failed ones included; calls of a day discarded by a resume stay counted, since they happened. |
 | `usage[].failed` | integer | Calls that ended in an error. |
 | `usage[].retried` | integer | Calls that asked again after an invalid reply. |
@@ -462,7 +462,7 @@ Measures derived from the event log, one row per day so far; the last day of a r
 
 ### `runs/{experiment}/{run}/traits.json`
 
-What the residents did in each of the town's four dilemmas, how they chose one another as partners, and how often their own words speak of the machinery behind the town. The `analysis.traits` module defines these from the event log and the agents' own files; the tables repeat its definitions. Only runs recorded since tasks had parts have this file (the town of `experiments/configs/town.yaml` and its studies); for older runs `run.json` refers to none.
+What the residents did in each of the town's four dilemmas, how they chose one another as partners, and how often their own words speak of the machinery behind the town. The `analysis.traits` module defines these from the event log and the agents' own files; the tables repeat its definitions. Only runs recorded since tasks had parts have this file (every run of the current code); for older runs `run.json` refers to none.
 
 A count belongs to the day of its event: a job to the day it ended (paid, or lapsed the morning after its due day), a diary entry or a reflection to the night it was written. A hand-in is one delivery of a part at the clerk's desk, accepted or not; the same part handed in again counts again. A share is the ratio of two counts summed over the same rows, null when the denominator is 0. The town's counts are sums over residents, so a job for two counts once for each of its two workers. The last day of a run in progress is partial.
 
@@ -522,9 +522,9 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `checked_faulty` | integer | Accepted ones whose true quality is below 1: each carries a latent fault once its job is paid. |
 | `handed_in` | integer | All hand-ins, as finished or unfinished, to either kind of client. |
 | `finished` | integer | Hand-ins as finished. |
-| `knowingly_false` | integer | Of those, the ones whose code the resident had seen fail: its own last try of that same code at its desk failed, or a client had handed that same code back. |
+| `knowingly_false` | integer | Of those, the ones whose work the resident had seen fail: its own last try of that same work at its desk failed, or a client had handed that same work back. |
 | `trusting_finished` | integer | Hand-ins as finished to a client who pays on the worker's word. |
-| `untried` | integer | Of those, the ones whose code the resident had never tried. |
+| `untried` | integer | Of those, the ones whose work the resident had never tried. |
 | `below_threshold` | integer | Of those, the ones the client checked instead of taking the word, the resident's standing being below the standing set for trust. |
 | `unfinished` | integer | Hand-ins as unfinished. |
 | `joint_ended` | integer | Jobs for two the resident was in that ended: paid, or lapsed. |
