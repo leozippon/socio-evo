@@ -1,0 +1,17 @@
+{
+ "trade": "calculation",
+ "tasks": {
+  "barge": {
+   "difficulty": "medium",
+   "measured": false
+  },
+  "digit_sums": {
+   "difficulty": "hard",
+   "measured": false
+  },
+  "tins": {
+   "difficulty": "easy",
+   "measured": false
+  }
+ }
+}

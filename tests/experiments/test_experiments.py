@@ -11,13 +11,14 @@ from pydantic import ValidationError
 from core.agent.evolution import Level
 from core.environment import Trade
 from core.interaction import Card, MaySubmit, Setting
-from experiments.config import ExperimentConfig
+from experiments.config import PROJECT_ROOT, ExperimentConfig
 from experiments.dry_run import DryRunResponder
-from experiments.run import as_dry_run, main
+from experiments.run import main
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.llm import LLMConfigError, LLMRequest, Message
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
+from tasks import BUILT_IN
 from tasks.calculation.answers import extract
 from tasks.queries import sql
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
@@ -135,8 +136,6 @@ def test_a_configuration_frozen_before_towns_had_trades_names_the_programming_ba
     banks = {**data, "tasks": {"banks": {"programming": "tasks/coding/bank", "queries": "q"}}}
     with_queries = ExperimentConfig.model_validate(banks)
     assert with_queries.tasks.banks[Trade.QUERIES] == "q"
-    with pytest.raises(ValueError, match="only the built-in programming bank"):
-        as_dry_run(with_queries)
 
 
 def test_the_dry_run_hands_in_a_valid_stub_of_every_trade():
@@ -249,6 +248,30 @@ def test_a_run_needs_its_bank_and_isolation_and_a_dry_run_works_on_the_built_in_
     tasks = yaml.safe_load(frozen.read_text(encoding="utf-8"))["tasks"]
     assert tasks["banks"] == {"programming": "tasks/coding/bank"}
     assert tasks["isolation"] == "bubblewrap"
+
+
+def test_a_dry_run_of_a_town_of_three_trades_works_on_their_built_in_banks(tmp_path):
+    """Each bank a town names, wherever it is, is replaced in a dry run by the built-in bank of
+    its trade, so a town posting all three trades runs to its end without a fetched bank, and
+    nothing its residents read steers traits or shows the machinery."""
+    data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+    absent = {trade.value: str(tmp_path / "absent" / trade.value) for trade in Trade}
+    data["tasks"] = {"banks": absent, "isolation": "bubblewrap"}
+    data["environment"]["conditions"]["trade_mix"] = {trade.value: 1 for trade in Trade}
+    config = tmp_path / "three.yaml"
+    config.write_text(yaml.safe_dump(data, allow_unicode=True), encoding="utf-8")
+    main([str(config), "--seeds", "0", "--runs-root", str(tmp_path), "--dry-run"])
+
+    run = RunDirectory.open(tmp_path / "smoke-dry-run" / "seed-0000")
+    assert run.read_manifest().status is RunStatus.COMPLETED
+    frozen = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))["tasks"]["banks"]
+    assert frozen == {
+        trade.value: BUILT_IN[trade].relative_to(PROJECT_ROOT).as_posix() for trade in Trade
+    }
+    log = [json.loads(line) for line in run.events_path.read_text(encoding="utf-8").splitlines()]
+    posted = {e["payload"]["task"]["trade"] for e in log if e["kind"] == "task_posted"}
+    assert posted == {trade.value for trade in Trade}
+    assert not unguarded(sent(run))
 
 
 def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):

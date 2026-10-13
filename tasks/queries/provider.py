@@ -4,7 +4,9 @@ one part of work.
 A bank file holds the client's request in plain words, the database's CREATE TABLE statements,
 the path of the full database relative to the bank, a few example rows of every table, the rows
 the benchmark's own query gives on those examples and on the full database, whether the request
-orders its rows, the benchmark's query, a reward and a deadline. The worker is shown the
+orders its rows, the benchmark's query, a reward and a deadline. The full database is an SQLite
+file, or, in the built-in bank, which keeps the repository free of binary files, the SQL script
+that creates it, run into a temporary file when the bank is loaded. The worker is shown the
 request, the tables, the example rows as INSERT statements and the rows a query should give on
 them; it hands in one query.
 
@@ -145,7 +147,9 @@ _REPORT = TypeAdapter(_Rows | _Error)
 class QueryProvider:
     """The work protocol over the bank at `path`, running each query for at most `timeout`
     seconds, separated from the machine by `isolation`. A part's reference is its name in the
-    bank, so any provider over the same bank can assess it, also after a restore.
+    bank, so any provider over the same bank can assess it, also after a restore. A database
+    given as an SQL script is created in a temporary directory that lives as long as the
+    provider.
 
     Raises FileNotFoundError if a task's database is missing.
     """
@@ -157,9 +161,27 @@ class QueryProvider:
         self.bank = load_bank(path)
         self.timeout = timeout
         self.isolation = isolation
+        self._created = tempfile.TemporaryDirectory(prefix="databases-")
+        self.databases: dict[str, Path] = {}  # the file of each database the bank names
         for name, task in self.bank.items():
-            if not (path / task.database).is_file():
-                raise FileNotFoundError(f"{name}: no database at {path / task.database}")
+            source = path / task.database
+            if not source.is_file():
+                raise FileNotFoundError(f"{name}: no database at {source}")
+            if task.database not in self.databases:
+                self.databases[task.database] = self._database(source)
+
+    def _database(self, source: Path) -> Path:
+        """The SQLite file of the database at `source`, created from it if it is a script."""
+        if source.suffix != ".sql":
+            return source
+        created = Path(self._created.name) / f"{len(self.databases)}.sqlite"
+        connection = sqlite3.connect(created)
+        try:
+            connection.executescript(source.read_text(encoding="utf-8"))
+            connection.commit()
+        finally:
+            connection.close()
+        return created
 
     def part(self, name: str) -> Part:
         """The bank task `name` as a part of work."""
@@ -180,12 +202,13 @@ class QueryProvider:
         if not sql.reads_only(solution):
             return Assessment(passed=False, feedback=REFUSED, quality=0)
         sandbox = Sandbox(self.isolation)
+        database = self.databases[task.database]
         with tempfile.TemporaryDirectory(prefix="sample-") as scratch:
             examples = Path(scratch) / DATABASE
             build_sample(examples, task.tables, task.sample)
             async with asyncio.TaskGroup() as group:
                 shown = group.create_task(self._run(sandbox, examples, solution))
-                full = group.create_task(self._run(sandbox, self.path / task.database, solution))
+                full = group.create_task(self._run(sandbox, database, solution))
         given = shown.result()
         passed = isinstance(given, list) and same(given, task.sample_result, task.ordered)
         whole = full.result()

@@ -1,0 +1,5 @@
+title: A barge's average speed
+problem: A barge goes 30 km up the river at 6 km/h and comes back down at 10 km/h. What is its average speed over the whole journey, in km/h?
+answer: 15/2
+reward: 30
+deadline_days: 1

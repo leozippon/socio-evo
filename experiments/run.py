@@ -7,14 +7,14 @@ Each seed runs in `<runs-root>/<experiment>/seed-NNNN`, with every model call re
 its `llm_calls.jsonl`. Creating a run that exists fails; `--resume` continues a run from its
 latest checkpoint and requires the configuration frozen in it. `--until-day` stops after
 that day, leaving the run interrupted and resumable. `--dry-run` replaces the model with the
-scripted responder of `experiments.dry_run` and the task bank with the built-in one, and runs
-as experiment `<experiment>-dry-run`; so a dry run needs neither the model nor a fetched bank.
+scripted responder of `experiments.dry_run` and each task bank with the built-in bank of its
+trade (`tasks.BUILT_IN`), and runs as experiment `<experiment>-dry-run`; so a dry run needs
+neither the model nor a fetched bank.
 
 Before a run is created or resumed, the task bank of every trade it names must exist (each is
 built by its trade's fetch, `python -m tasks.coding.fetch`, `tasks.queries.fetch` or
 `tasks.calculation.fetch`) and delivered code must run under the configured isolation;
-otherwise nothing is created. A dry run has only the built-in programming bank, so a town that
-posts another trade cannot be dry-run.
+otherwise nothing is created.
 """
 
 import argparse
@@ -33,8 +33,8 @@ from infrastructure.git import Repository
 from infrastructure.llm import LLMClient, RecordingClient, create_client
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.simulation import Setup, Simulation
-from tasks import PROVIDERS
-from tasks.coding import BANK, Check, run_checks
+from tasks import BUILT_IN, PROVIDERS
+from tasks.coding import Check, run_checks
 
 log = logging.getLogger(__name__)
 
@@ -102,16 +102,10 @@ async def run(
 
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
-    """`config` answered by the scripted responder on the built-in task bank, as experiment
-    `<name>-dry-run`. Raises ValueError for a town with a bank of another trade than
-    programming, which the built-in bank cannot stand in for."""
-    others = sorted(t.value for t in config.tasks.banks if t is not Trade.PROGRAMMING)
-    if others:
-        raise ValueError(
-            f"a dry run has only the built-in programming bank; {config.name} has banks of {others}"
-        )
+    """`config` answered by the scripted responder, each of its banks replaced by the
+    built-in bank of the same trade, as experiment `<name>-dry-run`."""
     scripted = config.llm.model_copy(update={"backend": "scripted"})
-    banks = {Trade.PROGRAMMING: BANK.relative_to(PROJECT_ROOT).as_posix()}
+    banks = {t: BUILT_IN[t].relative_to(PROJECT_ROOT).as_posix() for t in config.tasks.banks}
     tasks = config.tasks.model_copy(update={"banks": banks})
     return config.model_copy(
         update={"name": f"{config.name}-dry-run", "llm": scripted, "tasks": tasks}

@@ -1,10 +1,12 @@
 """Concrete work: task providers implementing the work protocol of `core.environment`, one for
 each trade, a kind of work with its own banks and its own way of checking.
 
-`PROVIDERS` names each trade's provider class, built alike over a bank directory; the shared
-layout of banks is `tasks.bank`, the isolation of delivered work `tasks.sandbox`, and the
-calibration of banks against a model `tasks.calibrate`. The words of each trade (what a worker
-hands in, what it is tried against) are the environment's, which tells them.
+`PROVIDERS` names each trade's provider class, built alike over a bank directory, and
+`BUILT_IN` each trade's built-in bank, a few tasks kept in the repository, on which dry runs
+and tests work without a fetched bank; the shared layout of banks is `tasks.bank`, the
+isolation of delivered work `tasks.sandbox`, and the calibration of banks against a model
+`tasks.calibrate`. The words of each trade (what a worker hands in, what it is tried against)
+are the environment's, which tells them.
 """
 
 from collections.abc import Mapping
@@ -12,9 +14,7 @@ from pathlib import Path
 from typing import Protocol
 
 from core.environment import Part, TaskProvider, Trade
-from tasks.calculation import CalculationProvider
-from tasks.coding import CodingTaskProvider
-from tasks.queries import QueryProvider
+from tasks import calculation, coding, queries
 from tasks.sandbox import Isolation
 
 
@@ -35,7 +35,13 @@ class Provider(TaskProvider, Protocol):
 
 
 PROVIDERS: dict[Trade, type[Provider]] = {
-    Trade.PROGRAMMING: CodingTaskProvider,
-    Trade.QUERIES: QueryProvider,
-    Trade.CALCULATION: CalculationProvider,
+    Trade.PROGRAMMING: coding.CodingTaskProvider,
+    Trade.QUERIES: queries.QueryProvider,
+    Trade.CALCULATION: calculation.CalculationProvider,
+}
+
+BUILT_IN: dict[Trade, Path] = {
+    Trade.PROGRAMMING: coding.BANK,
+    Trade.QUERIES: queries.BANK,
+    Trade.CALCULATION: calculation.BANK,
 }
