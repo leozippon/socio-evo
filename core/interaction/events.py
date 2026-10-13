@@ -25,12 +25,20 @@ class EventKind(StrEnum):
     """A proposal to take a two-person task together; private to the two."""
     TASK_APPLIED = "task_applied"
     """An application for a two-person task, for the board to pair; private to the applicant."""
+    OFFER_ENDED = "offer_ended"
+    """An open proposal or application that ended without its maker taking that task with the
+    one it named: withdrawn because its maker took a task or made another, because the task
+    went to others or its client withdrew it, or lapsed at the day's end; private to the
+    proposer and the partner, or to the applicant."""
     TASK_CLAIMED = "task_claimed"
     """A task taken: claimed alone, taken up together, or given to a pair by the board."""
     TASK_EXPIRED = "task_expired"
     """A task not completed by its deadline; nothing is paid and it returns to the board."""
     TASK_RETIRED = "task_retired"
     """An unclaimed task taken off the board after its shelf life; truth-only."""
+    TASK_WITHDRAWN = "task_withdrawn"
+    """A task its client withdrew, from the board or from its workers, with nothing more paid
+    for it; private to its workers, truth-only for a task nobody had taken."""
     WORK_CHECKED = "work_checked"
     """A solution run against a part's acceptance checks without delivery; private."""
     WORK_SUBMITTED = "work_submitted"

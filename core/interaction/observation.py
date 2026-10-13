@@ -3,7 +3,7 @@
 from pydantic import Field
 
 from core.interaction.card import Allowance
-from core.interaction.events import Percept
+from core.interaction.events import EventKind, Percept
 from core.interaction.time import SimTime
 from infrastructure.config import StrictModel
 
@@ -18,8 +18,10 @@ class Observation(StrictModel):
     observation, and `allowed` holds, for each kind of thing it can do now, the values that
     are really possible (see `core.interaction.card`). `places` names the town's places by
     id as the agent knows them, so that what it remembers can say where it happened; it may
-    be empty. Percepts cannot carry an event's payload or audience, and passing an Event
-    where a Percept is expected is rejected.
+    be empty. `shown` names the kinds of event whose news the situation shows as it now
+    stands (the notices on the board, the posted standings), so that the agent does not
+    recall their percepts beside it. Percepts cannot carry an event's payload or audience,
+    and passing an Event where a Percept is expected is rejected.
     """
 
     agent: str
@@ -31,3 +33,4 @@ class Observation(StrictModel):
     percepts: tuple[Percept, ...] = ()
     allowed: tuple[Allowance, ...] = Field(min_length=1)
     places: dict[str, str] = Field(default_factory=dict)
+    shown: tuple[EventKind, ...] = ()

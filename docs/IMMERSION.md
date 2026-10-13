@@ -9,7 +9,7 @@ In the first pilot the residents knew they were being run. More than half of the
 ## Rules
 
 1. **Nothing reveals the machinery.** No text a resident reads mentions or implies a simulation, a game, a scenario, a role, an agent, a model, a prompt, an action, a turn, a round, a step, a session, a schema, a field, or any identifier from the code. The same holds for anything written in the simulator's voice about the world ("claims are resolved in a random order").
-2. **The world is told as it is lived.** Second person, present tense, concrete and brief: where you are, what time it is, who is here and what they are doing, what you hear, what your body and your purse tell you. A fact is stated the way a person would meet it — a notice on the board, a word from a client, the workshop bell — not the way a log would record it.
+2. **The world is told as it is lived.** Second person, present tense, concrete and brief: where you are, what time it is, who is here and what they are doing, what you hear, what your body and your purse tell you. A fact is stated the way a person would meet it — a notice on the board, a word from a client, the workshop bell — not the way a log would record it. Other people's words, what they say, the note they hand over with money, what a worker told a client, are quoted as they said or wrote them, never narrated, so that nobody's words are taken for the resident's own or for a fact.
 3. **Every rule of the town has an in-world reason, and the town is physical.** The board is a wall of numbered notices in each work place, kept by a clerk at a desk beside it. To take a job you bring its notice to the clerk; when several reach for the same notice at once, the clerk draws lots. Work is handed in at the clerk's desk, and the clerk passes on what the client said. Nothing is requested, submitted or clicked. If a rule cannot be given a plain in-world form, the rule is wrong for this town.
 4. **Choices are things a person can do here and now**, described in plain words as part of the moment ("You could take one of the jobs on the board, …"). They are never called actions and never listed by code name.
 5. **Memory is recollection.** What a resident remembers is told to it the way everything else is, in the second person and in the town's words — "Thursday morning at the workshop you told Tomas …" — never as records, fields or structured data. Its own words are quoted as it wrote them: what it thought, what it said, its diary, what it believes and has resolved. One voice speaks to the resident throughout; the first person belongs to the resident alone.
@@ -44,7 +44,7 @@ In the first pilot the residents knew they were being run. More than half of the
 | credits | money, told in the town's currency: `$30`, or `30 crowns` where it has no sign |
 | Day 5 | Friday, your fifth day in town (the weekday follows from the town's date of day 1) |
 | a slot | the morning, midday, the afternoon, the evening |
-| turns left in a scene | the clock and the closing time ("it is 11:40; the workshop closes at noon") |
+| turns left in a scene | the clock, the closing time and how long what one does now takes ("it is 11:00; whatever you do now will take you to noon, when the workshop closes") |
 | policy | what you have resolved |
 | insights | what you have come to believe |
 | skills | your notebook |
@@ -69,7 +69,7 @@ The framing below is illustrative; the exact wording belongs to the code that pr
 >
 > Just now: Aisha took job 26.
 >
-> The workshop closes at noon. You could take one of the jobs on the board, say something to the others, or carry on quietly.
+> The workshop closes at noon. Whatever you do now will take you to 10:05.
 
 Followed by the answer card described below, and then the resident's reply.
 
@@ -78,11 +78,11 @@ Followed by the answer card described below, and then the resident's reply.
 A resident answers with what goes through its head and the one thing it does. A first attempt showed no form at all and relied on the server to enforce the structure: replies were well-formed and senseless, because a mind cannot guess a form it has never seen (residents "said" to the board that they were taking a job, and planned days in places that do not exist). So the form is shown, but it is the town's form and not the simulator's: a short answer card generated for each moment, in the town's words, listing only what can really be done now with the real choices filled in.
 
 > Answer with what goes through your head, briefly and in your own words, and the one thing you do:
-> {"thought": "…", "do": "take a job", "job": 25 or 28}
-> {"thought": "…", "do": "say", "words": "…", "to": "Tomas", "Aisha", "Jonas" or null for everyone, "privately": true or false}
+> {"thought": "…", "do": "take a job", "job": one of 25, 28}
+> {"thought": "…", "do": "say", "to": one of "Aisha", "Jonas", "Tomas", or null for everyone, "words": "…"}
 > {"thought": "…", "do": "carry on quietly"}
 
-The same card is the schema every reply is read against, so a decision can only name a job that is on the board, a person who is present, a place that exists. An answer that cannot be read, or that names something not on the card, is handed back with a plain word on what was wrong — `That answer could not be read: "job" is not one of the choices shown. Answer again, written as shown above.` — and asked for again; the word does not repeat the choices, so that it cannot lean towards one. The card, its reading and its translation into the simulator's actions have one definition, in the interaction protocol; the code's own names for actions and fields never reach a resident, not even in what it writes.
+A field with several choices is written as one of them, so that the list is not copied as the answer. The same card is the schema every reply is read against, so a decision can only name a job that is on the board, a person who is present, a place that exists. An answer that cannot be read, or that names something not on the card, is handed back with a plain word on what was wrong — `That answer could not be read: "job" must be one of the choices shown for it. Answer again, written as shown above.` — and asked for again; the word names the field but does not repeat its choices, so that it cannot lean towards one. The card, its reading and its translation into the simulator's actions have one definition, in the interaction protocol; the code's own names for actions and fields never reach a resident, not even in what it writes.
 
 ## The guard
 

@@ -1,6 +1,7 @@
 import asyncio
 import random
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -130,7 +131,8 @@ def act(agent: str, time: int, request: LLMRequest) -> dict[str, Any]:
     if card.HAND_IN in can:
         task = BY_ENTRY_POINT[re.search(r"defines `(\w+)`", prompt)[1]]
         solution = SOLUTIONS[task]["shortcut" if agent == "Ben" else "reference"]
-        return {"do": card.HAND_IN, card.CODE: solution, card.AS: "finished", card.TELLING: ""}
+        told = f"Handed in at {time} from desk {AGENTS.index(agent) + 1}."
+        return {"do": card.HAND_IN, card.CODE: solution, card.AS: "finished", card.TELLING: told}
     if card.TAKE in can:
         return {"do": card.TAKE, card.JOB: choices(request, card.TAKE)[card.JOB][0]}
     if card.LEAVE in can:
@@ -143,6 +145,45 @@ def act(agent: str, time: int, request: LLMRequest) -> dict[str, Any]:
         marks = [{"who": peer, "mark": 4, "because": "We met."} for peer in met.split(", ")]
         return {"do": card.MARK, card.MARKS: marks}
     return {"do": card.CARRY_ON}
+
+
+def told_twice(run: RunDirectory) -> tuple[list[str], int]:
+    """What a moment of `run` told twice, and how many facts were checked: the notice of a
+    job, the words a worker told a client with work it handed in (which a fault that comes to
+    light later quotes again, as its cause), and the posted standings, each told at most once
+    in any request a resident acted on."""
+    log = [Event.model_validate(line) for line in read_jsonl(run.events_path)]
+    notices = [
+        event.text.removeprefix("A new notice on the board: ").removesuffix(".")
+        for event in log
+        if event.kind is EventKind.TASK_POSTED
+    ]
+    said = Counter(
+        words
+        for event in log
+        for words in (event.payload.get("utterance"), event.payload.get("note"))
+        if words
+    )
+    reports = Counter(
+        event.payload["report"] for event in log if event.kind is EventKind.WORK_SUBMITTED
+    )
+    unique = [report for report, n in reports.items() if n == 1 and report not in said]
+    moments = [
+        call["request"]["messages"][-1]["content"]
+        for call in read_jsonl(run.llm_calls_path)
+        if call["metadata"]["purpose"] == "act"
+    ]
+    twice, checked = [], 0
+    for moment in moments:
+        handed = "\n".join(line for line in moment.splitlines() if "A fault has come" not in line)
+        told = [(notice.lower(), moment.lower()) for notice in notices]
+        for fact, text in [*told, *((report, handed) for report in unique)]:
+            checked += fact in text
+            if text.count(fact) > 1:
+                twice.append(fact)
+        if "tonight's standings" in moment and "The standings posted" in moment:
+            twice.append("the standings")
+    return twice, checked
 
 
 def place(id: str, kind: str, *residents: str, hours: tuple[str, ...] = ()) -> Place:
@@ -275,6 +316,17 @@ async def test_a_town_lives_through_its_days(tmp_path):
         assert office not in moment and "How work goes here" not in moment
     homes = {r.metadata["agent"]: "You live in the flat." in r.messages[0].content for r in acts}
     assert homes == {"Ana": True, "Ben": False, "Cai": False}
+    # The purse says what a day costs as the conditions stand: the rise on day 2 at 13:00 shows
+    # in every moment after it, at work or in company.
+    costs = {
+        (request.metadata["time"] >= time_at(2, "13:00"), cost)
+        for request in acts
+        for cost in re.findall(r"; the day costs you \d+ crowns\.", request.messages[-1].content)
+    }
+    assert costs == {
+        (False, "; the day costs you 5 crowns."),
+        (True, "; the day costs you 9 crowns."),
+    }
 
     decisions = [event for event in log if event.kind is EventKind.DECISION]
     assert all(event.audience == () for event in decisions)
@@ -291,16 +343,28 @@ async def test_a_town_lives_through_its_days(tmp_path):
         for line in message.content.splitlines()
     }
     assert not {line for line in sent if any(guard.search(line) for guard in GUARDS)}
+    # No moment tells a notice, or what a worker told a client, twice.
+    twice, checked = told_twice(run)
+    assert checked > 10 and not twice, twice
     written = [call["response"]["text"] for call in read_jsonl(run.llm_calls_path)]
     assert not [text for text in written if MACHINERY.search(text)]
 
     draws = [event for event in log if event.kind is EventKind.DRAW]
     assert (time_at(1, "09:00"), ("Ana", "Ben")) in {(e.time, e.audience) for e in draws}
     assert all(sorted(e.audience) == sorted(e.payload["order"]) for e in draws)
-    # A resident is told about itself as `you`, in what it witnesses and in each moment.
+    # A resident is told about itself as `you`, in what it witnesses and in each moment; a
+    # move as an arrival or a departure, and work it handed in by what followed.
     for event in log:
         for witness in event.audience:
-            assert event.percept(witness).text == as_told_to(event.text, witness)
+            told = event.percept(witness).text
+            if event.kind is EventKind.MOVE:
+                arrived, left = (f"{event.actor} {verb} " for verb in ("arrived at", "left"))
+                came = f"{event.actor} came home from "
+                assert told.startswith((arrived, came, left)) or told == event.text
+            elif event.kind is EventKind.WORK_SUBMITTED and witness == event.actor:
+                assert ", is in: " in told and "told the client" not in told
+            else:
+                assert told == as_told_to(event.text, witness)
     assert all(draw.personal.keys() == set(draw.audience) for draw in draws)
     for agent in AGENTS:
         for _, prompt in script.prompts(agent):
@@ -608,6 +672,38 @@ def read_events(path: Path) -> list[Event]:
     return [Event.model_validate(record) for record in read_jsonl(path)]
 
 
+def test_an_empty_board_says_when_new_notices_go_up(tmp_path):
+    env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
+    calendar, dawn = SIMULATION.calendar, time_at(1, "07:00")
+    morning, afternoon = time_at(1, "09:00"), time_at(1, "13:00")
+    both = ("morning", "afternoon")
+    assert situations.next_posting(calendar, both, dawn) == morning
+    assert situations.next_posting(calendar, both, morning) == afternoon
+    assert situations.next_posting(calendar, both, afternoon) == time_at(2, "09:00")
+    assert situations.next_posting(calendar, (), dawn) is None
+    planning = Planning(env, "planning", AGENTS, calendar, start=dawn, posting=morning)
+    empty = "There are no notices on the board. New notices go up at 09:00."
+    assert empty in planning.situation("Ana")
+    later = WorkSession(
+        env,
+        "work",
+        "office",
+        ["Ana"],
+        start=afternoon - 60,
+        until=afternoon,
+        rounds=1,
+        closes=True,
+        posting=time_at(2, "09:00"),
+    )
+    tomorrow = "There are no notices on the board. New notices go up tomorrow at 09:00."
+    assert tomorrow in later.situation("Ana")
+    unknown = Planning(env, "planning", AGENTS, calendar, start=dawn)
+    assert "New notices" not in unknown.situation("Ana")
+    env.post(dawn, 0)
+    assert "New notices" not in planning.situation("Ana")
+    assert planning.shown() == (EventKind.TASK_POSTED,) and later.shown() == planning.shown()
+
+
 async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_path):
     env = Environment.create(ENVIRONMENT, AGENTS, CodingTaskProvider(BANK), tmp_path / "log")
     start, closing = time_at(1, "09:00"), time_at(1, "13:00")
@@ -635,10 +731,41 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
         ("Ben", time_at(1, "10:20"), take),
     ]
     moments = [request.messages[-1].content for request in replies.requests]
-    assert "You are at the office, with Ben. The office closes at 13:00." in moments[0]
+    assert (
+        "You are at the office, with Ben. The office closes at 13:00. Whatever you do now will "
+        "take you to 10:20."
+    ) in moments[0]
+    assert "Whatever you do now will take you to 11:40." in moments[2]
     assert all("You could" not in moment for moment in moments)
-    assert '"do": "take a job", "job": 1, 2 or 3}' in moments[0]
-    assert '"do": "take a job", "job": 2 or 3}' in moments[3]
+    assert '"do": "take a job", "job": one of 1, 2, 3}' in moments[0]
+    assert '"do": "take a job", "job": one of 2, 3}' in moments[3]
+    last = WorkSession(
+        env,
+        "last",
+        "office",
+        ["Cai"],
+        start=time_at(1, "12:30"),
+        until=closing,
+        rounds=1,
+        closes=True,
+    )
+    assert "Whatever you do now will take you to 13:00, when the office closes." in (
+        last.situation("Cai")
+    )
+    ends = WorkSession(
+        env,
+        "ends",
+        "office",
+        ["Cai"],
+        start=start,
+        until=time_at(1, "12:00"),
+        rounds=3,
+        closes=False,
+    )
+    ends.turns = 2
+    assert "Whatever you do now will take you to 12:00, when this part of the day ends." in (
+        ends.situation("Cai")
+    )
     alone = WorkSession(
         env, "alone", "office", ["Ana"], start=start, until=closing, rounds=3, closes=True
     )
@@ -787,7 +914,9 @@ async def test_names_put_down_at_one_moment_are_paired_by_lot_at_once(tmp_path):
     assert (
         "the clerk drew lots" in log[0].text and "By drawing lots, the clerk paired" in paired.text
     )
-    assert "This part of the day ends at 10:00." in replies.requests[-1].messages[-1].content
+    assert "Whatever you do now will take you to 10:00, when this part of the day ends." in (
+        replies.requests[-1].messages[-1].content
+    )
 
 
 async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_morning(tmp_path):
@@ -846,13 +975,18 @@ async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_m
     ]
     planned = min(e.seq for e in log if e.kind is EventKind.DECISION)
     assert notices[0].seq < planned
-    notice = "The clerk has put up a notice: a meeting at the cafe at 18:00 today, on the question:"
+    notice = (
+        "The clerk has put up a notice: a meeting at the cafe at 18:00 today, on the question "
+        f'"{question}" Whoever comes'
+    )
     plans = [r for r in script_requests(run) if r["metadata"]["time"] == time_at(1, "07:00")]
     assert len(plans) == 3 and all(notice in r["messages"][-1]["content"] for r in plans)
 
     [opening] = [e for e in log if e.kind is EventKind.ANNOUNCEMENT and e.scene == held]
     assert (opening.time, sorted(opening.audience)) == (time_at(1, "18:00"), list(AGENTS))
-    assert opening.text.startswith("The clerk opens the meeting and reads out the question:")
+    assert opening.text.startswith(
+        f'The clerk opens the meeting and reads out the question: "{question}" The answers'
+    )
     [started] = [e for e in log if e.kind is EventKind.SCENE_STARTED and e.scene == held]
     assert started.payload["kind"] == "meeting"
     votes = [e for e in log if e.kind is EventKind.VOTE]
@@ -863,7 +997,7 @@ async def test_a_meeting_is_noticed_held_answered_counted_and_enacted_the_next_m
     asked = [r for r in script_requests(run) if '"give the clerk your answer"' in str(r)]
     assert len(asked) == 3 and all(
         "and the talk is over. The clerk asks each person here, privately, for an answer to "
-        f"the question: {question} The answers are yes or no." in r["messages"][-1]["content"]
+        f'the question "{question}" The answers are yes or no.' in r["messages"][-1]["content"]
         for r in asked
     )
     count = said_at[held]

@@ -7,6 +7,7 @@ from core.environment import Environment
 from core.interaction import (
     Allowance,
     Decision,
+    EventKind,
     Leave,
     MayCheck,
     MayClaim,
@@ -24,10 +25,11 @@ from runtime.scenes.scene import Scene
 class WorkSession(Scene):
     """The agents at a work place from `start` until `until`, when the place closes or the
     part of the day ends, in at most `rounds` rounds spread evenly over that time; in each,
-    every agent still present decides at once. One who goes home is no longer present, and a
-    round in which everyone still present carries on quietly, or after which nobody is left,
-    ends the session: those there work on until `until`. `closes` says whether `until` is
-    the place's closing time."""
+    every agent still present decides at once, told that what it does takes it to the next
+    round, or to `until` in the last. One who goes home is no longer present, and a round in
+    which everyone still present carries on quietly, or after which nobody is left, ends the
+    session: those there work on until `until`. `closes` says whether `until` is the place's
+    closing time, and `posting` when new notices next go up, if known."""
 
     kind = "work"
 
@@ -42,11 +44,13 @@ class WorkSession(Scene):
         until: int,
         rounds: int,
         closes: bool,
+        posting: int | None = None,
     ) -> None:
         super().__init__(env, id, place, participants, start, (until - start) // rounds)
         self.rounds = rounds
         self.until = until
         self.closes = closes
+        self.posting = posting
         self.present = list(participants)
 
     def ask(self) -> list[str]:
@@ -81,7 +85,22 @@ class WorkSession(Scene):
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]
-        return situations.work(self.env, self.place, others, agent, self.until, self.closes)
+        last = self.turns + 1 >= self.rounds
+        return situations.work(
+            self.env,
+            self.place,
+            others,
+            agent,
+            now=self.next_time,
+            following=self.until if last else self.next_time + self.step,
+            until=self.until,
+            closes=self.closes,
+            posting=self.posting,
+        )
+
+    def shown(self) -> tuple[EventKind, ...]:
+        """The board."""
+        return (EventKind.TASK_POSTED,)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(

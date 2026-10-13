@@ -22,10 +22,10 @@ Scenes at different places run side by side. The residents asked at one moment d
 
 Everything that happens is recorded in a single append-only event log, the ground truth for analysis and replay. A resident perceives only the text of the events it witnesses, worded for it, with itself as "you":
 
-- what is said and handed over where it is, and who comes and goes; of a private remark between others, only that it was made;
+- what is said and handed over where it is, quoted in the speaker's own words, and who comes and goes; of a private remark between others, only that it was made;
 - at its work place, notices going up, jobs taken, and work accepted together with what its worker told the client;
 - town-wide, faults that come to light, jobs that lapse, announcements and the posted standings;
-- privately, what concerns only itself: payments and charges, work handed back with what the client found, its own tries at its desk, an asking addressed to it, the clerk's draw and a choice that reality refused.
+- privately, what concerns only itself: payments and charges, work handed back with what the client found, its own tries at its desk, an asking addressed to it, an asking or a name put down that ends without a job and why, the clerk's draw and a choice that reality refused.
 
 The rest is in the log but never reaches a resident: the true quality of work, every private thought, the marks each resident gave and the answer each gave at a meeting.
 
@@ -44,8 +44,8 @@ At every decision the agent reads, in the second person and in the town's words:
 
 - who it is, what it knows of the town (its places and hours, the shape of its days, when notices go up, the rules of work and of the ledger), what it has resolved and the titles in its notebook;
 - its most relevant notes in full, and a bounded selection of what it has come to believe, beliefs about the people the moment mentions first;
-- what it remembers, told as recollection: its latest records, older ones that share words with the present moment, and what is new;
-- where it is, who is there, its purse, its job with the draft on its desk, and the board.
+- what it remembers, told as recollection: its latest records, older ones that share words with the present moment, and what is new, each fact once: what it did is told by its own record and what followed by the result, and the notices and standings it has in front of it are not recalled as well;
+- where it is, who is there, how long what it does now will take, its purse and what a day costs it, its job with the draft on its desk, and the board.
 
 It answers with what goes through its head and the one thing it does, on an answer card written for that moment in the town's words, which lists only what can really be done now: the jobs on the board, the people present, the places open. In the town a first answer is written freely. One that cannot be read, that names something not on the card or that is cut off by the token limit is handed back with a plain word on what was wrong and asked for again, now with the card enforced by the model server. If three attempts give no valid answer, the resident does nothing in that moment (or skips that night's step), and the lapse is recorded with how each attempt failed. A run fails once more than 1% of its decisions and night steps have lapsed, and at least ten have.
 

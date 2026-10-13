@@ -89,15 +89,18 @@ class Agent:
 
     async def act(self, observation: Observation) -> Decision:
         """Store the new percepts, recall memories, answer on the moment's card, and record
-        the decision the answer means.
+        the decision the answer means. News of the kinds the moment shows as it stands (the
+        board, the standings) is stored but not recalled beside it.
 
         Raises ValueError if the observation is addressed to another agent.
         """
         if observation.agent != self.id:
             raise ValueError(f"observation for {observation.agent!r} given to {self.id!r}")
-        memory = self.memory
-        earlier = memory.episodic.read()
+        memory, shown = self.memory, observation.shown
+        earlier = [record for record in memory.episodic.read() if record.kind not in shown]
         self.perceive(observation.percepts, observation.places)
+        new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
+        observation = observation.model_copy(update={"percepts": new})
         skills = memory.skills.read()
         recall = self._retriever.recall(observation, earlier, memory.insights.read(), skills)
         system = prompts.system_prompt(

@@ -78,6 +78,12 @@ class Scene(ABC):
     def situation(self, agent: str) -> str:
         """What `agent` is told about the moment and what it could do in it."""
 
+    def shown(self) -> tuple[EventKind, ...]:
+        """The kinds of event whose news the situation shows as it now stands, so that no
+        agent recalls them beside it; none, unless a scene shows the board or the
+        standings."""
+        return ()
+
     @abstractmethod
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         """Carry out `agent`'s decision in the turn that takes place at `time`."""
@@ -130,6 +136,7 @@ async def play(
                 percepts=env.perceive(agent),
                 allowed=scene.allowed(agent),
                 places=situations.place_names(env, agent),
+                shown=scene.shown(),
             )
             for scene, agent in asked
         ]

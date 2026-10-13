@@ -17,6 +17,7 @@ from infrastructure.git import Repository
 from infrastructure.llm import LLMConfigError
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
+from tests.runtime.test_simulation import told_twice
 
 CONFIGS = Path(__file__).parents[2] / "experiments" / "configs"
 GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
@@ -207,8 +208,9 @@ def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):
 def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path):
     """The smoke town on a Wednesday start: what every resident knows opens with the backdrop,
     money is told in dollars and never in crowns, the first day is a Wednesday by the town's
-    calendar and by the dates of every resident's history, and nothing sent or written steers
-    traits or shows the machinery."""
+    calendar and by the dates of every resident's history, nothing sent or written steers
+    traits or shows the machinery, and no moment tells a notice, a hand-in or the standings
+    twice."""
     data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
     data["environment"]["setting"]["start_date"] = "2001-01-03"
     config = tmp_path / "smoke.yaml"
@@ -233,6 +235,9 @@ def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path
     assert not unguarded(written(run))
     first = Repository(run.agent_dir("Mei")).log()[-1]
     assert first.date == datetime(2001, 1, 3, tzinfo=UTC)
+    twice, checked = told_twice(run)
+    assert checked and not twice, twice
+    assert any("tonight's standings" in text for text in texts)
 
 
 def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path):

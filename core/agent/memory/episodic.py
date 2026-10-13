@@ -5,32 +5,37 @@ from pathlib import Path
 
 from pydantic import NonNegativeInt
 
-from core.interaction import Percept, SimTime
+from core.interaction import EventKind, Percept, SimTime
 from infrastructure.config import StrictModel
 from infrastructure.storage import append_jsonl, read_jsonl
 
 
 class Record(StrictModel):
-    """One experience: a witnessed event, with its event `seq`, or one of the agent's own
-    decisions, with `seq` None. `text` is what the agent perceived or did; `place` is the id
-    of where it happened, and `where` the name the agent knows that place by, when it was
-    known as the record was made (records made before names were kept have none)."""
+    """One experience: a witnessed event, with its event `seq` and `kind`, or one of the
+    agent's own decisions, with both None. `text` is what the agent perceived or did; `place`
+    is the id of where it happened, and `where` the name the agent knows that place by, when
+    it was known as the record was made (records made before names, or kinds, were kept have
+    none)."""
 
     time: SimTime
     place: str | None = None
     where: str | None = None
     seq: NonNegativeInt | None = None
+    kind: EventKind | None = None
     text: str
 
     @classmethod
     def of(cls, percept: Percept, names: Mapping[str, str] | None = None) -> "Record":
-        """The record of `percept`, naming its place as `names` (by place id) do."""
-        where = None if names is None or percept.place is None else names.get(percept.place)
+        """The record of `percept`, naming its place as `names` (by place id) do; a move,
+        witnessed at either of its ends and told with both, names none."""
+        known = names is not None and percept.place is not None
+        where = names.get(percept.place) if known and percept.kind is not EventKind.MOVE else None
         return cls(
             time=percept.time,
             place=percept.place,
             where=where,
             seq=percept.seq,
+            kind=percept.kind,
             text=percept.text,
         )
 

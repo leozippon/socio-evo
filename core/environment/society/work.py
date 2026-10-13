@@ -361,6 +361,16 @@ class Board:
         """End every open proposal and application."""
         self.offers.clear()
 
+    def withdraw(self, task_id: str) -> Claim | None:
+        """Remove the task `task_id`, taken or on the board, with the offers for it; returns
+        its claim if it was taken. Raises ValueError if it is neither."""
+        if (claim := self.claims.pop(task_id, None)) is not None:
+            return claim
+        if self.listings.pop(task_id, None) is None:
+            raise ValueError(f"{task_id} is neither taken nor on the board")
+        self._drop_offers(task_id)
+        return None
+
     def discover(self, rng: random.Random, probability: float) -> list[Defect]:
         """Discover each latent defect with `probability`, one draw per defect; returns them."""
         hits = [rng.random() < probability for _ in self.latent]

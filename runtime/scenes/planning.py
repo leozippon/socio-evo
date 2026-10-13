@@ -3,7 +3,7 @@
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment, PlaceKind
-from core.interaction import Allowance, Decision, MayPlan, PlanDay
+from core.interaction import Allowance, Decision, EventKind, MayPlan, PlanDay
 from runtime.scenes import situations
 from runtime.scenes.scene import Scene
 from runtime.scheduler import Calendar
@@ -11,7 +11,8 @@ from runtime.scheduler import Calendar
 
 class Planning(Scene):
     """Each agent plans its day from wherever it is, in one turn at `start`, on a card that
-    offers for each part of the day the places open when it begins, and home."""
+    offers for each part of the day the places open when it begins, and home; `posting` is
+    when new notices next go up, if known."""
 
     kind = "planning"
 
@@ -23,9 +24,11 @@ class Planning(Scene):
         calendar: Calendar,
         *,
         start: int,
+        posting: int | None = None,
     ) -> None:
         super().__init__(env, id, None, participants, start, 0)
         self.calendar = calendar
+        self.posting = posting
         self.itineraries: dict[str, dict[str, str]] = {}
 
     def ask(self) -> list[str]:
@@ -48,7 +51,12 @@ class Planning(Scene):
         return (MayPlan(places=places),)
 
     def situation(self, agent: str) -> str:
-        return situations.planning(self.env, agent)
+        return situations.planning(self.env, agent, self.start, self.posting)
+
+    def shown(self) -> tuple[EventKind, ...]:
+        """The board, and the standings when they are posted."""
+        standings = (EventKind.ESTEEM_UPDATED,) if self.env.conditions.esteem_public else ()
+        return (EventKind.TASK_POSTED, *standings)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         plan: PlanDay = decision.action

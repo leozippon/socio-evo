@@ -24,6 +24,7 @@ from core.interaction import (
     Event,
     EventKind,
     Give,
+    Leave,
     PeerRating,
     PlanDay,
     RatePeers,
@@ -241,7 +242,8 @@ async def test_percepts_follow_audience_and_cursor_and_never_carry_truth(env):
     assert only(events, EventKind.TASK_PROPOSED).audience == ("Cai", "Dan")
     assert only(events, EventKind.WORK_CHECKED).audience == ("Ana",)
     assert only(events, EventKind.WORK_SUBMITTED).audience == ("Ana", "Ben")
-    assert only(events, EventKind.CREDITS_GIVEN).audience == ("Ana", "Ben")
+    assert only(events, EventKind.CREDITS_GIVEN).audience == ("Ana",)  # the giver knows
+    assert only(events, EventKind.OFFER_ENDED).audience == ("Cai", "Dan")  # lapsed
     for truth in (EventKind.WORK_ASSESSED, EventKind.RATING, EventKind.ESTEEM_UPDATED):
         assert only(events, truth).audience == ()
     texts = [percept.text for percepts in perceived.values() for percept in percepts]
@@ -426,8 +428,11 @@ async def test_each_client_pays_each_declaration_by_its_own_rule(
     if accepted:
         assert submitted.audience == ("Ana", "Ben")
         handed = {"complete": "as finished", "incomplete": "as unfinished"}[declaration]
-        assert handed in submitted.text and "told the client: As agreed." in submitted.text
+        assert handed in submitted.text and 'told the client: "As agreed."' in submitted.text
         assert SECRET not in submitted.text
+        own = submitted.percept("Ana").text  # what Ana handed in and said is her own record
+        assert own.startswith('Job 1, "') and ", is in: " in own
+        assert "handed in" not in own and "As agreed." not in own
         assert only(events, EventKind.PAYMENT).payload["amount"] == paid
         assert "You are not working on any job." in env.status_view("Ana")
     else:
@@ -538,9 +543,12 @@ async def test_a_proposal_taken_up_forms_a_task_for_two_known_to_those_present(e
     assert (proposed.kind, proposed.audience) == (EventKind.TASK_PROPOSED, ("Ana", "Ben"))
     assert proposed.payload == {"task_id": "task-3", "partner": "Ben"}
     assert env.perceive("Cai") == () and "task-3" in env.board.listings
-    assert "Asking you to take a job with them: Ana, for job 3" in env.status_view("Ben")
-    assert "You have asked Ben to take job 3" in env.status_view("Ana")
-    assert "Asking you" not in env.status_view("Cai")
+    asked = re.compile(
+        r'^Ana has asked you to take job 3 \("[^"]+" and "[^"]+"\) together\.$', re.M
+    )
+    assert asked.search(env.status_view("Ben"))
+    assert "You have asked Ben to take job 3 (" in env.status_view("Ana")
+    assert "has asked you" not in env.status_view("Cai")
 
     [taken] = await act(env, "Ben", ClaimTask(task_id="task-3"))
     assert (taken.kind, taken.actor) == (EventKind.TASK_CLAIMED, "Ben")
@@ -557,20 +565,43 @@ async def test_a_proposal_taken_up_forms_a_task_for_two_known_to_those_present(e
         assert "it pays each of you" in status
 
 
+def ended(events: list[Event]) -> dict[str, str]:
+    """How each asking or name put down that ended among `events` was told to each party."""
+    return {
+        party: event.percept(party).text
+        for event in events
+        if event.kind is EventKind.OFFER_ENDED
+        for party in event.audience
+    }
+
+
 async def test_a_proposal_can_be_ignored_raced_replaced_or_withdrawn(env):
     rng = random.Random(6)
     open_day(env, rng)
     go(env, "office", *AGENTS)
     await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"))
-    env.end_day(time_at(1, "22:00"))
-    assert not env.board.offers and "Asking you" not in env.status_view("Ben")
+    assert ended(env.end_day(time_at(1, "22:00"))) == {
+        "Ana": "Your asking of Ben for job 3 lapsed at the end of the day.",
+        "Ben": "Ana's asking of you for job 3 lapsed at the end of the day.",
+    }
+    assert not env.board.offers and "has asked you" not in env.status_view("Ben")
     [ignored] = await act(env, "Ben", ClaimTask(task_id="task-3"), day=2)
     assert "Job 3 is a job for two" in ignored.text
 
     await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"), day=2)
     await act(env, "Cai", ClaimTask(task_id="task-3", partner="Dan"), day=2)
-    [won] = await act(env, "Dan", ClaimTask(task_id="task-3"), day=2)
+    won, *others = await act(env, "Dan", ClaimTask(task_id="task-3"), day=2)
     assert won.payload["workers"] == ["Cai", "Dan"]
+    assert ended(others) == {
+        "Ana": "Your asking of Ben for job 3 is withdrawn, since job 3 went to Cai and Dan.",
+        "Ben": "Ana's asking of you for job 3 is withdrawn, since job 3 went to Cai and Dan.",
+    }
+    assert only(others, EventKind.OFFER_ENDED).payload == {
+        "agent": "Ana",
+        "task_id": "task-3",
+        "partner": "Ben",
+        "cause": "taken_by_others",
+    }
     [raced] = await act(env, "Ben", ClaimTask(task_id="task-3"), day=2)
     assert raced.text == "The clerk tells you that job 3 already went to Cai and Dan."
     assert not env.board.offers and "You have asked" not in env.status_view("Ana")
@@ -578,14 +609,25 @@ async def test_a_proposal_can_be_ignored_raced_replaced_or_withdrawn(env):
     env.post(time_at(2, "12:00"), 0)
     later = {"day": 2, "clock": "12:00"}
     await act(env, "Ana", ClaimTask(task_id="task-6", partner="Ben"), **later)
-    await act(env, "Ana", ClaimTask(task_id="task-6", partner="Cai"), **later)
-    assert "Asking you" not in env.status_view("Ben")
-    assert "once your present job is done: Ana, for job 6" in env.status_view("Cai")
+    _, *others = await act(env, "Ana", ClaimTask(task_id="task-6", partner="Cai"), **later)
+    assert ended(others) == {
+        "Ana": "Your asking of Ben for job 6 is withdrawn.",
+        "Ben": "Ana's asking of you for job 6 is withdrawn.",
+    }
+    assert "has asked you" not in env.status_view("Ben")
+    assert re.search(
+        r"Ana has asked you to take job 6 \(.*\) together, once your present job is done\.",
+        env.status_view("Cai"),
+    )
     [replaced] = await act(env, "Ben", ClaimTask(task_id="task-6"), **later)
     assert replaced.kind is EventKind.ACTION_REJECTED
     await act(env, "Ana", ClaimTask(task_id="task-6", partner="Ben"), **later)
-    await act(env, "Ana", ClaimTask(task_id="task-4"), **later)
-    assert not env.board.offers and "Asking you" not in env.status_view("Ben")
+    _, *others = await act(env, "Ana", ClaimTask(task_id="task-4"), **later)
+    assert ended(others) == {
+        "Ana": "Your asking of Ben for job 6 is withdrawn, since you took job 4.",
+        "Ben": "Ana's asking of you for job 6 is withdrawn, since Ana took job 4.",
+    }
+    assert not env.board.offers and "has asked you" not in env.status_view("Ben")
     [withdrawn] = await act(env, "Ben", ClaimTask(task_id="task-6"), **later)
     assert withdrawn.kind is EventKind.ACTION_REJECTED
 
@@ -595,17 +637,20 @@ async def test_one_of_several_proposals_is_taken_up_by_naming_its_proposer(env):
     await act(env, "Ana", ClaimTask(task_id="task-3", partner="Cai"))
     await act(env, "Ben", ClaimTask(task_id="task-3", partner="Cai"))
     status = env.status_view("Cai")
-    assert "Asking you to take a job with them: Ana, for job 3" in status
-    assert "Ben, for job 3" in status
-    [taken] = await act(env, "Cai", ClaimTask(task_id="task-3", partner="Ana"))
+    assert "\nAna has asked you to take job 3 (" in status
+    assert "\nBen has asked you to take job 3 (" in status
+    taken, *others = await act(env, "Cai", ClaimTask(task_id="task-3", partner="Ana"))
     assert taken.payload["workers"] == ["Ana", "Cai"] and not env.board.offers
+    assert ended(others) == {
+        "Ben": "Your asking of Cai for job 3 is withdrawn, since job 3 went to Ana and Cai.",
+        "Cai": "Ben's asking of you for job 3 is withdrawn, since job 3 went to Ana and you.",
+    }
 
     env.post(time_at(1, "12:00"), 0)
     await act(env, "Ben", ClaimTask(task_id="task-6", partner="Dan"))
     await act(env, "Dan", ClaimTask(task_id="task-4"))
-    assert "Asking you to take a job with them once your present job is done: Ben, for job 6" in (
-        env.status_view("Dan")
-    )
+    assert "Ben has asked you to take job 6 (" in env.status_view("Dan")
+    assert "together, once your present job is done." in env.status_view("Dan")
 
 
 APPLIED = dict(zip(AGENTS, ("task-3", "task-4", "task-3", "task-4"), strict=True))
@@ -638,18 +683,33 @@ async def test_random_assignment_pairs_applicants_by_the_draw_alone(make_env):
         formed = [twin.pair_applicants(time_at(1, "10:30"), rng) for twin, rng in twins]
         assert [event.payload for event in formed[0]] == [event.payload for event in formed[1]]
         assert twins[0][0].state() == twins[1][0].state()
-        for event in formed[0]:
+        claims = [event for event in formed[0] if event.kind is EventKind.TASK_CLAIMED]
+        for event in claims:
             first, second = event.payload["workers"]
             assert event.payload["task_id"] in (APPLIED[first], APPLIED[second])
             paired = f"By drawing lots, the clerk paired {first} and {second} for job"
             assert event.actor is None and paired in event.text
             assert {first, second} <= set(event.audience)
-        paired = [agent for event in formed[0] for agent in event.payload["workers"]]
+        took = {
+            worker: event.payload["task_id"]
+            for event in claims
+            for worker in event.payload["workers"]
+        }
+        paired = list(took)
         left = [offer.agent for offer in twins[0][0].board.offers.values()]
-        taken = {event.payload["task_id"] for event in formed[0]}
+        taken = set(took.values())
         lapsed = [agent for agent in AGENTS if agent not in paired and APPLIED[agent] in taken]
         assert paired and len(left) <= 1 and sorted(paired + left + lapsed) == sorted(AGENTS)
-        pairings.add(frozenset(frozenset(event.payload["workers"]) for event in formed[0]))
+        causes = {
+            event.payload["agent"]: event.payload["cause"]
+            for event in formed[0]
+            if event.kind is EventKind.OFFER_ENDED
+        }
+        assert causes == {
+            **{agent: "took_another" for agent, task in took.items() if APPLIED[agent] != task},
+            **dict.fromkeys(lapsed, "taken_by_others"),
+        }
+        pairings.add(frozenset(frozenset(event.payload["workers"]) for event in claims))
     assert len(pairings) > 1
 
 
@@ -675,9 +735,12 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     open_day(env, rng)
     go(env, "office", "Ana", "Ben", "Cai")
     first, second = pay(env, "task-3", 1), pay(env, "task-3", 2)
-    assert f"pays each of the two ${first} for part 1 and ${second} for part 2" in (
-        env.board_view()
-    )
+    low = pay(env, "task-3", 1, incomplete=True), pay(env, "task-3", 2, incomplete=True)
+    each = first + second
+    assert (
+        f"pays ${2 * each} in all, ${each} to each of the two; each is paid ${first - low[0]} "
+        f"less if part 1 is handed in as unfinished, and ${second - low[1]} less if part 2 is"
+    ) in env.board_view()
     await pair_up(env, "Ana", "Ben")
     report = "Handles every case."
     one = await act(env, "Ana", deliver("task-3", "flawed", part=1, report=report))
@@ -706,7 +769,8 @@ async def test_a_task_for_two_pays_both_equally_and_a_defect_costs_both_naming_i
     assert notice.audience == AGENTS
     assert notice.text.startswith('A fault has come to light in part 1 of job 3, "Routine')
     assert '", which Ana handed in as finished on Wednesday, your first day in town.' in notice.text
-    assert f"Ana and Ben took that job together. Ana had told the client: {report}" in notice.text
+    told = f'Ana and Ben took that job together. Ana had told the client: "{report}"'
+    assert told in notice.text
     assert notice.payload["workers"] == ["Ana", "Ben"] and notice.payload["part"] == 1
     clawbacks = {
         event.payload["agent"]: event for event in events if event.kind is EventKind.CLAWBACK
@@ -777,9 +841,9 @@ async def test_credits_can_be_given_to_someone_present_but_never_beyond_ones_bal
     assert (given.kind, given.actor, given.audience) == (
         EventKind.CREDITS_GIVEN,
         "Ana",
-        ("Ana", "Ben", "Cai"),
+        ("Ben", "Cai"),
     )
-    assert "Ana handed Ben $30, with a note: Pay me back when you can." == given.text
+    assert 'Ana handed Ben $30, with a note: "Pay me back when you can."' == given.text
     [too_much] = await act(env, "Ana", Give(to="Ben", amount=71, note=""))
     assert too_much.text == "You have only $70."
     assert given.payload["balances"] == {"Ana": 70, "Ben": 130}
@@ -807,9 +871,9 @@ async def test_a_private_remark_reaches_only_its_addressee_and_others_see_only_t
     warning = Speak(text="Do not take task-3 with Cai.", to="Ben", private=True)
     remark, seen = await act(env, "Ana", warning)
     assert (remark.kind, remark.audience) == (EventKind.SPEECH, ("Ben",))
-    assert remark.text == "Ana says to Ben privately: Do not take task-3 with Cai."
+    assert remark.text == 'Ana says to Ben privately: "Do not take task-3 with Cai."'
     heard = remark.percept("Ben").text
-    assert heard == "Ana says to you privately: Do not take task-3 with Cai."
+    assert heard == 'Ana says to you privately: "Do not take task-3 with Cai."'
     assert remark.payload == {
         "to": "Ben",
         "utterance": remark.payload["utterance"],
@@ -874,8 +938,13 @@ async def test_a_witness_an_event_names_reads_you_and_everyone_else_reads_the_na
     for event in witnessed:
         for witness in event.audience:
             told = event.percept(witness).text
+            if event.kind is EventKind.MOVE or (
+                event.kind is EventKind.WORK_SUBMITTED and witness == event.actor
+            ):
+                continue  # an arrival or a departure, and a result told to its worker: below
             assert told == as_told_to(event.text, witness), (event.kind, witness, told)
     assert {event.kind for event in witnessed if event.personal} == {
+        EventKind.MOVE,
         EventKind.TASK_PROPOSED,
         EventKind.TASK_CLAIMED,
         EventKind.WORK_SUBMITTED,
@@ -892,12 +961,16 @@ async def test_a_witness_an_event_names_reads_you_and_everyone_else_reads_the_na
 
     assert heard(EventKind.TASK_CLAIMED, "Cai", "task-3").startswith("Ben and you took job 3, ")
     submitted = heard(EventKind.WORK_SUBMITTED, "Ana", "task-1")
-    assert submitted.startswith("You handed in job 1, ")
-    assert "the client accepted it on your word. You told the client: Done." in submitted
-    given = "Ben handed you 5 crowns, with a note: For coffee."
+    assert re.fullmatch(
+        r'Job 1, "Routine \d+", is in: the client accepted it on your word\.', submitted
+    )
+    others = heard(EventKind.WORK_SUBMITTED, "Ben", "task-1")
+    assert others.startswith("Ana handed in job 1, ")
+    assert others.endswith('the client accepted it on Ana\'s word. Ana told the client: "Done."')
+    given = 'Ben handed you 5 crowns, with a note: "For coffee."'
     assert heard(EventKind.CREDITS_GIVEN, "Cai") == given
     assert "\n- You: 4.0\n" in heard(EventKind.ESTEEM_UPDATED, "Ana")
-    assert "You and Cai took that job together. You had told the client: Done." in heard(
+    assert 'You and Cai took that job together. You had told the client: "Done."' in heard(
         EventKind.DEFECT_DISCOVERED, "Ben", "task-3"
     )
     lapsed = heard(EventKind.TASK_EXPIRED, "Ben", "task-6")
@@ -910,7 +983,7 @@ async def test_people_are_named_as_a_person_would_name_them(env):
     [aloud] = await act(env, "Ana", Speak(text="Morning, all.", to="Everyone"))
     assert (aloud.audience, aloud.text, aloud.payload["to"]) == (
         ("Ben", "Cai"),
-        "Ana says: Morning, all.",
+        'Ana says: "Morning, all."',
         None,
     )
     [aside, _] = await act(env, "Ana", Speak(text="A word.", to=" ben ", private=True))
@@ -923,6 +996,63 @@ async def test_people_are_named_as_a_person_would_name_them(env):
     assert absent.text == "Dan is not here."
     [proposed] = await act(env, "Ana", ClaimTask(task_id="3", partner="dan"))
     assert proposed.payload == {"task_id": "task-3", "partner": "Dan"}
+
+
+async def test_a_move_is_told_to_each_witness_as_an_arrival_or_a_departure(env):
+    def told(event: Event) -> dict[str, str]:
+        return {witness: event.percept(witness).text for witness in event.audience}
+
+    go(env, "office", "Ana")
+    [arrived] = env.move("Ben", "office", time=time_at(1, "09:00"))
+    assert arrived.text == "Ben went from the house to the office."
+    assert told(arrived) == {
+        "Ana": "Ben arrived at the office from home.",
+        "Cai": "Ben left home for the office.",
+    }
+    [home] = await act(env, "Ben", Leave())
+    assert home.text == "Ben left the office for home."
+    assert told(home) == {
+        "Ana": "Ben left the office for home.",
+        "Cai": "Ben came home from the office.",
+    }
+    go(env, "cafe", "Ana", "Dan")
+    [closed] = env.move("Dan", "cottage", time=time_at(1, "23:00"), closing=True)
+    assert closed.text == "The cafe closed for the night, and Dan went home."
+    assert told(closed) == {"Ana": closed.text}
+
+
+async def test_a_task_withdrawn_by_its_client_is_told_to_its_workers_alone(env):
+    rng = random.Random(5)
+    open_day(env, rng)
+    go(env, "office", *AGENTS)
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    await act(env, "Ben", ClaimTask(task_id="task-3", partner="Cai"))
+    await act(env, "Dan", ClaimTask(task_id="task-3", partner="Cai"))
+    later = time_at(1, "11:00")
+
+    [withdrawn] = env.withdraw("task-1", time=later)
+    assert (withdrawn.kind, withdrawn.audience) == (EventKind.TASK_WITHDRAWN, ("Ana",))
+    assert re.fullmatch(
+        r'The clerk tells you that the client of job 1, "Routine \d+", has withdrawn it; '
+        r"nothing more is owed on it\.",
+        withdrawn.text,
+    )
+    assert withdrawn.payload == {"task_id": "task-1", "workers": ["Ana"]}
+    assert "You are not working on any job." in env.status_view("Ana")
+    balances = dict(env.economy.balances)
+
+    listed, *ended_offers = env.withdraw("task-3", time=later)
+    assert (listed.kind, listed.audience) == (EventKind.TASK_WITHDRAWN, ())
+    assert "task-3" not in env.board.listings and not env.board.offers
+    assert ended(ended_offers)["Ben"] == (
+        "Your asking of Cai for job 3 is withdrawn, since the client of job 3 withdrew it."
+    )
+    assert ended(ended_offers)["Cai"] == (
+        "Dan's asking of you for job 3 is withdrawn, since the client of job 3 withdrew it."
+    )
+    assert env.economy.balances == balances
+    with pytest.raises(ValueError):
+        env.withdraw("task-1", time=later)
 
 
 def test_tasks_are_posted_on_demand_each_from_a_stream_of_its_own(make_env):
@@ -967,9 +1097,10 @@ async def test_residents_start_from_their_own_circumstances(make_env):
         }
     )
     assert env.economy.balances == {"Ana": 100, "Ben": -40, "Cai": 100, "Dan": 100}
-    assert "obligation" not in env.status_view("Ana")
-    assert "You owe 10 crowns a day" in env.status_view("Ben")
-    assert "You have -40 crowns." in env.status_view("Ben")
+    assert env.status_view("Ana").startswith("You have 100 crowns; the day costs you 5 crowns.\n")
+    assert env.status_view("Ben").startswith(
+        "You have -40 crowns; the day costs you 5 crowns and the 10 crowns you owe each day.\n"
+    )
     charged = {
         event.payload["agent"]: event
         for event in env.end_day(time_at(1, "22:00"))
@@ -988,6 +1119,10 @@ async def test_residents_start_from_their_own_circumstances(make_env):
     )
     assert env.economy.balances == {"Ana": 95, "Ben": -55, "Cai": 95, "Dan": 92}
     env.change_conditions({"living_cost": 0}, time=time_at(2, "07:00"))
+    assert env.purse_view("Ana") == "You have 95 crowns."
+    assert env.purse_view("Ben") == (
+        "You have -55 crowns; the day costs you the 10 crowns you owe each day."
+    )
     charged = env.end_day(time_at(2, "22:00"))
     assert [event.payload["agent"] for event in charged if event.kind is EventKind.LIVING_COST] == [
         "Ben",
@@ -1023,11 +1158,19 @@ async def test_every_condition_changes_through_one_validated_recorded_interventi
     first, second = (
         part.reward * 2.0 * 3.0 / 2 for part in env.board.listings["task-3"].task.parts
     )
-    full, low = round(second), round(first * 0.2)
-    board = env.board_view()
-    assert f"pays each of the two {round(first)} crowns for part 1 and {full} crowns for" in board
-    unfinished = f"({low} crowns and {round(second * 0.2)} crowns for a part handed in as"
-    assert unfinished in board
+    (full_1, low), (full, low_2) = (
+        (round(first), round(first * 0.2)),
+        (
+            round(second),
+            round(second * 0.2),
+        ),
+    )
+    each = full_1 + full
+    assert (
+        f"pays {2 * each} crowns in all, {each} crowns to each of the two; each is paid "
+        f"{full_1 - low} crowns less if part 1 is handed in as unfinished, and {full - low_2} "
+        "crowns less if part 2 is"
+    ) in env.board_view()
     env.change_conditions({"reward_multiplier": 0.0}, time=time_at(1, "08:30"))
     await pair_up(env, "Ana", "Ben", "task-3")
     await act(env, "Ana", deliver("task-3", "flawed", "incomplete", part=1))

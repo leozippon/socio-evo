@@ -244,7 +244,12 @@ class Simulation:
                 },
             )
         planning = Planning(
-            self.env, f"day-{day:04d}/planning", list(self.agents), calendar, start=time
+            self.env,
+            f"day-{day:04d}/planning",
+            list(self.agents),
+            calendar,
+            start=time,
+            posting=self._next_posting(time),
         )
         await self._play([planning])
         for slot, start in calendar.slot_times(day):
@@ -302,6 +307,7 @@ class Simulation:
                     until=time_at(day, closing) if closes else ends[payload["slot"]],
                     rounds=settings.work_rounds,
                     closes=closes,
+                    posting=self._next_posting(time),
                 )
             elif place.kind is PlaceKind.SOCIAL and len(here) > 1:
                 scene = Conversation(
@@ -469,6 +475,10 @@ class Simulation:
         """What `agent` knows of the town now."""
         config = self.config
         return situations.setting(self.env, config.calendar, config.postings, agent)
+
+    def _next_posting(self, time: int) -> int | None:
+        """When new notices next go up after `time`."""
+        return situations.next_posting(self.config.calendar, self.config.postings, time)
 
     async def _evolve(
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int

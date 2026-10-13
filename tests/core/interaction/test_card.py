@@ -120,12 +120,13 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
     assert form(Card(WORK).model) == "\n".join(
         [
             "Answer in one of these forms:",
-            '{"thought": "…", "do": "take a job", "job": 25 or 28}',
-            '{"thought": "…", "do": "take a job for two", "job": 31, "with": "Aisha" or "Tomas"}',
-            '{"thought": "…", "do": "say", "to": "Aisha", "Tomas" or null for everyone, '
+            '{"thought": "…", "do": "take a job", "job": one of 25, 28}',
+            '{"thought": "…", "do": "take a job for two", "job": 31, '
+            '"with": one of "Aisha", "Tomas"}',
+            '{"thought": "…", "do": "say", "to": one of "Aisha", "Tomas", or null for everyone, '
             '"words": "…"}',
-            '{"thought": "…", "do": "say privately", "to": "Aisha" or "Tomas", "words": "…"}',
-            '{"thought": "…", "do": "hand over money", "to": "Aisha" or "Tomas", '
+            '{"thought": "…", "do": "say privately", "to": one of "Aisha", "Tomas", "words": "…"}',
+            '{"thought": "…", "do": "hand over money", "to": one of "Aisha", "Tomas", '
             '"dollars": a whole number, "note": "…"}',
             '{"thought": "…", "do": "carry on quietly"}',
         ]
@@ -138,10 +139,14 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
         [MayCheck(task_id="task-3", parts=(1, 2)), MaySubmit(task_id="task-3", parts=(1,))]
     )
     assert form(working.model).splitlines()[1:] == [
-        '{"thought": "…", "do": "try your code", "part": 1 or 2, "code": "…"}',
-        '{"thought": "…", "do": "hand in", "code": "…", "as": "finished" or "unfinished", '
+        '{"thought": "…", "do": "try your code", "part": one of 1, 2, "code": "…"}',
+        '{"thought": "…", "do": "hand in", "code": "…", "as": one of "finished", "unfinished", '
         '"telling the client": "…"}',
     ]
+    alone = Card([MaySpeak(to=("Tomas",))])
+    assert form(alone.model).splitlines()[1] == (
+        '{"thought": "…", "do": "say", "to": "Tomas" or null for everyone, "words": "…"}'
+    )
 
 
 @pytest.mark.parametrize(
@@ -165,7 +170,7 @@ def test_a_reply_can_only_name_what_is_really_there(answer):
 def test_an_answer_to_the_clerk_is_one_of_the_meetings_answers():
     meeting = Card([MayVote(options=("yes", "no")), MayPass()])
     assert form(meeting.model).splitlines()[1] == (
-        '{"thought": "…", "do": "give the clerk your answer", "answer": "no" or "yes"}'
+        '{"thought": "…", "do": "give the clerk your answer", "answer": one of "no", "yes"}'
     )
     with pytest.raises(ValidationError):
         meeting.model.model_validate(
@@ -233,13 +238,13 @@ async def test_a_reply_off_the_card_is_asked_for_again():
 @pytest.mark.parametrize(
     ("answer", "problem"),
     [
-        ({"do": "take a job", "job": 27}, '"job" is not one of the choices shown'),
+        ({"do": "take a job", "job": 27}, '"job" must be one of the choices shown for it'),
         (
             {"do": "say", "to": "Tomas, Aisha", "words": "Hi."},
-            '"to" is not one of the choices shown',
+            '"to" must be one of the choices shown for it',
         ),
         ({"do": "say", "words": "Hi."}, '"to" is missing'),
-        ({"do": "dance"}, '"do" is not one of the choices shown'),
+        ({"do": "dance"}, '"do" must be one of the choices shown for it'),
         ({"do": "carry on quietly", "job": 25}, '"job" is not part of that form'),
         ("I take job 25.", None),
     ],

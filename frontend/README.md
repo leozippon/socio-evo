@@ -321,14 +321,16 @@ Within a day the events are those the simulation recorded in order: the day open
 | `task_posted` | none | everyone | `task`: `id`, `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
 | `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`: a proposal to take a two-person task together |
 | `task_applied` | the applicant | the applicant | `task_id` of a two-person task, for the board to pair |
+| `offer_ended` | none | the proposer and `partner`, or the applicant | `agent` (who made it), `task_id`, `partner` (null for an application), `cause`: `lapsed` at the day's end, `took_another` task, task `taken_by_others`, `withdrawn` by its client, or `replaced` by another offer; an open proposal or application that ended without becoming the task of the two it names |
 | `task_claimed` | the agent whose claim took it; none for a pair the board formed | everyone at the places of its workers | `task_id`, `workers` (one per part; for a proposal, the proposer first), `due_day` (last day to deliver) |
 | `task_expired` | none | everyone | `task_id`, `workers`, `delivered` (for each part, the worker whose delivery was accepted, or null): a task not completed by its due day, recorded the morning after; nothing is paid and the task is open again |
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
+| `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (the code), `report` (the worker's own account) |
 | `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
-| `credits_given` | the giver | the giver and others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
+| `credits_given` | the giver | others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
 | `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
 | `defect_discovered` | none | everyone | `task_id`, `part`, `worker` who delivered it, `workers` of the task, `delivery_time`, `declaration`, `report`, `quality` of the delivery |
 | `clawback` | none | the agent | `agent`, `task_id`, `part`, `worker` who delivered the part, `amount` taken back, `balance` after it; one per worker of the task |

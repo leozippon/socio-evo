@@ -75,8 +75,8 @@ RULES = (
     "pays. A client who tries the examples before paying pays the full price for a part handed "
     "in as finished if its examples pass; if they do not, the clerk hands the work back with "
     "what the client found, and you can hand it in again. A client who cannot run code pays the "
-    "full price for a part handed in as finished on your word. Either kind of client pays the "
-    "lower price shown for a part handed in as unfinished. Whichever the client, you can run "
+    "full price for a part handed in as finished on your word. Either kind of client pays less, "
+    "as the notice shows, for a part handed in as unfinished. Whichever the client, you can run "
     "your code against a part's examples at your desk before handing it in and see which pass; "
     "nobody else sees how that goes. A job not done by its deadline lapses: nothing is paid for "
     "it, and its notice goes back up on the board. Faults in work handed in can come to light "
@@ -86,8 +86,8 @@ RULES = (
 CLAWBACK = ", and the client takes back what was paid for that part"
 PAIRS = (
     "A job for two is paid once both its parts are in, whichever of the two handed them in: "
-    "each of the two is paid the amounts shown, and whatever a client takes back for either "
-    "part is taken from both."
+    "each of the two is paid the amount its notice shows for each of them, and whatever a "
+    "client takes back for either part is taken from both."
 )
 CHOICE = (
     "To take a job for two, you bring its notice to the clerk and name the neighbour you mean "
@@ -278,7 +278,8 @@ class Environment:
 
     def move(self, agent: str, place: str, *, time: int, closing: bool = False) -> list[Event]:
         """Move `agent` to `place`, witnessed by the others at the origin and the destination;
-        with `closing`, the move is told as the place it leaves closing for the night.
+        with `closing`, the move is told to those it leaves behind as the place closing for
+        the night.
 
         An unknown place, or one closed at `time`, is rejected, also if the agent is already
         there; otherwise moving to where the agent already is changes nothing.
@@ -296,7 +297,8 @@ class Environment:
             text = f"{capital(names[origin])} closed for the night, and {agent} went home."
         else:
             text = f"{agent} went from {names[origin]} to {names[place]}."
-        return [self._moved(agent, origin, text, time=time, place=place, scene=None)]
+        moved = self._moved(agent, origin, text, time=time, place=place, scene=None, told=closing)
+        return [moved]
 
     async def execute(
         self, agent: str, action: Action, *, time: int, scene: str, witnesses: Collection[str]
@@ -305,12 +307,13 @@ class Environment:
 
         `speak` is witnessed by the others among `witnesses` (a private remark is heard by
         its addressee alone); `leave` takes the agent home, as a move seen by the others at
-        the place and at home; `pass` leaves no trace. `give` moves credits to someone present
-        before them all. `claim_task`, `check_work`, `submit_work` and
-        `rate_peers` change society; `vote` records the answer the agent gave the clerk, for
-        the meeting of `scene` to count. An action that reality cannot honour changes nothing and
-        yields a private `action_rejected` event. `plan_day` is the runtime's to interpret
-        and raises ValueError here.
+        the place and at home; `pass` leaves no trace. `give` moves credits to someone present,
+        seen by the others there. `claim_task`, `check_work`, `submit_work` and `rate_peers`
+        change society; `vote` records the answer the agent gave the clerk, for the meeting of
+        `scene` to count. The agent is told what follows from its action, not the action
+        itself, which it records as its own decision. An action that reality cannot honour
+        changes nothing and yields a private `action_rejected` event. `plan_day` is the
+        runtime's to interpret and raises ValueError here.
         """
         if isinstance(action, PlanDay):
             raise ValueError("plan_day is interpreted by the runtime, not executed")
@@ -325,7 +328,7 @@ class Environment:
                 case Pass():
                     return []
                 case ClaimTask():
-                    return [self._claim(agent, action, **where)]
+                    return self._claim(agent, action, **where)
                 case CheckWork():
                     return [await self._check(agent, action, **where)]
                 case SubmitWork():
@@ -402,17 +405,45 @@ class Environment:
     def pair_applicants(self, time: int, rng: random.Random) -> list[Event]:
         """Pair the open applications for two-person tasks at random with `rng` (see
         `Board.pair`); each pair formed is announced to those present with either partner."""
+        open_before = dict(self.board.offers)
         claims = self.board.pair(rng, time)
-        return [
+        events = [
             self._taken(claim, time=time, actor=None, place=None, scene=None) for claim in claims
         ]
+        return events + self._offers_ended(open_before, time=time)
+
+    def withdraw(self, task_id: str, *, time: int) -> list[Event]:
+        """The client of `task_id` withdraws it: a task taken leaves its workers with nothing
+        more paid or owed on it, each told so privately by the clerk; a task on the board
+        comes down, a truth-only event, and any asking or name put down for it ends, told to
+        those it concerns. Raises ValueError if the task is neither taken nor on the board."""
+        open_before = dict(self.board.offers)
+        claim = self.board.withdraw(task_id)
+        if claim is None:
+            text = f"The client of {job_name(task_id)} withdrew it, and its notice came down."
+            workers: tuple[str, ...] = ()
+        else:
+            task, workers = claim.task, claim.workers
+            text = (
+                f"The clerk tells you that the client of {_job(task)}, has withdrawn it; nothing "
+                "more is owed on it."
+            )
+        withdrawn = self.emit(
+            EventKind.TASK_WITHDRAWN,
+            text,
+            time=time,
+            audience=workers,
+            payload={"task_id": task_id, "workers": list(workers)},
+        )
+        return [withdrawn, *self._offers_ended(open_before, time=time)]
 
     def end_day(self, time: int) -> list[Event]:
-        """Close the day of `time`: open proposals and applications lapse, the living cost and
-        each agent's own obligation are charged, and esteem is updated, which every agent
-        sees if esteem is public."""
+        """Close the day of `time`: open proposals and applications lapse, each told to those
+        it concerns, the living cost and each agent's own obligation are charged, and esteem
+        is updated, which every agent sees if esteem is public."""
+        open_before = dict(self.board.offers)
         self.board.lapse_offers()
-        events = []
+        events = self._offers_ended(open_before, time=time, lapsed=True)
         cost = self.conditions.living_cost
         for agent in self.agents:
             obligation = self.config.obligation(agent)
@@ -488,16 +519,21 @@ class Environment:
         )
         return "\n".join(["On the board:", *offers])
 
-    def status_view(self, agent: str) -> str:
-        """`agent`'s balance and obligation, the task it holds with the state of each part,
-        what it last saw when a solution for a part was run, and its open proposals or
-        application and those made to it."""
-        lines = [f"You have {self._money(self.economy.balances[agent])}."]
+    def purse_view(self, agent: str) -> str:
+        """`agent`'s balance and what a day costs it under the present conditions: the living
+        cost and its own obligation."""
+        money = self._money
+        have = f"You have {money(self.economy.balances[agent])}"
+        costs = [money(cost)] if (cost := self.conditions.living_cost) else []
         if obligation := self.config.obligation(agent):
-            lines[0] += (
-                f" You owe {self._money(obligation)} a day, paid each evening with your living "
-                "costs."
-            )
+            costs.append(f"the {money(obligation)} you owe each day")
+        return f"{have}; the day costs you {listed(costs)}." if costs else f"{have}."
+
+    def status_view(self, agent: str) -> str:
+        """`agent`'s purse, the task it holds with the state of each part, what it last saw
+        when a solution for a part was run, and its open proposal or application and those
+        made to it."""
+        lines = [self.purse_view(agent)]
         claim = self.board.claim_of(agent)
         if claim is None:
             lines.append("You are not working on any job.")
@@ -512,18 +548,16 @@ class Environment:
             for number in range(1, len(task.parts) + 1):
                 lines += self._part_status(claim, agent, number)
         if mine := self.board.offers.get(agent):
-            task = self.board.listings[mine.task_id].task
+            job = _titled(self.board.listings[mine.task_id].task)
             if mine.partner is None:
-                lines.append(f"Your name is down for {_job(task)}.")
+                lines.append(f"Your name is down for {job}.")
             else:
-                lines.append(f"You have asked {mine.partner} to take {_job(task)}, with you.")
-        if to_me := [offer for offer in self.board.offers.values() if offer.partner == agent]:
-            asks = (
-                f"{offer.agent}, for {_job(self.board.listings[offer.task_id].task)}"
-                for offer in to_me
-            )
-            busy = " once your present job is done" if claim is not None else ""
-            lines.append(f"Asking you to take a job with them{busy}: {'; '.join(asks)}.")
+                lines.append(f"You have asked {mine.partner} to take {job} together.")
+        busy = ", once your present job is done" if claim is not None else ""
+        for offer in self.board.offers.values():
+            if offer.partner == agent:
+                job = _titled(self.board.listings[offer.task_id].task)
+                lines.append(f"{offer.agent} has asked you to take {job} together{busy}.")
         return "\n".join(lines)
 
     def esteem_view(self, agent: str) -> str | None:
@@ -536,18 +570,42 @@ class Environment:
         """`agent` leaves `place` for home, in `scene`: an event of that place."""
         self.world.move(agent, self.config.homes[agent], clock_of(time))
         text = f"{agent} left {self.world.places[place].name} for home."
-        return self._moved(agent, place, text, time=time, place=place, scene=scene)
+        return self._moved(agent, origin=place, text=text, time=time, place=place, scene=scene)
 
     def _moved(
-        self, agent: str, origin: str, text: str, *, time: int, place: str, scene: str | None
+        self,
+        agent: str,
+        origin: str,
+        text: str,
+        *,
+        time: int,
+        place: str,
+        scene: str | None,
+        told: bool = False,
     ) -> Event:
-        """The news, told as `text`, that `agent` went from `origin` to where it is now, for
-        the others there and at `origin`, as an event of `place`."""
+        """The news that `agent` went from `origin` to where it is now, for the others there
+        and at `origin`, as an event of `place`: told to a witness at the destination as an
+        arrival, to one at the origin as a departure, unless `told` (then as `text`), each
+        naming both ends, and as `text` in the log."""
         destination = self.world.locations[agent]
         witnesses = self.world.occupants(origin) + self.world.occupants(destination)
+        home = self.config.homes[agent]
+        came = "home" if origin == home else self.world.places[origin].name
+        went = "home" if destination == home else self.world.places[destination].name
+
+        def seen(you: Witness) -> str:
+            here = None if you.name is None else self.world.locations[you.name]
+            if here == destination:
+                if destination == home:
+                    return f"{agent} came home from {came}."
+                return f"{agent} arrived at {went} from {came}."
+            if here == origin and not told:
+                return f"{agent} left {came} for {went}."
+            return text
+
         return self.emit(
             EventKind.MOVE,
-            text,
+            seen,
             time=time,
             audience=[witness for witness in witnesses if witness != agent],
             actor=agent,
@@ -566,7 +624,7 @@ class Environment:
 
         def said(you: Witness) -> str:
             whom = f" to {you(to)}" if to else ""
-            return f"{agent} says{whom}{' privately' if action.private else ''}: {action.text}"
+            return f'{agent} says{whom}{" privately" if action.private else ""}: "{action.text}"'
 
         payload = {"to": to, "utterance": action.text, "private": action.private}
         events = [
@@ -592,10 +650,13 @@ class Environment:
             )
         return events
 
-    def _claim(self, agent: str, action: ClaimTask, *, time: int, place: str, scene: str) -> Event:
+    def _claim(
+        self, agent: str, action: ClaimTask, *, time: int, place: str, scene: str
+    ) -> list[Event]:
         partner = None if action.partner is None else self._person(action.partner)
         if partner == agent:
             raise Rejected("You cannot take a job with yourself.")
+        open_before = dict(self.board.offers)
         taken = self.board.take(
             agent,
             action.task_id,
@@ -605,10 +666,10 @@ class Environment:
         )
         where = {"time": time, "actor": agent, "place": place, "scene": scene}
         if isinstance(taken, Claim):
-            return self._taken(taken, **where)
-        task = self.board.listings[taken.task_id].task
-        if taken.partner is None:
-            return self.emit(
+            event = self._taken(taken, **where)
+        elif taken.partner is None:
+            task = self.board.listings[taken.task_id].task
+            event = self.emit(
                 EventKind.TASK_APPLIED,
                 f"You put your name down for {_job(task)} with the clerk, who pairs the names put "
                 "down by drawing lots.",
@@ -616,14 +677,17 @@ class Environment:
                 payload={"task_id": task.id},
                 **where,
             )
-        partner, job = taken.partner, _job(task)
-        return self.emit(
-            EventKind.TASK_PROPOSED,
-            lambda you: f"{capital(you(agent))} asked {you(partner)} to take {job}, together.",
-            audience=[agent, partner],
-            payload={"task_id": task.id, "partner": partner},
-            **where,
-        )
+        else:
+            task, asked = self.board.listings[taken.task_id].task, taken.partner
+            job = _job(task)
+            event = self.emit(
+                EventKind.TASK_PROPOSED,
+                lambda you: f"{capital(you(agent))} asked {you(asked)} to take {job}, together.",
+                audience=[agent, asked],
+                payload={"task_id": task.id, "partner": asked},
+                **where,
+            )
+        return [event, *self._offers_ended(open_before, time=time)]
 
     def _taken(
         self, claim: Claim, *, time: int, actor: str | None, place: str | None, scene: str | None
@@ -653,6 +717,48 @@ class Environment:
             payload={"task_id": task.id, "workers": list(workers), "due_day": claim.due_day},
         )
 
+    def _offers_ended(
+        self, open_before: Mapping[str, Offer], *, time: int, lapsed: bool = False
+    ) -> list[Event]:
+        """Tell those it concerns, privately, of each offer in `open_before` that is no longer
+        open and did not become the task of the two it names (or of its applicant), and why:
+        it lapsed with the day (`lapsed`), its maker took another task, its task went to
+        others, its client withdrew it, or its maker made another offer."""
+        events = []
+        for agent, offer in open_before.items():
+            claim = self.board.claims.get(offer.task_id)
+            named = [agent] if offer.partner is None else [agent, offer.partner]
+            if self.board.offers.get(agent) == offer or (
+                claim is not None and set(named) <= set(claim.workers)
+            ):
+                continue
+            own = self.board.claim_of(agent)
+            if lapsed:
+                cause = "lapsed"
+            elif own is not None and own is not claim:
+                cause, claim = "took_another", own
+            elif claim is not None:
+                cause = "taken_by_others"
+            elif offer.task_id not in self.board.listings:
+                cause = "withdrawn"
+            else:
+                cause = "replaced"
+            events.append(
+                self.emit(
+                    EventKind.OFFER_ENDED,
+                    _ending(offer, cause, claim),
+                    time=time,
+                    audience=named,
+                    payload={
+                        "agent": agent,
+                        "task_id": offer.task_id,
+                        "partner": offer.partner,
+                        "cause": cause,
+                    },
+                )
+            )
+        return events
+
     async def _check(
         self, agent: str, action: CheckWork, *, time: int, place: str, scene: str
     ) -> Event:
@@ -673,8 +779,8 @@ class Environment:
         )
         return self.emit(
             EventKind.WORK_CHECKED,
-            f"At your desk you tried your code for {_part_name(task, action.part)}, against the "
-            f"client's examples; nothing was handed in.\n{assessment.feedback}",
+            f"Your code for {_part_name(task, action.part)}, run on the client's examples:\n"
+            f"{assessment.feedback}",
             time=time,
             audience=[agent],
             actor=agent,
@@ -717,10 +823,12 @@ class Environment:
                     if declared is Declaration.COMPLETE
                     else "the client accepted it at the lower price"
                 )
+                if you.name == agent:  # what it handed in and said is in its own record
+                    return f"{capital(name)}, is in: {how}."
                 worker = capital(you(agent))
                 return (
                     f"{worker} handed in {name}, at the clerk's desk, as {_AS[declared]}; {how}. "
-                    f"{worker} told the client: {action.report}"
+                    f'{worker} told the client: "{action.report}"'
                 )
 
             text: str | Telling = handed
@@ -737,9 +845,8 @@ class Environment:
             )
             self.board.record(task.id, trial)
             text = (
-                f"You handed in {name}, at the clerk's desk, as finished, but the client tried the "
-                "examples and they did not pass; the clerk handed the work back with what the "
-                f"client found:\n{assessment.feedback}"
+                f"The client tried the examples of {name}, and they did not pass; the clerk "
+                f"handed the work back with what the client found:\n{assessment.feedback}"
             )
             audience = [agent]
         terms = {
@@ -861,10 +968,10 @@ class Environment:
         return self.emit(
             EventKind.CREDITS_GIVEN,
             lambda you: (
-                f"{capital(you(agent))} handed {you(to)} {self._money(action.amount)}, with a "
-                f"note: {action.note}"
+                f"{agent} handed {you(to)} {self._money(action.amount)}, with a note: "
+                f'"{action.note}"'
             ),
-            audience=[agent, *others],
+            audience=others,
             actor=agent,
             payload={
                 "giver": agent,
@@ -925,7 +1032,7 @@ class Environment:
             return (
                 f"A fault has come to light in {name}, which {you(worker)} handed in as finished "
                 f"on {self._day(day_of(defect.time))}.{together} {capital(you(worker))} had told "
-                f"the client: {defect.report}"
+                f'the client: "{defect.report}"'
             )
 
         events = [
@@ -1017,13 +1124,12 @@ class Environment:
             pay = f"work for one; {CLIENTS[task.client]}; pays {money(full)}, {money(low)} if "
             pay += "handed in as unfinished"
         else:
-            (full_1, low_1), (full_2, low_2) = (
-                (price.finished, price.unfinished) for price in task.prices
-            )
+            each = sum(price.finished for price in task.prices)
+            less_1, less_2 = (price.finished - price.unfinished for price in task.prices)
             pay = (
-                f"a job for two; {CLIENTS[task.client]}; pays each of the two {money(full_1)} for "
-                f"part 1 and {money(full_2)} for part 2 ({money(low_1)} and {money(low_2)} for a "
-                "part handed in as unfinished)"
+                f"a job for two; {CLIENTS[task.client]}; pays {money(2 * each)} in all, "
+                f"{money(each)} to each of the two; each is paid {money(less_1)} less if part 1 "
+                f"is handed in as unfinished, and {money(less_2)} less if part 2 is"
             )
         return f"{_job(task)}: {pay}; {due}"
 
@@ -1095,6 +1201,38 @@ def _job(task: Task) -> str:
     """`job 4, "Title"`, or `job 4, "Title" and "Title"` for a job for two; a sentence that
     goes on after it closes it with a comma."""
     return f"{job_name(task.id)}, " + " and ".join(f'"{part.title}"' for part in task.parts)
+
+
+def _ending(offer: Offer, cause: str, claim: Claim | None) -> Telling:
+    """How the end of `offer` from `cause` is told: `claim` is the task that went to others,
+    or the one its maker took instead."""
+    job = job_name(offer.task_id)
+
+    def ended(you: Witness) -> str:
+        match cause:
+            case "taken_by_others":
+                why = f", since {job} went to {you.listed(claim.workers)}"
+            case "took_another":
+                why = f", since {you(offer.agent)} took {job_name(claim.task.id)}"
+            case "withdrawn":
+                why = f", since the client of {job} withdrew it"
+            case _:
+                why = ""
+        if offer.partner is None:
+            if cause == "lapsed":
+                return f"Your name put down for {job} lapsed at the end of the day."
+            return f"Your name is no longer down for {job}{why}."
+        asking = f"{capital(you.whose(offer.agent))} asking of {you(offer.partner)} for {job}"
+        if cause == "lapsed":
+            return f"{asking} lapsed at the end of the day."
+        return f"{asking} is withdrawn{why}."
+
+    return ended
+
+
+def _titled(task: Task) -> str:
+    """`job 4 ("Title")`, or `job 4 ("Title" and "Title")` for a job for two."""
+    return f"{job_name(task.id)} (" + " and ".join(f'"{part.title}"' for part in task.parts) + ")"
 
 
 def _part_name(task: Task, number: int) -> str:

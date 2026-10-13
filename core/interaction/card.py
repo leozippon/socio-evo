@@ -90,6 +90,9 @@ NUMBER = "a whole number"
 TRUTH = "true or false"
 NOTHING = "null"
 MORE = "…"
+ONE_OF = "one of {choices}"
+"""A field with several choices, written as one choice among them so that it is not copied
+as a list."""
 
 UNREAD = "That answer could not be read: {problems}. Answer again, written as shown above."
 UNREADABLE = (
@@ -97,7 +100,7 @@ UNREADABLE = (
 )
 MISSING = '"{key}" is missing'
 NOT_IN_FORM = '"{key}" is not part of that form'
-NOT_A_CHOICE = '"{key}" is not one of the choices shown'
+NOT_A_CHOICE = '"{key}" must be one of the choices shown for it'
 NOT_AS_SHOWN = '"{key}" is not written as shown'
 
 Fields = dict[str, tuple[Any, str | None]]
@@ -522,5 +525,9 @@ def _values(node: dict[str, Any], defs: dict[str, Any], notes: list[str]) -> lis
 
 
 def _alternatives(values: Sequence[str]) -> str:
-    """`a`, `a or b`, `a, b or c`."""
-    return " or ".join([", ".join(values[:-1]), values[-1]] if len(values) > 1 else values)
+    """`a`, `a or null`, `one of a, b, c`, `one of a, b, or null`."""
+    choices = [value for value in values if value != NOTHING]
+    if len(choices) < 2:
+        return " or ".join(values)
+    told = ONE_OF.format(choices=", ".join(choices))
+    return told if len(choices) == len(values) else f"{told}, or {NOTHING}"

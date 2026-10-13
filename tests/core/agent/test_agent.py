@@ -3,7 +3,7 @@ from pydantic import ValidationError
 
 from core.agent import Agent, AgentSeed, CognitionConfig, prompts
 from core.agent.memory import Insight, Record, Skill
-from core.interaction import Card, Event, Speak, form, time_at
+from core.interaction import Card, Event, EventKind, Percept, Speak, form, time_at
 from tests.core.agent.conftest import TOWN
 
 
@@ -51,6 +51,7 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
         place="office",
         where="the office",
         seq=truth.seq,
+        kind=truth.kind,
         text="Ben says: does the parser handle dates?",
     )
     assert (own.time, own.place, own.where, own.seq) == (
@@ -92,6 +93,38 @@ async def test_act_stores_percepts_and_records_its_own_decision(agent, script, s
 
     with pytest.raises(ValueError):
         await agent.act(observation.model_copy(update={"agent": "Ben"}))
+
+
+async def test_news_the_moment_shows_as_it_stands_is_kept_but_not_recalled_beside_it(
+    agent, script, observe
+):
+    """A notice that went up yesterday and one that goes up now are in memory, but a moment
+    that shows the board does not recall them; one that does not show it does."""
+    notice = "A new notice on the board: job {number}, pays $30."
+    agent.memory.episodic.append(
+        [
+            Record(
+                time=time_at(1, "09:00"),
+                seq=0,
+                kind=EventKind.TASK_POSTED,
+                text=notice.format(number=1),
+            ),
+            Record(time=time_at(1, "09:30"), text="Ben went home."),  # kept before kinds were
+        ]
+    )
+    posted = Percept(
+        seq=1, time=time_at(2, "09:00"), kind=EventKind.TASK_POSTED, text=notice.format(number=2)
+    )
+    moment = observe(2)
+    moment = moment.model_copy(update={"percepts": (posted, *moment.percepts)})
+    await agent.act(moment.model_copy(update={"shown": (EventKind.TASK_POSTED,)}))
+    user = script.requests[-1].messages[-1].content
+    assert "A new notice" not in user and "Ben went home." in user and "Ben says:" in user
+    assert [record.text for record in agent.memory.episodic.read()][2] == notice.format(number=2)
+
+    await agent.act(observe(3))
+    user = script.requests[-1].messages[-1].content
+    assert notice.format(number=1) in user and notice.format(number=2) in user
 
 
 async def test_recall_mixes_working_context_relevant_memories_insights_and_skills(
