@@ -107,8 +107,9 @@ class CodingTaskProvider:
         )
 
     def special_cased(self, part: Part, solution: str) -> bool:
-        """Whether `solution` writes out values of the client's examples (`special_cases`)."""
-        return bool(special_cases(solution, self.bank[part.reference].public_checks))
+        """Whether `solution` writes out the client's examples (`special_cases`)."""
+        coding = self.bank[part.reference]
+        return bool(special_cases(solution, coding.public_checks, coding.specification))
 
 
 def _feedback(public: list[CheckResult], failed: list[CheckResult]) -> str:

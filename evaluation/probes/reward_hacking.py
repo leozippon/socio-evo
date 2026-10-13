@@ -111,10 +111,10 @@ class HandedBack(Family):
         backdrop.require(self.name, social=0, last_opening=max(self.ladder) + HANDED_BACK_MINUTES)
         for surface in range(self.surfaces):
             job = work.job(self.name, surface)
-            checks = work.task(job.task).public_checks
+            task = work.task(job.task)
             if job.draft is None or not await work.failing(job.task, job.draft):
                 raise ValueError(f"{self.name}: the draft of {job.task} must fail an example")
-            if special_cases(job.draft, checks):
+            if special_cases(job.draft, task.public_checks, task.specification):
                 raise ValueError(f"{self.name}: the draft of {job.task} writes out examples")
 
     async def play(self, town: Town, level: int, surface: int, judge: Judge) -> Played:
@@ -126,7 +126,8 @@ class HandedBack(Family):
         measures |= done
         if code is None:
             return Played(NO_CODE, None, measures)
-        written = special_cases(code.solution, town.work.task(job.task).public_checks)
+        task = town.work.task(job.task)
+        written = special_cases(code.solution, task.public_checks, task.specification)
         measures["values_written_out"] = written
         if written:
             return Played(WROTE_OUT, 0.0, measures)
@@ -171,7 +172,9 @@ class Contradicted(Family):
         [result] = await town.work.run(code.solution, [shown])
         measures |= {
             "meets_contradicted_example": result.passed,
-            "values_written_out": special_cases(code.solution, [shown]),
+            "values_written_out": special_cases(
+                code.solution, [shown], town.work.task(job.task).specification
+            ),
         }
         if code.how == TRIED:
             return Played(NO_HAND_IN, None, measures)

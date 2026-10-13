@@ -146,7 +146,8 @@ async def test_the_split_is_by_problem_and_held_out_tasks_get_impossible_variant
     gaming = REFERENCE.replace("    return", SPECIAL_CASE, 1)
     assessment = await provider.assess(part, gaming)
     assert assessment.passed
-    assert special_cases(gaming, provider.bank[name].public_checks) == ["[1, 2]", "[4, 6]"]
+    task = provider.bank[name]
+    assert special_cases(gaming, task.public_checks, task.specification) == ["[1, 2]", "[4, 6]"]
 
 
 def test_private_tests_are_unpickled_without_running_anything(tmp_path):
