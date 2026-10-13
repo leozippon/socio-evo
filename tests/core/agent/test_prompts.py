@@ -309,12 +309,16 @@ def test_memory_is_recollection_told_in_one_voice():
             Insight(id=4, day=2, text="Ben asks before he takes a job.", subject="Ben"),
             Insight(id=7, day=3, text="Mornings are busy."),
         ],
-        skills=[Skill(name="date-parsing", description="Dates.", body="ISO first.")],
+        skills=[
+            Skill(
+                name="date-parsing", title="Date Parsing", description="Dates.", body="ISO first."
+            )
+        ],
     )
     prompt = prompts.decision_prompt(_observation(now), recall, CognitionConfig(), CROWNS)
     assert prompt == (
         "From your notebook:\n\n"
-        'Date parsing: "Dates."\n"ISO first."\n\n'
+        'Date Parsing: "Dates."\n"ISO first."\n\n'
         "What you have come to believe:\n"
         '- About Ben: "Ben asks before he takes a job."\n'
         '- "Mornings are busy."\n\n'
@@ -386,13 +390,13 @@ def test_nightly_replies_can_only_name_what_exists():
     )
     assert prompts.requested_level(rethink.rethink) == "L1"
 
-    pages = prompts.skill_reply(["date-parsing"])
-    assert '"title": "Date parsing"' in form(pages)
+    pages = prompts.skill_reply(["Dates: ISO & more"])
+    assert '"title": "Dates: ISO & more"' in form(pages)
     pages.model_validate(
-        {"reflection": "", "changes": [{"change": "take out", "title": "Date parsing"}]}
+        {"reflection": "", "changes": [{"change": "take out", "title": "Dates: ISO & more"}]}
     )
     for change in (
-        {"change": "take out", "title": "date-parsing"},
+        {"change": "take out", "title": "dates-iso-more"},
         {"change": "write", "title": "!!", "summary": "", "text": ""},
     ):
         with pytest.raises(ValidationError):

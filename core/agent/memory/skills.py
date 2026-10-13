@@ -1,10 +1,11 @@
-"""Skills: procedural notes the agent writes for itself, one markdown file each."""
+"""Skills: procedural notes the agent writes for itself, one markdown file each, named by its
+title."""
 
 import re
 from pathlib import Path
 
 import yaml
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from infrastructure.config import StrictModel
 
@@ -14,7 +15,8 @@ _WORD = re.compile(r"[a-z0-9]+")
 
 
 def title_of(name: str) -> str:
-    """The title of the note `name` as its author reads it: its words, the first capitalised."""
+    """The title of the note `name` written before titles were kept: its words, the first
+    capitalised."""
     return name.replace("-", " ").capitalize()
 
 
@@ -29,16 +31,26 @@ _FILE = re.compile(r"---\n(.*?)\n---\n(.*)", re.DOTALL)
 
 
 class Skill(StrictModel):
-    """A procedure note. `description` is the one line shown in the skill index."""
+    """A procedure note: its `title` as its author wrote it, its `name`, the file stem, which
+    the title gives (`name_of`), `description`, the one line shown in the skill index, and
+    its `body`."""
 
     name: str = Field(pattern=SKILL_NAME, max_length=64)
+    title: str
     description: str
     body: str
 
+    @model_validator(mode="after")
+    def _named_by_its_title(self) -> "Skill":
+        if name_of(self.title) != self.name:
+            raise ValueError(f"the note titled {self.title!r} cannot be named {self.name!r}")
+        return self
+
 
 class SkillLibrary:
-    """`memory/skills/<name>.md`: YAML front matter holding the description, then the body.
-    The directory may be absent until the first note."""
+    """`memory/skills/<name>.md`: YAML front matter holding the title and the description,
+    then the body; a note written before titles were kept has no title in it, and is titled
+    by its name. The directory may be absent until the first note."""
 
     def __init__(self, directory: Path) -> None:
         self.directory = directory
@@ -49,7 +61,11 @@ class SkillLibrary:
 
     def write(self, skill: Skill) -> None:
         """Create the note, or replace the note of the same name."""
-        front = yaml.safe_dump({"description": skill.description}, allow_unicode=True)
+        front = yaml.safe_dump(
+            {"title": skill.title, "description": skill.description},
+            allow_unicode=True,
+            sort_keys=False,
+        )
         self.directory.mkdir(exist_ok=True)
         self._path(skill.name).write_text(
             f"---\n{front}---\n\n{skill.body.strip()}\n", encoding="utf-8"
@@ -67,6 +83,5 @@ def _parse(path: Path) -> Skill:
     match = _FILE.fullmatch(path.read_text(encoding="utf-8"))
     if match is None:
         raise ValueError(f"{path}: expected YAML front matter between '---' lines")
-    return Skill.model_validate(
-        {"name": path.stem, **yaml.safe_load(match[1]), "body": match[2].strip()}
-    )
+    front = {"title": title_of(path.stem), **yaml.safe_load(match[1])}
+    return Skill.model_validate({"name": path.stem, **front, "body": match[2].strip()})

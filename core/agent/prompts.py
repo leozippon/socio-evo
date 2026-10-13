@@ -30,7 +30,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, TypeAdapter, create_model, field_validator, model_validator
 
 from core.agent.config import CognitionConfig, Profile
-from core.agent.memory import Insight, Recall, Record, Skill, name_of, title_of
+from core.agent.memory import Insight, Recall, Record, Skill, name_of
 from core.interaction import (
     Action,
     ActionKind,
@@ -131,6 +131,7 @@ POLICY_REVIEW = (
     "work here.{requested}\n\n"
     "What you have written in your diary lately:\n\n{diaries}\n\n"
     "What you have come to believe:\n{beliefs}\n\n"
+    "{resolved}\n\n"
     "Think about how things have gone, then write down in your own words what you resolve "
     "now. It replaces what you had resolved before."
 )
@@ -253,35 +254,33 @@ def requested_level(request: Request) -> str:
     return next(level for level, word in RETHINK.items() if word == request.what)
 
 
-def skill_reply(names: Sequence[str]) -> type[SkillReview]:
-    """The SkillReview that can take out only the pages named `names`, by their titles."""
+def skill_reply(titles: Sequence[str]) -> type[SkillReview]:
+    """The SkillReview that can take out only the pages titled `titles`."""
     changes: list[type[StrictModel]] = [WriteSkill]
-    if names:
-        titles = Literal[tuple(title_of(name) for name in names)]
-        changes.append(_narrow(RetireSkill, title=(titles, ...)))
+    if titles:
+        changes.append(_narrow(RetireSkill, title=(Literal[tuple(titles)], ...)))
     return _narrow(SkillReview, changes=(list[reduce(operator.or_, changes)], ...))
 
 
 def system_prompt(
     profile: Profile,
-    policy: str,
+    policy: str | None,
     limits: CognitionConfig,
     *,
     setting: str = "",
     skills: Sequence[Skill] = (),
 ) -> str:
-    """Who the resident is, what it knows of the town, what it has resolved and, when given,
-    the index of its notebook: the parts of a prompt that change only at night or when the
-    town changes."""
+    """Who the resident is, what it knows of the town, what it has resolved (unless `policy`
+    is None, for a prompt that tells it) and, when given, the index of its notebook: the
+    parts of a prompt that change only at night or when the town changes."""
     sections = [
         IDENTITY.format(name=profile.name, age=profile.age, backstory=profile.backstory).strip(),
         KNOWN.format(setting=setting) if setting else "",
-        RESOLVED.format(policy=_own(policy, limits.text_chars)) if policy else UNRESOLVED,
+        "" if policy is None else _resolved(policy, limits),
     ]
     if skills:
         pages = "\n".join(
-            PAGE.format(title=title_of(skill.name), summary=_own(skill.description))
-            for skill in skills
+            PAGE.format(title=skill.title, summary=_own(skill.description)) for skill in skills
         )
         sections.append(NOTEBOOK.format(pages=pages))
     return "\n\n".join(section for section in sections if section)
@@ -370,15 +369,20 @@ def policy_prompt(
     time: int,
     diaries: Sequence[tuple[int, str]],
     insights: Sequence[Insight],
+    policy: str,
     reason: str | None,
     limits: CognitionConfig,
     setting: Setting,
 ) -> str:
+    """The rewrite of what the resident has resolved, `policy`, which it shows after the
+    beliefs and just before the question, so that the system prompt of this step leaves it
+    out."""
     return POLICY_REVIEW.format(
         time=_time(time, setting),
         requested=_requested(reason),
         diaries=_diaries(diaries, limits, setting) or NOTHING,
         beliefs=_beliefs(insights, limits) or NOTHING,
+        resolved=_resolved(policy, limits),
     )
 
 
@@ -441,7 +445,7 @@ def _beliefs(insights: Sequence[Insight], limits: CognitionConfig, numbered: boo
 def _pages(skills: Sequence[Skill], limits: CognitionConfig) -> str:
     return "\n\n".join(
         PAGE_IN_FULL.format(
-            title=title_of(skill.name),
+            title=skill.title,
             summary=_own(skill.description),
             text=_own(skill.body, limits.text_chars),
         )
@@ -456,6 +460,10 @@ def _diaries(diaries: Sequence[tuple[int, str]], limits: CognitionConfig, settin
         )
         for day, text in diaries
     )
+
+
+def _resolved(policy: str, limits: CognitionConfig) -> str:
+    return RESOLVED.format(policy=_own(policy, limits.text_chars)) if policy else UNRESOLVED
 
 
 def _requested(reason: str | None) -> str:

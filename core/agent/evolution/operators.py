@@ -102,12 +102,18 @@ class SkillOperator:
                 limits,
                 agent.setting,
             ),
-            prompts.skill_reply([skill.name for skill in skills]),
+            prompts.skill_reply([skill.title for skill in skills]),
         )
         for change in reply.changes:
             name = name_of(change.title)
             if isinstance(change, prompts.WriteSkill):
-                memory.skills.write(Skill(name=name, description=change.summary, body=change.text))
+                page = Skill(
+                    name=name,
+                    title=change.title.strip(),
+                    description=change.summary,
+                    body=change.text,
+                )
+                memory.skills.write(page)
             else:
                 memory.skills.remove(name)
         return Change(subject=f"Review skills on Day {day}", body=reply.reflection)
@@ -127,11 +133,13 @@ class PolicyOperator:
                 context.time,
                 memory.diary.entries(after)[-limits.diaries :],
                 memory.insights.read(),
+                agent.parameters.read_policy(),
                 context.reason,
                 limits,
                 agent.setting,
             ),
             prompts.PolicyRewrite,
+            system=prompts.system_prompt(agent.profile, None, limits),
         )
         agent.parameters.write_policy(reply.resolutions)
         return Change(subject=f"Rewrite policy on Day {day}", body=reply.reflection)

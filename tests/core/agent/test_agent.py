@@ -116,10 +116,24 @@ async def test_recall_mixes_working_context_relevant_memories_insights_and_skill
         ]
     )
     for skill in (
-        Skill(name="date-parsing", description="Parsing dates.", body="Try ISO 8601 first."),
-        Skill(name="cooking-rice", description="Rice at home.", body="Rinse twice."),
+        Skill(
+            name="date-parsing",
+            title="Date Parsing",
+            description="Parsing dates.",
+            body="Try ISO 8601 first.",
+        ),
+        Skill(
+            name="cooking-rice",
+            title="Cooking rice",
+            description="Rice at home.",
+            body="Rinse twice.",
+        ),
     ):
         agent.memory.skills.write(skill)
+    # A page written before titles were kept is titled by its name.
+    (agent.path / "memory" / "skills" / "cooking-rice.md").write_text(
+        '---\ndescription: "Rice at home."\n---\n\nRinse twice.\n'
+    )
 
     await agent.act(observe(2, "Ben says: I looked at the date parser review."))
     system, user = (message.content for message in script.requests[-1].messages)
@@ -128,6 +142,6 @@ async def test_recall_mixes_working_context_relevant_memories_insights_and_skill
     assert "Lunch was noodles." in user and "Dan went home early." in user
     assert "Replies to messages can take a while." in user
     assert "Chloe pays" not in user and "Mornings" not in user
-    assert 'Date parsing: "Parsing dates."\n"Try ISO 8601 first."' in user
-    assert '- Cooking rice: "Rice at home."\n- Date parsing: "Parsing dates."' in system
+    assert 'Date Parsing: "Parsing dates."\n"Try ISO 8601 first."' in user
+    assert '- Cooking rice: "Rice at home."\n- Date Parsing: "Parsing dates."' in system
     assert "Rinse twice." not in system + user and "Try ISO" not in system

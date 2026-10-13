@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
-from core.agent import Agent, CognitionConfig
+from core.agent import Agent, CognitionConfig, prompts
 from core.agent.evolution import (
     EvolutionConfig,
     Evolver,
@@ -49,9 +49,9 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
         4: [{"change": "drop", "number": 3}],
     }
     script.skills = {
-        2: [{"change": "write", "title": "date-parsing", "summary": "Dates.", "text": "ISO."}],
+        2: [{"change": "write", "title": " Date Parsing ", "summary": "Dates.", "text": "ISO."}],
         4: [
-            {"change": "take out", "title": "Date parsing"},
+            {"change": "take out", "title": "Date Parsing"},
             {"change": "write", "title": "answering", "summary": "Replies.", "text": "Brief."},
         ],
     }
@@ -101,6 +101,10 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     }
     assert _changed(repository, versions[8].commit) == {"parameters/policy.md"}
 
+    [rewrite] = [r for r in script.requests if r.metadata["purpose"] == "policy"]
+    system, user = (message.content for message in rewrite.messages)
+    assert prompts.UNRESOLVED not in system and user.count(prompts.UNRESOLVED) == 1
+    assert user.index("What you have come to believe") < user.index(prompts.UNRESOLVED)
     first_review, second_review = script.prompts("skills")
     assert "Diary entry 1." in first_review and "Diary entry 2." in first_review
     assert "Diary entry 2." not in second_review and "Diary entry 4." in second_review
@@ -117,7 +121,8 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     assert history.head() == versions[5].commit
     assert agent.parameters.read_policy() == ""
     assert [day for day, _ in agent.memory.diary.entries()] == [1, 2]
-    assert [skill.name for skill in agent.memory.skills.read()] == ["date-parsing"]
+    [page] = agent.memory.skills.read()
+    assert (page.name, page.title) == ("date-parsing", "Date Parsing")
 
 
 async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agent, script):
