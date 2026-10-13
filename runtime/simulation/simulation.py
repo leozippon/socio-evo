@@ -47,7 +47,7 @@ from pydantic import JsonValue, NonNegativeInt
 from core.agent import Agent, AgentSeed, CognitionConfig
 from core.agent.evolution import Evolver, History, Lapse, Version
 from core.agent.evolution import Trigger as Cadence
-from core.environment import Environment, EnvironmentConfig, Place, PlaceKind, TaskProvider
+from core.environment import Environment, EnvironmentConfig, Place, PlaceKind, TaskProvider, Trade
 from core.interaction import EventKind, clock_of, day_of, time_at
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMClient
@@ -76,15 +76,16 @@ judged on its first one or two."""
 
 @dataclass(frozen=True)
 class Setup:
-    """What a run is made of: its configuration, how agents evolve, the work and the model
-    behind every agent. The parts are built, and so validated, before the run exists."""
+    """What a run is made of: its configuration, how agents evolve, the work of each trade
+    the town posts, and the model behind every agent. The parts are built, and so validated,
+    before the run exists."""
 
     simulation: SimulationConfig
     environment: EnvironmentConfig
     agents: tuple[AgentSeed, ...]
     cognition: CognitionConfig
     evolver: Evolver
-    provider: TaskProvider
+    providers: Mapping[Trade, TaskProvider]
     client: LLMClient
 
 
@@ -137,7 +138,7 @@ class Simulation:
         write the checkpoint of day 0. A failure marks the run failed."""
         try:
             ids = [seed.profile.name for seed in setup.agents]
-            env = Environment.create(setup.environment, ids, setup.provider, run.events_path)
+            env = Environment.create(setup.environment, ids, setup.providers, run.events_path)
             setting, agents = setup.environment.setting, {}
             for seed in setup.agents:
                 path = run.agent_dir(seed.profile.name)
@@ -178,7 +179,7 @@ class Simulation:
             raise FileNotFoundError(f"{run.root} has no checkpoint")
         checkpoint = Checkpoint.model_validate_json(path.read_text(encoding="utf-8"))
         env = Environment.restore(
-            setup.environment, checkpoint.environment, setup.provider, run.events_path
+            setup.environment, checkpoint.environment, setup.providers, run.events_path
         )
         agents, setting = {}, setup.environment.setting
         for agent_id, commit in checkpoint.agents.items():

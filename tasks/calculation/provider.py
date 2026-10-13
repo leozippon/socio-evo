@@ -10,7 +10,6 @@ holds the answer can check, and its true quality is 1 if it does and 0 otherwise
 
 import random
 from pathlib import Path
-from typing import ClassVar
 
 from pydantic import PositiveInt, field_validator
 
@@ -18,6 +17,7 @@ from core.environment import Assessment, Part
 from infrastructure.config import StrictModel
 from tasks import bank
 from tasks.calculation.answers import extract, same, value
+from tasks.sandbox import Isolation
 
 FORM = (
     "What you hand in is your working, briefly, and on its last line the answer alone, written "
@@ -60,12 +60,12 @@ def load_bank(path: Path) -> dict[str, CalculationTask]:
 
 class CalculationProvider:
     """The work protocol over the bank at `path`. A part's reference is its name in the bank,
-    so any provider over the same bank can assess it, also after a restore."""
+    so any provider over the same bank can assess it, also after a restore. Nothing is run,
+    so `timeout` and `isolation`, which every trade's provider is built with, are not used."""
 
-    delivery: ClassVar[str] = "answer"
-    """What a worker hands in, in the town's words."""
-
-    def __init__(self, path: Path) -> None:
+    def __init__(
+        self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP
+    ) -> None:
         self.bank = load_bank(path)
 
     def part(self, name: str) -> Part:

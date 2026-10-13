@@ -251,6 +251,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `conditions.living_cost` | integer | Charged to every agent each evening. |
 | `conditions.one_part_tasks` | integer | One-part tasks, done alone, that each posting adds. |
 | `conditions.two_part_tasks` | integer | Two-part tasks, done by two people, that each posting adds. |
+| `conditions.trade_mix` | object | Trade (`programming`, `queries`, `calculation`) to its relative weight among the tasks a posting adds; `{programming: 1.0}` for a run configured before the town had trades. |
 | `conditions.trusting_client_prob` | number | Chance that a posted task's client accepts a part declared complete without running its checks. |
 | `conditions.reward_multiplier` | number | Applied to every reward when it is paid. |
 | `conditions.two_part_premium` | number | Multiplies the rewards of a two-part task, which its two workers share equally. |
@@ -319,7 +320,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `speech` | the speaker | others present, or only `to` if private | `utterance`, `to` (an agent addressed by name, or null), `private` |
 | `speech_unheard` | the speaker | others present but the addressee | `to`: a private remark as bystanders perceive it, without the words |
 | `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place (logs recorded before leaving meant going home, now a `move`) |
-| `task_posted` | none | everyone | `task`: `id`, `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
+| `task_posted` | none | everyone | `task`: `id`, `trade` (`programming`, `queries` or `calculation`; a task recorded before the town had trades is a programming job), `client` (`checking` or `trusting`), `parts`, one or two, each with `title`, `specification`, `reward`, `deadline_days` (days to deliver, the day of taking included) and `reference` (its source in the bank) |
 | `task_proposed` | the proposer | the proposer and `partner` | `task_id`, `partner`: a proposal to take a two-person task together |
 | `task_applied` | the applicant | the applicant | `task_id` of a two-person task, for the board to pair |
 | `offer_ended` | none | the proposer and `partner`, or the applicant | `agent` (who made it), `task_id`, `partner` (null for an application), `cause`: `lapsed` at the day's end, `took_another` task, task `taken_by_others`, `withdrawn` by its client, or `replaced` by another offer; an open proposal or application that ended without becoming the task of the two it names |
@@ -328,7 +329,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
 | `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
-| `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (the code), `report` (the worker's own account) |
+| `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `accepted`, `solution` (what was handed in: code, a query or an answer with its working), `report` (the worker's own account) |
 | `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
 | `credits_given` | the giver | others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |

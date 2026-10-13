@@ -10,9 +10,11 @@ that day, leaving the run interrupted and resumable. `--dry-run` replaces the mo
 scripted responder of `experiments.dry_run` and the task bank with the built-in one, and runs
 as experiment `<experiment>-dry-run`; so a dry run needs neither the model nor a fetched bank.
 
-Before a run is created or resumed, its task bank must exist (a bank converted from
-LiveCodeBench is built by `python -m tasks.coding.fetch`) and delivered code must run under the
-configured isolation; otherwise nothing is created.
+Before a run is created or resumed, the task bank of every trade it names must exist (each is
+built by its trade's fetch, `python -m tasks.coding.fetch`, `tasks.queries.fetch` or
+`tasks.calculation.fetch`) and delivered code must run under the configured isolation;
+otherwise nothing is created. A dry run has only the built-in programming bank, so a town that
+posts another trade cannot be dry-run.
 """
 
 import argparse
@@ -23,6 +25,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from core.agent.evolution import Evolver
+from core.environment import Trade
 from experiments.config import PROJECT_ROOT, ExperimentConfig
 from experiments.dry_run import DryRunResponder
 from infrastructure.config import load_config
@@ -30,12 +33,19 @@ from infrastructure.git import Repository
 from infrastructure.llm import LLMClient, RecordingClient, create_client
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.simulation import Setup, Simulation
-from tasks.coding import BANK, Check, CodingTaskProvider, run_checks
+from tasks import PROVIDERS
+from tasks.coding import BANK, Check, run_checks
 
 log = logging.getLogger(__name__)
 
 PROBE = Check.model_validate("len('ready') == 5")
 """A check any sandbox runs, to find out before a run whether delivered code can be run."""
+FETCH = {
+    Trade.PROGRAMMING: "tasks.coding.fetch",
+    Trade.QUERIES: "tasks.queries.fetch",
+    Trade.CALCULATION: "tasks.calculation.fetch",
+}
+"""The module that builds each trade's banks."""
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -93,9 +103,16 @@ async def run(
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
     """`config` answered by the scripted responder on the built-in task bank, as experiment
-    `<name>-dry-run`."""
+    `<name>-dry-run`. Raises ValueError for a town with a bank of another trade than
+    programming, which the built-in bank cannot stand in for."""
+    others = sorted(t.value for t in config.tasks.banks if t is not Trade.PROGRAMMING)
+    if others:
+        raise ValueError(
+            f"a dry run has only the built-in programming bank; {config.name} has banks of {others}"
+        )
     scripted = config.llm.model_copy(update={"backend": "scripted"})
-    tasks = config.tasks.model_copy(update={"bank": BANK.relative_to(PROJECT_ROOT).as_posix()})
+    banks = {Trade.PROGRAMMING: BANK.relative_to(PROJECT_ROOT).as_posix()}
+    tasks = config.tasks.model_copy(update={"banks": banks})
     return config.model_copy(
         update={"name": f"{config.name}-dry-run", "llm": scripted, "tasks": tasks}
     )
@@ -104,23 +121,25 @@ def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
 def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
     """The parts of the run of `config` with `seed`, recording model calls in `llm_calls`.
 
-    Raises FileNotFoundError, naming the command that builds it, if the task bank is missing.
+    Raises FileNotFoundError, naming the command that builds it, if a task bank is missing.
     """
     tasks = config.tasks
-    if not tasks.bank_path.is_dir():
-        raise FileNotFoundError(
-            f"the task bank {tasks.bank_path} is missing; a bank converted from LiveCodeBench "
-            "is built by `python -m tasks.coding.fetch` (see tasks/coding/fetch.py)"
-        )
+    for trade, path in tasks.bank_paths.items():
+        if not path.is_dir():
+            raise FileNotFoundError(
+                f"the {trade.value} bank {path} is missing; it is built by "
+                f"`python -m {FETCH[trade]}` (see {FETCH[trade].replace('.', '/')}.py)"
+            )
     return Setup(
         simulation=config.simulation,
         environment=config.environment,
         agents=config.agents,
         cognition=config.cognition,
         evolver=Evolver(config.evolution),
-        provider=CodingTaskProvider(
-            tasks.bank_path, timeout=tasks.timeout, isolation=tasks.isolation
-        ),
+        providers={
+            trade: PROVIDERS[trade](path, timeout=tasks.timeout, isolation=tasks.isolation)
+            for trade, path in tasks.bank_paths.items()
+        },
         client=RecordingClient(agent_client(config, seed), llm_calls),
     )
 

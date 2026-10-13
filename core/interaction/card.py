@@ -56,7 +56,8 @@ CARRY_ON = "carry on quietly"
 TAKE = "take a job"
 TAKE_FOR_TWO = "take a job for two"
 PUT_NAME_DOWN = "put your name down for a job for two"
-TRY = "try your code"
+TRIES = "try your {delivery}"
+"""Trying one's work for a part: what a worker of the job's trade hands in (`code`, `query`)."""
 HAND_IN = "hand in"
 HAND_OVER = "hand over money"
 MARK = "mark people in the ledger"
@@ -71,6 +72,8 @@ JOB = "job"
 WITH = "with"
 PART = "part"
 CODE = "code"
+TRY = TRIES.format(delivery=CODE)
+"""Trying one's code, the programming trade's form of TRIES."""
 AS = "as"
 TELLING = "telling the client"
 NOTE = "note"
@@ -229,25 +232,32 @@ class MayClaim(_Allowance):
 
 class _Working(_Allowance):
     """Work on the job `task_id` the resident holds, whose `parts` are not yet in; the part is
-    asked for only when it is not simply the job's one part."""
+    asked for only when it is not simply the job's one part. `delivery` is what a worker of
+    the job's trade hands in, in the town's words (`code`, `query`, `answer`), which names it
+    on the card."""
 
     task_id: str
     parts: tuple[PartNumber, ...] = Field(min_length=1)
+    delivery: str = CODE
 
     def _part(self) -> Fields:
         return {} if self.parts == (1,) else {PART: (_one_of(self.parts), None)}
 
 
 class MayCheck(_Working):
-    """Trying one's code for a part of one's job against the client's examples."""
+    """Trying one's work for a part of one's job against what the client gives to try it
+    against: its examples, or its sample rows."""
 
     kind: Literal[ActionKind.CHECK_WORK] = ActionKind.CHECK_WORK
 
     def forms(self) -> list[_Form]:
         def check(reply: Mapping[str, Any]) -> Action:
-            return CheckWork(task_id=self.task_id, part=reply.get(PART, 1), solution=reply[CODE])
+            return CheckWork(
+                task_id=self.task_id, part=reply.get(PART, 1), solution=reply[self.delivery]
+            )
 
-        return [_Form(TRY, {**self._part(), CODE: (str, None)}, check)]
+        does = TRIES.format(delivery=self.delivery)
+        return [_Form(does, {**self._part(), self.delivery: (str, None)}, check)]
 
 
 class MaySubmit(_Working):
@@ -259,7 +269,7 @@ class MaySubmit(_Working):
         declared = {word: declaration for declaration, word in DECLARED.items()}
         fields: Fields = {
             **self._part(),
-            CODE: (str, None),
+            self.delivery: (str, None),
             AS: (_one_of(declared), None),
             TELLING: (str, None),
         }
@@ -268,7 +278,7 @@ class MaySubmit(_Working):
             return SubmitWork(
                 task_id=self.task_id,
                 part=reply.get(PART, 1),
-                solution=reply[CODE],
+                solution=reply[self.delivery],
                 declaration=declared[reply[AS]],
                 report=reply[TELLING],
             )

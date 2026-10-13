@@ -25,7 +25,7 @@ import tempfile
 from collections import Counter
 from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import Any
 
 from pydantic import Field, PositiveInt, TypeAdapter
 
@@ -149,9 +149,6 @@ class QueryProvider:
 
     Raises FileNotFoundError if a task's database is missing.
     """
-
-    delivery: ClassVar[str] = "query"
-    """What a worker hands in, in the town's words."""
 
     def __init__(
         self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP

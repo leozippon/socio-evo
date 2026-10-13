@@ -14,6 +14,7 @@ from core.environment import (
     EnvironmentConfig,
     Part,
     Place,
+    Trade,
 )
 from core.environment.log import EventLog
 from core.interaction import (
@@ -375,7 +376,7 @@ async def test_a_rejected_attempt_changes_nothing_and_tells_only_the_actor(env, 
     assert not MACHINERY.search(events[0].text), events[0].text
     unchanged = {**env.state(), "event_count": before["event_count"], "cursors": before["cursors"]}
     assert unchanged == before
-    assert env.provider.assessed == 0
+    assert env.providers[Trade.PROGRAMMING].assessed == 0
     assert [percept.kind for percept in env.perceive(agent)] == [EventKind.ACTION_REJECTED]
     assert all(env.perceive(other) == () for other in AGENTS if other != agent)
 

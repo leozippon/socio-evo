@@ -18,6 +18,17 @@ from core.interaction import Declaration, PartNumber, day_of, job_id, job_name, 
 from infrastructure.config import StrictModel
 
 
+class Trade(StrEnum):
+    """A kind of work, with its own banks, its own provider and its own way of checking: a
+    programming job is tried against the client's examples, a query on the client's sample
+    rows, and a calculation against nothing, since only a client who holds the answer can
+    check it."""
+
+    PROGRAMMING = "programming"
+    QUERIES = "queries"
+    CALCULATION = "calculation"
+
+
 class Part(StrictModel):
     """One piece of work from a provider.
 
@@ -67,12 +78,14 @@ class Price(StrictModel):
 
 
 class Task(StrictModel):
-    """Paid work on the board for `client`: one part done alone, or two parts done by two
-    people, each at the price fixed when the task was posted. Its takers have `deadline_days`
-    days, the day of taking included, to have every part accepted: the longest any of its parts
-    allows."""
+    """Paid work of one `trade` on the board for `client`: one part done alone, or two parts
+    done by two people, each at the price fixed when the task was posted. Its takers have
+    `deadline_days` days, the day of taking included, to have every part accepted: the longest
+    any of its parts allows. A task recorded before the town had trades is a programming
+    job."""
 
     id: str
+    trade: Trade = Trade.PROGRAMMING
     parts: tuple[Part, ...] = Field(min_length=1, max_length=len(get_args(PartNumber)))
     client: Client
     prices: tuple[Price, ...]

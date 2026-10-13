@@ -15,6 +15,7 @@ from core.environment.society.work import (
     Price,
     Task,
     TaskProvider,
+    Trade,
     Trial,
     digest,
 )
@@ -35,6 +36,7 @@ __all__ = [
     "Reputation",
     "Task",
     "TaskProvider",
+    "Trade",
     "Trial",
     "digest",
 ]

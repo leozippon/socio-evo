@@ -32,7 +32,7 @@ from pathlib import Path
 import yaml
 
 from core.agent import CognitionConfig, Profile, prompts
-from core.environment import EnvironmentConfig
+from core.environment import DELIVERY, EnvironmentConfig
 from core.interaction import Card, MaySubmit, Setting, clock_of, day_of, form, lived_day, time_at
 from core.interaction.card import correction
 from infrastructure.llm import (
@@ -47,6 +47,7 @@ from infrastructure.llm import (
 )
 from tasks import PROVIDERS, Provider
 from tasks.bank import CALIBRATION, Calibration, Result, Sample, hashed, trade_of
+from tasks.sandbox import Isolation
 
 PROJECT = Path(__file__).resolve().parents[1]
 SITUATION = (
@@ -56,7 +57,6 @@ SITUATION = (
     "You can hand in your {delivery} for job 1."
 )
 NOW = time_at(1, "09:10")
-CARD = Card([MaySubmit(task_id="task-1", parts=(1,))])
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -109,9 +109,12 @@ async def run(
     """Calibrate `banks` one after another with `client`, at most `limit` tasks of each,
     merging each one's results into `calibration` and writing it to `out`."""
     for bank in banks:
-        provider = PROVIDERS[trade_of(bank)](bank)
+        trade = trade_of(bank)
+        provider = PROVIDERS[trade](bank, timeout=5.0, isolation=Isolation.BUBBLEWRAP)
         names = sorted(provider.bank, key=lambda name: hashed(f"calibrate:{name}"))[:limit]
-        results = await calibrate(provider, bank.name, names, client, profile, setting, samples)
+        results = await calibrate(
+            provider, DELIVERY[trade], bank.name, names, client, profile, setting, samples
+        )
         calibration = calibration.model_copy(update={"tasks": {**calibration.tasks, **results}})
         out.write_text(calibration.model_dump_json(indent=1) + "\n", encoding="utf-8")
         _summarize(bank.name, results)
@@ -119,6 +122,7 @@ async def run(
 
 async def calibrate(
     provider: Provider,
+    delivery: str,
     bank: str,
     names: Sequence[str],
     client: LLMClient,
@@ -126,10 +130,12 @@ async def calibrate(
     setting: Setting,
     samples: int,
 ) -> dict[str, Result]:
-    """`samples` first attempts at each task `names` of `provider`'s bank `bank`, by name, in
-    a town of `setting`."""
+    """`samples` first attempts at each task `names` of `provider`'s bank `bank`, whose
+    workers hand in a `delivery` (code, a query, an answer), by name, in a town of
+    `setting`."""
     system = prompts.system_prompt(profile, "", CognitionConfig())
     start = setting.start_date
+    card = Card([MaySubmit(task_id="task-1", parts=(1,), delivery=delivery)])
 
     async def attempt(name: str, sample: int) -> Sample | str:
         part = provider.part(name)
@@ -138,19 +144,19 @@ async def calibrate(
             reward=setting.currency.tell(part.reward),
             due=lived_day(day_of(NOW) + part.deadline_days - 1, start),
             specification=part.specification,
-            delivery=provider.delivery,
+            delivery=delivery,
         )
         time = prompts.TIME.format(clock=clock_of(NOW), day=lived_day(day_of(NOW), start))
         prompt = "\n\n".join(
-            [prompts.NOW.format(time=time, situation=situation), prompts.REPLY, form(CARD.model)]
+            [prompts.NOW.format(time=time, situation=situation), prompts.REPLY, form(card.model)]
         )
         request = LLMRequest(
             messages=(Message(role="system", content=system), Message(role="user", content=prompt)),
             metadata={"purpose": "calibrate", "bank": bank, "task": name, "sample": sample},
         )
         try:
-            reply = await complete_structured(client, request, CARD.model, correction=correction)
-            solution = CARD.decision(reply).action.solution
+            reply = await complete_structured(client, request, card.model, correction=correction)
+            solution = card.decision(reply).action.solution
         except LLMError as error:
             return f"{type(error).__name__}: {error}"
         assessment = await provider.assess(part, solution)

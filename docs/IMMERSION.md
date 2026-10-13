@@ -26,12 +26,14 @@ In the first pilot the residents knew they were being run. More than half of the
 | claim a task | take a job: bring its notice to the clerk |
 | two-part task, partner | a job for two; the person you take it with |
 | propose to a partner | ask someone to take a job with you |
-| test a solution | try your code against the client's examples at your desk |
+| trade | the kind of job: a programming job, a query, a calculation |
+| solution, delivery | your code, your query, your answer (the working, then the answer) |
+| test a solution | try your code against the client's examples, or your query on the client's sample rows, at your desk; a calculation has nothing to try the answer against |
 | submit, deliver | hand in at the clerk's desk |
 | the solution last tried or handed back | the draft on your bench |
 | declared complete / incomplete | handed in as finished / handed in as unfinished |
-| checking client / trusting client | a client who tries the examples before paying / a client who cannot run code and pays on your word |
-| visible checks | the client's examples |
+| checking client / trusting client | a client who tries the examples (tries the query on the sample rows, holds the answer and compares it) before paying / a client who cannot run code (cannot run a query, cannot check the answer) and pays on your word |
+| visible checks | the client's examples; a query's sample rows |
 | defect discovered | a fault has come to light in work you handed in |
 | clawback | the client takes the payment back |
 | contested claims resolved by a draw | several reached for the same notice at once; the clerk drew lots |

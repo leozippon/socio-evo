@@ -11,7 +11,7 @@ when every public check passes; its true quality is the fraction of hidden check
 import random
 from pathlib import Path
 from textwrap import indent
-from typing import Annotated, ClassVar
+from typing import Annotated
 
 from pydantic import BeforeValidator, Field, PositiveInt
 
@@ -67,9 +67,6 @@ class CodingTaskProvider:
     """The work protocol over the bank at `path`, running each check for at most `timeout`
     seconds, separated from the machine by `isolation`. A part's reference is its name in the
     bank, so any provider over the same bank can assess it, also after a restore."""
-
-    delivery: ClassVar[str] = "code"
-    """What a worker hands in, in the town's words."""
 
     def __init__(
         self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP

@@ -5,9 +5,10 @@ Each reply is drawn at random from the request's JSON schema with a generator se
 the run seed and the request's messages, so a request always gets the same reply, in any
 order. A moment's answer card enumerates every reference (jobs, people, places, parts), so
 the draw picks among the real choices; the one free reference, whom a new belief is about,
-is drawn from the experiment's residents, and code is a stub defining the function the
-prompt names. Lists hold at most one item, so no reply breaks a uniqueness rule its schema
-cannot express. A request without a schema gets a placeholder sentence.
+is drawn from the experiment's residents, and a hand-in is a stub of its trade: code defining
+the function the prompt names, a query that reads nothing, an answer of one. Lists hold at
+most one item, so no reply breaks a uniqueness rule its schema cannot express. A request
+without a schema gets a placeholder sentence.
 """
 
 import hashlib
@@ -16,11 +17,16 @@ import random
 import re
 from typing import Any
 
-from core.interaction.card import CODE
+from core.environment import DELIVERY, Trade
 from experiments.config import ExperimentConfig
 from infrastructure.llm import LLMRequest
 
 _ENTRY_POINT = re.compile(r"defines `(\w+)`")
+_HAND_INS = {
+    DELIVERY[Trade.QUERIES]: "SELECT 1 WHERE 0",
+    DELIVERY[Trade.CALCULATION]: "Nothing to work out.\nAnswer: 1",
+}
+"""A valid hand-in of each trade whose stub needs nothing from the prompt."""
 
 
 class DryRunResponder:
@@ -84,9 +90,11 @@ class _Draw:
         rng = self.rng
         if name in self.responder.words:
             return rng.choice(self.responder.words[name])
-        if name == CODE:
+        if name == DELIVERY[Trade.PROGRAMMING]:
             entry = _ENTRY_POINT.search(self.prompt)
             return f"def {entry[1] if entry else 'solution'}(*args, **kwargs):\n    return None\n"
+        if name in _HAND_INS:
+            return _HAND_INS[name]
         return _placeholder(rng)
 
 

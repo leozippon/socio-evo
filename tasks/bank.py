@@ -10,8 +10,9 @@ trade's task format, named by the task, and an `index.json` (`Index`): the bank'
 for each task, where it came from and its difficulty, never shown to a worker. Converting the
 same files with the same calibration gives the same banks.
 
-A task's difficulty is the measured one (`measured_difficulty`) where the calibration holds at
-least `MIN_ATTEMPTS` assessed first attempts at it, and else the benchmark's label. Each trade
+A bank's trade is the environment's `Trade`, which this module re-exports. A task's difficulty
+is the measured one (`measured_difficulty`) where the calibration holds at least `MIN_ATTEMPTS`
+assessed first attempts at it, and else the benchmark's label. Each trade
 prices a task by its difficulty, a reward and a deadline in days. Every source has a `pool/`
 of its converted tasks and a `town/` bank, the pool's tasks of each tier in proportion to
 `TOWN_MIX`, as many as the scarcest tier allows, chosen by hash. The hard tier holds the hard
@@ -32,6 +33,7 @@ from typing import Any, Generic, NamedTuple, TypeVar
 import yaml
 from pydantic import BaseModel
 
+from core.environment import Trade
 from infrastructure.config import StrictModel, load_config
 from infrastructure.llm.structured import TRUNCATED
 
@@ -39,14 +41,6 @@ DATA_DIR = Path("~/.cache/socio-evo/banks")
 INDEX = "index.json"
 CALIBRATION = "calibration.json"
 MIN_ATTEMPTS = 2
-
-
-class Trade(StrEnum):
-    """A kind of work, with its own banks and its own way of checking."""
-
-    PROGRAMMING = "programming"
-    QUERIES = "queries"
-    CALCULATION = "calculation"
 
 
 class Difficulty(StrEnum):

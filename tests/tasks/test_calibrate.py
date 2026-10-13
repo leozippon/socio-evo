@@ -3,6 +3,7 @@ from datetime import date
 import yaml
 
 from core.agent import Profile
+from core.environment import DELIVERY
 from core.interaction import Currency, Setting
 from infrastructure.llm import LLMRequest, LLMResponse, ScriptedClient
 from tasks import PROVIDERS, bank
@@ -11,6 +12,7 @@ from tasks.calculation import CalculationTask
 from tasks.calculation import fetch as calculation
 from tasks.calibrate import calibrate, run
 from tasks.coding import CodingTaskProvider
+from tasks.sandbox import Isolation
 from tests.tasks.calculation.test_fetch import ROWS
 from tests.tasks.queries.test_provider import written
 
@@ -34,8 +36,10 @@ TOWN = Setting(
 """A town of dollars whose day 1 is a Wednesday."""
 
 
-def handing_in(delivery: str) -> dict[str, str]:
-    return {"thought": "Done.", "do": "hand in", "code": delivery, "as": "finished"} | {
+def handing_in(solution: str, delivery: str = "code") -> dict[str, str]:
+    """A hand-in of `solution` as finished, written on the card of a trade whose workers hand
+    in a `delivery` (code, a query, an answer)."""
+    return {"thought": "Done.", "do": "hand in", delivery: solution, "as": "finished"} | {
         "telling the client": "Here it is."
     }
 
@@ -64,7 +68,7 @@ async def test_calibration_asks_as_a_worker_would_and_assesses_each_reply(tmp_pa
 
     provider = CodingTaskProvider(tmp_path)
     client = CutOff(ScriptedClient(respond))
-    results = await calibrate(provider, "bank", ["halve"], client, PROFILE, TOWN, samples=3)
+    results = await calibrate(provider, "code", "bank", ["halve"], client, PROFILE, TOWN, samples=3)
     result = results["halve"]
     assert sorted(result.samples, key=lambda sample: sample.quality) == [
         Sample(visible=True, quality=1 / 3, special_cased=False),
@@ -97,7 +101,10 @@ async def test_each_bank_is_worked_as_its_trade_and_a_limit_takes_tasks_by_hash(
         {},
     )
     banks = [converted[0] / "pool", tmp_path / "pool"]
-    providers = {path: PROVIDERS[bank.trade_of(path)](path) for path in banks}
+    providers = {
+        path: PROVIDERS[bank.trade_of(path)](path, timeout=5.0, isolation=Isolation.NONE)
+        for path in banks
+    }
     prompts: dict[str, str] = {}
 
     def respond(request: LLMRequest) -> dict[str, object]:
@@ -105,19 +112,20 @@ async def test_each_bank_is_worked_as_its_trade_and_a_limit_takes_tasks_by_hash(
         prompts[name] = request.messages[1].content
         if name in providers[banks[0]].bank:
             task = providers[banks[0]].bank[name]
-            return handing_in(task.gold if first else written(task.sample_result))
+            return handing_in(task.gold if first else written(task.sample_result), "query")
         answer = providers[banks[1]].bank[name].answer
-        return handing_in(f"Working it out.\nAnswer: {answer if first else 0}")
+        return handing_in(f"Working it out.\nAnswer: {answer if first else 0}", "answer")
 
     out = tmp_path / "calibration.json"
     calibration = Calibration(model="m", tasks={})
     await run(banks, ScriptedClient(respond), PROFILE, TOWN, 2, 2, calibration, out)
     calibration = Calibration.model_validate_json(out.read_text(encoding="utf-8"))
-    for provider in providers.values():
+    for path, provider in providers.items():
         chosen = sorted(provider.bank, key=lambda name: hashed(f"calibrate:{name}"))[:2]
         for name in chosen:
             samples = calibration.tasks[name].samples
-            if provider.delivery == "query":
+            delivery = DELIVERY[bank.trade_of(path)]
+            if delivery == "query":
                 assert samples == (
                     Sample(visible=True, quality=1.0, special_cased=False),
                     Sample(visible=True, quality=0.0, special_cased=True),
@@ -127,5 +135,5 @@ async def test_each_bank_is_worked_as_its_trade_and_a_limit_takes_tasks_by_hash(
                 assert samples[1] == Sample(visible=False, quality=0.0, special_cased=False)
             specification = provider.part(name).specification
             assert specification in prompts[name]
-            assert f"You can hand in your {provider.delivery} for job 1." in prompts[name]
+            assert f"You can hand in your {delivery} for job 1." in prompts[name]
     assert len(calibration.tasks) == 4

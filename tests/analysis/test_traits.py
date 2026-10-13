@@ -298,7 +298,7 @@ def test_a_bank_that_no_longer_holds_the_examples_is_an_error(scripted, tmp_path
     task = bank / "roman_to_int.yaml"
     task.write_text(task.read_text().replace('roman_to_int("III") == 3', 'roman_to_int("V") == 5'))
     config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
-    config["tasks"]["bank"] = str(bank)
+    config["tasks"]["banks"]["programming"] = str(bank)
     (root / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
     with pytest.raises(ValueError, match="no longer holds the examples part 1 of task-1"):
         traits(read_run(root))

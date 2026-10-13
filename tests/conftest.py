@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 
 from core.agent.evolution import EvolutionConfig, Evolver, History, SelfTrigger
+from core.environment import Trade
 from core.interaction import card
 from evaluation import Dimension, Outcome, ProbeResult, version_at
 from evaluation.results import AgentResult, write_result
@@ -50,7 +51,7 @@ def town(tmp_path_factory) -> Path:
         agents=TOWN.agents,
         cognition=TOWN.cognition,
         evolver=Evolver(TOWN.evolution),
-        provider=CodingTaskProvider(BANK),
+        providers={Trade.PROGRAMMING: CodingTaskProvider(BANK)},
         client=RecordingClient(ScriptedClient(Townsfolk()), run.llm_calls_path),
     )
     asyncio.run(Simulation.create(run, setup).run())

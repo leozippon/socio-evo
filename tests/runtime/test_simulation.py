@@ -14,7 +14,7 @@ from analysis import meetings as meetings_of
 from analysis import read_run
 from core.agent import Agent, AgentSeed, CognitionConfig, Profile
 from core.agent.evolution import EvolutionConfig, Evolver, History, Level, SelfTrigger
-from core.environment import Conditions, Environment, EnvironmentConfig, Place
+from core.environment import Conditions, Environment, EnvironmentConfig, Place, Trade
 from core.interaction import (
     Event,
     EventKind,
@@ -254,7 +254,7 @@ def setup(run: RunDirectory, script: Script) -> Setup:
         agents=tuple(SEEDS.values()),
         cognition=CognitionConfig(),
         evolver=Evolver(EvolutionConfig(self_trigger=SelfTrigger(enabled=False))),
-        provider=CodingTaskProvider(BANK),
+        providers={Trade.PROGRAMMING: CodingTaskProvider(BANK)},
         client=RecordingClient(ScriptedClient(script), run.llm_calls_path),
     )
 

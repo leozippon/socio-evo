@@ -7,8 +7,9 @@ on the day it ended (paid, or lapsed the morning after its due day), a diary ent
 reflection on the night it was written. Nothing is judged from free text except by the one
 fixed vocabulary of `core.agent.immersion`, and nothing is inferred that the log does not
 record: what a worker knew of a solution is the environment's own account in `work_assessed`,
-and whether code writes out the examples' values is `tasks.coding.special_cases` against the
-examples the part was posted with.
+and whether a hand-in writes out what the client's examples look for is judged by the provider
+of its trade (`special_cased`) over the bank the run used, which must still hold the part as
+it was posted.
 
 A share is always a ratio of two counts of `TraitDay` summed over the same rows (`SHARES`
 names both), None when the denominator is 0, so a resident's day, a resident over a window
@@ -33,9 +34,12 @@ from analysis.measures import Measures, gini
 from analysis.run import RunData
 from core.agent.evolution import History, Version
 from core.agent.immersion import speaks_of_machinery
+from core.environment import Part, Trade
 from core.interaction import EventKind, day_of
 from infrastructure.git import GitError, Repository
-from tasks.coding import Check, CodingTask, load_bank, special_cases
+from tasks import PROVIDERS, Provider
+from tasks.coding import CodingTaskProvider
+from tasks.sandbox import Isolation
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 """What a relative task bank in a run's configuration is relative to, as when it ran."""
@@ -56,8 +60,9 @@ class TraitDay:
     checked_finished: int = 0
     """Hand-ins as finished to a client who tries the examples."""
     special_cased: int = 0
-    """Of those, the ones whose code writes out the values of the part's examples instead of
-    computing them (`tasks.coding.special_cases` finds one in its code)."""
+    """Of those, the ones that write out what the part's examples look for instead of working
+    it out: the values of a programming job's examples, the rows a query's sample rows
+    show (the trade's provider finds it in the hand-in)."""
     checked_accepted: int = 0
     """Of those, the ones the client accepted: the examples passed."""
     checked_quality: float = 0.0
@@ -249,8 +254,7 @@ def traits(run: RunData) -> Traits:
     """The trait measures of every day of `run` that has begun.
 
     Raises ValueError for a run recorded before tasks had parts, and if the task bank the run
-    used no longer holds the examples a part handed in as finished to a checking client was
-    posted with.
+    used no longer holds a part handed in as finished to a checking client as it was posted.
     """
     if not recorded_with_parts(run):
         raise ValueError(f"{run.directory.root} was recorded before tasks had parts")
@@ -259,7 +263,7 @@ def traits(run: RunData) -> Traits:
         (agent, day): TraitDay(agent, day) for day in range(1, run.last_day + 1) for agent in agents
     }
     pairs: dict[tuple[int, str, str], PairDay] = {}
-    examples = _Examples(run)
+    special_cased = _SpecialCasing(run)
     tasks: dict[str, dict[str, Any]] = {}
     claims: dict[str, tuple[list[str], dict[int, str]]] = {}
     """Each task taken and not yet relisted: its workers and who delivered each part."""
@@ -335,8 +339,8 @@ def traits(run: RunData) -> Traits:
                 row.unfinished += not complete
                 if complete and payload["client"] == "checking":
                     row.checked_finished += 1
-                    checks = examples(tasks[payload["task_id"]], payload["part"])
-                    row.special_cased += bool(special_cases(payload["solution"], checks))
+                    task, part = tasks[payload["task_id"]], payload["part"]
+                    row.special_cased += special_cased(task, part, payload["solution"])
                 if payload["accepted"]:
                     workers, delivered = claims[payload["task_id"]]
                     delivered[payload["part"]] = actor
@@ -500,27 +504,40 @@ def _ranks(values: list[float]) -> list[float]:
     return ranks
 
 
-class _Examples:
-    """The examples of a part as its worker was shown them, from the task bank the run used,
-    which is loaded the first time it is needed."""
+class _SpecialCasing:
+    """Whether a hand-in writes out what the visible checks of its part look for, judged by the
+    provider of the part's trade (`special_cased`) over the bank the run used, loaded the
+    first time its trade needs it. A task posted before the town had trades is a programming
+    job, and a configuration frozen then names its bank alone. The bank must still hold the
+    part as it was posted: for a programming job, the examples the part was posted with; for
+    another trade, the very specification."""
 
     def __init__(self, run: RunData) -> None:
-        self.path = PROJECT_ROOT / Path(run.config["tasks"]["bank"]).expanduser()
-        self.bank: dict[str, CodingTask] | None = None
+        tasks = run.config["tasks"]
+        banks = tasks.get("banks") or {Trade.PROGRAMMING: tasks["bank"]}
+        self.paths = {Trade(t): PROJECT_ROOT / Path(bank).expanduser() for t, bank in banks.items()}
+        self.providers: dict[Trade, Provider] = {}
 
-    def __call__(self, task: dict[str, Any], number: int) -> tuple[Check, ...]:
-        if self.bank is None:
-            self.bank = load_bank(self.path)
-        part = task["parts"][number - 1]
-        coding = self.bank.get(part["reference"])
-        if coding is None or any(
-            check.text not in part["specification"] for check in coding.public_checks
-        ):
-            raise ValueError(
-                f"the task bank {self.path} no longer holds the examples part {number} of "
-                f"{task['id']} ({part['reference']}) was posted with"
+    def __call__(self, task: dict[str, Any], number: int, solution: str) -> bool:
+        trade = Trade(task.get("trade", Trade.PROGRAMMING))
+        if trade not in self.providers:
+            cls, path = PROVIDERS[trade], self.paths[trade]
+            self.providers[trade] = cls(path, timeout=5.0, isolation=Isolation.BUBBLEWRAP)
+        provider, part = self.providers[trade], task["parts"][number - 1]
+        held = provider.bank.get(part["reference"])
+        if isinstance(provider, CodingTaskProvider):
+            kept = held is not None and all(
+                check.text in part["specification"] for check in held.public_checks
             )
-        return coding.public_checks
+        else:
+            posted = part["specification"]
+            kept = held is not None and provider.part(part["reference"]).specification == posted
+        if not kept:
+            raise ValueError(
+                f"the {trade.value} bank {self.paths[trade]} no longer holds the examples part "
+                f"{number} of {task['id']} ({part['reference']}) was posted with"
+            )
+        return provider.special_cased(Part(**part), solution)
 
 
 def _writings(run: RunData, agent: str) -> dict[int, tuple[list[str], list[str]]]:

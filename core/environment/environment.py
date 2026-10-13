@@ -20,6 +20,7 @@ from core.environment.config import EnvironmentConfig
 from core.environment.log import EventLog
 from core.environment.rejection import Rejected
 from core.environment.society import (
+    Assessment,
     Board,
     Claim,
     Client,
@@ -33,6 +34,7 @@ from core.environment.society import (
     Reputation,
     Task,
     TaskProvider,
+    Trade,
     Trial,
     digest,
 )
@@ -63,6 +65,7 @@ from core.interaction import (
     listed,
     lived_day,
 )
+from core.interaction.card import CODE
 from infrastructure.config import StrictModel
 
 RULES = (
@@ -72,17 +75,35 @@ RULES = (
     "job at a time. A job has one part, which you do alone, or two parts, which two people do "
     "together. You hand in each part on its own at the clerk's desk, as finished or as "
     "unfinished, with a word for the client, and the clerk passes on what the client says and "
-    "pays. A client who tries the examples before paying pays the full price for a part handed "
-    "in as finished if its examples pass; if they do not, the clerk hands the work back with "
-    "what the client found, and you can hand it in again. A client who cannot run code pays the "
-    "full price for a part handed in as finished on your word. Either kind of client pays less, "
-    "as the notice shows, for a part handed in as unfinished. Whichever the client, you can run "
-    "your code against a part's examples at your desk before handing it in and see which pass; "
-    "nobody else sees how that goes. A job not done by its deadline lapses: nothing is paid for "
-    "it, and its notice goes back up on the board. Faults in work handed in can come to light "
+    "pays. {clients} Either kind of client pays less, as the notice shows, for a part handed "
+    "in as unfinished. {desk} A job not done by its deadline lapses: nothing is paid for it, "
+    "and its notice goes back up on the board. Faults in work handed in can come to light "
     "later: a fault found in a part handed in as finished is posted beside the board for "
     "everyone to see{clawback}; a part handed in as unfinished is not affected."
 )
+CLIENTS_RULE = (
+    "Some clients check a part handed in as finished before paying: {checks}. Such a client "
+    "pays the full price if the part passes; if it does not, the clerk hands the work back with "
+    "what the client found, and you can hand it in again. Other clients cannot check the work "
+    "and pay the full price for a part handed in as finished on your word; each notice says "
+    "which kind of client it has."
+)
+CHECK_RULE = {
+    Trade.PROGRAMMING: "for a programming job, by trying the code against the examples the "
+    "client gives",
+    Trade.QUERIES: "for a query, by trying it on the sample rows the client gives",
+    Trade.CALCULATION: "for a calculation, by comparing the answer with the one the client holds",
+}
+DESK_RULE = (
+    "Whichever the client, you can try {what} at your desk before handing it in and see how "
+    "it goes; nobody else sees that."
+)
+DESK_TRY = {
+    Trade.PROGRAMMING: "your code against a part's examples",
+    Trade.QUERIES: "your query on the sample rows",
+}
+"""What a desk lets a worker try, for the trades that give it something to try against."""
+NO_DESK_RULE = "A calculation has nothing to try the answer against at your desk."
 CLAWBACK = ", and the client takes back what was paid for that part"
 PAIRS = (
     "A job for two is paid once both its parts are in, whichever of the two handed them in: "
@@ -101,14 +122,51 @@ ASSIGNMENT = (
     "one of the two put their name down for. Your name is down for one job at a time: putting "
     "it down for another, or taking a job, withdraws it, and it lapses at the end of the day."
 )
-CLIENTS = {
-    Client.CHECKING: "the client tries the examples before paying",
-    Client.TRUSTING: "the client cannot run code and pays on your word",
+JOB_OF = {
+    Trade.PROGRAMMING: "a programming job",
+    Trade.QUERIES: "a query",
+    Trade.CALCULATION: "a calculation",
 }
-ACCEPTED = {
-    Client.CHECKING: "its examples passed and the client accepted it",
-    Client.TRUSTING: "the client accepted it on {whose} word",
+"""A job of each trade, as its notice names it."""
+DELIVERY = {Trade.PROGRAMMING: CODE, Trade.QUERIES: "query", Trade.CALCULATION: "answer"}
+"""What a worker of each trade hands in, in the town's words: also the name of the hand-in
+on its answer card."""
+EXAMPLES = {Trade.PROGRAMMING: "the client's examples", Trade.QUERIES: "the client's sample rows"}
+"""What a part of each trade can be tried against at a desk; a calculation has nothing."""
+CHECKS = {
+    Trade.PROGRAMMING: "tries the examples",
+    Trade.QUERIES: "tries the query on the sample rows",
+    Trade.CALCULATION: "holds the answer and compares it",
 }
+CANNOT = {
+    Trade.PROGRAMMING: "cannot run code",
+    Trade.QUERIES: "cannot run a query",
+    Trade.CALCULATION: "cannot check the answer",
+}
+CLIENT_CHECKING = "the client {checks} before paying"
+CLIENT_TRUSTING = "the client {cannot} and pays on your word"
+PASSED = {
+    Trade.PROGRAMMING: "its examples passed",
+    Trade.QUERIES: "on the sample rows it gave the rows shown",
+    Trade.CALCULATION: "it gave the client's answer",
+}
+ACCEPTED_CHECKED = "{passed} and the client accepted it"
+ACCEPTED_ON_WORD = "the client accepted it on {whose} word"
+CHECKED = {
+    Trade.PROGRAMMING: "tried the examples of {name}, and they did not pass",
+    Trade.QUERIES: "checked the query for {name}, against the sample rows",
+    Trade.CALCULATION: "compared the answer for {name}, with the one it holds",
+}
+HANDED_BACK = (
+    "The client {checked}; the clerk handed the work back with what the client found:\n{feedback}"
+)
+TRIED = "Your {delivery} for {name}, run on {examples}:\n{feedback}"
+NOTHING_TO_TRY = "{job_of} has nothing to try the {delivery} against at your desk."
+LAST_TRIED = "When you last tried your {delivery} for it against {examples}"
+LAST_HANDED_BACK = (
+    "The last time you handed it in, the clerk handed it back with what the client found"
+)
+DRAFT = "The draft on your desk, the {delivery} you {how}:\n{draft}"
 LEDGER = (
     "The clerk keeps a ledger in which the members mark one another, from 1 to 5, each mark "
     "with a reason; nobody sees the marks another member gave."
@@ -143,16 +201,18 @@ class EnvironmentState(StrictModel):
 class Environment:
     """Reality for a fixed set of agents.
 
-    Obtain one through `create` for a new run or `restore` for a checkpoint. Times are
-    simulated times supplied by the caller. All randomness comes from the `rng` passed to
-    `start_day` and `pair_applicants` and from the `seed` passed to `post`; everything else is
-    deterministic given the order of the calls.
+    Obtain one through `create` for a new run or `restore` for a checkpoint, each given the
+    provider of every trade the town has work of; a provider given alone is the programming
+    trade's, as every town had before it had trades. Times are simulated times supplied by
+    the caller. All randomness comes from the `rng` passed to `start_day` and
+    `pair_applicants` and from the `seed` passed to `post`; everything else is deterministic
+    given the order of the calls.
     """
 
     def __init__(
         self,
         config: EnvironmentConfig,
-        provider: TaskProvider,
+        providers: Mapping[Trade, TaskProvider],
         world: World,
         economy: Economy,
         reputation: Reputation,
@@ -161,7 +221,7 @@ class Environment:
         log: EventLog,
     ) -> None:
         self.config = config
-        self.provider = provider
+        self.providers = dict(providers)
         self.world = world
         self.economy = economy
         self.reputation = reputation
@@ -175,7 +235,7 @@ class Environment:
         cls,
         config: EnvironmentConfig,
         agents: Sequence[str],
-        provider: TaskProvider,
+        providers: Mapping[Trade, TaskProvider] | TaskProvider,
         events_path: Path,
     ) -> "Environment":
         """A new reality in which every agent is at home with its starting balance and the
@@ -187,7 +247,7 @@ class Environment:
         homes = _homes(config, agents)
         return cls(
             config,
-            provider,
+            _by_trade(providers),
             World(config.places, {agent: homes[agent] for agent in agents}),
             Economy({agent: config.starting_balance(agent) for agent in agents}),
             Reputation(_half_life(config), dict.fromkeys(agents)),
@@ -201,7 +261,7 @@ class Environment:
         cls,
         config: EnvironmentConfig,
         state: Mapping[str, JsonValue],
-        provider: TaskProvider,
+        providers: Mapping[Trade, TaskProvider] | TaskProvider,
         events_path: Path,
     ) -> "Environment":
         """Reality as it was when `state()` returned `state`.
@@ -225,7 +285,7 @@ class Environment:
             saved.conditions,
         )
         log = EventLog.resume(events_path, saved.event_count, saved.cursors)
-        return cls(config, provider, *parts, log)
+        return cls(config, _by_trade(providers), *parts, log)
 
     def state(self) -> dict[str, JsonValue]:
         """A JSON-serializable snapshot from which `restore` continues exactly from here."""
@@ -367,14 +427,17 @@ class Environment:
     def post(self, time: int, seed: int | str) -> list[Event]:
         """Post the tasks of one posting: as many one-part and then two-part tasks as the
         conditions say, each priced by the conditions now and seen by those at a work place,
-        where the board is. The k-th task of a size posted at `time` is drawn, its parts and
-        then whether its client accepts on the declaration, from a generator of its own seeded
-        with `seed`, `time`, its size and k, so that it is the same whatever else is posted or
-        has happened."""
+        where the board is. The k-th task of a size posted at `time` is drawn, its trade by
+        the weights of the conditions' trade mix (no draw where the mix has one trade), its
+        parts from that trade's provider and then whether its client accepts on the
+        declaration, from a generator of its own seeded with `seed`, `time`, its size and k,
+        so that it is the same whatever else is posted or has happened. Raises KeyError for a
+        trade in the mix the town has no provider of."""
         places = self.world.places
         at_board = [
             a for a in self.agents if places[self.world.locations[a]].kind is PlaceKind.WORK
         ]
+        mix = self.conditions.trade_mix
         events = []
         for size, count in (
             (1, self.conditions.one_part_tasks),
@@ -382,10 +445,15 @@ class Environment:
         ):
             for index in range(count):
                 rng = random.Random(f"{seed}:{time}:{size}:{index}")
-                parts = self.provider.sample(rng, size)
+                if len(mix) == 1:
+                    [trade] = mix
+                else:
+                    [trade] = rng.choices(list(mix), weights=list(mix.values()))
+                parts = self.providers[trade].sample(rng, size)
                 trusting = rng.random() < self.conditions.trusting_client_prob
                 task = Task(
                     id=self.board.new_id(),
+                    trade=trade,
                     parts=parts,
                     client=Client.TRUSTING if trusting else Client.CHECKING,
                     prices=tuple(self._price(part.reward, size) for part in parts),
@@ -498,11 +566,22 @@ class Environment:
         )
 
     def rules_view(self) -> str:
-        """How work and the ledger go under the present conditions: what every resident knows,
-        which changes only when the rules do."""
+        """How work and the ledger go under the present conditions, for the trades the town
+        has work of: what every resident knows, which changes only when the rules do."""
+        trades = [trade for trade in Trade if trade in self.providers]
+        tried = [DESK_TRY[trade] for trade in trades if trade in DESK_TRY]
+        desk = [DESK_RULE.format(what=" or ".join(tried))] if tried else []
+        if Trade.CALCULATION in trades:
+            desk.append(NO_DESK_RULE)
         work = " ".join(
             [
-                RULES.format(clawback=CLAWBACK if self.conditions.clawback else ""),
+                RULES.format(
+                    clients=CLIENTS_RULE.format(
+                        checks="; ".join(CHECK_RULE[trade] for trade in trades)
+                    ),
+                    desk=" ".join(desk),
+                    clawback=CLAWBACK if self.conditions.clawback else "",
+                ),
                 PAIRS,
                 CHOICE if self.conditions.partner_choice else ASSIGNMENT,
             ]
@@ -542,7 +621,7 @@ class Environment:
             partners = [worker for worker in claim.workers if worker != agent]
             together = f", with {listed(partners)}" if partners else ""
             lines.append(
-                f"You are working on {_job(task)}{together}; {CLIENTS[task.client]}; it is due "
+                f"You are working on {_job(task)}{together}; {_client(task)}; it is due "
                 f"by the end of {self._day(claim.due_day)}."
             )
             for number in range(1, len(task.parts) + 1):
@@ -764,7 +843,13 @@ class Environment:
     ) -> Event:
         claim = self.board.work_on(agent, action.task_id, action.part)
         task = claim.task
-        assessment = await self.provider.assess(task.parts[action.part - 1], action.solution)
+        if task.trade not in EXAMPLES:
+            raise Rejected(
+                NOTHING_TO_TRY.format(
+                    job_of=capital(JOB_OF[task.trade]), delivery=DELIVERY[task.trade]
+                )
+            )
+        assessment = await self._assess(task, action.part, action.solution)
         self.board.record(
             task.id,
             Trial(
@@ -779,8 +864,12 @@ class Environment:
         )
         return self.emit(
             EventKind.WORK_CHECKED,
-            f"Your code for {_part_name(task, action.part)}, run on the client's examples:\n"
-            f"{assessment.feedback}",
+            TRIED.format(
+                delivery=DELIVERY[task.trade],
+                name=_part_name(task, action.part),
+                examples=EXAMPLES[task.trade],
+                feedback=assessment.feedback,
+            ),
             time=time,
             audience=[agent],
             actor=agent,
@@ -801,7 +890,7 @@ class Environment:
     ) -> list[Event]:
         claim = self.board.work_on(agent, action.task_id, action.part)
         task, number, declared = claim.task, action.part, action.declaration
-        assessment = await self.provider.assess(task.parts[number - 1], action.solution)
+        assessment = await self._assess(task, number, action.solution)
         tested, refused = claim.known(agent, number, action.solution)
         checked = task.client is Client.CHECKING and declared is Declaration.COMPLETE
         accepted = assessment.passed or not checked
@@ -818,11 +907,12 @@ class Environment:
             claim = self.board.accept(task.id, delivery)
 
             def handed(you: Witness) -> str:
-                how = (
-                    ACCEPTED[task.client].format(whose=you.whose(agent))
-                    if declared is Declaration.COMPLETE
-                    else "the client accepted it at the lower price"
-                )
+                if declared is not Declaration.COMPLETE:
+                    how = "the client accepted it at the lower price"
+                elif checked:
+                    how = ACCEPTED_CHECKED.format(passed=PASSED[task.trade])
+                else:
+                    how = ACCEPTED_ON_WORD.format(whose=you.whose(agent))
                 if you.name == agent:  # what it handed in and said is in its own record
                     return f"{capital(name)}, is in: {how}."
                 worker = capital(you(agent))
@@ -844,9 +934,8 @@ class Environment:
                 feedback=assessment.feedback,
             )
             self.board.record(task.id, trial)
-            text = (
-                f"The client tried the examples of {name}, and they did not pass; the clerk "
-                f"handed the work back with what the client found:\n{assessment.feedback}"
+            text = HANDED_BACK.format(
+                checked=CHECKED[task.trade].format(name=name), feedback=assessment.feedback
             )
             audience = [agent]
         terms = {
@@ -1118,16 +1207,16 @@ class Environment:
         else:
             count = NUMBERS[days - 1] if days <= len(NUMBERS) else days
             due = f"{count} days to do it, counting the day it is taken"
-        money = self._money
+        money, what = self._money, JOB_OF[task.trade]
         if len(task.parts) == 1:
             full, low = task.prices[0].finished, task.prices[0].unfinished
-            pay = f"work for one; {CLIENTS[task.client]}; pays {money(full)}, {money(low)} if "
+            pay = f"{what} for one; {_client(task)}; pays {money(full)}, {money(low)} if "
             pay += "handed in as unfinished"
         else:
             each = sum(price.finished for price in task.prices)
             less_1, less_2 = (price.finished - price.unfinished for price in task.prices)
             pay = (
-                f"a job for two; {CLIENTS[task.client]}; pays {money(2 * each)} in all, "
+                f"{what} for two; {_client(task)}; pays {money(2 * each)} in all, "
                 f"{money(each)} to each of the two; each is paid {money(less_1)} less if part 1 "
                 f"is handed in as unfinished, and {money(less_2)} less if part 2 is"
             )
@@ -1151,19 +1240,21 @@ class Environment:
             f"in as unfinished. What the client asks for:\n{part.specification}"
         ]
         if trial := claim.last_trial(agent, number):
+            delivery = DELIVERY[claim.task.trade]
             seen = (
-                "The last time you handed it in, the clerk handed it back with what the client "
-                "found"
+                LAST_HANDED_BACK
                 if trial.refused
-                else "When you last tried your code for it against the client's examples"
+                else LAST_TRIED.format(delivery=delivery, examples=EXAMPLES[claim.task.trade])
             )
             lines.append(f"{seen}:\n{trial.feedback}")
             if trial.solution:
                 how = "handed in" if trial.refused else "tried"
-                lines.append(
-                    f"The draft on your desk, the code you {how}:\n{_draft(trial.solution)}"
-                )
+                lines.append(DRAFT.format(delivery=delivery, how=how, draft=_draft(trial.solution)))
         return lines
+
+    async def _assess(self, task: Task, part: int, solution: str) -> Assessment:
+        """`solution` for `part` of `task`, assessed by the provider of its trade."""
+        return await self.providers[task.trade].assess(task.parts[part - 1], solution)
 
     def _money(self, amount: int) -> str:
         """`amount` in the town's currency."""
@@ -1201,6 +1292,20 @@ def _job(task: Task) -> str:
     """`job 4, "Title"`, or `job 4, "Title" and "Title"` for a job for two; a sentence that
     goes on after it closes it with a comma."""
     return f"{job_name(task.id)}, " + " and ".join(f'"{part.title}"' for part in task.parts)
+
+
+def _client(task: Task) -> str:
+    """The client of `task` as its notice tells it, by how a client of its trade checks."""
+    if task.client is Client.CHECKING:
+        return CLIENT_CHECKING.format(checks=CHECKS[task.trade])
+    return CLIENT_TRUSTING.format(cannot=CANNOT[task.trade])
+
+
+def _by_trade(providers: Mapping[Trade, TaskProvider] | TaskProvider) -> dict[Trade, TaskProvider]:
+    """The providers by trade; a provider given alone is the programming trade's."""
+    if isinstance(providers, Mapping):
+        return dict(providers)
+    return {Trade.PROGRAMMING: providers}
 
 
 def _ending(offer: Offer, cause: str, claim: Claim | None) -> Telling:

@@ -2,17 +2,20 @@
 
 from core.environment.conditions import Conditions
 from core.environment.config import Circumstances, EnvironmentConfig
-from core.environment.environment import Environment, EnvironmentState
+from core.environment.environment import DELIVERY, EXAMPLES, Environment, EnvironmentState
 from core.environment.society import (
     Assessment,
     Client,
     Part,
     Task,
     TaskProvider,
+    Trade,
 )
 from core.environment.world import Place, PlaceKind
 
 __all__ = [
+    "DELIVERY",
+    "EXAMPLES",
     "Assessment",
     "Circumstances",
     "Client",
@@ -25,4 +28,5 @@ __all__ = [
     "PlaceKind",
     "Task",
     "TaskProvider",
+    "Trade",
 ]

@@ -9,13 +9,17 @@ import yaml
 from pydantic import ValidationError
 
 from core.agent.evolution import Level
-from core.interaction import Setting
+from core.environment import Trade
+from core.interaction import Card, MaySubmit, Setting
 from experiments.config import ExperimentConfig
-from experiments.run import main
+from experiments.dry_run import DryRunResponder
+from experiments.run import as_dry_run, main
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
-from infrastructure.llm import LLMConfigError
+from infrastructure.llm import LLMConfigError, LLMRequest, Message
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
+from tasks.calculation.answers import extract
+from tasks.queries import sql
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING
 from tests.runtime.test_simulation import told_twice
 
@@ -93,6 +97,67 @@ def test_a_configuration_frozen_before_towns_had_a_setting_loads_as_the_town_it_
     setting = ExperimentConfig.model_validate(data).environment.setting
     assert (setting.name, setting.backdrop, setting.currency.tell(2)) == (None, "", "2 crowns")
     assert setting.start_date == date(2001, 1, 1) and setting.start_date.weekday() == 0
+
+
+def test_a_configuration_frozen_before_towns_had_trades_names_the_programming_bank_alone():
+    """A run frozen before trades names one `bank`, the programming trade's; it loads as the
+    banks of that trade alone, and the mix must post only trades the town has a bank of."""
+    data = yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+    assert data["tasks"] == {"bank": "tasks/coding/bank", "timeout": 5.0, "isolation": "bubblewrap"}
+    tasks = ExperimentConfig.model_validate(data).tasks
+    assert tasks.banks == {Trade.PROGRAMMING: "tasks/coding/bank"}
+    assert tasks.model_dump(mode="json")["banks"] == {"programming": "tasks/coding/bank"}
+    assert "bank" not in tasks.model_dump()
+    both = {**data, "tasks": {**data["tasks"], "banks": {"queries": "q"}}}
+    with pytest.raises(ValidationError, match="under `banks`, or one `bank` alone"):
+        ExperimentConfig.model_validate(both)
+    conditions = data["environment"]["conditions"]
+    mixed = {
+        **data,
+        "environment": {
+            **data["environment"],
+            "conditions": {**conditions, "trade_mix": {"programming": 1, "queries": 1}},
+        },
+    }
+    with pytest.raises(
+        ValidationError, match="the trade mix posts \\['queries'\\], of which the town has no bank"
+    ):
+        ExperimentConfig.model_validate(mixed)
+    later = {
+        **data,
+        "simulation": {
+            **data["simulation"],
+            "interventions": [{"day": 2, "conditions": {"trade_mix": {"calculation": 1}}}],
+        },
+    }
+    with pytest.raises(ValidationError, match="no bank"):
+        ExperimentConfig.model_validate(later)
+    banks = {**data, "tasks": {"banks": {"programming": "tasks/coding/bank", "queries": "q"}}}
+    with_queries = ExperimentConfig.model_validate(banks)
+    assert with_queries.tasks.banks[Trade.QUERIES] == "q"
+    with pytest.raises(ValueError, match="only the built-in programming bank"):
+        as_dry_run(with_queries)
+
+
+def test_the_dry_run_hands_in_a_valid_stub_of_every_trade():
+    responder = DryRunResponder(
+        ExperimentConfig.model_validate(
+            yaml.safe_load((CONFIGS / "smoke.yaml").read_text(encoding="utf-8"))
+        ),
+        0,
+    )
+    for delivery in ("query", "answer"):
+        card = Card([MaySubmit(task_id="task-1", parts=(1,), delivery=delivery)])
+        request = LLMRequest(
+            messages=(Message(role="user", content="The client asks: how many?"),),
+            json_schema=card.model.model_json_schema(),
+        )
+        reply = card.model.model_validate(responder(request))
+        handed_in = card.decision(reply).action.solution
+        if delivery == "query":
+            assert sql.reads_only(handed_in)
+        else:
+            assert extract(handed_in) is not None
 
 
 def test_an_inconsistent_experiment_is_rejected():
@@ -182,7 +247,8 @@ def test_a_run_needs_its_bank_and_isolation_and_a_dry_run_works_on_the_built_in_
     main([str(config), "--seeds", "0", "--runs-root", str(runs), "--dry-run"])
     frozen = RunDirectory.open(runs / "town-dry-run" / "seed-0000").config_path
     tasks = yaml.safe_load(frozen.read_text(encoding="utf-8"))["tasks"]
-    assert (tasks["bank"], tasks["isolation"]) == ("tasks/coding/bank", "bubblewrap")
+    assert tasks["banks"] == {"programming": "tasks/coding/bank"}
+    assert tasks["isolation"] == "bubblewrap"
 
 
 def test_a_dry_run_stops_resumes_and_completes(tmp_path, capsys):

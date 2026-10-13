@@ -62,8 +62,8 @@ export function partName(id, part, tasks) {
 
 /** The client of a task in the town's words, and its icon. */
 export const CLIENTS = {
-  checking: { label: "tries the examples before paying", short: "tries the examples", icon: "examples" },
-  trusting: { label: "cannot run code and pays on the worker's word", short: "pays on the word", icon: "word" },
+  checking: { label: "checks the work before paying (the examples, the sample rows, or the answer it holds)", short: "checks the work", icon: "examples" },
+  trusting: { label: "cannot check the work and pays on the worker's word", short: "pays on the word", icon: "word" },
 };
 
 /** How a part was handed in. */

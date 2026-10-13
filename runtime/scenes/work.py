@@ -3,7 +3,7 @@ they choose, hour by hour."""
 
 from collections.abc import Mapping, Sequence
 
-from core.environment import Environment
+from core.environment import DELIVERY, EXAMPLES, Environment
 from core.interaction import (
     Allowance,
     Decision,
@@ -58,9 +58,9 @@ class WorkSession(Scene):
 
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
         """Someone working on no job may take one from the board, if any is there; someone
-        working on one may try and hand in the parts not yet in. Anyone may talk to and hand
-        money to the others here, go home for the rest of this part of the day, or carry on
-        quietly."""
+        working on one may hand in the parts not yet in, and try them where the job's trade
+        gives something to try against. Anyone may talk to and hand money to the others here,
+        go home for the rest of this part of the day, or carry on quietly."""
         env, allowed = self.env, []
         claim = env.board.claim_of(agent)
         if claim is None:
@@ -74,10 +74,10 @@ class WorkSession(Scene):
         else:
             task = claim.task
             parts = tuple(n for n in range(1, len(task.parts) + 1) if claim.delivery(n) is None)
-            allowed += [
-                MayCheck(task_id=task.id, parts=parts),
-                MaySubmit(task_id=task.id, parts=parts),
-            ]
+            working = {"task_id": task.id, "parts": parts, "delivery": DELIVERY[task.trade]}
+            if task.trade in EXAMPLES:
+                allowed.append(MayCheck(**working))
+            allowed.append(MaySubmit(**working))
         if others := tuple(other for other in self.present if other != agent):
             units = env.config.setting.currency.units
             allowed += [MaySpeak(to=others), MayGive(to=others, units=units)]
