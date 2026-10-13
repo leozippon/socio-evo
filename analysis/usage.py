@@ -31,8 +31,8 @@ class Usage:
 
 def run_usage(run: RunData) -> list[dict[str, Any]]:
     """The run's model calls by simulated day, agent and purpose (`act`, `diary`, `reflect`,
-    `skills`, `policy`), ordered so. Calls of a day discarded by a resume stay counted: they
-    did happen."""
+    `skills`, `policy`, or `revise` in the free mode of evolution), ordered so. Calls of a
+    day discarded by a resume stay counted: they did happen."""
     groups = usage(
         run.directory.llm_calls_path,
         lambda meta: (day_of(meta["time"]), meta["agent"], meta["purpose"]),

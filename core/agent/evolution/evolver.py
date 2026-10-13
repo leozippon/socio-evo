@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from core.agent import prompts
 from core.agent.agent import Agent
-from core.agent.evolution.config import EvolutionConfig
+from core.agent.evolution.config import EvolutionConfig, Mode
 from core.agent.evolution.history import History, Version
 from core.agent.evolution.levels import Level, Trigger
 from core.agent.evolution.operators import (
@@ -12,6 +12,7 @@ from core.agent.evolution.operators import (
     MemoryOperator,
     Operator,
     PolicyOperator,
+    RevisionOperator,
     SkillOperator,
 )
 from core.interaction import day_of
@@ -34,8 +35,9 @@ class Evolver:
     """Applies `config` to agents. Raises ConfigError if an enabled level has no operator."""
 
     def __init__(self, config: EvolutionConfig) -> None:
+        memory = MemoryOperator(config.retention_days, config.max_insights)
         operators: dict[Level, Operator] = {
-            Level.L0: MemoryOperator(config.retention_days, config.max_insights),
+            Level.L0: memory,
             Level.L1: SkillOperator(),
             Level.L2: PolicyOperator(),
         }
@@ -44,6 +46,7 @@ class Evolver:
             raise ConfigError(f"evolution levels enabled without an operator: {', '.join(missing)}")
         self.config = config
         self._operators = operators
+        self._revision = RevisionOperator(memory)
 
     async def evolve(self, agent: Agent, trigger: Trigger, time: int) -> list[Version | Lapse]:
         """Apply the enabled levels `trigger` schedules, in level order, each as one commit,
@@ -53,10 +56,12 @@ class Evolver:
         If any level applies, pending experience is committed first so that each step's commit
         holds only that step's changes; a step that changes no file is an empty commit. A level
         already applied at `time`, such as one the agent requested earlier that night, is not
-        applied again.
+        applied again. In the free mode only the night (`daily`) applies, as `_revise` says.
         """
         if trigger is Trigger.SELF:
             raise ValueError("self-triggered steps are requested by reflection, not fired")
+        if self.config.mode is Mode.FREE:
+            return await self._revise(agent, time) if trigger is Trigger.DAILY else []
         levels = sorted(set(self.config.schedule.get(trigger, ())) & set(self.config.levels))
         if not levels:
             return []
@@ -67,6 +72,24 @@ class Evolver:
             if not any(v.level is level and v.time == time for v in history.log()):
                 versions += await self._step(agent, history, level, trigger, time, None)
         return versions
+
+    async def _revise(self, agent: Agent, time: int) -> list[Version | Lapse]:
+        """The free mode's night: after pending experience is committed, the diary and the
+        one question, whose reply is filed level by level, each level that changed as one
+        commit triggered `daily` (see `RevisionOperator.file`). When no valid reply can be
+        obtained the night lapses as its L0 step, with nothing committed; an agent left
+        without an account of itself is asked for one again the next night."""
+        history = History(agent.path, agent.setting.start_date)
+        history.commit_experience(time)
+        try:
+            revision = await self._revision.apply(agent, Context(Trigger.DAILY, time))
+        except StructuredOutputError as error:
+            history.reset(history.head())
+            return [Lapse(Level.L0, Trigger.DAILY, error)]
+        return [
+            history.commit_step(level, Trigger.DAILY, time, change.subject, change.body)
+            for level, change in self._revision.file(agent, revision, day_of(time))
+        ]
 
     async def _step(
         self,

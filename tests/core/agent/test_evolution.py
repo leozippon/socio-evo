@@ -8,7 +8,9 @@ from core.agent.evolution import (
     EvolutionConfig,
     Evolver,
     History,
+    Lapse,
     Level,
+    Mode,
     SelfTrigger,
     Trigger,
     commit_date,
@@ -196,6 +198,133 @@ def test_unimplemented_or_misplaced_levels_are_configuration_errors():
         EvolutionConfig(schedule={SELF: (L1,)})
     with pytest.raises(ValidationError):
         SelfTrigger(levels=(L0,))
+
+
+@pytest.mark.parametrize(
+    ("settings", "refusal"),
+    [
+        ({"mode": "wild"}, "'scheduled' or 'free'"),
+        ({"mode": "free", "levels": []}, "levels must be those"),
+        ({"mode": "free", "levels": ["L0", "L1", "L2", "L3"]}, "levels must be those"),
+        ({"mode": "free", "self_trigger": {"cooldown_days": 3}}, "self_trigger cannot be set"),
+        ({"mode": "free", "schedule": {"daily": ["L0", "L1"]}}, "schedule cannot be set"),
+    ],
+)
+def test_the_free_mode_has_no_levels_or_cadences_to_choose(settings, refusal):
+    with pytest.raises(ValidationError, match=refusal):
+        EvolutionConfig.model_validate(settings)
+    free = EvolutionConfig(mode=Mode.FREE, levels=(L2, L1, L0), retention_days=3)
+    assert EvolutionConfig.model_validate(free.model_dump(mode="json")) == free
+    assert EvolutionConfig().mode is Mode.SCHEDULED
+
+
+async def test_in_free_mode_every_night_files_one_reply_level_by_level(
+    agent, script, seed, observe
+):
+    """The first night's reply holds the resident's account of itself, which it reads from the
+    next day on in place of its profile; every night one reply revises any of what it has
+    written, each level it changed one commit triggered daily, and no cadence applies."""
+    evolver = Evolver(EvolutionConfig(mode=Mode.FREE))
+    first, later = "I write routing code and I am new here.", "I write parsers now."
+    script.revisions = {
+        1: {
+            "about yourself": first,
+            "what you have come to believe": [
+                {"change": "add", "belief": "Ben asks about parsers.", "about": "Ben"}
+            ],
+        },
+        2: {
+            "about yourself": later,
+            "what you have resolved": "Answer Ben first.",
+            "your notebook": [
+                {"change": "write", "title": "Dates", "summary": "Dates.", "text": "ISO first."}
+            ],
+            "what you have come to believe": [
+                {"change": "reword", "number": 1, "belief": "Ben asks every day."}
+            ],
+        },
+        3: {"about yourself": None},
+    }
+    returned = []
+    for day in (1, 2, 3):
+        await agent.act(observe(day))
+        for trigger in (DAILY, WEEKLY, MONTHLY):
+            returned += await evolver.evolve(agent, trigger, _end(day))
+
+    steps = [version for version in History(agent.path).log()[::-1] if version.level]
+    assert returned == steps
+    assert [(v.level, v.trigger, day_of(v.time), v.subject, v.body) for v in steps] == [
+        (L0, DAILY, 1, "Reflect on Day 1", "Night 1."),
+        (L2, DAILY, 1, "Rewrite account of itself on Day 1", "Night 1."),
+        (L0, DAILY, 2, "Reflect on Day 2", "Night 2."),
+        (L1, DAILY, 2, "Review skills on Day 2", "Night 2."),
+        (L2, DAILY, 2, "Rewrite account of itself and policy on Day 2", "Night 2."),
+        (L0, DAILY, 3, "Reflect on Day 3", "Night 3."),
+    ]
+    repository = Repository(agent.path)
+    assert [_changed(repository, version.commit) for version in steps] == [
+        {"memory/diary/day-0001.md", "memory/insights.jsonl"},
+        {"parameters/self.md"},
+        {"memory/diary/day-0002.md", "memory/insights.jsonl"},
+        {"memory/skills/dates.md"},
+        {"parameters/policy.md", "parameters/self.md"},
+        {"memory/diary/day-0003.md"},
+    ]
+    assert (agent.parameters.read_account(), agent.parameters.read_policy()) == (
+        later,
+        "Answer Ben first.",
+    )
+
+    revise = [r for r in script.requests if r.metadata["purpose"] == "revise"]
+    assert ["about yourself" in r.json_schema["required"] for r in revise] == [True, False, False]
+    asked = [r.messages[-1].content for r in revise]
+    assert prompts.FIRST_ACCOUNT in asked[0] and prompts.FIRST_ACCOUNT not in asked[1]
+    assert f'About yourself:\n"{first}"\n\nWhat you have resolved:\nNothing yet.' in asked[1]
+    assert '1. About Ben: "Ben asks about parsers."' in asked[1]
+    assert 'Dates: "Dates."\n"ISO first."' in asked[2]
+    profile = f"You are Mei. You are 34 years old. {seed.profile.backstory}"
+    # The question shows the account and the resolutions; its system prompt does not repeat them.
+    assert [r.messages[0].content for r in revise] == [profile, "You are Mei.", "You are Mei."]
+    for request in script.requests:
+        system = request.messages[0].content
+        if day_of(request.metadata["time"]) == 1:
+            assert system.startswith(profile), request.metadata
+        else:
+            assert seed.profile.backstory not in system and "years old" not in system, system
+    acts = [r.messages[0].content for r in script.requests if r.metadata["purpose"] == "act"]
+    assert acts[1].startswith(prompts.OWN_ACCOUNT.format(name="Mei", account=f'"{first}"'))
+    assert acts[2].startswith(prompts.OWN_ACCOUNT.format(name="Mei", account=f'"{later}"'))
+
+
+async def test_a_first_night_without_an_account_lapses_and_is_asked_again(
+    agent, script, seed, observe
+):
+    """A night with no valid reply lapses with nothing committed, its diary discarded; the
+    resident, still without an account of itself, reads its profile the next day and is asked
+    for an account again the next night."""
+    evolver = Evolver(EvolutionConfig(mode=Mode.FREE))
+    script.revisions = {1: {"about yourself": "  "}, 2: {"about yourself": "I am Mei."}}
+    await agent.act(observe(1))
+    [lapse] = await evolver.evolve(agent, DAILY, _end(1))
+    assert isinstance(lapse, Lapse) and (lapse.level, lapse.trigger) == (L0, DAILY)
+    assert lapse.error.attempts == 3
+    corrected = [r for r in script.requests if r.metadata["purpose"] == "revise"][-1]
+    assert prompts.NO_ACCOUNT in corrected.messages[-1].content
+    assert not [version for version in History(agent.path).log() if version.level]
+    assert agent.memory.diary.entries() == [] and agent.parameters.read_account() == ""
+
+    await agent.act(observe(2))
+    profile = f"You are Mei. You are 34 years old. {seed.profile.backstory}"
+    assert script.requests[-1].messages[0].content.startswith(profile)
+    steps = await evolver.evolve(agent, DAILY, _end(2))
+    assert [(v.level, v.subject) for v in steps] == [
+        (L0, "Reflect on Day 2"),
+        (L2, "Rewrite account of itself on Day 2"),
+    ]
+    asked = [r for r in script.requests if r.metadata["purpose"] == "revise"][-1]
+    assert "about yourself" in asked.json_schema["required"]
+    assert prompts.FIRST_ACCOUNT in asked.messages[-1].content
+    assert agent.parameters.read_account() == "I am Mei."
 
 
 async def test_a_frozen_export_loads_without_history_and_stays_independent(

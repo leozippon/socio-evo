@@ -274,7 +274,8 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `meetings[].options` | array of strings | The answers it can be given. |
 | `meetings[].enacts` | object | Answer to the conditions it sets the next morning if it carries; an answer without them leaves things as they are. |
 | `evolution` | object | How agents evolve in this experiment. |
-| `evolution.levels` | array of strings | The enabled levels, among `L0` (memory), `L1` (skills), `L2` (policy); none is the no-evolution baseline. |
+| `evolution.mode` | string | `scheduled`, each level at its cadence, or `free`, every night one revision of everything the agent has written about itself, its own account of itself included, filed at `L0`, `L1` and `L2`. |
+| `evolution.levels` | array of strings | The enabled levels, among `L0` (memory), `L1` (skills), `L2` (policy and, in the free mode, the account of itself); none is the no-evolution baseline. |
 | `evolution.schedule` | object | Trigger (`daily`, `weekly`, `monthly`) to the levels it runs. |
 | `evolution.self_trigger` | object | `enabled`, the `levels` an agent may request at night, and the `cooldown_days` after a request. |
 | `evolution.retention_days` | integer | Days of episodic memory an agent keeps. |

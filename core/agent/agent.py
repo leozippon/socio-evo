@@ -107,6 +107,7 @@ class Agent:
             self.profile,
             self.parameters.read_policy(),
             self.cognition,
+            account=self.parameters.read_account(),
             setting=observation.setting,
             skills=skills,
         )
@@ -144,14 +145,14 @@ class Agent:
     ) -> T:
         """A validated `reply` to `prompt`, after which the form of the reply is shown; an
         answer that cannot be read is told so in the card's words (`card.correction`). The
-        system prompt defaults to identity and policy. Raises StructuredOutputError if no
-        valid reply could be obtained."""
+        system prompt defaults to who the agent is and its policy. Raises
+        StructuredOutputError if no valid reply could be obtained."""
         request = self._request(purpose, time, system, f"{prompt}\n\n{form(reply)}")
         return await complete_structured(self.client, request, reply, correction=correction)
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
-        """Free text in reply to `prompt`, with identity and policy as the system prompt.
-        Raises StructuredOutputError if no whole reply could be obtained."""
+        """Free text in reply to `prompt`, with who the agent is and its policy as the system
+        prompt. Raises StructuredOutputError if no whole reply could be obtained."""
         text = await complete_text(self.client, self._request(purpose, time, None, prompt))
         return text.strip()
 
@@ -159,7 +160,10 @@ class Agent:
         spec = self.parameters.read_model()
         if system is None:
             system = prompts.system_prompt(
-                self.profile, self.parameters.read_policy(), self.cognition
+                self.profile,
+                self.parameters.read_policy(),
+                self.cognition,
+                account=self.parameters.read_account(),
             )
         return LLMRequest(
             messages=(

@@ -1,4 +1,5 @@
-"""The agent's parameters: its self-authored policy (L2) and its model specification (L3)."""
+"""The agent's parameters: its self-authored policy and account of itself (L2) and its model
+specification (L3)."""
 
 from pathlib import Path
 
@@ -28,10 +29,15 @@ class ModelSpec(StrictModel):
 
 
 class Parameters:
-    """`parameters/` of an agent directory: `policy.md` and `model.yaml`."""
+    """`parameters/` of an agent directory: `policy.md`, `self.md` and `model.yaml`.
+
+    `self.md` is the agent's account of itself, which only the free mode of evolution has it
+    write; it is absent until then, as in every agent directory of the scheduled mode.
+    """
 
     def __init__(self, root: Path) -> None:
         self.policy_path = root / "policy.md"
+        self.account_path = root / "self.md"
         self.model_path = root / "model.yaml"
 
     def read_policy(self) -> str:
@@ -39,6 +45,15 @@ class Parameters:
 
     def write_policy(self, text: str) -> None:
         self.policy_path.write_text(text.strip() + "\n", encoding="utf-8")
+
+    def read_account(self) -> str:
+        """The account of itself the agent has written; empty if it has written none."""
+        if not self.account_path.exists():
+            return ""
+        return self.account_path.read_text(encoding="utf-8").strip()
+
+    def write_account(self, text: str) -> None:
+        self.account_path.write_text(text.strip() + "\n", encoding="utf-8")
 
     def read_model(self) -> ModelSpec:
         return load_config(self.model_path, ModelSpec)

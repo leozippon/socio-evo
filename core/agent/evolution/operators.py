@@ -1,6 +1,6 @@
 """Evolution operators: each turns the agent's experience into a change of its own files."""
 
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -49,37 +49,42 @@ class MemoryOperator:
         self.max_insights = max_insights
 
     async def apply(self, agent: Agent, context: Context) -> Change:
-        memory, limits, day = agent.memory, agent.cognition, day_of(context.time)
-        today = [record for record in memory.episodic.read() if day_of(record.time) == day]
-        diary = await agent.write(
-            "diary", context.time, prompts.diary_prompt(context.time, today, limits, agent.setting)
-        )
-        memory.diary.write(day, diary)
-
-        insights = memory.insights.read()
+        day = day_of(context.time)
+        await _write_diary(agent, context.time)
+        insights = agent.memory.insights.read()
         reply = await agent.ask(
             "reflect",
             context.time,
             prompts.reflection_prompt(
                 context.time,
-                memory.diary.entries(after=day - self.retention_days),
+                self.diaries(agent, day),
                 insights,
                 self.max_insights,
                 context.requestable,
-                limits,
+                agent.cognition,
                 agent.setting,
             ),
             prompts.reflection_reply([insight.id for insight in insights], context.requestable),
         )
-        updated = _revise_insights(insights, reply.changes, day)
-        kept = sorted(updated, key=lambda insight: (insight.day, insight.id))[-self.max_insights :]
-        memory.insights.write(sorted(kept, key=lambda insight: insight.id))
-        memory.episodic.drop_before((day - self.retention_days) * MINUTES_PER_DAY)
+        self.file(agent, reply.changes, day)
         return Change(
             subject=f"Reflect on Day {day}",
             body=reply.reflection,
             request=getattr(reply, "rethink", None),
         )
+
+    def diaries(self, agent: Agent, day: int) -> list[tuple[int, str]]:
+        """The diary entries reflected on at the end of `day`: those of the retention window."""
+        return agent.memory.diary.entries(after=day - self.retention_days)
+
+    def file(self, agent: Agent, changes: Sequence[object], day: int) -> None:
+        """Apply the changes to the agent's beliefs made at the end of `day`, then
+        consolidate."""
+        memory = agent.memory
+        updated = _revise_insights(memory.insights.read(), changes, day)
+        kept = sorted(updated, key=lambda insight: (insight.day, insight.id))[-self.max_insights :]
+        memory.insights.write(sorted(kept, key=lambda insight: insight.id))
+        memory.episodic.drop_before((day - self.retention_days) * MINUTES_PER_DAY)
 
 
 class SkillOperator:
@@ -104,7 +109,13 @@ class SkillOperator:
             ),
             prompts.skill_reply([skill.title for skill in skills]),
         )
-        for change in reply.changes:
+        self.file(agent, reply.changes)
+        return Change(subject=f"Review skills on Day {day}", body=reply.reflection)
+
+    @staticmethod
+    def file(agent: Agent, changes: Sequence[prompts.WriteSkill | prompts.RetireSkill]) -> None:
+        """Write or take out the pages of the agent's notebook that `changes` name."""
+        for change in changes:
             name = name_of(change.title)
             if isinstance(change, prompts.WriteSkill):
                 page = Skill(
@@ -113,10 +124,9 @@ class SkillOperator:
                     description=change.summary,
                     body=change.text,
                 )
-                memory.skills.write(page)
+                agent.memory.skills.write(page)
             else:
-                memory.skills.remove(name)
-        return Change(subject=f"Review skills on Day {day}", body=reply.reflection)
+                agent.memory.skills.remove(name)
 
 
 class PolicyOperator:
@@ -143,6 +153,88 @@ class PolicyOperator:
         )
         agent.parameters.write_policy(reply.resolutions)
         return Change(subject=f"Rewrite policy on Day {day}", body=reply.reflection)
+
+
+class RevisionOperator:
+    """The free mode's night: the diary, then one question of what the agent would change in
+    what it has written about itself and its ways (its account of itself, its policy, its
+    skill notes and its insights), whose reply `file` files by level. While the agent has
+    no account of itself, as on its first night, the reply must hold one.
+
+    The account of itself is filed at L2 with the policy: both are the self-authored texts
+    read at every decision, rewritten by reflection at the same depth.
+    """
+
+    def __init__(self, memory: MemoryOperator) -> None:
+        self.memory = memory
+
+    async def apply(self, agent: Agent, context: Context) -> prompts.Revision:
+        """Write the diary and ask the question; returns the reply, of which nothing but the
+        diary has been written yet. The question shows the account and the policy, so its
+        system prompt leaves them out: it names the agent, or tells its profile while there
+        is no account."""
+        day = day_of(context.time)
+        await _write_diary(agent, context.time)
+        account, insights = agent.parameters.read_account(), agent.memory.insights.read()
+        skills = agent.memory.skills.read()
+        return await agent.ask(
+            "revise",
+            context.time,
+            prompts.revision_prompt(
+                context.time,
+                self.memory.diaries(agent, day),
+                account,
+                agent.parameters.read_policy(),
+                skills,
+                insights,
+                self.memory.max_insights,
+                agent.cognition,
+                agent.setting,
+            ),
+            prompts.revision_reply(
+                [insight.id for insight in insights],
+                [skill.title for skill in skills],
+                first=not account,
+            ),
+            system=prompts.system_prompt(
+                agent.profile, None, agent.cognition, account=None if account else ""
+            ),
+        )
+
+    def file(
+        self, agent: Agent, revision: prompts.Revision, day: int
+    ) -> Iterator[tuple[Level, Change]]:
+        """File `revision`, made at the end of `day`, level by level, yielding each level's
+        change once its files are written and before the next level's are, so that the caller
+        can commit each level on its own: L0 always (the diary, the insights and
+        consolidation), L1 if the skill notes changed, L2 if the account or the policy did.
+        Every change carries the agent's reflection as its reasoning."""
+        reasoning = revision.reflection
+        self.memory.file(agent, revision.beliefs, day)
+        yield Level.L0, Change(subject=f"Reflect on Day {day}", body=reasoning)
+        if revision.notebook:
+            SkillOperator.file(agent, revision.notebook)
+            yield Level.L1, Change(subject=f"Review skills on Day {day}", body=reasoning)
+        rewritten = []
+        if revision.account is not None:
+            agent.parameters.write_account(revision.account)
+            rewritten.append("account of itself")
+        if revision.resolutions is not None:
+            agent.parameters.write_policy(revision.resolutions)
+            rewritten.append("policy")
+        if rewritten:
+            subject = f"Rewrite {' and '.join(rewritten)} on Day {day}"
+            yield Level.L2, Change(subject=subject, body=reasoning)
+
+
+async def _write_diary(agent: Agent, time: int) -> None:
+    """Write the agent's diary entry for the day of `time`, from that day's episodic records."""
+    day = day_of(time)
+    today = [record for record in agent.memory.episodic.read() if day_of(record.time) == day]
+    diary = await agent.write(
+        "diary", time, prompts.diary_prompt(time, today, agent.cognition, agent.setting)
+    )
+    agent.memory.diary.write(day, diary)
 
 
 def _revise_insights(

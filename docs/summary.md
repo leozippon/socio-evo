@@ -35,6 +35,7 @@ An agent is a directory of plain, human-readable files, and in a run that direct
 
 - a fixed profile: name, age, occupation and backstory;
 - a policy, what the resident has resolved about how to live and work here;
+- in the free mode described below, an account of itself in its own words;
 - skill notes, its notebook of how it does things;
 - insights, what it has come to believe about events, about itself and about particular people;
 - a diary with one entry per night;
@@ -60,6 +61,8 @@ Self-evolution happens at night, at levels that differ in depth and cadence:
 | L4 meta | Rewrites its own evolution procedure. | not implemented |
 
 In its nightly reflection an agent may also ask for a skill review or a policy rewrite that same night, giving its reason. After such a step it must wait seven days before asking again. In the six-week town the scheduled policy rewrite falls on day 28, so any earlier change of policy is one the agent asked for. Which levels run is part of the experiment. With none enabled, experience is still recorded but nothing is reflected on or rewritten, which gives the no-evolution arm.
+
+These cadences are the controlled design the trust study uses. An exploratory free mode, for later experiments, instead lets a resident's identity become its own writing and leaves it to decide when to change it. On its first day the resident reads its profile as usual. On its first night, after its diary, it is asked to write who it is, in its own words, as it would want to remember it, and from the next day that account, under its name, takes the place of the profile in everything it reads; only what it knows of the town still comes from the town. Every night after the diary, a single question asks what it would change in what it has written about itself and its ways, shown under its own headings (about itself, what it has resolved, its notebook, what it has come to believe), with no cadence and no waiting. The reply is filed into the same files as before, and each level it changed is a commit of its own: beliefs at L0, notebook at L1, the account and the resolutions together at L2. If the first night yields no valid reply, the lapse is recorded, the resident reads its profile for one more day and is asked again. The mode is chosen with `evolution: {mode: free}`, which leaves no levels or cadences to set. To try it on the smoke town, `python -m experiments.study experiments/studies/smoke.yaml` runs it as experiment `smoke-free` (add `--dry-run` to run it without a model). Folding what a resident has written into its model's parameters (L3) is not built.
 
 Every change is a commit. Whatever the day added to memory is committed each night as plain experience. Each evolution step is a commit of its own: the message carries the agent's reasoning, and the trailers record the level, the trigger (daily, weekly, monthly or self) and the simulated time. Commit dates are simulated time as well, with day 1 starting at midnight on the setting's date of the first day. An agent's whole development can therefore be read and compared with ordinary git, and any past version can be exported intact, which is what evaluation does.
 

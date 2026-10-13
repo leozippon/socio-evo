@@ -6,11 +6,17 @@ from typing import Any
 import pytest
 import yaml
 
+from core.agent import prompts
+from core.agent.evolution import History, Level, Mode, Trigger
+from core.interaction import day_of
 from experiments.config import ExperimentConfig
+from experiments.run import as_dry_run
+from experiments.run import run as run_experiment
 from experiments.study import load_study, main
 from infrastructure.config import ConfigError, load_config
+from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, RunStatus, read_jsonl
-from tests.experiments.test_experiments import sent, unguarded
+from tests.experiments.test_experiments import sent, unguarded, written
 
 STUDIES = Path(__file__).parents[2] / "experiments" / "studies"
 TOWN = Path(__file__).parents[2] / "experiments" / "configs" / "town.yaml"
@@ -161,3 +167,65 @@ def test_a_study_runs_its_grid_resumes_skips_and_matches_its_seeds(tmp_path, cap
         assert not unguarded(sent(run))
         config = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
         assert json.dumps(config).count("dry-run") == 1
+
+
+LEVEL_OF = {
+    "memory/diary/": Level.L0,
+    "memory/insights.jsonl": Level.L0,
+    "memory/skills/": Level.L1,
+    "parameters/self.md": Level.L2,
+    "parameters/policy.md": Level.L2,
+}
+"""The level at which each of the files a resident writes about itself and its ways changes."""
+
+
+async def test_a_free_resident_reads_its_own_account_from_its_second_day(tmp_path):
+    """The free arm of the smoke study, answered by the scripted model: on day 1 a resident
+    reads its profile, on the first night it writes an account of itself, from day 2 it reads
+    that account and never its profile, and every night it is asked what it would change in
+    what it has written. Every change to that writing is a commit at its level, triggered
+    daily; and nothing sent or written steers traits or shows the machinery."""
+    _, arms = load_study(STUDIES / "smoke.yaml")
+    config = as_dry_run(arms["free"])
+    assert (config.name, config.evolution.mode) == ("smoke-free-dry-run", Mode.FREE)
+    root, status = await run_experiment(config, 0, tmp_path, resume=False, until_day=None)
+    assert status is RunStatus.COMPLETED
+    directory = RunDirectory.open(root)
+    assert not unguarded(sent(directory)) and not unguarded(written(directory))
+
+    calls = list(read_jsonl(directory.llm_calls_path))
+    for seed in config.agents:
+        name, backstory = seed.profile.name, seed.profile.backstory
+        mine = [call for call in calls if call["metadata"]["agent"] == name]
+        for call in mine:
+            shown = any(backstory in message["content"] for message in call["request"]["messages"])
+            assert shown == (day_of(call["metadata"]["time"]) == 1), call["metadata"]
+        revise = [call for call in mine if call["metadata"]["purpose"] == "revise"]
+        assert [day_of(call["metadata"]["time"]) for call in revise] == [1, 2, 3]
+        required = [
+            "about yourself" in call["request"]["json_schema"]["required"] for call in revise
+        ]
+        assert required == [True, False, False]
+
+        path = directory.agent_dir(name)
+        repository, steps = Repository(path), History(path).log()[::-1]
+        changes = repository.changes()
+        for version in steps[1:]:
+            for change in changes[version.commit]:
+                level = next((v for k, v in LEVEL_OF.items() if change.path.startswith(k)), None)
+                if level is None:
+                    assert change.path == "memory/episodic.jsonl", change
+                    assert version.level in (None, Level.L0), version
+                else:
+                    assert version.level is level, (change, version)
+        assert {v.trigger for v in steps if v.level} == {Trigger.DAILY}
+        assert {day_of(v.time) for v in steps if v.level is Level.L0} == {1, 2, 3}
+        [first] = [v for v in steps if v.level is Level.L2 and day_of(v.time) == 1]
+        assert "parameters/self.md" in {change.path for change in changes[first.commit]}
+        account = repository.read_file(first.commit, "parameters/self.md").strip()
+        first_act = next(
+            call["request"]["messages"][0]["content"]
+            for call in mine
+            if call["metadata"]["purpose"] == "act" and day_of(call["metadata"]["time"]) == 2
+        )
+        assert first_act.startswith(prompts.OWN_ACCOUNT.format(name=name, account=f'"{account}"'))

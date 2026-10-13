@@ -39,7 +39,8 @@ class Script:
     """A deterministic stand-in for the model that answers by purpose and keeps every request.
 
     `reflections` and `skills` map a day to that night's changes; `request` is made
-    whenever a reflection's reply schema offers one.
+    whenever a reflection's reply schema offers one. `revisions` map a day to the headings of
+    that free night's reply, whose lists are empty unless given.
     """
 
     def __init__(self) -> None:
@@ -47,6 +48,7 @@ class Script:
         self.reflections: dict[int, list[dict[str, Any]]] = {}
         self.skills: dict[int, list[dict[str, Any]]] = {}
         self.request: dict[str, str] | None = None
+        self.revisions: dict[int, dict[str, Any]] = {}
         self.client = ScriptedClient(self.reply)
 
     def reply(self, request: LLMRequest) -> str | dict[str, Any]:
@@ -69,6 +71,9 @@ class Script:
             return {"reflection": f"Notebook {day}.", "changes": self.skills.get(day, [])}
         if purpose == "policy":
             return {"reflection": f"Thoughts {day}.", "resolutions": f"Resolutions {day}."}
+        if purpose == "revise":
+            lists = {"your notebook": [], "what you have come to believe": []}
+            return {"reflection": f"Night {day}.", **lists, **self.revisions.get(day, {})}
         raise AssertionError(f"unexpected purpose {purpose}")
 
     def prompts(self, purpose: str) -> list[str]:

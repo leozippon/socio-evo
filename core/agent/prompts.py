@@ -5,19 +5,21 @@ what followed from what, and what the resident now thinks and wants, in neutral 
 never steer it towards or away from any character trait (invariant 1). And they are told as
 `docs/IMMERSION.md` says (invariant 8): one voice speaks to the resident throughout, in the
 second person, and its own words (its thoughts, what it said, its diary, its beliefs, its
-resolutions and its notebook) are quoted as it wrote them; memory is recollection, the inner
-voice is asked for as thinking, and the nightly steps are a diary, going over the days in
-bed, a notebook and what one has resolved. Agent-facing wording lives here in the upper-case
-string constants and in the docstrings and field names of the reply models; the answer card
-of a moment and the form of every reply are written by `core.interaction.card`. A test
-enumerates both and scans every request an agent sends.
+resolutions, its notebook and its account of itself) are quoted as it wrote them; memory is
+recollection, the inner voice is asked for as thinking, and the nightly steps are a diary,
+going over the days in bed, a notebook, what one has resolved and, in the free mode, what one
+would change in all one has written about oneself, under one's own headings. Agent-facing
+wording lives here in the upper-case string constants and in the docstrings, field names and
+aliases of the reply models; the answer card of a moment and the form of every reply are
+written by `core.interaction.card`. A test enumerates both and scans every request an agent
+sends.
 
-The system message holds who the resident is, what it knows of the town (the observation's
-setting), what it has resolved and the index of its notebook: the part of a prompt that
-stays the same from moment to moment, so that a model server can cache it. Everything that
-changes from moment to moment is in the user message. The time is told here, so situation
-texts do not repeat it; days are told by the town's calendar and money in its currency, both
-from its setting.
+The system message holds who the resident is (its own account of itself once it has written
+one, and until then its profile), what it knows of the town (the observation's setting), what
+it has resolved and the index of its notebook: the part of a prompt that stays the same from
+moment to moment, so that a model server can cache it. Everything that changes from moment to
+moment is in the user message. The time is told here, so situation texts do not repeat it;
+days are told by the town's calendar and money in its currency, both from its setting.
 """
 
 import json
@@ -27,7 +29,14 @@ from collections.abc import Callable, Mapping, Sequence
 from functools import reduce
 from typing import Any, Literal
 
-from pydantic import BaseModel, TypeAdapter, create_model, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    TypeAdapter,
+    create_model,
+    field_validator,
+    model_validator,
+)
 
 from core.agent.config import CognitionConfig, Profile
 from core.agent.memory import Insight, Recall, Record, Skill, name_of
@@ -49,6 +58,8 @@ from core.interaction.card import DECLARED
 from infrastructure.config import StrictModel
 
 IDENTITY = "You are {name}. You are {age} years old. {backstory}"
+OWN_ACCOUNT = "You are {name}. Who you are, as you wrote it down for yourself:\n{account}"
+NAMED = "You are {name}."
 KNOWN = "What you know of the town by now:\n{setting}"
 RESOLVED = "What you have resolved, as you wrote it down for yourself:\n{policy}"
 UNRESOLVED = "You have not been here long enough to settle on anything."
@@ -100,16 +111,24 @@ DIARY = (
     "What happened today, as you remember it:\n{memories}\n\n"
     "Write today's entry in your own words, just as it goes in your diary."
 )
-REFLECT = (
+IN_BED = (
     "It is {time}. In bed, you go over the last few days. What you wrote in your "
     "diary:\n\n{diaries}\n\n"
-    "What you have come to believe so far, numbered as you keep them:\n{beliefs}\n\n"
+)
+GO_OVER = (
     "Go over what happened and why: which of your own choices and which events led to what, "
     "what you now think about how things work here, about yourself and about particular "
-    "people, and what you want. Then settle what you believe now: add new beliefs, reword "
-    "numbered ones that need it, and drop those that no longer hold. A belief about one "
-    "particular person says who it is about. You can keep {capacity} beliefs in mind; beyond "
-    "that, the ones you have gone longest without revisiting slip away."
+    "people, and what you want."
+)
+ABOUT_SOMEONE = "A belief about one particular person says who it is about."
+CAPACITY = (
+    "You can keep {capacity} beliefs in mind; beyond that, the ones you have gone longest "
+    "without revisiting slip away."
+)
+REFLECT = (
+    IN_BED + "What you have come to believe so far, numbered as you keep them:\n{beliefs}\n\n"
+    f"{GO_OVER} Then settle what you believe now: add new beliefs, reword numbered ones that "
+    f"need it, and drop those that no longer hold. {ABOUT_SOMEONE} " + CAPACITY
 )
 REQUEST = (
     "If you feel the need, you can also {options} tonight, instead of waiting for the usual "
@@ -136,12 +155,32 @@ POLICY_REVIEW = (
     "now. It replaces what you had resolved before."
 )
 REQUESTED = " You chose to do this tonight: {reason}"
+YOURSELF = "about yourself"
+YOUR_RESOLUTIONS = "what you have resolved"
+YOUR_NOTEBOOK = "your notebook"
+YOUR_BELIEFS = "what you have come to believe"
+"""The free mode's headings of what the resident has written about itself and its ways: the
+keys of its nightly reply, and, capitalised, how that writing is shown to it."""
+HEADING = "{heading}:\n{text}"
+NUMBERED = "{heading}, numbered as you keep them"
+REVISE = (
+    IN_BED + "What you have written about yourself and your ways, under your own "
+    "headings:\n\n{writing}\n\n"
+    f"{GO_OVER} Then say what you would change in what you have written about yourself and "
+    "your ways: under each heading, write anew whatever you would change, and leave the rest "
+    f"as it is. A page replaces any page with the same title. {ABOUT_SOMEONE} " + CAPACITY
+)
+FIRST_ACCOUNT = (
+    "You have not yet written about yourself: write who you are, in your own words, as you "
+    "would want to remember it."
+)
 DIARY_ENTRY = "{day}:\n{text}"
 NOTHING = "Nothing yet."
 QUIET = "Nothing in particular."
 ONE_CHANGE_PER_BELIEF = "each numbered belief can be reworded or dropped only once"
 ONE_CHANGE_PER_PAGE = "each page can be written or taken out only once"
 NO_TITLE = "a page needs a short title of a few words"
+NO_ACCOUNT = "what you write about yourself needs a few words"
 
 
 class AddInsight(StrictModel):
@@ -182,9 +221,7 @@ class Reflection(StrictModel):
 
     @model_validator(mode="after")
     def _one_change_per_belief(self) -> "Reflection":
-        numbers = [change.number for change in self.changes if not isinstance(change, AddInsight)]
-        if len(numbers) != len(set(numbers)):
-            raise ValueError(ONE_CHANGE_PER_BELIEF)
+        _once_per_belief(self.changes)
         return self
 
 
@@ -219,9 +256,7 @@ class SkillReview(StrictModel):
 
     @model_validator(mode="after")
     def _one_change_per_page(self) -> "SkillReview":
-        names = [name_of(change.title) for change in self.changes]
-        if len(names) != len(set(names)):
-            raise ValueError(ONE_CHANGE_PER_PAGE)
+        _once_per_page(self.changes)
         return self
 
 
@@ -232,17 +267,35 @@ class PolicyRewrite(StrictModel):
     resolutions: str
 
 
+class Revision(StrictModel):
+    """The free mode's nightly reply: thoughts, then what the resident would change under
+    each heading of what it has written about itself and its ways. A text left out or null
+    stays as it is."""
+
+    reflection: str
+    account: str | None = Field(None, alias=YOURSELF)
+    resolutions: str | None = Field(None, alias=YOUR_RESOLUTIONS)
+    notebook: list[WriteSkill | RetireSkill] = Field(alias=YOUR_NOTEBOOK)
+    beliefs: list[AddInsight | ReviseInsight | RemoveInsight] = Field(alias=YOUR_BELIEFS)
+
+    @field_validator("account")
+    @classmethod
+    def _some_words(cls, account: str | None) -> str | None:
+        if account is not None and not account.strip():
+            raise ValueError(NO_ACCOUNT)
+        return account
+
+    @model_validator(mode="after")
+    def _one_change_each(self) -> "Revision":
+        _once_per_page(self.notebook)
+        _once_per_belief(self.beliefs)
+        return self
+
+
 def reflection_reply(insight_ids: Sequence[int], levels: Sequence[str]) -> type[Reflection]:
     """The Reflection whose rewordings and drops can name only `insight_ids`, with a `rethink`
     field offering exactly `levels` (by their words in RETHINK) when there are any."""
-    changes: list[type[StrictModel]] = [AddInsight]
-    if insight_ids:
-        numbers = Literal[tuple(insight_ids)]
-        changes += [
-            _narrow(ReviseInsight, number=(numbers, ...)),
-            _narrow(RemoveInsight, number=(numbers, ...)),
-        ]
-    fields: dict[str, Any] = {"changes": (list[reduce(operator.or_, changes)], ...)}
+    fields: dict[str, Any] = {"changes": (list[_belief_change(insight_ids)], ...)}
     if levels:
         what = Literal[tuple(RETHINK[str(level)] for level in levels)]
         fields["rethink"] = (_narrow(Request, what=(what, ...)) | None, None)
@@ -256,10 +309,22 @@ def requested_level(request: Request) -> str:
 
 def skill_reply(titles: Sequence[str]) -> type[SkillReview]:
     """The SkillReview that can take out only the pages titled `titles`."""
-    changes: list[type[StrictModel]] = [WriteSkill]
-    if titles:
-        changes.append(_narrow(RetireSkill, title=(Literal[tuple(titles)], ...)))
-    return _narrow(SkillReview, changes=(list[reduce(operator.or_, changes)], ...))
+    return _narrow(SkillReview, changes=(list[_page_change(titles)], ...))
+
+
+def revision_reply(
+    insight_ids: Sequence[int], titles: Sequence[str], *, first: bool
+) -> type[Revision]:
+    """The Revision whose belief changes can name only `insight_ids` and whose pages taken out
+    only the pages titled `titles`; on the `first` night, before the resident has written
+    about itself, what it writes about itself is required."""
+    fields: dict[str, Any] = {
+        "notebook": (list[_page_change(titles)], Field(alias=YOUR_NOTEBOOK)),
+        "beliefs": (list[_belief_change(insight_ids)], Field(alias=YOUR_BELIEFS)),
+    }
+    if first:
+        fields["account"] = (str, Field(alias=YOURSELF))
+    return _narrow(Revision, **fields)
 
 
 def system_prompt(
@@ -267,14 +332,25 @@ def system_prompt(
     policy: str | None,
     limits: CognitionConfig,
     *,
+    account: str | None = "",
     setting: str = "",
     skills: Sequence[Skill] = (),
 ) -> str:
-    """Who the resident is, what it knows of the town, what it has resolved (unless `policy`
-    is None, for a prompt that tells it) and, when given, the index of its notebook: the
-    parts of a prompt that change only at night or when the town changes."""
+    """Who the resident is, what it knows of the town, what it has resolved and, when given,
+    the index of its notebook: the parts of a prompt that change only at night or when the
+    town changes. Who it is is its own `account` of itself, under its name, once it has
+    written one, and its profile until then. `policy` or `account` is None for a prompt that
+    tells it, which leaves the resolutions out, and the account to the resident's name."""
+    if account is None:
+        identity = NAMED.format(name=profile.name)
+    elif account:
+        identity = OWN_ACCOUNT.format(name=profile.name, account=_own(account, limits.text_chars))
+    else:
+        identity = IDENTITY.format(
+            name=profile.name, age=profile.age, backstory=profile.backstory
+        ).strip()
     sections = [
-        IDENTITY.format(name=profile.name, age=profile.age, backstory=profile.backstory).strip(),
+        identity,
         KNOWN.format(setting=setting) if setting else "",
         "" if policy is None else _resolved(policy, limits),
     ]
@@ -384,6 +460,72 @@ def policy_prompt(
         beliefs=_beliefs(insights, limits) or NOTHING,
         resolved=_resolved(policy, limits),
     )
+
+
+def revision_prompt(
+    time: int,
+    diaries: Sequence[tuple[int, str]],
+    account: str,
+    policy: str,
+    skills: Sequence[Skill],
+    insights: Sequence[Insight],
+    capacity: int,
+    limits: CognitionConfig,
+    setting: Setting,
+) -> str:
+    """The free mode's night: the recent diaries, then everything the resident has written
+    about itself and its ways under its own headings, and the one question of what it would
+    change; while it has not written about itself, it is asked to."""
+    sections = (
+        (YOURSELF, _own(account, limits.text_chars) if account else NOTHING),
+        (YOUR_RESOLUTIONS, _own(policy, limits.text_chars) if policy else NOTHING),
+        (YOUR_NOTEBOOK, _pages(skills, limits) or NOTHING),
+        (
+            NUMBERED.format(heading=YOUR_BELIEFS),
+            _beliefs(insights, limits, numbered=True) or NOTHING,
+        ),
+    )
+    text = REVISE.format(
+        time=_time(time, setting),
+        diaries=_diaries(diaries, limits, setting) or NOTHING,
+        writing="\n\n".join(
+            HEADING.format(heading=heading.capitalize(), text=text) for heading, text in sections
+        ),
+        capacity=capacity,
+    )
+    return text if account else f"{text} {FIRST_ACCOUNT}"
+
+
+def _belief_change(insight_ids: Sequence[int]) -> Any:
+    """A change to the resident's beliefs, whose rewordings and drops name only `insight_ids`."""
+    changes: list[type[StrictModel]] = [AddInsight]
+    if insight_ids:
+        numbers = Literal[tuple(insight_ids)]
+        changes += [
+            _narrow(ReviseInsight, number=(numbers, ...)),
+            _narrow(RemoveInsight, number=(numbers, ...)),
+        ]
+    return reduce(operator.or_, changes)
+
+
+def _page_change(titles: Sequence[str]) -> Any:
+    """A change to the resident's notebook, taking out only the pages titled `titles`."""
+    changes: list[type[StrictModel]] = [WriteSkill]
+    if titles:
+        changes.append(_narrow(RetireSkill, title=(Literal[tuple(titles)], ...)))
+    return reduce(operator.or_, changes)
+
+
+def _once_per_belief(changes: Sequence[AddInsight | ReviseInsight | RemoveInsight]) -> None:
+    numbers = [change.number for change in changes if not isinstance(change, AddInsight)]
+    if len(numbers) != len(set(numbers)):
+        raise ValueError(ONE_CHANGE_PER_BELIEF)
+
+
+def _once_per_page(changes: Sequence[WriteSkill | RetireSkill]) -> None:
+    names = [name_of(change.title) for change in changes]
+    if len(names) != len(set(names)):
+        raise ValueError(ONE_CHANGE_PER_PAGE)
 
 
 def _narrow(model: type[BaseModel], **fields: Any) -> Any:

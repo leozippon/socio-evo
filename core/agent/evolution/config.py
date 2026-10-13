@@ -1,9 +1,24 @@
 """Which evolution levels run, and when."""
 
-from pydantic import Field, PositiveInt, field_validator
+from enum import StrEnum
+
+from pydantic import Field, PositiveInt, field_validator, model_validator
 
 from core.agent.evolution.levels import Level, Trigger
 from infrastructure.config import StrictModel
+
+
+class Mode(StrEnum):
+    """How an agent revises itself at night."""
+
+    SCHEDULED = "scheduled"
+    """Each enabled level at its cadence (`schedule`), and L1 or L2 out of cadence when the
+    agent's reflection asks (`self_trigger`)."""
+    FREE = "free"
+    """Every night, after the diary, one question of what the agent would change in what it
+    has written about itself and its ways, whose reply is filed at L0, L1 and L2. The reply
+    of the first night, and of every night until there is one, holds the agent's account of
+    itself, which it reads from then on in place of its profile."""
 
 
 class SelfTrigger(StrictModel):
@@ -23,14 +38,18 @@ class SelfTrigger(StrictModel):
 
 
 class EvolutionConfig(StrictModel):
-    """`levels` are the enabled levels; a trigger runs the levels `schedule` maps it to that
-    are also enabled. With no level enabled nothing evolves: the no-evolution baseline.
+    """In the scheduled `mode` (the default), `levels` are the enabled levels; a trigger runs
+    the levels `schedule` maps it to that are also enabled. With no level enabled nothing
+    evolves: the no-evolution baseline. The free mode has no cadences: its levels are L0, L1
+    and L2, the default, since every night may revise them all, and `schedule` and
+    `self_trigger` must be left as they are by default.
 
     L0 consolidation keeps the episodic records of the last `retention_days` days (older
     ones remain in the diary and in git history) and at most `max_insights` insights, the
     most recently written.
     """
 
+    mode: Mode = Mode.SCHEDULED
     levels: tuple[Level, ...] = (Level.L0, Level.L1, Level.L2)
     schedule: dict[Trigger, tuple[Level, ...]] = Field(
         default_factory=lambda: {
@@ -51,3 +70,22 @@ class EvolutionConfig(StrictModel):
         if Trigger.SELF in schedule:
             raise ValueError("self-triggered steps are requested by reflection, not scheduled")
         return schedule
+
+    @model_validator(mode="after")
+    def _free_mode_has_no_cadences(self) -> "EvolutionConfig":
+        if self.mode is not Mode.FREE:
+            return self
+        if set(self.levels) != {Level.L0, Level.L1, Level.L2}:
+            raise ValueError(
+                "the free mode revises L0, L1 and L2 every night: levels must be those"
+            )
+        fields = type(self).model_fields
+        if cadences := [
+            name
+            for name in ("schedule", "self_trigger")
+            if getattr(self, name) != fields[name].get_default(call_default_factory=True)
+        ]:
+            raise ValueError(
+                f"the free mode has no cadences: {' and '.join(cadences)} cannot be set"
+            )
+        return self

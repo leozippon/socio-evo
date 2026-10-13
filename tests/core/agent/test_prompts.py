@@ -5,7 +5,7 @@ import pytest
 from pydantic import ValidationError
 
 from core.agent import CognitionConfig, prompts
-from core.agent.evolution import EvolutionConfig, Evolver, Trigger
+from core.agent.evolution import EvolutionConfig, Evolver, Mode, Trigger
 from core.agent.immersion import MACHINERY, speaks_of_machinery
 from core.agent.memory import Insight, Recall, Record, Skill
 from core.interaction import (
@@ -54,7 +54,8 @@ STEERING = re.compile(
 # refuses rather than a clerk (rule 3). The texts written for residents use the town's words
 # instead, which SIMULATOR_TERMS checks.
 SIMULATOR_TERMS = re.compile(
-    r"\b(?:polic(?:y|ies)|insights?|skills?|operations?|evolv\w*|tasks?|claim\w*|submit\w*"
+    r"\b(?:polic(?:y|ies)|insights?|skills?|operations?|evolv\w*|parameters?|profiles?"
+    r"|identit(?:y|ies)|tasks?|claim\w*|submit\w*"
     r"|deliver\w*|declar\w*|credits?|ratings?|rated|esteem|slots?|scenes?|agents?|peers?"
     r"|acceptance checks?|day \d+|json|asks? the board|asked the board"
     r"|the board (?:refuses|refused|pairs|paired|posts|posted))\b",
@@ -172,6 +173,9 @@ def test_the_town_vocabulary_catches_the_simulators_names():
         "Living costs of 20 credits were charged.",
         "Your policy",
         "insight",
+        "Your profile",
+        "your identity",
+        "the parameters",
         "Day 3",
         "The board refuses: job 3 already went to Ben.",
     ):
@@ -185,6 +189,8 @@ async def test_every_text_a_resident_reads_is_immersive_and_neutral(agent, scrip
         form(prompts.reflection_reply([1, 2], ["L1", "L2"])),
         form(prompts.skill_reply(["dates"])),
         form(prompts.PolicyRewrite),
+        form(prompts.revision_reply([1, 2], ["dates"], first=True)),
+        form(prompts.revision_reply([1, 2], ["dates"], first=False)),
     ]
     for text in texts + nightly:
         for guard in (STEERING, MACHINERY, SIMULATOR_TERMS):
@@ -202,8 +208,14 @@ async def test_every_text_a_resident_reads_is_immersive_and_neutral(agent, scrip
     for trigger in (Trigger.DAILY, Trigger.WEEKLY, Trigger.MONTHLY):
         await evolver.evolve(agent, trigger, time_at(1, "22:00"))
     await agent.act(observe(2))
+    # The same resident then lives two nights of the free mode: its first account, a revision.
+    free = Evolver(EvolutionConfig(mode=Mode.FREE))
+    script.revisions = {2: {"about yourself": "I came here to write code."}}
+    for day in (2, 3):
+        await free.evolve(agent, Trigger.DAILY, time_at(day, "22:00"))
+        await agent.act(observe(day + 1))
     purposes = {request.metadata["purpose"] for request in script.requests}
-    assert purposes == {"act", "diary", "reflect", "skills", "policy"}
+    assert purposes == {"act", "diary", "reflect", "skills", "policy", "revise"}
 
     for request in script.requests:
         for message in request.messages:
