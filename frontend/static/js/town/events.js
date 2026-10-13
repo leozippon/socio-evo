@@ -32,6 +32,8 @@ export function involved(event) {
   if (event.actor) names.add(event.actor);
   for (const key of ["agent", "worker", "rater", "target", "to", "from", "partner", "giver", "recipient", "foreman", "applicant"]) if (typeof p[key] === "string") names.add(p[key]);
   for (const key of ["order", "partners", "participants", "workers"]) if (Array.isArray(p[key])) for (const name of p[key]) if (typeof name === "string") names.add(name);
+  // An event told to one alone, with no actor, concerns that one: what is on a worker's desk at night.
+  if (!event.actor && event.audience.length === 1) names.add(event.audience[0]);
   return [...names];
 }
 
@@ -118,8 +120,10 @@ const ICONS = {
   wage_paid: "coin",
   applied: "ask",
   hired: "check",
+  application_ended: "cross",
   dismissed: "cross",
   resigned: "chevron",
+  desk: "table",
 };
 export const iconFor = (event) => (event.kind === "speech" && event.payload?.private ? "lock" : ICONS[event.kind] ?? "spark");
 
@@ -191,6 +195,9 @@ export function actionCode(action) {
 
 // Lines -------------------------------------------------------------------------------------------
 
+/** Kinds told to their one witness as "you" whatever their first word: the clerk's word that an asking for a place ended, and what is still on a worker's desk at night. */
+const TOLD_TO_ONE = new Set(["application_ended", "desk"]);
+
 /**
  * For each private remark among `events`, by its seq, what its bystanders perceived: the
  * `speech_unheard` that follows it, if anyone else was present.
@@ -261,7 +268,7 @@ export function line(event, m) {
   const reader = m.reader && witnessed(event, m.reader) ? m.reader : null;
   const text = (reader && event.personal?.[reader]) || event.text || [event.actor, words(event.kind).toLowerCase()].filter(Boolean).join(" ");
   if (reader && event.audience.length === 1 && event.audience[0] === reader) return h("span", {}, cast.mention(text));
-  if (event.audience.length === 1 && /^(You|Your|At your)\b/.test(text))
+  if (event.audience.length === 1 && (TOLD_TO_ONE.has(event.kind) || /^(You|Your|At your)\b/.test(text)))
     return h("span", {}, h("span", { class: "to" }, cast.badge(event.audience[0], 13), event.audience[0], " perceives: "), text);
   return h("span", {}, cast.mention(text));
 }
