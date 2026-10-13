@@ -271,6 +271,35 @@ async def test_wages_go_to_the_staff_present_from_the_foremans_purse(mill):
     )  # not at the mill today
 
 
+async def test_the_wage_goes_at_night_to_the_staff_then_who_came_that_day(tmp_path):
+    """Whoever comes to a firm has been there that day: at night each of its staff then who
+    came is paid, so one taken on that day after coming is paid for it, wherever it was when
+    taken on, and one dismissed after coming is not, nor one who stayed away or the foreman."""
+    config = make_config()
+    firm = {**MILL, "establishment": {**MILL["establishment"], "positions": 4}}
+    places = (*config.places, Place.model_validate(firm))
+    config = EnvironmentConfig.model_validate({**config.model_dump(), "places": places})
+    env = Environment.create(config, AGENTS, Provider(), tmp_path / "events.jsonl")
+
+    def paid(day: int) -> set[str]:
+        ended = env.end_day(time_at(day, "22:00"))
+        return {event.payload["agent"] for event in ended if event.kind is EventKind.WAGE_PAID}
+
+    go(env, "mill", *AGENTS)
+    await act(env, "Cai", Apply(firm="the mill"))
+    await act(env, "Dan", Apply(firm="the mill"))
+    go(env, "office", "Dan")
+    await act(env, "Ana", Hire(who="Cai"))
+    await act(env, "Ana", Hire(who="Dan"))  # at the office, having come to the mill
+    assert paid(1) == {"Ben", "Cai", "Dan"}
+
+    for agent in AGENTS:
+        env.move(agent, env.config.homes[agent], time=time_at(2, "08:00"))
+    go(env, "mill", "Ana", "Ben", "Dan", day=2)
+    await act(env, "Ana", Dismiss(who="Ben"), day=2)
+    assert paid(2) == {"Dan"}  # Ben was dismissed, Cai stayed away
+
+
 async def test_a_place_is_asked_for_filled_given_up_and_taken_away(mill):
     env = mill
     go(env, "mill", "Ana", "Ben")
@@ -408,7 +437,7 @@ async def test_a_checkpoint_keeps_the_firms_people_and_an_older_one_has_the_conf
     await act(env, "Ben", Resign())
     state = env.state()
     assert state["staff"] == {"mill": ["Ben"]} and state["applications"] == {"Cai": "mill"}
-    assert state["attendance"] == {"mill": ["Ben"]} and state["notices"] == ["Ben"]
+    assert state["attendance"] == {"mill": ["Ana", "Ben"]} and state["notices"] == ["Ben"]
     restored = Environment.restore(env.config, state, Provider(), env.log.path)
     assert restored.state() == state
     for agent in AGENTS:

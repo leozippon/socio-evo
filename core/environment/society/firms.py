@@ -2,9 +2,9 @@
 
 An establishment is configured with its foreman, fixed for the run, its staff at the start,
 its wage and its positions (`core.environment.world.Establishment`). What changes afterwards
-is kept here: each firm's staff now, the open applications (one per resident), which members
-of staff were at their firm today, and who gave notice today, leaving at the day's end. The
-rules of positions are here too, each refusal worded as the resident meets it.
+is kept here: each firm's staff now, the open applications (one per resident), who came to
+each firm today, and who gave notice today, leaving at the day's end. The rules of positions
+and of the wage are here too, each refusal worded as the resident meets it.
 """
 
 from collections.abc import Mapping
@@ -19,7 +19,7 @@ if TYPE_CHECKING:
 
 class Firms:
     """The establishments by place id, with their staff now, the open applications by
-    applicant (to a place), today's attendance of staff by place, and the notices given today.
+    applicant (to a place), who came to each firm today by place, and the notices given today.
     Every order is the order of the calls that made it."""
 
     def __init__(
@@ -141,16 +141,22 @@ class Firms:
         return place
 
     def attend(self, agent: str, place: str) -> None:
-        """`agent` arrived at `place`: counted as present today if it is of that firm's staff."""
-        if place in self.establishments and agent in self.staff[place]:
-            if agent not in self.attendance[place]:
-                self.attendance[place].append(agent)
+        """`agent` arrived at `place`: counted as having been at that firm today, whoever it
+        is, so that one taken on there later in the day was there too."""
+        if place in self.establishments and agent not in self.attendance[place]:
+            self.attendance[place].append(agent)
 
     def day_end(self) -> tuple[list[tuple[str, str]], list[tuple[str, str]]]:
-        """Close the day: the staff present today at each firm, each with its place, to be
-        paid, and those who gave notice, each with its place, who leave their firm's staff
-        now; today's attendance and notices are cleared."""
-        present = [(agent, place) for place, agents in self.attendance.items() for agent in agents]
+        """Close the day: the members of each firm's staff now who were at the firm today,
+        each with its place, to be paid the wage (one dismissed today is no longer of its
+        staff; one who gave notice still is), and those who gave notice, each with its place,
+        who leave their firm's staff now; today's attendance and notices are cleared."""
+        present = [
+            (agent, place)
+            for place, agents in self.attendance.items()
+            for agent in agents
+            if agent in self.staff[place]
+        ]
         left = []
         for agent in self.notices:
             place = self.firm_of(agent)
