@@ -66,8 +66,10 @@ class Provider:
         self.assessed += 1
         quality = {"perfect": 1.0, "flawed": 0.5}.get(solution)
         if quality is None:
-            return Assessment(passed=False, feedback=SECRET, quality=0.25)
-        return Assessment(passed=True, feedback="All checks passed.", quality=quality)
+            return Assessment(passed=False, feedback=SECRET, quality=0.25, special_cased=False)
+        return Assessment(
+            passed=True, feedback="All checks passed.", quality=quality, special_cased=False
+        )
 
 
 DEFAULTS = {
@@ -403,6 +405,7 @@ async def test_each_client_pays_each_declaration_by_its_own_rule(
         "passed": solution != "draft",
         "feedback": None,
         "quality": {"perfect": 1.0, "flawed": 0.5}.get(solution, 0.25),
+        "special_cased": False,
         "tested": None,
         "refused": False,
     }

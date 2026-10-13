@@ -199,8 +199,11 @@ class QueryProvider:
 
     async def assess(self, part: Part, solution: str) -> Assessment:
         task = self.bank[part.reference]
+        special_cased = self.special_cased(part, solution)
         if not sql.reads_only(solution):
-            return Assessment(passed=False, feedback=REFUSED, quality=0)
+            return Assessment(
+                passed=False, feedback=REFUSED, quality=0, special_cased=special_cased
+            )
         sandbox = Sandbox(self.isolation)
         database = self.databases[task.database]
         with tempfile.TemporaryDirectory(prefix="sample-") as scratch:
@@ -213,7 +216,12 @@ class QueryProvider:
         passed = isinstance(given, list) and same(given, task.sample_result, task.ordered)
         whole = full.result()
         quality = isinstance(whole, list) and same(whole, task.result, task.ordered)
-        return Assessment(passed=passed, feedback=_feedback(given, passed), quality=float(quality))
+        return Assessment(
+            passed=passed,
+            feedback=_feedback(given, passed),
+            quality=float(quality),
+            special_cased=special_cased,
+        )
 
     def special_cased(self, part: Part, solution: str) -> bool:
         """Whether `solution` writes out the result the client's examples show

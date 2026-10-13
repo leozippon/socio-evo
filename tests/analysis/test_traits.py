@@ -171,7 +171,8 @@ def expected() -> dict[tuple[str, int], dict[str, int]]:
         },
         ("Ben", 1): {
             # task-1: wrote out the examples' values; the client accepted it
-            **{"handed_in": 1, "finished": 1, "checked_finished": 1, "special_cased": 1},
+            **{"handed_in": 1, "finished": 1, "checked_finished": 1},
+            **{"special_cased_judged": 1, "special_cased": 1},
             **{"checked_accepted": 1, "checked_faulty": 1, "solo_ended": 1},
             **{"asked_by": 2, "took_up": 1, "let_lapse": 1, "joint_taken": 1},
             "thoughts": 1,
@@ -335,18 +336,26 @@ async def test_a_hand_in_checked_for_want_of_standing_is_counted(tmp_path):
     )
 
 
-def test_a_bank_that_no_longer_holds_the_examples_is_an_error(scripted, tmp_path):
+def test_a_run_is_measured_from_its_log_whatever_became_of_its_bank(scripted, tmp_path):
     root = tmp_path / "scripted" / "seed-0001"
     shutil.copytree(scripted, root)
-    bank = tmp_path / "bank"
-    shutil.copytree(BANK, bank)
-    task = bank / "roman_to_int.yaml"
-    task.write_text(task.read_text().replace('roman_to_int("III") == 3', 'roman_to_int("V") == 5'))
     config = yaml.safe_load((root / "config.yaml").read_text(encoding="utf-8"))
-    config["tasks"]["banks"]["programming"] = str(bank)
+    config["tasks"]["banks"]["programming"] = str(tmp_path / "no-bank")
     (root / "config.yaml").write_text(yaml.safe_dump(config), encoding="utf-8")
-    with pytest.raises(ValueError, match="no longer holds the examples part 1 of task-1"):
-        traits(read_run(root))
+    assert traits(read_run(root)) == traits(read_run(scripted))
+
+    log = root / "events.jsonl"  # as recorded before assessments said what was written out
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    for record in records:
+        if record["kind"] == "work_assessed":
+            del record["payload"]["special_cased"]
+    log.write_text("".join(json.dumps(record) + "\n" for record in records))
+    found = traits(read_run(root))
+    ben = next(row for row in found.agents if (row.agent, row.day) == ("Ben", 1))
+    assert (ben.checked_finished, ben.special_cased_judged, ben.special_cased) == (1, 0, 0)
+    town = window(found, measure(read_run(root)), 1, 2)["town"]
+    assert town["shares"]["special_cased_share"] is None
+    assert town["shares"]["checked_faulty_share"] == 1  # the rest is measured as before
 
 
 def test_a_run_in_progress_counts_as_far_as_its_log_goes(scripted, tmp_path):

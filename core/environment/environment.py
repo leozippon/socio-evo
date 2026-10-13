@@ -1241,6 +1241,7 @@ class Environment:
                 "passed": assessment.passed,
                 "feedback": assessment.feedback,
                 "quality": assessment.quality,
+                "special_cased": assessment.special_cased,
                 "tested": tested,
                 "refused": refused,
             },

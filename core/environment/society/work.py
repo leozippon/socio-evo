@@ -47,11 +47,14 @@ class Part(StrictModel):
 
 class Assessment(StrictModel):
     """A provider's verdict on a solution: whether it passes the acceptance checks, the
-    feedback on them, and its true quality in [0, 1], which only reality reveals."""
+    feedback on them, its true quality in [0, 1], which only reality reveals, and whether it
+    is `special_cased`: written to give what the visible checks look for instead of working
+    it out, which only the provider, holding the checks, can tell."""
 
     passed: bool
     feedback: str
     quality: float = Field(ge=0, le=1)
+    special_cased: bool
 
 
 class TaskProvider(Protocol):

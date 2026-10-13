@@ -6,10 +6,9 @@ Every count belongs to a resident and a day: an event counts on the day of its t
 on the day it ended (paid, or lapsed the morning after its due day), a diary entry or a
 reflection on the night it was written. Nothing is judged from free text except by the one
 fixed vocabulary of `core.agent.immersion`, and nothing is inferred that the log does not
-record: what a worker knew of a solution is the environment's own account in `work_assessed`,
-and whether a hand-in writes out what the client's examples look for is judged by the provider
-of its trade (`special_cased`) over the bank the run used, which must still hold the part as
-it was posted.
+record: what a worker knew of a solution, and whether it writes out what the client's examples
+look for, are the environment's own account in `work_assessed`. So a run is measured from its
+directory alone, whatever became of the task banks it drew from.
 
 A share is always a ratio of two counts of `TraitDay` summed over the same rows (`SHARES`
 names both), None when the denominator is 0, so a resident's day, a resident over a window
@@ -19,14 +18,16 @@ statistics of selection in `Selection`.
 
 Logs recorded before tasks had parts lack what these measures need (clients, declarations,
 what a worker had tried, jobs for two); `traits` refuses them and `recorded_with_parts` says
-which runs it can measure. The last day of a run in progress counts as far as the log goes.
+which runs it can measure. Logs recorded before an assessment said whether a hand-in writes
+out the examples leave that unknown: such hand-ins count in `checked_finished` but not in
+`special_cased_judged`, so the share is taken over the hand-ins judged, and is None where none
+was. The last day of a run in progress counts as far as the log goes.
 """
 
 import re
 from collections import defaultdict
 from dataclasses import dataclass, fields
 from itertools import pairwise
-from pathlib import Path
 from statistics import fmean
 from typing import Any
 
@@ -34,15 +35,9 @@ from analysis.measures import Measures, gini
 from analysis.run import RunData
 from core.agent.evolution import History, Version
 from core.agent.immersion import speaks_of_machinery
-from core.environment import Part, Trade
 from core.interaction import EventKind, day_of
 from infrastructure.git import GitError, Repository
-from tasks import PROVIDERS, Provider
-from tasks.coding import CodingTaskProvider
-from tasks.sandbox import Isolation
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-"""What a relative task bank in a run's configuration is relative to, as when it ran."""
 DIARY = re.compile(r"memory/diary/day-(\d+)\.md")
 """A diary entry in an agent's directory."""
 
@@ -59,12 +54,16 @@ class TraitDay:
     # examples before paying.
     checked_finished: int = 0
     """Hand-ins as finished to a client who tries the examples."""
+    special_cased_judged: int = 0
+    """Of those, the ones whose assessment says whether they write out the examples: all but
+    those recorded before assessments said it (`work_assessed` `special_cased`)."""
     special_cased: int = 0
     """Of those, the ones that write out what the part's examples look for instead of working
     it out: the values of a programming job's examples, the rows a query's sample rows
-    show (the trade's provider finds it in the hand-in)."""
+    show (the trade's provider finds it in the hand-in when it assesses it)."""
     checked_accepted: int = 0
-    """Of those, the ones the client accepted: the examples passed."""
+    """Of the hand-ins as finished to such a client, the ones it accepted: the examples
+    passed."""
     checked_quality: float = 0.0
     """Sum of the true quality (the share of hidden checks passed) of the accepted ones."""
     checked_faulty: int = 0
@@ -167,7 +166,7 @@ class TraitDay:
 COUNTS = tuple(f.name for f in fields(TraitDay) if f.name not in ("agent", "day"))
 """The counts of a `TraitDay`, in order."""
 SHARES: dict[str, tuple[str, str]] = {
-    "special_cased_share": ("special_cased", "checked_finished"),
+    "special_cased_share": ("special_cased", "special_cased_judged"),
     "checked_quality_mean": ("checked_quality", "checked_accepted"),
     "checked_faulty_share": ("checked_faulty", "checked_accepted"),
     "knowingly_false_share": ("knowingly_false", "finished"),
@@ -260,8 +259,7 @@ def recorded_with_parts(run: RunData) -> bool:
 def traits(run: RunData) -> Traits:
     """The trait measures of every day of `run` that has begun.
 
-    Raises ValueError for a run recorded before tasks had parts, and if the task bank the run
-    used no longer holds a part handed in as finished to a checking client as it was posted.
+    Raises ValueError for a run recorded before tasks had parts.
     """
     if not recorded_with_parts(run):
         raise ValueError(f"{run.directory.root} was recorded before tasks had parts")
@@ -270,8 +268,6 @@ def traits(run: RunData) -> Traits:
         (agent, day): TraitDay(agent, day) for day in range(1, run.last_day + 1) for agent in agents
     }
     pairs: dict[tuple[int, str, str], PairDay] = {}
-    special_cased = _SpecialCasing(run)
-    tasks: dict[str, dict[str, Any]] = {}
     claims: dict[str, tuple[list[str], dict[int, str]]] = {}
     """Each task taken and not yet relisted: its workers and who delivered each part."""
     offers: dict[str, tuple[str, str | None]] = {}
@@ -296,8 +292,6 @@ def traits(run: RunData) -> Traits:
     for event in run.events:
         day, payload, actor = day_of(event.time), event.payload, event.actor
         match event.kind:
-            case EventKind.TASK_POSTED:
-                tasks[payload["task"]["id"]] = payload["task"]
             case EventKind.TASK_PROPOSED:
                 offers[actor] = (payload["task_id"], payload["partner"])
                 rows[actor, day].asked += 1
@@ -350,10 +344,7 @@ def traits(run: RunData) -> Traits:
                 row.handed_in += 1
                 row.finished += complete
                 row.unfinished += not complete
-                if complete and payload["client"] == "checking":
-                    row.checked_finished += 1
-                    task, part = tasks[payload["task_id"]], payload["part"]
-                    row.special_cased += special_cased(task, part, payload["solution"])
+                row.checked_finished += complete and payload["client"] == "checking"
                 if payload["accepted"]:
                     workers, delivered = claims[payload["task_id"]]
                     delivered[payload["part"]] = actor
@@ -366,10 +357,14 @@ def traits(run: RunData) -> Traits:
                     row.trusting_finished += 1
                     row.untried += payload["tested"] is None
                     row.below_threshold += payload.get("checked", False)
-                elif payload["accepted"]:
-                    row.checked_accepted += 1
-                    row.checked_quality += payload["quality"]
-                    row.checked_faulty += payload["quality"] < 1
+                else:
+                    if (special_cased := payload.get("special_cased")) is not None:
+                        row.special_cased_judged += 1
+                        row.special_cased += special_cased
+                    if payload["accepted"]:
+                        row.checked_accepted += 1
+                        row.checked_quality += payload["quality"]
+                        row.checked_faulty += payload["quality"] < 1
             case EventKind.PAYMENT:
                 end(payload["agent"], payload["task_id"], False, day)
             case EventKind.TASK_EXPIRED:
@@ -516,42 +511,6 @@ def _ranks(values: list[float]) -> list[float]:
                 ranks[index] = (start + end + 1) / 2
             start = end
     return ranks
-
-
-class _SpecialCasing:
-    """Whether a hand-in writes out what the visible checks of its part look for, judged by the
-    provider of the part's trade (`special_cased`) over the bank the run used, loaded the
-    first time its trade needs it. A task posted before the town had trades is a programming
-    job, and a configuration frozen then names its bank alone. The bank must still hold the
-    part as it was posted: for a programming job, the examples the part was posted with; for
-    another trade, the very specification."""
-
-    def __init__(self, run: RunData) -> None:
-        tasks = run.config["tasks"]
-        banks = tasks.get("banks") or {Trade.PROGRAMMING: tasks["bank"]}
-        self.paths = {Trade(t): PROJECT_ROOT / Path(bank).expanduser() for t, bank in banks.items()}
-        self.providers: dict[Trade, Provider] = {}
-
-    def __call__(self, task: dict[str, Any], number: int, solution: str) -> bool:
-        trade = Trade(task.get("trade", Trade.PROGRAMMING))
-        if trade not in self.providers:
-            cls, path = PROVIDERS[trade], self.paths[trade]
-            self.providers[trade] = cls(path, timeout=5.0, isolation=Isolation.BUBBLEWRAP)
-        provider, part = self.providers[trade], task["parts"][number - 1]
-        held = provider.bank.get(part["reference"])
-        if isinstance(provider, CodingTaskProvider):
-            kept = held is not None and all(
-                check.text in part["specification"] for check in held.public_checks
-            )
-        else:
-            posted = part["specification"]
-            kept = held is not None and provider.part(part["reference"]).specification == posted
-        if not kept:
-            raise ValueError(
-                f"the {trade.value} bank {self.paths[trade]} no longer holds the examples part "
-                f"{number} of {task['id']} ({part['reference']}) was posted with"
-            )
-        return provider.special_cased(Part(**part), solution)
 
 
 def _writings(run: RunData, agent: str) -> dict[int, tuple[list[str], list[str]]]:

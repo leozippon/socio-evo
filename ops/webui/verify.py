@@ -14,6 +14,7 @@ import time
 from urllib.parse import urlencode
 
 SERVICES = {'cornerhead': 20817, 'socio-evo': 20131}
+BUNDLE_FORMAT = 2  # the bundle format frontend.publish writes (FORMAT); a test keeps them equal
 
 
 def wait_for_gateway(service: str) -> None:
@@ -99,7 +100,7 @@ class Client:
             safe = '/api/health'
         else:
             body, _ = self.expect(200, '/data/index.json')
-            if json.loads(body).get('format') != 2:
+            if json.loads(body).get('format') != BUNDLE_FORMAT:
                 raise RuntimeError('unexpected socio bundle format')
             self.expect(200, '/js/app.js')
             safe = '/index.html'

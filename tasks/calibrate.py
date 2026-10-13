@@ -163,7 +163,7 @@ async def calibrate(
         return Sample(
             visible=assessment.passed,
             quality=assessment.quality,
-            special_cased=provider.special_cased(part, solution),
+            special_cased=assessment.special_cased,
         )
 
     async with asyncio.TaskGroup() as group:

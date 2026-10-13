@@ -94,7 +94,7 @@ async def test_a_calculation_is_judged_by_its_answer_alone(tmp_path):
     for delivery, verdict in deliveries.items():
         assessment = await provider.assess(part, delivery)
         assert (assessment.passed, assessment.quality, assessment.feedback) == verdict
-        assert not provider.special_cased(part, delivery)
+        assert not assessment.special_cased
 
 
 def test_the_source_files_are_read_column_by_column(tmp_path):

@@ -61,7 +61,8 @@ def load_bank(path: Path) -> dict[str, CalculationTask]:
 class CalculationProvider:
     """The work protocol over the bank at `path`. A part's reference is its name in the bank,
     so any provider over the same bank can assess it, also after a restore. Nothing is run,
-    so `timeout` and `isolation`, which every trade's provider is built with, are not used."""
+    so `timeout` and `isolation`, which every trade's provider is built with, are not used,
+    and no delivery is special-cased: there are no examples whose values it could write out."""
 
     def __init__(
         self, path: Path, *, timeout: float = 5.0, isolation: Isolation = Isolation.BUBBLEWRAP
@@ -85,10 +86,11 @@ class CalculationProvider:
     async def assess(self, part: Part, solution: str) -> Assessment:
         answer = extract(solution)
         if answer is None:
-            return Assessment(passed=False, feedback=MISSING, quality=0)
+            return Assessment(passed=False, feedback=MISSING, quality=0, special_cased=False)
         right = same(answer, self.bank[part.reference].answer)
-        return Assessment(passed=right, feedback=SAME if right else DIFFERS, quality=float(right))
-
-    def special_cased(self, part: Part, solution: str) -> bool:
-        """Never: there are no examples whose values a delivery could write out."""
-        return False
+        return Assessment(
+            passed=right,
+            feedback=SAME if right else DIFFERS,
+            quality=float(right),
+            special_cased=False,
+        )

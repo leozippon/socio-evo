@@ -19,10 +19,11 @@ from core.agent.evolution import History
 from core.agent.prompts import REPLY
 from core.interaction import DAY_ONE, EventKind
 from frontend import bundle
-from frontend.publish import KINDS, Publisher, encode
+from frontend.publish import FORMAT, KINDS, Publisher, encode
 from frontend.publish import main as publish
 from frontend.server import DevServer
 from infrastructure.storage import RunDirectory
+from ops.webui.verify import BUNDLE_FORMAT
 from tests.analysis.test_measures import old_shape, truncate_mid_day
 from tests.conftest import TOWN
 
@@ -464,6 +465,45 @@ def test_a_run_recorded_before_tasks_had_parts_is_published_without_traits(town,
     study.write_text(yaml.safe_dump({"name": "pair", "arms": {"solo": []}}))
     with pytest.raises(ValueError, match="before tasks had parts"):
         Publisher(runs, tmp_path / "other", [study]).publish()
+
+
+def test_a_run_is_published_from_its_own_directory_whatever_became_of_its_bank(
+    site, town, tmp_path
+):
+    """With its task bank gone, a run publishes the traits it did; one recorded before an
+    assessment said whether a hand-in writes out the examples publishes that share as
+    unknown, over no hand-in judged, and the rest as before."""
+    runs = tmp_path / "runs"
+    for experiment in ("town", "older"):
+        root = runs / experiment / "seed-0007"
+        shutil.copytree(town, root)
+        config = yaml.safe_load((root / "config.yaml").read_text())
+        config["tasks"]["banks"] = {"programming": str(tmp_path / "no-bank")}
+        (root / "config.yaml").write_text(yaml.safe_dump(config))
+    log = runs / "older" / "seed-0007" / "events.jsonl"
+    records = [json.loads(line) for line in log.read_text().splitlines()]
+    for record in records:
+        if record["kind"] == "work_assessed":
+            del record["payload"]["special_cased"]
+    log.write_text("".join(json.dumps(record) + "\n" for record in records))
+    Publisher(runs, tmp_path / "site").publish()
+
+    def published(site: Path, experiment: str) -> dict[str, Any]:
+        run = json.loads((site / f"data/runs/{experiment}/seed-0007/run.json").read_bytes())
+        path = f"data/runs/{experiment}/seed-0007/{urlsplit(run['traits']).path}"
+        return json.loads((site / path).read_bytes())
+
+    assert published(tmp_path / "site", "town") == published(site, "town")
+    recorded = published(site, "town")["windows"][0]["town"]
+    before = published(tmp_path / "site", "older")["windows"][0]["town"]
+    assert recorded["counts"]["special_cased_judged"] == recorded["counts"]["checked_finished"] > 0
+    unknown = {"special_cased_judged": 0, "special_cased": 0}
+    assert before["counts"] == {**recorded["counts"], **unknown}
+    assert before["shares"] == {**recorded["shares"], "special_cased_share": None}
+
+
+def test_the_webui_verifier_expects_the_bundle_format_published():
+    assert BUNDLE_FORMAT == FORMAT
 
 
 def test_a_site_published_with_another_manifest_is_rebuilt(town, tmp_path):

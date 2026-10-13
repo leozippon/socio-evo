@@ -19,19 +19,16 @@ from tasks.sandbox import Isolation
 
 
 class Provider(TaskProvider, Protocol):
-    """What every trade's provider offers besides the work protocol: its bank by task name,
-    a task of it as a part, and whether a delivery writes out what the visible checks look
-    for instead of working it out. Every provider is built over its bank with the seconds
-    each check of a delivery may run and how a delivery is separated from the machine, which
-    a trade that runs nothing does not use."""
+    """What every trade's provider offers besides the work protocol: its bank by task name
+    and a task of it as a part. Every provider is built over its bank with the seconds each
+    check of a delivery may run and how a delivery is separated from the machine, which a
+    trade that runs nothing does not use."""
 
     bank: Mapping[str, object]
 
     def __init__(self, path: Path, *, timeout: float, isolation: Isolation) -> None: ...
 
     def part(self, name: str) -> Part: ...
-
-    def special_cased(self, part: Part, solution: str) -> bool: ...
 
 
 PROVIDERS: dict[Trade, type[Provider]] = {

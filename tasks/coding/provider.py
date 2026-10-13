@@ -103,6 +103,7 @@ class CodingTaskProvider:
             passed=not failed,
             feedback=_feedback(public, failed),
             quality=sum(passed) / len(passed),
+            special_cased=self.special_cased(part, solution),
         )
 
     def special_cased(self, part: Part, solution: str) -> bool:
