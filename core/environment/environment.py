@@ -218,6 +218,11 @@ FIRMS_RULE = (
     "the board; anyone without a place may ask for it, the foreman takes people on and may "
     "dismiss them, and a member of staff may give notice and leaves at the end of that day."
 )
+SHEET_PAYS = "pays {firm} {amount}"
+"""What a job on a firm's job sheet pays, and whom: its client pays the firm, into its
+foreman's purse, and nothing to those who do it."""
+STAFF_PAY = "what you are paid is your wage"
+"""Told to a member of a firm's staff beside what a job on the firm's sheet pays the firm."""
 WORKER = {
     Trade.PROGRAMMING: "a programmer",
     Trade.QUERIES: "someone to write queries",
@@ -632,7 +637,7 @@ class Environment:
         where = "the board" if sheet is None else f"{self.firms.names[sheet]}'s job sheet"
         return self.emit(
             EventKind.TASK_POSTED,
-            f"A new notice on {where}: {self._offer(task)}.",
+            lambda you: f"A new notice on {where}: {self._offer(task, you.name)}.",
             time=time,
             audience=audience,
             payload={"task": task.model_dump(mode="json")},
@@ -787,7 +792,9 @@ class Environment:
             return SHEET_OF_OTHERS.format(firm=self.firms.names[place])
         sheet = place in self.firms.establishments
         where = f"{self.firms.names[place]}'s job sheet" if sheet else "the board"
-        notices = [f"- {capital(self._offer(task))}." for task in self.notices_for(agent, place)]
+        notices = [
+            f"- {capital(self._offer(task, agent))}." for task in self.notices_for(agent, place)
+        ]
         if not sheet:
             notices += [f"- {capital(self._vacancy(firm))}." for firm in self._vacancies()]
         if not notices:
@@ -1320,7 +1327,8 @@ class Environment:
 
     def _settle_sheet(self, claim: Claim, shares: Mapping[int, int], time: int) -> list[Event]:
         """Pay the foreman of the firm whose sheet `claim`'s task was on the whole price, what
-        its workers would have been paid together, telling the workers too."""
+        its workers would have been paid together, telling the workers too, and those of its
+        staff that what they are paid is their wage."""
         task, workers = claim.task, claim.workers
         foreman, firm = self.firms.foreman_of(task.sheet), self.firms.names[task.sheet]
         total = len(workers) * sum(shares.values())
@@ -1331,8 +1339,11 @@ class Environment:
             both = f"Both parts of {_job(task)}, are in; " if len(workers) > 1 else ""
             if you.name == foreman:
                 have = money(balance)
-                return f"{both}The clerk paid you, for {firm}, {money(total)}. You now have {have}."
-            return f"{both}The clerk paid {firm} {money(total)} for {_job(task)}."
+                told = f"the clerk paid you, for {firm}, {money(total)}. You now have {have}."
+            else:
+                job, wage = "it" if both else _job(task), self._staff_pay(task, you.name)
+                told = f"the clerk paid {firm} {money(total)} for {job}{wage}."
+            return capital(both + told)
 
         events = [
             self.emit(
@@ -1642,8 +1653,10 @@ class Environment:
             finished=round(value), unfinished=round(value * self.conditions.incomplete_share)
         )
 
-    def _offer(self, task: Task) -> str:
-        """`task` as its notice on the board reads, without the final full stop."""
+    def _offer(self, task: Task, reader: str | None = None) -> str:
+        """`task` as its notice reads to `reader` (anyone, if None), without the final full
+        stop: on the board, what it pays each of those who do it; on a firm's job sheet, what
+        it pays the firm (`_firm_paid`)."""
         days = task.deadline_days
         if days == 1:
             due = "to be done by the end of the day it is taken"
@@ -1651,7 +1664,10 @@ class Environment:
             count = NUMBERS[days - 1] if days <= len(NUMBERS) else days
             due = f"{count} days to do it, counting the day it is taken"
         money, what, client = self._money, JOB_OF[task.trade], self._client(task)
-        if len(task.parts) == 1:
+        if task.sheet is not None:
+            size = NUMBERS[len(task.parts) - 1]
+            pay = f"{what} for {size}; {client}; {self._firm_paid(task, reader)}"
+        elif len(task.parts) == 1:
             full, low = task.prices[0].finished, task.prices[0].unfinished
             pay = f"{what} for one; {client}; pays {money(full)}, {money(low)} if "
             pay += "handed in as unfinished"
@@ -1665,22 +1681,59 @@ class Environment:
             )
         return f"{_job(task)}: {pay}; {due}"
 
+    def _firm_paid(self, task: Task, reader: str | None) -> str:
+        """What a job on a firm's job sheet pays the firm, which is what its foreman reads the
+        firm earns from it: its workers' prices together, which its client pays the foreman;
+        and, to `reader` if of the firm's staff, that what it is paid is its wage."""
+        money, workers = self._money, len(task.parts)
+        if workers == 1:
+            full, low = money(task.prices[0].finished), money(task.prices[0].unfinished)
+            amount = f"{full}, {low} if handed in as unfinished"
+        else:
+            total = workers * sum(price.finished for price in task.prices)
+            less_1, less_2 = (workers * (p.finished - p.unfinished) for p in task.prices)
+            amount = (
+                f"{money(total)} in all, {money(less_1)} less if part 1 is handed in as "
+                f"unfinished and {money(less_2)} less if part 2 is"
+            )
+        paid = SHEET_PAYS.format(firm=self.firms.names[task.sheet], amount=amount)
+        return paid + self._staff_pay(task, reader)
+
+    def _staff_pay(self, task: Task, reader: str | None) -> str:
+        """`; what you are paid is your wage` if `reader` is of the staff of the firm whose
+        job sheet `task` is on, else nothing."""
+        return f"; {STAFF_PAY}" if reader in self.firms.staff.get(task.sheet, ()) else ""
+
     def _part_status(self, claim: Claim, agent: str, number: int) -> list[str]:
-        part = claim.task.parts[number - 1]
-        each = "each of you " if len(claim.workers) > 1 else ""
+        """Part `number` of `claim` as `agent`'s status tells it: whether it is in, what it
+        pays (each of its workers, or on a firm's job sheet the firm), and if it is not in, what
+        the client asks for and what `agent` last saw of it."""
+        task, money = claim.task, self._money
+        part = task.parts[number - 1]
+        if task.sheet is None:  # each worker is paid the price
+            times, each = 1, "each of you " if len(claim.workers) > 1 else ""
+
+            def pays(amount: str) -> str:
+                return f"pays {each}{amount}"
+        else:  # the firm is paid its workers' prices together
+            times, firm = len(claim.workers), self.firms.names[task.sheet]
+
+            def pays(amount: str) -> str:
+                return SHEET_PAYS.format(firm=firm, amount=amount)
+
         if done := claim.delivery(number):
             worker = "you" if done.worker == agent else done.worker
-            share = claim.task.price(number, done.declaration)
+            share = times * task.price(number, done.declaration)
             return [
                 f'Part {number}, "{part.title}": in; {worker} handed it in as '
-                f"{_AS[done.declaration]} on {self._day(day_of(done.time))}; it pays "
-                f"{each}{self._money(share)}."
+                f"{_AS[done.declaration]} on {self._day(day_of(done.time))}; it "
+                f"{pays(money(share))}."
             ]
-        price = claim.task.prices[number - 1]
-        full, low = self._money(price.finished), self._money(price.unfinished)
+        price = task.prices[number - 1]
+        full, low = money(times * price.finished), money(times * price.unfinished)
         lines = [
-            f'Part {number}, "{part.title}": not in yet; it pays {each}{full}, {low} if handed '
-            f"in as unfinished. What the client asks for:\n{part.specification}"
+            f'Part {number}, "{part.title}": not in yet; it {pays(full)}, {low} if handed in as '
+            f"unfinished. What the client asks for:\n{part.specification}"
         ]
         if trial := claim.last_trial(agent, number):
             delivery = DELIVERY[claim.task.trade]

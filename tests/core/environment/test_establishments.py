@@ -1,9 +1,11 @@
 """Establishments: the configuration refuses a firm that cannot stand; a firm's job sheet is
-posted to and taken from by its people alone and its clients pay the foreman, who bears the
-clawbacks; wages go to the staff present at the day's end; places are asked for, filled,
-given up and taken away, each refusal a plain word; and a checkpoint keeps it all."""
+posted to and taken from by its people alone and its clients pay the foreman, as its notices
+tell them, who bears the clawbacks; wages go to the staff present at the day's end; places are
+asked for, filled, given up and taken away, each refusal a plain word; and a checkpoint keeps
+it all."""
 
 import random
+import re
 
 import pytest
 from pydantic import ValidationError
@@ -143,9 +145,9 @@ async def test_a_firms_sheet_is_posted_to_and_taken_from_by_its_people_and_pays_
         paid.percept("Ana").text
         == f"The clerk paid you, for the mill, {price} crowns. You now have {100 + price} crowns."
     )
-    assert paid.percept("Ben").text.startswith(
-        f"The clerk paid the mill {price} crowns for job 4, "
-    )
+    told = paid.percept("Ben").text
+    assert told.startswith(f"The clerk paid the mill {price} crowns for job 4, ")
+    assert told.endswith("; what you are paid is your wage.")
     assert env.economy.balances["Ben"] == 100
     await act(env, "Ana", ClaimTask(task_id="task-5", partner="Ben", part=1))
     await act(env, "Ben", ClaimTask(task_id="task-5"))
@@ -155,7 +157,7 @@ async def test_a_firms_sheet_is_posted_to_and_taken_from_by_its_people_and_pays_
     task = paid.payload["task_id"]
     assert paid.payload["agent"] == "Ana" and paid.payload["workers"] == ["Ana", "Ben"]
     assert paid.percept("Ben").text.startswith("Both parts of job 5, ")
-    assert "The clerk paid the mill" in paid.percept("Ben").text
+    assert "; the clerk paid the mill " in paid.percept("Ben").text
     assert task == "task-5"
 
     found = env.start_day(time_at(2, "07:00"), random.Random(1))  # discovery probability 0.5
@@ -167,6 +169,68 @@ async def test_a_firms_sheet_is_posted_to_and_taken_from_by_its_people_and_pays_
         f"The client took back the {price} crowns the mill was paid for job 4, "
     )
     assert ", which Ben handed in. You now have" in clawback.text
+
+
+async def test_a_job_on_a_firms_sheet_tells_whom_it_pays(mill):
+    """Its staff read that the client pays the firm and that what they are paid is their wage,
+    never that the price is theirs; the foreman reads what the firm earns; a worker who has
+    left the staff is promised no wage; and the board's notices read as they always have."""
+    env = mill
+    go(env, "mill", "Ana", "Ben", "Cai")
+    go(env, "office", "Dan")
+    env.start_day(time_at(1, "07:00"), random.Random(31))
+    posted = env.post(time_at(1, "09:00"), 0)
+    alone, together = (env.board.listings[f"task-{n}"].task for n in (4, 5))
+    full, low = alone.prices[0].finished, alone.prices[0].unfinished
+    total = 2 * sum(price.finished for price in together.prices)
+    less = [2 * (price.finished - price.unfinished) for price in together.prices]
+    firm = [
+        f"pays the mill {full} crowns, {low} crowns if handed in as unfinished",
+        f"pays the mill {total} crowns in all, {less[0]} crowns less if part 1 is handed in as "
+        f"unfinished and {less[1]} crowns less if part 2 is",
+    ]
+    wage = "; what you are paid is your wage;"
+
+    foreman, staff = env.board_view("Ana").splitlines()[1:], env.board_view("Ben").splitlines()[1:]
+    for earns, as_foreman, as_staff in zip(firm, foreman, staff, strict=True):
+        assert f"; {earns}; two days" in as_foreman and "what you are paid" not in as_foreman
+        assert f"; {earns}{wage} two days" in as_staff
+        assert not re.search(r"pays \d|each of|to each|each is paid", as_staff), as_staff
+    for event, earns in zip(posted[3:], firm, strict=True):
+        assert f"; {earns}; two days" in event.text and event.percept("Ana").text == event.text
+        assert f"; {earns}{wage} two days" in event.percept("Ben").text
+    board = env.board_view("Dan").splitlines()[1]
+    first = env.board.listings["task-1"].task.prices[0]
+    assert board == (
+        f'- Job 1, "{env.board.listings["task-1"].task.parts[0].title}": a programming job for '
+        "one; the client tries the examples before paying; pays "
+        f"{first.finished} crowns, {first.unfinished} crowns if handed in as unfinished; two "
+        "days to do it, counting the day it is taken."
+    )
+
+    await act(env, "Ana", ClaimTask(task_id="task-5", partner="Ben", part=1))
+    await act(env, "Ben", ClaimTask(task_id="task-5"))
+    price = together.prices[0]
+    held = (
+        f'Part 1, "{together.parts[0].title}": not in yet; it pays the mill '
+        f"{2 * price.finished} crowns, {2 * price.unfinished} crowns if handed in as unfinished."
+    )
+    for agent in ("Ana", "Ben"):
+        assert held in env.status_view(agent) and "each of you" not in env.status_view(agent)
+    await act(env, "Ana", deliver("task-5", "perfect", part=1))
+    assert f"; it pays the mill {2 * price.finished} crowns.\n" in env.status_view("Ben")
+    paid = only(await act(env, "Ben", deliver("task-5", "perfect", part=2)), EventKind.PAYMENT)
+    assert paid.percept("Ben").text.endswith(
+        f"; the clerk paid the mill {total} crowns for it; what you are paid is your wage."
+    )
+    assert f"; the clerk paid you, for the mill, {total} crowns." in paid.percept("Ana").text
+
+    await act(env, "Ben", ClaimTask(task_id="task-4"))
+    await act(env, "Ana", Dismiss(who="Ben"))
+    paid = only(await act(env, "Ben", deliver("task-4", "perfect")), EventKind.PAYMENT)
+    assert paid.percept("Ben").text == paid.text  # no longer of its staff: no wage is promised
+    assert paid.text.startswith(f"The clerk paid the mill {full} crowns for job 4, ")
+    assert paid.text.endswith('".')
 
 
 async def test_wages_go_to_the_staff_present_from_the_foremans_purse(mill):
