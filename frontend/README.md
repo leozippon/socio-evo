@@ -237,6 +237,8 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `places[].y` | number | Map position. |
 | `places[].residents` | array of strings | The agents living there (homes only). |
 | `places[].hours` | array of strings | Opening hours as `HH:MM-HH:MM` spans; empty means open until the day ends. |
+| `places[].trade` | string or null | The trade of the establishment at a work place (`programming`, `queries`, `calculation`); null for a place that is none. |
+| `places[].establishment` | object or null | The firm at a work place, as configured: `foreman` (fixed for the run), `staff` at the start, `wage` paid to each member of staff at the end of every day it was there, `positions` (the foreman's included) and `postings` (`one_part`, `two_part` per posting on its job sheet, or null for the conditions' counts); null for a place that is none. Who holds a position later is in the event log. |
 | `agents` | array | Every agent, in the configured order. |
 | `agents[].name` | string | The agent's id and given name. |
 | `agents[].age` | integer | Age. |
@@ -332,8 +334,13 @@ Within a day the events are those the simulation recorded in order: the day open
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `checked` (whether the client ran its checks: a checking client's, or a trusting client's for a worker whose standing is below the threshold; absent in logs recorded before the threshold existed, where a checking client checked every part declared complete), `accepted`, `solution` (what was handed in: code, a query or an answer with its working; a hand-in that named the draft on the desk holds the draft), `report` (the worker's own account) |
 | `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `checked`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
-| `payment` | none | the agent | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once |
+| `payment` | none | the agent, or the foreman and the workers | `agent`, `task_id`, `amount`, `balance` after it; each worker of a completed task is paid once, or, for a task on an establishment's job sheet, its foreman once the whole price, with the `workers` named |
 | `credits_given` | the giver | others present | `giver`, `recipient`, `amount`, `note`, `balances`: each of the two agents to its balance after it |
+| `wage_paid` | none | the member of staff and the foreman | `agent` (the member of staff), `foreman`, `place` (the establishment), `amount`, `balances`: the day's wage, paid at the day's end for a day the agent was at the establishment |
+| `applied` | the applicant | the applicant and the foreman | `applicant`, `place`, `foreman`: a resident asked for the place the establishment has to fill |
+| `hired` | the foreman | those at the establishment and the applicant | `foreman`, `applicant`, `place`: the applicant joins the staff at once |
+| `dismissed` | the foreman | those at the establishment and the dismissed | `foreman`, `agent` (the dismissed), `place`: the member of staff leaves at once |
+| `resigned` | the member of staff | those at the establishment and the foreman | `agent`, `place`, `foreman`: the member of staff gave notice and leaves the staff at the day's end |
 | `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
 | `defect_discovered` | none | everyone | `task_id`, `part`, `worker` who delivered it, `workers` of the task, `delivery_time`, `declaration`, `report`, `quality` of the delivery |
 | `clawback` | none | the agent | `agent`, `task_id`, `part`, `worker` who delivered the part, `amount` taken back, `balance` after it; one per worker of the task |
@@ -347,7 +354,7 @@ Within a day the events are those the simulation recorded in order: the day open
 
 Every change of a balance names the agent and the balance after it: `payment`, `living_cost` and `clawback` once per agent concerned (a task for two pays, and takes back from, each of its workers in an event of its own), `credits_given` for both of its parties. Logs recorded before tasks had parts carry older payloads: `task_claimed` without `workers` (the actor was the only worker), `task_expired` with `agent` instead of `workers` and `delivered`, `work_submitted` and `work_assessed` with `passed` (accepted on the acceptance checks) instead of `accepted`, `declaration` and `client`, and `task_posted` with a single-part `task`.
 
-A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id`, an optional `partner` and the `part` the proposer means to do (null where none was named); `check_work` with `task_id`, `part` and `solution` (the words "the draft on your desk" where the resident named its draft instead of writing it out); `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`; `vote` with `choice`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
+A decision's `action` has a `kind` and its fields: `plan_day` with `itinerary` (slot name to place id) and `intention`; `speak` with `text`, an optional `to` and `private`; `leave`; `pass`; `claim_task` with `task_id`, an optional `partner` and the `part` the proposer means to do (null where none was named); `check_work` with `task_id`, `part` and `solution` (the words "the draft on your desk" where the resident named its draft instead of writing it out); `submit_work` with `task_id`, `part`, `solution`, `declaration` and `report`; `give` with `to`, `amount` and `note`; `rate_peers` with `ratings`, each a `target`, `score` and `reason`; `vote` with `choice`; `apply` with `firm` (the establishment's name); `hire` and `dismiss` with `who`; `resign`. A decision recorded before a field existed lacks it and means what it meant then: part 1 declared complete, no partner, not private.
 
 ### `runs/{experiment}/{run}/measures.json`
 
@@ -382,6 +389,14 @@ Measures derived from the event log, one row per day so far; the last day of a r
 | `agents[].ratings_given_sum` | integer | Sum of their scores. |
 | `agents[].esteem` | number or null | Esteem published at the end of the day: the mean of all ratings received, each weighted by half for every half-life of its age. Null if not yet rated or the day has not ended. |
 | `agents[].evolution` | object | `level/trigger` (for example `L0/daily`, `L2/self`) to the number of evolution steps applied that night; only steps that happened appear. |
+| `agents[].position` | string | The agent's position at the end of the day: `foreman` or `staff` of an establishment, else `freelance`; income by position is `income` grouped by this. |
+| `agents[].wages_received` | integer | Wages paid to the agent as a member of staff. |
+| `agents[].wages_paid` | integer | Wages the agent paid out as a foreman. |
+| `agents[].attended` | integer | 1 if the agent, a member of staff, was at its establishment that day and was paid the wage for it, else 0; an establishment whose wage is 0 records no attendance. |
+| `agents[].applied` | integer | Times the agent asked for a place at an establishment. |
+| `agents[].hired` | integer | Times the agent was taken on. |
+| `agents[].dismissed` | integer | Times the agent was dismissed. |
+| `agents[].resigned` | integer | Times the agent gave notice. |
 | `society` | array | One row per day for the whole town. Counts are sums over agents of the same agent fields unless said otherwise. |
 | `society[].day` | integer | The day. |
 | `society[].conditions` | object | The conditions in force at the end of the day, fields as in `world.json`. |
@@ -417,6 +432,12 @@ Measures derived from the event log, one row per day so far; the last day of a r
 | `society[].ratings_sum` | integer | Sum of their scores. |
 | `society[].decisions` | object | Action kind to decisions; every kind is listed. |
 | `society[].evolution` | object | `level/trigger` to evolution steps. |
+| `society[].wages` | integer | Wages paid, the sum of `wages_received`. |
+| `society[].attendance` | integer | Staff-days at establishments, the sum of `attended`. |
+| `society[].applications` | integer | Times a resident asked for a place. |
+| `society[].hires` | integer | Times someone was taken on. |
+| `society[].dismissals` | integer | Times someone was dismissed. |
+| `society[].notices` | integer | Times a member of staff gave notice. |
 | `graph` | array | What one agent had to do with another on a day: one row per ordered pair and day with anything to count, by day, source and target. |
 | `graph[].day` | integer | The day. |
 | `graph[].source` | string | One agent. |

@@ -39,8 +39,29 @@ OLD_MEASURES = {
 }
 """The first 16 hex digits of the SHA-256 of the published measures of the runs of the first
 town, archived under runs/v1 on the machine where they ran, as they were before the second town."""
-LATER_KINDS = ("vote",)
+LATER_KINDS = ("vote", "apply", "hire", "dismiss", "resign")
 """Kinds of decision added since the first town, which its measures count as none."""
+LATER_FIELDS = {
+    "agents": {
+        "position": "freelance",
+        "wages_received": 0,
+        "wages_paid": 0,
+        "attended": 0,
+        "applied": 0,
+        "hired": 0,
+        "dismissed": 0,
+        "resigned": 0,
+    },
+    "society": {
+        "wages": 0,
+        "attendance": 0,
+        "applications": 0,
+        "hires": 0,
+        "dismissals": 0,
+        "notices": 0,
+    },
+}
+"""Fields of the measures added since the first town, with the values its measures hold."""
 
 
 def files(root: Path) -> dict[str, bytes]:
@@ -469,7 +490,9 @@ def test_the_measures_of_the_first_town_are_unchanged(run):
         pytest.skip(f"{run} is not on this machine")
     found = read_run(root)
     document = bundle.measures(measure(found), run_usage(found))
-    for row in (*document["agents"], *document["society"]):
-        for counts in (row["decisions"], row.get("rejected", {})):
-            assert all(counts.pop(kind) == 0 for kind in LATER_KINDS if kind in counts)
+    for table, later in LATER_FIELDS.items():
+        for row in document[table]:
+            for counts in (row["decisions"], row.get("rejected", {})):
+                assert all(counts.pop(kind) == 0 for kind in LATER_KINDS if kind in counts)
+            assert all(row.pop(name) == value for name, value in later.items())
     assert hashlib.sha256(encode(document)).hexdigest()[:16] == OLD_MEASURES[run]

@@ -267,6 +267,10 @@ SAMPLES = {
         'in the clerk\'s ledger you marked Ben 4 of 5 ("He explained the parser.").',
     ),
     ActionKind.VOTE: ({"choice": "no"}, "you gave the clerk your answer: no."),
+    ActionKind.APPLY: ({"firm": "Ostrander & Co."}, "you asked Ostrander & Co. for its place."),
+    ActionKind.HIRE: ({"who": "Ravi"}, "at your firm you took Ravi on."),
+    ActionKind.DISMISS: ({"who": "Aisha"}, "at your firm you dismissed Aisha."),
+    ActionKind.RESIGN: ({}, "you gave notice at your firm, to leave at the end of the day."),
 }
 
 

@@ -78,14 +78,16 @@ class Price(StrictModel):
 
 
 class Task(StrictModel):
-    """Paid work of one `trade` on the board for `client`: one part done alone, or two parts
-    done by two people, each at the price fixed when the task was posted. Its takers have
-    `deadline_days` days, the day of taking included, to have every part accepted: the longest
-    any of its parts allows. A task recorded before the town had trades is a programming
-    job."""
+    """Paid work of one `trade` on the board for `client`, or on the job sheet of the
+    establishment at `sheet`, whose people alone take it and whose foreman its client pays:
+    one part done alone, or two parts done by two people, each at the price fixed when the
+    task was posted. Its takers have `deadline_days` days, the day of taking included, to
+    have every part accepted: the longest any of its parts allows. A task recorded before the
+    town had trades is a programming job on the board."""
 
     id: str
     trade: Trade = Trade.PROGRAMMING
+    sheet: str | None = None
     parts: tuple[Part, ...] = Field(min_length=1, max_length=len(get_args(PartNumber)))
     client: Client
     prices: tuple[Price, ...]
@@ -317,18 +319,24 @@ class Board:
         return self._open(Offer(agent=agent, task_id=task_id, partner=partner, part=part))
 
     def pair(self, rng: random.Random, time: int) -> list[Claim]:
-        """Pair the open applications at random with `rng`: the applicants, in the order they
-        applied, are shuffled and paired in turn, and each pair takes the task its first member
-        applied for. Applications for a task taken meanwhile lapse; an applicant left without
-        a partner stays open. Returns the claims made."""
-        applicants = [offer.agent for offer in self.offers.values() if offer.partner is None]
-        rng.shuffle(applicants)
+        """Pair the open applications at random with `rng`, the board's and each sheet's
+        apart: the applicants, in the order they applied, are shuffled and paired in turn, and
+        each pair takes the task its first member applied for. Applications for a task taken
+        meanwhile lapse; an applicant left without a partner stays open. Returns the claims
+        made."""
+        by_sheet: dict[str | None, list[str]] = {}
+        for offer in self.offers.values():
+            if offer.partner is None:
+                sheet = self.listings[offer.task_id].task.sheet
+                by_sheet.setdefault(sheet, []).append(offer.agent)
         claims = []
-        while len(applicants) > 1:
-            first, second = applicants[:2]
-            task = self.listings[self.offers[first].task_id].task
-            claims.append(self._form(task, (first, second), time))
-            applicants = [agent for agent in applicants[2:] if agent in self.offers]
+        for applicants in by_sheet.values():
+            rng.shuffle(applicants)
+            while len(applicants) > 1:
+                first, second = applicants[:2]
+                task = self.listings[self.offers[first].task_id].task
+                claims.append(self._form(task, (first, second), time))
+                applicants = [agent for agent in applicants[2:] if agent in self.offers]
         return claims
 
     def work_on(self, agent: str, reference: str, part: int) -> Claim:

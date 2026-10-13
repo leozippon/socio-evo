@@ -18,10 +18,14 @@ import re
 from typing import Any
 
 from core.environment import DELIVERY, Trade
+from core.interaction import card
 from experiments.config import ExperimentConfig
 from infrastructure.llm import LLMRequest
 
 _ENTRY_POINT = re.compile(r"defines `(\w+)`")
+FAVOURED = {card.ASK_FOR_PLACE: 4, card.TAKE_ON: 4, card.DISMISS: 4, card.GIVE_NOTICE: 2}
+"""The weight of each form a card seldom offers, against 1 for any other, so that a dry run
+exercises asking for a place, taking people on, dismissing them and giving notice."""
 _HAND_INS = {
     DELIVERY[Trade.QUERIES]: "SELECT 1 WHERE 0",
     DELIVERY[Trade.CALCULATION]: "Nothing to work out.\nAnswer: 1",
@@ -60,7 +64,9 @@ class _Draw:
         if "$ref" in schema:
             return self.value(self.root["$defs"][schema["$ref"].removeprefix("#/$defs/")], name)
         if "anyOf" in schema:
-            return self.value(rng.choice(schema["anyOf"]), name)
+            options = schema["anyOf"]
+            weights = [FAVOURED.get(self._does(option), 1) for option in options]
+            return self.value(rng.choices(options, weights=weights)[0], name)
         if "const" in schema:
             return schema["const"]
         if "enum" in schema:
@@ -85,6 +91,13 @@ class _Draw:
             case "null":
                 return None
         raise ValueError(f"the dry run cannot draw {name!r} from the schema {schema}")
+
+    def _does(self, option: dict[str, Any]) -> str | None:
+        """What a form of a card says the resident does, None for a schema that is no form."""
+        if "$ref" in option:
+            option = self.root["$defs"][option["$ref"].removeprefix("#/$defs/")]
+        does = option.get("properties", {}).get(card.DOES, {})
+        return does.get("const")
 
     def string(self, name: str) -> str:
         rng = self.rng

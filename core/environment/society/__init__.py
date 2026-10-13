@@ -1,6 +1,7 @@
 """Social truth: the economy, reputation and work."""
 
 from core.environment.society.economy import Economy
+from core.environment.society.firms import Firms
 from core.environment.society.reputation import DecayedMean, Reputation
 from core.environment.society.work import (
     Assessment,
@@ -29,6 +30,7 @@ __all__ = [
     "Defect",
     "Delivery",
     "Economy",
+    "Firms",
     "Listing",
     "Offer",
     "Part",

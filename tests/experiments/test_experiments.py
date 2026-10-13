@@ -47,7 +47,7 @@ def written(run: RunDirectory) -> list[str]:
 
 def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
-    assert set(configs) == {"smoke", "pilot", "town"}
+    assert set(configs) == {"smoke", "pilot", "town", "firm"}
     for config in configs.values():
         assert not unguarded([config.environment.setting.backdrop]), config.name
         for meeting in config.simulation.meetings:
@@ -304,6 +304,25 @@ def test_a_dry_run_of_the_smoke_town_tells_its_setting_in_every_request(tmp_path
     twice, checked = told_twice(run)
     assert checked and not twice, twice
     assert any("tonight's standings" in text for text in texts)
+
+
+def test_a_dry_run_of_the_firm_town_pays_wages_and_posts_its_place(tmp_path):
+    """The firm town dry-run: the firm's sheet is posted to and its people paid their wages,
+    the board says the firm has a place to fill, the scripted model favours asking for it,
+    taking people on, dismissing and giving notice, and nothing read steers or shows the
+    machinery."""
+    main([str(CONFIGS / "firm.yaml"), "--seeds", "0", "--runs-root", str(tmp_path), "--dry-run"])
+    run = RunDirectory.open(tmp_path / "firm-dry-run" / "seed-0000")
+    log = [json.loads(line) for line in run.events_path.read_text(encoding="utf-8").splitlines()]
+    kinds = {event["kind"] for event in log}
+    assert {"wage_paid", "task_posted"} <= kinds
+    assert any(e["payload"].get("task", {}).get("sheet") == "ostrander" for e in log)
+    texts = sent(run)
+    assert any("Ostrander & Co. has a place for a programmer at $30 a day" in t for t in texts)
+    assert any("You work at Ostrander & Co. (Mei is the foreman); $30 a day" in t for t in texts)
+    assert any('"do": "ask for a place", "at": "Ostrander & Co."' in t for t in texts)
+    assert not unguarded(texts)
+    assert not unguarded(written(run))
 
 
 def test_no_request_in_the_pilot_town_steers_traits_or_shows_machinery(tmp_path):

@@ -11,7 +11,9 @@ from core.interaction import (
     Leave,
     MayCheck,
     MayClaim,
+    MayDismiss,
     MayGive,
+    MayHire,
     MayLeave,
     MayPass,
     MaySpeak,
@@ -19,7 +21,7 @@ from core.interaction import (
     Pass,
 )
 from runtime.scenes import situations
-from runtime.scenes.scene import Scene
+from runtime.scenes.scene import Scene, careers
 
 
 class WorkSession(Scene):
@@ -57,17 +59,23 @@ class WorkSession(Scene):
         return list(self.present)
 
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
-        """Someone working on no job may take one from the board, if any is there; someone
-        working on one may hand in the parts not yet in, and try them where the job's trade
-        gives something to try against. Anyone may talk to and hand money to the others here,
-        go home for the rest of this part of the day, or carry on quietly."""
-        env, allowed = self.env, []
+        """Someone working on no job may take one from the notices it faces here (the board,
+        or its firm's job sheet), if any is there, a job for two with a neighbour, or with one
+        of the firm's people on its sheet; someone working on one may hand in the parts not
+        yet in, and try them where the job's trade gives something to try against. A foreman
+        at its firm may take on those who asked for its place while it has one, and dismiss
+        its staff; anyone may ask for a place or give notice (`careers`). Anyone may talk to
+        and hand money to the others here, go home for the rest of this part of the day, or
+        carry on quietly."""
+        env, allowed, firms = self.env, [], self.env.firms
         claim = env.board.claim_of(agent)
+        firm = self.place if self.place in firms.establishments else None
         if claim is None:
-            tasks = [listing.task for listing in env.board.listings.values()]
+            tasks = env.notices_for(agent, self.place)
             alone = tuple(task.id for task in tasks if len(task.parts) == 1)
             together = tuple(task.id for task in tasks if len(task.parts) > 1)
-            neighbours = tuple(other for other in env.agents if other != agent)
+            people = firms.people(firm) if firm is not None else env.agents
+            neighbours = tuple(other for other in people if other != agent)
             partners = neighbours if env.conditions.partner_choice else None
             if alone or (together and partners != ()):
                 allowed.append(MayClaim(alone=alone, together=together, partners=partners))
@@ -86,6 +94,12 @@ class WorkSession(Scene):
             if task.trade in EXAMPLES:
                 allowed.append(MayCheck(**working))
             allowed.append(MaySubmit(**working))
+        if firm is not None and firms.foreman_of(firm) == agent:
+            if (applicants := firms.applicants(firm)) and firms.vacancies(firm) > 0:
+                allowed.append(MayHire(applicants=tuple(applicants)))
+            if staff := firms.staff[firm]:
+                allowed.append(MayDismiss(staff=tuple(staff)))
+        allowed += careers(env, agent)
         if others := tuple(other for other in self.present if other != agent):
             units = env.config.setting.currency.units
             allowed += [MaySpeak(to=others), MayGive(to=others, units=units)]

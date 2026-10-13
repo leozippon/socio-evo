@@ -28,6 +28,7 @@ from core.environment.society import (
     Defect,
     Delivery,
     Economy,
+    Firms,
     Listing,
     Offer,
     Price,
@@ -42,17 +43,21 @@ from core.environment.world import PlaceKind, World
 from core.interaction import (
     MINUTES_PER_DAY,
     Action,
+    Apply,
     CheckWork,
     ClaimTask,
     Declaration,
+    Dismiss,
     Event,
     EventKind,
     Give,
+    Hire,
     Leave,
     Pass,
     Percept,
     PlanDay,
     RatePeers,
+    Resign,
     Speak,
     SubmitWork,
     Telling,
@@ -61,6 +66,7 @@ from core.interaction import (
     capital,
     clock_of,
     day_of,
+    job_id,
     job_name,
     listed,
     lived_day,
@@ -203,6 +209,41 @@ SEEN = {
     "untried": "; you have not tried it",
 }
 """What the desk says of a part not in, by what its holder last saw of it."""
+FIRMS_RULE = (
+    "Some work places are firms, each with a foreman, a job sheet of its own that only its "
+    "people take from, and positions at a wage. A firm's clients pay its foreman, who pays each "
+    "member of staff the wage at the end of every day they were at the firm, and whatever a "
+    "client takes back comes from the foreman's purse. A firm with a place to fill says so on "
+    "the board; anyone without a place may ask for it, the foreman takes people on and may "
+    "dismiss them, and a member of staff may give notice and leaves at the end of that day."
+)
+WORKER = {
+    Trade.PROGRAMMING: "a programmer",
+    Trade.QUERIES: "someone to write queries",
+    Trade.CALCULATION: "someone to do calculations",
+}
+"""Whom a firm of each trade has a place for."""
+VACANCY = "{firm} has a place for {worker} at {wage} a day; anyone without a place may ask for it"
+STAFF_STATUS = (
+    "You work at {firm} ({foreman} is the foreman); {wage} a day, paid for the days you are "
+    "there.{notice}"
+)
+GAVE_NOTICE = " You have given notice, and leave at the end of the day."
+FOREMAN_STATUS = "You are the foreman of {firm}; {staff}{places}{applicants}"
+FOREMAN_STAFF = "its staff are {staff}, at {wage} a day each, paid for the days they are there"
+FOREMAN_ALONE = "it has no staff"
+PLACES_TO_FILL = "; it has {count} to fill"
+APPLICANTS = "; {who} asked for a place"
+APPLICANT_STATUS = "You have asked {firm} for its place."
+SHEET_OF_OTHERS = "The notices here are on {firm}'s job sheet, which only its people take from."
+NOT_OF_FIRM = "{who} is not of {firm}; only its people take from its job sheet."
+WAGE_TEXT = "{firm} paid {who} the day's wage of {wage}."
+WAGE_RECEIVED = "{firm} paid you the day's wage of {wage}. You now have {balance}."
+WAGE_PAID = "You paid {who} the day's wage of {wage} from your purse. You now have {balance}."
+APPLIED = "{who} asked for the place at {firm}; word of it has gone to {foreman}, its foreman."
+HIRED = "{foreman} took {who} on at {firm}, at {wage} a day."
+DISMISSED = "{foreman} dismissed {who} from {firm}'s staff, with immediate effect."
+RESIGNED = "{who} has given notice at {firm}, and leaves its staff at the end of the day."
 LEDGER = (
     "The clerk keeps a ledger in which the members mark one another, from 1 to 5, each mark "
     "with a reason; nobody sees the marks another member gave."
@@ -230,6 +271,12 @@ class EnvironmentState(StrictModel):
     offers: tuple[Offer, ...]
     claims: tuple[Claim, ...]
     latent_defects: tuple[Defect, ...]
+    staff: dict[str, tuple[str, ...]] | None = None
+    """Each establishment's staff by place; None in a checkpoint written before the town had
+    establishments, whose staff are the configured ones."""
+    applications: dict[str, str] = {}
+    attendance: dict[str, tuple[str, ...]] = {}
+    notices: tuple[str, ...] = ()
 
 
 class Environment:
@@ -251,6 +298,7 @@ class Environment:
         economy: Economy,
         reputation: Reputation,
         board: Board,
+        firms: Firms,
         conditions: Conditions,
         log: EventLog,
     ) -> None:
@@ -260,6 +308,7 @@ class Environment:
         self.economy = economy
         self.reputation = reputation
         self.board = board
+        self.firms = firms
         self.conditions = conditions
         self.log = log
         self.agents = tuple(log.cursors)
@@ -286,6 +335,7 @@ class Environment:
             Economy({agent: config.starting_balance(agent) for agent in agents}),
             Reputation(_half_life(config), dict.fromkeys(agents)),
             Board(1, {}, {}, {}, []),
+            Firms.at_start(config.establishments, _firm_names(config)),
             config.conditions,
             EventLog.create(events_path, agents),
         )
@@ -305,6 +355,18 @@ class Environment:
         """
         saved = EnvironmentState.model_validate(state)
         _homes(config, list(saved.cursors))
+        establishments = config.establishments
+        if saved.staff is None:
+            firms = Firms.at_start(establishments, _firm_names(config))
+        else:
+            firms = Firms(
+                establishments,
+                _firm_names(config),
+                {place: list(saved.staff.get(place, ())) for place in establishments},
+                dict(saved.applications),
+                {place: list(saved.attendance.get(place, ())) for place in establishments},
+                list(saved.notices),
+            )
         parts = (
             World(config.places, dict(saved.locations)),
             Economy(dict(saved.balances)),
@@ -316,6 +378,7 @@ class Environment:
                 {claim.task.id: claim for claim in saved.claims},
                 list(saved.latent_defects),
             ),
+            firms,
             saved.conditions,
         )
         log = EventLog.resume(events_path, saved.event_count, saved.cursors)
@@ -335,6 +398,10 @@ class Environment:
             offers=tuple(self.board.offers.values()),
             claims=tuple(self.board.claims.values()),
             latent_defects=tuple(self.board.latent),
+            staff={place: tuple(staff) for place, staff in self.firms.staff.items()},
+            applications=dict(self.firms.applications),
+            attendance={place: tuple(a) for place, a in self.firms.attendance.items()},
+            notices=tuple(self.firms.notices),
         ).model_dump(mode="json")
 
     def emit(
@@ -386,6 +453,7 @@ class Environment:
             return [self._reject(agent, attempt, rejection, time=time, place=origin, scene=None)]
         if place == origin:
             return []
+        self.firms.attend(agent, place)
         names = {key: self.world.places[key].name for key in (origin, place)}
         if closing:
             text = f"{capital(names[origin])} closed for the night, and {agent} went home."
@@ -402,12 +470,13 @@ class Environment:
         `speak` is witnessed by the others among `witnesses` (a private remark is heard by
         its addressee alone); `leave` takes the agent home, as a move seen by the others at
         the place and at home; `pass` leaves no trace. `give` moves credits to someone present,
-        seen by the others there. `claim_task`, `check_work`, `submit_work` and `rate_peers`
-        change society; `vote` records the answer the agent gave the clerk, for the meeting of
-        `scene` to count. The agent is told what follows from its action, not the action
-        itself, which it records as its own decision. An action that reality cannot honour
-        changes nothing and yields a private `action_rejected` event. `plan_day` is the
-        runtime's to interpret and raises ValueError here.
+        seen by the others there. `claim_task`, `check_work`, `submit_work`, `rate_peers`,
+        `apply`, `hire`, `dismiss` and `resign` change society; `vote` records the answer the
+        agent gave the clerk, for the meeting of `scene` to count. The agent is told what
+        follows from its action, not the action itself, which it records as its own decision.
+        An action that reality cannot honour changes nothing and yields a private
+        `action_rejected` event. `plan_day` is the runtime's to interpret and raises
+        ValueError here.
         """
         if isinstance(action, PlanDay):
             raise ValueError("plan_day is interpreted by the runtime, not executed")
@@ -433,6 +502,14 @@ class Environment:
                     return self._rate(agent, action, **where)
                 case Vote():
                     return [self._vote(agent, action, **where)]
+                case Apply():
+                    return [self._apply(agent, action, **where)]
+                case Hire():
+                    return [self._hire(agent, action, **where)]
+                case Dismiss():
+                    return [self._dismiss(agent, action, **where)]
+                case Resign():
+                    return [self._resign(agent, **where)]
                 case _:
                     raise TypeError(f"not an action: {action!r}")
         except Rejected as rejection:
@@ -461,35 +538,63 @@ class Environment:
         return events
 
     def post(self, time: int, seed: int | str) -> list[Event]:
-        """Post the tasks of one posting: as many one-part and then two-part tasks as the
-        conditions say, each priced by the conditions now and seen by those at a work place,
-        where the board is. The k-th task of a size posted at `time` is drawn, its trade by
-        the weights of the conditions' trade mix (no draw where the mix has one trade), its
+        """Post the tasks of one posting: on the board, as many one-part and then two-part
+        tasks as the conditions say, each priced by the conditions now and seen by those at a
+        work place that is not an establishment; then on each establishment's job sheet, as
+        many of its trade as its own postings or else the conditions say, seen by its people
+        there. The k-th task of a size posted at `time` is drawn, its trade by the weights of
+        the conditions' trade mix (no draw where the mix has one trade, or on a sheet), its
         parts from that trade's provider and then whether its client accepts on the
-        declaration, from a generator of its own seeded with `seed`, `time`, its size and k,
-        so that it is the same whatever else is posted or has happened. Raises KeyError for a
-        trade in the mix the town has no provider of."""
-        places = self.world.places
+        declaration, from a generator of its own seeded with `seed`, `time`, its size and k
+        (and the sheet's place), so that it is the same whatever else is posted or has
+        happened. Raises KeyError for a trade the town has no provider of."""
+        places, locations = self.world.places, self.world.locations
         at_board = [
-            a for a in self.agents if places[self.world.locations[a]].kind is PlaceKind.WORK
+            agent
+            for agent in self.agents
+            if places[locations[agent]].kind is PlaceKind.WORK
+            and locations[agent] not in self.firms.establishments
         ]
+        conditions = self.conditions
+        counts = (conditions.one_part_tasks, conditions.two_part_tasks)
+        events = self._post(time, seed, None, counts, None, at_board)
+        for place, firm in self.firms.establishments.items():
+            own = firm.postings
+            counts = counts if own is None else (own.one_part, own.two_part)
+            people = [agent for agent in self.firms.people(place) if locations[agent] == place]
+            trade = places[place].trade
+            events += self._post(time, f"{seed}:{place}", place, counts, trade, people)
+        return events
+
+    def _post(
+        self,
+        time: int,
+        seed: int | str,
+        sheet: str | None,
+        counts: tuple[int, int],
+        trade: Trade | None,
+        audience: Sequence[str],
+    ) -> list[Event]:
+        """Post `counts` one-part and two-part tasks of `trade` (drawn by the mix if None) on
+        the board or the job `sheet`, for `audience` to see."""
         mix = self.conditions.trade_mix
+        where = "the board" if sheet is None else f"{self.firms.names[sheet]}'s job sheet"
         events = []
-        for size, count in (
-            (1, self.conditions.one_part_tasks),
-            (2, self.conditions.two_part_tasks),
-        ):
+        for size, count in zip((1, 2), counts, strict=True):
             for index in range(count):
                 rng = random.Random(f"{seed}:{time}:{size}:{index}")
-                if len(mix) == 1:
-                    [trade] = mix
+                if trade is not None:
+                    drawn = trade
+                elif len(mix) == 1:
+                    [drawn] = mix
                 else:
-                    [trade] = rng.choices(list(mix), weights=list(mix.values()))
-                parts = self.providers[trade].sample(rng, size)
+                    [drawn] = rng.choices(list(mix), weights=list(mix.values()))
+                parts = self.providers[drawn].sample(rng, size)
                 trusting = rng.random() < self.conditions.trusting_client_prob
                 task = Task(
                     id=self.board.new_id(),
-                    trade=trade,
+                    trade=drawn,
+                    sheet=sheet,
                     parts=parts,
                     client=Client.TRUSTING if trusting else Client.CHECKING,
                     prices=tuple(self._price(part.reward, size) for part in parts),
@@ -498,9 +603,9 @@ class Environment:
                 events.append(
                     self.emit(
                         EventKind.TASK_POSTED,
-                        f"A new notice on the board: {self._offer(task)}.",
+                        f"A new notice on {where}: {self._offer(task)}.",
                         time=time,
-                        audience=at_board,
+                        audience=audience,
                         payload={"task": task.model_dump(mode="json")},
                     )
                 )
@@ -542,10 +647,11 @@ class Environment:
         return [withdrawn, *self._offers_ended(open_before, time=time)]
 
     def end_day(self, time: int) -> list[Event]:
-        """Close the day of `time`: the living cost and each agent's own obligation are
-        charged, and esteem is updated, which every agent sees if esteem is public. Open
-        proposals and applications stand."""
-        events = []
+        """Close the day of `time`: each member of staff who was at its firm today is paid
+        the wage from the foreman's purse, those who gave notice leave their firm, the living
+        cost and each agent's own obligation are charged, and esteem is updated, which every
+        agent sees if esteem is public. Open proposals and applications stand."""
+        events = self._wages(time)
         cost = self.conditions.living_cost
         for agent in self.agents:
             obligation = self.config.obligation(agent)
@@ -626,17 +732,52 @@ class Environment:
                 CHOICE if self.conditions.partner_choice else ASSIGNMENT,
             ]
         )
+        if self.firms.establishments:
+            work = f"{work} {FIRMS_RULE}"
         ledger = LEDGER + (STANDINGS if self.conditions.esteem_public else "")
         return f"{work}\n\n{ledger}"
 
-    def board_view(self) -> str:
-        """The notices on the board, as anyone can see them."""
-        if not self.board.listings:
-            return "There are no notices on the board."
-        offers = (
-            f"- {capital(self._offer(listing.task))}." for listing in self.board.listings.values()
+    def notices_for(self, agent: str | None, place: str | None = None) -> list[Task]:
+        """The tasks on the notices `agent` faces at `place` (where it is, if None): those of
+        the job sheet at an establishment of which it is a member, none at one it is not,
+        and the board's elsewhere; with no agent, the board's."""
+        if agent is not None and place is None:
+            place = self.world.locations[agent]
+        listings = self.board.listings.values()
+        if place in self.firms.establishments:
+            if agent not in self.firms.people(place):
+                return []
+            return [listing.task for listing in listings if listing.task.sheet == place]
+        return [listing.task for listing in listings if listing.task.sheet is None]
+
+    def board_view(self, agent: str | None = None, place: str | None = None) -> str:
+        """The notices `agent` faces at `place`, where it is if None (see `notices_for`): the
+        jobs, and on the board the places firms have to fill; without an agent, the board as
+        anyone sees it."""
+        if agent is not None and place is None:
+            place = self.world.locations[agent]
+        if place in self.firms.establishments and agent not in self.firms.people(place):
+            return SHEET_OF_OTHERS.format(firm=self.firms.names[place])
+        sheet = place in self.firms.establishments
+        where = f"{self.firms.names[place]}'s job sheet" if sheet else "the board"
+        notices = [f"- {capital(self._offer(task))}." for task in self.notices_for(agent, place)]
+        if not sheet:
+            notices += [f"- {capital(self._vacancy(firm))}." for firm in self._vacancies()]
+        if not notices:
+            return f"There are no notices on {where}."
+        return "\n".join([f"On {where}:", *notices])
+
+    def _vacancies(self) -> list[str]:
+        """The establishments with a place to fill, by place id."""
+        return [place for place in self.firms.establishments if self.firms.vacancies(place) > 0]
+
+    def _vacancy(self, place: str) -> str:
+        firm = self.firms.establishments[place]
+        return VACANCY.format(
+            firm=self.firms.names[place],
+            worker=WORKER[self.world.places[place].trade],
+            wage=self._money(firm.wage),
         )
-        return "\n".join(["On the board:", *offers])
 
     def purse_view(self, agent: str) -> str:
         """`agent`'s balance and what a day costs it under the present conditions: the living
@@ -652,7 +793,7 @@ class Environment:
         """`agent`'s purse, the task it holds with the state of each part, what it last saw
         when a solution for a part was run, and its open proposal or application and those
         made to it."""
-        lines = [self.purse_view(agent)]
+        lines = [self.purse_view(agent), *self._position(agent)]
         claim = self.board.claim_of(agent)
         if claim is None:
             lines.append("You are not working on any job.")
@@ -685,6 +826,28 @@ class Environment:
                 parts = _asked_parts(offer, Witness(agent))
                 lines.append(f"{offer.agent} has asked you to take {job} together{parts}{busy}.")
         return "\n".join(lines)
+
+    def _position(self, agent: str) -> list[str]:
+        """`agent`'s place at a firm, as its status tells it: the firm it works at, the firm it
+        is foreman of with its staff and what it has to fill, or the place it has asked for."""
+        firms = self.firms
+        if (place := firms.firm_of(agent)) is None:
+            if (asked := firms.applications.get(agent)) is None:
+                return []
+            return [APPLICANT_STATUS.format(firm=firms.names[asked])]
+        firm, name = firms.establishments[place], firms.names[place]
+        wage = self._money(firm.wage)
+        if agent != firm.foreman:
+            notice = GAVE_NOTICE if agent in firms.notices else ""
+            return [STAFF_STATUS.format(firm=name, foreman=firm.foreman, wage=wage, notice=notice)]
+        staff = firms.staff[place]
+        told = FOREMAN_STAFF.format(staff=listed(staff), wage=wage) if staff else FOREMAN_ALONE
+        count = firms.vacancies(place)
+        places = PLACES_TO_FILL.format(count=_places(count)) if count else ""
+        asked = firms.applicants(place)
+        applicants = APPLICANTS.format(who=listed(asked)) if asked else ""
+        status = FOREMAN_STATUS.format(firm=name, staff=told, places=places, applicants=applicants)
+        return [f"{status}."]
 
     def desk_view(self, agent: str) -> str | None:
         """What is still on `agent`'s desk at night: its job, when it is due, and of each
@@ -812,6 +975,13 @@ class Environment:
         partner = None if action.partner is None else self._person(action.partner)
         if partner == agent:
             raise Rejected("You cannot take a job with yourself.")
+        task_id = job_id(action.task_id)
+        listing = self.board.listings.get(task_id) if task_id else None
+        if listing is not None and (sheet := listing.task.sheet) is not None:
+            people, firm = self.firms.people(sheet), self.firms.names[sheet]
+            for who in (agent, partner):
+                if who is not None and who not in people:
+                    raise Rejected(NOT_OF_FIRM.format(who=who, firm=firm))
         open_before = dict(self.board.offers)
         taken = self.board.take(
             agent,
@@ -1081,12 +1251,15 @@ class Environment:
         return [submitted, assessed]
 
     def _settle(self, claim: Claim, time: int) -> list[Event]:
-        """Pay the workers of the completed `claim` for every part, and keep each part
-        declared complete whose true quality is below 1 as a latent defect."""
+        """Pay the workers of the completed `claim` for every part, or the foreman of the firm
+        whose sheet it was on, and keep each part declared complete whose true quality is
+        below 1 as a latent defect, with what each was paid for it."""
         task = claim.task
         shares = {done.part: task.price(done.part, done.declaration) for done in claim.deliveries}
         amount = sum(shares.values())
         events = []
+        if task.sheet is not None:
+            return self._settle_sheet(claim, shares, time)
         for worker in claim.workers:
             balance = self.economy.add(worker, amount)
             partners = [other for other in claim.workers if other != worker]
@@ -1116,6 +1289,137 @@ class Environment:
                 paid = dict.fromkeys(claim.workers, shares[done.part])
                 self.board.latent.append(Defect(**dict(done), task=task, paid=paid))
         return events
+
+    def _settle_sheet(self, claim: Claim, shares: Mapping[int, int], time: int) -> list[Event]:
+        """Pay the foreman of the firm whose sheet `claim`'s task was on the whole price, what
+        its workers would have been paid together, telling the workers too."""
+        task, workers = claim.task, claim.workers
+        foreman, firm = self.firms.foreman_of(task.sheet), self.firms.names[task.sheet]
+        total = len(workers) * sum(shares.values())
+        balance = self.economy.add(foreman, total)
+        money = self._money
+
+        def paid(you: Witness) -> str:
+            both = f"Both parts of {_job(task)}, are in; " if len(workers) > 1 else ""
+            if you.name == foreman:
+                have = money(balance)
+                return f"{both}The clerk paid you, for {firm}, {money(total)}. You now have {have}."
+            return f"{both}The clerk paid {firm} {money(total)} for {_job(task)}."
+
+        events = [
+            self.emit(
+                EventKind.PAYMENT,
+                paid,
+                time=time,
+                audience=[foreman, *workers],
+                payload={
+                    "agent": foreman,
+                    "task_id": task.id,
+                    "amount": total,
+                    "balance": balance,
+                    "workers": list(workers),
+                },
+            )
+        ]
+        for done in claim.deliveries:
+            if done.declaration is Declaration.COMPLETE and done.quality < 1:
+                paid_for = {foreman: len(workers) * shares[done.part]}
+                self.board.latent.append(Defect(**dict(done), task=task, paid=paid_for))
+        return events
+
+    def _wages(self, time: int) -> list[Event]:
+        """Pay each member of staff present at its firm today the firm's wage from the
+        foreman's purse, told to both, and let those who gave notice leave."""
+        present, _ = self.firms.day_end()
+        events = []
+        for agent, place in present:
+            firm = self.firms.establishments[place]
+            if not firm.wage:
+                continue
+            foreman = firm.foreman
+            balances = {
+                agent: self.economy.add(agent, firm.wage),
+                foreman: self.economy.add(foreman, -firm.wage),
+            }
+            name, wage = capital(self.firms.names[place]), self._money(firm.wage)
+            texts = {
+                None: WAGE_TEXT.format(firm=name, who=agent, wage=wage),
+                agent: WAGE_RECEIVED.format(
+                    firm=name, wage=wage, balance=self._money(balances[agent])
+                ),
+                foreman: WAGE_PAID.format(
+                    who=agent, wage=wage, balance=self._money(balances[foreman])
+                ),
+            }
+            events.append(
+                self.emit(
+                    EventKind.WAGE_PAID,
+                    lambda you, texts=texts: texts.get(you.name, texts[None]),
+                    time=time,
+                    audience=[agent, foreman],
+                    payload={
+                        "agent": agent,
+                        "foreman": foreman,
+                        "place": place,
+                        "amount": firm.wage,
+                        "balances": balances,
+                    },
+                )
+            )
+        return events
+
+    def _apply(self, agent: str, action: Apply, **where) -> Event:
+        place = self.firms.by_name(action.firm)
+        self.firms.apply(agent, place)
+        foreman, firm = self.firms.foreman_of(place), self.firms.names[place]
+        return self.emit(
+            EventKind.APPLIED,
+            lambda you: APPLIED.format(who=capital(you(agent)), firm=firm, foreman=you(foreman)),
+            audience=[agent, foreman],
+            actor=agent,
+            payload={"applicant": agent, "place": place, "foreman": foreman},
+            **where,
+        )
+
+    def _hire(self, agent: str, action: Hire, **where) -> Event:
+        who = self._person(action.who)
+        place = self.firms.hire(agent, where["place"], who)
+        firm, wage = self.firms.names[place], self._money(self.firms.establishments[place].wage)
+        return self.emit(
+            EventKind.HIRED,
+            lambda you: HIRED.format(
+                foreman=capital(you(agent)), who=you(who), firm=firm, wage=wage
+            ),
+            audience=[*self.world.occupants(place), who],
+            actor=agent,
+            payload={"foreman": agent, "applicant": who, "place": place},
+            **where,
+        )
+
+    def _dismiss(self, agent: str, action: Dismiss, **where) -> Event:
+        who = self._person(action.who)
+        place = self.firms.dismiss(agent, where["place"], who)
+        firm = self.firms.names[place]
+        return self.emit(
+            EventKind.DISMISSED,
+            lambda you: DISMISSED.format(foreman=capital(you(agent)), who=you(who), firm=firm),
+            audience=[*self.world.occupants(place), who],
+            actor=agent,
+            payload={"foreman": agent, "agent": who, "place": place},
+            **where,
+        )
+
+    def _resign(self, agent: str, **where) -> Event:
+        place = self.firms.resign(agent)
+        foreman, firm = self.firms.foreman_of(place), self.firms.names[place]
+        return self.emit(
+            EventKind.RESIGNED,
+            lambda you: RESIGNED.format(who=capital(you(agent)), firm=firm),
+            audience=[*self.world.occupants(place), foreman],
+            actor=agent,
+            payload={"agent": agent, "place": place, "foreman": foreman},
+            **where,
+        )
 
     def _lapse(self, claim: Claim, time: int) -> Event:
         task = claim.task
@@ -1257,10 +1561,11 @@ class Environment:
         for agent, amount in defect.paid.items():
             balance = self.economy.add(agent, -amount)
             whose = "" if agent == worker else f", which {worker} handed in"
+            paid_to = "you were" if task.sheet is None else f"{self.firms.names[task.sheet]} was"
             events.append(
                 self.emit(
                     EventKind.CLAWBACK,
-                    f"The client took back the {self._money(amount)} you were paid for "
+                    f"The client took back the {self._money(amount)} {paid_to} paid for "
                     f"{name}{whose}. You now have {self._money(balance)}.",
                     time=time,
                     audience=[agent],
@@ -1414,6 +1719,18 @@ def _job(task: Task) -> str:
     """`job 4, "Title"`, or `job 4, "Title" and "Title"` for a job for two; a sentence that
     goes on after it closes it with a comma."""
     return f"{job_name(task.id)}, " + " and ".join(f'"{part.title}"' for part in task.parts)
+
+
+def _places(count: int) -> str:
+    """`a place`, `two places`."""
+    if count == 1:
+        return "a place"
+    return f"{NUMBERS[count - 1] if count <= len(NUMBERS) else count} places"
+
+
+def _firm_names(config: EnvironmentConfig) -> dict[str, str]:
+    """Each establishment's name by place id."""
+    return {place.id: place.name for place in config.places if place.establishment is not None}
 
 
 def _standing(standing: float) -> str:

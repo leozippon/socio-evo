@@ -5,7 +5,7 @@ from collections import Counter
 from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
 from core.environment.conditions import Conditions
-from core.environment.world import Place
+from core.environment.world import Establishment, Place
 from core.interaction import Setting
 from infrastructure.config import StrictModel
 
@@ -45,15 +45,29 @@ class EnvironmentConfig(StrictModel):
 
     @model_validator(mode="after")
     def _unique_places_and_residents(self) -> "EnvironmentConfig":
+        firms = [
+            (place.id, place.establishment)
+            for place in self.places
+            if place.establishment is not None
+        ]
         for what, names in (
             ("place id", [place.id for place in self.places]),
             ("resident", [agent for place in self.places for agent in place.residents]),
+            ("position holder", [p for _, firm in firms for p in (firm.foreman, *firm.staff)]),
         ):
             if repeated := sorted(name for name, count in Counter(names).items() if count > 1):
                 raise ValueError(f"repeated {what}s: {repeated}")
         if strangers := sorted(self.circumstances.keys() - self.homes.keys()):
             raise ValueError(f"circumstances of people who live nowhere: {strangers}")
+        for place, firm in firms:
+            if strangers := sorted({firm.foreman, *firm.staff} - self.homes.keys()):
+                raise ValueError(f"{place} employs people who live nowhere: {strangers}")
         return self
+
+    @property
+    def establishments(self) -> dict[str, "Establishment"]:
+        """The establishment of each work place that is one, by place id."""
+        return {p.id: p.establishment for p in self.places if p.establishment is not None}
 
     @property
     def homes(self) -> dict[str, str]:

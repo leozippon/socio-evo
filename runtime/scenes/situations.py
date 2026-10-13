@@ -18,7 +18,7 @@ is told in the town's currency, and the words of others are quoted.
 
 from collections.abc import Sequence
 
-from core.environment import Environment, PlaceKind
+from core.environment import Environment, PlaceKind, Trade
 from core.interaction import Telling, Witness, capital, clock_of, day_of, job_name, listed
 from runtime.scheduler import Calendar
 
@@ -30,6 +30,13 @@ USES = {
     PlaceKind.WORK: "where you can take jobs from the board and work at a desk",
     PlaceKind.SOCIAL: "where you can sit and talk with whoever else is there",
 }
+FIRM = "a firm doing {work}, with a job sheet of its own for its people and {foreman} as foreman"
+WORK_OF = {
+    Trade.PROGRAMMING: "programming jobs",
+    Trade.QUERIES: "queries",
+    Trade.CALCULATION: "calculations",
+}
+"""The work of a firm of each trade."""
 HOURS = ", open {spans}"
 SPAN = "from {opens} to {closes}"
 UNTIL = ", open until {closes}"
@@ -112,7 +119,9 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
     places = [
         PLACE.format(
             name=capital(place.name),
-            use=USES[place.kind],
+            use=USES[place.kind]
+            if place.establishment is None
+            else FIRM.format(work=WORK_OF[place.trade], foreman=place.establishment.foreman),
             hours=HOURS.format(
                 spans=listed([SPAN.format(opens=o, closes=c) for o, c in place.spans()])
             )
@@ -153,11 +162,13 @@ def next_posting(calendar: Calendar, postings: Sequence[str], time: int) -> int 
 
 
 def planning(env: Environment, agent: str, now: int, posting: int | None) -> str:
-    """The planning moment at `now`; `posting` is when new notices next go up, if known."""
+    """The planning moment at `now`, with the notices `agent` would face at its own board (its
+    firm's job sheet, or the board); `posting` is when new notices next go up, if known."""
     standings = env.esteem_view(agent)
+    at = env.firms.firm_of(agent)
     return PLANNING.format(
         status=env.status_view(agent),
-        board=_board(env, now, posting),
+        board=_board(env, agent, at, now, posting),
         standings="" if standings is None else f"\n\n{standings}",
     )
 
@@ -192,7 +203,7 @@ def work(
         company=COMPANY.format(people=listed(others)) if others else ALONE,
         until=told,
         status=env.status_view(agent),
-        board=_board(env, now, posting),
+        board=_board(env, agent, place, now, posting),
     )
 
 
@@ -260,10 +271,11 @@ def draw(order: Sequence[str], task_id: str) -> Telling:
     return drawn
 
 
-def _board(env: Environment, now: int, posting: int | None) -> str:
-    """The board at `now`; if it is empty and `posting` is known, when new notices go up."""
-    board = env.board_view()
-    if env.board.listings or posting is None:
+def _board(env: Environment, agent: str, place: str | None, now: int, posting: int | None) -> str:
+    """The notices `agent` faces at `place` (its own board, if None) at `now`; if there are
+    none and `posting` is known, when new notices go up."""
+    board = env.board_view(agent) if place is None else env.board_view(agent, place)
+    if env.notices_for(agent, place) or posting is None or not board.startswith("There are no"):
         return board
     told = NO_NOTICES if day_of(posting) == day_of(now) else NO_NOTICES_TOMORROW
     return told.format(board=board, clock=clock_of(posting))

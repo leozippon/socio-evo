@@ -107,6 +107,10 @@ MARKED = "in the clerk's ledger you marked {marks}."
 MARK = "{target} {score} of 5 ({reason})"
 MARKED_NO_ONE = "you marked no one in the clerk's ledger."
 VOTED = "you gave the clerk your answer: {choice}."
+ASKED_FOR_PLACE = "you asked {firm} for its place."
+TOOK_ON = "at your firm you took {who} on."
+DISMISSED = "at your firm you dismissed {who}."
+GAVE_NOTICE = "you gave notice at your firm, to leave at the end of the day."
 DID = "you chose to {deed}{details}."
 JOB_NAMED = "the job you called {reference}"
 
@@ -742,6 +746,10 @@ _DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
     ),
     ActionKind.RATE_PEERS: lambda action, _: _marked(action),
     ActionKind.VOTE: lambda action, _: VOTED.format(choice=action["choice"]),
+    ActionKind.APPLY: lambda action, _: ASKED_FOR_PLACE.format(firm=action["firm"]),
+    ActionKind.HIRE: lambda action, _: TOOK_ON.format(who=action["who"]),
+    ActionKind.DISMISS: lambda action, _: DISMISSED.format(who=action["who"]),
+    ActionKind.RESIGN: lambda action, _: GAVE_NOTICE,
 }
 """How each kind of thing the resident did is told to it, from the action's fields and the
 town's currency."""

@@ -30,17 +30,21 @@ from pydantic import BaseModel, Field, RootModel, ValidationError, create_model,
 from core.interaction.actions import (
     Action,
     ActionKind,
+    Apply,
     CheckWork,
     ClaimTask,
     Decision,
     Declaration,
+    Dismiss,
     Give,
+    Hire,
     Leave,
     PartNumber,
     Pass,
     PeerRating,
     PlanDay,
     RatePeers,
+    Resign,
     Speak,
     SubmitWork,
     Vote,
@@ -62,6 +66,10 @@ HAND_IN = "hand in"
 HAND_OVER = "hand over money"
 MARK = "mark people in the ledger"
 GIVE_ANSWER = "give the clerk your answer"
+ASK_FOR_PLACE = "ask for a place"
+TAKE_ON = "take someone on"
+DISMISS = "dismiss someone"
+GIVE_NOTICE = "give notice"
 
 THOUGHT = "thought"
 DOES = "do"
@@ -83,6 +91,7 @@ OR_DRAFT = '(or "{draft}", to use it as it is)'
 NOTE = "note"
 MARKS = "marks"
 REPLY_GIVEN = "answer"
+AT = "at"
 WHO = "who"
 MARK_GIVEN = "mark"
 BECAUSE = "because"
@@ -359,6 +368,49 @@ class MayVote(_Allowance):
         return [_Form(GIVE_ANSWER, fields, lambda reply: Vote(choice=reply[REPLY_GIVEN]))]
 
 
+class MayApply(_Allowance):
+    """Asking for the place a firm has to fill: the firms with one, each by its name, with
+    the place's id."""
+
+    kind: Literal[ActionKind.APPLY] = ActionKind.APPLY
+    firms: dict[str, str] = Field(min_length=1)
+
+    def forms(self) -> list[_Form]:
+        fields: Fields = {AT: (_one_of(self.firms), None)}
+        return [_Form(ASK_FOR_PLACE, fields, lambda reply: Apply(firm=reply[AT]))]
+
+
+class MayHire(_Allowance):
+    """Taking on, as a foreman at one's firm, one of those who asked for its place."""
+
+    kind: Literal[ActionKind.HIRE] = ActionKind.HIRE
+    applicants: tuple[str, ...] = Field(min_length=1)
+
+    def forms(self) -> list[_Form]:
+        fields: Fields = {WHO: (_one_of(self.applicants), None)}
+        return [_Form(TAKE_ON, fields, lambda reply: Hire(who=reply[WHO]))]
+
+
+class MayDismiss(_Allowance):
+    """Dismissing, as a foreman at one's firm, one of its staff."""
+
+    kind: Literal[ActionKind.DISMISS] = ActionKind.DISMISS
+    staff: tuple[str, ...] = Field(min_length=1)
+
+    def forms(self) -> list[_Form]:
+        fields: Fields = {WHO: (_one_of(self.staff), None)}
+        return [_Form(DISMISS, fields, lambda reply: Dismiss(who=reply[WHO]))]
+
+
+class MayResign(_Allowance):
+    """Giving notice at the firm where one has a place."""
+
+    kind: Literal[ActionKind.RESIGN] = ActionKind.RESIGN
+
+    def forms(self) -> list[_Form]:
+        return [_Form(GIVE_NOTICE, {}, lambda reply: Resign())]
+
+
 Allowance = Annotated[
     MayPlan
     | MaySpeak
@@ -369,7 +421,11 @@ Allowance = Annotated[
     | MaySubmit
     | MayGive
     | MayRate
-    | MayVote,
+    | MayVote
+    | MayApply
+    | MayHire
+    | MayDismiss
+    | MayResign,
     Field(discriminator="kind"),
 ]
 """What a resident can do of one kind at a moment, with the values that are really possible."""

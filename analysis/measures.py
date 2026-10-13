@@ -89,6 +89,24 @@ class AgentDay:
     """Evolution steps applied this night, by `level/trigger` (for example `L0/daily` or
     `L2/self`); only steps that happened are listed. Plain experience commits are not
     steps."""
+    position: str = "freelance"
+    """The agent's position at the end of the day: `foreman` or `staff` of an establishment,
+    else `freelance`. Income by position is `income` grouped by this."""
+    wages_received: int = 0
+    """Wages paid to the agent as a member of staff."""
+    wages_paid: int = 0
+    """Wages the agent paid out as a foreman."""
+    attended: int = 0
+    """1 if the agent, a member of staff, was at its establishment that day and was paid the
+    wage for it, else 0; an establishment whose wage is 0 records no attendance."""
+    applied: int = 0
+    """Times the agent asked for a place at an establishment."""
+    hired: int = 0
+    """Times the agent was taken on."""
+    dismissed: int = 0
+    """Times the agent was dismissed."""
+    resigned: int = 0
+    """Times the agent gave notice."""
 
 
 @dataclass
@@ -153,6 +171,15 @@ class SocietyDay:
     ratings_sum: int = 0
     decisions: dict[str, int] = field(default_factory=dict)
     evolution: dict[str, int] = field(default_factory=dict)
+    wages: int = 0
+    """Wages paid, the sum of `wages_received`."""
+    attendance: int = 0
+    """Staff-days at establishments, the sum of `attended`."""
+    applications: int = 0
+    hires: int = 0
+    dismissals: int = 0
+    notices: int = 0
+    """Times a member of staff gave notice."""
 
 
 @dataclass
@@ -231,6 +258,12 @@ def measure(run: RunData) -> Measures:
     }
     balance = {agent: starting.get(agent, environment["initial_balance"]) for agent in agents}
     earnings = dict.fromkeys(agents, 0)
+    positions = dict.fromkeys(agents, "freelance")
+    for place in environment["places"]:
+        if firm := place.get("establishment"):
+            positions[firm["foreman"]] = "foreman"
+            positions.update(dict.fromkeys(firm["staff"], "staff"))
+    leaving: set[str] = set()
     conditions = dict(environment["conditions"])
     open_tasks: set[str] = set()
     scenes: dict[str, _Scene] = {}
@@ -305,6 +338,25 @@ def measure(run: RunData) -> Measures:
                     balance[payload["agent"]] = payload["balance"]
                 case EventKind.CREDITS_GIVEN:
                     balance.update(payload["balances"])
+                case EventKind.WAGE_PAID:
+                    balance.update(payload["balances"])
+                    today[payload["agent"]].wages_received += payload["amount"]
+                    today[payload["agent"]].attended = 1
+                    today[payload["foreman"]].wages_paid += payload["amount"]
+                case EventKind.APPLIED:
+                    today[payload["applicant"]].applied += 1
+                case EventKind.HIRED:
+                    today[payload["applicant"]].hired += 1
+                    positions[payload["applicant"]] = "staff"
+                case EventKind.DISMISSED:
+                    today[payload["agent"]].dismissed += 1
+                    positions[payload["agent"]] = "freelance"
+                case EventKind.RESIGNED:
+                    today[payload["agent"]].resigned += 1
+                    leaving.add(payload["agent"])
+                case EventKind.DAY_ENDED:
+                    positions.update(dict.fromkeys(leaving, "freelance"))
+                    leaving = set()
                 case EventKind.LIVING_COST:
                     today[payload["agent"]].living_cost += payload["amount"]
                     balance[payload["agent"]] = payload["balance"]
@@ -357,6 +409,7 @@ def measure(run: RunData) -> Measures:
         )
         for row in today.values():
             row.balance = balance[row.agent]
+            row.position = positions[row.agent]
         rows += today.values()
         society.append(_society(day, list(today.values()), town, conditions, open_tasks, earnings))
 
@@ -446,6 +499,12 @@ def _society(
             "utterances",
         ):
             setattr(total, name, getattr(total, name) + getattr(row, name))
+        total.wages += row.wages_received
+        total.attendance += row.attended
+        total.applications += row.applied
+        total.hires += row.hired
+        total.dismissals += row.dismissed
+        total.notices += row.resigned
         total.ratings += row.ratings_given
         total.ratings_sum += row.ratings_given_sum
         total.decisions = dict(Counter(total.decisions) + Counter(row.decisions))

@@ -29,6 +29,10 @@ class ActionKind(StrEnum):
     GIVE = "give"
     RATE_PEERS = "rate_peers"
     VOTE = "vote"
+    APPLY = "apply"
+    HIRE = "hire"
+    DISMISS = "dismiss"
+    RESIGN = "resign"
 
 
 class Declaration(StrEnum):
@@ -138,8 +142,48 @@ class Vote(StrictModel):
     choice: str
 
 
+class Apply(StrictModel):
+    """Ask for the place a firm has to fill, naming the firm as the town calls it."""
+
+    kind: Literal[ActionKind.APPLY] = ActionKind.APPLY
+    firm: str
+
+
+class Hire(StrictModel):
+    """As a foreman at your firm, take on someone who has asked for its place."""
+
+    kind: Literal[ActionKind.HIRE] = ActionKind.HIRE
+    who: str
+
+
+class Dismiss(StrictModel):
+    """As a foreman at your firm, dismiss a member of its staff."""
+
+    kind: Literal[ActionKind.DISMISS] = ActionKind.DISMISS
+    who: str
+
+
+class Resign(StrictModel):
+    """Give notice at the firm where you have a place: you leave its staff at the day's end."""
+
+    kind: Literal[ActionKind.RESIGN] = ActionKind.RESIGN
+
+
 Action = Annotated[
-    PlanDay | Speak | Leave | Pass | ClaimTask | CheckWork | SubmitWork | Give | RatePeers | Vote,
+    PlanDay
+    | Speak
+    | Leave
+    | Pass
+    | ClaimTask
+    | CheckWork
+    | SubmitWork
+    | Give
+    | RatePeers
+    | Vote
+    | Apply
+    | Hire
+    | Dismiss
+    | Resign,
     Field(discriminator="kind"),
 ]
 

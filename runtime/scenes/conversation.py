@@ -16,7 +16,7 @@ from core.interaction import (
     Speak,
 )
 from runtime.scenes import situations
-from runtime.scenes.scene import Scene
+from runtime.scenes.scene import Scene, careers
 
 
 class Conversation(Scene):
@@ -53,9 +53,12 @@ class Conversation(Scene):
         return [self.present[self.next]]
 
     def allowed(self, agent: str) -> tuple[Allowance, ...]:
+        """Talking to and handing money to the others here, asking for a place or giving
+        notice (`careers`), going home, or carrying on quietly."""
         others = tuple(other for other in self.present if other != agent)
         units = self.env.config.setting.currency.units
-        return (MaySpeak(to=others), MayGive(to=others, units=units), MayLeave(), MayPass())
+        company = [MaySpeak(to=others), MayGive(to=others, units=units)]
+        return (*company, *careers(self.env, agent), MayLeave(), MayPass())
 
     def situation(self, agent: str) -> str:
         others = [other for other in self.present if other != agent]

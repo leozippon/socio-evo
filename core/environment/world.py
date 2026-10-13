@@ -1,11 +1,13 @@
-"""Physical truth: the places of the town and where each agent is."""
+"""Physical truth: the places of the town, the establishments among them, and where each agent
+is."""
 
 from collections.abc import Iterable
 from enum import StrEnum
 
-from pydantic import Field, model_validator
+from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from core.environment.rejection import Rejected
+from core.environment.society.work import Trade
 from core.interaction import time_at
 from infrastructure.config import StrictModel
 
@@ -16,10 +18,42 @@ class PlaceKind(StrEnum):
     SOCIAL = "social"
 
 
+class Postings(StrictModel):
+    """How many one-part and two-part tasks a posting puts on an establishment's sheet."""
+
+    one_part: NonNegativeInt
+    two_part: NonNegativeInt
+
+
+class Establishment(StrictModel):
+    """A firm at a work place: its `foreman`, fixed for the run; its `staff` at the start;
+    the `wage` paid to each member of staff at the end of every day it was at the firm; its
+    `positions`, the foreman's included, so that it has a place to fill while they exceed its
+    people; and its own `postings` per posting, the conditions' counts when none are given."""
+
+    foreman: str
+    staff: tuple[str, ...] = ()
+    wage: NonNegativeInt
+    positions: PositiveInt
+    postings: Postings | None = None
+
+    @model_validator(mode="after")
+    def _people_fit_positions(self) -> "Establishment":
+        people = (self.foreman, *self.staff)
+        if len(set(people)) != len(people):
+            raise ValueError(f"the foreman {self.foreman} and staff {list(self.staff)} repeat")
+        if self.positions < len(people):
+            raise ValueError(
+                f"{self.positions} positions do not hold the foreman and {len(self.staff)} staff"
+            )
+        return self
+
+
 class Place(StrictModel):
     """A place in the town at map position (`x`, `y`). A home names the agents living there
     and is always open; another place may be open only during `hours`, spans written
-    `HH:MM-HH:MM` in the order of the day, each from its opening to its closing time."""
+    `HH:MM-HH:MM` in the order of the day, each from its opening to its closing time. A work
+    place may be an `establishment` of a `trade`, with a job sheet of its own."""
 
     id: str = Field(min_length=1)
     kind: PlaceKind
@@ -29,6 +63,8 @@ class Place(StrictModel):
     y: float
     residents: tuple[str, ...] = ()
     hours: tuple[str, ...] = ()
+    trade: Trade | None = None
+    establishment: Establishment | None = None
 
     @model_validator(mode="after")
     def _consistent(self) -> "Place":
@@ -36,6 +72,10 @@ class Place(StrictModel):
             raise ValueError(f"place {self.id!r} has residents but is not a home")
         if self.hours and self.kind == PlaceKind.HOME:
             raise ValueError(f"home {self.id!r} has opening hours")
+        if (self.trade is None) != (self.establishment is None):
+            raise ValueError(f"place {self.id!r} needs a trade and an establishment, or neither")
+        if self.establishment is not None and self.kind != PlaceKind.WORK:
+            raise ValueError(f"establishment {self.id!r} is not a work place")
         for span in self.hours:
             if len(span.split("-")) != 2:
                 raise ValueError(f"opening hours {span!r} of {self.id!r} are not HH:MM-HH:MM")

@@ -29,7 +29,16 @@ from typing import ClassVar
 
 from core.agent import Agent
 from core.environment import Environment
-from core.interaction import Allowance, ClaimTask, Decision, EventKind, Observation, job_id
+from core.interaction import (
+    Allowance,
+    ClaimTask,
+    Decision,
+    EventKind,
+    MayApply,
+    MayResign,
+    Observation,
+    job_id,
+)
 from infrastructure.llm import StructuredOutputError
 from runtime.scenes import situations
 
@@ -96,6 +105,22 @@ class Scene(ABC):
     def lapsed(self, agent: str) -> None:  # noqa: B027 - a hook most scenes leave as it is
         """`agent` did nothing in this turn, for want of a reply. Nothing follows unless a
         scene keeps track of whose turn it is."""
+
+
+def careers(env: Environment, agent: str) -> list[Allowance]:
+    """What `agent` may do about a position wherever it answers a card: ask for the place a
+    firm has to fill, holding none, or give notice at the firm where it has one."""
+    firms = env.firms
+    if (place := firms.firm_of(agent)) is None:
+        open_places = {
+            firms.names[place]: place
+            for place in firms.establishments
+            if firms.vacancies(place) > 0
+        }
+        return [MayApply(firms=open_places)] if open_places else []
+    if agent != firms.foreman_of(place) and agent not in firms.notices:
+        return [MayResign()]
+    return []
 
 
 async def play(

@@ -53,6 +53,18 @@ class EventKind(StrEnum):
     RATING = "rating"
     VOTE = "vote"
     """An answer given to the clerk at a meeting; truth-only."""
+    WAGE_PAID = "wage_paid"
+    """A day's wage paid by a foreman to a member of staff present at the firm that day;
+    private to the two."""
+    APPLIED = "applied"
+    """A resident asked for the place a firm has to fill; private to it and the foreman."""
+    HIRED = "hired"
+    """A foreman took an applicant on; witnessed at the firm and by the applicant."""
+    DISMISSED = "dismissed"
+    """A foreman dismissed a member of staff; witnessed at the firm and by the dismissed."""
+    RESIGNED = "resigned"
+    """A member of staff gave notice, leaving at the day's end; witnessed at the firm and by
+    the foreman."""
     ESTEEM_UPDATED = "esteem_updated"
     ACTION_REJECTED = "action_rejected"
     """An action reality could not honour; private to the actor, nothing changed."""

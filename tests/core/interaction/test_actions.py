@@ -36,6 +36,10 @@ REPLIES: dict[ActionKind, dict[str, Any]] = {
         "ratings": [{"target": "ben", "score": 4, "reason": "Delivered on time."}],
     },
     ActionKind.VOTE: {"kind": "vote", "choice": "no"},
+    ActionKind.APPLY: {"kind": "apply", "firm": "Ostrander & Co."},
+    ActionKind.HIRE: {"kind": "hire", "who": "ben"},
+    ActionKind.DISMISS: {"kind": "dismiss", "who": "ben"},
+    ActionKind.RESIGN: {"kind": "resign"},
 }
 
 

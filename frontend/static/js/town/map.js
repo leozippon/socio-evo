@@ -166,6 +166,9 @@ export class TownMap {
       const status = h("span", { class: "label-status" });
       // Hidden until the first moment places it, so names do not pile up in a corner meanwhile.
       const el = h("div", { class: `place-label ${place.kind}`, "data-place": place.id, style: { visibility: "hidden" } }, name, status);
+      // An establishment: its trade and people, as configured, on the label's tooltip.
+      const firm = place.establishment;
+      if (firm) el.title = `${place.name}: a ${place.trade} firm; foreman ${firm.foreman}; staff ${firm.staff.length ? firm.staff.join(", ") : "none"}; ${firm.positions} positions at a wage of ${firm.wage} a day`;
       this.overlay.append(el);
       this.boxes.labels.set(place.id, { el, name, status, text: "", size: null, compact: null, priority: 0 });
     }

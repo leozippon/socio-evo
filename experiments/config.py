@@ -98,6 +98,12 @@ class ExperimentConfig(StrictModel):
         return self
 
     def _posts_only_its_trades(self, conditions: Conditions) -> None:
+        for place in self.environment.places:
+            if place.trade is not None and place.trade not in self.tasks.banks:
+                raise ValueError(
+                    f"{place.id} is an establishment of {place.trade.value}, of which the town "
+                    f"has no bank (tasks.banks names {[t.value for t in self.tasks.banks]})"
+                )
         if unknown := sorted(conditions.trade_mix.keys() - self.tasks.banks.keys()):
             raise ValueError(
                 f"the trade mix posts {[trade.value for trade in unknown]}, of which the town "

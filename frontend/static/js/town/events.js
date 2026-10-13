@@ -30,7 +30,7 @@ export function involved(event) {
   const p = event.payload ?? {};
   const names = new Set();
   if (event.actor) names.add(event.actor);
-  for (const key of ["agent", "worker", "rater", "target", "to", "from", "partner", "giver", "recipient"]) if (typeof p[key] === "string") names.add(p[key]);
+  for (const key of ["agent", "worker", "rater", "target", "to", "from", "partner", "giver", "recipient", "foreman", "applicant"]) if (typeof p[key] === "string") names.add(p[key]);
   for (const key of ["order", "partners", "participants", "workers"]) if (Array.isArray(p[key])) for (const name of p[key]) if (typeof name === "string") names.add(name);
   return [...names];
 }
@@ -115,6 +115,11 @@ const ICONS = {
   defect_discovered: "alert",
   action_rejected: "cross",
   left: "chevron",
+  wage_paid: "coin",
+  applied: "ask",
+  hired: "check",
+  dismissed: "cross",
+  resigned: "chevron",
 };
 export const iconFor = (event) => (event.kind === "speech" && event.payload?.private ? "lock" : ICONS[event.kind] ?? "spark");
 
