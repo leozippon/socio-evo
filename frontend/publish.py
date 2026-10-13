@@ -53,7 +53,7 @@ from frontend import bundle
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
 
-FORMAT = 2
+FORMAT = 3
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,

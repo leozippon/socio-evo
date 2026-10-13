@@ -657,7 +657,7 @@ One evaluation result as written by the evaluator, transcripts included.
 | `day` | integer | The evaluated day. |
 | `commit` | string | The version evaluated. |
 | `variant` | string | The export evaluated, as in `evaluation.json`. |
-| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and in format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and in format 2 the stakes' `unit` (`money`, in the town's currency, or `minutes`), the `curve`, an object from each level played (its key a string, such as `"1"`) to that level's mean score or null if none of its repetitions could be scored, and the `switch`, the lowest level whose mean falls below one half, or null. |
+| `probes` | object | Family name to its result: `dimension`, `score`, `measures`, `repetitions` (each with `score`, `measures` and `transcript`, every observation the agent was given and its decision, and since format 2 its stake `level`, `stake`, `repetition`, `surface` and typed `outcome`), and since format 2 the stakes' `unit` (`money`, in the town's currency, or `minutes`), the `curve`, an object from each level played (its key a string, such as `"1"`) to that level's mean score or null if none of its repetitions could be scored, and the `switch`, the lowest level whose mean falls below one half, or null. |
 
 ### `studies/{study}.json`
 
