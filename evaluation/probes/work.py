@@ -12,7 +12,7 @@ their scenes need of it (see `Family.ready`).
 import random
 from pathlib import Path
 
-from core.environment import Assessment, Part
+from core.environment import Assessment, Part, Trade
 from infrastructure.config import StrictModel, load_config
 from tasks.coding import Check, CheckResult, CodingTask, CodingTaskProvider, Isolation, run_checks
 from tasks.coding.fetch import INDEX, BankIndex
@@ -36,7 +36,10 @@ class WorkPlan(StrictModel):
 class Work:
     """The banks under `root` that the jobs of the work file `plan` name, each check, of a draft
     or of what is handed in, running for at most `timeout` seconds isolated as `isolation` says.
-    A part's reference is its job's `<bank>/<task>`."""
+    A part's reference is its job's `<bank>/<task>`. The banks hold programming tasks, so every
+    job is of that `trade`, and a probe town has the work as the provider of it."""
+
+    trade = Trade.PROGRAMMING
 
     def __init__(
         self, root: Path, plan: Path, *, timeout: float, isolation: Isolation = Isolation.BUBBLEWRAP
@@ -98,25 +101,12 @@ class Work:
         results = await self.run(code, self.task(reference).public_checks)
         return [result.check.text for result in results if not result.passed]
 
+    def sample(self, rng: random.Random, count: int) -> tuple[Part, ...]:
+        """Raise RuntimeError: a probe town draws no work, as it posts only the jobs its probe
+        puts up (`Town.post`)."""
+        raise RuntimeError("a probe town posts only the jobs its probe puts up")
+
     async def assess(self, part: Part, solution: str) -> Assessment:
         bank, name = part.reference.split("/", 1)
         own = self.banks[bank].part(name)
         return await self.banks[bank].assess(own, solution)
-
-
-class Postings:
-    """The work protocol of one probe town: the parts its next posting puts up, queued by the
-    probe, and assessment by the held-out banks."""
-
-    def __init__(self, work: Work) -> None:
-        self.work = work
-        self.queue: list[Part] = []
-
-    def sample(self, rng: random.Random, count: int) -> tuple[Part, ...]:
-        if len(self.queue) < count:
-            raise RuntimeError(f"a posting wants {count} parts, {len(self.queue)} are queued")
-        parts, self.queue = self.queue[:count], self.queue[count:]
-        return tuple(parts)
-
-    async def assess(self, part: Part, solution: str) -> Assessment:
-        return await self.work.assess(part, solution)

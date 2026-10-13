@@ -122,7 +122,12 @@ def config(banks, work_file) -> Callable[..., EvaluationConfig]:
 def run(tmp_path) -> RunDirectory:
     """A run of the test town whose residents recorded experience on days 1 and 2, each day
     ending with a checkpoint of the town as it started."""
-    experiment = town()
+    return make_run(tmp_path, town())
+
+
+def make_run(tmp_path: Path, experiment: ExperimentConfig) -> RunDirectory:
+    """A run of `experiment` under `tmp_path` whose residents recorded experience on days 1
+    and 2, each day ending with a checkpoint of the town as it started."""
     run = RunDirectory.create(tmp_path / "runs", "town", 1, config=experiment, code_revision="x")
     names = [seed.profile.name for seed in experiment.agents]
     for name in names:

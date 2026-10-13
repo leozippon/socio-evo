@@ -5,17 +5,20 @@ Everything a resident is shown in a probe is composed by the code that composes 
 The environment is `core.environment.Environment`, built from the run's own configuration and
 restored from the evaluated day's checkpoint: its conditions, so the rules of work read as the
 resident knows them, every balance and standing, the jobs taken and the number the next notice
-will carry, with an empty board. At dawn of the probe's first day the client of every job taken
-withdraws it, which the clerk tells its workers, so that nobody holds a job and the resident
-knows why its own is gone. What leads up to a moment is made to happen in that environment
-through its public methods: people move, notices go up, jobs are taken, code is tried and
-handed in, people speak and hand over money, days end and begin; so every percept is an event
-the environment itself recorded and worded, told to each witness in its own words. The moment
-itself is a scene of `runtime.scenes` (a round of a work session, a turn of a conversation, day
-planning) played by `runtime.scenes.play`, which builds the observation as in a run: the
-setting, the situation, the percepts and the answer card. A round of work is told that what
-the resident does takes it to the probe's next moment at the desk, or to the closing, and an
-empty board when the run's notices next go up.
+will carry, with an empty board. Its firms keep their foremen, staff and places to fill, so a
+resident's place at one reads as it knows it. At dawn of the probe's first day the client of
+every job taken withdraws it, which the clerk tells its workers, so that nobody holds a job and
+the resident knows why its own is gone. What leads up to a moment is made to happen in that
+environment through its public methods: people move, the probe's job goes up on the board, jobs
+are taken, code is tried and handed in, people speak and hand over money, days end and begin;
+so every percept is an event the environment itself recorded and worded, told to each witness
+in its own words. The probe's job is the only notice that goes up, on the board of a work place
+that is no firm's, where the probe's work is done; nothing goes up on a firm's job sheet. The
+moment itself is a scene of `runtime.scenes` (a round of a work session, a turn of a
+conversation, day planning) played by `runtime.scenes.play`, which builds the observation as
+in a run: the setting, the situation, the percepts and the answer card. A round of work is
+told that what the resident does takes it to the probe's next moment at the desk, or to the
+closing, and an empty board when the run's notices next go up.
 
 The run's other residents are in town, at home, so that the standings and the names on a card
 are those the resident knows. The strangers live in a lodging added for them, which no text
@@ -55,7 +58,7 @@ from core.interaction import (
     time_at,
 )
 from evaluation.probes.base import Step
-from evaluation.probes.work import Postings, Work
+from evaluation.probes.work import Work
 from infrastructure.storage import read_jsonl
 from runtime.scenes import Conversation, Planning, Scene, WorkSession, play, situations
 from runtime.simulation import SimulationConfig
@@ -75,15 +78,24 @@ class Backdrop:
     state: EnvironmentState
 
     def places(self, kind: PlaceKind) -> list[str]:
-        """The ids of the town's places of `kind`, in the order of its configuration."""
-        return [place.id for place in self.environment.places if place.kind is kind]
+        """The ids of the town's places of `kind` where a probe is played, in the order of its
+        configuration: no firm is among them, since a probe's job goes up on the board."""
+        return [
+            place.id
+            for place in self.environment.places
+            if place.kind is kind and place.establishment is None
+        ]
 
     def require(self, family: str, *, social: int = 1, last_opening: int = 0) -> None:
-        """Raise ValueError unless the town has a work place, `social` social places, and
-        every work place opens last for `last_opening` minutes or more."""
-        works = [place for place in self.environment.places if place.kind is PlaceKind.WORK]
+        """Raise ValueError unless the town has a work place with the board, `social` social
+        places, and every work place with the board opens last for `last_opening` minutes or
+        more."""
+        boards = self.places(PlaceKind.WORK)
+        works = [place for place in self.environment.places if place.id in boards]
         if not works or len(self.places(PlaceKind.SOCIAL)) < social:
-            raise ValueError(f"{family} needs a work place and {social} social place(s)")
+            raise ValueError(
+                f"{family} needs a work place with the board and {social} social place(s)"
+            )
         for place in works:
             if not place.spans():
                 raise ValueError(f"{family} needs work places that close; {place.id} never does")
@@ -158,9 +170,8 @@ class Town:
         )
         self.log = directory / "events.jsonl"
         self.log.touch(exist_ok=False)
-        self.postings = Postings(work)
         self.env = Environment.restore(
-            self.config, restored.model_dump(mode="json"), self.postings, self.log
+            self.config, restored.model_dump(mode="json"), {work.trade: work}, self.log
         )
         self.work = work
         self.backdrop = backdrop
@@ -168,7 +179,6 @@ class Town:
         self.resident = resident.id
         self.strangers = tuple(strangers)
         self.cast = {resident.id: self.recorder, **{name: Stranger() for name in strangers}}
-        self.seed = seed
         self.rng = random.Random(seed)
         self.day = backdrop.day + 1
         dawn = self.dawn(self.day)
@@ -233,19 +243,11 @@ class Town:
         return self._honoured(events)
 
     def post(self, time: int, parts: Sequence[Part], client: Client) -> Task:
-        """Put up the notice of one job of `parts` for `client`, as a posting of the town puts
-        notices up, priced by the town's conditions; its part rewards are what the posting
-        pays before the town's multiplier and premium."""
-        conditions = self.env.conditions
-        changes = {
-            "one_part_tasks": int(len(parts) == 1),
-            "two_part_tasks": int(len(parts) == 2),
-            "trusting_client_prob": float(client is Client.TRUSTING),
-        }
-        self.env.change_conditions(changes, time=time)
-        self.postings.queue = list(parts)
-        [posted] = self.env.post(time, self.seed)
-        self.env.change_conditions({key: getattr(conditions, key) for key in changes}, time=time)
+        """Put up on the board the notice of one job of the work's trade made of `parts` for
+        `client`, as the town puts up any notice, priced by its conditions; its part rewards
+        are what the notice pays before the town's multiplier and premium. Nothing else goes
+        up, on the board or on a firm's job sheet."""
+        posted = self.env.post_task(time, self.work.trade, parts, client)
         return Task.model_validate(posted.payload["task"])
 
     def reward(self, amount: int, size: int = 1) -> int:

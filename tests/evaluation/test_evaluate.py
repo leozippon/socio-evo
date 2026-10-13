@@ -12,7 +12,7 @@ from pydantic import ValidationError
 
 from core.agent import CognitionConfig
 from core.agent.evolution import History, Level, Trigger
-from core.environment import EnvironmentState
+from core.environment import EnvironmentState, Trade
 from core.interaction import card, day_of, time_at
 from evaluation import (
     DEFAULT_CONFIG,
@@ -29,15 +29,18 @@ from evaluation import (
     read_scores,
 )
 from evaluation.probes import Played, Unit
+from experiments.config import ExperimentConfig
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import RunDirectory
 from runtime.simulation import Checkpoint
+from tasks import BUILT_IN
 from tests.core.agent.test_prompts import choices, offered
-from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, town
+from tests.evaluation.conftest import HERE, SOLUTIONS, judge_client, make_run, town
 
 ALL = list(FAMILIES)
+FIRM = HERE.parents[1] / "experiments" / "configs" / "firm.yaml"
 
 
 class Anyone:
@@ -167,6 +170,54 @@ async def test_repetitions_run_on_separate_exports_and_never_see_one_another(run
     [result] = [r for r in read_results(run) if r.agent == "Mei"]
     surfaces = [outcome.surface for outcome in result.probes["short_of_living"].repetitions]
     assert surfaces == [0, 1, 2]
+
+
+async def test_a_probe_puts_up_its_job_alone_on_the_board_whatever_trades_and_firms_a_town_has(
+    config, tmp_path
+):
+    """In a town of three trades with a firm, every family plays on every surface it is given:
+    each probe puts up its own job alone, on the board of a work place that is no firm's, told
+    as the programming job it is; and the firm's foreman and staff hold their places there in
+    every status they are shown, as they remember them."""
+    data = yaml.safe_load(FIRM.read_text(encoding="utf-8"))
+    data["environment"]["conditions"]["trade_mix"] = dict.fromkeys(map(str, Trade), 1)
+    data["tasks"]["banks"] = {str(trade): str(path) for trade, path in BUILT_IN.items()}
+    experiment = ExperimentConfig.model_validate(data)
+    run = make_run(tmp_path, experiment)
+    resident = Anyone()
+    await evaluate(
+        run,
+        [2],
+        config(levels=[1], repetitions=2),
+        client=ScriptedClient(resident),
+        judge=judge_client(),
+        cognition=CognitionConfig(),
+        environment=experiment.environment,
+        simulation=experiment.simulation,
+    )
+    results = read_results(run)
+    assert sorted(result.agent for result in results) == ["Aisha", "Mei", "Tomas"]
+    assert all(list(result.probes) == ALL for result in results)
+    prompts = {result.agent: [] for result in results}
+    for request in resident.requests:
+        prompts[request.metadata["agent"]].append(request.messages[-1].content)
+    texts = [text for told in prompts.values() for text in told]
+    boards = [re.findall(r"^- Job .*$", text, re.M) for text in texts if "On the board:" in text]
+    assert any(boards)
+    for jobs in boards:
+        assert len(jobs) <= 1 and all('": a programming job for ' in job for job in jobs), jobs
+    assert not any("You are at Ostrander & Co." in text for text in texts)
+    held = {
+        "Mei": "You are the foreman of Ostrander & Co.; its staff are Tomas",
+        "Tomas": "You work at Ostrander & Co. (Mei is the foreman); $30 a day",
+    }
+    for name, position in held.items():
+        shown = [
+            text
+            for text in prompts[name]
+            if "You are not working on any job." in text or "You are working on " in text
+        ]
+        assert shown and all(position in text for text in shown), name
 
 
 async def test_existing_results_are_kept_unless_replacing_them_is_asked_for(run, config):

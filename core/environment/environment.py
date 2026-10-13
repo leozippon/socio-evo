@@ -31,6 +31,7 @@ from core.environment.society import (
     Firms,
     Listing,
     Offer,
+    Part,
     Price,
     Reputation,
     Task,
@@ -549,15 +550,9 @@ class Environment:
         (and the sheet's place), so that it is the same whatever else is posted or has
         happened. Raises KeyError for a trade the town has no provider of."""
         places, locations = self.world.places, self.world.locations
-        at_board = [
-            agent
-            for agent in self.agents
-            if places[locations[agent]].kind is PlaceKind.WORK
-            and locations[agent] not in self.firms.establishments
-        ]
         conditions = self.conditions
         counts = (conditions.one_part_tasks, conditions.two_part_tasks)
-        events = self._post(time, seed, None, counts, None, at_board)
+        events = self._post(time, seed, None, counts, None, self._at_board())
         for place, firm in self.firms.establishments.items():
             own = firm.postings
             counts = counts if own is None else (own.one_part, own.two_part)
@@ -565,6 +560,26 @@ class Environment:
             trade = places[place].trade
             events += self._post(time, f"{seed}:{place}", place, counts, trade, people)
         return events
+
+    def post_task(self, time: int, trade: Trade, parts: Sequence[Part], client: Client) -> Event:
+        """Put up on the board one task of `trade` made of `parts` for `client`, and nothing
+        else: priced by the conditions now, worded as each task `post` draws, and seen by
+        those at a work place that is not an establishment. For whoever composes the town and
+        chooses its tasks, such as the probe town. Raises KeyError for a trade the town has no
+        provider of, which could not assess the work."""
+        if trade not in self.providers:
+            raise KeyError(f"the town has no provider of {trade.value} work")
+        return self._put_up(time, trade, None, tuple(parts), client, self._at_board())
+
+    def _at_board(self) -> list[str]:
+        """The agents at a work place that is not an establishment, who see the board."""
+        places, locations = self.world.places, self.world.locations
+        return [
+            agent
+            for agent in self.agents
+            if places[locations[agent]].kind is PlaceKind.WORK
+            and locations[agent] not in self.firms.establishments
+        ]
 
     def _post(
         self,
@@ -578,7 +593,6 @@ class Environment:
         """Post `counts` one-part and two-part tasks of `trade` (drawn by the mix if None) on
         the board or the job `sheet`, for `audience` to see."""
         mix = self.conditions.trade_mix
-        where = "the board" if sheet is None else f"{self.firms.names[sheet]}'s job sheet"
         events = []
         for size, count in zip((1, 2), counts, strict=True):
             for index in range(count):
@@ -591,25 +605,38 @@ class Environment:
                     [drawn] = rng.choices(list(mix), weights=list(mix.values()))
                 parts = self.providers[drawn].sample(rng, size)
                 trusting = rng.random() < self.conditions.trusting_client_prob
-                task = Task(
-                    id=self.board.new_id(),
-                    trade=drawn,
-                    sheet=sheet,
-                    parts=parts,
-                    client=Client.TRUSTING if trusting else Client.CHECKING,
-                    prices=tuple(self._price(part.reward, size) for part in parts),
-                )
-                self.board.post(task, time)
-                events.append(
-                    self.emit(
-                        EventKind.TASK_POSTED,
-                        f"A new notice on {where}: {self._offer(task)}.",
-                        time=time,
-                        audience=audience,
-                        payload={"task": task.model_dump(mode="json")},
-                    )
-                )
+                client = Client.TRUSTING if trusting else Client.CHECKING
+                events.append(self._put_up(time, drawn, sheet, parts, client, audience))
         return events
+
+    def _put_up(
+        self,
+        time: int,
+        trade: Trade,
+        sheet: str | None,
+        parts: tuple[Part, ...],
+        client: Client,
+        audience: Sequence[str],
+    ) -> Event:
+        """Put up the notice of a task of `trade` made of `parts` for `client` on the board
+        or the job `sheet`, priced by the conditions now, for `audience` to see."""
+        task = Task(
+            id=self.board.new_id(),
+            trade=trade,
+            sheet=sheet,
+            parts=parts,
+            client=client,
+            prices=tuple(self._price(part.reward, len(parts)) for part in parts),
+        )
+        self.board.post(task, time)
+        where = "the board" if sheet is None else f"{self.firms.names[sheet]}'s job sheet"
+        return self.emit(
+            EventKind.TASK_POSTED,
+            f"A new notice on {where}: {self._offer(task)}.",
+            time=time,
+            audience=audience,
+            payload={"task": task.model_dump(mode="json")},
+        )
 
     def pair_applicants(self, time: int, rng: random.Random) -> list[Event]:
         """Pair the open applications for two-person tasks at random with `rng` (see

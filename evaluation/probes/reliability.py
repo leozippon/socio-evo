@@ -181,7 +181,7 @@ class JointPart(Family):
             "plan": plan,
             "intention": town.steps[-1].decision.action.intention,
         }
-        works = set(town.backdrop.places(PlaceKind.WORK))
+        works = {place.id for place in town.config.places if place.kind is PlaceKind.WORK}
         if works & set(plan.values()):
             return Played(KEPT, 1.0, measures)
         return Played(TOOK_OFFER if social in plan.values() else ELSEWHERE, 0.0, measures)
