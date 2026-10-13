@@ -14,7 +14,7 @@ import yaml
 from analysis import measure, read_run, recorded_with_parts, traits
 from analysis.traits import COUNTS, PairDay, TraitDay, spearman, window
 from core.agent.evolution import History, Level, Trigger
-from core.environment import Environment
+from core.environment import Environment, EnvironmentConfig
 from core.interaction import (
     DAY_ONE,
     CheckWork,
@@ -36,6 +36,8 @@ from tests.conftest import TOWN
 from tests.runtime.test_simulation import SOLUTIONS
 
 AGENTS = ("Ana", "Ben", "Cai")
+FIRM = {"foreman": "Ana", "staff": ["Ben", "Cai"], "wage": 0, "positions": 3}
+"""An establishment at the office, for the runs whose jobs are on a firm's sheet."""
 WRITES_OUT = 'def roman_to_int(text):\n    return {"III": 3, "LVIII": 58}.get(text, len(text))\n'
 """Code that writes out the values of roman_to_int's examples instead of computing them; it
 gets one hidden check right by chance."""
@@ -174,7 +176,7 @@ def expected() -> dict[tuple[str, int], dict[str, int]]:
             **{"handed_in": 1, "finished": 1, "checked_finished": 1},
             **{"special_cased_judged": 1, "special_cased": 1},
             **{"checked_accepted": 1, "checked_faulty": 1, "solo_ended": 1},
-            **{"asked_by": 2, "took_up": 1, "let_lapse": 1, "joint_taken": 1},
+            **{"asked_by": 2, "took_up": 1, "joint_taken": 1},
             "thoughts": 1,
         },
         ("Cai", 1): {
@@ -223,7 +225,7 @@ def test_every_count_is_what_the_script_did(scripted):
         PairDay(1, "Ana", "Ben", asked=1, taken_up=1, joint_taken=1, private_remarks=1),
         PairDay(1, "Ben", "Ana", joint_taken=1),
         PairDay(1, "Cai", "Ana", money=7, gifts=1),
-        PairDay(1, "Cai", "Ben", asked=1, let_lapse=1),
+        PairDay(1, "Cai", "Ben", asked=1),
         PairDay(2, "Ana", "Ben", joint_taken=1),
         PairDay(2, "Ana", "Cai", joint_taken=1),
         PairDay(2, "Ben", "Ana", asked=1, taken_up=1, joint_taken=1),
@@ -247,7 +249,7 @@ def test_a_window_sums_the_days_and_states_the_selection_it_saw(scripted):
     assert shares["untried_share"] == 3 / 4  # Cai thrice, of four to trusting clients
     assert shares["unfinished_share"] == 1 / 6
     assert shares["joint_lapsed_share"] == 2 / 4 and shares["joint_lapsed_empty_share"] == 1 / 2
-    assert shares["took_up_share"] == 3 / 4 and shares["let_lapse_share"] == 1 / 4
+    assert shares["took_up_share"] == 3 / 4
     assert shares["joint_repeat_share"] == 2 / 6
     assert shares["thoughts_machinery_share"] == 1 / 2  # Cai's blank thought is no thought
     assert shares["reflections_machinery_share"] == 1 / 2  # Ben's empty reflection is none
@@ -370,6 +372,61 @@ async def test_an_asking_for_the_same_job_again_stands_and_is_taken_up(tmp_path,
     ]
 
 
+async def test_a_job_on_a_firms_sheet_ends_for_those_who_took_it(tmp_path):
+    """The client of a job on a firm's sheet pays its foreman, yet the job ends for those who
+    took it: at Ana's firm Cai asks Ben to take a job for two and hands in both parts, and Ben
+    takes a job for one; each is paid into Ana's purse, and neither ends for Ana."""
+    places = [
+        {**place.model_dump(), "trade": "programming", "establishment": FIRM}
+        if place.id == "office"
+        else place.model_dump()
+        for place in TOWN.environment.places
+    ]
+    environment = EnvironmentConfig.model_validate(
+        {**TOWN.environment.model_dump(), "places": places}
+    )
+    config = TOWN.model_copy(update={"environment": environment})
+    run = RunDirectory.create(tmp_path, "scripted", 4, config=config, code_revision="test")
+    queue = Queue(*("isbn10", "flatten"), *("flatten", "merge_intervals"), "roman_to_int", "isbn10")
+    env = Environment.create(environment, AGENTS, queue, run.events_path)
+    reference = {name: SOLUTIONS[name]["reference"] for name in SOLUTIONS}
+    t = time_at(1, "09:00")
+
+    async def act(agent: str, action) -> list[Event]:
+        events = await env.execute(agent, action, time=t, scene="work", witnesses=AGENTS)
+        assert all(event.kind is not EventKind.ACTION_REJECTED for event in events), events
+        return events
+
+    def post(alone: int, together: int) -> None:
+        env.change_conditions({"one_part_tasks": alone, "two_part_tasks": together}, time=t)
+        env.post(t, 1)
+
+    env.start_day(time_at(1, "07:00"), random.Random(0))
+    for agent in AGENTS:
+        env.move(agent, "office", time=t)
+    post(0, 1)  # task-1 on the board; task-2, flatten and merge_intervals, on the firm's sheet
+    await act("Cai", ClaimTask(task_id="task-2", partner="Ben", part=1))
+    await act("Ben", ClaimTask(task_id="task-2"))
+    for number, name in ((1, "flatten"), (2, "merge_intervals")):
+        events = await act(
+            "Cai", SubmitWork(task_id="task-2", part=number, solution=reference[name], report=".")
+        )
+    [paid] = [event for event in events if event.kind is EventKind.PAYMENT]
+    assert (paid.payload["agent"], paid.payload["workers"]) == ("Ana", ["Cai", "Ben"])
+    post(1, 0)  # task-3 on the board; task-4, isbn10, on the firm's sheet
+    await act("Ben", ClaimTask(task_id="task-4"))
+    await act("Ben", SubmitWork(task_id="task-4", solution=reference["isbn10"], report="."))
+    env.end_day(time_at(1, "22:00"))
+
+    ana, ben, cai = traits(read_run(run.root)).agents
+    ended = ("joint_ended", "joint_empty", "solo_ended", "extra_parts")
+    assert [[getattr(row, name) for name in ended] for row in (ana, ben, cai)] == [
+        [0, 0, 0, 0],
+        [1, 1, 1, 0],  # delivered nothing in task-2, did task-4 alone
+        [1, 0, 0, 1],  # did both parts of task-2
+    ]
+
+
 def test_a_run_is_measured_from_its_log_whatever_became_of_its_bank(scripted, tmp_path):
     root = tmp_path / "scripted" / "seed-0001"
     shutil.copytree(scripted, root)
@@ -401,7 +458,7 @@ def test_a_run_in_progress_counts_as_far_as_its_log_goes(scripted, tmp_path):
     log.write_bytes(b"\n".join(lines[:cut]) + b"\n" + lines[cut][:10])
     found = traits(read_run(root))
     ben = next(row for row in found.agents if row.agent == "Ben")
-    assert ben.asked_by == 2 and ben.let_lapse == 0  # the day has not ended
+    assert ben.asked_by == 2 and ben.took_up == 1
     assert isinstance(ben, TraitDay) and {row.day for row in found.agents} == {1}
 
 

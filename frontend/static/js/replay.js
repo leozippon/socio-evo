@@ -23,7 +23,7 @@ export function initialState(world) {
     open: {}, // task id -> time it (re)appeared on the board
     claims: {}, // task id -> {workers, actor, due_day, time, parts: [{worker, declaration, time} | null]}
     offers: {}, // agent -> its open bid for a job for two: {task_id, partner (null: name put down), time}
-    askings: [], // the askings made today or still open at its start, each {seq, time, day, asker, partner, task_id, fate, at, atDay, nights}
+    askings: [], // the askings made today or still open at its start, each {seq, time, day, asker, partner, task_id, fate, at, atDay}
     scenes: {}, // scene id -> {kind, place, participants, present, start}
     said: {}, // agent -> seq of its latest speech
     decided: {}, // agent -> seq of its latest decision
@@ -33,11 +33,10 @@ export function initialState(world) {
 }
 
 /**
- * What became of an asking: `open` while it stands; `taken up` when the two took the job
- * together; `withdrawn` when the one who asked asked about another job, put their name down or
- * took a job; `ended` when the job went to others or came down; `lapsed` when the day ended
- * with it still open, in logs recorded while askings lapsed at night. An asking that stands
- * overnight records each such night in `nights` (frontend/README.md, traits.json `let_lapse`).
+ * What became of an asking: `open` while it stands, overnight too; `taken up` when the two took
+ * the job together; `withdrawn` when the one who asked asked about another job, put their name
+ * down or took a job; `ended` when the job went to others or came down; `lapsed` when the day
+ * ended with it still open, in logs recorded while askings lapsed at night.
  */
 function settle(asking, fate, event) {
   asking.fate = fate;
@@ -57,7 +56,7 @@ function bid(state, event, partner) {
     if (asking) settle(asking, "withdrawn", event);
   }
   state.offers[actor] = { task_id: event.payload.task_id, partner, time: event.time };
-  if (partner) state.askings.push({ seq: event.seq, time: event.time, day: dayOf(event.time), asker: actor, partner, task_id: event.payload.task_id, fate: "open", at: null, atDay: null, nights: [] });
+  if (partner) state.askings.push({ seq: event.seq, time: event.time, day: dayOf(event.time), asker: actor, partner, task_id: event.payload.task_id, fate: "open", at: null, atDay: null });
 }
 
 /** Drop the open bids that `drop(agent, offer)` names, settling their askings with `fate(offer)`. */
@@ -94,9 +93,6 @@ export function apply(state, event) {
       state.askings = state.askings.filter((asking) => asking.fate === "open");
       break;
     case "day_ended":
-      // Open askings stand overnight, each night counted; in logs recorded while they lapsed at
-      // night, an `offer_ended` has lapsed them before this.
-      for (const asking of state.askings) if (asking.fate === "open") asking.nights.push(state.day);
       state.ended = true;
       break;
     case "offer_ended": {
@@ -107,7 +103,6 @@ export function apply(state, event) {
       delete state.offers[p.agent];
       const asking = state.askings.findLast((found) => found.asker === p.agent && found.fate === "open");
       if (!asking) break;
-      if (p.cause === "lapsed") asking.nights.push(state.day);
       settle(asking, FATES[p.cause] ?? "ended", event);
       break;
     }

@@ -483,7 +483,6 @@ A count belongs to the day of its event: a job to the day it ended (paid, or lap
 | `pairs[].target` | string | The other. |
 | `pairs[].asked` | integer | Askings `source` made to `target`: a job for two proposed to them by name. |
 | `pairs[].taken_up` | integer | Of those, the ones `target` took up. |
-| `pairs[].let_lapse` | integer | Of those, the ones still open when the day ended. |
 | `pairs[].joint_taken` | integer | Jobs for two the two took together, however they came to. Symmetric. |
 | `pairs[].money` | integer | Money `source` handed `target`. |
 | `pairs[].gifts` | integer | Times `source` handed `target` money. |
@@ -543,7 +542,6 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `asked` | integer | Askings the resident made: a job for two proposed to a named neighbour. |
 | `asked_by` | integer | Askings the resident received. |
 | `took_up` | integer | Askings received that the resident took up, taking the job with the one who asked. |
-| `let_lapse` | integer | Askings received still open when a day ended: neither taken up nor withdrawn by the one who asked, with the job still on the board; an asking that stands several nights counts on each. The others were taken up, withdrawn (the asker asked about another job or took one), or ended when the job went to others or came down. |
 | `put_down` | integer | Times the resident put its name down for a job for two, for the clerk to pair by lot. |
 | `paired` | integer | Jobs for two the clerk gave the resident by lot. |
 | `joint_taken` | integer | Jobs for two the resident took, by asking, by being asked or by lot. |
@@ -570,7 +568,6 @@ The three statistics of selection describe one town; they are not tests. With ei
 | `joint_lapsed_empty_share` | number or null | `joint_lapsed_empty / joint_lapsed`. |
 | `solo_lapsed_share` | number or null | `solo_lapsed / solo_ended`. |
 | `took_up_share` | number or null | `took_up / asked_by`. |
-| `let_lapse_share` | number or null | `let_lapse / asked_by`. |
 | `joint_repeat_share` | number or null | `joint_repeat / joint_taken`. |
 | `thoughts_machinery_share` | number or null | `thoughts_machinery / thoughts`. |
 | `diaries_machinery_share` | number or null | `diaries_machinery / diaries`. |

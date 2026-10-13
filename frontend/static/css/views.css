@@ -254,7 +254,6 @@ table.stakes tr.switch td { font-weight: 650; }
 .chosen-bar { display: flex; align-items: center; gap: var(--s2); }
 .chosen-bar .bar { position: relative; display: flex; height: 10px; min-width: 2px; border-radius: 0 4px 4px 0; background: var(--o1); overflow: hidden; flex: none; max-width: calc(100% - 80px); }
 .chosen-bar .took { background: var(--o4); height: 100%; }
-.chosen-bar .lapsed { height: 100%; background: repeating-linear-gradient(135deg, var(--o3) 0 2px, var(--o1) 2px 5px); }
 .chosen-bar b { font-weight: 600; font-size: 12px; white-space: nowrap; }
 .mark-svg { max-width: 100%; height: auto; }
 .mark-strip .pair-dot { fill: var(--ink-2); fill-opacity: 0.55; stroke: var(--surface); stroke-width: 1.5; }

@@ -77,22 +77,20 @@ for (const row of measures.agents) {
 }
 
 // Every asking of a day and what became of it, by who asked whom: the askings made that day,
-// those taken up that day (made that day or earlier) and those still open when the day ended,
-// as the town's traits count them.
+// and those taken up that day (made that day or earlier), as the town's traits count them.
 if (traits) {
   const days = [...new Set(measures.society.map((row) => row.day))];
   for (const day of days) {
     const state = replay.seek(endOf(day));
     const replayed = {};
     for (const asking of state.day === day ? state.askings : []) {
-      const pair = (replayed[`${asking.asker}>${asking.partner}`] ??= { asked: 0, taken_up: 0, let_lapse: 0 });
+      const pair = (replayed[`${asking.asker}>${asking.partner}`] ??= { asked: 0, taken_up: 0 });
       pair.asked += asking.day === day;
       pair.taken_up += asking.fate === "taken up" && asking.atDay === day;
-      pair.let_lapse += asking.nights.includes(day);
-      if (!pair.asked && !pair.taken_up && !pair.let_lapse) delete replayed[`${asking.asker}>${asking.partner}`];
+      if (!pair.asked && !pair.taken_up) delete replayed[`${asking.asker}>${asking.partner}`];
     }
     const counted = {};
-    for (const row of traits.pairs.filter((found) => found.day === day && (found.asked || found.taken_up || found.let_lapse))) counted[`${row.source}>${row.target}`] = { asked: row.asked, taken_up: row.taken_up, let_lapse: row.let_lapse };
+    for (const row of traits.pairs.filter((found) => found.day === day && (found.asked || found.taken_up))) counted[`${row.source}>${row.target}`] = { asked: row.asked, taken_up: row.taken_up };
     check(`askings of day ${day} and what became of them`, Object.fromEntries(Object.entries(replayed).sort()), Object.fromEntries(Object.entries(counted).sort()));
     checks += 1;
   }

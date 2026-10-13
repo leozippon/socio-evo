@@ -16,7 +16,7 @@ const MEASURES = {
   money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", from: "pairs", field: "money", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
-const FIELDS = { graph: ["minutes", "addressed", "ratings", "ratings_sum"], pairs: ["asked", "taken_up", "let_lapse", "joint_taken", "money", "gifts", "private_remarks"] };
+const FIELDS = { graph: ["minutes", "addressed", "ratings", "ratings_sum"], pairs: ["asked", "taken_up", "joint_taken", "money", "gifts", "private_remarks"] };
 
 export class TiesPanel {
   constructor({ cast, onSelect }) {

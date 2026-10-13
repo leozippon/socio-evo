@@ -126,13 +126,10 @@ class TraitDay:
     asked_by: int = 0
     """Askings the resident received."""
     took_up: int = 0
-    """Askings received that the resident took up, taking the job with the one who asked."""
-    let_lapse: int = 0
-    """Askings received still open when a day ended: neither taken up nor withdrawn by the
-    one who asked, and the job still on the board; an asking that stands several nights
-    counts on each (in logs recorded while askings lapsed at night, the night it lapsed).
-    The rest of the askings received were taken up, withdrawn, or ended when the job went to
-    others or came down."""
+    """Askings received that the resident took up, taking the job with the one who asked. An
+    asking stands until it is taken up, its maker takes or asks about another job, or the job
+    goes to others or comes down, so how the rest ended is not the resident's doing alone and
+    is not counted apart."""
     put_down: int = 0
     """Times the resident put its name down for a job for two, for the clerk to pair by lot."""
     paired: int = 0
@@ -178,7 +175,6 @@ SHARES: dict[str, tuple[str, str]] = {
     "joint_lapsed_empty_share": ("joint_lapsed_empty", "joint_lapsed"),
     "solo_lapsed_share": ("solo_lapsed", "solo_ended"),
     "took_up_share": ("took_up", "asked_by"),
-    "let_lapse_share": ("let_lapse", "asked_by"),
     "joint_repeat_share": ("joint_repeat", "joint_taken"),
     "thoughts_machinery_share": ("thoughts_machinery", "thoughts"),
     "diaries_machinery_share": ("diaries_machinery", "diaries"),
@@ -201,8 +197,6 @@ class PairDay:
     """Askings `source` made to `target`."""
     taken_up: int = 0
     """Of those, the ones `target` took up."""
-    let_lapse: int = 0
-    """Of those, the ones still open when the day ended."""
     joint_taken: int = 0
     """Jobs for two the two took together. Symmetric."""
     money: int = 0
@@ -328,17 +322,9 @@ def traits(run: RunData) -> Traits:
             case EventKind.TASK_RETIRED:
                 offers = {a: offer for a, offer in offers.items() if offer[0] != payload["task_id"]}
             case EventKind.OFFER_ENDED if payload["cause"] != "replaced" and (
-                offers.get(maker := payload["agent"], (None,))[0] == payload["task_id"]
+                offers.get(payload["agent"], (None,))[0] == payload["task_id"]
             ):  # a replaced offer is told ended after the one that replaced it, already held
-                _, partner = offers.pop(maker)
-                if payload["cause"] == "lapsed" and partner is not None:
-                    rows[partner, day].let_lapse += 1
-                    pair(day, maker, partner).let_lapse += 1
-            case EventKind.DAY_ENDED:
-                for agent, (_, partner) in offers.items():
-                    if partner is not None:
-                        rows[partner, day].let_lapse += 1
-                        pair(day, agent, partner).let_lapse += 1
+                del offers[payload["agent"]]
             case EventKind.WORK_SUBMITTED:
                 row, complete = rows[actor, day], payload["declaration"] == "complete"
                 row.handed_in += 1
@@ -365,8 +351,9 @@ def traits(run: RunData) -> Traits:
                         row.checked_accepted += 1
                         row.checked_quality += payload["quality"]
                         row.checked_faulty += payload["quality"] < 1
-            case EventKind.PAYMENT:
-                end(payload["agent"], payload["task_id"], False, day)
+            case EventKind.PAYMENT:  # to each worker, or once to the foreman of a firm's job
+                for worker in payload.get("workers", [payload["agent"]]):
+                    end(worker, payload["task_id"], False, day)
             case EventKind.TASK_EXPIRED:
                 claims[payload["task_id"]] = (
                     payload["workers"],

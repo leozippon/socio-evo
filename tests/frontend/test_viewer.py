@@ -20,7 +20,7 @@ PLAN_CHECK = Path(__file__).with_name("plan_check.mjs")
 EVALUATION_CHECK = Path(__file__).with_name("evaluation_check.mjs")
 STUDY = Path(__file__).parents[2] / "experiments" / "studies" / "trust.yaml"
 TRUST_ARMS = ("selection-scarce", "assignment-scarce")
-"""Arms of the study whose four-day dry runs hold askings let lapse and withdrawn, names put down
+"""Arms of the study whose four-day dry runs hold askings taken up and withdrawn, names put down
 and pairs by lot, crowns handed over, jobs that lapsed, and a job for two paid whose fault is
 then clawed back from both its workers."""
 
@@ -68,7 +68,7 @@ def test_the_check_fails_when_an_asking_is_counted_otherwise(trust, tmp_path):
     path = run_dir / run["traits"].split("?")[0]
     traits = json.loads(path.read_bytes())
     row = next(row for row in traits["pairs"] if row["asked"])
-    row["let_lapse"] += 1
+    row["taken_up"] += 1
     path.write_text(json.dumps(traits))
     code, summary = replay_check(site, trust_run("selection-scarce"))
     assert code == 1
