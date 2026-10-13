@@ -42,7 +42,8 @@ asyncio_default_fixture_loop_scope = "function"
 [tool.ruff]
 line-length = 100
 target-version = "py311"
-extend-exclude = ["external_references"]
+# ops/webui holds the host deployment scripts shared with another service and keeps their style.
+extend-exclude = ["external_references", "ops/webui"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
