@@ -70,6 +70,8 @@ A work place may be an establishment: a firm with a trade, a foreman and positio
 
 Collaborative work remains jobs for two, now between colleagues as well as between freelancers; parts beyond two are not added until a dilemma needs them.
 
+Three mechanics of work change with this wave, after the first seven-day run of the town showed coordination slips being read as character: an asking names the part the asker will do and stands until the job's deadline or until the asker takes another job, instead of lapsing every night; the notice of a taken job for two says which part each partner took, either still free to deliver either; and a hand-in may name the draft on the desk instead of re-typing it, with the desk showing the whole draft. The same run showed standing consumed nowhere, as the first town's review had found of esteem, so standing gains one use: a condition names the standing below which a client who would pay on a worker's word insists on trying the examples instead, so that trust must be earned before it can be abused. At night, the review of the day states what is still on the resident's desk, since diaries were found recording hand-ins that never happened.
+
 ## 4. Meetings: interventions that provoke disagreement
 
 An intervention may call a meeting: a question with teeth, put to whoever comes.
@@ -111,6 +113,8 @@ What a person has when deciding, and the resident does not, is mostly what the w
 ## 7. The city, and more residents
 
 A second shipped configuration, `city.yaml`: sixteen residents in a river port, dollars, three establishments of the three trades beside the labour exchange, three social places with hours, meetings on two days, and residents in different circumstances including four freelancers. It is the configuration the exploratory modes are tried on; `town.yaml` and the trust study stay as the controlled design, with crowns replaced by dollars since no run has yet frozen them.
+
+The seven-day run also showed that with this model the client's examples are nearly as strong as the hidden checks (two faulty parts among fifty-two accepted) and that at a daily discovery chance of 0.1 nothing surfaces within a week. Two settings therefore change in the shipped configurations: the town bank is composed to prefer jobs whose calibration found attempts that pass the examples and fail hidden checks, and the daily chance that a fault comes to light rises so that a fault handed in during the first week is more likely than not to be found before the week is out.
 
 ## 8. Benchmarks as evaluation
 
