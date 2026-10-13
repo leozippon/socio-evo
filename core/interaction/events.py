@@ -45,6 +45,10 @@ class EventKind(StrEnum):
     """A delivery of a part and its public result, as witnesses see it."""
     WORK_ASSESSED = "work_assessed"
     """The true quality of a delivered part and what its worker knew; truth-only."""
+    DESK = "desk"
+    """What is still on a worker's desk at night, once everyone is home: its job, when it is
+    due, and of each part whether it is in and what the worker last saw of it; private to the
+    worker."""
     PAYMENT = "payment"
     CREDITS_GIVEN = "credits_given"
     LIVING_COST = "living_cost"

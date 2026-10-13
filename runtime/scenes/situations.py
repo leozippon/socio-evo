@@ -12,8 +12,8 @@ The setting is what every resident simply knows, the same from moment to moment 
 town's rules change: the backdrop the configuration gives the town, its places, the shape of
 its days, and how work and the ledger go. A moment is short: where you are, who is here, how
 long until closing and, at work, until the next moment, your purse and job, and the board,
-which says when new notices go up if it is empty; at night, what is still on your desk. Money
-is told in the town's currency, and the words of others are quoted.
+which says when new notices go up if it is empty; at night, whom you spent the day with.
+Money is told in the town's currency, and the words of others are quoted.
 """
 
 from collections.abc import Sequence
@@ -73,7 +73,7 @@ CONVERSATION = "You are at {place} with {people}. {purse}"
 
 REVIEW = (
     "You are home for the night. Today you spent time with {people}. Before you sleep, the "
-    "clerk's ledger is open to you.{desk}"
+    "clerk's ledger is open to you."
 )
 
 NOTICE = (
@@ -213,10 +213,10 @@ def conversation(env: Environment, place: str, others: Sequence[str], agent: str
     )
 
 
-def review(env: Environment, agent: str, people: Sequence[str]) -> str:
-    """The night's moment: whom `agent` met today, and what is still on its desk."""
-    desk = env.desk_view(agent)
-    return REVIEW.format(people=listed(people), desk="" if desk is None else f"\n\n{desk}")
+def review(people: Sequence[str]) -> str:
+    """The night's moment: whom the resident met today. What is still on its desk it has just
+    been told, among the evening's percepts."""
+    return REVIEW.format(people=listed(people))
 
 
 def notice(env: Environment, place: str, clock: str, question: str, options: Sequence[str]) -> str:

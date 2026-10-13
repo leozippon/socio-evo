@@ -102,11 +102,10 @@ TOOK_WITH_PART = (
     "you brought the notice of {job} to the clerk, to take it with {partner}, doing part "
     "{part} yourself."
 )
-TRIED = "at your desk you tried your code for {part} against the client's examples."
-HANDED_IN = (
-    "at the clerk's desk you handed in your code for {part} as {declared}, telling the "
-    "client: {report}"
-)
+TRIED = "at your desk you tried a draft for {part}, without handing it in."
+HANDED_IN = "at the clerk's desk you handed in {part} as {declared}, telling the client: {report}"
+"""What the resident did with its work, told in no trade's words: what a try was run on and what
+it showed is told by the town in the words of the job's trade, in what follows it."""
 PART = "part {part} of {job}"
 GAVE = "you handed {to} {amount}, with a note: {note}"
 MARKED = "in the clerk's ledger you marked {marks}."

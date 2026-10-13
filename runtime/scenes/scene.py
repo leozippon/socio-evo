@@ -92,8 +92,8 @@ class Scene(ABC):
 
     def shown(self) -> tuple[EventKind, ...]:
         """The kinds of event whose news the situation shows as it now stands, so that no
-        agent recalls them beside it; none, unless a scene shows the board or the
-        standings."""
+        agent recalls them beside it; none, unless a scene shows the board, the standings or
+        the resident's own job."""
         return ()
 
     @abstractmethod

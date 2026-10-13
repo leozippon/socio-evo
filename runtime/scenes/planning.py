@@ -54,9 +54,10 @@ class Planning(Scene):
         return situations.planning(self.env, agent, self.start, self.posting)
 
     def shown(self) -> tuple[EventKind, ...]:
-        """The board, and the standings when they are posted."""
+        """The board, one's job (which the desk at night told), and the standings when they
+        are posted."""
         standings = (EventKind.ESTEEM_UPDATED,) if self.env.conditions.esteem_public else ()
-        return (EventKind.TASK_POSTED, *standings)
+        return (EventKind.TASK_POSTED, EventKind.DESK, *standings)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         plan: PlanDay = decision.action

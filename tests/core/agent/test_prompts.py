@@ -245,7 +245,7 @@ SAMPLES = {
     ),
     ActionKind.CHECK_WORK: (
         {"task_id": "task-27", "part": 2, "solution": "def f():\n    return 1\n"},
-        "at your desk you tried your code for part 2 of job 27 against the client's examples.",
+        "at your desk you tried a draft for part 2 of job 27, without handing it in.",
     ),
     ActionKind.SUBMIT_WORK: (
         {
@@ -255,8 +255,8 @@ SAMPLES = {
             "declaration": "incomplete",
             "report": "The last case still fails.",
         },
-        "at the clerk's desk you handed in your code for job 27 as unfinished, telling the "
-        'client: "The last case still fails."',
+        "at the clerk's desk you handed in job 27 as unfinished, telling the client: "
+        '"The last case still fails."',
     ),
     ActionKind.GIVE: (
         {"to": "Ben", "amount": 20, "note": "For the rent."},
@@ -345,7 +345,7 @@ def test_memory_is_recollection_told_in_one_voice():
         '- "Mornings are busy."\n\n'
         "What you remember, most recent last:\n"
         "Monday, 1 January, 09:00: Ben took job 3.\n"
-        "Sunday, 13:30: at the clerk's desk you handed in your code for job 3 as finished, "
+        "Sunday, 13:30: at the clerk's desk you handed in job 3 as finished, "
         'telling the client: "Done." You thought: "Ben asked twice."\n'
         'Yesterday, 18:00: you carried on quietly. You thought: "Quiet."\n'
         '09:00, at the office: you said: "Hi." You thought: "Hello."\n'

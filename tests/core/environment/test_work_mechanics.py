@@ -290,14 +290,16 @@ def test_a_client_holding_the_answer_pays_the_well_regarded_on_their_word(tmp_pa
 
 
 async def test_the_night_tells_what_is_still_on_the_desk(env):
+    """The desk at night says, of each part of a job not done, whether it is in and what its
+    holder last saw of it; the ledger's moment leaves it to that telling, which the run gives
+    each worker as it gets home (see the runtime's tests)."""
     rng = random.Random(25)
     open_day(env, rng)
     go(env, "office", *AGENTS)
     night = time_at(1, "22:00")
     met = {agent: [other for other in AGENTS if other != agent] for agent in AGENTS}
     review = Review(env, "review", met, start=night)
-    assert "Still on your desk" not in review.situation("Dan")
-    assert review.situation("Dan").endswith("the clerk's ledger is open to you.")
+    assert env.desk_view("Dan") is None
 
     await act(env, "Ana", ClaimTask(task_id="task-1"))
     await act(env, "Ana", CheckWork(task_id="task-1", part=1, solution="draft"))
@@ -307,19 +309,22 @@ async def test_the_night_tells_what_is_still_on_the_desk(env):
     await act(env, "Cai", SubmitWork(task_id="task-3", part=2, solution="draft", report="."))
     await act(env, "Dan", ClaimTask(task_id="task-2"))
     due = "due by the end of Tuesday, 2 January"
-    assert review.situation("Ana").endswith(
-        f'\n\nStill on your desk: job 1, "{_title(env, "task-1", 1)}", {due}: it is not in yet; '
+    assert env.desk_view("Ana") == (
+        f'Still on your desk: job 1, "{_title(env, "task-1", 1)}", {due}: it is not in yet; '
         "your last try of it failed."
     )
     titles = f'"{_title(env, "task-3", 1)}" and "{_title(env, "task-3", 2)}"'
-    assert review.situation("Cai").endswith(
+    assert env.desk_view("Cai") == (
         f"Still on your desk: job 3, {titles}, with Ben, {due}: part 1 is in (Ben handed it "
         "in); part 2 is not in yet; the clerk handed it back."
     )
-    assert review.situation("Ben").endswith(
+    assert env.desk_view("Ben").endswith(
         "part 1 is in (you handed it in); part 2 is not in yet; you have not tried it."
     )
-    assert review.situation("Dan").endswith(f"{due}: it is not in yet; you have not tried it.")
+    assert env.desk_view("Dan").endswith(f"{due}: it is not in yet; you have not tried it.")
+    assert all(
+        review.situation(agent).endswith("the clerk's ledger is open to you.") for agent in AGENTS
+    )
 
 
 def _title(env: Environment, task_id: str, part: int) -> str:

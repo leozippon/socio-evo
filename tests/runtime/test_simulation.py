@@ -44,7 +44,7 @@ from runtime.scheduler import Calendar
 from runtime.simulation import Intervention, Setup, Simulation, SimulationConfig
 from tasks.coding import BANK, CodingTaskProvider
 from tests.core.agent.test_prompts import MACHINERY, SIMULATOR_TERMS, STEERING, choices, offered
-from tests.core.environment.test_environment import as_told_to
+from tests.core.environment.test_environment import Provider, as_told_to
 
 GUARDS = (STEERING, MACHINERY, SIMULATOR_TERMS)
 """What no text a resident reads may contain: trait words, and the machinery's terms."""
@@ -701,7 +701,8 @@ def test_an_empty_board_says_when_new_notices_go_up(tmp_path):
     assert "New notices" not in unknown.situation("Ana")
     env.post(dawn, 0)
     assert "New notices" not in planning.situation("Ana")
-    assert planning.shown() == (EventKind.TASK_POSTED,) and later.shown() == planning.shown()
+    shown = (EventKind.TASK_POSTED, EventKind.DESK)
+    assert planning.shown() == shown and later.shown() == planning.shown()
 
 
 async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_path):
@@ -776,6 +777,83 @@ async def test_work_is_told_by_the_clock_and_offers_what_a_resident_can_do(tmp_p
         MayLeave(),
         MayPass(),
     )
+
+
+def at_the_desk(request: LLMRequest) -> str | dict[str, Any]:
+    """A day at the office: Ana takes the first job and tries a draft of it at every moment
+    after, Cai takes the last job and leaves it untried, Ben takes none; nobody marks anyone,
+    and each writes a line of diary and changes no belief."""
+    agent, purpose = request.metadata["agent"], request.metadata["purpose"]
+    if purpose == "diary":
+        return f"{agent}'s day."
+    if purpose == "reflect":
+        return {"reflection": "", "changes": []}
+    can, thought = offered(request), {"thought": ""}
+    if card.DECIDE in can:
+        parts = [part for part in choices(request, card.DECIDE) if part != card.PLAN]
+        days = {part: "the office" if part == "morning" else "home" for part in parts}
+        return {**thought, "do": card.DECIDE, **days, card.PLAN: ""}
+    if card.TAKE in can and agent != "Ben":
+        jobs = choices(request, card.TAKE)[card.JOB]
+        return {**thought, "do": card.TAKE, card.JOB: jobs[0 if agent == "Ana" else -1]}
+    if card.TRY in can and agent == "Ana":
+        return {**thought, "do": card.TRY, card.CODE: "def f():\n    return 0\n"}
+    return {**thought, "do": card.CARRY_ON}
+
+
+async def test_what_is_still_on_the_desk_is_told_at_night_to_the_ledger_and_the_diary(tmp_path):
+    """Once home, whoever holds a job is told privately what is still on its desk, a job tried
+    and not handed in as much as one never tried: once in the ledger's moment, and once in
+    what the diary is written from. Whoever holds no job is told nothing of a desk."""
+    run = RunDirectory.create(tmp_path, "town", 7, config=SIMULATION, code_revision="test")
+    await Simulation.create(run, setup(run, at_the_desk)).run(until_day=1)
+    desks = {event.audience: event.text for event in events(run) if event.kind is EventKind.DESK}
+    assert set(desks) == {("Ana",), ("Cai",)}
+    assert "it is not in yet; your last try of it " in desks[("Ana",)]
+    assert desks[("Cai",)].endswith("it is not in yet; you have not tried it.")
+    calls = list(read_jsonl(run.llm_calls_path))
+    night = time_at(1, "22:00")
+    asked = {
+        (call["metadata"]["agent"], call["metadata"]["purpose"]): call["request"]["messages"][-1][
+            "content"
+        ]
+        for call in calls
+        if call["metadata"]["time"] == night
+    }
+    for (agent,), desk in desks.items():
+        assert asked[agent, "act"].count(desk) == asked[agent, "diary"].count(desk) == 1
+    assert "on your desk" not in asked["Ben", "act"] + asked["Ben", "diary"]
+
+
+async def test_a_try_is_remembered_as_a_try_in_the_words_of_its_trade(tmp_path):
+    """A resident who tries its query remembers trying a draft without handing it in, and what
+    the town told it of the try: its query run on the client's sample rows, never examples."""
+    conditions = ENVIRONMENT.conditions.model_copy(update={"trade_mix": {Trade.QUERIES: 1.0}})
+    config = ENVIRONMENT.model_copy(update={"conditions": conditions})
+    env = Environment.create(config, AGENTS, {Trade.QUERIES: Provider()}, tmp_path / "log")
+    start = time_at(1, "09:00")
+    env.post(start, 0)
+    env.move("Ana", "office", time=start)
+    trying = {"do": card.TRIES.format(delivery="query"), "query": "SELECT 1"}
+    replies = Replies({"Ana": [{"do": card.TAKE, "job": 1}, trying, QUIETLY]})
+    agents = scripted(tmp_path / "agents", replies)
+    work = WorkSession(
+        env,
+        "work",
+        "office",
+        ["Ana"],
+        start=start,
+        until=time_at(1, "13:00"),
+        rounds=3,
+        closes=True,
+    )
+    await play(env, agents, [work], random.Random(0), lambda agent: "")
+    remembered = [record.text for record in agents["Ana"].memory.episodic.read()]
+    [tried] = [text for text in remembered if text.startswith("at your desk")]
+    assert tried.startswith("at your desk you tried a draft for job 1, without handing it in.")
+    told = "\n".join(remembered)
+    assert "Your query for job 1, " in told and "run on the client's sample rows:" in told
+    assert "example" not in told and "handed in" not in told
 
 
 async def test_one_who_leaves_goes_home_for_the_rest_of_the_part_and_is_asked_nothing_more(

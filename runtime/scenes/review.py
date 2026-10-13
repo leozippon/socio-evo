@@ -27,7 +27,7 @@ class Review(Scene):
         return (MayRate(whom=tuple(self.met[agent])), MayPass())
 
     def situation(self, agent: str) -> str:
-        return situations.review(self.env, agent, self.met[agent])
+        return situations.review(self.met[agent])
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(agent, decision.action, time=time, scene=self.id, witnesses=[agent])

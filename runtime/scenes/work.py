@@ -121,8 +121,8 @@ class WorkSession(Scene):
         )
 
     def shown(self) -> tuple[EventKind, ...]:
-        """The board."""
-        return (EventKind.TASK_POSTED,)
+        """The board, and one's job (which the desk at night told)."""
+        return (EventKind.TASK_POSTED, EventKind.DESK)
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(

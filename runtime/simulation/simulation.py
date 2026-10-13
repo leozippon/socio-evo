@@ -6,10 +6,11 @@ if it is one of the configured postings, and plays a work session at every occup
 and a conversation at every social place with company, each until the place closes at the
 latest; nothing else costs a model call. A resident who leaves either goes home until the
 next slot moves it. A day end sends whoever is still out home (told as the place closing, for
-a place that closes then), holds the evening ledger, closes the day in the environment, hands
-every agent what it witnessed since its last decision, lets every agent evolve, schedules the
-next day and writes a checkpoint. Interventions change conditions or make announcements at
-their time.
+a place that closes then), tells each worker privately what is still on its desk, so that the
+ledger's moment and the diary have it among the evening's percepts, holds the evening ledger,
+closes the day in the environment, hands every agent what it witnessed since its last
+decision, lets every agent evolve, schedules the next day and writes a checkpoint.
+Interventions change conditions or make announcements at their time.
 
 A meeting is put up as a notice to everyone when its day starts, before anyone plans the
 day. At its slot the clerk opens it to those at its place, who hold it as a `Meeting` scene in
@@ -340,6 +341,7 @@ class Simulation:
             if place.kind is not PlaceKind.HOME and (not place.hours or place.spans()[-1][1] == end)
         }
         self._move(self.env.config.homes, time, closing)
+        self._desks(time)
         met = {
             agent: [other for other in self.agents if other in others]
             for agent, others in self._met.items()
@@ -393,6 +395,15 @@ class Simulation:
             self._kinds[EventKind.LAPSE],
             self._kinds[EventKind.DECISION],
         )
+
+    def _desks(self, time: int) -> None:
+        """Tell each agent that holds a job, privately, what is still on its desk."""
+        for agent in self.agents:
+            if (desk := self.env.desk_view(agent)) is not None:
+                task = self.env.board.claim_of(agent).task.id
+                self.env.emit(
+                    EventKind.DESK, desk, time=time, audience=[agent], payload={"task_id": task}
+                )
 
     def _closing(self, place: Place, time: int) -> int:
         """When `place`, open at `time`, closes: at the end of its span, or, for a place
