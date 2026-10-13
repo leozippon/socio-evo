@@ -6,7 +6,16 @@ import pytest
 
 from infrastructure.llm.structured import TRUNCATED
 from tasks import bank
-from tasks.bank import Difficulty, Entry, Result, Sample, Trade, measured_difficulty, town
+from tasks.bank import (
+    TIERS,
+    Difficulty,
+    Entry,
+    Result,
+    Sample,
+    Trade,
+    measured_difficulty,
+    town,
+)
 
 
 def result(*attempts: tuple[bool, float], cut_off: int = 0) -> Result:
@@ -45,18 +54,51 @@ def test_the_town_takes_the_pool_in_the_mix_with_every_unsolved_task_in_the_hard
         for difficulty, count in counts.items()
         for n in range(count)
     }
-    chosen = town(pool)
+    chosen = town(pool, {})
     assert Counter(entry.difficulty for _, entry in chosen.values()) == {
         Difficulty.EASY: 5,
         Difficulty.MEDIUM: 5,
         Difficulty.UNSOLVED: 4,
         Difficulty.HARD: 1,
     }
-    assert town(dict(reversed(pool.items()))) == chosen
+    assert town(dict(reversed(pool.items())), {}) == chosen
     unsolved_only = {name: item for name, item in pool.items() if not name.startswith("hard")}
-    assert Counter(e.difficulty for _, e in town(unsolved_only).values())[Difficulty.UNSOLVED] == 4
+    assert (
+        Counter(e.difficulty for _, e in town(unsolved_only, {}).values())[Difficulty.UNSOLVED] == 4
+    )
     with pytest.raises(ValueError, match="no hard task"):
-        town({name: item for name, item in unsolved_only.items() if "unsolved" not in name})
+        town({name: item for name, item in unsolved_only.items() if "unsolved" not in name}, {})
+
+
+def test_each_tier_holds_first_the_tasks_at_which_an_attempt_passed_the_examples_but_was_faulty():
+    """Where the calibration found an attempt that passed the visible checks and failed a hidden
+    one, a fault can go unseen at the desk: such tasks come first in their tier, before the
+    unsolved ones; an attempt that failed the visible checks, or a perfect one, does not count."""
+    counts = {Difficulty.EASY: 3, Difficulty.MEDIUM: 6, Difficulty.HARD: 5, Difficulty.UNSOLVED: 2}
+    pool = {
+        f"{difficulty}-{n}": ({}, Entry(difficulty=difficulty, measured=True))
+        for difficulty, count in counts.items()
+        for n in range(count)
+    }
+    by_hash = town(pool, {})
+    medium = [name for name in sorted(pool) if name.startswith("medium") and name not in by_hash]
+    hard = [name for name in sorted(pool) if name.startswith("hard") and name not in by_hash]
+    perfect, defective, failed, failed_short = (True, 1.0), (True, 0.5), (False, 0.0), (False, 0.5)
+    results = {
+        medium[0]: result(perfect, defective),
+        medium[1]: result(defective),
+        medium[2]: result(failed, perfect, failed_short),
+        hard[0]: result(failed, defective),
+    }
+    chosen = town(pool, results)
+    assert Counter(TIERS[entry.difficulty] for _, entry in chosen.values()) == {
+        Difficulty.EASY: 3,
+        Difficulty.MEDIUM: 3,
+        Difficulty.HARD: 3,
+    }
+    assert {medium[0], medium[1], hard[0], "unsolved-0", "unsolved-1"} <= chosen.keys()
+    assert medium[2] not in chosen
+    assert {name for name in chosen if name.startswith("hard")} == {hard[0]}
 
 
 def test_an_index_records_its_trade_and_one_written_before_trades_is_programming(tmp_path):

@@ -12,7 +12,9 @@ the banks use are copied out of the archive into `DIR/spider/databases/`, and th
 written beside them:
 
     pool/   every converted question
-    town/   the town bank: the pool in the town mix
+    town/   the town bank: the pool in the town mix, each tier holding first the tasks at
+            which calibration found a query that gave the rows shown on the client's examples
+            and other rows than the benchmark query's on the full database (`tasks.bank.town`)
 
 Each task file is in the bank format of `tasks.queries.provider`, named by its split and its
 position there, and the index records each task's origin.
@@ -134,8 +136,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     for reason, count in sorted(dropped.items()):
         print(f"dropped {count}: {reason}")
     results = bank.calibration(root)
-    measured = bank.measured({problem.name: problem.label for problem in problems}, results)
-    built = bank.build(root, Trade.QUERIES, QueryTask, TERMS, Entry, problems, measured)
+    built = bank.build(root, Trade.QUERIES, QueryTask, TERMS, Entry, problems, results)
     bank.report(built, results)
 
 

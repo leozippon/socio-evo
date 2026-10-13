@@ -9,7 +9,10 @@ against their SHA-256, and read column by column with pyarrow, the project's `ba
 banks are written beside the raw files:
 
     pool/   a sample of the convertible problems
-    town/   the town bank: the pool in the town mix
+    town/   the town bank: the pool in the town mix (`tasks.bank.town`), whose preference
+            for tasks at which calibration found an attempt that passed the visible checks
+            and failed a hidden one never applies here: an answer passes the client's check
+            exactly when it is right
 
 Each task file is in the bank format of `tasks.calculation.provider`, named by a hash of its
 problem, and the index records each task's origin.
@@ -137,8 +140,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     for reason, count in sorted(dropped.items()):
         print(f"dropped {count}: {reason}")
     results = bank.calibration(root)
-    measured = bank.measured({problem.name: problem.label for problem in problems}, results)
-    built = bank.build(root, Trade.CALCULATION, CalculationTask, TERMS, Entry, problems, measured)
+    built = bank.build(root, Trade.CALCULATION, CalculationTask, TERMS, Entry, problems, results)
     bank.report(built, results)
 
 

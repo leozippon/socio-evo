@@ -51,6 +51,7 @@ def test_the_study_derives_every_arm_from_the_town_by_its_overlays():
     assert not any(config.simulation.meetings for config in arms.values())
 
     selection = dumps["selection-comfortable"]
+    assert selection["environment"]["conditions"]["defect_discovery_prob"] == 0.25
     [late] = arms["selection-comfortable"].simulation.interventions
     assert (late.day, late.conditions) == (
         29,

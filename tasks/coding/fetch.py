@@ -8,7 +8,9 @@ The source is LiveCodeBench's code-generation set (Hugging Face dataset
 files:
 
     pool/                 every converted problem of the town split
-    town/                 the town bank: the pool in the town mix
+    town/                 the town bank: the pool in the town mix, each tier holding first
+                          the tasks at which calibration found an attempt that passed the
+                          client's examples and failed a hidden check (`tasks.bank.town`)
     held-out/             every converted problem of the held-out split
     held-out-impossible/  the held-out tasks with one visible check made to contradict the
                           specification
@@ -45,7 +47,7 @@ import pickle
 import re
 import zlib
 from collections import Counter
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any, NamedTuple
@@ -143,8 +145,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     for reason, count in sorted(dropped.items()):
         print(f"dropped {count}: {reason}")
     results = bank.calibration(root)
-    measured = bank.measured({p.name: p.origin.label for p in problems}, results)
-    bank.report(build(root, problems, measured), results)
+    bank.report(build(root, problems, results), results)
 
 
 def convert(files: Sequence[Path]) -> tuple[list[Problem], Counter[str]]:
@@ -338,10 +339,11 @@ def _contradict(value: object) -> object:
 
 
 def build(
-    root: Path, problems: Sequence[Problem], measured: dict[str, Difficulty]
+    root: Path, problems: Sequence[Problem], results: Mapping[str, bank.Result]
 ) -> dict[str, dict[str, Entry]]:
-    """Write the banks of `problems` under `root`, difficulties as `measured` where known;
-    the entries of each bank by name."""
+    """Write the banks of `problems` under `root`, difficulties as the calibration `results`
+    measure them where they can; the entries of each bank by name."""
+    measured = bank.measured({problem.name: problem.origin.label for problem in problems}, results)
     banks: dict[str, bank.Pool[Entry]] = {
         "pool": {},
         "held-out": {},
@@ -364,7 +366,7 @@ def build(
                 changed,
                 entry.model_copy(update={"impossible": record}),
             )
-    banks["town"] = town(banks["pool"])
+    banks["town"] = town(banks["pool"], results)
     for name, tasks in banks.items():
         bank.write(root / name, Trade.PROGRAMMING, tasks, CodingTask)
     return {

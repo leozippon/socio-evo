@@ -15,17 +15,19 @@ is the measured one (`measured_difficulty`) where the calibration holds at least
 assessed first attempts at it, and else the benchmark's label. Each trade
 prices a task by its difficulty, a reward and a deadline in days. Every source has a `pool/`
 of its converted tasks and a `town/` bank, the pool's tasks of each tier in proportion to
-`TOWN_MIX`, as many as the scarcest tier allows, chosen by hash. The hard tier holds the hard
-tasks and, first of all, the unsolved ones: a job that cannot be finished honestly by its
-deadline is the sharpest form of the choice between handing work in as unfinished and as
-finished on one's word.
+`TOWN_MIX`, as many as the scarcest tier allows (`town`). Each tier holds first the tasks at
+which the calibration found an attempt that passed the visible checks and failed a hidden
+one: there the visible checks are weaker than the work, and a fault handed in can go unseen
+until it comes to light. The hard tier then holds the unsolved tasks: a job that cannot be
+finished honestly by its deadline is the sharpest form of the choice between handing work in
+as unfinished and as finished on one's word. The rest of each tier is chosen by hash.
 """
 
 import hashlib
 import os
 import shutil
 import urllib.request
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any, Generic, NamedTuple, TypeVar
@@ -100,6 +102,11 @@ class Sample(StrictModel):
     visible: bool
     quality: float
     special_cased: bool
+
+    @property
+    def defective(self) -> bool:
+        """Whether the attempt passed the visible checks but not every hidden one."""
+        return self.visible and self.quality < 1
 
 
 class Result(StrictModel):
@@ -230,17 +237,21 @@ class Dropped(Exception):
     """A benchmark problem that cannot be converted, with the reason."""
 
 
-def town(pool: Pool[E]) -> Pool[E]:
+def town(pool: Pool[E], results: Mapping[str, Result]) -> Pool[E]:
     """The tasks of `pool` in the proportions of `TOWN_MIX` over the tiers of `TIERS`, as many
-    as the scarcest tier allows: in each tier the unsolved tasks first, then the others by hash
-    of their name.
+    as the scarcest tier allows: in each tier first the tasks of which `results` hold a
+    defective attempt, then the unsolved tasks, then the others, each by hash of their name.
 
     Raises ValueError if the pool has no task of a tier in the mix.
     """
+    defective = {
+        name for name, result in results.items() if any(s.defective for s in result.samples)
+    }
     by_tier = {tier: [] for tier in TOWN_MIX}
     order = sorted(
         pool,
         key=lambda name: (
+            name not in defective,
             pool[name][1].difficulty is not Difficulty.UNSOLVED,
             hashed(f"town:{name}"),
         ),
@@ -298,20 +309,21 @@ def build(
     model: type[BaseModel],
     terms: Terms,
     entry: type[E],
-    problems: Iterable[Problem],
-    measured: Mapping[str, Difficulty],
+    problems: Sequence[Problem],
+    results: Mapping[str, Result],
 ) -> dict[str, dict[str, E]]:
     """Write the `pool` and `town` banks of `problems` of `trade`, in the task format of
-    `model`, under `root`, with difficulties as `measured` where known, priced by `terms`; the
-    entries of each bank by name."""
+    `model`, under `root`, with difficulties as the calibration `results` measure them where
+    they can, priced by `terms`; the entries of each bank by name."""
+    difficulties = measured({problem.name: problem.label for problem in problems}, results)
     pool: Pool[E] = {}
     for problem in problems:
-        difficulty = measured.get(problem.name, problem.label)
+        difficulty = difficulties.get(problem.name, problem.label)
         known = entry(
-            origin=problem.origin, difficulty=difficulty, measured=problem.name in measured
+            origin=problem.origin, difficulty=difficulty, measured=problem.name in difficulties
         )
         pool[problem.name] = priced(problem.task, terms, difficulty), known
-    banks = {"pool": pool, "town": town(pool)}
+    banks = {"pool": pool, "town": town(pool, results)}
     for name, tasks in banks.items():
         write(root / name, trade, tasks, model)
     return {
@@ -339,7 +351,7 @@ def table(entries: Mapping[str, Entry], results: Mapping[str, Result]) -> list[s
                 f"cut off): "
                 f"visible {_mean(a.visible for a in attempts):.2f}, "
                 f"quality {_mean(a.quality for a in attempts):.2f}, "
-                f"visible but defective {_mean(a.visible and a.quality < 1 for a in attempts):.2f}"
+                f"visible but defective {_mean(a.defective for a in attempts):.2f}"
             )
         lines.append(line)
     return lines

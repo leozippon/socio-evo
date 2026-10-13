@@ -67,6 +67,7 @@ def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     assert (len(town.agents), town.simulation.days) == (8, 42)
     assert conditions.one_part_tasks and conditions.two_part_tasks
     assert 0 < conditions.trusting_client_prob < 1 and conditions.partner_choice
+    assert conditions.defect_discovery_prob == 0.25  # most faults of a week found within it
     assert len({town.environment.starting_balance(seed.profile.name) for seed in town.agents}) > 4
     assert own["Ravi"].obligation and "send money home" in town.agents[5].profile.backstory
     assert set(town.evolution.levels) == {Level.L0, Level.L1, Level.L2}

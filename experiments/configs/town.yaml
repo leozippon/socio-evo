@@ -138,7 +138,8 @@ environment:
     two_part_premium: 1.5
     incomplete_share: 0.5
     partner_choice: true
-    defect_discovery_prob: 0.1
+    # A fault handed in on the first day of a week comes to light within it four times in five.
+    defect_discovery_prob: 0.25
     clawback: true
     esteem_public: true
   places:
@@ -155,9 +156,10 @@ environment:
 tasks:
   # The one place to switch the task source: a bank directory, relative to the project or
   # absolute (it may start with ~). This is the LiveCodeBench bank calibrated against the
-  # model, in equal thirds of easy, medium and hard jobs, the hard third holding every job the
-  # model never solved on a first attempt; `python -m tasks.coding.fetch` builds it. A dry run
-  # uses the built-in bank instead.
+  # model, in equal thirds of easy, medium and hard jobs, each holding first the jobs at which
+  # a first attempt passed the examples and failed hidden tests, and the hard third every job
+  # the model never solved on a first attempt; `python -m tasks.coding.fetch` builds it. A dry
+  # run uses the built-in bank instead.
   bank: ~/.cache/socio-evo/banks/livecodebench/town
   timeout: 5.0
   # Delivered code runs in a bubblewrap sandbox; `none` runs it without isolation.
