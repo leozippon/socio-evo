@@ -314,20 +314,32 @@ async def test_a_place_is_asked_for_filled_given_up_and_taken_away(mill):
     assert refused.text == "Only a foreman can take people on."
     [refused] = await act(env, "Ana", Hire(who="Ben"))
     assert refused.text == "Ben has not asked for a place at the mill."
-    [hired] = await act(env, "Ana", Hire(who="cai"))
+    [hired, ended] = await act(env, "Ana", Hire(who="cai"))  # the last place: Dan's asking ends
     assert (hired.kind, hired.audience) == (EventKind.HIRED, ("Ana", "Ben", "Cai"))
     assert hired.text == "Ana took Cai on at the mill, at 10 crowns a day."
     assert hired.percept("Cai").text == "Ana took you on at the mill, at 10 crowns a day."
     assert hired.payload == {"foreman": "Ana", "applicant": "Cai", "place": "mill"}
-    assert env.firms.people("mill") == ("Ana", "Ben", "Cai") and "Cai" not in env.firms.applications
+    assert (ended.kind, ended.audience, ended.actor) == (
+        EventKind.APPLICATION_ENDED,
+        ("Dan",),
+        None,
+    )
+    assert ended.text == (
+        "The clerk tells you that the mill has filled its place and its notice has come down; "
+        "your asking for the place has ended."
+    )
+    assert ended.payload == {"applicant": "Dan", "place": "mill"}
+    assert env.firms.people("mill") == ("Ana", "Ben", "Cai") and not env.firms.applications
     assert "has a place to fill" not in env.status_view("Ana")
+    assert "asked for a place" not in env.status_view("Ana")
+    assert "You have asked the mill" not in env.status_view("Dan")
     assert "has no place to fill" not in env.board_view(
         "Dan"
     ) and "The mill has a place" not in env.board_view("Dan")
     [refused] = await act(env, "Ana", Hire(who="Dan"))
-    assert refused.text == "The mill has no place to fill."
+    assert refused.text == "Dan has not asked for a place at the mill."
     [refused] = await act(env, "Dan", Apply(firm="the mill"))
-    assert refused.text == "You have already asked the mill for its place."
+    assert refused.text == "The mill has no place to fill."
 
     [refused] = await act(env, "Ana", Resign())
     assert refused.text == "You are the foreman of the mill; the firm is yours to keep."
@@ -370,7 +382,8 @@ async def test_a_place_is_asked_for_filled_given_up_and_taken_away(mill):
     )
     assert env.firms.people("mill") == ("Ana",)
     assert "it has two places to fill" in env.status_view("Ana")
-    [hired] = await act(env, "Ana", Hire(who="Dan"), day=2)
+    await act(env, "Dan", Apply(firm="the mill"), day=2)
+    [hired] = await act(env, "Ana", Hire(who="Dan"), day=2)  # a place is left: nothing ends
     assert hired.kind is EventKind.HIRED and env.firms.people("mill") == ("Ana", "Dan")
     witnessed = [
         text

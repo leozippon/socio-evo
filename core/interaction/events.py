@@ -60,6 +60,9 @@ class EventKind(StrEnum):
     """A resident asked for the place a firm has to fill; private to it and the foreman."""
     HIRED = "hired"
     """A foreman took an applicant on; witnessed at the firm and by the applicant."""
+    APPLICATION_ENDED = "application_ended"
+    """An asking for a firm's place that ended because the firm filled its last place, told by
+    the clerk; private to the one who asked."""
     DISMISSED = "dismissed"
     """A foreman dismissed a member of staff; witnessed at the firm and by the dismissed."""
     RESIGNED = "resigned"

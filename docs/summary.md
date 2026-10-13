@@ -40,7 +40,7 @@ Before handing in, a worker can try its code against the examples, or its query 
 
 A paid part handed in as finished whose true quality is below 1 carries a latent fault. Each morning each such fault comes to light with a fixed chance, 0.25 in the shipped worlds. It is announced to everyone with the worker's name, the day and what the worker told the client, and the client takes the payment back.
 
-At work or in company, anyone without a position may ask for a firm's place; the foreman takes someone on or lets the request stand, and may dismiss a member of staff at once, who may in turn give notice and leave at the day's end. A resident holds at most one position, and foremen are fixed. The staff's security is the wage, and the foreman's income is what is left.
+At work or in company, anyone without a position may ask for a firm's place, and the asking stands until the foreman takes its maker on or fills the last place, when the clerk tells those still asking; the foreman may dismiss a member of staff at once, who may in turn give notice and leave at the day's end. A resident holds at most one position, and foremen are fixed. The staff's security is the wage, and the foreman's income is what is left.
 
 ## The agents
 
@@ -145,7 +145,7 @@ To view the runs and a study, run `python -m frontend.server --runs-root runs --
 - There is no birth, death or inheritance: debt is allowed and nobody leaves, so pressure works through income, standing, others' choices and reflection.
 - Memory retrieval uses recency and word overlap, without embeddings.
 - People move only when a part of the day begins, and nobody stays out past the last closing hour.
-- A firm's attendance is counted by the wage paid; nobody is told when passed over for a place; a foreman's own hand-ins are paid into its own purse.
+- A firm's attendance is counted by the wage paid; a foreman's own hand-ins are paid into its own purse.
 - The probes' work is programming alone, whatever a resident's trade.
 - Every random choice comes from the seed, but with a sampling model the replies differ between runs; only a dry run repeats exactly.
 

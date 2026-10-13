@@ -248,6 +248,10 @@ WAGE_RECEIVED = "{firm} paid you the day's wage of {wage}. You now have {balance
 WAGE_PAID = "You paid {who} the day's wage of {wage} from your purse. You now have {balance}."
 APPLIED = "{who} asked for the place at {firm}; word of it has gone to {foreman}, its foreman."
 HIRED = "{foreman} took {who} on at {firm}, at {wage} a day."
+FILLED = (
+    "The clerk tells you that {firm} has filled its place and its notice has come down; your "
+    "asking for the place has ended."
+)
 DISMISSED = "{foreman} dismissed {who} from {firm}'s staff, with immediate effect."
 RESIGNED = "{who} has given notice at {firm}, and leaves its staff at the end of the day."
 LEDGER = (
@@ -511,7 +515,7 @@ class Environment:
                 case Apply():
                     return [self._apply(agent, action, **where)]
                 case Hire():
-                    return [self._hire(agent, action, **where)]
+                    return self._hire(agent, action, **where)
                 case Dismiss():
                     return [self._dismiss(agent, action, **where)]
                 case Resign():
@@ -1420,11 +1424,13 @@ class Environment:
             **where,
         )
 
-    def _hire(self, agent: str, action: Hire, **where) -> Event:
+    def _hire(self, agent: str, action: Hire, **where) -> list[Event]:
+        """`agent` takes on the applicant `action` names; if that fills the firm's last place,
+        the other applications to it end, each told to its maker by the clerk."""
         who = self._person(action.who)
-        place = self.firms.hire(agent, where["place"], who)
+        place, ended = self.firms.hire(agent, where["place"], who)
         firm, wage = self.firms.names[place], self._money(self.firms.establishments[place].wage)
-        return self.emit(
+        hired = self.emit(
             EventKind.HIRED,
             lambda you: HIRED.format(
                 foreman=capital(you(agent)), who=you(who), firm=firm, wage=wage
@@ -1434,6 +1440,19 @@ class Environment:
             payload={"foreman": agent, "applicant": who, "place": place},
             **where,
         )
+        return [
+            hired,
+            *(
+                self.emit(
+                    EventKind.APPLICATION_ENDED,
+                    FILLED.format(firm=firm),
+                    time=where["time"],
+                    audience=[other],
+                    payload={"applicant": other, "place": place},
+                )
+                for other in ended
+            ),
+        ]
 
     def _dismiss(self, agent: str, action: Dismiss, **where) -> Event:
         who = self._person(action.who)

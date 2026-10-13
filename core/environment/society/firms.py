@@ -96,8 +96,9 @@ class Firms:
         self.applications.pop(agent, None)
         self.applications[agent] = place
 
-    def hire(self, foreman: str, here: str, applicant: str) -> str:
-        """The foreman of `here` takes `applicant` on; returns the place. Raises Rejected if
+    def hire(self, foreman: str, here: str, applicant: str) -> tuple[str, list[str]]:
+        """The foreman of `here` takes `applicant` on; returns the place and, if that filled
+        its last place, those whose applications to it ended with it. Raises Rejected if
         `foreman` is not its foreman, is elsewhere, `applicant` has not asked there, or the
         firm has no place to fill."""
         place = self._own(foreman, here, "take people on")
@@ -107,7 +108,10 @@ class Firms:
             raise Rejected(f"{capital(self.names[place])} has no place to fill.")
         del self.applications[applicant]
         self.staff[place].append(applicant)
-        return place
+        ended = self.applicants(place) if self.vacancies(place) == 0 else []
+        for agent in ended:
+            del self.applications[agent]
+        return place, ended
 
     def dismiss(self, foreman: str, here: str, member: str) -> str:
         """The foreman of `here` dismisses `member` at once; returns the place. Raises

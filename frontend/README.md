@@ -339,6 +339,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `wage_paid` | none | the member of staff and the foreman | `agent` (the member of staff), `foreman`, `place` (the establishment), `amount`, `balances`: the day's wage, paid at the day's end for a day the agent was at the establishment |
 | `applied` | the applicant | the applicant and the foreman | `applicant`, `place`, `foreman`: a resident asked for the place the establishment has to fill |
 | `hired` | the foreman | those at the establishment and the applicant | `foreman`, `applicant`, `place`: the applicant joins the staff at once |
+| `application_ended` | none | the applicant | `applicant`, `place`: the establishment filled its last place, so this resident's asking for it ended, told by the clerk |
 | `dismissed` | the foreman | those at the establishment and the dismissed | `foreman`, `agent` (the dismissed), `place`: the member of staff leaves at once |
 | `resigned` | the member of staff | those at the establishment and the foreman | `agent`, `place`, `foreman`: the member of staff gave notice and leaves the staff at the day's end |
 | `living_cost` | none | the agent | `agent`, `amount` (living cost plus the agent's `obligation`), `obligation`, `balance` after it |
