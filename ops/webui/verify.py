@@ -175,6 +175,8 @@ def main() -> None:
                args.ca, args.credentials_dir)
     except RuntimeError as exc:
         parser.exit(1, f'WebUI verification failed: {exc}\n')
+    except FileNotFoundError as exc:
+        parser.exit(1, f'WebUI verification failed: missing {exc.filename}\n')
     except (OSError, ValueError, subprocess.CalledProcessError):
         parser.exit(1, 'WebUI verification failed; check TLS, auth services, and protected configuration (no secrets printed).\n')
 
