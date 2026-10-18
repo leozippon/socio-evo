@@ -4,6 +4,7 @@
 import { FormatError, RunSource, readIndex, readManifest, runKey, studyOf } from "./data.js";
 import { experimentLabel, fill, fmt, h, useCurrency } from "./dom.js";
 import { icon } from "./icons.js";
+import { canManageExperiments } from "./management.js";
 import { Cast } from "./identity.js";
 import { href, navigate, parse, remember, sibling } from "./router.js";
 import { mountCompare } from "./views/compare.js";
@@ -19,6 +20,7 @@ const VIEWS = { home: mountLanding, compare: mountCompare, study: mountStudy, ov
 const $ = (id) => document.getElementById(id);
 
 const app = {
+  management: false,
   index: null,
   route: null,
   view: null, // {kind, key, handle}
@@ -119,6 +121,8 @@ async function route(force = false) {
     const context = {
       route: r,
       index: app.index,
+      management: app.management,
+      refresh: async () => { await poll(); },
       ...(run ?? {}),
       navigate,
       remember: (next) => {
@@ -170,6 +174,7 @@ async function boot() {
   }
   window.addEventListener("hashchange", () => route());
   document.addEventListener("visibilitychange", () => !document.hidden && poll());
+  app.management = await canManageExperiments();
   await route();
   schedule();
 }

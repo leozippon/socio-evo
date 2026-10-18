@@ -322,3 +322,13 @@ table.stakes tr.switch td { font-weight: 650; }
 
 /* Wall-clock timestamps are separate from the simulated-day progress. */
 .run-times { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+/* Experiment management follows the existing viewer controls. */
+.experiment-controls { gap: .4rem; flex-wrap: wrap; }
+.danger { color: var(--danger, #a33327); }
+.experiment-dialog { max-width: 32rem; width: calc(100% - 3rem); padding: 1.5rem; border: 1px solid var(--line, #ccc); border-radius: .8rem; background: var(--surface, #fffaf3); color: var(--ink, #25251f); }
+.experiment-dialog::backdrop { background: #0006; }
+.experiment-dialog label { display: grid; gap: .5rem; }
+.experiment-dialog input { width: 100%; box-sizing: border-box; padding: .65rem; font: inherit; }
+.experiment-dialog .management-buttons { justify-content: flex-end; margin-top: 1rem; }
+.management-error { color: var(--danger, #a33327); min-height: 1.4em; }

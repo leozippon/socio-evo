@@ -6,6 +6,8 @@
 // dropped. Only the manifest and the index are fetched afresh. A 404 for a reference means the
 // index has moved on: the run is refreshed and the document asked for again, once.
 
+import { setExperimentNames } from "./dom.js";
+
 export const FORMAT = 3;
 
 export class FetchError extends Error {
@@ -72,6 +74,7 @@ export async function readIndex() {
   const url = here("data/index.json");
   const index = await getJSON(url, true);
   if (index.format !== FORMAT) throw new FormatError(`The run index has format ${index.format}, but this viewer reads format ${FORMAT}.`);
+  setExperimentNames(index.runs);
   return { url, runs: index.runs, studies: index.studies ?? [] };
 }
 

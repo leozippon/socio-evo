@@ -50,6 +50,7 @@ from analysis import (
 )
 from analysis.study import Measured, Study, document, read_study, table
 from frontend import bundle
+from frontend.management import display_name
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
 
@@ -329,6 +330,7 @@ def publish_run(site: Site, root: Path) -> tuple[dict[str, Any], Analysed]:
     )
     entry = {
         "continued_at": continued_at,
+        "display_name": display_name(root.parent),
         "experiment": experiment,
         "run": name,
         "url": ref(f"runs/{experiment}/{name}/run.json", digest, False),
@@ -393,6 +395,7 @@ def _fingerprint(run: RunDirectory) -> tuple[tuple[str, int, int], ...]:
         run.manifest_path,
         run.config_path,
         run.root / "continuation.json",
+        run.root.parent / ".display.json",
         run.events_path,
         run.llm_calls_path,
         *sorted(run.checkpoints_dir.glob("day-*.json")),

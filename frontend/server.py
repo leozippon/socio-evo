@@ -11,6 +11,7 @@ and the last complete site stays served.
 """
 
 import argparse
+import json
 import sys
 import tempfile
 import threading
@@ -22,12 +23,64 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from frontend.management import ManagementError, manage
 from frontend.publish import Publisher
 
 
 class _Handler(SimpleHTTPRequestHandler):
     """Static files of the site with the caching of the deployment: a URL with `?v=` names
     content that never changes; anything else is fetched afresh. No directory listings."""
+
+    def json_response(self, status, document):
+        data = json.dumps(document).encode()
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        if self.path == "/api/experiments":
+            self.json_response(200, {"management": True})
+            return
+        super().do_GET()
+
+    def do_POST(self):
+        if self.path != "/api/experiments":
+            self.json_response(404, {"error": "Endpoint not found."})
+            return
+        # This API is for the loopback viewer/SSH tunnel. Reject cross-origin requests
+        # and foreign Host names (including DNS rebinding); static hosting has no API.
+        host = self.headers.get("Host", "")
+        hostname = urlsplit("http://" + host).hostname
+        if (
+            hostname not in ("localhost", "127.0.0.1", "::1")
+            or self.headers.get("Origin") != "http://" + host
+            or self.headers.get("X-Socio-Management") != "1"
+            or self.headers.get_content_type() != "application/json"
+        ):
+            self.json_response(403, {"error": "Use the experiment controls in this local viewer."})
+            return
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if not 0 < length <= 4096:
+                raise ManagementError("Invalid request size.")
+            request = json.loads(self.rfile.read(length))
+            if not isinstance(request, dict):
+                raise ManagementError("Expected a JSON object.")
+            with self.server.publication_lock:
+                result = manage(self.server.publisher.runs_root, request)
+                self.server.publisher.publish()
+            self.json_response(200, result)
+        except ManagementError as error:
+            self.json_response(error.status, {"error": str(error)})
+        except (ValueError, UnicodeError):
+            self.json_response(400, {"error": "Invalid experiment data or JSON request."})
+        except Exception:
+            traceback.print_exc()
+            self.json_response(
+                500, {"error": "Could not update the viewer. Refresh before retrying."}
+            )
 
     def list_directory(self, path: str) -> None:
         self.send_error(HTTPStatus.NOT_FOUND)
@@ -48,6 +101,7 @@ class DevServer(ThreadingHTTPServer):
     it serves."""
 
     def __init__(self, address: tuple[str, int], publisher: Publisher, interval: float) -> None:
+        self.publication_lock = threading.RLock()
         publisher.publish()
         super().__init__(address, partial(_Handler, directory=str(publisher.out)))
         self.publisher = publisher
@@ -65,7 +119,8 @@ class DevServer(ThreadingHTTPServer):
     def _refresh(self) -> None:
         while not self._stop.wait(self.interval):
             try:
-                self.publisher.publish()
+                with self.publication_lock:
+                    self.publisher.publish()
             except Exception:
                 traceback.print_exc()
 

@@ -134,7 +134,8 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | --- | --- | --- |
 | `format` | integer | The bundle format, as in `manifest.json`. |
 | `runs` | array | Every run, ordered by experiment and run name. |
-| `runs[].experiment` | string | The experiment name. |
+| `runs[].experiment` | string | The stable experiment identifier. |
+| `runs[].display_name` | string or null | Optional user-assigned display name; links and source IDs remain unchanged. |
 | `runs[].run` | string | The run name, `seed-NNNN`. |
 | `runs[].url` | reference | The run's `run.json`. |
 | `runs[].seed` | integer | The random seed. |
@@ -743,3 +744,12 @@ The contrasts are declared in advance in the arms of `experiments/studies/trust.
 - How the model is reached (endpoint, key variable, request options, timeouts), the agents' prompt-size limits and the location of the task bank.
 - The hidden checks of tasks, which live in the task bank; their outcome is each delivery's `quality`.
 - Anything about when or where the bundle was published, so publishing the same runs twice gives the same bytes.
+
+
+### Local experiment management
+
+When served with `python -m frontend.server` through localhost or an SSH tunnel, the homepage offers **Rename** and **Delete** for each experiment (including study arms). Rename updates the display name across the viewer and preserves URLs, configs, manifests and history. Names are stored in `<runs-root>/<experiment>/.display.json` and exported in the run index.
+
+Delete asks for confirmation and removes all seeds of the selected experiment from the viewer. Running or unknown-status seeds block deletion. The original directory moves atomically to `<runs-root>/.trash/<experiment>-<UTC timestamp>-<id>` for manual recovery; this does not free disk space. To restore it, stop publishers briefly and move it back to its original experiment ID, ensuring that no directory with that ID already exists.
+
+The local management API is `GET/POST /api/experiments`; mutations accept JSON, require a same-origin request and `X-Socio-Management: 1`, and are serialized with refresh publication. A static export remains read-only and does not show these controls. Management writes require serving the viewer from localhost, including via a port forward.

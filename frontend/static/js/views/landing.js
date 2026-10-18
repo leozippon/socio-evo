@@ -3,6 +3,7 @@
 
 import { experimentLabel, emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
+import { experimentControls } from "../management.js";
 import { studyKey } from "../data.js";
 import { href } from "../router.js";
 import { studyLabel } from "./study.js";
@@ -79,7 +80,7 @@ function seedChip(entry) {
 }
 
 /** A study: its arms, each with its seeds, and the way to the arms compared. */
-function studySection(study, index) {
+function studySection(study, index, ctx) {
   const arms = study.arms.map((arm) => ({ ...arm, runs: index.runs.filter((entry) => entry.experiment === arm.experiment) }));
   const runs = arms.flatMap((arm) => arm.runs);
   const first = runs[0];
@@ -106,7 +107,7 @@ function studySection(study, index) {
         h(
           "li",
           { class: "arm-row" },
-          h("b", { class: "arm-name" }, arm.arm),
+          h("div", {}, h("b", { class: "arm-name" }, arm.arm), h("div", { class: "note" }, experimentLabel(arm.experiment)), ctx.management && arm.runs.length ? experimentControls(arm.experiment, arm.runs, ctx.refresh) : null),
           arm.runs.length ? h("div", { class: "seed-chips" }, arm.runs.map(seedChip)) : h("p", { class: "muted small-text" }, "No run yet."),
           arm.runs.length > 1 ? h("a", { class: "quiet small", href: href({ view: "compare", experiment: arm.experiment }), title: "The seeds of this arm side by side" }, icon("lines", 14), "Seeds") : h("span"),
         ),
@@ -129,7 +130,7 @@ export function mountLanding(root, ctx) {
     fill(
       page,
       h("header", { class: "page-head" }, h("h1", {}, "Experiments"), h("p", { class: "lede" }, studies.length ? "A study runs the arms of an experimental design over the same seeds; each seed is an independent run of an arm's town. Other experiments follow. Live runs update as they go." : "Each experiment is one town and its rules; each seed is an independent run of it. Live runs update as they go.")),
-      studies.map((study) => studySection(study, index)),
+      studies.map((study) => studySection(study, index, ctx)),
       studies.length && experiments.size ? h("p", { class: "eyebrow group-title" }, "Other experiments") : null,
       experiments.size || studies.length
         ? [...experiments].map(([name, runs]) => {
@@ -141,7 +142,7 @@ export function mountLanding(root, ctx) {
                 "header",
                 { class: "spread experiment-head" },
                 h("div", {}, h("h2", {}, experimentLabel(name)), h("p", { class: "note" }, `${first.agents.length} agents · ${first.days} days · ${first.model} · ${fmt.plural(runs.length, "seed")}`)),
-                runs.length > 1 ? h("a", { class: "quiet small", href: href({ view: "compare", experiment: name }) }, icon("lines", 15), "Compare seeds") : null,
+                h("div", { class: "row" }, ctx.management ? experimentControls(name, runs, ctx.refresh) : null, runs.length > 1 ? h("a", { class: "quiet small", href: href({ view: "compare", experiment: name }) }, icon("lines", 15), "Compare seeds") : null),
               ),
               h("ul", { class: "runs card" }, runs.map(runRow)),
             );

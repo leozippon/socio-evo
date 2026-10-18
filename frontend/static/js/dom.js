@@ -128,4 +128,9 @@ export function onWidth(element, fn) {
 }
 
 /** Human-facing name; stable experiment IDs remain unchanged for links and data. */
-export const experimentLabel = (name) => String(name ?? "").replace(/^zenith-/i, "");
+const experimentNames = new Map();
+export function setExperimentNames(runs) {
+  experimentNames.clear();
+  for (const run of runs) if (run.display_name) experimentNames.set(run.experiment, run.display_name);
+}
+export const experimentLabel = (name) => experimentNames.get(name) ?? String(name ?? "").replace(/^zenith-/i, "");
