@@ -9,6 +9,9 @@ import hashlib
 import json
 import re
 from pathlib import Path
+from typing import Literal
+
+from pydantic import Field
 
 from core.agent.config import WorkNotesConfig
 from core.agent.context import Block
@@ -23,6 +26,7 @@ from core.interaction import (
     job_name,
     lived_day,
 )
+from infrastructure.config import StrictModel
 from infrastructure.storage import append_jsonl, read_jsonl
 
 _GENERIC = _STOPWORDS | set(
@@ -31,6 +35,13 @@ _GENERIC = _STOPWORDS | set(
         "people clerk board note notes"
     ).split()
 )
+
+
+class WriteWorkNote(StrictModel):
+    thought: str = Field(max_length=1000)
+    do: Literal["update work notes"]
+    job: str = Field(min_length=1, max_length=80)
+    note: str = Field(min_length=1, max_length=4000)
 
 
 class WorkNotes:
@@ -115,6 +126,17 @@ class WorkNotes:
             },
         )
 
+    def write_note(self, task: str, time: int, text: str) -> None:
+        # Agent-authored interpretation, kept separately from witnessed facts.
+        directory = self._directory(task)
+        target = directory / "note.md"
+        temporary = directory / "note.tmp"
+        if not self._safe(target) or not self._safe(temporary):
+            raise ValueError("symlinked notebook is not writable")
+        self.record(task, time, "note", text)
+        temporary.write_text(text.strip() + "\n", encoding="utf-8")
+        temporary.replace(target)
+
     def state(self, task: str, now: int | None = None) -> dict:
         entries = self.entries(task, now)
 
@@ -128,6 +150,7 @@ class WorkNotes:
             "last_observation": latest("observation"),
             "last_intention": latest("intention"),
             "last_work_view": latest("work_view"),
+            "last_note": latest("note"),
         }
 
     @staticmethod
@@ -143,11 +166,16 @@ class WorkNotes:
 
     def render(self, task: str, now: int, config: WorkNotesConfig, setting: Setting) -> str:
         records = self.entries(task, now)
-        selected = [r for r in records if r["type"] != "work_view"][-config.recent_entries :]
+        selected = [r for r in records if r["type"] not in {"work_view", "note"}][
+            -config.recent_entries :
+        ]
         view = next((r for r in reversed(records) if r["type"] == "work_view"), None)
         if not selected and view:
             selected = [view]
         lines = [f"Your work notes for {job_name(task)}:"]
+        note = next((r for r in reversed(records) if r["type"] == "note"), None)
+        if note:
+            selected = [note, *selected]
         for record in selected:
             date = lived_day(day_of(record["time"]), setting.start_date)
             when = f"{date}, {clock_of(record['time'])}"
@@ -156,6 +184,8 @@ class WorkNotes:
                 if record["type"] == "intention"
                 else "What you saw"
             )
+            if record["type"] == "note":
+                label = "Your own working summary (interpretation, not a verified result)"
             text = record["text"]
             size = config.excerpt_chars
             if len(text) > size:

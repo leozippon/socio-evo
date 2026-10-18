@@ -7,3 +7,7 @@ class Rejected(Exception):
 
     Raised before anything changes, so a rejected action leaves reality as it was.
     """
+
+
+class AssessmentUnavailable(Exception):
+    """Infrastructure could not produce a verdict; never evidence of poor work."""

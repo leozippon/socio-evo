@@ -2,7 +2,8 @@
 
 Each resident can keep an independent journal for each job they encounter. This is an
 opt-in cognition feature, separate from the general episodic stream, diaries, and skills.
-Existing configurations retain their behavior. No model call is required to maintain it.
+Existing configurations retain their behavior. Automatic factual logging requires no model call. With `work_notes.editable: true`,
+a resident may additionally write one bounded working summary before each external decision.
 
 ## Files and contents
 
@@ -11,6 +12,7 @@ Inside each resident's directory:
 ```
 memory/work/task-1/events.jsonl
 memory/work/task-1/state.json
+memory/work/task-1/note.md
 ```
 
 `events.jsonl` is an append-only journal. Each entry has an ID, simulation time, source,
@@ -81,3 +83,17 @@ that experiment automatically.
 Validation covers task routing, hidden-payload exclusion, private files, symlink refusal,
 idempotent replay, reopening, time filtering, context selection, active recall, nightly
 injection, the disabled baseline, and a three-day simulation using mocked inference.
+
+## Resident-managed summaries
+
+`editable` defaults to false for old experiments and is enabled in the community profiles.
+The internal `update work notes` action replaces `note.md` and appends a versioned `note`
+entry to the journal. It does not advance simulated time or change the environment. A
+resident can only update a notebook they have already encountered. Each decision permits
+at most one update, alongside the separate bounded active-recall loop.
+
+The summary can record the problem, evidence, edits, tests, uncertainties, and next steps.
+It is explicitly attributed to the resident and is not treated as a verified observation.
+The latest summary as of the decision time is injected together with separately labelled
+factual excerpts under the shared token budget. Historical entries remain available for
+active recall. `state.json` includes the latest summary but remains a derived view.

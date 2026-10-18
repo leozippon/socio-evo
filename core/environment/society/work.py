@@ -84,7 +84,7 @@ class Price(StrictModel):
 class Task(StrictModel):
     """Paid work of one `trade` on the board for `client`, or on the job sheet of the
     establishment at `sheet`, whose people alone take it and whose foreman its client pays:
-    one part done alone, or two parts done by two people, each at the price fixed when the
+    one or more deliverables shared by the required workers, each at the price fixed when the
     task was posted. Its takers have `deadline_days` days, the day of taking included, to
     have every part accepted: the longest any of its parts allows. A task recorded before the
     town had trades is a programming job on the board."""
@@ -94,6 +94,8 @@ class Task(StrictModel):
     sheet: str | None = None
     parts: tuple[Part, ...] = Field(min_length=1, max_length=len(get_args(PartNumber)))
     client: Client
+    strict_acceptance: bool = False
+    required_workers: int | None = Field(default=None, ge=1, le=2)
     prices: tuple[Price, ...]
 
     @model_validator(mode="after")
@@ -106,6 +108,10 @@ class Task(StrictModel):
         """What each worker is paid for `part` handed in with `declaration`."""
         price = self.prices[part - 1]
         return price.finished if declaration is Declaration.COMPLETE else price.unfinished
+
+    @property
+    def worker_count(self) -> int:
+        return self.required_workers or len(self.parts)
 
     @property
     def deadline_days(self) -> int:
@@ -180,12 +186,17 @@ class Claim(StrictModel):
     time: int
     parts: dict[str, PartNumber] = {}
     deliveries: tuple[Delivery, ...] = ()
+    grace_days: NonNegativeInt = 0
+    assessment_fault_day: int | None = None
     trials: tuple[Trial, ...] = ()
 
     @model_validator(mode="after")
     def _one_worker_per_part(self) -> "Claim":
-        if len(set(self.workers)) != len(self.workers) or len(self.workers) != len(self.task.parts):
-            raise ValueError(f"{self.task.id} needs {len(self.task.parts)} distinct workers")
+        if (
+            len(set(self.workers)) != len(self.workers)
+            or len(self.workers) != self.task.worker_count
+        ):
+            raise ValueError(f"{self.task.id} needs {self.task.worker_count} distinct workers")
         if self.parts and (
             set(self.parts) != set(self.workers) or len(set(self.parts.values())) != len(self.parts)
         ):
@@ -195,7 +206,7 @@ class Claim(StrictModel):
     @property
     def due_day(self) -> int:
         """The last day on which parts can be delivered."""
-        return day_of(self.time) + self.task.deadline_days - 1
+        return day_of(self.time) + self.task.deadline_days - 1 + self.grace_days
 
     @property
     def complete(self) -> bool:
@@ -235,12 +246,14 @@ class Board:
         offers: dict[str, Offer],
         claims: dict[str, Claim],
         latent: list[Defect],
+        issued_references: dict[str, list[str]] | None = None,
     ) -> None:
         self.next_number = next_number
         self.listings = listings
         self.offers = offers
         self.claims = claims
         self.latent = latent
+        self.issued_references = issued_references or {}
 
     def new_id(self) -> str:
         task_id = job_id(str(self.next_number))
@@ -249,6 +262,10 @@ class Board:
 
     def post(self, task: Task, time: int) -> None:
         self.listings[task.id] = Listing(task=task, time=time)
+        issued = self.issued_references.setdefault(task.trade.value, [])
+        for part in task.parts:
+            if part.reference not in issued:
+                issued.append(part.reference)
 
     def claim_of(self, agent: str) -> Claim | None:
         """The claim `agent` works on, if any."""
@@ -286,7 +303,7 @@ class Board:
         if task_id not in self.listings:
             raise Rejected(_no_job(reference))
         task, job = self.listings[task_id].task, job_name(task_id)
-        if len(task.parts) == 1:
+        if task.worker_count == 1:
             if partner is not None:
                 raise Rejected(
                     f"{job.capitalize()} is work for one; take it without naming anyone."
@@ -301,7 +318,9 @@ class Board:
             return self._open(Offer(agent=agent, task_id=task_id, partner=None))
         if (asking := self.taken_up(agent, task_id, partner)) is not None:
             named, asker = asking.part, asking.agent
-            parts = {} if named is None else {asker: named, agent: 3 - named}
+            parts = (
+                {} if named is None or len(task.parts) == 1 else {asker: named, agent: 3 - named}
+            )
             return self._form(task, (asker, agent), time, parts)
         if partner is None:
             askers = [
@@ -392,9 +411,11 @@ class Board:
             self.post(claim.task, time)
         return expired
 
-    def retire(self, time: int, shelf_life_days: int) -> list[Task]:
+    def retire(self, time: int, shelf_life_days: int | None) -> list[Task]:
         """Remove the tasks listed for `shelf_life_days` days or more by the day of `time`,
         and the offers for them."""
+        if shelf_life_days is None:
+            return []
         day = day_of(time)
         stale = [
             listing.task

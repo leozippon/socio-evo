@@ -11,6 +11,7 @@ from core.interaction import EventKind, Observation, Setting
 EVIDENCE = {
     EventKind.COMMAND_EXECUTED,
     EventKind.WORK_CHECKED,
+    EventKind.WORK_DELAYED,
     EventKind.DESK,
     EventKind.TASK_CLAIMED,
     EventKind.WORK_SUBMITTED,
@@ -82,12 +83,5 @@ def blocks_for(
             prompts.OPEN_NOTEBOOK.format(pages=prompts._pages([skill], limits)),
             55,
             skill.body,
-        )
-    for skill in skills:
-        add(
-            f"skill-index:{skill.name}",
-            f"Notebook: {skill.title}: {skill.description}",
-            20,
-            f"index:{skill.name}",
         )
     return sorted(blocks, key=lambda block: order[block.source])

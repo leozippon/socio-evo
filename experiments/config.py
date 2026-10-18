@@ -28,6 +28,10 @@ class TasksConfig(StrictModel):
 
     provider: Literal["coding", "swebench"] = "coding"
     instances: tuple[str, ...] = ()
+    community: bool = False
+    dataset_variant: Literal["lite", "verified"] = "verified"
+    solo_deadline_days: int = Field(default=2, ge=1)
+    joint_deadline_days: int = Field(default=2, ge=1)
     command_seconds: int = Field(default=60, ge=1, le=300)
     evaluation_seconds: int = Field(default=600, ge=60, le=1800)
     banks: dict[Trade, str] = Field(default={Trade.PROGRAMMING: "tasks/coding/bank"}, min_length=1)
@@ -76,14 +80,26 @@ class ExperimentConfig(StrictModel):
         if self.tasks.provider == "swebench":
             if set(self.tasks.banks) != {Trade.PROGRAMMING}:
                 raise ValueError("SWE-bench pilot requires only the programming bank")
-            if not self.tasks.instances or len(set(self.tasks.instances)) != len(
+            if (not self.tasks.instances and not self.tasks.community) or len(
+                set(self.tasks.instances)
+            ) != len(self.tasks.instances):
+                raise ValueError("SWE-bench requires distinct configured instance IDs")
+            if self.environment.conditions.two_part_tasks and not self.tasks.community:
+                raise ValueError("SWE-bench pilot supports single-part jobs only")
+            if self.tasks.instances and self.environment.conditions.one_part_tasks > len(
                 self.tasks.instances
             ):
-                raise ValueError("SWE-bench requires distinct configured instance IDs")
-            if self.environment.conditions.two_part_tasks:
-                raise ValueError("SWE-bench pilot supports single-part jobs only")
-            if self.environment.conditions.one_part_tasks > len(self.tasks.instances):
                 raise ValueError("not enough SWE-bench issues for distinct postings")
+        if self.tasks.community:
+            if self.tasks.provider != "swebench" or not self.environment.strict_acceptance:
+                raise ValueError("community work requires SWE-bench and strict acceptance")
+            if self.environment.establishments:
+                raise ValueError("community work currently uses the shared public board")
+        if self.environment.posting_mode == "replenish":
+            if self.simulation.postings != ("morning",):
+                raise ValueError("replenishment runs post only in the morning")
+            if self.environment.task_shelf_life_days is not None:
+                raise ValueError("replenishment requires persistent unclaimed notices")
         names = [seed.profile.name for seed in self.agents]
         residents = self.environment.homes
         if len(set(names)) != len(names) or set(names) != residents.keys():

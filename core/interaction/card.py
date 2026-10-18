@@ -214,6 +214,7 @@ class MayClaim(_Allowance):
     kind: Literal[ActionKind.CLAIM_TASK] = ActionKind.CLAIM_TASK
     alone: tuple[str, ...] = ()
     together: tuple[str, ...] = ()
+    shared: tuple[str, ...] = ()
     partners: tuple[str, ...] | None
     standing: tuple[str, str | None] | None = None
 
@@ -246,11 +247,15 @@ class MayClaim(_Allowance):
                     (tuple(task for task in self.together if task != job), self.partners),
                     ((job,), tuple(name for name in self.partners if name != asked)),
                 ]
-            forms += [_together(jobs, partners) for jobs, partners in groups if jobs and partners]
+            for jobs, partners in groups:
+                for shared in (False, True):
+                    selected = tuple(job for job in jobs if (job in self.shared) == shared)
+                    if selected and partners:
+                        forms.append(_together(selected, partners, shared=shared))
         return forms
 
 
-def _together(jobs: Sequence[str], partners: Sequence[str]) -> _Form:
+def _together(jobs: Sequence[str], partners: Sequence[str], *, shared: bool = False) -> _Form:
     """Taking one of the jobs for two `jobs` with one of `partners`, naming the part one means
     to do: asking them, or taking up their asking."""
     pairs = {job_number(task): task for task in jobs}
@@ -259,10 +264,14 @@ def _together(jobs: Sequence[str], partners: Sequence[str]) -> _Form:
         WITH: (_one_of(partners), None),
         PART: (_one_of(get_args(PartNumber)), None),
     }
+    if shared:
+        fields.pop(PART)
     return _Form(
         TAKE_FOR_TWO,
         fields,
-        lambda reply: ClaimTask(task_id=pairs[reply[JOB]], partner=reply[WITH], part=reply[PART]),
+        lambda reply: ClaimTask(
+            task_id=pairs[reply[JOB]], partner=reply[WITH], part=reply.get(PART)
+        ),
     )
 
 

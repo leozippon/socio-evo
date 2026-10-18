@@ -179,6 +179,9 @@ class Simulation:
         if path is None:
             raise FileNotFoundError(f"{run.root} has no checkpoint")
         checkpoint = Checkpoint.model_validate_json(path.read_text(encoding="utf-8"))
+        for provider in setup.providers.values():
+            if hasattr(provider, "restore_checkpoint"):
+                provider.restore_checkpoint(checkpoint.day)
         env = Environment.restore(
             setup.environment, checkpoint.environment, setup.providers, run.events_path
         )
@@ -503,6 +506,9 @@ class Simulation:
         return versions
 
     def _checkpoint(self) -> None:
+        for provider in self.env.providers.values():
+            if hasattr(provider, "checkpoint"):
+                provider.checkpoint(self.day)
         checkpoint = Checkpoint(
             day=self.day,
             environment=self.env.state(),

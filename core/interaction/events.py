@@ -42,6 +42,7 @@ class EventKind(StrEnum):
     for it; private to its workers, truth-only for a task nobody had taken."""
     COMMAND_EXECUTED = "command_executed"
     WORK_CHECKED = "work_checked"
+    WORK_DELAYED = "work_delayed"
     """A solution run against a part's acceptance checks without delivery; private."""
     WORK_SUBMITTED = "work_submitted"
     """A delivery of a part and its public result, as witnesses see it."""
@@ -142,6 +143,7 @@ class Event(StrictModel):
             EventKind.TASK_WITHDRAWN,
             EventKind.COMMAND_EXECUTED,
             EventKind.WORK_CHECKED,
+            EventKind.WORK_DELAYED,
             EventKind.WORK_SUBMITTED,
             EventKind.DESK,
             EventKind.PAYMENT,

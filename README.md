@@ -80,3 +80,10 @@ opt-in cognition settings; existing experiment configurations keep their previou
 
 For per-resident task journals and selective context injection, see
 [Task work notes](docs/task-work-notes.md). The work-notes pilot enables all three features.
+
+### Technical community profile
+
+The opt-in [technical community](docs/technical-community.md) provides Lite/Verified
+SWE-bench profiles with eight residents, completion-based task replenishment, shared
+two-person issue repairs, strict official acceptance, and editable private task notes.
+Use Lite for workflow validation before the 42-day Verified run.

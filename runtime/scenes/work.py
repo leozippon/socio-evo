@@ -82,14 +82,22 @@ class WorkSession(Scene):
         if claim is None:
             late = situations.last_moment(env, self.following, self.until)
             tasks = env.notices_for(agent, self.place, late=late)
-            alone = tuple(task.id for task in tasks if len(task.parts) == 1)
-            together = tuple(task.id for task in tasks if len(task.parts) > 1)
+            alone = tuple(task.id for task in tasks if task.worker_count == 1)
+            together = tuple(task.id for task in tasks if task.worker_count > 1)
             people = firms.people(firm) if firm is not None else env.agents
             neighbours = tuple(other for other in people if other != agent)
             partners = neighbours if env.conditions.partner_choice else None
             offer = env.board.offers.get(agent)
             standing = None if offer is None else (offer.task_id, offer.partner)
-            claims = MayClaim(alone=alone, together=together, partners=partners, standing=standing)
+            claims = MayClaim(
+                alone=alone,
+                together=together,
+                partners=partners,
+                standing=standing,
+                shared=tuple(
+                    task.id for task in tasks if task.worker_count == 2 and len(task.parts) == 1
+                ),
+            )
             if claims.forms():
                 allowed.append(claims)
         else:
@@ -106,7 +114,7 @@ class WorkSession(Scene):
                 "delivery": DELIVERY[task.trade],
                 "drafts": drafts,
             }
-            if task.trade in EXAMPLES:
+            if task.trade in EXAMPLES and not env.config.strict_acceptance:
                 allowed.append(MayCheck(**working))
             allowed.append(MaySubmit(**working))
         if firm is not None and firms.foreman_of(firm) == agent:

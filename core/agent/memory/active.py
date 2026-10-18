@@ -116,6 +116,8 @@ def search(memory: Memory, query: str, now: int, config: ActiveRecallConfig) -> 
             label = (
                 "Intended action, not a confirmed outcome"
                 if entry["type"] == "intention"
+                else "Your own working summary"
+                if entry["type"] == "note"
                 else "Observed"
             )
             add(

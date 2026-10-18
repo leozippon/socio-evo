@@ -319,7 +319,7 @@ function priceLabel(task) {
     const [figure, unit] = fmt.moneyFigure(value);
     return { figure, unit: [unit, each ? "each" : ""].filter(Boolean).join(" "), title };
   };
-  if (prices.every(Boolean)) return label(prices.reduce((a, p) => a + p.finished, 0), parts.length > 1, "Paid to each worker once every part is in, all as finished");
+  if (prices.every(Boolean)) return label(prices.reduce((a, p) => a + p.finished, 0), (task.required_workers ?? parts.length) > 1, task.strict_acceptance ? "Paid to each worker after official acceptance" : "Paid to each worker once every part is in, all as finished");
   return label(parts.reduce((a, p) => a + (p.reward ?? 0), 0), false, "The reward the notice offers");
 }
 
@@ -363,7 +363,7 @@ export class BoardPanel {
               "span",
               { class: "task-meta" },
               t?.client ? clientMark(t.client) : null,
-              parts.length > 1 ? h("span", { class: "for-two" }, icon("pair", 13), "for two") : null,
+              (t?.required_workers ?? parts.length) > 1 ? h("span", { class: "for-two" }, icon("pair", 13), "for two") : null,
               h("span", { class: "muted" }, `${t ? fmt.plural(Math.max(...parts.map((part) => part.deadline_days)), "day") : "?"} to do · posted day ${posted(id) ? dayOf(posted(id).time) : "?"}`),
             ),
             below,
@@ -476,7 +476,7 @@ export class BoardPanel {
         return h(
           "details",
           { class: "part-spec" },
-          h("summary", {}, h("b", {}, parts.length > 1 ? `Part ${i + 1}: ${part.title}` : part.title), h("span", { class: "muted" }, price ? ` · ${fmt.money(price.finished)} finished, ${fmt.money(price.unfinished)} unfinished${parts.length > 1 ? ", to each" : ""}` : part.reward ? ` · ${fmt.money(part.reward)}` : "")),
+          h("summary", {}, h("b", {}, parts.length > 1 ? `Part ${i + 1}: ${part.title}` : part.title), h("span", { class: "muted" }, price && t.strict_acceptance ? ` · ${fmt.money(price.finished)} on acceptance${(t.required_workers ?? parts.length) > 1 ? ", to each" : ""}` : price ? ` · ${fmt.money(price.finished)} finished, ${fmt.money(price.unfinished)} unfinished${parts.length > 1 ? ", to each" : ""}` : part.reward ? ` · ${fmt.money(part.reward)}` : "")),
           h("pre", { class: "spec" }, part.specification),
         );
       }),

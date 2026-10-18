@@ -119,3 +119,59 @@ async def test_notes_injected_into_decision_and_nightly_context(agent, observe, 
 def test_disabled_does_not_create_notes(agent):
     agent.perceive([event().percept("Mei")])
     assert not agent.memory.work.root.exists()
+
+
+async def test_resident_can_update_summary_then_act_without_overwriting_facts(agent, observe):
+    from infrastructure.llm import ScriptedClient
+
+    agent.cognition = agent.cognition.model_copy(
+        update={
+            "work_notes": WorkNotesConfig(enabled=True, editable=True),
+            "context_budget": ContextBudgetConfig(enabled=True),
+        }
+    )
+    notes = agent.memory.work
+    notes.observe(event().percept("Mei"))
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return {
+                "thought": "Keep track of the evidence.",
+                "do": "update work notes",
+                "job": "1",
+                "note": "Parser test failed. Next: inspect timezone conversion.",
+            }
+        assert "Parser test failed. Next:" in request.messages[-1].content
+        assert "update work notes" not in str(request.json_schema)
+        return {
+            "thought": "Discuss the failure.",
+            "do": "say",
+            "to": "Ben",
+            "words": "The parser test failed.",
+        }
+
+    agent.client = ScriptedClient(reply)
+    await agent.act(observe(2).model_copy(update={"situation": "Discuss job 1."}))
+    assert len(requests) == 2
+    assert (notes.root / "task-1/note.md").read_text().startswith("Parser test failed.")
+    assert notes.state("task-1")["last_observation"]["text"] == "Parser timezone test failed."
+    assert notes.state("task-1")["last_note"]["type"] == "note"
+    assert all(r.metadata["context_usage"]["input_count"] <= 24000 for r in requests)
+
+
+def test_summary_as_of_time_and_symlink_protection(agent, tmp_path):
+    notes = agent.memory.work
+    notes.observe(event().percept("Mei"))
+    notes.write_note("task-1", time_at(2, "11:00"), "OLD_SUMMARY")
+    notes.write_note("task-1", time_at(3, "11:00"), "FUTURE_SUMMARY")
+    view = notes.render("task-1", time_at(2, "12:00"), WorkNotesConfig(), agent.setting)
+    assert "OLD_SUMMARY" in view and "FUTURE_SUMMARY" not in view
+    target = tmp_path / "other-agent-note"
+    target.write_text("PRIVATE")
+    (notes.root / "task-1/note.md").unlink()
+    (notes.root / "task-1/note.md").symlink_to(target)
+    with pytest.raises(ValueError):
+        notes.write_note("task-1", time_at(4, "12:00"), "rewrite")
+    assert target.read_text() == "PRIVATE"

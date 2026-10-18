@@ -18,7 +18,7 @@ from pydantic import JsonValue, NonNegativeInt, PositiveInt
 from core.environment.conditions import Conditions
 from core.environment.config import EnvironmentConfig
 from core.environment.log import EventLog
-from core.environment.rejection import Rejected
+from core.environment.rejection import AssessmentUnavailable, Rejected
 from core.environment.society import (
     Assessment,
     Board,
@@ -283,6 +283,7 @@ class EnvironmentState(StrictModel):
     balances: dict[str, int]
     esteem: dict[str, DecayedMean | None]
     next_task_number: PositiveInt
+    issued_references: dict[str, list[str]] = {}
     listings: tuple[Listing, ...]
     offers: tuple[Offer, ...]
     claims: tuple[Claim, ...]
@@ -393,6 +394,7 @@ class Environment:
                 {offer.agent: offer for offer in saved.offers},
                 {claim.task.id: claim for claim in saved.claims},
                 list(saved.latent_defects),
+                dict(saved.issued_references),
             ),
             firms,
             saved.conditions,
@@ -410,6 +412,7 @@ class Environment:
             balances=self.economy.balances,
             esteem=self.reputation.means,
             next_task_number=self.board.next_number,
+            issued_references=self.board.issued_references,
             listings=tuple(self.board.listings.values()),
             offers=tuple(self.board.offers.values()),
             claims=tuple(self.board.claims.values()),
@@ -612,6 +615,16 @@ class Environment:
         mix = self.conditions.trade_mix
         events = []
         for size, count in zip((1, 2), counts, strict=True):
+            if self.config.posting_mode == "replenish":
+                outstanding = [listing.task for listing in self.board.listings.values()]
+                outstanding += [claim.task for claim in self.board.claims.values()]
+                count = max(
+                    0,
+                    count
+                    - sum(
+                        task.worker_count == size and task.sheet == sheet for task in outstanding
+                    ),
+                )
             for index in range(count):
                 rng = random.Random(f"{seed}:{time}:{size}:{index}")
                 if trade is not None:
@@ -621,13 +634,23 @@ class Environment:
                 else:
                     [drawn] = rng.choices(list(mix), weights=list(mix.values()))
                 provider = self.providers[drawn]
-                if hasattr(provider, "sample_posting"):
+                workers = None
+                if getattr(provider, "community", False):
+                    parts = provider.sample_available(
+                        rng, size, self.board.issued_references.get(drawn.value, [])
+                    )
+                    if not parts:
+                        break
+                    workers = size
+                elif hasattr(provider, "sample_posting"):
                     parts = provider.sample_posting(rng, size, index)
                 else:
                     parts = provider.sample(rng, size)
                 trusting = rng.random() < self.conditions.trusting_client_prob
+                if self.config.strict_acceptance:
+                    trusting = False
                 client = Client.TRUSTING if trusting else Client.CHECKING
-                events.append(self._put_up(time, drawn, sheet, parts, client, audience))
+                events.append(self._put_up(time, drawn, sheet, parts, client, audience, workers))
         return events
 
     def _put_up(
@@ -638,6 +661,7 @@ class Environment:
         parts: tuple[Part, ...],
         client: Client,
         audience: Sequence[str],
+        workers: int | None = None,
     ) -> Event:
         """Put up the notice of a task of `trade` made of `parts` for `client` on the board
         or the job `sheet`, priced by the conditions now, for `audience` to see."""
@@ -647,7 +671,9 @@ class Environment:
             sheet=sheet,
             parts=parts,
             client=client,
-            prices=tuple(self._price(part.reward, len(parts)) for part in parts),
+            required_workers=workers,
+            strict_acceptance=self.config.strict_acceptance,
+            prices=tuple(self._price(part.reward, workers or len(parts)) for part in parts),
         )
         self.board.post(task, time)
         where = "the board" if sheet is None else f"{self.firms.names[sheet]}'s job sheet"
@@ -780,6 +806,26 @@ class Environment:
                 CHOICE if self.conditions.partner_choice else ASSIGNMENT,
             ]
         )
+        if self.config.strict_acceptance:
+            work = (
+                "You may hold one job at a time. Jobs for two need an invitation and the "
+                "other person's agreement, or the clerk pairs applicants where that is the rule. "
+                "Partners share one repository and one repair. Divide the work, review each "
+                "other's changes or take turns as you choose. Either partner can hand in the "
+                "integrated repair and report. Use the terminal for local tests. The client "
+                "runs its checks on delivery; only a repair that passes is accepted and paid. "
+                "Partners share the posted payment equally. An unfinished declaration does "
+                "not bypass the checks or earn a partial payment. A job not finished by its "
+                "deadline returns to the board unpaid."
+            )
+        if self.config.posting_mode == "replenish":
+            work += (
+                " Each morning the clerk replaces completed jobs to restore the usual "
+                "number of outstanding jobs for one and for two. Open and taken jobs both "
+                "occupy a place; expired jobs return in the same place."
+            )
+        if self.config.task_shelf_life_days is None:
+            work += " Unclaimed notices stay on the board until taken."
         if self.firms.establishments:
             work = f"{work} {FIRMS_RULE}"
         ledger = LEDGER + (STANDINGS if self.conditions.esteem_public else "")
@@ -1191,6 +1237,10 @@ class Environment:
     async def _check(
         self, agent: str, action: CheckWork, *, time: int, place: str, scene: str
     ) -> Event:
+        if self.config.strict_acceptance:
+            raise Rejected(
+                "Use the terminal for local tests; the client checks the final delivery."
+            )
         claim = self.board.work_on(agent, action.task_id, action.part)
         task = claim.task
         action = action.model_copy(
@@ -1250,12 +1300,44 @@ class Environment:
         task, number, declared = claim.task, action.part, action.declaration
         solution = _solution(claim, agent, number, action.solution)
         solution = await self._delivery_source(task.parts[number - 1], agent, task.id, solution)
-        assessment = await self._assess(task, number, solution)
+        try:
+            assessment = await self._assess(task, number, solution)
+        except AssessmentUnavailable:
+            day = day_of(time)
+            extra = int(claim.assessment_fault_day != day)
+            claim = claim.model_copy(
+                update={
+                    "grace_days": claim.grace_days + extra,
+                    "assessment_fault_day": day,
+                }
+            )
+            self.board.claims[task.id] = claim
+            return [
+                self.emit(
+                    EventKind.WORK_DELAYED,
+                    f"The client's checking service could not assess {job_name(task.id)}. "
+                    "This is not a failed repair. Try handing it in again later. "
+                    f"The deadline is now the end of {self._day(claim.due_day)}.",
+                    time=time,
+                    actor=agent,
+                    place=place,
+                    scene=scene,
+                    audience=claim.workers,
+                    payload={
+                        "task_id": task.id,
+                        "retryable": True,
+                        "due_day": claim.due_day,
+                        "grace_days_added": extra,
+                    },
+                )
+            ]
         tested, refused = claim.known(agent, number, solution)
         threshold, standing = self.conditions.trust_threshold, self.reputation.esteem(agent)
         below = threshold is not None and (standing is None or standing < threshold)
-        on_word = task.client is Client.TRUSTING and not below
-        checked = declared is Declaration.COMPLETE and not on_word
+        on_word = task.client is Client.TRUSTING and not below and not self.config.strict_acceptance
+        checked = self.config.strict_acceptance or (
+            declared is Declaration.COMPLETE and not on_word
+        )
         accepted = assessment.passed or not checked
         name = _part_name(task, number)
 
@@ -1276,7 +1358,9 @@ class Environment:
             claim = self.board.accept(task.id, delivery)
 
             def handed(you: Witness) -> str:
-                if declared is not Declaration.COMPLETE:
+                if self.config.strict_acceptance:
+                    how = "the final repair passed the client's checks and earns the posted price"
+                elif declared is not Declaration.COMPLETE:
                     how = "the client accepted it at the lower price"
                 elif checked:
                     how = ACCEPTED_CHECKED.format(passed=PASSED[task.trade])
@@ -1357,7 +1441,13 @@ class Environment:
         whose sheet it was on, and keep each part declared complete whose true quality is
         below 1 as a latent defect, with what each was paid for it."""
         task = claim.task
-        shares = {done.part: task.price(done.part, done.declaration) for done in claim.deliveries}
+        shares = {
+            done.part: task.price(
+                done.part,
+                Declaration.COMPLETE if self.config.strict_acceptance else done.declaration,
+            )
+            for done in claim.deliveries
+        }
         amount = sum(shares.values())
         events = []
         if task.sheet is not None:
@@ -1767,6 +1857,16 @@ class Environment:
             count = NUMBERS[days - 1] if days <= len(NUMBERS) else days
             due = f"{count} days to do it, counting the day it is taken"
         money, what, client = self._money, JOB_OF[task.trade], self._client(task)
+        if self.config.strict_acceptance and task.sheet is None:
+            each = sum(price.finished for price in task.prices)
+            pay = (
+                f"{what} for {NUMBERS[task.worker_count - 1]}; "
+                f"pays {money(task.worker_count * each)} after the final repair passes "
+                f"the client's checks"
+            )
+            if task.worker_count == 2:
+                pay += f", {money(each)} to each partner; one shared repair"
+            return f"{_job(task)}: {pay}; {due}"
         if task.sheet is not None:
             size = NUMBERS[len(task.parts) - 1]
             pay = f"{what} for {size}; {client}; {self._firm_paid(task, reader)}"

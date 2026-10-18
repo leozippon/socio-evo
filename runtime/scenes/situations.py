@@ -153,6 +153,11 @@ def setting(env: Environment, calendar: Calendar, postings: Sequence[str], agent
         parts=_parts(calendar),
         postings=listed([starts[slot] for slot in postings]),
     )
+    if env.config.posting_mode == "replenish":
+        day = day.replace(
+            "New notices go up on the board at",
+            "Completed jobs are replaced, while unused issues remain, at",
+        )
     home = env.world.places[env.config.homes[agent]].name
     world = env.config.setting
     town = TOWN.format(home=home, town=world.name or IN_TOWN, places="\n".join(places))
@@ -330,6 +335,8 @@ def _board(
     board = env.board_view(agent, place, late=late)
     if posting is None or not board.startswith("There are no"):
         return board
+    if env.config.posting_mode == "replenish":
+        return board + " New notices appear only after completed jobs free places on the board."
     told = NO_NOTICES if day_of(posting) == day_of(now) else NO_NOTICES_TOMORROW
     return told.format(board=board, clock=clock_of(posting))
 

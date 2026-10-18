@@ -64,6 +64,7 @@ class ContextBudgetConfig(StrictModel):
 
 class WorkNotesConfig(StrictModel):
     enabled: bool = False
+    editable: bool = False
     related_notes: int = Field(default=2, ge=0, le=5)
     recent_entries: int = Field(default=4, ge=1, le=20)
     excerpt_chars: int = Field(default=1600, ge=200, le=8000)

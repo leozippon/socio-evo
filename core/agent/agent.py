@@ -13,6 +13,7 @@ from core.agent.context import BudgetClient, BudgetPrompt, pack
 from core.agent.decision_context import blocks_for
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.memory.active import MemoryHit, Remember, search
+from core.agent.memory.work import WriteWorkNote
 from core.agent.parameters import Parameters
 from core.interaction import Card, Decision, Observation, Percept, Setting, form
 from core.interaction.card import correction
@@ -115,7 +116,7 @@ class Agent:
             self.cognition,
             account=self.parameters.read_account(),
             setting=observation.setting,
-            skills=() if self.cognition.context_budget.enabled else skills,
+            skills=skills,
         )
         card = Card(observation.allowed)
         if (
@@ -165,23 +166,27 @@ class Agent:
         hits: list[MemoryHit] = []
         queries: list[str] = []
         audit = []
-        rounds = settings.max_queries if settings.enabled else 0
-        work_blocks = (
-            self.memory.work.select(observation, self.cognition.work_notes, self.setting)
-            if self.cognition.work_notes.enabled
-            else []
-        )
+        recall_limit = settings.max_queries if settings.enabled else 0
+        notes = self.cognition.work_notes
+        can_edit = notes.enabled and notes.editable and bool(self.memory.work.tasks())
+        rounds = recall_limit + int(can_edit)
+        note_update = None
         actions = (
             get_args(card.model.model_fields["root"].annotation)
             if issubclass(card.model, RootModel)
             else (card.model,)
         )
         for step in range(rounds + 1):
-            can_recall = step < rounds
+            can_recall = step < rounds and len(queries) < recall_limit
+            can_write = step < rounds and can_edit and note_update is None
+            internal = ([Remember] if can_recall else []) + ([WriteWorkNote] if can_write else [])
             model = (
-                RootModel[Union[tuple((Remember, *actions))]]  # noqa: UP007
-                if can_recall
+                RootModel[Union[tuple((*internal, *actions))]]  # noqa: UP007
+                if internal
                 else card.model
+            )
+            work_blocks = (
+                self.memory.work.select(observation, notes, self.setting) if notes.enabled else []
             )
             instruction = (
                 "Before doing anything, you may recall something from your own experiences "
@@ -191,6 +196,15 @@ class Agent:
                 if can_recall
                 else "Choose what to do now using what you know."
             )
+            if can_write:
+                instruction += (
+                    "\nYou may update one of your existing job notes before acting. "
+                    "Name its job number and write a concise replacement note: the problem, "
+                    "evidence, changes, test results, unresolved questions and next steps. "
+                    "Distinguish your interpretation and plans from observed outcomes."
+                )
+            if note_update is not None:
+                instruction += "\n" + note_update
             if queries:
                 instruction += "\nAlready looked for: " + "; ".join(queries)
                 if audit[-1]["repeated"]:
@@ -225,6 +239,7 @@ class Agent:
                         "recall_round": step,
                         "active_recall": audit,
                         "work_notes": [block.source for block in work_blocks],
+                        "work_note_update": note_update,
                     },
                 }
             )
@@ -245,6 +260,18 @@ class Agent:
             answer = reply
             while isinstance(answer, RootModel):
                 answer = answer.root
+            if isinstance(answer, WriteWorkNote):
+                from core.interaction import job_id
+
+                task = job_id(answer.job)
+                if task in self.memory.work.tasks() and self.memory.work.entries(
+                    task, observation.time
+                ):
+                    self.memory.work.write_note(task, observation.time, answer.note)
+                    note_update = "Your work note was saved. Continue with your decision."
+                else:
+                    note_update = "You have no notes for that job. No note was saved."
+                continue
             if not isinstance(answer, Remember):
                 return answer
             normalized = " ".join(answer.query.lower().split())

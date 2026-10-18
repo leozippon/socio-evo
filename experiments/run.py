@@ -81,7 +81,7 @@ async def run(
     before a new run directory exists, so a configuration error leaves nothing behind. A
     termination signal cancels the run like a keyboard interrupt: it is marked interrupted."""
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
-    if resume and config.tasks.provider == "swebench":
+    if resume and config.tasks.provider == "swebench" and not config.tasks.community:
         raise ValueError("SWE-bench town pilot cannot resume a partial day; start a new run")
     revision = code_revision()
     root = RunDirectory.root_of(runs_root, config.name, seed)
@@ -151,15 +151,24 @@ def task_providers(config: ExperimentConfig, run_root: Path):
     if config.tasks.provider == "swebench":
         from tasks.swebench.provider import SWEbenchTaskProvider
 
-        return {
-            Trade.PROGRAMMING: SWEbenchTaskProvider(
-                config.tasks.bank_path,
-                config.tasks.instances,
-                run_root / "repositories",
-                command_seconds=config.tasks.command_seconds,
-                evaluation_seconds=config.tasks.evaluation_seconds,
+        provider = SWEbenchTaskProvider(
+            config.tasks.bank_path,
+            config.tasks.instances,
+            run_root / "repositories",
+            command_seconds=config.tasks.command_seconds,
+            evaluation_seconds=config.tasks.evaluation_seconds,
+            community=config.tasks.community,
+            solo_deadline_days=config.tasks.solo_deadline_days,
+            joint_deadline_days=config.tasks.joint_deadline_days,
+        )
+        if config.tasks.community:
+            required = (
+                config.environment.conditions.one_part_tasks
+                + config.environment.conditions.two_part_tasks
             )
-        }
+            if len(provider.rows) < required:
+                raise ValueError(f"community needs at least {required} distinct repository issues")
+        return {Trade.PROGRAMMING: provider}
     return {
         trade: PROVIDERS[trade](
             path, timeout=config.tasks.timeout, isolation=config.tasks.isolation

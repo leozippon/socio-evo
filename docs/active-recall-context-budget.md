@@ -52,7 +52,11 @@ Other content shares the remaining allowance, rather than owning fixed-size part
 
 1. Current command/test/desk evidence; recent work evidence.
 2. Active-recall excerpts and new observations.
-3. Relevant skills, recent history, beliefs, older history, notebook index.
+3. Relevant skill bodies, recent history, beliefs, and older history.
+
+The skill directory is part of the system message and is counted in mandatory input.
+Selected skill bodies remain optional user-message blocks. Current task notes and
+assessment-delay notices receive evidence priority; summaries remain resident interpretations.
 
 A small dynamic floor (at most 192 counted units per block) is shared among current
 observations, recent evidence and requested recollections before allocating the remaining

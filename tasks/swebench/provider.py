@@ -6,13 +6,16 @@ import io
 import json
 import os
 import random
+import shutil
 import subprocess
 import sys
 import tarfile
+import threading
 import uuid
 from pathlib import Path
 
 from core.environment import Assessment, Part
+from core.environment.rejection import AssessmentUnavailable
 from tasks.swebench.docker_exec import captured_exec
 from tasks.swebench.pilot import command, container_args, execute, image_for, public_issue
 
@@ -26,9 +29,20 @@ class SWEbenchTaskProvider:
         *,
         command_seconds: int = 60,
         evaluation_seconds: int = 600,
+        community: bool = False,
+        solo_deadline_days: int = 2,
+        joint_deadline_days: int = 2,
     ):
         rows = {r["instance_id"]: r for r in json.loads(dataset.read_text())}
-        self.rows = {i: rows[i] for i in instances}
+        self.rows = {i: rows[i] for i in (instances or tuple(sorted(rows)))}
+        self.bank_identity = {
+            "sha256": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+            "instances": sorted(self.rows),
+        }
+        self.community = community
+        self.solo_deadline_days = solo_deadline_days
+        self.joint_deadline_days = joint_deadline_days
+        self._lock = threading.RLock()
         self.dataset, self.root = dataset.resolve(), root.resolve()
         self.command_seconds, self.evaluation_seconds = command_seconds, evaluation_seconds
         self.client = None
@@ -50,9 +64,63 @@ class SWEbenchTaskProvider:
             "Passing local tests alone does not guarantee acceptance. Keep terminal "
             "output short. You can discuss your diagnosis with neighbours.",
             reward=60,
-            deadline_days=2,
+            deadline_days=self.solo_deadline_days,
             reference=instance,
         )
+
+    def sample_available(self, rng, workers: int, issued: list[str]) -> tuple[Part, ...]:
+        available = sorted(set(self.rows) - set(issued))
+        if not available:
+            return ()
+        part = self.part(rng.choice(available))
+        days = self.joint_deadline_days if workers == 2 else self.solo_deadline_days
+        text = part.specification
+        if workers == 2:
+            text += (
+                "\nThis is one shared repair for two partners. Both use the same checkout; "
+                "changes made by either are visible to the other. Coordinate file edits, "
+                "review diffs and run local tests. Terminal commands execute in order. "
+                "Either partner may submit the final integrated WORKTREE and report."
+            )
+        return (part.model_copy(update={"deadline_days": days, "specification": text}),)
+
+    def _key(self, part, worker: str, task_id: str) -> str:
+        owner = "shared" if self.community else worker
+        return hashlib.sha256(f"{owner}:{task_id}:{part.reference}".encode()).hexdigest()[:20]
+
+    def checkpoint(self, day: int) -> None:
+        if not self.community:
+            return
+        destination = self.root / "checkpoints" / f"day-{day:04d}"
+        temporary = destination.with_suffix(".tmp")
+        if temporary.exists():
+            shutil.rmtree(temporary)
+        temporary.mkdir(parents=True)
+        (temporary / "bank.json").write_text(json.dumps(self.bank_identity, sort_keys=True))
+        workspaces = self.root / "workspaces"
+        if workspaces.exists():
+            shutil.copytree(workspaces, temporary / "workspaces")
+        if destination.exists():
+            shutil.rmtree(destination)
+        temporary.rename(destination)
+
+    def restore_checkpoint(self, day: int) -> None:
+        if not self.community:
+            return
+        source = self.root / "checkpoints" / f"day-{day:04d}"
+        if not source.is_dir():
+            raise FileNotFoundError(f"Missing repository checkpoint: {source}")
+        if json.loads((source / "bank.json").read_text()) != self.bank_identity:
+            raise ValueError(
+                "repository checkpoint belongs to a different dataset or instance pool"
+            )
+        if self.containers:
+            raise RuntimeError("restore requires an unopened workspace provider")
+        target = self.root / "workspaces"
+        if target.exists():
+            shutil.rmtree(target)
+        if (source / "workspaces").exists():
+            shutil.copytree(source / "workspaces", target)
 
     def sample(self, rng: random.Random, count: int) -> tuple[Part, ...]:
         return tuple(self.part(i) for i in rng.sample(list(self.rows), count))
@@ -68,7 +136,7 @@ class SWEbenchTaskProvider:
 
         if self.client is None:
             self.client = docker.from_env()
-        key = hashlib.sha256(f"{worker}:{task_id}:{part.reference}".encode()).hexdigest()[:20]
+        key = self._key(part, worker, task_id)
         folder = self.root / "workspaces" / key
         folder.mkdir(parents=True, exist_ok=True)
         if key in self.containers:
@@ -139,22 +207,28 @@ class SWEbenchTaskProvider:
         return await asyncio.to_thread(self._command, part, worker, task_id, script)
 
     def _command(self, part, worker, task_id, script):
+        with self._lock:
+            return self._locked_command(part, worker, task_id, script)
+
+    def _locked_command(self, part, worker, task_id, script):
         container, folder = self._workspace(part, worker, task_id)
         result = execute(container.name, script, self.command_seconds)
         self._snapshot(container, folder)
         with (folder / "commands.jsonl").open("a") as f:
             f.write(json.dumps({"worker": worker, "command": script, **result}) + "\n")
-        (folder / "last_command.json").write_text(json.dumps({"command": script, **result}))
+        (folder / "last_command.json").write_text(
+            json.dumps({"worker": worker, "command": script, **result})
+        )
         return result
 
     def desk_view(self, part: Part, worker: str, task_id: str) -> str:
-        key = hashlib.sha256(f"{worker}:{task_id}:{part.reference}".encode()).hexdigest()[:20]
+        key = self._key(part, worker, task_id)
         path = self.root / "workspaces" / key / "last_command.json"
         if not path.exists():
             return ""
         latest = json.loads(path.read_text())
         return (
-            f"Your terminal screen, from your most recent command:\n{latest['command']}\n"
+            f"Terminal screen, command by {latest.get('worker', worker)}:\n{latest['command']}\n"
             f"Exit code: {latest['exit_code']}\n{latest['output']}"
         )
 
@@ -163,13 +237,22 @@ class SWEbenchTaskProvider:
             return solution
 
         def collect():
-            container, folder = self._workspace(part, worker, task_id)
-            return self._snapshot(container, folder)
+            with self._lock:
+                container, folder = self._workspace(part, worker, task_id)
+                return self._snapshot(container, folder)
 
         return await asyncio.to_thread(collect)
 
     async def assess(self, part: Part, solution: str) -> Assessment:
-        return await asyncio.to_thread(self._assess, part, solution)
+        try:
+            return await asyncio.to_thread(self._assess, part, solution)
+        except (subprocess.SubprocessError, OSError, RuntimeError, ValueError, KeyError) as exc:
+            if not self.community:
+                raise
+            self.root.mkdir(parents=True, exist_ok=True)
+            with (self.root / "assessment_errors.jsonl").open("a") as log:
+                log.write(json.dumps({"instance_id": part.reference, "error": str(exc)}) + "\n")
+            raise AssessmentUnavailable("Checking service unavailable") from exc
 
     def _assess(self, part: Part, solution: str) -> Assessment:
         if not solution.strip():
@@ -250,7 +333,11 @@ class SWEbenchTaskProvider:
             # Do not assign zero skill for an environment/harness failure.
             raise RuntimeError(f"Official grading did not produce a verdict; inspect {folder}")
         row = json.loads(report.read_text())[part.reference]
+        if row.get("error") or "resolved" not in row:
+            raise RuntimeError("Official grading returned no usable verdict")
         resolved = row["resolved"]
+        if not isinstance(resolved, bool):
+            raise RuntimeError("Official grading returned an invalid verdict")
         assessment = Assessment(
             passed=resolved,
             quality=float(resolved),

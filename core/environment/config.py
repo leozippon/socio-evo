@@ -1,6 +1,7 @@
 """Configuration of reality at the start of a run."""
 
 from collections import Counter
+from typing import Literal
 
 from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
 
@@ -41,7 +42,9 @@ class EnvironmentConfig(StrictModel):
     initial_balance: int
     circumstances: dict[str, Circumstances] = {}
     esteem_half_life_days: PositiveFloat
-    task_shelf_life_days: PositiveInt
+    task_shelf_life_days: PositiveInt | None
+    posting_mode: Literal["append", "replenish"] = "append"
+    strict_acceptance: bool = False
 
     @model_validator(mode="after")
     def _unique_places_and_residents(self) -> "EnvironmentConfig":
