@@ -106,6 +106,7 @@ async function route(force = false) {
     if (!app.index) app.index = await readIndex();
     if (r.view === "missing") throw new Error(`Nothing lives at ${location.hash}.`);
     const run = r.run ? await openRun(r) : null;
+    if (!r.run) app.run = null; // Do not keep polling a run after returning to the list.
     if (ticket !== routing) return;
     if (r.view === "person" && !r.agent) {
       remember({ ...r, agent: run.cast.names[0] });
