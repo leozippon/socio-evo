@@ -558,3 +558,141 @@ async def test_actual_agent_retry_receives_closed_destination_reason(clock, tmp_
     retry = "\n".join(m.content for m in requests[1].messages)
     assert "closed until 14:00" in retry
     assert "Do not substitute another destination" in retry
+
+
+class SpeechResident:
+    def __init__(self, action):
+        self.action = action
+        self.observations = []
+
+    async def act(self, observation):
+        self.observations.append(observation)
+        return Decision(thought="Next action", action=self.action)
+
+
+@pytest.mark.parametrize("order", [("Aisha", "Kofi"), ("Kofi", "Aisha")])
+@pytest.mark.parametrize("private", [False, True])
+async def test_ordinary_reply_arrives_before_simultaneous_departure(clock, order, private):
+    now = time_at(1, "18:25")
+    for name in ("Aisha", "Kofi", "Mei"):
+        clock.env.move(name, "tavern", time=now)
+        clock.env.perceive(name)
+    clock.sim.agents["Aisha"] = SpeechResident(
+        Speak(text="Thanks for asking.", to="Kofi", private=private)
+    )
+    clock.sim.agents["Kofi"] = SpeechResident(
+        Activity(operation="move", target=clock.env.config.homes["Kofi"])
+    )
+    await clock.decide(order, now)
+    speech = [e for e in logged(clock) if e.kind == EventKind.SPEECH]
+    assert len(speech) == 1 and speech[0].time == now
+    assert "Kofi" in speech[0].audience
+    assert ("Mei" in speech[0].audience) == (not private)
+    assert not any(
+        p.kind == EventKind.SPEECH for p in clock.sim.agents["Kofi"].observations[0].percepts
+    )
+    assert clock.pending["Aisha"].end == now + 5
+    assert "Kofi" in clock.sim._met["Aisha"]
+    await clock.complete(now + 5)
+    assert clock.env.world.locations["Kofi"] == clock.env.config.homes["Kofi"]
+    assert "Aisha" not in clock.pending
+    assert len([e for e in logged(clock) if e.kind == EventKind.SPEECH]) == 1
+    assert not any(e.kind == EventKind.ACTION_REJECTED for e in logged(clock))
+    clock.sim.agents["Kofi"].action = Pass()
+    await clock.decide(["Kofi"], now + 5)
+    assert any(
+        p.kind == EventKind.SPEECH and "Thanks for asking." in p.text
+        for p in clock.sim.agents["Kofi"].observations[-1].percepts
+    )
+
+
+async def test_busy_listener_keeps_speech_until_command_finishes(clock):
+    put_at_work(clock)
+    now = time_at(1, "09:00")
+    pending(clock, "Kofi", ClaimTask(task_id="task-1"), now - 5)
+    await clock.complete(now)
+    clock.env.perceive("Kofi")
+    busy = pending(clock, "Kofi", RunCommand(task_id="task-1", command="pytest"), now, 20)
+    clock.sim.agents["Aisha"] = SpeechResident(
+        Speak(text="Try the repository test runner.", to="Kofi")
+    )
+    await clock.decide(["Aisha"], now + 5)
+    assert clock.pending["Kofi"] is busy and busy.end == now + 20
+    await clock.complete(now + 10)
+    assert clock.pending["Kofi"] is busy
+    await clock.complete(now + 20)
+    clock.sim.agents["Kofi"] = SpeechResident(Pass())
+    await clock.decide(["Kofi"], now + 20)
+    assert any(
+        p.kind == EventKind.SPEECH and p.time == now + 5
+        for p in clock.sim.agents["Kofi"].observations[-1].percepts
+    )
+    assert clock.env.providers[Trade.PROGRAMMING].commands == [("Kofi", "pytest")]
+
+
+async def test_speech_reaches_only_people_present_at_start(clock):
+    now = time_at(1, "18:25")
+    clock.env.move("Aisha", "tavern", time=now)
+    clock.env.move("Kofi", "cafe", time=now)
+    clock.env.perceive("Kofi")
+    clock.sim.agents["Aisha"] = SpeechResident(Speak(text="Good evening."))
+    clock.sim.agents["Kofi"] = SpeechResident(Activity(operation="move", target="tavern"))
+    await clock.decide(["Aisha", "Kofi"], now)
+    await clock.complete(now + 5)
+    assert not any(e.kind == EventKind.SPEECH for e in clock.env.perceive("Kofi"))
+
+
+async def test_invalid_ordinary_addressee_rejected_once_at_start(clock):
+    now = time_at(1, "18:25")
+    clock.env.move("Aisha", "tavern", time=now)
+    clock.sim.agents["Aisha"] = SpeechResident(Speak(text="Hello", to="Kofi"))
+    await clock.decide(["Aisha"], now)
+    rejects = [e for e in logged(clock) if e.kind == EventKind.ACTION_REJECTED]
+    assert len(rejects) == 1 and rejects[0].time == now
+    assert not any(e.kind == EventKind.SPEECH for e in logged(clock))
+    await clock.complete(now + 5)
+    assert len([e for e in logged(clock) if e.kind == EventKind.ACTION_REJECTED]) == 1
+
+
+async def test_formal_discussion_retains_shared_turn_and_completion_delivery(clock):
+    put_at_work(clock)
+    now = time_at(1, "10:00")
+    clock.discussions["d"] = Discussion(
+        "d", "Mei", "Tomas", "repair", 20, True, work_place(clock), ["Mei", "Tomas"], now + 20
+    )
+    clock.sim.agents["Mei"] = SpeechResident(Speak(text="My turn.", to="Tomas"))
+    clock.sim.agents["Tomas"] = SpeechResident(Pass())
+    await clock.decide(["Mei", "Tomas"], now)
+    assert not any(e.kind == EventKind.SPEECH for e in logged(clock))
+    assert clock.pending["Mei"].end == clock.pending["Tomas"].end == now + 5
+    await clock.complete(now + 5)
+    speech = [e for e in logged(clock) if e.kind == EventKind.SPEECH]
+    assert len(speech) == 1 and speech[0].time == now + 5
+    assert clock.discussions["d"].speaker == 1
+
+
+async def test_ordinary_speech_wakes_long_wait_at_same_instant(clock):
+    observations = {a: [] for a in clock.env.agents}
+    start = time_at(1, "18:20")
+    for name in ("Aisha", "Kofi"):
+        clock.env.move(name, "tavern", time=start)
+
+    class Resident:
+        def __init__(self, name):
+            self.name = name
+
+        async def act(self, observation):
+            observations[self.name].append(observation)
+            if self.name == "Aisha" and observation.time == start:
+                action = Pass()
+            elif self.name == "Aisha" and observation.time == start + 5:
+                action = Speak(text="How was work?", to="Kofi")
+            else:
+                action = Activity(operation="wait", until=clock.end)
+            return Decision(thought="next", action=action)
+
+    clock.sim.agents = {a: Resident(a) for a in clock.env.agents}
+    await clock.run(start)
+    kofi = observations["Kofi"]
+    assert [o.time for o in kofi] == [start, start + 5]
+    assert any(p.kind == EventKind.SPEECH for p in kofi[1].percepts)

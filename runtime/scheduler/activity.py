@@ -1,4 +1,5 @@
-"""Opt-in independent daytime clock. Effects are applied only at completion times.
+"""Opt-in independent daytime clock. Ordinary speech arrives at action start;
+other effects are applied at completion times.
 
 Wall-clock model/tool latency never chooses the order of equal-time actions. Day-end
 checkpoints remain the recovery unit; no running process is serialized.
@@ -211,6 +212,7 @@ class ActivityClock:
         return "\n".join(lines)
 
     def wake_waiters(self, now):
+        woken = []
         for agent, pending in list(self.pending.items()):
             action = pending.decision.action
             if not isinstance(action, Activity) or action.operation != "wait":
@@ -240,6 +242,7 @@ class ActivityClock:
             pending.event_cursor = self.env.log.count
             if reason:
                 del self.pending[agent]
+                woken.append(agent)
                 self.emit(
                     EventKind.ACTION_COMPLETED,
                     f"Waiting interrupted. {reason}",
@@ -251,6 +254,8 @@ class ActivityClock:
                     reason=reason,
                     action=action.model_dump(mode="json"),
                 )
+
+        return woken
 
     def observation(self, agent: str, now: int) -> Observation:
         own = self.member_of(agent)
@@ -325,7 +330,10 @@ class ActivityClock:
                 "choose a short current goal. You decide again after every action. Between 07:00 "
                 "and 08:00, and at lunch 12:00–14:00, you may read notices, take jobs, move or "
                 "talk, but not work. Conversations are voluntary; merely being nearby "
-                "does not join you."
+                "does not join you. Ordinary remarks are heard immediately when you begin "
+                "speaking; you remain occupied for 5 minutes. A busy listener can respond "
+                "after their current action. Formal discussion turns still take 5 minutes "
+                "of every participant's time."
             )
         )
 
@@ -346,6 +354,7 @@ class ActivityClock:
             tasks = [
                 group.create_task(_decide(self.sim.agents[o.agent], o, True)) for o in observations
             ]
+        ordinary_speakers = []
         for agent, task in zip(agents, tasks, strict=True):
             decision = task.result()
             failed = isinstance(decision, StructuredOutputError)
@@ -393,6 +402,31 @@ class ActivityClock:
                 end=now + duration,
                 discussion=own.id if own else None,
             )
+
+            if isinstance(action, Speak) and own is None:
+                ordinary_speakers.append(agent)
+        # All decisions use the same pre-speech snapshot. Register every action before
+        # delivery so agent iteration order cannot influence simultaneous decisions.
+        for agent in ordinary_speakers:
+            await self.deliver_ordinary_speech(agent, now)
+
+    async def deliver_ordinary_speech(self, agent, now):
+        pending = self.pending[agent]
+        action = pending.decision.action
+        witnesses = self.env.world.occupants(pending.place)
+        events = await self.env.execute(
+            agent,
+            action,
+            time=now,
+            scene=f"day-{day_of(now):04d}/activities",
+            witnesses=witnesses,
+        )
+        if any(e.kind == EventKind.SPEECH for e in events):
+            heard = witnesses if action.to is None else [action.to]
+            for person in heard:
+                if person != agent:
+                    self.sim._met[agent].add(person)
+                    self.sim._met[person].add(agent)
 
     def goal(self, agent, text, now):
         self.sim.goals[agent] = text[:600]
@@ -572,6 +606,9 @@ class ActivityClock:
             try:
                 if isinstance(action, Activity):
                     self.control(agent, action, now)
+                elif isinstance(action, Speak) and p.discussion is None:
+                    # Delivered when the action began; completion releases only its speaker.
+                    continue
                 elif isinstance(action, SubmitWork):
                     await self.submit(agent, action, now, p.place)
                 else:
@@ -704,6 +741,9 @@ class ActivityClock:
                 if now + 5 <= self.end:
                     await self.decide(idle, now)
                 self.sim._bound_lapses()
+                if self.wake_waiters(now):
+                    # Newly delivered speech wakes long waits at this same instant.
+                    continue
                 times = [p.end for p in self.pending.values()]
                 times += [v[0] for v in self.grading.values()]
                 times += [t for t in boundaries if t > now]
