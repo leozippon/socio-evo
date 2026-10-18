@@ -395,6 +395,7 @@ def decision_prompt(
     if records:
         memories = _memories(records, observation.time, limits, setting)
         sections.append(REMEMBER.format(memories=memories))
+    sections.extend(observation.evidence)
     sections += [
         NOW.format(time=_time(observation.time, setting), situation=observation.situation),
         REPLY,

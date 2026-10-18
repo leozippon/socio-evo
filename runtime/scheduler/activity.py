@@ -207,7 +207,7 @@ class ActivityClock:
             + "\n"
             + self.env.board_view(agent)
             + "\n"
-            + (self.env.desk_view(agent) or "")
+            + self.env.status_view(agent, include_evidence=False)
         )
         return Observation(
             agent=agent,
@@ -217,6 +217,7 @@ class ActivityClock:
             setting=self.setting(agent),
             situation=situation,
             percepts=self.env.perceive(agent),
+            evidence=self.env.work_evidence(agent),
             allowed=self.allowed(agent, now),
             places=situations.place_names(self.env, agent),
             goal_updates=agent in self.planned,

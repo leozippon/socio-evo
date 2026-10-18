@@ -351,3 +351,65 @@ async def test_closing_completes_work_before_five_minute_return(clock):
     assert clock.env.world.locations["Mei"] == work_place(clock)
     await clock.complete(time_at(1, "12:05"))
     assert clock.env.world.locations["Mei"] == clock.env.config.homes["Mei"]
+
+
+async def test_decisions_include_job_requirements_and_separate_current_evidence(clock):
+    put_at_work(clock)
+    now = time_at(1, "08:00")
+    pending(clock, "Mei", ClaimTask(task_id="task-1"), now)
+    await clock.complete(now + 5)
+    provider = clock.env.providers[Trade.PROGRAMMING]
+    provider.desk_view = lambda *args: "Terminal evidence: parser assertion failed"
+    observation = clock.observation("Mei", now + 5)
+    part = clock.env.board.claim_of("Mei").task.parts[0]
+    assert part.specification in observation.situation
+    assert clock.env.purse_view("Mei") in observation.situation
+    assert "parser assertion failed" not in observation.situation
+    assert any("parser assertion failed" in text for text in observation.evidence)
+    assert not clock.observation("Aisha", now + 5).evidence
+    # Existing scene callers still receive the complete status view.
+    assert "parser assertion failed" in clock.env.status_view("Mei")
+
+
+def test_planning_and_later_decisions_include_current_financial_pressure(clock):
+    clock.planned.clear()
+    for name in ("Mei", "Aisha", "Jonas", "Ravi"):
+        observation = clock.observation(name, time_at(1, "07:00"))
+        assert clock.env.purse_view(name) in observation.situation
+    assert "$8" in clock.observation("Jonas", time_at(1, "07:00")).situation
+    assert "$10" in clock.observation("Ravi", time_at(1, "07:00")).situation
+    clock.env.economy.balances["Aisha"] = 10
+    clock.planned.add("Aisha")
+    assert "You have $10;" in clock.observation("Aisha", time_at(2, "08:00")).situation
+
+
+async def test_community_prompt_budget_keeps_issue_with_large_terminal_screen(clock, tmp_path):
+    from core.agent import Agent
+
+    cfg = load_config(Path("experiments/configs/community/lite.yaml"), ExperimentConfig)
+    put_at_work(clock)
+    now = time_at(1, "08:00")
+    pending(clock, "Mei", ClaimTask(task_id="task-1"), now)
+    await clock.complete(now + 5)
+    clock.env.providers[Trade.PROGRAMMING].desk_view = lambda *args: (
+        "SCREEN_START\n" + "traceback line\n" * 3000 + "SCREEN_END"
+    )
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        return {"thought": "Inspect next.", "do": "carry on quietly", "current goal": None}
+
+    resident = Agent.create(
+        tmp_path / "resident",
+        cfg.agents[0],
+        ScriptedClient(respond),
+        cfg.cognition,
+        cfg.environment.setting,
+    )
+    await resident.act(clock.observation("Mei", now + 5))
+    prompt = requests[-1].messages[-1].content
+    assert "Repair the repository." in prompt
+    assert "You have $120" in prompt
+    assert "SCREEN_START" in prompt and "SCREEN_END" in prompt
+    assert requests[-1].metadata["context_usage"]["input_count"] <= 24000

@@ -342,3 +342,28 @@ def test_long_current_evidence_leaves_room_for_requested_recollection():
     text = packed.messages[-1].content
     assert "timezone is missing" in text and "Traceback" in text and "Exit 1" in text
     assert Counter(cfg).request(packed) <= 1000
+
+
+@pytest.mark.parametrize("budget", [True, False])
+async def test_current_desk_evidence_reaches_model_without_displacing_job(
+    agent, script, observe, budget
+):
+    enable(agent, recall=False, budget=budget)
+    evidence = "TERMINAL_START\n" + "trace line\n" * 4000 + "TERMINAL_END"
+    observation = observe(1).model_copy(
+        update={
+            "situation": "REQUIRED_ISSUE: repair the parser. You have $30; the day costs $20.",
+            "evidence": (evidence,),
+        }
+    )
+    await agent.act(observation)
+    request = script.requests[-1]
+    prompt = request.messages[-1].content
+    assert "REQUIRED_ISSUE" in prompt
+    assert "You have $30" in prompt
+    assert "TERMINAL_START" in prompt and "TERMINAL_END" in prompt
+    if budget:
+        assert request.metadata["context_usage"]["input_count"] <= 24000
+        assert "[excerpt shortened]" in prompt
+    else:
+        assert evidence in prompt

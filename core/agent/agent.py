@@ -215,7 +215,7 @@ class Agent:
                     instruction += "\nNo matching recollection was found. Do not invent one."
             if budget.enabled:
                 # Situation includes the task/desk view produced by the environment.
-                moment = observation.model_copy(update={"percepts": ()})
+                moment = observation.model_copy(update={"percepts": (), "evidence": ()})
                 from core.agent.memory.retrieval import Recall
 
                 prompt = prompts.decision_prompt(

@@ -37,6 +37,9 @@ def blocks_for(
             blocks.append(Block(source, text, priority))
             order[source] = time
 
+    for i, evidence in enumerate(observation.evidence):
+        add(f"desk:{i}", evidence, 95, evidence, observation.time)
+
     # Current perceptions are inserted first for deduplication, then older memories.
     # Higher priority reserves space before history; rendering keeps observation time order.
     for percept in observation.percepts:

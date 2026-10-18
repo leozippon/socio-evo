@@ -895,7 +895,7 @@ class Environment:
             costs.append(f"the {money(obligation)} you owe each day")
         return f"{have}; the day costs you {listed(costs)}." if costs else f"{have}."
 
-    def status_view(self, agent: str) -> str:
+    def status_view(self, agent: str, *, include_evidence: bool = True) -> str:
         """`agent`'s purse, the task it holds with the state of each part, what it last saw
         when a solution for a part was run, and its open proposal or application and those
         made to it."""
@@ -917,7 +917,7 @@ class Environment:
                 f"by the end of {self._day(claim.due_day)}{doing}."
             )
             for number in range(1, len(task.parts) + 1):
-                lines += self._part_status(claim, agent, number)
+                lines += self._part_status(claim, agent, number, include_evidence=include_evidence)
         if mine := self.board.offers.get(agent):
             job = _titled(self.board.listings[mine.task_id].task)
             if mine.partner is None:
@@ -1921,7 +1921,9 @@ class Environment:
         job sheet `task` is on, else nothing."""
         return f"; {STAFF_PAY}" if reader in self.firms.staff.get(task.sheet, ()) else ""
 
-    def _part_status(self, claim: Claim, agent: str, number: int) -> list[str]:
+    def _part_status(
+        self, claim: Claim, agent: str, number: int, *, include_evidence: bool = True
+    ) -> list[str]:
         """Part `number` of `claim` as `agent`'s status tells it: whether it is in, what it
         pays (each of its workers, or on a firm's job sheet the firm), and if it is not in, what
         the client asks for and what `agent` last saw of it."""
@@ -1952,6 +1954,25 @@ class Environment:
             f'Part {number}, "{part.title}": not in yet; it {pays(full)}, {low} if handed in as '
             f"unfinished. What the client asks for:\n{part.specification}"
         ]
+        if include_evidence:
+            lines += self._part_evidence(claim, agent, number)
+        return lines
+
+    def work_evidence(self, agent: str) -> tuple[str, ...]:
+        """Current evidence from this resident's desk, separate from required job state."""
+        claim = self.board.claim_of(agent)
+        if claim is None:
+            return ()
+        return tuple(
+            text
+            for number in range(1, len(claim.task.parts) + 1)
+            if not claim.delivery(number)
+            for text in self._part_evidence(claim, agent, number)
+        )
+
+    def _part_evidence(self, claim: Claim, agent: str, number: int) -> list[str]:
+        part = claim.task.parts[number - 1]
+        lines = []
         if trial := claim.last_trial(agent, number):
             delivery = DELIVERY[claim.task.trade]
             seen = (

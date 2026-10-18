@@ -15,3 +15,18 @@ assert.equal(saved.activities.Mei.end, 500);
 apply(state, event("decision", 505, { action: { kind: "pass" } }));
 assert.equal(state.decided.Mei, 505);
 console.log("Independent activity replay checks passed");
+
+// Two partners share one deliverable; old two-part and single-part logs still replay.
+apply(state, event("task_posted", 510, { task: { id: "joint", required_workers: 2, parts: [{}] } }));
+apply(state, event("task_claimed", 515, { task_id: "joint", workers: ["Mei", "Tomas"], due_day: 2 }));
+assert.equal(state.claims.joint.parts.length, 1);
+apply(state, event("work_delayed", 520, { task_id: "joint", due_day: 3 }));
+assert.equal(state.claims.joint.due_day, 3);
+apply(state, event("work_delayed", 525, { task_id: "missing", due_day: 3 }));
+apply(state, event("task_posted", 530, { task: { id: "legacy-pair", parts: [{}, {}] } }));
+apply(state, event("task_claimed", 535, { task_id: "legacy-pair", workers: ["Mei", "Tomas"], due_day: 2 }));
+assert.equal(state.claims["legacy-pair"].parts.length, 2);
+apply(state, event("task_posted", 540, { task: { id: "legacy-solo" } }));
+apply(state, event("task_claimed", 545, { task_id: "legacy-solo", due_day: 2 }));
+assert.equal(state.claims["legacy-solo"].parts.length, 1);
+console.log("Shared deliverable and deadline replay checks passed");

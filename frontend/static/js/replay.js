@@ -20,6 +20,7 @@ export function initialState(world) {
     balances: each((agent) => agent.initial_balance ?? world.initial_balance),
     esteem: each(() => null), // as last published; null until first rated
     conditions: { ...world.conditions },
+    taskParts: {}, // actual deliverable counts, distinct from worker counts
     open: {}, // task id -> time it (re)appeared on the board
     claims: {}, // task id -> {workers, actor, due_day, time, parts: [{worker, declaration, time} | null]}
     offers: {}, // agent -> its open bid for a job for two: {task_id, partner (null: name put down), time}
@@ -149,6 +150,7 @@ export function apply(state, event) {
       state.said[event.actor] = event.seq;
       break;
     case "task_posted":
+      (state.taskParts ??= {})[p.task.id] = p.task.parts?.length ?? 1;
       state.open[p.task.id] = event.time;
       break;
     case "task_proposed":
@@ -168,9 +170,12 @@ export function apply(state, event) {
         (agent, offer) => (offer.task_id === p.task_id && workers.includes(offer.partner) && workers.includes(agent) ? "taken up" : workers.includes(agent) ? "withdrawn" : "ended"),
       );
       delete state.open[p.task_id];
-      state.claims[p.task_id] = { workers: [...workers], actor: event.actor, due_day: p.due_day, time: event.time, parts: workers.map(() => null) };
+      state.claims[p.task_id] = { workers: [...workers], actor: event.actor, due_day: p.due_day, time: event.time, parts: Array.from({ length: state.taskParts?.[p.task_id] ?? workers.length }, () => null) };
       break;
     }
+    case "work_delayed":
+      if (state.claims[p.task_id] && p.due_day != null) state.claims[p.task_id].due_day = p.due_day;
+      break;
     case "task_expired":
       delete state.claims[p.task_id];
       state.open[p.task_id] = event.time;

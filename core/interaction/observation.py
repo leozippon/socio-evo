@@ -24,6 +24,9 @@ class Observation(StrictModel):
     and passing an Event where a Percept is expected is rejected.
     """
 
+    evidence: tuple[str, ...] = ()
+    """Current desk evidence, budgeted ahead of historical memory; not new events."""
+
     goal_updates: bool = False
     agent: str
     time: SimTime
