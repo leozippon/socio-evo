@@ -449,6 +449,7 @@ class MayResign(_Allowance):
 
 class MayActivity(_Allowance):
     kind: Literal[ActionKind.ACTIVITY] = ActionKind.ACTIVITY
+    waits: dict[str, int] = {}
     planning: bool = False
     moves: dict[str, str] = {}
     people: tuple[str, ...] = ()
@@ -469,6 +470,14 @@ class MayActivity(_Allowance):
                     lambda r: Activity(operation="goal", topic=r["goal"][:600]),
                 )
             ]
+        if self.waits and not self.discussion:
+            result.append(
+                _Form(
+                    "wait until",
+                    {"until": (_one_of(self.waits), None)},
+                    lambda r: Activity(operation="wait", until=self.waits[r["until"]]),
+                )
+            )
         if self.moves:
             result.append(
                 _Form(

@@ -29,6 +29,7 @@ class TasksConfig(StrictModel):
     provider: Literal["coding", "swebench"] = "coding"
     instances: tuple[str, ...] = ()
     community: bool = False
+    repository_guidance: bool = False
     dataset_variant: Literal["lite", "verified"] = "verified"
     solo_deadline_days: int = Field(default=2, ge=1)
     joint_deadline_days: int = Field(default=2, ge=1)
@@ -47,6 +48,12 @@ class TasksConfig(StrictModel):
             data = {**data, "banks": {Trade.PROGRAMMING: data["bank"]}}
             del data["bank"]
         return data
+
+    @model_validator(mode="after")
+    def _guidance_needs_repository_provider(self):
+        if self.repository_guidance and self.provider != "swebench":
+            raise ValueError("repository_guidance requires the swebench provider")
+        return self
 
     @property
     def bank_path(self) -> Path:

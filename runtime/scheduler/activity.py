@@ -41,6 +41,8 @@ class Pending:
     end: int
     place: str
     discussion: str | None = None
+    event_cursor: int = 0
+    task_id: str | None = None
 
 
 @dataclass
@@ -139,6 +141,7 @@ class ActivityClock:
         )
         allowed = [
             MayActivity(
+                waits={clock_of(t): t for t in range(now + 10, self.close_at(place, now) + 1, 5)},
                 moves=moves,
                 people=other,
                 nearby=tuple(p for p in here if p != agent),
@@ -173,6 +176,82 @@ class ActivityClock:
                 allowed.append(MaySubmit(task_id=claim.task.id, parts=parts))
         return tuple(allowed)
 
+    def current_status(self, agent, now):
+        place = self.env.world.places[self.env.world.locations[agent]]
+        nearby = [a for a in self.env.world.occupants(place.id) if a != agent]
+        lines = [
+            f"You are currently at {place.name}. "
+            f"People here: {', '.join(nearby) or 'nobody else'}. "
+        ]
+        for p in self.env.world.places.values():
+            if p.kind != PlaceKind.WORK:
+                continue
+            future = [
+                time_at(day_of(now), opening)
+                for opening, _ in p.spans()
+                if time_at(day_of(now), opening) > now
+            ]
+            if p.is_open(clock_of(now)):
+                lines.append(
+                    f"{p.name} is open now; work must finish before {p.closing(clock_of(now))}."
+                )
+            elif future:
+                opens = min(future)
+                lines.append(
+                    f"{p.name} is closed until {clock_of(opens)}. Travel takes 5 minutes; "
+                    f"earliest departure is {clock_of(opens - 5)} for arrival at opening."
+                )
+            else:
+                lines.append(f"{p.name} is closed for the rest of today.")
+        lines.append(
+            "Use 'wait until' to stay here without repeatedly reconsidering. An invitation, "
+            "speech addressed to you, or feedback on your own job can interrupt waiting. "
+            "A five-minute quiet action is only a short pause. On waking, choose again."
+        )
+        return "\n".join(lines)
+
+    def wake_waiters(self, now):
+        for agent, pending in list(self.pending.items()):
+            action = pending.decision.action
+            if not isinstance(action, Activity) or action.operation != "wait":
+                continue
+            claim = self.env.board.claim_of(agent)
+            own_job = pending.task_id or (claim.task.id if claim else None)
+            reason = None
+            for event in self.env.log.pending_events(agent):
+                if event.seq < pending.event_cursor:
+                    continue
+                direct = event.kind in (EventKind.DISCUSSION, EventKind.TASK_PROPOSED)
+                speech = event.kind == EventKind.SPEECH and event.payload.get("to") == agent
+                feedback = (
+                    event.kind
+                    in (
+                        EventKind.WORK_SUBMITTED,
+                        EventKind.WORK_DELAYED,
+                        EventKind.TASK_EXPIRED,
+                        EventKind.TASK_WITHDRAWN,
+                    )
+                    and own_job is not None
+                    and event.payload.get("task_id") == own_job
+                )
+                if direct or speech or feedback:
+                    reason = f"New {event.kind}: {event.percept(agent).text}"
+                    break
+            pending.event_cursor = self.env.log.count
+            if reason:
+                del self.pending[agent]
+                self.emit(
+                    EventKind.ACTION_COMPLETED,
+                    f"Waiting interrupted. {reason}",
+                    agent,
+                    now,
+                    start=pending.start,
+                    end=now,
+                    planned_end=pending.end,
+                    reason=reason,
+                    action=action.model_dump(mode="json"),
+                )
+
     def observation(self, agent: str, now: int) -> Observation:
         own = self.member_of(agent)
         topic = ""
@@ -201,6 +280,8 @@ class ActivityClock:
             "if needed. A command cannot cross noon or 18:00; all activities end at 22:00. "
             "Use WORKTREE when handing in existing edits. Invitations do not reserve anyone; "
             "meet in the same open place and start only when everyone is free.\n"
+            + self.current_status(agent, now)
+            + "\n"
             + topic
             + "\n"
             + "\n".join(invitations + joins)
@@ -220,6 +301,12 @@ class ActivityClock:
             evidence=self.env.work_evidence(agent),
             allowed=self.allowed(agent, now),
             places=situations.place_names(self.env, agent),
+            correction_context=(
+                self.current_status(agent, now) + "\nReconsider your whole action "
+                "and reason. Do not substitute another destination merely to satisfy "
+                "the reply format. If your intended destination is closed, wait "
+                "until departure is possible or deliberately choose another goal."
+            ),
             goal_updates=agent in self.planned,
         )
 
@@ -270,6 +357,12 @@ class ActivityClock:
                 self.goal(agent, decision.goal, now)
             action = decision.action
             duration = 20 if isinstance(action, RunCommand) else 5
+            if isinstance(action, Activity) and action.operation == "wait":
+                if self.member_of(agent) or action.until is None or action.until <= now:
+                    raise ValueError("Invalid long wait")
+                duration = (
+                    min(action.until, self.close_at(self.env.world.locations[agent], now)) - now
+                )
             own = self.member_of(agent)
             self.pending[agent] = Pending(
                 agent,
@@ -278,6 +371,8 @@ class ActivityClock:
                 now + duration,
                 self.env.world.locations[agent],
                 own.id if own else None,
+                self.env.log.count,
+                claim.task.id if (claim := self.env.board.claim_of(agent)) else None,
             )
             if not failed:
                 self.emit(
@@ -329,6 +424,8 @@ class ActivityClock:
 
     def control(self, agent, action, now):
         op = action.operation
+        if op == "wait":
+            return
         if op == "goal":
             self.goal(agent, action.topic, now)
             self.planned.add(agent)
@@ -593,6 +690,7 @@ class ActivityClock:
                     if trigger.time == now:
                         self.sim._intervene(now, trigger.payload)
                         changes.remove(trigger)
+                self.wake_waiters(now)
                 self.boundary(now)
                 if now == self.end:
                     break

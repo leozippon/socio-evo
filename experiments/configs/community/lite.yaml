@@ -222,6 +222,7 @@ environment:
 tasks:
   provider: swebench
   community: true
+  repository_guidance: true
   dataset_variant: lite
   bank: /personal_fast_storage/datasets/swebench-lite/test.json
   instances: []

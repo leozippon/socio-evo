@@ -27,6 +27,7 @@ class Observation(StrictModel):
     evidence: tuple[str, ...] = ()
     """Current desk evidence, budgeted ahead of historical memory; not new events."""
 
+    correction_context: str = ""
     goal_updates: bool = False
     agent: str
     time: SimTime

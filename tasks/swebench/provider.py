@@ -34,6 +34,7 @@ class SWEbenchTaskProvider:
         command_seconds: int = 60,
         evaluation_seconds: int = 600,
         community: bool = False,
+        repository_guidance: bool = False,
         solo_deadline_days: int = 2,
         joint_deadline_days: int = 2,
     ):
@@ -44,6 +45,8 @@ class SWEbenchTaskProvider:
             "instances": sorted(self.rows),
         }
         self.community = community
+        self.repository_guidance = repository_guidance
+        self.preflights: dict[str, dict] = {}
         self.solo_deadline_days = solo_deadline_days
         self.joint_deadline_days = joint_deadline_days
         self._lock = threading.RLock()
@@ -54,6 +57,11 @@ class SWEbenchTaskProvider:
 
     def part(self, instance: str) -> Part:
         row = self.rows[instance]
+        notes = ""
+        if self.repository_guidance:
+            from tasks.swebench.preflight import operating_notes
+
+            notes = operating_notes(self._preflight(instance), self.command_seconds, self.community)
         return Part(
             title=f"Repair {row['repo']}: {row['problem_statement'].splitlines()[0][:100]}",
             specification=public_issue(row) + "\n\n"
@@ -66,11 +74,21 @@ class SWEbenchTaskProvider:
             "clerk collects your current diff. You may instead supply a complete unified "
             "diff. The client checks the repair and regressions in a separate checkout. "
             "Passing local tests alone does not guarantee acceptance. Keep terminal "
-            "output short. You can discuss your diagnosis with neighbours.",
+            "output short. You can discuss your diagnosis with neighbours." + notes,
             reward=60,
             deadline_days=self.solo_deadline_days,
             reference=instance,
         )
+
+    def _preflight(self, instance: str) -> dict:
+        from tasks.swebench.preflight import inspect_environment
+
+        if instance not in self.preflights:
+            row = self.rows[instance]
+            self.preflights[instance] = inspect_environment(
+                instance, row["repo"], row["base_commit"], self.root / "preflight"
+            )
+        return self.preflights[instance]
 
     def sample_available(self, rng, workers: int, issued: list[str]) -> tuple[Part, ...]:
         available = sorted(set(self.rows) - set(issued))
@@ -145,10 +163,18 @@ class SWEbenchTaskProvider:
         folder.mkdir(parents=True, exist_ok=True)
         if key in self.containers:
             return self.containers[key], folder
+        checked = self._preflight(part.reference) if self.repository_guidance else None
         name = "socio-town-" + uuid.uuid4().hex[:16]
         command(container_args(name, image_for(part.reference)))
         container = self.client.containers.get(name)
         self.containers[key] = container
+        if self.repository_guidance:
+            from tasks.swebench.preflight import EnvironmentPreflightError
+
+            if checked["image_id"] != container.image.id:
+                container.remove(force=True)
+                self.containers.pop(key, None)
+                raise EnvironmentPreflightError("Workspace image differs from its preflight image")
         base = captured_exec(container, ["git", "-C", "/testbed", "rev-parse", "HEAD"])
         ancestor = captured_exec(
             container,

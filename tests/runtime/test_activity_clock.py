@@ -413,3 +413,148 @@ async def test_community_prompt_budget_keeps_issue_with_large_terminal_screen(cl
     assert "You have $120" in prompt
     assert "SCREEN_START" in prompt and "SCREEN_END" in prompt
     assert requests[-1].metadata["context_usage"]["input_count"] <= 24000
+
+
+async def test_long_wait_suppresses_decisions_until_chosen_time(clock):
+    seen = {a: [] for a in clock.env.agents}
+
+    class Resident:
+        def __init__(self, name):
+            self.name = name
+
+        async def act(self, observation):
+            seen[self.name].append(observation.time)
+            until = time_at(1, "13:55") if observation.time < time_at(1, "13:55") else clock.end
+            return Decision(
+                thought="Stay until it is time to go.",
+                action=Activity(operation="wait", until=until),
+            )
+
+    clock.sim.agents = {a: Resident(a) for a in clock.env.agents}
+    await clock.run(time_at(1, "12:05"))
+    assert all(times == [time_at(1, "12:05"), time_at(1, "13:55")] for times in seen.values())
+    assert not clock.pending
+
+
+@pytest.mark.parametrize(
+    "kind,payload,audience,wakes",
+    [
+        (EventKind.DISCUSSION, {}, ["Mei"], True),
+        (EventKind.TASK_PROPOSED, {}, ["Mei"], True),
+        (EventKind.SPEECH, {"to": "Mei"}, ["Mei"], True),
+        (EventKind.SPEECH, {"to": "Aisha"}, ["Mei"], False),
+        (EventKind.SPEECH, {"to": "Mei"}, ["Aisha"], False),
+        (EventKind.MOVE, {}, ["Mei"], False),
+        (EventKind.WORK_DELAYED, {"task_id": "task-1"}, ["Mei"], True),
+        (EventKind.WORK_SUBMITTED, {"task_id": "task-1"}, ["Mei"], True),
+        (EventKind.WORK_SUBMITTED, {"task_id": "task-2"}, ["Mei"], False),
+    ],
+)
+def test_wait_interruptions_respect_audience_job_and_address(clock, kind, payload, audience, wakes):
+    start, end = time_at(1, "12:05"), time_at(1, "13:55")
+    clock.env.emit(kind, "Old news", time=start, audience=["Mei"], payload=payload)
+    clock.pending["Mei"] = Pending(
+        "Mei",
+        Decision(thought="wait", action=Activity(operation="wait", until=end)),
+        start,
+        end,
+        clock.env.world.locations["Mei"],
+        event_cursor=clock.env.log.count,
+        task_id="task-1",
+    )
+    clock.wake_waiters(start)
+    assert "Mei" in clock.pending
+    clock.env.emit(kind, "New news", time=start + 5, audience=audience, payload=payload)
+    clock.wake_waiters(start + 5)
+    assert ("Mei" not in clock.pending) == wakes
+    if wakes:
+        assert logged(clock)[-1].payload["planned_end"] == end
+    # Looking for wake signals must not consume any resident's memories.
+    assert any(e.text == "Old news" for e in clock.env.perceive("Mei"))
+
+
+async def test_wait_clipped_at_closing_and_discussion_has_no_long_wait(clock):
+    office = work_place(clock)
+    clock.env.world.locations["Mei"] = office
+    now = time_at(1, "11:45")
+
+    class Resident:
+        async def act(self, observation):
+            return Decision(thought="wait", action=Activity(operation="wait", until=clock.end))
+
+    clock.sim.agents["Mei"] = Resident()
+    await clock.decide(["Mei"], now)
+    assert clock.pending["Mei"].end == time_at(1, "12:00")
+    await clock.complete(time_at(1, "12:00"))
+    clock.boundary(time_at(1, "12:00"))
+    assert clock.pending["Mei"].decision.action.operation == "move"
+    clock.discussions["d"] = Discussion(
+        "d", "Mei", "Tomas", "talk", 20, members=["Mei", "Tomas"], end=clock.end
+    )
+    assert not any(a.waits for a in clock.allowed("Mei", now) if isinstance(a, MayActivity))
+
+
+def test_lunch_prompt_explains_location_reopening_and_reasoned_repair(clock):
+    observation = clock.observation("Kofi", time_at(1, "12:30"))
+    assert "12:00–14:00" in observation.setting
+    assert "You are currently at" in observation.situation
+    assert "closed until 14:00" in observation.situation
+    assert "earliest departure is 13:55" in observation.situation
+    assert "Do not substitute another destination" in observation.correction_context
+    card = Card(observation.allowed, goal_updates=True)
+    reply = card.model.model_validate(
+        {
+            "thought": "Wait before travel",
+            "do": "wait until",
+            "until": "13:55",
+            "current goal": None,
+        }
+    )
+    assert card.decision(reply).action.until == time_at(1, "13:55")
+
+
+@pytest.mark.parametrize("enhanced", [True, False])
+async def test_actual_agent_retry_receives_closed_destination_reason(clock, tmp_path, enhanced):
+    from core.agent import Agent
+
+    cfg = load_config(Path("experiments/configs/community/lite.yaml"), ExperimentConfig)
+    cognition = cfg.cognition
+    if not enhanced:
+        cognition = cognition.model_copy(
+            update={
+                "active_recall": cognition.active_recall.model_copy(update={"enabled": False}),
+                "context_budget": cognition.context_budget.model_copy(update={"enabled": False}),
+                "work_notes": cognition.work_notes.model_copy(update={"enabled": False}),
+            }
+        )
+    requests = []
+
+    def respond(request):
+        requests.append(request)
+        if len(requests) == 1:
+            return {
+                "thought": "Go to work",
+                "do": "move",
+                "to": "the Workshop",
+                "current goal": None,
+            }
+        return {
+            "thought": "It is closed; wait for departure",
+            "do": "wait until",
+            "until": "13:55",
+            "current goal": None,
+        }
+
+    resident = Agent.create(
+        tmp_path / "resident",
+        cfg.agents[0],
+        ScriptedClient(respond),
+        cognition,
+        cfg.environment.setting,
+    )
+    decision = await resident.act(clock.observation("Mei", time_at(1, "12:30")))
+    assert decision.action.operation == "wait"
+    assert len(requests) == 2
+    retry = "\n".join(m.content for m in requests[1].messages)
+    assert "closed until 14:00" in retry
+    assert "Do not substitute another destination" in retry

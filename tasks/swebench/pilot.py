@@ -100,7 +100,7 @@ def execute(name: str, script: str, seconds: int) -> dict:
     import docker
 
     # Both the shell and the timeout are INSIDE the task container, never on the host.
-    prelude = "source /opt/miniconda3/bin/activate testbed && cd /testbed && "
+    prelude = "set -o pipefail; source /opt/miniconda3/bin/activate testbed && cd /testbed && "
     with closing(docker.from_env()) as client:
         result = captured_exec(
             client.containers.get(name), ["bash", "-lc", prelude + script], timeout=seconds

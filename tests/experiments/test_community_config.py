@@ -11,6 +11,7 @@ from tasks.swebench.fetch import save_bank
 def test_community_configuration(variant, days):
     cfg = load_config(Path(f"experiments/configs/community/{variant}.yaml"), ExperimentConfig)
     assert len(cfg.agents) == 8 and cfg.simulation.days == days
+    assert cfg.tasks.repository_guidance
     assert cfg.environment.posting_mode == "replenish"
     assert cfg.environment.task_shelf_life_days is None and cfg.environment.strict_acceptance
     assert cfg.simulation.postings == ("morning",)
@@ -49,3 +50,12 @@ def test_bank_manifest_and_no_accidental_replacement(tmp_path):
     assert manifest["revision"] == "pinned-sha" and manifest["variant"] == "verified"
     with pytest.raises(FileExistsError):
         save_bank(rows, dest, variant="verified", revision="other-sha")
+
+
+def test_repository_guidance_is_opt_in_for_old_configs():
+    from experiments.config import TasksConfig
+
+    assert not TasksConfig().repository_guidance
+    assert not TasksConfig(provider="swebench").repository_guidance
+    with pytest.raises(ValueError, match="requires the swebench provider"):
+        TasksConfig(repository_guidance=True)

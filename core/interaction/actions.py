@@ -185,11 +185,22 @@ class Activity(StrictModel):
 
     kind: Literal[ActionKind.ACTIVITY] = ActionKind.ACTIVITY
     operation: Literal[
-        "goal", "move", "invite", "accept", "decline", "start", "join", "exit", "extend", "agree"
+        "goal",
+        "move",
+        "invite",
+        "accept",
+        "decline",
+        "start",
+        "join",
+        "exit",
+        "extend",
+        "agree",
+        "wait",
     ]
     target: str = ""
     topic: str = Field(default="", max_length=1000)
     minutes: int = Field(default=20, ge=5, le=60, multiple_of=5)
+    until: int | None = Field(default=None, ge=0)
     remote: bool = False
 
 

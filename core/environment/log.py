@@ -99,6 +99,10 @@ class EventLog:
             self._unread[agent].append(event)
         return event
 
+    def pending_events(self, agent: str) -> tuple[Event, ...]:
+        """Witnessed unread events, without consuming the perception cursor."""
+        return tuple(self._unread[agent])
+
     def perceive(self, agent: str) -> tuple[Percept, ...]:
         """The percepts of the events `agent` witnessed since it last perceived; advances its
         cursor to the end of the log."""

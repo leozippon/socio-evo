@@ -132,6 +132,7 @@ class Agent:
                 prompts.decision_prompt(observation, recall, self.cognition, self.setting),
                 card.model,
                 system=system,
+                correction_context=observation.correction_context,
             )
         decision = card.decision(reply)
         if self.cognition.work_notes.enabled:
@@ -255,7 +256,10 @@ class Agent:
                     budget,
                 )
             reply = await complete_structured(
-                self._completion_client(), request, model, correction=correction
+                self._completion_client(),
+                request,
+                model,
+                correction=lambda m, e: correction(m, e) + "\n" + observation.correction_context,
             )
             answer = reply
             while isinstance(answer, RootModel):
@@ -323,7 +327,14 @@ class Agent:
                 self.memory.work.observe(percept)
 
     async def ask(
-        self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None
+        self,
+        purpose: str,
+        time: int,
+        prompt: str,
+        reply: type[T],
+        *,
+        system: str | None = None,
+        correction_context: str = "",
     ) -> T:
         """A validated `reply` to `prompt`, after which the form of the reply is shown; an
         answer that cannot be read is told so in the card's words (`card.correction`). The
@@ -335,7 +346,11 @@ class Agent:
             request = request.model_copy(update={"json_schema": reply.model_json_schema()})
             request = pack(request, prompt.blocks, self.cognition.context_budget)
         return await complete_structured(
-            self._completion_client(), request, reply, correction=correction
+            self._completion_client(),
+            request,
+            reply,
+            correction=lambda m, e: correction(m, e)
+            + ("\n" + correction_context if correction_context else ""),
         )
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
