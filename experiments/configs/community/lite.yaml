@@ -230,6 +230,7 @@ tasks:
   command_seconds: 60
   evaluation_seconds: 600
 simulation:
+  scheduling: independent
   days: 3
   checkpoint_days: 1
   postings:

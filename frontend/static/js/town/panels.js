@@ -201,6 +201,10 @@ export class PeoplePanel {
           const esteem = m.state.esteem[name];
           const owes = m.cast.agent(name).obligation ?? 0;
           const status = jobStatus(name, m);
+          const activity = m.state.activities?.[name];
+          const goal = (m.truth || m.reader === name) ? m.state.goals?.[name] : null;
+          if (activity) status.push(`${activity.action?.operation ?? activity.action?.kind ?? "busy"} · ${clockOf({ time: activity.start })}–${clockOf({ time: activity.end })}`);
+          if (goal) status.push(`Goal: ${goal}`);
           return h(
             "li",
             {},

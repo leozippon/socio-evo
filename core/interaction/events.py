@@ -10,6 +10,11 @@ from infrastructure.config import StrictModel
 
 
 class EventKind(StrEnum):
+    ACTION_STARTED = "action_started"
+    ACTION_COMPLETED = "action_completed"
+    GOAL_UPDATED = "goal_updated"
+    DISCUSSION = "discussion"
+    SUBMISSION_PENDING = "submission_pending"
     """The single vocabulary of event kinds."""
 
     DAY_STARTED = "day_started"
@@ -144,6 +149,7 @@ class Event(StrictModel):
             EventKind.COMMAND_EXECUTED,
             EventKind.WORK_CHECKED,
             EventKind.WORK_DELAYED,
+            EventKind.SUBMISSION_PENDING,
             EventKind.WORK_SUBMITTED,
             EventKind.DESK,
             EventKind.PAYMENT,

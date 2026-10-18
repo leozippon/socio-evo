@@ -19,6 +19,7 @@ from infrastructure.config import StrictModel
 
 
 class ActionKind(StrEnum):
+    ACTIVITY = "activity"
     PLAN_DAY = "plan_day"
     SPEAK = "speak"
     LEAVE = "leave"
@@ -179,8 +180,22 @@ class Resign(StrictModel):
     kind: Literal[ActionKind.RESIGN] = ActionKind.RESIGN
 
 
+class Activity(StrictModel):
+    """Independent-clock movement, goals and voluntary discussion controls."""
+
+    kind: Literal[ActionKind.ACTIVITY] = ActionKind.ACTIVITY
+    operation: Literal[
+        "goal", "move", "invite", "accept", "decline", "start", "join", "exit", "extend", "agree"
+    ]
+    target: str = ""
+    topic: str = Field(default="", max_length=1000)
+    minutes: int = Field(default=20, ge=5, le=60, multiple_of=5)
+    remote: bool = False
+
+
 Action = Annotated[
-    PlanDay
+    Activity
+    | PlanDay
     | Speak
     | Leave
     | Pass
@@ -207,6 +222,7 @@ class Decision(StrictModel):
     """A private thought, then one action."""
 
     thought: str
+    goal: str | None = Field(default=None, max_length=600)
     action: Action
 
 

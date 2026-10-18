@@ -16,6 +16,10 @@ and 14:00–18:00. Café Linde opens 08:00–22:00; Anchor opens 18:00–22:00. 
 reflection and self-modification remain. A separate daytime home-learning action is not
 implemented by this change.
 
+The community profiles now use the opt-in [independent action clock](independent-scheduling.md).
+Tasks are replenished at 07:00 before goal planning. Each resident then chooses a new action
+when their own previous action finishes; the old scene scheduler remains available.
+
 ## Work lifecycle
 
 - Initially six solo issues and one joint issue are posted. Each morning only vacancies

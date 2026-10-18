@@ -229,6 +229,7 @@ async def test_every_text_a_resident_reads_is_immersive_and_neutral(agent, scrip
 
 
 SAMPLES = {
+    ActionKind.ACTIVITY: ({"operation": "move", "target": "cafe"}, "you chose to move cafe: "),
     ActionKind.PLAN_DAY: (
         {"itinerary": {"morning": "office"}, "intention": "The office, then the café."},
         'you decided how to spend the day: "The office, then the café."',

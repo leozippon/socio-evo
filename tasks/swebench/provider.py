@@ -20,6 +20,10 @@ from tasks.swebench.docker_exec import captured_exec
 from tasks.swebench.pilot import command, container_args, execute, image_for, public_issue
 
 
+class WorkBudgetExceeded(RuntimeError):
+    """Discard edits that exceed the per-action persistence budget."""
+
+
 class SWEbenchTaskProvider:
     def __init__(
         self,
@@ -199,6 +203,8 @@ class SWEbenchTaskProvider:
         diff = captured_exec(container, ["git", "-C", "/testbed", "diff", "--binary", base])
         if added.exit_code or diff.exit_code:
             raise RuntimeError("cannot save resident repository changes")
+        if self.community and len(diff.output) > 2_000_000:
+            raise WorkBudgetExceeded("Edits exceed the 2 MB limit; this action was rolled back.")
         patch = diff.output.decode()
         (folder / "working.patch").write_text(patch)
         return patch
@@ -212,8 +218,19 @@ class SWEbenchTaskProvider:
 
     def _locked_command(self, part, worker, task_id, script):
         container, folder = self._workspace(part, worker, task_id)
-        result = execute(container.name, script, self.command_seconds)
-        self._snapshot(container, folder)
+        try:
+            result = execute(container.name, script, self.command_seconds)
+            if self.community:
+                result["output"] = result["output"][:16000]
+            try:
+                self._snapshot(container, folder)
+            except WorkBudgetExceeded as exc:
+                result = {"exit_code": 1, "output": str(exc)}
+        finally:
+            if self.community:
+                # Persist only the worktree patch; kill all processes, including detached children.
+                container.remove(force=True)
+                self.containers.pop(self._key(part, worker, task_id), None)
         with (folder / "commands.jsonl").open("a") as f:
             f.write(json.dumps({"worker": worker, "command": script, **result}) + "\n")
         (folder / "last_command.json").write_text(
@@ -238,6 +255,15 @@ class SWEbenchTaskProvider:
 
         def collect():
             with self._lock:
+                if self.community:
+                    # Each work action already persisted its patch before killing the container.
+                    patch = (
+                        self.root
+                        / "workspaces"
+                        / self._key(part, worker, task_id)
+                        / "working.patch"
+                    )
+                    return patch.read_text() if patch.exists() else ""
                 container, folder = self._workspace(part, worker, task_id)
                 return self._snapshot(container, folder)
 

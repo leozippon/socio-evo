@@ -87,3 +87,7 @@ The opt-in [technical community](docs/technical-community.md) provides Lite/Veri
 SWE-bench profiles with eight residents, completion-based task replenishment, shared
 two-person issue repairs, strict official acceptance, and editable private task notes.
 Use Lite for workflow validation before the 42-day Verified run.
+
+The community profiles use [independent action scheduling](docs/independent-scheduling.md):
+5-minute simple actions, 20-minute work actions, voluntary timed discussions, and daily
+goals. Existing configurations retain the legacy scene scheduler by default.

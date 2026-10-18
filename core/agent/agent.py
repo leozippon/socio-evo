@@ -118,7 +118,7 @@ class Agent:
             setting=observation.setting,
             skills=skills,
         )
-        card = Card(observation.allowed)
+        card = Card(observation.allowed, goal_updates=observation.goal_updates)
         if (
             self.cognition.active_recall.enabled
             or self.cognition.context_budget.enabled

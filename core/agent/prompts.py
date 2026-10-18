@@ -739,6 +739,9 @@ def _marked(action: Mapping[str, Any]) -> str:
 
 
 _DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
+    ActionKind.ACTIVITY: lambda a, _: (
+        f"you chose to {a['operation']} {a.get('target', '')}: {a.get('topic', '')}"
+    ),
     ActionKind.PLAN_DAY: lambda action, _: PLANNED.format(intention=_own(action["intention"])),
     ActionKind.SPEAK: lambda action, _: _said(action),
     ActionKind.LEAVE: lambda action, _: LEFT,

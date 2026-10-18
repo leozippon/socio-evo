@@ -42,7 +42,8 @@ from core.interaction import (
     Vote,
     form,
 )
-from core.interaction.card import UNREAD, UNREADABLE, correction
+from core.interaction.actions import Activity
+from core.interaction.card import UNREAD, UNREADABLE, MayActivity, correction
 from infrastructure.llm import LLMRequest, Message, ScriptedClient, complete_structured
 
 WORK = (
@@ -54,6 +55,11 @@ WORK = (
 CODE = "def add(a, b):\n    return a + b\n"
 
 ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
+    ActionKind.ACTIVITY: (
+        MayActivity(moves={"the cafe": "cafe"}),
+        {"do": "move", "to": "the cafe"},
+        Activity(operation="move", target="cafe"),
+    ),
     ActionKind.PLAN_DAY: (
         MayPlan(places={"morning": {"the Workshop": "workshop", "home": "flat"}}),
         {"do": "decide the day", "morning": "the Workshop", "plan": "Work, then rest."},

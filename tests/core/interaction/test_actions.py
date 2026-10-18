@@ -7,6 +7,7 @@ from pydantic import ValidationError
 from core.interaction import ACTION_TYPES, ActionKind, Decision, job_id, job_name, job_number
 
 REPLIES: dict[ActionKind, dict[str, Any]] = {
+    ActionKind.ACTIVITY: {"kind": "activity", "operation": "move", "target": "cafe"},
     ActionKind.PLAN_DAY: {
         "kind": "plan_day",
         "itinerary": {"morning": "office", "evening": "tavern"},

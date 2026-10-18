@@ -90,6 +90,8 @@ class ExperimentConfig(StrictModel):
                 self.tasks.instances
             ):
                 raise ValueError("not enough SWE-bench issues for distinct postings")
+        if self.simulation.scheduling == "independent" and not self.tasks.community:
+            raise ValueError("independent scheduling currently requires community repository tasks")
         if self.tasks.community:
             if self.tasks.provider != "swebench" or not self.environment.strict_acceptance:
                 raise ValueError("community work requires SWE-bench and strict acceptance")

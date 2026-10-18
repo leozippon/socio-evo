@@ -131,6 +131,17 @@ export function apply(state, event) {
     case "scene_ended":
       delete state.scenes[event.scene];
       break;
+    case "action_started":
+      state.activities ??= {};
+      state.activities[event.actor] = p;
+      break;
+    case "action_completed":
+      if (state.activities) delete state.activities[event.actor];
+      break;
+    case "goal_updated":
+      state.goals ??= {};
+      state.goals[event.actor] = p.goal;
+      break;
     case "decision":
       state.decided[event.actor] = event.seq;
       break;

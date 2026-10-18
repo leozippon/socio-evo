@@ -99,6 +99,7 @@ class Checkpoint(StrictModel):
     queue: tuple[Trigger, ...]
     rng: tuple[int, tuple[int, ...], float | None]
     agents: dict[str, str]
+    goals: dict[str, str] = {}
 
 
 class Simulation:
@@ -124,6 +125,7 @@ class Simulation:
         self.rng = rng
         self.day = day
         """The last day completed."""
+        self.goals: dict[str, str] = {}
         self._stop = self.config.days
         self._met: dict[str, set[str]] = {}
         self._held: list[tuple[Called, Meeting | None]] = []
@@ -194,7 +196,9 @@ class Simulation:
         rng.setstate(checkpoint.rng)
         run.update_manifest(status=RunStatus.RUNNING, ended_at=None)
         queue = TriggerQueue(checkpoint.queue)
-        return cls(run, setup, env, agents, queue, rng, checkpoint.day)
+        simulation = cls(run, setup, env, agents, queue, rng, checkpoint.day)
+        simulation.goals = dict(checkpoint.goals)
+        return simulation
 
     async def run(self, until_day: int | None = None) -> RunStatus:
         """Run through the last day, or only through `until_day`, and return the final
@@ -233,6 +237,13 @@ class Simulation:
         self._started = wall.perf_counter()
         self.env.start_day(time, self.rng)
         self._met, self._held = {agent: set() for agent in self.agents}, []
+        if self.config.scheduling == "independent":
+            from runtime.scheduler.activity import ActivityClock
+
+            self.env.post(time, self.seed)
+            await ActivityClock(self).run(time)
+            self.queue.push(Trigger(time=calendar.end(day), kind=TriggerKind.DAY_END))
+            return
         starts = dict(calendar.slot_times(day))
         for called in self._meetings(day):
             clock = clock_of(starts[called.at])
@@ -511,6 +522,7 @@ class Simulation:
                 provider.checkpoint(self.day)
         checkpoint = Checkpoint(
             day=self.day,
+            goals=dict(self.goals),
             environment=self.env.state(),
             queue=tuple(self.queue.state()),
             rng=self.rng.getstate(),

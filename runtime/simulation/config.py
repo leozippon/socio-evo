@@ -90,6 +90,8 @@ class SimulationConfig(StrictModel):
     `max_lapse_share` of its decisions and night steps have lapsed for want of a valid reply
     (see `Simulation`)."""
 
+    scheduling: Literal["scenes", "independent"] = "scenes"
+    grading_minutes: int = Field(default=20, ge=5, le=120, multiple_of=5)
     days: PositiveInt
     calendar: Calendar
     postings: tuple[str, ...] = Field(min_length=1)
@@ -101,6 +103,11 @@ class SimulationConfig(StrictModel):
     @model_validator(mode="after")
     def _fits(self) -> "SimulationConfig":
         calendar = self.calendar
+        if self.scheduling == "independent":
+            if calendar.day_start != "07:00" or calendar.day_end != "22:00":
+                raise ValueError("independent scheduling requires 07:00–22:00 days")
+            if self.meetings:
+                raise ValueError("scripted meetings use the legacy scenes scheduler")
         moments = [calendar.day_start, *(slot.start for slot in calendar.slots), calendar.day_end]
         slots = [slot.name for slot in calendar.slots]
         for intervention in self.interventions:

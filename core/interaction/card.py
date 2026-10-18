@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field, RootModel, ValidationError, create_model
 from core.interaction.actions import (
     Action,
     ActionKind,
+    Activity,
     Apply,
     CheckWork,
     ClaimTask,
@@ -446,8 +447,98 @@ class MayResign(_Allowance):
         return [_Form(GIVE_NOTICE, {}, lambda reply: Resign())]
 
 
+class MayActivity(_Allowance):
+    kind: Literal[ActionKind.ACTIVITY] = ActionKind.ACTIVITY
+    planning: bool = False
+    moves: dict[str, str] = {}
+    people: tuple[str, ...] = ()
+    nearby: tuple[str, ...] = ()
+    replies: tuple[str, ...] = ()
+    starts: tuple[str, ...] = ()
+    joins: tuple[str, ...] = ()
+    discussion: str | None = None
+    extension: bool = False
+
+    def forms(self) -> list[_Form]:
+        result = []
+        if self.planning:
+            return [
+                _Form(
+                    "set today's goal",
+                    {"goal": (Annotated[str, Field(max_length=600)], None)},
+                    lambda r: Activity(operation="goal", topic=r["goal"][:600]),
+                )
+            ]
+        if self.moves:
+            result.append(
+                _Form(
+                    "move",
+                    {"to": (_one_of(self.moves), None)},
+                    lambda r: Activity(operation="move", target=self.moves[r["to"]]),
+                )
+            )
+        for remote, people in ((False, self.nearby), (True, self.people)):
+            if people:
+                result.append(
+                    _Form(
+                        "send a discussion invitation" if remote else "invite to discuss",
+                        {
+                            "to": (_one_of(people), None),
+                            "topic": (Annotated[str, Field(max_length=1000)], None),
+                            "minutes": (_one_of(range(5, 61, 5)), None),
+                        },
+                        lambda r, remote=remote: Activity(
+                            operation="invite",
+                            target=r["to"],
+                            topic=r["topic"],
+                            minutes=r["minutes"],
+                            remote=remote,
+                        ),
+                    )
+                )
+        for operation, label, ids in (
+            ("accept", "accept invitation", self.replies),
+            ("decline", "decline invitation", self.replies),
+            ("start", "start discussion", self.starts),
+            ("join", "join discussion", self.joins),
+        ):
+            if ids:
+                result.append(
+                    _Form(
+                        label,
+                        {"discussion": (_one_of(ids), None)},
+                        lambda r, op=operation: Activity(operation=op, target=r["discussion"]),
+                    )
+                )
+        if self.discussion:
+            result += [
+                _Form(
+                    "leave discussion",
+                    {},
+                    lambda r: Activity(operation="exit", target=self.discussion),
+                ),
+                _Form(
+                    "propose more time",
+                    {"minutes": (_one_of(range(5, 61, 5)), None)},
+                    lambda r: Activity(
+                        operation="extend", target=self.discussion, minutes=r["minutes"]
+                    ),
+                ),
+            ]
+            if self.extension:
+                result.append(
+                    _Form(
+                        "agree to more time",
+                        {},
+                        lambda r: Activity(operation="agree", target=self.discussion),
+                    )
+                )
+        return result
+
+
 Allowance = Annotated[
-    MayPlan
+    MayActivity
+    | MayPlan
     | MaySpeak
     | MayLeave
     | MayPass
@@ -481,7 +572,7 @@ class Card:
     one allowance may say one thing in several forms, whose choices it keeps apart.
     """
 
-    def __init__(self, allowed: Sequence[Allowance]) -> None:
+    def __init__(self, allowed: Sequence[Allowance], *, goal_updates: bool = False) -> None:
         offered = [allowance.forms() for allowance in allowed]
         self._forms = [form for forms in offered for form in forms]
         if not self._forms:
@@ -489,6 +580,21 @@ class Card:
         said = [{form.does for form in forms} for forms in offered]
         if len(set().union(*said)) != sum(len(does) for does in said):
             raise ValueError("two things a card offers would read the same")
+        if goal_updates:
+            self._forms = [
+                _Form(
+                    f.does,
+                    {
+                        **f.fields,
+                        "current goal": (
+                            Annotated[str, Field(max_length=600)] | None,
+                            "Keep null to retain your goal; otherwise replace it briefly.",
+                        ),
+                    },
+                    f.action,
+                )
+                for f in self._forms
+            ]
         self._models = [_model(index, form) for index, form in enumerate(self._forms)]
         self.model: type[BaseModel] = (
             self._models[0] if len(self._models) == 1 else RootModel[Union[tuple(self._models)]]  # noqa: UP007
@@ -498,7 +604,9 @@ class Card:
         answer = reply.root if isinstance(reply, RootModel) else reply
         values = answer.model_dump(by_alias=True)
         form = self._forms[self._models.index(type(answer))]
-        return Decision(thought=values[THOUGHT], action=form.action(values))
+        return Decision(
+            thought=values[THOUGHT], action=form.action(values), goal=values.get("current goal")
+        )
 
 
 def form(model: type[BaseModel]) -> str:

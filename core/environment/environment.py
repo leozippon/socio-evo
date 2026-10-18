@@ -1294,14 +1294,28 @@ class Environment:
         )
 
     async def _submit(
-        self, agent: str, action: SubmitWork, *, time: int, place: str, scene: str
+        self,
+        agent: str,
+        action: SubmitWork,
+        *,
+        time: int,
+        place: str,
+        scene: str,
+        prepared: tuple[str, Assessment | AssessmentUnavailable] | None = None,
     ) -> list[Event]:
         claim = self.board.work_on(agent, action.task_id, action.part)
         task, number, declared = claim.task, action.part, action.declaration
-        solution = _solution(claim, agent, number, action.solution)
-        solution = await self._delivery_source(task.parts[number - 1], agent, task.id, solution)
+        solution = (
+            _solution(claim, agent, number, action.solution) if prepared is None else prepared[0]
+        )
+        if prepared is None:
+            solution = await self._delivery_source(task.parts[number - 1], agent, task.id, solution)
         try:
-            assessment = await self._assess(task, number, solution)
+            assessment = (
+                await self._assess(task, number, solution) if prepared is None else prepared[1]
+            )
+            if isinstance(assessment, AssessmentUnavailable):
+                raise assessment
         except AssessmentUnavailable:
             day = day_of(time)
             extra = int(claim.assessment_fault_day != day)

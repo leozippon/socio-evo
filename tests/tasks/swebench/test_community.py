@@ -91,7 +91,7 @@ async def test_both_workers_edit_and_submit_the_same_workspace(provider, monkeyp
 
     part = provider.part("org__repo-1")
     files = []
-    container = SimpleNamespace(name="fake-shared-container")
+    container = SimpleNamespace(name="fake-shared-container", remove=lambda **kwargs: None)
 
     def workspace(part, worker, task_id):
         folder = provider.root / "workspaces" / provider._key(part, worker, task_id)
@@ -105,7 +105,13 @@ async def test_both_workers_edit_and_submit_the_same_workspace(provider, monkeyp
 
     monkeypatch.setattr(provider, "_workspace", workspace)
     monkeypatch.setattr("tasks.swebench.provider.execute", execute)
-    monkeypatch.setattr(provider, "_snapshot", lambda container, folder: "\n".join(files))
+
+    def snapshot(container, folder):
+        patch = "\n".join(files)
+        (folder / "working.patch").write_text(patch)
+        return patch
+
+    monkeypatch.setattr(provider, "_snapshot", snapshot)
     await provider.run_command(part, "Mei", "task-1", "first edit")
     result = await provider.run_command(part, "Tomas", "task-1", "second edit")
     assert result["output"] == "first edit\nsecond edit"
@@ -113,3 +119,29 @@ async def test_both_workers_edit_and_submit_the_same_workspace(provider, monkeyp
     _, folder = workspace(part, "Tomas", "task-1")
     commands = [json.loads(line) for line in (folder / "commands.jsonl").read_text().splitlines()]
     assert [entry["worker"] for entry in commands] == ["Mei", "Tomas"]
+
+
+async def test_command_budget_kills_descendants_and_keeps_previous_patch(provider, monkeypatch):
+    from types import SimpleNamespace
+
+    from tasks.swebench.provider import WorkBudgetExceeded
+
+    part = provider.part("org__repo-1")
+    folder = provider.root / "workspaces" / provider._key(part, "Mei", "task-1")
+    folder.mkdir(parents=True)
+    (folder / "working.patch").write_text("previous edits")
+    removed = []
+    container = SimpleNamespace(name="fake", remove=lambda **kwargs: removed.append(kwargs))
+    monkeypatch.setattr(provider, "_workspace", lambda *a: (container, folder))
+    monkeypatch.setattr(
+        "tasks.swebench.provider.execute",
+        lambda *a: {"exit_code": 0, "output": "background process started"},
+    )
+
+    def too_large(*args):
+        raise WorkBudgetExceeded("Too large; edits rolled back")
+
+    monkeypatch.setattr(provider, "_snapshot", too_large)
+    result = await provider.run_command(part, "Mei", "task-1", "large edit")
+    assert result["exit_code"] == 1 and removed == [{"force": True}]
+    assert (folder / "working.patch").read_text() == "previous edits"

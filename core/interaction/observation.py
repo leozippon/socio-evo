@@ -24,6 +24,7 @@ class Observation(StrictModel):
     and passing an Event where a Percept is expected is rejected.
     """
 
+    goal_updates: bool = False
     agent: str
     time: SimTime
     place: str
