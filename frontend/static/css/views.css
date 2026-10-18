@@ -319,3 +319,6 @@ table.stakes tr.switch td { font-weight: 650; }
 .contrast-table { margin: 0; }
 .card.table-wrap { padding: 0 var(--s4) var(--s2); }
 .none-note { margin: var(--s2) 0 0; color: var(--muted); }
+
+/* Wall-clock timestamps are separate from the simulated-day progress. */
+.run-times { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px 20px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }

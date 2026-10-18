@@ -8,12 +8,15 @@ version = "0.1.0"
 description = "Long-term multi-agent society simulation of self-evolving LLM agents under social selection pressure."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2", "pyyaml", "openai"]
+dependencies = ["pydantic>=2", "pyyaml", "openai>=3.26.1", "httpx2"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 # Reading the parquet files of the calculation benchmark (`python -m tasks.calculation.fetch`).
 banks = ["pyarrow"]
+# Exact local chat-template accounting; no tokenizer downloads at runtime.
+context = ["transformers>=4.45"]
+swebench = ["docker==7.1.0", "swebench==4.1.0", "pyarrow==24.0.0"]
 
 # Flat layout. Mapping the root package directory to "." makes an editable install
 # expose the project root, so top-level packages added later need no reinstall.

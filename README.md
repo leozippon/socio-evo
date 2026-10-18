@@ -59,6 +59,9 @@ python -m frontend.publish --runs-root runs --out build/site
 
 ## Documentation
 
+- [docs/zenith-livecodebench.md](docs/zenith-livecodebench.md): prepare and use LiveCodeBench tasks on Zenith.
+- [docs/swebench-pilot.md](docs/swebench-pilot.md): run and grade an isolated three-task SWE-bench Verified repair pilot.
+
 - [docs/summary.md](docs/summary.md): what the system is, why it is built this way, and how to use it.
 - [docs/experimental-design.md](docs/experimental-design.md): the hypotheses, the dilemmas, the arms and controls, and the measures.
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): code layering, module contracts, run-directory layout and invariants.
@@ -66,3 +69,14 @@ python -m frontend.publish --runs-root runs --out build/site
 - [docs/reviews/](docs/reviews/): dated design reviews and plans; [docs/logbook/](docs/logbook/): the project log.
 - [frontend/README.md](frontend/README.md): the published site, its data bundle and how to deploy it.
 - [external_references/README.md](external_references/README.md): the projects the design draws on.
+
+- [SWE-bench town pilot](docs/swebench-town.md): residents inspect and repair real repositories through isolated terminals.
+
+### Optional active recall and context budgets
+
+For bounded private memory queries before action and priority-based context packing, see
+[Active recall and shared context budgets](docs/active-recall-context-budget.md). These are
+opt-in cognition settings; existing experiment configurations keep their previous behavior.
+
+For per-resident task journals and selective context injection, see
+[Task work notes](docs/task-work-notes.md). The work-notes pilot enables all three features.

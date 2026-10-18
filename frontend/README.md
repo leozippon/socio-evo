@@ -123,7 +123,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `format` | integer | The bundle format, currently 2. |
+| `format` | integer | The bundle format, currently 3. |
 | `files` | array | Every kind of file in the bundle. |
 | `files[].kind` | string | The kind, named as in this section's headings. |
 | `files[].path` | string | Its path pattern; `{day}` is a four-digit day number. |
@@ -140,6 +140,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].seed` | integer | The random seed. |
 | `runs[].status` | string | `running`, `completed`, `failed`, or `interrupted` (stopped early on request). |
 | `runs[].started_at` | string | When the run was created. |
+| `runs[].continued_at` | string or null | When a completed trajectory was copied for continuation; null for fresh runs. Landing timestamps use Asia/Shanghai and sort by continuation time when present, otherwise start time. |
 | `runs[].ended_at` | string or null | When it last stopped; null while running. |
 | `runs[].days` | integer | The number of days planned. |
 | `runs[].settled_day` | integer | The last settled day, 0 if none. |
@@ -333,6 +334,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
 | `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
+| `command_executed` | the worker | the worker only | `task_id`, `part`, `command`, `exit_code`, `output` |
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `checked` (whether the client ran its checks: a checking client's, or a trusting client's for a worker whose standing is below the threshold; absent in logs recorded before the threshold existed, where a checking client checked every part declared complete), `accepted`, `solution` (what was handed in: code, a query or an answer with its working; a hand-in that named the draft on the desk holds the draft), `report` (the worker's own account) |
 | `work_assessed` | the worker | none | `task_id`, `part`, `client`, `declaration`, `checked`, `accepted`, `passed` (the acceptance checks), `feedback` (on them), `quality` (the true quality, the share of hidden checks passed, 0 to 1), `special_cased` (whether the solution writes out what the client's examples look for instead of working it out, as the trade's provider judged when it assessed it; absent in logs recorded before it was kept), `tested` (the result of the worker's last private check of this very solution, or null), `refused` (whether the client had refused this very solution); accepted, declared complete and below 1 means a latent defect once the task is paid |
 | `desk` | none | the worker | `task_id` of the job the worker holds at night, once home: what is still on its desk, each part in or not and what the worker last saw of it |

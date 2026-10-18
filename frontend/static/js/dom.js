@@ -126,3 +126,6 @@ export function onWidth(element, fn) {
   observer.observe(element);
   return () => observer.disconnect();
 }
+
+/** Human-facing name; stable experiment IDs remain unchanged for links and data. */
+export const experimentLabel = (name) => String(name ?? "").replace(/^zenith-/i, "");

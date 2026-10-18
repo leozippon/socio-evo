@@ -25,3 +25,6 @@ runs/
 
 # Reference checkouts; the README there is tracked
 external_references/*/
+
+# Independent benchmark pilots (may contain large transcripts)
+pilot-runs/

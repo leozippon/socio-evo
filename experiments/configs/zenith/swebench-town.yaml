@@ -1,0 +1,99 @@
+# Smoke test: three agents for three days. Cadences are compressed so that the weekly (L1)
+# step runs on day 2 and the monthly (L2) step on day 3; one intervention on day 2.
+name: zenith-swebench-town-v3
+
+llm:
+  base_url: http://127.0.0.1:8011/v1
+  api_key_env: VLLM_API_KEY
+  model: qwen-3.8-27b-fp8
+  structured_output: json_schema
+  sampling:
+    temperature: 0.7
+    top_p: 0.8
+    max_tokens: 4096
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false
+
+# Real repository work runs only inside isolated official Docker images.
+tasks:
+  provider: swebench
+  bank: /personal_fast_storage/datasets/swebench-verified/verified.json
+  instances: [pallets__flask-5014, astropy__astropy-12907]
+  command_seconds: 60
+  evaluation_seconds: 600
+
+agents:
+  - profile:
+      name: Mei
+      age: 34
+      occupation: software developer
+      backstory: >-
+        You grew up in a port city and spent six years writing routing software for a
+        freight company. When the company closed its regional office last spring, you moved
+        to this town, where rents are lower, and took a room in the shared house on Mill
+        Street. You live off programming jobs from the town's board while you decide what to
+        do next.
+  - profile:
+      name: Tomas
+      age: 58
+      occupation: retired railway signal engineer
+      backstory: >-
+        You maintained railway signalling systems for thirty years and retired early when
+        your line was automated. You moved here to be near your daughter, who studies at the
+        college, and you rent a flat by the college gates. Your pension is smaller than you
+        expected, so you take programming jobs from the town's board, mostly in Python,
+        which you learned for testing signal logic.
+  - profile:
+      name: Aisha
+      age: 24
+      occupation: computer science graduate
+      backstory: >-
+        You finished your computer science degree in the summer and have applied for junior
+        developer positions without an offer so far. You came here because rooms are cheap,
+        and you rent one in the shared house on Mill Street. Until a position comes through
+        you work on jobs from the town's board, which also gives you work to show employers.
+
+evolution:
+  levels: [L0, L1, L2]
+
+environment:
+  initial_balance: 100
+  esteem_half_life_days: 7
+  task_shelf_life_days: 3
+  conditions:
+    living_cost: 20
+    one_part_tasks: 2
+    two_part_tasks: 0
+    trusting_client_prob: 0.0
+    reward_multiplier: 1.0
+    two_part_premium: 1.5
+    incomplete_share: 0.5
+    partner_choice: true
+    defect_discovery_prob: 0.3
+    clawback: true
+    esteem_public: true
+  places:
+    - {id: mill-street-house, kind: home, name: the shared house on Mill Street, description: "", x: 1, y: 4, residents: [Mei, Aisha]}
+    - {id: college-flat, kind: home, name: the flat by the college gates, description: "", x: 6, y: 5, residents: [Tomas]}
+    - {id: workshop, kind: work, name: the Workshop, description: A shared workroom with long tables near the market square., x: 4, y: 3, hours: ["09:00-12:00", "13:30-18:00"]}
+    - {id: cafe, kind: social, name: Café Linde, description: A café on the market square., x: 3, y: 2}
+
+simulation:
+  days: 1
+  postings: [morning]
+  calendar:
+    day_start: "07:00"
+    slots:
+      - {name: morning, start: "09:00"}
+      - {name: midday, start: "12:00"}
+      - {name: afternoon, start: "13:30"}
+      - {name: evening, start: "18:00"}
+    day_end: "22:00"
+    weekly_days: 2
+    monthly_days: 3
+  scenes:
+    work_rounds: 12
+    conversation_turns: 8
+    turn_minutes: 5
+  interventions: []

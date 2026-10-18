@@ -1,5 +1,6 @@
 """Events, the immutable record of what happened, and percepts, a witness's view of one."""
 
+import re
 from enum import StrEnum
 
 from pydantic import Field, JsonValue, NonNegativeInt
@@ -39,6 +40,7 @@ class EventKind(StrEnum):
     TASK_WITHDRAWN = "task_withdrawn"
     """A task its client withdrew, from the board or from its workers, with nothing more paid
     for it; private to its workers, truth-only for a task nobody had taken."""
+    COMMAND_EXECUTED = "command_executed"
     WORK_CHECKED = "work_checked"
     """A solution run against a part's acceptance checks without delivery; private."""
     WORK_SUBMITTED = "work_submitted"
@@ -100,6 +102,7 @@ class Percept(StrictModel):
     place: str | None = None
     scene: str | None = None
     text: str
+    task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
 
 
 class Event(StrictModel):
@@ -109,7 +112,8 @@ class Event(StrictModel):
     events. `text` is what a witness perceives, naming everyone in it by name; `personal`
     holds, by agent id, the wording for each witness the text names, which says the same of
     that witness as `you` and is what it perceives instead (see `core.interaction.telling`).
-    `payload` is structured truth for analysis and replay; it never reaches an agent.
+    `payload` is structured truth for analysis and replay; only a whitelisted task
+    identifier is projected for witnessed work events, never the rest of the payload.
     """
 
     seq: NonNegativeInt
@@ -120,10 +124,34 @@ class Event(StrictModel):
     scene: str | None = None
     audience: tuple[str, ...] = ()
     text: str
+    task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
     personal: dict[str, str] = Field(default_factory=dict)
     payload: dict[str, JsonValue] = Field(default_factory=dict)
 
     def percept(self, witness: str) -> Percept:
         """This event as `witness` perceives it: in its own wording, if it has one."""
         seen = self.model_dump(exclude={"payload", "audience", "personal"})
+        seen["task_id"] = None
+        # Only a public routing identifier, never evaluation results or hidden tests.
+        work_kinds = {
+            EventKind.TASK_POSTED,
+            EventKind.TASK_CLAIMED,
+            EventKind.TASK_PROPOSED,
+            EventKind.TASK_APPLIED,
+            EventKind.TASK_EXPIRED,
+            EventKind.TASK_WITHDRAWN,
+            EventKind.COMMAND_EXECUTED,
+            EventKind.WORK_CHECKED,
+            EventKind.WORK_SUBMITTED,
+            EventKind.DESK,
+            EventKind.PAYMENT,
+            EventKind.DEFECT_DISCOVERED,
+            EventKind.CLAWBACK,
+            EventKind.ACTION_REJECTED,
+            EventKind.OFFER_ENDED,
+        }
+        task = self.task_id or self.payload.get("task_id")
+        if witness in self.audience and self.kind in work_kinds and isinstance(task, str):
+            if re.fullmatch(r"task-\d+", task):
+                seen["task_id"] = task
         return Percept.model_validate({**seen, "text": self.personal.get(witness, self.text)})

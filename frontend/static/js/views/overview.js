@@ -4,7 +4,7 @@
 // model usage.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
-import { emptyState, fill, fmt, h, s } from "../dom.js";
+import { experimentLabel, emptyState, fill, fmt, h, s } from "../dom.js";
 import { icon } from "../icons.js";
 import { href, sibling } from "../router.js";
 import { conditionLabel, conditionValue, interventions, markers } from "../world.js";
@@ -123,7 +123,7 @@ export function mountOverview(root, ctx) {
         "div",
         { class: "run-title" },
         h("p", { class: "eyebrow" }, "Run"),
-        h("h1", {}, doc.experiment, h("span", { class: "run-seed" }, doc.run)),
+        h("h1", {}, experimentLabel(doc.experiment), h("span", { class: "run-seed" }, doc.run)),
         h("p", { class: "run-meta" }, `${fmt.plural(world.agents.length, "agent")} · ${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""} · seed ${doc.seed}`),
         h(
           "p",

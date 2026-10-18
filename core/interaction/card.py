@@ -44,6 +44,7 @@ from core.interaction.actions import (
     PlanDay,
     RatePeers,
     Resign,
+    RunCommand,
     Speak,
     SubmitWork,
     Vote,
@@ -61,6 +62,8 @@ TAKE_FOR_TWO = "take a job for two"
 PUT_NAME_DOWN = "put your name down for a job for two"
 TRIES = "try your {delivery}"
 """Trying one's work for a part: what a worker of the job's trade hands in (`code`, `query`)."""
+RUN = "use the terminal"
+COMMAND = "command"
 HAND_IN = "hand in"
 HAND_OVER = "hand over money"
 MARK = "mark people in the ledger"
@@ -282,6 +285,16 @@ class _Working(_Allowance):
         return {self.delivery: (str, OR_DRAFT.format(draft=DRAFT) if self.drafts else None)}
 
 
+class MayRunCommand(_Working):
+    kind: Literal[ActionKind.RUN_COMMAND] = ActionKind.RUN_COMMAND
+
+    def forms(self) -> list[_Form]:
+        def run(reply: Mapping[str, Any]) -> Action:
+            return RunCommand(task_id=self.task_id, part=reply.get(PART, 1), command=reply[COMMAND])
+
+        return [_Form(RUN, {**self._part(), COMMAND: (str, None)}, run)]
+
+
 class MayCheck(_Working):
     """Trying one's work for a part of one's job against what the client gives to try it
     against: its examples, or its sample rows."""
@@ -430,6 +443,7 @@ Allowance = Annotated[
     | MayLeave
     | MayPass
     | MayClaim
+    | MayRunCommand
     | MayCheck
     | MaySubmit
     | MayGive

@@ -54,7 +54,8 @@ class Assessment(StrictModel):
     passed: bool
     feedback: str
     quality: float = Field(ge=0, le=1)
-    special_cased: bool
+    special_cased: bool | None = None
+    """None when this provider does not support example-hardcoding detection."""
 
 
 class TaskProvider(Protocol):

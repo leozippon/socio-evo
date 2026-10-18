@@ -408,14 +408,14 @@ def recollection(decision: Decision, currency: Currency) -> str:
     return _recalled(decision.action.model_dump(mode="json"), decision.thought, currency)
 
 
-def diary_prompt(
+def _legacy_diary_prompt(
     time: int, records: Sequence[Record], limits: CognitionConfig, setting: Setting
 ) -> str:
     memories = _memories(records, time, limits, setting) or QUIET
     return DIARY.format(time=_time(time, setting), memories=memories)
 
 
-def reflection_prompt(
+def _legacy_reflection_prompt(
     time: int,
     diaries: Sequence[tuple[int, str]],
     insights: Sequence[Insight],
@@ -436,7 +436,7 @@ def reflection_prompt(
     return text
 
 
-def skill_prompt(
+def _legacy_skill_prompt(
     time: int,
     diaries: Sequence[tuple[int, str]],
     insights: Sequence[Insight],
@@ -454,7 +454,7 @@ def skill_prompt(
     )
 
 
-def policy_prompt(
+def _legacy_policy_prompt(
     time: int,
     diaries: Sequence[tuple[int, str]],
     insights: Sequence[Insight],
@@ -475,7 +475,7 @@ def policy_prompt(
     )
 
 
-def revision_prompt(
+def _legacy_revision_prompt(
     time: int,
     diaries: Sequence[tuple[int, str]],
     account: str,
@@ -744,6 +744,7 @@ _DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
     ActionKind.LEAVE: lambda action, _: LEFT,
     ActionKind.PASS: lambda action, _: CARRIED_ON,
     ActionKind.CLAIM_TASK: lambda action, _: _took(action),
+    ActionKind.RUN_COMMAND: lambda action, _: f"you used the terminal for {_part(action)}.",
     ActionKind.CHECK_WORK: lambda action, _: TRIED.format(part=_part(action)),
     ActionKind.SUBMIT_WORK: lambda action, _: HANDED_IN.format(
         part=_part(action),
@@ -762,3 +763,100 @@ _DEEDS: dict[str, Callable[[Mapping[str, Any], Currency], str]] = {
 }
 """How each kind of thing the resident did is told to it, from the action's fields and the
 town's currency."""
+
+
+# Keep the legacy renderers byte-for-byte for historical experiments. The enabled path
+# separates instructions/current principles from optional evidence before token packing.
+
+
+def _night_blocks(diaries, insights, skills, limits, setting):
+    from core.agent.context import Block
+
+    blocks = [
+        Block(f"diary:{day}", _diaries([(day, text)], limits, setting), 70) for day, text in diaries
+    ]
+    blocks += [
+        Block(f"belief:{insight.id}", _beliefs([insight], limits, numbered=True), 60)
+        for insight in insights
+    ]
+    blocks += [Block(f"skill:{skill.name}", _pages([skill], limits), 65) for skill in skills]
+    return blocks
+
+
+def diary_prompt(time, records, limits, setting):
+    if not limits.context_budget.enabled:
+        return _legacy_diary_prompt(time, records, limits, setting)
+    from core.agent.context import Block, BudgetPrompt
+
+    blocks = [
+        Block(f"experience:{i}", f"{_when(record.time, time, setting)}: {record.text}", 70)
+        for i, record in enumerate(records)
+    ]
+    return BudgetPrompt(
+        DIARY.format(time=_time(time, setting), memories="Your selected recollections are above."),
+        blocks,
+    )
+
+
+def reflection_prompt(time, diaries, insights, capacity, requestable, limits, setting):
+    if not limits.context_budget.enabled:
+        return _legacy_reflection_prompt(
+            time, diaries, insights, capacity, requestable, limits, setting
+        )
+    from core.agent.context import BudgetPrompt
+
+    text = _legacy_reflection_prompt(time, [], [], capacity, requestable, limits, setting)
+    return BudgetPrompt(
+        text.replace(NOTHING, "See your selected notes above, if any."),
+        _night_blocks(diaries, insights, [], limits, setting),
+    )
+
+
+def skill_prompt(time, diaries, insights, skills, reason, limits, setting):
+    if not limits.context_budget.enabled:
+        return _legacy_skill_prompt(time, diaries, insights, skills, reason, limits, setting)
+    from core.agent.context import BudgetPrompt
+
+    text = _legacy_skill_prompt(time, [], [], [], reason, limits, setting)
+    return BudgetPrompt(
+        text.replace(NOTHING, "See your selected notes above, if any."),
+        _night_blocks(diaries, insights, skills, limits, setting),
+    )
+
+
+def policy_prompt(time, diaries, insights, policy, reason, limits, setting):
+    if not limits.context_budget.enabled:
+        return _legacy_policy_prompt(time, diaries, insights, policy, reason, limits, setting)
+    from core.agent.context import BudgetPrompt
+
+    text = _legacy_policy_prompt(time, [], [], policy, reason, limits, setting)
+    return BudgetPrompt(
+        text.replace(NOTHING, "See your selected notes above, if any."),
+        _night_blocks(diaries, insights, [], limits, setting),
+    )
+
+
+def revision_prompt(time, diaries, account, policy, skills, insights, capacity, limits, setting):
+    if not limits.context_budget.enabled:
+        return _legacy_revision_prompt(
+            time, diaries, account, policy, skills, insights, capacity, limits, setting
+        )
+    from core.agent.context import BudgetPrompt
+
+    text = _legacy_revision_prompt(time, [], account, policy, [], [], capacity, limits, setting)
+    # Only replace missing notebook/belief placeholders; an absent self-account must remain
+    # absent so the first-night instruction to write it is retained.
+    for heading in (YOUR_NOTEBOOK, NUMBERED.format(heading=YOUR_BELIEFS)):
+        text = text.replace(
+            HEADING.format(heading=heading.capitalize(), text=NOTHING),
+            HEADING.format(
+                heading=heading.capitalize(), text="See your selected notes above, if any."
+            ),
+        )
+    text = text.replace(
+        IN_BED.format(time=_time(time, setting), diaries=NOTHING),
+        IN_BED.format(
+            time=_time(time, setting), diaries="See your selected diary entries above, if any."
+        ),
+    )
+    return BudgetPrompt(text, _night_blocks(diaries, insights, skills, limits, setting))

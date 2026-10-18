@@ -27,6 +27,7 @@ from core.interaction import (
     MayPlan,
     MayRate,
     MayResign,
+    MayRunCommand,
     MaySpeak,
     MaySubmit,
     MayVote,
@@ -35,6 +36,7 @@ from core.interaction import (
     PlanDay,
     RatePeers,
     Resign,
+    RunCommand,
     Speak,
     SubmitWork,
     Vote,
@@ -72,6 +74,11 @@ ANSWERS: dict[ActionKind, tuple[Any, dict[str, Any], Any]] = {
         WORK[0],
         {"do": "take a job for two", "job": 31, "with": "Aisha", "part": 2},
         ClaimTask(task_id="task-31", partner="Aisha", part=2),
+    ),
+    ActionKind.RUN_COMMAND: (
+        MayRunCommand(task_id="task-31", parts=(1,)),
+        {"do": "use the terminal", "command": "ls"},
+        RunCommand(task_id="task-31", command="ls"),
     ),
     ActionKind.CHECK_WORK: (
         MayCheck(task_id="task-31", parts=(2,)),

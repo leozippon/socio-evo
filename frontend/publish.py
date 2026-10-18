@@ -323,7 +323,12 @@ def publish_run(site: Site, root: Path) -> tuple[dict[str, Any], Analysed]:
         "agents": agents,
     }
     digest = put("run.json", lambda: document)
+    continuation = root / "continuation.json"
+    continued_at = (
+        json.loads(continuation.read_text()).get("continued_at") if continuation.is_file() else None
+    )
     entry = {
+        "continued_at": continued_at,
         "experiment": experiment,
         "run": name,
         "url": ref(f"runs/{experiment}/{name}/run.json", digest, False),
@@ -387,6 +392,7 @@ def _fingerprint(run: RunDirectory) -> tuple[tuple[str, int, int], ...]:
     paths = [
         run.manifest_path,
         run.config_path,
+        run.root / "continuation.json",
         run.events_path,
         run.llm_calls_path,
         *sorted(run.checkpoints_dir.glob("day-*.json")),

@@ -23,6 +23,7 @@ class Record(StrictModel):
     seq: NonNegativeInt | None = None
     kind: EventKind | None = None
     text: str
+    task_id: str | None = None
 
     @classmethod
     def of(cls, percept: Percept, names: Mapping[str, str] | None = None) -> "Record":
@@ -37,6 +38,7 @@ class Record(StrictModel):
             seq=percept.seq,
             kind=percept.kind,
             text=percept.text,
+            task_id=percept.task_id,
         )
 
 

@@ -2,7 +2,7 @@
 // runs by polling the index, and says plainly what failed when something does.
 
 import { FormatError, RunSource, readIndex, readManifest, runKey, studyOf } from "./data.js";
-import { fill, fmt, h, useCurrency } from "./dom.js";
+import { experimentLabel, fill, fmt, h, useCurrency } from "./dom.js";
 import { icon } from "./icons.js";
 import { Cast } from "./identity.js";
 import { href, navigate, parse, remember, sibling } from "./router.js";
@@ -57,14 +57,14 @@ function header() {
     if (study) {
       const arm = study.arms.find((found) => found.experiment === r.experiment).arm;
       crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb study-crumb", href: href({ view: "study", study: `${study.study}${study.dry_run ? "-dry-run" : ""}` }) }, studyLabel(`${study.study}${study.dry_run ? "-dry-run" : ""}`)));
-      crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }), title: r.experiment }, arm));
-    } else crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }) }, r.experiment));
-    if (r.run) crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: `${r.experiment} · ${r.run}` }, r.run));
+      crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }), title: experimentLabel(r.experiment) }, arm));
+    } else crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", experiment: r.experiment }) }, experimentLabel(r.experiment)));
+    if (r.run) crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: `${experimentLabel(r.experiment)} · ${r.run}` }, r.run));
   }
   fill($("crumbs"), crumbs);
   document.body.classList.toggle("in-run", Boolean(r.run && entry));
   document.body.dataset.view = r.view;
-  document.title = r.run ? `${r.experiment} · ${r.run} · socio-evo` : r.experiment ? `${r.experiment} · socio-evo` : r.study ? `${studyLabel(r.study)} · socio-evo` : "socio-evo";
+  document.title = r.run ? `${experimentLabel(r.experiment)} · ${r.run} · socio-evo` : r.experiment ? `${experimentLabel(r.experiment)} · socio-evo` : r.study ? `${studyLabel(r.study)} · socio-evo` : "socio-evo";
   if (r.run && entry) {
     const tab = (view, label, glyph) =>
       h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));

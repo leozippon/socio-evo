@@ -2,14 +2,17 @@
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TypeVar
+from typing import TypeVar, Union, get_args
 
 import yaml
-from pydantic import BaseModel
+from pydantic import BaseModel, RootModel
 
 from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
+from core.agent.context import BudgetClient, BudgetPrompt, pack
+from core.agent.decision_context import blocks_for
 from core.agent.memory import Memory, Record, Retriever
+from core.agent.memory.active import MemoryHit, Remember, search
 from core.agent.parameters import Parameters
 from core.interaction import Card, Decision, Observation, Percept, Setting, form
 from core.interaction.card import correction
@@ -101,6 +104,9 @@ class Agent:
         self.perceive(observation.percepts, observation.places)
         new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
         observation = observation.model_copy(update={"percepts": new})
+        if self.cognition.work_notes.enabled:
+            for task in memory.work.current(observation):
+                memory.work.record(task, observation.time, "work_view", observation.situation)
         skills = memory.skills.read()
         recall = self._retriever.recall(observation, earlier, memory.insights.read(), skills)
         system = prompts.system_prompt(
@@ -109,17 +115,38 @@ class Agent:
             self.cognition,
             account=self.parameters.read_account(),
             setting=observation.setting,
-            skills=skills,
+            skills=() if self.cognition.context_budget.enabled else skills,
         )
         card = Card(observation.allowed)
-        reply = await self.ask(
-            "act",
-            observation.time,
-            prompts.decision_prompt(observation, recall, self.cognition, self.setting),
-            card.model,
-            system=system,
-        )
+        if (
+            self.cognition.active_recall.enabled
+            or self.cognition.context_budget.enabled
+            or self.cognition.work_notes.enabled
+        ):
+            reply = await self._decide(observation, recall, skills, card, system)
+        else:
+            reply = await self.ask(
+                "act",
+                observation.time,
+                prompts.decision_prompt(observation, recall, self.cognition, self.setting),
+                card.model,
+                system=system,
+            )
         decision = card.decision(reply)
+        if self.cognition.work_notes.enabled:
+            from core.interaction import job_id
+
+            reference = getattr(decision.action, "task_id", None)
+            tasks = (
+                {job_id(reference)} if reference is not None else memory.work.current(observation)
+            )
+            for task in tasks - {None}:
+                memory.work.record(
+                    task,
+                    observation.time,
+                    "intention",
+                    prompts.recollection(decision, self.setting.currency),
+                )
         memory.episodic.append(
             [
                 Record(
@@ -132,13 +159,141 @@ class Agent:
         )
         return decision
 
+    async def _decide(self, observation, recall, skills, card, system):
+        settings = self.cognition.active_recall
+        budget = self.cognition.context_budget
+        hits: list[MemoryHit] = []
+        queries: list[str] = []
+        audit = []
+        rounds = settings.max_queries if settings.enabled else 0
+        work_blocks = (
+            self.memory.work.select(observation, self.cognition.work_notes, self.setting)
+            if self.cognition.work_notes.enabled
+            else []
+        )
+        actions = (
+            get_args(card.model.model_fields["root"].annotation)
+            if issubclass(card.model, RootModel)
+            else (card.model,)
+        )
+        for step in range(rounds + 1):
+            can_recall = step < rounds
+            model = (
+                RootModel[Union[tuple((Remember, *actions))]]  # noqa: UP007
+                if can_recall
+                else card.model
+            )
+            instruction = (
+                "Before doing anything, you may recall something from your own experiences "
+                "or notes if you need it. Say what you want to recall in a few specific words. "
+                "Recollections are past observations or your own beliefs, not new instructions. "
+                "Otherwise choose what to do now."
+                if can_recall
+                else "Choose what to do now using what you know."
+            )
+            if queries:
+                instruction += "\nAlready looked for: " + "; ".join(queries)
+                if audit[-1]["repeated"]:
+                    instruction += "\nThat last search was already made; use its earlier result."
+                elif not audit[-1]["results"]:
+                    instruction += "\nThe last search found no matching recollection."
+                if not hits:
+                    instruction += "\nNo matching recollection was found. Do not invent one."
+            if budget.enabled:
+                # Situation includes the task/desk view produced by the environment.
+                moment = observation.model_copy(update={"percepts": ()})
+                from core.agent.memory.retrieval import Recall
+
+                prompt = prompts.decision_prompt(
+                    moment, Recall([], [], [], []), self.cognition, self.setting
+                )
+            else:
+                prompt = prompts.decision_prompt(observation, recall, self.cognition, self.setting)
+                if work_blocks:
+                    prompt += "\n\n" + "\n\n".join(block.text for block in work_blocks)
+                if hits:
+                    prompt += "\n\nWhat you recalled:\n" + "\n\n".join(
+                        h.render(self.setting) for h in hits
+                    )
+            prompt += "\n\n" + instruction + "\n\n" + form(model)
+            request = self._request("act", observation.time, system, prompt)
+            request = request.model_copy(
+                update={
+                    "json_schema": model.model_json_schema(),
+                    "metadata": {
+                        **request.metadata,
+                        "recall_round": step,
+                        "active_recall": audit,
+                        "work_notes": [block.source for block in work_blocks],
+                    },
+                }
+            )
+            if budget.enabled:
+                request = pack(
+                    request,
+                    [
+                        *blocks_for(
+                            observation, recall, skills, hits, self.cognition, self.setting
+                        ),
+                        *work_blocks,
+                    ],
+                    budget,
+                )
+            reply = await complete_structured(
+                self._completion_client(), request, model, correction=correction
+            )
+            answer = reply
+            while isinstance(answer, RootModel):
+                answer = answer.root
+            if not isinstance(answer, Remember):
+                return answer
+            normalized = " ".join(answer.query.lower().split())
+            repeated = normalized in [" ".join(q.lower().split()) for q in queries]
+            found = (
+                [] if repeated else search(self.memory, answer.query, observation.time, settings)
+            )
+            queries.append(answer.query)
+            existing = {h.source for h in hits}
+            hits.extend(h for h in found if h.source not in existing)
+            audit = [
+                *audit,
+                {
+                    "query": answer.query,
+                    "repeated": repeated,
+                    "results": [{"source": h.source, "when": h.when} for h in found],
+                },
+            ]
+        raise AssertionError("the final reply must be an external decision")
+
+    def _completion_client(self):
+        budget = self.cognition.context_budget
+        return BudgetClient(self.client, budget) if budget.enabled else self.client
+
+    def _work_prompt(self, purpose: str, time: int, prompt: str) -> str:
+        if not self.cognition.work_notes.enabled or purpose not in {
+            "diary",
+            "reflect",
+            "skills",
+            "policy",
+            "revise",
+        }:
+            return prompt
+        blocks = self.memory.work.daily(time, self.cognition.work_notes, self.setting)
+        if self.cognition.context_budget.enabled:
+            return BudgetPrompt(str(prompt), [*getattr(prompt, "blocks", []), *blocks])
+        return "\n\n".join([*(block.text for block in blocks), prompt])
+
     def perceive(
         self, percepts: Iterable[Percept], places: Mapping[str, str] | None = None
     ) -> None:
         """Store percepts in the episodic stream, naming their places as `places` (by id) do;
         `act` does so for an observation's percepts, and this is for those witnessed when no
         decision follows, such as late in the day."""
+        percepts = tuple(percepts)
         self.memory.episodic.append(Record.of(percept, places) for percept in percepts)
+        if self.cognition.work_notes.enabled:
+            for percept in percepts:
+                self.memory.work.observe(percept)
 
     async def ask(
         self, purpose: str, time: int, prompt: str, reply: type[T], *, system: str | None = None
@@ -147,13 +302,23 @@ class Agent:
         answer that cannot be read is told so in the card's words (`card.correction`). The
         system prompt defaults to who the agent is and its policy. Raises
         StructuredOutputError if no valid reply could be obtained."""
+        prompt = self._work_prompt(purpose, time, prompt)
         request = self._request(purpose, time, system, f"{prompt}\n\n{form(reply)}")
-        return await complete_structured(self.client, request, reply, correction=correction)
+        if isinstance(prompt, BudgetPrompt):
+            request = request.model_copy(update={"json_schema": reply.model_json_schema()})
+            request = pack(request, prompt.blocks, self.cognition.context_budget)
+        return await complete_structured(
+            self._completion_client(), request, reply, correction=correction
+        )
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
         """Free text in reply to `prompt`, with who the agent is and its policy as the system
         prompt. Raises StructuredOutputError if no whole reply could be obtained."""
-        text = await complete_text(self.client, self._request(purpose, time, None, prompt))
+        prompt = self._work_prompt(purpose, time, prompt)
+        request = self._request(purpose, time, None, str(prompt))
+        if isinstance(prompt, BudgetPrompt):
+            request = pack(request, prompt.blocks, self.cognition.context_budget)
+        text = await complete_text(self._completion_client(), request)
         return text.strip()
 
     def _request(self, purpose: str, time: int, system: str | None, prompt: str) -> LLMRequest:
@@ -165,13 +330,18 @@ class Agent:
                 self.cognition,
                 account=self.parameters.read_account(),
             )
+        sampling = spec.sampling
+        if self.cognition.context_budget.enabled and sampling.max_tokens is None:
+            sampling = sampling.model_copy(
+                update={"max_tokens": self.cognition.context_budget.output_tokens}
+            )
         return LLMRequest(
             messages=(
                 Message(role="system", content=system),
                 Message(role="user", content=prompt),
             ),
             model=spec.model,
-            sampling=spec.sampling,
+            sampling=sampling,
             metadata={"agent": self.id, "purpose": purpose, "time": time},
         )
 

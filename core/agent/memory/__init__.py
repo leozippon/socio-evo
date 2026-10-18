@@ -7,6 +7,7 @@ from core.agent.memory.episodic import EpisodicStream, Record
 from core.agent.memory.insights import Insight, InsightStore
 from core.agent.memory.retrieval import Recall, Retriever
 from core.agent.memory.skills import SKILL_NAME, Skill, SkillLibrary, name_of, title_of
+from core.agent.memory.work import WorkNotes
 
 
 class Memory:
@@ -17,6 +18,7 @@ class Memory:
         self.diary = Diary(root / "diary")
         self.insights = InsightStore(root / "insights.jsonl")
         self.skills = SkillLibrary(root / "skills")
+        self.work = WorkNotes(root / "work")
 
 
 __all__ = [

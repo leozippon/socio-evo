@@ -81,10 +81,13 @@ async def run(
     before a new run directory exists, so a configuration error leaves nothing behind. A
     termination signal cancels the run like a keyboard interrupt: it is marked interrupted."""
     asyncio.get_running_loop().add_signal_handler(signal.SIGTERM, asyncio.current_task().cancel)
+    if resume and config.tasks.provider == "swebench":
+        raise ValueError("SWE-bench town pilot cannot resume a partial day; start a new run")
     revision = code_revision()
     root = RunDirectory.root_of(runs_root, config.name, seed)
     parts = setup(config, seed, RunDirectory(root).llm_calls_path)
-    await run_checks("", (PROBE,), isolation=config.tasks.isolation)
+    if config.tasks.provider != "swebench":
+        await run_checks("", (PROBE,), isolation=config.tasks.isolation)
     if resume:
         directory = RunDirectory.open(root)
         if load_config(directory.config_path, ExperimentConfig) != config:
@@ -98,12 +101,17 @@ async def run(
             runs_root, config.name, seed, config=config, code_revision=revision
         )
         simulation = Simulation.create(directory, parts)
-    return root, await simulation.run(until_day)
+    try:
+        return root, await simulation.run(until_day)
+    finally:
+        await close_providers(parts)
 
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
     """`config` answered by the scripted responder, each of its banks replaced by the
     built-in bank of the same trade, as experiment `<name>-dry-run`."""
+    if config.tasks.provider == "swebench":
+        raise ValueError("The scripted dry-run responder does not implement repository repairs")
     scripted = config.llm.model_copy(update={"backend": "scripted"})
     banks = {t: BUILT_IN[t].relative_to(PROJECT_ROOT).as_posix() for t in config.tasks.banks}
     tasks = config.tasks.model_copy(update={"banks": banks})
@@ -119,6 +127,10 @@ def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
     """
     tasks = config.tasks
     for trade, path in tasks.bank_paths.items():
+        if tasks.provider == "swebench":
+            if not path.is_file():
+                raise FileNotFoundError(f"SWE-bench dataset is missing: {path}")
+            continue
         if not path.is_dir():
             raise FileNotFoundError(
                 f"the {trade.value} bank {path} is missing; it is built by "
@@ -130,12 +142,36 @@ def setup(config: ExperimentConfig, seed: int, llm_calls: Path) -> Setup:
         agents=config.agents,
         cognition=config.cognition,
         evolver=Evolver(config.evolution),
-        providers={
-            trade: PROVIDERS[trade](path, timeout=tasks.timeout, isolation=tasks.isolation)
-            for trade, path in tasks.bank_paths.items()
-        },
+        providers=task_providers(config, llm_calls.parent),
         client=RecordingClient(agent_client(config, seed), llm_calls),
     )
+
+
+def task_providers(config: ExperimentConfig, run_root: Path):
+    if config.tasks.provider == "swebench":
+        from tasks.swebench.provider import SWEbenchTaskProvider
+
+        return {
+            Trade.PROGRAMMING: SWEbenchTaskProvider(
+                config.tasks.bank_path,
+                config.tasks.instances,
+                run_root / "repositories",
+                command_seconds=config.tasks.command_seconds,
+                evaluation_seconds=config.tasks.evaluation_seconds,
+            )
+        }
+    return {
+        trade: PROVIDERS[trade](
+            path, timeout=config.tasks.timeout, isolation=config.tasks.isolation
+        )
+        for trade, path in config.tasks.bank_paths.items()
+    }
+
+
+async def close_providers(parts: Setup) -> None:
+    for provider in parts.providers.values():
+        if hasattr(provider, "close"):
+            await provider.close()
 
 
 def agent_client(config: ExperimentConfig, seed: int) -> LLMClient:

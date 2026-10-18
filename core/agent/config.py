@@ -1,6 +1,6 @@
 """What an experiment config says about an agent: its seed and its prompt-size limits."""
 
-from pydantic import Field, NonNegativeInt, PositiveInt
+from pydantic import Field, NonNegativeInt, PositiveInt, model_validator
 
 from core.agent.parameters import ModelSpec
 from infrastructure.config import StrictModel
@@ -32,6 +32,43 @@ class AgentSeed(StrictModel):
     model: ModelSpec = ModelSpec()
 
 
+class ActiveRecallConfig(StrictModel):
+    """Opt-in internal recollection; never an external action or arbitrary file read."""
+
+    enabled: bool = False
+    max_queries: int = Field(default=2, ge=1, le=5)
+    max_results: int = Field(default=5, ge=1, le=20)
+    snippet_chars: int = Field(default=1200, ge=100, le=8000)
+
+
+class ContextBudgetConfig(StrictModel):
+    """Shared input budget. A local tokenizer is optional; otherwise count UTF-8 bytes.
+
+    The byte estimate is intentionally conservative, not an exact token measurement.
+    Set context_tokens to the actual server limit, including generated output.
+    """
+
+    enabled: bool = False
+    context_tokens: PositiveInt = 32768
+    input_tokens: PositiveInt = 24000
+    output_tokens: PositiveInt = 4096
+    safety_tokens: NonNegativeInt = 1024
+    tokenizer_path: str | None = None
+
+    @model_validator(mode="after")
+    def _room_for_input(self) -> "ContextBudgetConfig":
+        if self.context_tokens <= self.output_tokens + self.safety_tokens:
+            raise ValueError("context_tokens must leave room after output and safety reserves")
+        return self
+
+
+class WorkNotesConfig(StrictModel):
+    enabled: bool = False
+    related_notes: int = Field(default=2, ge=0, le=5)
+    recent_entries: int = Field(default=4, ge=1, le=20)
+    excerpt_chars: int = Field(default=1600, ge=200, le=8000)
+
+
 class CognitionConfig(StrictModel):
     """Bounds on what goes into one prompt: how many memories and how long each text may be.
 
@@ -50,3 +87,6 @@ class CognitionConfig(StrictModel):
     diaries: PositiveInt = 30
     record_chars: PositiveInt = 600
     text_chars: PositiveInt = 4000
+    active_recall: ActiveRecallConfig = ActiveRecallConfig()
+    context_budget: ContextBudgetConfig = ContextBudgetConfig()
+    work_notes: WorkNotesConfig = WorkNotesConfig()

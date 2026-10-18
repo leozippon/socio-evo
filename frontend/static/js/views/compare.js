@@ -3,7 +3,7 @@
 
 import { DayChart, figure } from "../charts.js";
 import { RunSource } from "../data.js";
-import { emptyState, fill, fmt, h } from "../dom.js";
+import { experimentLabel, emptyState, fill, fmt, h } from "../dom.js";
 import { TRAITS } from "../measures.js";
 import { href } from "../router.js";
 import { markers } from "../world.js";
@@ -56,7 +56,7 @@ export function mountCompare(root, ctx) {
       const evaluated = loaded.some((run) => run.evaluation.scores.length);
       fill(
         page,
-        h("header", { class: "page-head" }, h("p", { class: "eyebrow" }, "Experiment"), h("h1", {}, `${experiment}: seeds side by side`), h("p", { class: "lede" }, "Each seed is an independent run of the same town and rules. Point at a line to pick out a seed.")),
+        h("header", { class: "page-head" }, h("p", { class: "eyebrow" }, "Experiment"), h("h1", {}, `${experimentLabel(experiment)}: seeds side by side`), h("p", { class: "lede" }, "Each seed is an independent run of the same town and rules. Point at a line to pick out a seed.")),
         h(
           "ul",
           { class: "card runs" },

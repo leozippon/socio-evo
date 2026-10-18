@@ -1,7 +1,7 @@
 """An experiment: one YAML file naming everything a society run is made of."""
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field, PositiveFloat, model_validator
 
@@ -26,6 +26,10 @@ class TasksConfig(StrictModel):
     trades names one `bank`, the programming trade's, which loads as `banks` of that trade
     alone."""
 
+    provider: Literal["coding", "swebench"] = "coding"
+    instances: tuple[str, ...] = ()
+    command_seconds: int = Field(default=60, ge=1, le=300)
+    evaluation_seconds: int = Field(default=600, ge=60, le=1800)
     banks: dict[Trade, str] = Field(default={Trade.PROGRAMMING: "tasks/coding/bank"}, min_length=1)
     timeout: PositiveFloat = 5.0
     isolation: Isolation = Isolation.BUBBLEWRAP
@@ -39,6 +43,11 @@ class TasksConfig(StrictModel):
             data = {**data, "banks": {Trade.PROGRAMMING: data["bank"]}}
             del data["bank"]
         return data
+
+    @property
+    def bank_path(self) -> Path:
+        """Legacy single programming-bank path, including SWE-bench dataset JSON."""
+        return self.bank_paths[Trade.PROGRAMMING]
 
     @property
     def bank_paths(self) -> dict[Trade, Path]:
@@ -64,6 +73,17 @@ class ExperimentConfig(StrictModel):
 
     @model_validator(mode="after")
     def _consistent(self) -> "ExperimentConfig":
+        if self.tasks.provider == "swebench":
+            if set(self.tasks.banks) != {Trade.PROGRAMMING}:
+                raise ValueError("SWE-bench pilot requires only the programming bank")
+            if not self.tasks.instances or len(set(self.tasks.instances)) != len(
+                self.tasks.instances
+            ):
+                raise ValueError("SWE-bench requires distinct configured instance IDs")
+            if self.environment.conditions.two_part_tasks:
+                raise ValueError("SWE-bench pilot supports single-part jobs only")
+            if self.environment.conditions.one_part_tasks > len(self.tasks.instances):
+                raise ValueError("not enough SWE-bench issues for distinct postings")
         names = [seed.profile.name for seed in self.agents]
         residents = self.environment.homes
         if len(set(names)) != len(names) or set(names) != residents.keys():

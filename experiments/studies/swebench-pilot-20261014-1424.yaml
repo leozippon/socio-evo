@@ -1,0 +1,13 @@
+# Matched pilot: three residents, three days, one seed; sequential arms.
+name: swebench-pilot-20261014-1424
+base: ../configs/zenith/swebench-town-e841d09-20261013-2303.yaml
+seeds: [0]
+
+overlays:
+  no-evolution:
+    evolution:
+      levels: []
+
+arms:
+  evolution: []
+  no-evolution: [no-evolution]

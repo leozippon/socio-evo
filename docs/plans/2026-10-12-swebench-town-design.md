@@ -1,0 +1,11 @@
+# SWE-bench town pilot
+
+Residents use the existing identity, memory, planning, conversation, job board, income and daily evolution loops. Add a terminal action only for providers supporting isolated repository work. The environment checks job ownership before running commands, and only the worker perceives command output. There is no separate solver acting on the resident's behalf.
+
+Each resident/claim/issue has a distinct official Docker image checkout with network disabled, no host bind mounts, dropped capabilities and bounded CPU/memory/processes. Commands start in the testbed environment, persist file edits, and record their output. A WORKTREE delivery is converted to the actual diff before the existing trial/delivery bookkeeping, so knowledge-of-failure tracking compares patches rather than a constant marker. A textual unified diff can also be submitted.
+
+The provider runs the official harness in separate clean containers and caches the verdict by issue and patch hash within each town run. No hidden test names, source, gold patch or hints enter resident prompts or workspaces. Feedback is limited to overall acceptance/rejection. Harness failure interrupts the experiment rather than assigning fabricated zero capability. Quality is binary official resolved, not a fraction of tests passed. Residents can run public repository tests themselves. The terminal's latest bounded output is displayed as current desk state, separate from episodic memory's 600-character clipping.
+
+Start with three residents, one day, two distinct single-part tasks: Flask 5014 and Astropy 12907. Requests is excluded because its reference-patch control timed out with external HTTP failures. There are 12 decisions per work session, and the normal lunch/evening conversations and daily review remain. This is a scarce-job pilot; it cannot establish longitudinal co-evolution or general benchmark accuracy.
+
+Preserve all old runs and original Python environment entry points. This initial integration rejects scripted dry-run and partial-day resume: restoring complete social checkpoints together with repository snapshots requires additional transactional support. Workspace snapshots support fault inspection and are exercised separately in integration verification.

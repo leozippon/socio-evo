@@ -29,6 +29,7 @@ from core.interaction import (
     PeerRating,
     PlanDay,
     RatePeers,
+    RunCommand,
     Setting,
     Speak,
     SubmitWork,
@@ -1458,3 +1459,42 @@ def test_setup_must_be_consistent(tmp_path):
     Environment.create(config, AGENTS, Provider(), tmp_path / "events.jsonl")
     with pytest.raises(FileExistsError):
         Environment.create(config, AGENTS, Provider(), tmp_path / "events.jsonl")
+
+
+async def test_repository_terminal_requires_ownership_and_output_is_private(env):
+    calls = []
+
+    async def run_command(part, worker, task_id, command):
+        calls.append((worker, task_id, command))
+        return {"exit_code": 0, "output": "private repository contents"}
+
+    env.providers[Trade.PROGRAMMING].run_command = run_command
+    open_day(env, random.Random(0))
+    go(env, "office", "Ana", "Ben")
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    denied = await act(env, "Ben", RunCommand(task_id="task-1", command="ls"))
+    assert denied[0].kind is EventKind.ACTION_REJECTED
+    assert not calls
+    events = await act(env, "Ana", RunCommand(task_id="task-1", command="ls"))
+    assert calls == [("Ana", "task-1", "ls")]
+    assert events[0].kind is EventKind.COMMAND_EXECUTED
+    assert events[0].audience == ("Ana",)
+    assert events[0].payload["output"] == "private repository contents"
+
+
+async def test_worktree_marker_is_resolved_before_trial_and_submission(env):
+    async def prepare(part, worker, task_id, solution):
+        assert worker == "Ana" and task_id == "task-1"
+        return "perfect" if solution == "WORKTREE" else solution
+
+    env.providers[Trade.PROGRAMMING].prepare_submission = prepare
+    open_day(env, random.Random(0))
+    go(env, "office", "Ana")
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    checked = await act(env, "Ana", CheckWork(task_id="task-1", part=1, solution="WORKTREE"))
+    assert checked[0].payload["solution"] == "perfect"
+    submitted = await act(
+        env, "Ana", SubmitWork(task_id="task-1", solution="WORKTREE", report="Ready")
+    )
+    delivery = next(e for e in submitted if e.kind is EventKind.WORK_SUBMITTED)
+    assert delivery.payload["solution"] == "perfect"

@@ -16,6 +16,7 @@ REPLIES: dict[ActionKind, dict[str, Any]] = {
     ActionKind.LEAVE: {"kind": "leave"},
     ActionKind.PASS: {"kind": "pass"},
     ActionKind.CLAIM_TASK: {"kind": "claim_task", "task_id": "task-12", "partner": "ben"},
+    ActionKind.RUN_COMMAND: {"kind": "run_command", "task_id": "task-12", "command": "ls"},
     ActionKind.CHECK_WORK: {
         "kind": "check_work",
         "task_id": "task-12",

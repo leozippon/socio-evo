@@ -59,6 +59,7 @@ from core.interaction import (
     PlanDay,
     RatePeers,
     Resign,
+    RunCommand,
     Speak,
     SubmitWork,
     Telling,
@@ -507,6 +508,8 @@ class Environment:
                     return []
                 case ClaimTask():
                     return self._claim(agent, action, **where)
+                case RunCommand():
+                    return [await self._command(agent, action, **where)]
                 case CheckWork():
                     return [await self._check(agent, action, **where)]
                 case SubmitWork():
@@ -617,7 +620,11 @@ class Environment:
                     [drawn] = mix
                 else:
                     [drawn] = rng.choices(list(mix), weights=list(mix.values()))
-                parts = self.providers[drawn].sample(rng, size)
+                provider = self.providers[drawn]
+                if hasattr(provider, "sample_posting"):
+                    parts = provider.sample_posting(rng, size, index)
+                else:
+                    parts = provider.sample(rng, size)
                 trusting = rng.random() < self.conditions.trusting_client_prob
                 client = Client.TRUSTING if trusting else Client.CHECKING
                 events.append(self._put_up(time, drawn, sheet, parts, client, audience))
@@ -1148,11 +1155,51 @@ class Environment:
             )
         return events
 
+    async def _command(
+        self, agent: str, action: RunCommand, *, time: int, place: str, scene: str
+    ) -> Event:
+        claim = self.board.work_on(agent, action.task_id, action.part)
+        provider = self.providers[claim.task.trade]
+        if not hasattr(provider, "run_command"):
+            raise Rejected("This job has no repository terminal.")
+        result = await provider.run_command(
+            claim.task.parts[action.part - 1], agent, claim.task.id, action.command
+        )
+        return self.emit(
+            EventKind.COMMAND_EXECUTED,
+            f"At your desk the terminal returned exit code {result['exit_code']}:\n"
+            f"{result['output']}",
+            time=time,
+            place=place,
+            scene=scene,
+            actor=agent,
+            audience=[agent],
+            payload={
+                "task_id": claim.task.id,
+                "part": action.part,
+                "command": action.command,
+                **result,
+            },
+        )
+
+    async def _delivery_source(self, part, agent, task_id, solution):
+        provider = self.providers[self.board.claims[task_id].task.trade]
+        if hasattr(provider, "prepare_submission"):
+            return await provider.prepare_submission(part, agent, task_id, solution)
+        return solution
+
     async def _check(
         self, agent: str, action: CheckWork, *, time: int, place: str, scene: str
     ) -> Event:
         claim = self.board.work_on(agent, action.task_id, action.part)
         task = claim.task
+        action = action.model_copy(
+            update={
+                "solution": await self._delivery_source(
+                    task.parts[action.part - 1], agent, task.id, action.solution
+                )
+            }
+        )
         if task.trade not in EXAMPLES:
             raise Rejected(
                 NOTHING_TO_TRY.format(
@@ -1202,6 +1249,7 @@ class Environment:
         claim = self.board.work_on(agent, action.task_id, action.part)
         task, number, declared = claim.task, action.part, action.declaration
         solution = _solution(claim, agent, number, action.solution)
+        solution = await self._delivery_source(task.parts[number - 1], agent, task.id, solution)
         assessment = await self._assess(task, number, solution)
         tested, refused = claim.known(agent, number, solution)
         threshold, standing = self.conditions.trust_threshold, self.reputation.esteem(agent)
@@ -1689,7 +1737,11 @@ class Environment:
             actor=agent,
             place=place,
             scene=scene,
-            payload={"attempt": attempt, "reason": str(rejection)},
+            payload={
+                "attempt": attempt,
+                "reason": str(rejection),
+                "task_id": job_id(str(attempt.get("task_id", ""))),
+            },
         )
 
     def _price(self, reward: int, size: int) -> Price:
@@ -1798,6 +1850,11 @@ class Environment:
                 how = "handed in" if trial.refused else "tried"
                 draft = f"```\n{trial.solution.rstrip()}\n```"
                 lines.append(ON_DESK.format(delivery=delivery, how=how, draft=draft))
+        provider = self.providers[claim.task.trade]
+        if hasattr(provider, "desk_view"):
+            screen = provider.desk_view(part, agent, claim.task.id)
+            if screen:
+                lines.append(screen)
         return lines
 
     def _client(self, task: Task) -> str:

@@ -1,0 +1,17 @@
+# Use only the held-out LiveCodeBench split; never the town bank.
+bank: /personal_fast_storage/datasets/livecodebench
+families: [handed_back, contradicted, pays_on_word, misdirected_payment, appointment, joint_part, short_of_living, partner_behind, shared_notice]
+levels: [1, 2, 3, 4]
+variants: [full]
+repetitions: 3
+sandbox_timeout: 5.0
+judge:
+  base_url: http://127.0.0.1:8011/v1
+  api_key_env: VLLM_API_KEY
+  model: qwen-3.8-27b-fp8
+  sampling:
+    temperature: 0.0
+  structured_output: json_schema
+  extra_body:
+    chat_template_kwargs:
+      enable_thinking: false

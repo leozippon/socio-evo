@@ -16,6 +16,7 @@ from core.interaction import (
     MayHire,
     MayLeave,
     MayPass,
+    MayRunCommand,
     MaySpeak,
     MaySubmit,
     Pass,
@@ -94,6 +95,8 @@ class WorkSession(Scene):
         else:
             task = claim.task
             parts = tuple(n for n in range(1, len(task.parts) + 1) if claim.delivery(n) is None)
+            if hasattr(env.providers[task.trade], "run_command"):
+                allowed.append(MayRunCommand(task_id=task.id, parts=parts))
             drafts = tuple(
                 n for n in parts if (trial := claim.last_trial(agent, n)) and trial.solution
             )

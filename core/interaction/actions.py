@@ -24,6 +24,7 @@ class ActionKind(StrEnum):
     LEAVE = "leave"
     PASS = "pass"
     CLAIM_TASK = "claim_task"
+    RUN_COMMAND = "run_command"
     CHECK_WORK = "check_work"
     SUBMIT_WORK = "submit_work"
     GIVE = "give"
@@ -86,6 +87,15 @@ class ClaimTask(StrictModel):
     task_id: str
     partner: str | None = None
     part: PartNumber | None = None
+
+
+class RunCommand(StrictModel):
+    """Run a command in the isolated repository of the worker's claimed part."""
+
+    kind: Literal[ActionKind.RUN_COMMAND] = ActionKind.RUN_COMMAND
+    task_id: str
+    part: PartNumber = 1
+    command: str = Field(min_length=1, max_length=16000)
 
 
 class CheckWork(StrictModel):
@@ -175,6 +185,7 @@ Action = Annotated[
     | Leave
     | Pass
     | ClaimTask
+    | RunCommand
     | CheckWork
     | SubmitWork
     | Give

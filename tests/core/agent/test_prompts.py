@@ -243,6 +243,10 @@ SAMPLES = {
         {"task_id": "task-27", "partner": "Ben"},
         "you brought the notice of job 27 to the clerk, to take it with Ben.",
     ),
+    ActionKind.RUN_COMMAND: (
+        {"task_id": "task-27", "command": "ls"},
+        "you used the terminal for job 27.",
+    ),
     ActionKind.CHECK_WORK: (
         {"task_id": "task-27", "part": 2, "solution": "def f():\n    return 1\n"},
         "at your desk you tried a draft for part 2 of job 27, without handing it in.",

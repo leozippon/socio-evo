@@ -48,7 +48,7 @@ def written(run: RunDirectory) -> list[str]:
 
 def test_experiment_configs_load_and_profiles_tell_circumstances_only():
     configs = {path.stem: load_config(path, ExperimentConfig) for path in CONFIGS.glob("*.yaml")}
-    assert set(configs) == {"smoke", "pilot", "town", "firm", "city"}
+    assert set(configs) == {"smoke", "pilot", "town", "firm", "city", "zenith-direct-smoke"}
     for config in configs.values():
         assert not unguarded([config.environment.setting.backdrop]), config.name
         for meeting in config.simulation.meetings:
