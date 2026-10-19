@@ -315,8 +315,8 @@ export function mountTown(root, ctx) {
       ? h(
           "div",
           { class: "seg lens", role: "group", "aria-label": "Whose wording to read" },
-          h("button", { type: "button", "aria-pressed": String(!view.lens), title: "Every event as the town's people read it", onclick: () => setLens(false) }, "As everyone read it"),
-          h("button", { type: "button", "aria-pressed": String(view.lens), title: `What ${view.selected} witnessed, in ${view.selected}'s own wording`, onclick: () => setLens(true) }, `As ${view.selected} read it`),
+          h("button", { type: "button", "aria-pressed": String(!view.lens), title: "Every event as the town's people read it", onclick: () => openResidentFeed(false) }, "As everyone read it"),
+          h("button", { type: "button", "aria-pressed": String(view.lens), title: `What ${view.selected} witnessed, in ${view.selected}'s own wording`, onclick: () => openResidentFeed(true) }, `As ${view.selected} read it`),
         )
       : null;
     fill(
@@ -339,6 +339,14 @@ export function mountTown(root, ctx) {
         : null,
       lens,
     );
+  }
+
+  // These controls open the selected resident's event stream, not the directory.
+  function openResidentFeed(on) {
+    if (!view.selected) return;
+    view.only = true;
+    showPanel("feed", true);
+    setLens(on);
   }
 
   function setLens(on) {
@@ -570,6 +578,10 @@ export function mountTown(root, ctx) {
   function select(name, fromMap = false) {
     view.selected = name === view.selected ? null : name;
     if (!view.selected) view.only = false;
+    else if (view.panel === "people") {
+      view.only = true;
+      showPanel("feed", true);
+    }
     renderSelected();
     paint(false);
     refreshPanel(true);
