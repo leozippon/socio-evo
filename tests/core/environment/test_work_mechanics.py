@@ -22,7 +22,7 @@ from core.interaction import (
     time_at,
 )
 from core.interaction.card import DRAFT
-from runtime.scenes import Review, WorkSession
+from runtime.scenes import Review, WorkSession, situations
 from tests.core.environment.test_environment import (
     AGENTS,
     DEFAULTS,
@@ -274,7 +274,6 @@ async def test_the_night_tells_what_is_still_on_the_desk(env):
     go(env, "office", *AGENTS)
     night = time_at(1, "22:00")
     met = {agent: [other for other in AGENTS if other != agent] for agent in AGENTS}
-    review = Review(env, "review", met, start=night)
     assert env.desk_view("Dan") is None
 
     await act(env, "Ana", ClaimTask(task_id="task-1"))
@@ -284,6 +283,7 @@ async def test_the_night_tells_what_is_still_on_the_desk(env):
     await act(env, "Ben", deliver("task-3", "perfect", part=1))
     await act(env, "Cai", SubmitWork(task_id="task-3", part=2, solution="draft", report="."))
     await act(env, "Dan", ClaimTask(task_id="task-2"))
+    review = Review(env, "review", met, start=night)
     due = "due by the end of Tuesday, 2 January"
     assert env.desk_view("Ana") == (
         f'Still on your desk: job 1, "{_title(env, "task-1", 1)}", {due}: it is not in yet; '
@@ -298,9 +298,28 @@ async def test_the_night_tells_what_is_still_on_the_desk(env):
         "part 1 is in (you handed it in); part 2 is not in yet; you have not tried it."
     )
     assert env.desk_view("Dan").endswith(f"{due}: it is not in yet; you have not tried it.")
-    assert all(
-        review.situation(agent).endswith("the clerk's ledger is open to you.") for agent in AGENTS
-    )
+    for agent in AGENTS:
+        situation = review.situation(agent)
+        base = situations.review(met[agent])
+        assert situation.startswith(base)
+        assert situation[len(base) :].lstrip().startswith(
+            "Verified personal work records for today's peer review."
+        )
+
+    ana = review.situation("Ana")
+    ana_own = ana.split("YOUR task and acceptance records today", 1)[1].split(
+        "YOUR personal payment receipts today", 1
+    )[0]
+    ana_witnessed = ana.split("OTHER PEOPLE'S work you witnessed today", 1)[1].split(
+        "Use these attributed records", 1
+    )[0]
+    cai = review.situation("Cai")
+    cai_own = cai.split("YOUR task and acceptance records today", 1)[1].split(
+        "YOUR personal payment receipts today", 1
+    )[0]
+    assert "task-1" in ana_own and "task-3" not in ana_own
+    assert "task-3" in ana_witnessed and "task-1" not in ana_witnessed
+    assert "task-3" in cai_own
 
 
 def _title(env: Environment, task_id: str, part: int) -> str:
