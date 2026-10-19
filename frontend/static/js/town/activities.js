@@ -1,12 +1,13 @@
 import { calendarOf, dayOf, dayStart, hhmmss, minuteOf } from "../clock.js";
 import { fill, h } from "../dom.js";
+import { speechText } from "./events.js";
 import { shortName } from "../world.js";
-import { activityDuration, activityIntervals, activityLink, activityLabel, ACTIVITY_LABELS, residentActivitySummary } from "./activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityLabel, ACTIVITY_LABELS, activityConversations } from "./activity-model.js";
 
 const clock = (time) => hhmmss(minuteOf(time));
 const label = activityLabel;
 
-/** A compact overview; full resident ledgers and transcripts live in People → Activities. */
+/** Activity overview and shared conversation transcripts at the current replay moment. */
 export class ActivitiesPanel {
   constructor() {
     this.el = h("section", { class: "activities-panel", "aria-label": "Resident activities" });
@@ -54,22 +55,34 @@ export class ActivitiesPanel {
           h("span", { class: "activity-cursor", style: { left: `${percent(now)}%` }, "aria-hidden": "true" })),
       );
     });
+    const conversations = !m.truth && !reader ? [] : activityConversations(m.activityEvents, now, day, reader);
+    const scope = `${m.route.experiment}/${m.route.run}/${day}`;
+    if (this.conversationScope !== scope) { this.conversationScope = scope; this.conversationId = null; }
+    const selected = conversations.find((row) => row.id === this.conversationId) ?? conversations.at(-1);
+    this.conversationId = selected?.id ?? null;
+    const conversationLabel = (row) => `${clock(row.start)} · ${place(row)} · ${row.participants.join(", ") || "No participants recorded"}`;
+    const transcript = h("div", { class: "conversation-detail" });
+    const showConversation = (row) => {
+      this.conversationId = row.id;
+      fill(transcript,
+        h("p", { class: "note" }, conversationLabel(row)),
+        row.messages.length ? h("ol", { class: "conversation-messages", "aria-label": "Conversation messages" }, row.messages.map((event) =>
+          h("li", {}, h("header", {}, h("time", {}, clock(event.time)), h("b", {}, event.actor ?? event.payload.message?.author ?? "Unknown speaker")),
+            h("p", {}, speechText(event))))) : h("p", { class: "note" }, "No messages recorded yet."));
+    };
+    if (selected) showConversation(selected);
     fill(this.el,
       h("header", { class: "activity-heading" }, h("h3", {}, "Activities"), h("time", {}, `Day ${day} · ${clock(now)}`)),
       h("p", { class: "note" }, "Hover or focus a segment for a summary. Open it to inspect that resident's activity, tools and feedback."),
       h("div", { class: "activity-legend" }, Object.entries(ACTIVITY_LABELS).map(([type, name]) => h("span", {}, h("i", { class: `activity-${type}` }), name))),
       h("div", { class: "activity-lanes" }, h("div", { class: "activity-axis" }, h("span", {}, "Resident / current activity"), h("div", { class: "activity-ruler" }, [0, 1 / 3, 2 / 3, 1].map((part) => h("span", {}, clock(from + span * part).slice(0, 5))))), lanes),
-      h("div", { class: "activity-heading" }, h("h4", {}, "Activity history by resident"), h("span", { class: "muted" }, `Day ${day}`)),
-      h("p", { class: "note" }, "Open a resident's daily ledger for the complete timeline and activity details. Totals include only time observed so far."),
-      h("div", { class: "activity-residents" }, m.world.agents.map(({ name }) => {
-        const summary = residentActivitySummary(rows, name, day, now);
-        const known = m.truth || name === reader;
-        const status = summary.current ? (summary.current.outside && summary.current.type === "rest" ? "Waiting outside" : label(summary.current)) : "Between activities";
-        return h("a", { class: "activity-resident-card", href: link(name) },
-          m.cast.badge(name, 28), h("div", {}, h("b", {}, name), h("small", {}, known ? `${status} · ${summary.count} activities` : "Not observed"),
-            known ? h("small", {}, `Work ${activityDuration(summary.seconds.work)} · Conversation ${activityDuration(summary.seconds.conversation)}`) : null),
-          h("span", { "aria-hidden": "true" }, "→"));
-      })), tooltip,
+      h("div", { class: "activity-heading" }, h("h4", {}, "Conversations"), h("span", { class: "muted" }, `Day ${day}`)),
+      selected ? [
+        h("label", { class: "conversation-picker" }, "Conversation ", h("select", {
+          "aria-label": "Conversation", onchange: (event) => showConversation(conversations.find((row) => row.id === event.target.value)),
+        }, conversations.map((row) => h("option", { value: row.id, selected: row.id === selected.id }, conversationLabel(row))))),
+        transcript,
+      ] : h("p", { class: "note" }, "No conversations recorded at this moment."), tooltip,
     );
   }
 }

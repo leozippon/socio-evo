@@ -35,3 +35,13 @@ def test_original_perspective_wording_and_complete_feed():
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_shared_conversations_and_activities_panel():
+    result = subprocess.run(
+        ["node", str(Path(__file__).with_name("conversations_check.mjs"))],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

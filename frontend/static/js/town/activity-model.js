@@ -55,6 +55,54 @@ export function activityTranscript(events, interval, through) {
   });
 }
 
+/** Shared conversations, never one copy per resident or per message recipient. */
+export function activityConversations(events, through, day, reader = null) {
+  const groups = new Map();
+  const recorded = events.filter((event) => event.time <= through);
+  const activityTypes = new Map(recorded.filter((event) => event.kind === "activity_entered")
+    .map((event) => [event.payload.activity, event.payload.activity_type]));
+  const conversationScenes = new Set(recorded.filter((event) => event.kind === "scene_started" && ["conversation", "meeting"].includes(event.payload.kind)).map((event) => event.scene));
+  const visible = recorded.filter((event) => !reader || event.actor === reader || (event.audience ?? []).includes(reader))
+    .sort((a, b) => a.time - b.time || a.seq - b.seq);
+  const group = (id, event) => {
+    if (!groups.has(id)) groups.set(id, { id, start: event.time, last: event.time, place: event.place, participants: new Set(), messages: [], seen: new Set() });
+    const row = groups.get(id);
+    row.last = event.time;
+    row.place ??= event.place;
+    return row;
+  };
+  for (const event of visible) {
+    const p = event.payload ?? {};
+    if (event.kind === "activity_entered" && p.activity_type === "conversation" && p.activity) {
+      const row = group(`activity:${p.activity}`, event);
+      if (event.actor) row.participants.add(event.actor);
+    } else if (event.kind === "scene_started" && ["conversation", "meeting"].includes(p.kind) && event.scene) {
+      const row = group(`scene:${event.scene}`, event);
+      for (const name of p.participants ?? []) row.participants.add(name);
+    }
+    const id = p.activity ? `activity:${p.activity}` : event.scene ? `scene:${event.scene}` : null;
+    if (!id) continue;
+    if (event.kind === "activity_left" || event.kind === "scene_ended") {
+      if (groups.has(id)) groups.get(id).last = event.time;
+      continue;
+    }
+    if (!["speech", "conversation_message"].includes(event.kind)) continue;
+    // Speech may survive in older exports without its membership records.
+    const conversation = p.activity ? !activityTypes.has(p.activity) || activityTypes.get(p.activity) === "conversation" : conversationScenes.has(event.scene);
+    const row = groups.get(id) ?? (conversation ? group(id, event) : null);
+    if (!row) continue;
+    const key = p.message?.id != null ? `message:${p.message.id}` : `event:${event.seq}`;
+    if (row.seen.has(key)) continue;
+    row.seen.add(key);
+    row.messages.push(event);
+    row.last = event.time;
+    if (event.actor ?? p.message?.author) row.participants.add(event.actor ?? p.message.author);
+  }
+  const start = dayStart(day), end = start + 1440;
+  return [...groups.values()].filter((row) => row.start < end && row.last >= start)
+    .map(({ seen, ...row }) => ({ ...row, participants: [...row.participants] }));
+}
+
 export function residentActivitySummary(intervals, actor, day, through) {
   const start = dayStart(day), end = Math.min(through, start + 1440);
   const rows = intervals.filter((row) => row.actor === actor && row.start <= end && (row.end ?? end) >= start);

@@ -691,7 +691,10 @@ body[data-view="town"] { overflow: hidden; }
 .activity-tooltip { position: fixed; z-index: 1000; width: 250px; padding: 12px 14px; border: 1px solid var(--line-2); border-radius: 8px; background: var(--surface); color: var(--ink); box-shadow: 0 6px 24px #35281426; pointer-events: none; font-size: 12px; line-height: 1.5; }
 .activity-tooltip span, .activity-tooltip small { display: block; }
 .activity-tooltip small { color: var(--muted); margin-top: 6px; }
-.activity-residents { display: grid; gap: 8px; }
-.activity-resident-card { display: grid; grid-template-columns: 28px minmax(0,1fr) 16px; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 11px; text-decoration: none; color: inherit; }
-.activity-resident-card:hover, .activity-resident-card:focus-visible { background: var(--surface); border-color: var(--ink-2); }
-.activity-resident-card small { display: block; font-size: 11px; color: var(--muted); }
+.conversation-picker { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 12px; }
+.conversation-picker select { max-width: 100%; min-width: 0; flex: 1; }
+.conversation-messages { list-style: none; margin: 16px 0 0; padding: 0; }
+.conversation-messages li { border-top: 1px solid var(--line); padding: 12px 0; }
+.conversation-messages header { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; }
+.conversation-messages time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.conversation-messages p { margin: 6px 0 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
