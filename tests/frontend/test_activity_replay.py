@@ -25,3 +25,13 @@ def test_whole_second_clock_and_activity_timeline():
         text=True,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+@pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
+def test_resident_received_events_and_replay_cutoffs():
+    result = subprocess.run(
+        ["node", str(Path(__file__).with_name("perceptions_check.mjs"))],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr

@@ -13,6 +13,7 @@ import { icon } from "../icons.js";
 import { Replay, current } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { CLIENTS, actionSummary, bystanders, handedAs, isPublic, jobName, partsOf, sceneName, speechText, witnessed } from "../town/events.js";
+import { nextReceivedTime } from "../town/perceptions.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
 import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel, jobStatus } from "../town/panels.js";
@@ -210,13 +211,15 @@ export function mountTown(root, ctx) {
       route,
       activityEvents: replay.sortedDays().flatMap((d) => replay.eventsOf(d)).filter((e) => e.seq <= state.seq),
       bystanders: bystanders(dayEvents),
-      reader: view.lens && view.selected && replay.perspectives ? view.selected : null,
+      reader: view.lens && view.selected ? view.selected : null,
       dayStart: replay.snapshots.get(state.day)?.balances ?? null,
       truth: view.truth,
       selected: view.selected,
       follow: view.only,
       phase: phase(state),
       select: (name) => select(name),
+      nextReceived: (reader) => nextReceivedTime(replay.eventsOf(day), state.time, reader),
+      jump: (time) => seek(time, true),
     };
   }
 
@@ -311,14 +314,12 @@ export function mountTown(root, ctx) {
     const status = jobStatus(view.selected, m);
     // Whose wording the panels and the map read: the town's, or the selected resident's for
     // what it witnessed, private remarks included.
-    const lens = replay.perspectives
-      ? h(
+    const lens = h(
           "div",
           { class: "seg lens", role: "group", "aria-label": "Whose wording to read" },
           h("button", { type: "button", "aria-pressed": String(!view.lens), title: "Every event as the town's people read it", onclick: () => setLens(false) }, "As everyone read it"),
           h("button", { type: "button", "aria-pressed": String(view.lens), title: `What ${view.selected} witnessed, in ${view.selected}'s own wording`, onclick: () => setLens(true) }, `As ${view.selected} read it`),
-        )
-      : null;
+        );
     fill(
       selectedBox,
       h(
@@ -372,7 +373,7 @@ export function mountTown(root, ctx) {
       shownSeq = m.state.seq;
     }
     const now = performance.now();
-    if ((changed || view.panel === "activities") && (!view.playing || now - lastPanels > 250)) {
+    if ((changed || view.panel === "activities" || view.panel === "people") && (!view.playing || now - lastPanels > 250)) {
       lastPanels = now;
       refreshPanel();
     }

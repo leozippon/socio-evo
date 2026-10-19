@@ -8,6 +8,8 @@ import { current, holdings } from "../replay.js";
 import { shortName } from "../world.js";
 import { actionCode, actionSummary, actionTexts, clientMark, clockOf, feedItems, glyph, handedAs, involved, isPublic, isTruth, jobName, line, partName, partsOf, priceOf, sceneName, shown, witnessed } from "./events.js";
 
+import { receivedEvents } from "./perceptions.js";
+
 const truthTag = (label = "truth") => h("span", { class: "truth-tag" }, icon("eye", 13), label);
 
 /** Events of the same turn that do not follow from anyone's decision in it. */
@@ -183,14 +185,21 @@ export class PeoplePanel {
   constructor() {
     this.el = h("div", { class: "panel people" });
     this.key = null;
+    this.receiptLimit = 12;
+    this.perspective = null;
   }
 
-  update(m) {
-    const key = `${m.state.seq}|${m.selected}|${m.truth}|${m.reader}`;
-    if (key === this.key) return;
+  update(m, force = false) {
+    const perspective = `${m.selected}|${m.reader}`;
+    if (perspective !== this.perspective) this.receiptLimit = 12;
+    this.perspective = perspective;
+    const key = `${m.state.seq}|${Math.floor(m.state.time * 60)}|${m.selected}|${m.truth}|${m.reader}|${this.receiptLimit}`;
+    if (key === this.key && !force) return;
     this.key = key;
     fill(
       this.el,
+      this.perceptions(m),
+      h("h4", { class: "residents-heading" }, "Residents"),
       h(
         "ul",
         { class: "people-list" },
@@ -224,6 +233,32 @@ export class PeoplePanel {
           );
         }),
       ),
+    );
+  }
+
+  perceptions(m) {
+    const events = receivedEvents(m.dayEvents, m.state.time, m.reader);
+    const rows = events.slice(-this.receiptLimit);
+    const next = m.nextReceived(m.reader);
+    const title = m.reader ? `What ${m.reader} received` : "What residents received";
+    return h("section", { class: "people-perceptions", "aria-label": title, "data-reader": m.reader ?? "everyone" },
+      h("header", { class: "perceptions-heading" }, h("h3", {}, title), h("time", {}, `Up to ${clockOf({time:m.state.time})}`)),
+      h("p", { class: "note" }, m.reader
+        ? `Only events delivered to ${m.reader}, using that resident's recorded wording. Hidden thoughts and other residents' private feedback are excluded.`
+        : "Events delivered to at least one resident, in the town record's wording. Each entry names its recipients; this is not knowledge shared by everyone."),
+      rows.length ? [
+        h("p", { class: "perception-count" }, `Showing ${rows.length} of ${events.length} received events`),
+        h("ol", { class: "perception-list" }, rows.map((event) => h("li", { "data-event-seq": String(event.seq) },
+          h("header", {}, h("time", {}, clockOf(event)), h("span", { class: "muted" }, event.kind.replaceAll("_", " "))),
+          event.text.length > 500
+            ? h("details", {}, h("summary", {}, `${event.text.slice(0,180)}…`), h("pre", { class: "perception-text" }, event.text))
+            : h("p", { class: "perception-text" }, m.cast.mention(event.text)),
+          !m.reader ? h("small", {}, `Received by: ${event.audience.join(", ")}`) : null,
+        ))),
+        events.length > rows.length ? h("button", { class: "ghost small", type: "button", onclick: () => { this.receiptLimit += 12; this.update(m,true); } }, "Show earlier received events") : null,
+      ] : emptyState(`No received events by ${clockOf({time:m.state.time})}.`,
+        m.reader ? `No event has been delivered to ${m.reader} at this replay time.` : "No event has been delivered to a resident at this replay time.",
+        next != null ? h("button", { class: "ghost small next-receipt", type: "button", onclick: () => m.jump(next) }, `Next received event · ${clockOf({time:next})}`) : null),
     );
   }
 }

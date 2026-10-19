@@ -695,3 +695,18 @@ body[data-view="town"] { overflow: hidden; }
 .activity-resident-card { display: grid; grid-template-columns: 28px minmax(0,1fr) 16px; gap: 10px; align-items: center; border: 1px solid var(--line); border-radius: 8px; padding: 11px; text-decoration: none; color: inherit; }
 .activity-resident-card:hover, .activity-resident-card:focus-visible { background: var(--surface); border-color: var(--ink-2); }
 .activity-resident-card small { display: block; font-size: 11px; color: var(--muted); }
+
+.people-perceptions { border-bottom: 1px solid var(--line-2); margin-bottom: 20px; padding-bottom: 18px; }
+.perceptions-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.perceptions-heading h3 { margin: 0; font-size: 15px; }
+.perceptions-heading time, .perception-list time { font-variant-numeric: tabular-nums; font-size: 11px; color: var(--muted); }
+.perception-count { font-size: 11px; color: var(--muted); margin: 10px 0 4px; }
+.perception-list { list-style: none; padding: 0; margin: 0 0 10px; max-height: 340px; overflow: auto; }
+.perception-list li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.perception-list li:last-child { border-bottom: 0; }
+.perception-list header { display: flex; gap: 10px; font-size: 11px; }
+.perception-text { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; margin: 6px 0; }
+pre.perception-text { max-height: 260px; overflow: auto; }
+.perception-list small { display: block; color: var(--muted); font-size: 10px; }
+.perception-list summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.next-receipt { display: block; margin: 12px auto 0; }
