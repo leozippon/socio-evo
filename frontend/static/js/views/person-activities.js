@@ -1,7 +1,7 @@
 import { dayOf, dayStart, formatTime, hhmmss, minuteOf, normalizeEventTimes, parseStamp, stamp } from "../clock.js";
 import { emptyState, h } from "../dom.js";
 import { href, sibling } from "../router.js";
-import { activityDuration, activityIntervals, activityLink, activityTranscript, ACTIVITY_LABELS, residentActivitySummary } from "../town/activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityTranscript, ACTIVITY_LABELS, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
 import { bystanders, line } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { shortName } from "../world.js";
@@ -25,6 +25,8 @@ export async function personActivities({ source, world, cast, places, route, go 
   const summary = residentActivitySummary(rows, route.agent, day, cutoff);
   const selected = rows.find((row) => row.id === route.query.activity);
   const place = (row) => places.has(row.place) ? shortName(places.get(row.place)) : row.place || "Not recorded";
+  const reveal = (row, event) => revealCurrentActivity(event, row.id, selected?.id,
+    () => document.getElementById("person-activity-detail")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   const rowLink = (row) => activityLink(route, route.agent, through, row, day);
   const controls = h("div", { class: "spread activity-ledger-heading" },
     h("div", {}, h("h2", {}, "Daily activities"), h("p", { class: "note" }, `${summary.count} activities · Work ${activityDuration(summary.seconds.work)} · Conversation ${activityDuration(summary.seconds.conversation)}`)),
@@ -33,13 +35,13 @@ export async function personActivities({ source, world, cast, places, route, go 
   const table = rows.length ? h("div", { class: "card pad table-wrap activity-table-wrap" }, h("table", { class: "data activity-table", "aria-label": `${route.agent}'s activities on day ${day}` },
     h("thead", {}, h("tr", {}, ["Start", "End", "Activity", "Place", "Elapsed", "Status", ""].map((text) => h("th", { scope: "col" }, text)))),
     h("tbody", {}, rows.map((row) => h("tr", { class: row.id === selected?.id ? "selected-activity" : "" },
-      h("td", {}, h("a", { href: rowLink(row) }, clock(row.start))),
+      h("td", {}, h("a", { href: rowLink(row), onclick: (event) => reveal(row, event) }, clock(row.start))),
       h("td", {}, row.end == null ? "Ongoing" : clock(row.end)),
       h("td", {}, h("span", { class: "activity-type-label" }, h("i", { class: `activity-${row.type}` }), label(row))),
       h("td", {}, place(row)),
       h("td", {}, activityDuration(((row.end ?? cutoff) - row.start) * 60)),
       h("td", {}, row.end == null ? "In progress" : "Ended"),
-      h("td", {}, h("a", { href: rowLink(row), "aria-label": `Open ${route.agent}'s ${label(row)} at ${clock(row.start)}` }, "Details →")),
+      h("td", {}, h("a", { href: rowLink(row), onclick: (event) => reveal(row, event), "aria-current": row.id === selected?.id ? "true" : null, "aria-label": `Open ${route.agent}'s ${label(row)} at ${clock(row.start)}` }, row.id === selected?.id ? "Show details ↓" : "Details ↓")),
     ))),
   )) : h("div", { class: "card" }, emptyState("No recorded activities on this day.", "Older runs may contain actions without activity membership records."));
   let detail = h("div", { class: "card activity-detail-hint" }, emptyState(route.query.activity ? "This activity is not available at this moment." : "Select an activity to inspect it.", "Open a row to see its tools, feedback and received conversation in chronological order."));

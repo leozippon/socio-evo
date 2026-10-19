@@ -78,3 +78,21 @@ assert.equal(route.agent,"Mei");
 assert.equal(route.query.tab,"activities");
 assert.equal(route.query.activity,sessions[1].id);
 assert.equal(parseStamp(route.query.t),506);
+// Clicking a selected detail again must still reveal it, without hijacking new-tab actions.
+let prevented = 0, revealed = 0;
+const click = {button:0,preventDefault:()=>prevented++};
+assert.equal(model.revealCurrentActivity(click,"same","same",()=>revealed++),true);
+assert.equal(revealed,1); assert.equal(prevented,1);
+assert.equal(model.revealCurrentActivity(click,"other","same",()=>revealed++),false);
+assert.equal(model.revealCurrentActivity({...click,metaKey:true},"same","same",()=>revealed++),false);
+assert.equal(model.revealCurrentActivity({...click,button:1},"same","same",()=>revealed++),false);
+const {speechText} = await import("../../frontend/static/js/town/events.js");
+assert.equal(speechText({payload:{message:{text:"Direct speech"}},text:"recorded speech"}),"Direct speech");
+assert.equal(speechText({payload:{utterance:"Legacy speech"},text:"recorded speech"}),"Legacy speech");
+assert.equal(speechText({payload:{},text:"Fallback speech"}),"Fallback speech");
+// Live republishing temporarily invalidates replay state; seek must precede selected UI.
+replay.seek(481);
+const loadedDay = replay.eventsOf(1);
+replay.load(1,loadedDay);
+assert.equal(replay.state.seq,-1);
+assert.equal(replay.seek(481).seq,1);

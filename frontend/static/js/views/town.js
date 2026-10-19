@@ -12,7 +12,7 @@ import { fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { Replay, current } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { CLIENTS, actionSummary, bystanders, handedAs, isPublic, jobName, partsOf, sceneName, witnessed } from "../town/events.js";
+import { CLIENTS, actionSummary, bystanders, handedAs, isPublic, jobName, partsOf, sceneName, speechText, witnessed } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
 import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel, jobStatus } from "../town/panels.js";
@@ -230,7 +230,7 @@ export function mountTown(root, ctx) {
       if (!speech.has(e.place)) speech.set(e.place, []);
       // A private remark shows its words in the truth view and to those who heard them.
       const heard = !e.payload.private || (m.reader ? m.reader === e.actor || m.reader === e.payload.to : view.truth);
-      speech.get(e.place).push({ agent: e.actor, text: e.payload.utterance, to: e.payload.to, private: Boolean(e.payload.private), heard });
+      speech.get(e.place).push({ agent: e.actor, text: speechText(e), to: e.payload.to, private: Boolean(e.payload.private), heard });
     }
     const thinking = new Set();
     if (view.truth) for (const e of m.dayEvents) if (e.kind === "decision" && m.state.time - e.time < turn) thinking.add(e.actor);
@@ -421,7 +421,9 @@ export function mountTown(root, ctx) {
   let marksTimer = null;
   function dayLoaded() {
     timeline.setRun({ loaded: new Set(replay.days.keys()) });
-    if (view.selected && shownSeq !== null) renderSelected();
+    // Loading a changed day invalidates Replay.state. Draw selection only after seek
+    // restores the cursor; an eager draw here clears the resident's thought and job.
+    shownSeq = null;
     clearTimeout(marksTimer);
     marksTimer = setTimeout(() => {
       const evolution = [];

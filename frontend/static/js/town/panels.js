@@ -186,7 +186,7 @@ export class PeoplePanel {
   }
 
   update(m) {
-    const key = `${m.state.seq}|${m.selected}`;
+    const key = `${m.state.seq}|${m.selected}|${m.truth}|${m.reader}`;
     if (key === this.key) return;
     this.key = key;
     fill(

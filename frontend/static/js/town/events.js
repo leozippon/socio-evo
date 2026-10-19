@@ -312,3 +312,6 @@ export const clientMark = (client, long = false) => {
   const found = CLIENTS[client];
   return found ? h("span", { class: `client ${client}`, title: `The client ${found.label}` }, icon(found.icon, 13), long ? found.label : found.short) : null;
 };
+
+/** Both scene speech and real-time direct conversation carry readable words. */
+export const speechText = (event) => event.payload.utterance ?? event.payload.message?.text ?? event.text;

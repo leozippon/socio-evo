@@ -71,3 +71,11 @@ export function activityLink(route, actor, through, interval = null, day = dayOf
   return href({ view: "person", experiment: route.experiment, run: route.run, agent: actor,
     query: { tab: "activities", day: String(day), t: stamp(through), activity: interval?.id ?? null } });
 }
+
+/** An unchanged hash does not fire hashchange: re-open the selected detail explicitly. */
+export function revealCurrentActivity(event, key, selected, reveal) {
+  if (key !== selected || event.button > 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return false;
+  event.preventDefault();
+  reveal();
+  return true;
+}
