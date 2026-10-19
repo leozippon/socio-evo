@@ -212,18 +212,46 @@ class Simulation:
         so nothing changes after the run has failed, and the failures propagate together as
         an ExceptionGroup."""
         self._stop = self.config.days if until_day is None else min(until_day, self.config.days)
+        pending = False
         try:
             while self.day < self._stop:
                 await self._dispatch(self.queue.pop())
+            if self.config.scheduling == "realtime" and self.day == self.config.days:
+                pending = await self._settle_realtime()
         except Exception:
             _finish(self.directory, RunStatus.FAILED)
             raise
         except BaseException:
             _finish(self.directory, RunStatus.INTERRUPTED)
             raise
-        status = RunStatus.COMPLETED if self.day == self.config.days else RunStatus.INTERRUPTED
+        status = (
+            RunStatus.COMPLETED
+            if self.day == self.config.days and not pending
+            else RunStatus.INTERRUPTED
+        )
         _finish(self.directory, status)
         return status
+
+    async def _settle_realtime(self):
+        """No extra simulated days or economic charges while finishing final grading."""
+        from runtime.realtime.engine import RealtimeEngine
+
+        if self.activity_engine is None:
+            self.activity_engine = RealtimeEngine(self, self.activity_state)
+            self.activity_engine.now = max(
+                self.config.calendar.end(self.day) * 60,
+                self.activity_state.get("last_time", 0),
+            )
+            self.activity_engine.end = self.config.calendar.end(self.day) * 60
+        engine = self.activity_engine
+        had_pending = bool(engine.assessments)
+        pending = await engine.settle_final()
+        if had_pending:
+            for agent in self.agents.values():
+                agent.perceive(self.env.perceive(agent.id))
+                History(agent.path, agent.setting.start_date).commit_experience(engine.now // 60)
+            self._checkpoint()
+        return pending
 
     async def _dispatch(self, trigger: Trigger) -> None:
         match trigger.kind:
@@ -239,18 +267,26 @@ class Simulation:
     async def _start_day(self, time: int) -> None:
         day, calendar = day_of(time), self.config.calendar
         self._started = wall.perf_counter()
-        if self.config.scheduling == "activities":
+        if self.config.scheduling in ("activities", "realtime"):
             if self.activity_engine is None:
                 from runtime.activities.engine import ActivityEngine
 
-                self.activity_engine = ActivityEngine(self, self.activity_state)
+                if self.config.scheduling == "realtime":
+                    from runtime.realtime.engine import RealtimeEngine
+
+                    self.activity_engine = RealtimeEngine(self, self.activity_state)
+                else:
+                    self.activity_engine = ActivityEngine(self, self.activity_state)
             self.activity_engine.protect_assessment_deadlines(day)
         self.env.start_day(time, self.rng)
         self._met, self._held = {agent: set() for agent in self.agents}, []
-        if self.config.scheduling == "activities":
+        if self.config.scheduling in ("activities", "realtime"):
             self.env.post(time, self.seed)
             await self.activity_engine.run(time)
-            self.queue.push(Trigger(time=calendar.end(day), kind=TriggerKind.DAY_END))
+            end = calendar.end(day)
+            if self.config.scheduling == "realtime":
+                end = max(end, self.activity_engine.now // 60)
+            self.queue.push(Trigger(time=end, kind=TriggerKind.DAY_END))
             return
         if self.config.scheduling == "independent":
             from runtime.scheduler.activity import ActivityClock

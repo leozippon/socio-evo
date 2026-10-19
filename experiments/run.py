@@ -161,7 +161,7 @@ def task_providers(config: ExperimentConfig, run_root: Path):
             evaluation_seconds=config.tasks.evaluation_seconds,
             community=config.tasks.community,
             repository_guidance=config.tasks.repository_guidance,
-            independent_workspaces=config.simulation.scheduling == "activities",
+            independent_workspaces=config.simulation.scheduling in ("activities", "realtime"),
             solo_deadline_days=config.tasks.solo_deadline_days,
             joint_deadline_days=config.tasks.joint_deadline_days,
         )

@@ -1,5 +1,9 @@
 # Activity scheduling
 
+For the opt-in wall-clock driver and directly heard conversation, see
+[Real-time scheduling](realtime-scheduling.md). This document describes the retained
+fixed-cost `activities` entry.
+
 The opt-in `simulation.scheduling: activities` mode implements event-driven activity
 selection. The `scenes` and `independent` entries remain available and existing run
 configurations are unchanged. A complete example is

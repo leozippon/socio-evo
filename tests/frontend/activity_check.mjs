@@ -42,3 +42,11 @@ apply(state, event("activity_left", 610, { activity: "work-1" }));
 assert.equal(state.activities.Mei, undefined);
 assert.equal(state.sessions.Mei, undefined);
 console.log("Session and tool replay checks passed");
+
+// Real-time operations have a start but no predicted finish timestamp.
+apply(state, event("activity_entered", 700, { activity: "work-live", activity_type: "work", start: 700, end: 1080 }));
+apply(state, event("tool_started", 701, { activity: "work-live", tool: "command", start: 701, end: null, timing: "wall" }));
+assert.equal(state.activities.Mei.end, null);
+apply(state, event("tool_completed", 703, { activity: "work-live", tool: "command", start: 701, end: 703 }));
+assert.equal(state.activities.Mei.action.kind, "work");
+console.log("Real-time operation replay checks passed");

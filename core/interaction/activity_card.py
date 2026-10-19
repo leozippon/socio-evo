@@ -28,6 +28,10 @@ def tool(label, name, fields=None):
 
 def invitation_form(label="invite people", name="invite", menu=None):
     menu = menu or {}
+    if menu.get("realtime"):
+        from core.interaction.realtime_card import realtime_invitation
+
+        return realtime_invitation(menu, label)
     return tool(
         label,
         name,
@@ -43,6 +47,10 @@ def invitation_form(label="invite people", name="invite", menu=None):
 
 
 def activity_forms(layer, menu):
+    if layer == "selection" and menu.get("realtime"):
+        from core.interaction.realtime_card import realtime_forms
+
+        return realtime_forms(layer, menu)
     if layer == "selection":
         result = [
             _Form(

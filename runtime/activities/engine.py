@@ -848,7 +848,7 @@ class ActivityEngine:
                 self.leave(who, "A new invitation arrived.")
             member.event_cursor = self.env.log.count
 
-    async def complete_tool(self, who, pending):
+    async def complete_tool(self, who, pending, *, record_completion=True):
         if self.current.get(who) != pending.activity:
             return
         activity = self.activities[pending.activity]
@@ -959,16 +959,20 @@ class ActivityEngine:
             self.reject(who, action, str(error))
             self.feedback(who, str(error))
         finally:
-            self.emit(
-                EventKind.TOOL_COMPLETED,
-                f"{who} finished {tool}.",
-                actor=who,
-                activity=activity.id,
-                tool=tool,
-                start=pending.start / 60,
-                end=self.now / 60,
-                arguments=args,
-            )
+            if record_completion:
+                self.record_tool_completion(who, pending, tool, args, activity)
+
+    def record_tool_completion(self, who, pending, tool, args, activity):
+        self.emit(
+            EventKind.TOOL_COMPLETED,
+            f"{who} finished {tool}.",
+            actor=who,
+            activity=activity.id,
+            tool=tool,
+            start=pending.start / 60,
+            end=self.now / 60,
+            arguments=args,
+        )
 
     def command_for(self, tool, args):
         if tool in ("command", "test"):
@@ -1245,7 +1249,7 @@ class ActivityEngine:
         else:
             self.boundary()
 
-    async def run(self, start):
+    def prepare_day(self, start):
         self.now = start * 60
         self.end = self.sim.config.calendar.end(day_of(start)) * 60
         self.queue = EventQueue()
@@ -1277,6 +1281,9 @@ class ActivityEngine:
         while len(self.sim.queue) and self.sim.queue.state()[0].time * 60 <= self.end:
             event = self.sim.queue.pop()
             self.queue.add(event.time * 60, "intervention", priority=1, payload=event.payload)
+
+    async def run(self, start):
+        self.prepare_day(start)
         while True:
             # Let background grading run even when every resident is asleep. This yields
             # execution, but never advances or ties simulated time to wall-clock latency.
