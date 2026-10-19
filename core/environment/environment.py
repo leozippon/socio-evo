@@ -273,6 +273,18 @@ EVERYONE = frozenset({"all", "everyone", "everybody", "all of you", "everyone he
 """What, in lower case, addresses everyone present rather than one person."""
 
 
+class AcceptanceNotice(StrictModel):
+    """Only the client's public verdict, never a private trial or hidden quality."""
+
+    task_id: str
+    part: PositiveInt
+    submitter: str
+    time: NonNegativeInt
+    event: NonNegativeInt
+    accepted: bool
+    feedback: str
+
+
 class EnvironmentState(StrictModel):
     """What a checkpoint holds of reality besides its config and the event log itself."""
 
@@ -284,6 +296,7 @@ class EnvironmentState(StrictModel):
     esteem: dict[str, DecayedMean | None]
     next_task_number: PositiveInt
     issued_references: dict[str, list[str]] = {}
+    latest_work_results: dict[str, AcceptanceNotice] = {}
     listings: tuple[Listing, ...]
     offers: tuple[Offer, ...]
     claims: tuple[Claim, ...]
@@ -329,6 +342,7 @@ class Environment:
         self.conditions = conditions
         self.log = log
         self.agents = tuple(log.cursors)
+        self.latest_work_results: dict[str, AcceptanceNotice] = {}
 
     @classmethod
     def create(
@@ -400,7 +414,9 @@ class Environment:
             saved.conditions,
         )
         log = EventLog.resume(events_path, saved.event_count, saved.cursors)
-        return cls(config, _by_trade(providers), *parts, log)
+        result = cls(config, _by_trade(providers), *parts, log)
+        result.latest_work_results = dict(saved.latest_work_results)
+        return result
 
     def state(self) -> dict[str, JsonValue]:
         """A JSON-serializable snapshot from which `restore` continues exactly from here."""
@@ -413,6 +429,7 @@ class Environment:
             esteem=self.reputation.means,
             next_task_number=self.board.next_number,
             issued_references=self.board.issued_references,
+            latest_work_results=self.latest_work_results,
             listings=tuple(self.board.listings.values()),
             offers=tuple(self.board.offers.values()),
             claims=tuple(self.board.claims.values()),
@@ -1013,6 +1030,17 @@ class Environment:
         when a solution for a part was run, and its open proposal or application and those
         made to it."""
         lines = [self.purse_view(agent), *self._position(agent)]
+        if notice := self.latest_work_results.get(agent):
+            outcome = "ACCEPTED" if notice.accepted else "REJECTED — rework required"
+            lines.append(
+                f"Latest completed client verdict for YOUR work: {job_name(notice.task_id)}, "
+                f"part {notice.part}, submitted by {notice.submitter}, "
+                f"day {day_of(notice.time)} {clock_of(notice.time)} (the clerk's record): "
+                f"{outcome}. {notice.feedback[:1000]} "
+                "This is an actual verdict, not a submission promise or a private local test. "
+                "Older waiting notices do not override it; a later pending submission, "
+                "if any, is reported separately."
+            )
         claim = self.board.claim_of(agent)
         if claim is None:
             lines.append("You are not working on any job.")
@@ -1535,7 +1563,7 @@ class Environment:
                 checked=CHECKED[task.trade].format(name=name),
                 feedback=assessment.feedback,
             )
-            audience = [agent]
+            audience = list(claim.workers)
         terms = {
             "task_id": task.id,
             "part": number,
@@ -1552,6 +1580,19 @@ class Environment:
             payload={**terms, "solution": solution, "report": action.report},
             **where,
         )
+        notice = AcceptanceNotice(
+            task_id=task.id,
+            part=number,
+            submitter=agent,
+            time=time,
+            event=submitted.seq,
+            accepted=accepted,
+            feedback="The client accepted the submitted work."
+            if accepted
+            else assessment.feedback[:1000],
+        )
+        for worker in claim.workers:
+            self.latest_work_results[worker] = notice
         assessed = self.emit(
             EventKind.WORK_ASSESSED,
             f"{agent}'s work on {name}, has true quality {assessment.quality:.2f}.",

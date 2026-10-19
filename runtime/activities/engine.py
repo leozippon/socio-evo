@@ -512,7 +512,9 @@ class ActivityEngine:
         if entry.get("retry_at"):
             timing += f" The clerk will automatically retry at {clock(entry['retry_at'])}."
         return (
-            f" Your job {claim.task.id} is awaiting background acceptance. {timing} "
+            f" Current acceptance status: your job {claim.task.id} is awaiting background "
+            f"acceptance. {timing} "
+            "Any earlier completed verdict belongs to a previous submission, not this pending one. "
             "You may leave Work to socialize or rest while waiting. Do not resubmit. "
             "The current claim still occupies your one-job slot until acceptance; "
             "you cannot claim another job yet. After successful acceptance you may "
