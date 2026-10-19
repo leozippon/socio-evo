@@ -123,7 +123,7 @@ export class Timeline {
   }
 
   setCursor(exact, { playing, follow, truth, speed, phase }) {
-    const time = Math.floor(exact);
+    const time = Math.floor(exact * 60 + 1e-7) / 60;
     const moved = dayOf(time) !== dayOf(this.time);
     this.time = time;
     if (this.playing !== playing) {
