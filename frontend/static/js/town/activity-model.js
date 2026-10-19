@@ -65,25 +65,40 @@ export function activityConversations(events, through, day, reader = null) {
   const visible = recorded.filter((event) => !reader || event.actor === reader || (event.audience ?? []).includes(reader))
     .sort((a, b) => a.time - b.time || a.seq - b.seq);
   const group = (id, event) => {
-    if (!groups.has(id)) groups.set(id, { id, start: event.time, last: event.time, place: event.place, participants: new Set(), messages: [], seen: new Set() });
+    if (!groups.has(id)) groups.set(id, { id, start: event.time, last: event.time, place: event.place, participants: new Set(), messages: [], entries: [], seen: new Set() });
     const row = groups.get(id);
     row.last = event.time;
     row.place ??= event.place;
     return row;
   };
+  const sceneParticipants = new Map();
+  const membership = (row, event, action, actors) => {
+    for (const actor of new Set(actors)) {
+      if (!actor) continue;
+      row.participants.add(actor);
+      row.entries.push({ kind: action, actor, time: event.time, seq: event.seq });
+    }
+  };
   for (const event of visible) {
     const p = event.payload ?? {};
     if (event.kind === "activity_entered" && p.activity_type === "conversation" && p.activity) {
       const row = group(`activity:${p.activity}`, event);
-      if (event.actor) row.participants.add(event.actor);
+      membership(row, event, "joined", [event.actor]);
     } else if (event.kind === "scene_started" && ["conversation", "meeting"].includes(p.kind) && event.scene) {
       const row = group(`scene:${event.scene}`, event);
-      for (const name of p.participants ?? []) row.participants.add(name);
+      sceneParticipants.set(event.scene, p.participants ?? []);
+      membership(row, event, "joined", p.participants ?? []);
     }
     const id = p.activity ? `activity:${p.activity}` : event.scene ? `scene:${event.scene}` : null;
     if (!id) continue;
     if (event.kind === "activity_left" || event.kind === "scene_ended") {
-      if (groups.has(id)) groups.get(id).last = event.time;
+      // An exit can be visible even when the entry was private.
+      const conversation = p.activity ? activityTypes.get(p.activity) === "conversation" : conversationScenes.has(event.scene);
+      const row = groups.get(id) ?? (conversation ? group(id, event) : null);
+      if (row) {
+        row.last = event.time;
+        membership(row, event, "left", event.kind === "activity_left" ? [event.actor] : p.participants ?? sceneParticipants.get(event.scene) ?? []);
+      }
       continue;
     }
     if (!["speech", "conversation_message"].includes(event.kind)) continue;
@@ -95,6 +110,7 @@ export function activityConversations(events, through, day, reader = null) {
     if (row.seen.has(key)) continue;
     row.seen.add(key);
     row.messages.push(event);
+    row.entries.push({ kind: "speech", time: event.time, seq: event.seq, event });
     row.last = event.time;
     if (event.actor ?? p.message?.author) row.participants.add(event.actor ?? p.message.author);
   }

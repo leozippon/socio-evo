@@ -15,7 +15,7 @@ from tests.runtime.activities.test_engine import PrivateRepositories
 
 async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
     config = load_config(Path("experiments/configs/community/activities.yaml"), ExperimentConfig)
-    simulation_config = config.simulation.model_copy(update={"days": 2})
+    simulation_config = config.simulation.model_copy(update={"days": 2, "lunch_place": None})
     calls = []
     selections = {}
     tools = {}

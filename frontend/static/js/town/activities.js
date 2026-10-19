@@ -66,9 +66,13 @@ export class ActivitiesPanel {
       this.conversationId = row.id;
       fill(transcript,
         h("p", { class: "note" }, conversationLabel(row)),
-        row.messages.length ? h("ol", { class: "conversation-messages", "aria-label": "Conversation messages" }, row.messages.map((event) =>
-          h("li", {}, h("header", {}, h("time", {}, clock(event.time)), h("b", {}, event.actor ?? event.payload.message?.author ?? "Unknown speaker")),
-            h("p", {}, speechText(event))))) : h("p", { class: "note" }, "No messages recorded yet."));
+        row.entries.length ? h("ol", { class: "conversation-messages", "aria-label": "Conversation timeline" }, row.entries.map((entry) => {
+          if (entry.kind !== "speech") return h("li", { class: "conversation-membership" },
+            h("time", {}, clock(entry.time)), h("span", {}, `${entry.actor} ${entry.kind}`));
+          const event = entry.event;
+          return h("li", {}, h("header", {}, h("time", {}, clock(event.time)), h("b", {}, event.actor ?? event.payload.message?.author ?? "Unknown speaker")),
+            h("p", {}, speechText(event)));
+        })) : h("p", { class: "note" }, "No messages recorded yet."));
     };
     if (selected) showConversation(selected);
     fill(this.el,

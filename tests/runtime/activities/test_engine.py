@@ -60,6 +60,9 @@ class PrivateRepositories(RepositoryProvider):
 @pytest.fixture
 def engine(tmp_path):
     config = load_config(Path("experiments/configs/community/activities.yaml"), ExperimentConfig)
+    config = config.model_copy(
+        update={"simulation": config.simulation.model_copy(update={"lunch_place": None})}
+    )
     provider = PrivateRepositories()
     env = Environment.create(
         config.environment, list(config.environment.homes), provider, tmp_path / "events.jsonl"

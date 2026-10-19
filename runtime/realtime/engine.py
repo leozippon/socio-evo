@@ -15,6 +15,7 @@ from runtime.activities.model import (
     Message,
     MoveActivity,
     WorkActivity,
+    at,
     clock,
 )
 from runtime.realtime.clock import WallClock
@@ -443,6 +444,10 @@ class RealtimeEngine(ActivityEngine):
             return
         finished = job.task.result()
         if job.kind == "decision":
+            daily_boundary = self.sim.config.lunch_place and any(
+                job.start < at(day_of(self.now // 60), text) <= self.now
+                for text in ("12:00", "18:00")
+            )
             self.remember(who)
             reply = finished.value
             if isinstance(reply, StructuredOutputError):
@@ -484,7 +489,12 @@ class RealtimeEngine(ActivityEngine):
             current = self.current.get(who)
             if current != job.activity:
                 return  # An invitation/boundary changed the original decision's context.
-            closing = self.now >= self.end or current in self.closing or who in self.deferred
+            closing = (
+                daily_boundary
+                or self.now >= self.end
+                or current in self.closing
+                or who in self.deferred
+            )
             if closing:
                 # The speech itself was being generated before closing; deliver it before exit.
                 if isinstance(action, Choice) and action.tool == "reply" and current:
@@ -632,6 +642,7 @@ class RealtimeEngine(ActivityEngine):
                                 await self.process(event)
                 self.now = max(self.now, target)
                 self.flush_leaves()
+                self.daily_choices()
                 self.env.pair_applicants(self.now // 60, self.sim.rng)
                 if self.now < self.end:
                     self.start_ready_conversations()

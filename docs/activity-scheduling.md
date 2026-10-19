@@ -12,6 +12,8 @@ The event engine processes operation completions, activity boundaries, invitatio
 
 An activity's duration is a limit, not a prepaid charge. Prompts state the current time, remaining duration, latest end, available tools and minimum costs. Size-dependent costs are checked again before launch. An operation that does not fit is rejected without execution; finishing exactly at the boundary is allowed.
 
+In configurations with `simulation.lunch_place`, noon is a fixed daily lunch destination. Residents finish an operation or move already underway, then travel there; an arrival after noon still counts for that day and does not trigger another lunch trip. Lunch adds no meal tool, hunger state or charge. At 18:00, residents in Work or a long Rest choose what to do for the evening; residents already in Conversation can continue. The evening remains theirs to arrange, including whether to meet anyone. This setting is used by the community `activities` and `realtime` examples; other schedulers remain unchanged.
+
 Default costs are configurable under `simulation.activity_timing`:
 
 | Operation | Simulated cost |
@@ -33,7 +35,7 @@ Work can pause and resume. Claims, private repository snapshots and task notes p
 
 Submission freezes the patch and starts official assessment in the background. The first check is due after 20 simulated minutes; unfinished assessment reports delay and is checked again every five minutes. Infrastructure errors are not failed repairs and do not earn rewards. Pending claims are protected from expiry while assessment is outstanding. Existing acceptance and settlement rules determine success and payment.
 
-Private chats and public groups use one conversation activity with a message stream and separate join/read positions. Members can read, reply, wait or leave. Waiting resumes when a new reply arrives; late joiners see only later messages, and leaving ends future delivery. Invitations do not interrupt running work. An appointment starts only when at least two confirmed members are present and available; the default grace period is five minutes.
+Private chats and public groups use one conversation activity with a message stream and separate join/read positions. Membership starts at the resident's recorded join time: a late joiner can read only messages at or after that position. Leaving records the end of membership, so later speech is not delivered to that resident; in a group, the remaining members can continue. Waiting resumes when a new reply arrives. Invitations do not interrupt running work. A confirmed appointment can remind its participants when it is time to leave for the venue, based on walking time; a reminder may wake Rest, but does not reserve anyone or send them automatically. Declining or replacing an invitation makes its old reminder moot. An appointment starts only when at least two confirmed members are present and available; the default grace period is five minutes.
 
 ## Persistence and records
 

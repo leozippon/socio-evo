@@ -30,6 +30,7 @@ def setup_run(tmp_path, days=2):
     simconfig = config.simulation.model_copy(
         update={
             "days": days,
+            "lunch_place": None,
             "realtime": RealtimeTiming(multiplier=100_000, final_grading_wait_seconds=0),
         }
     )

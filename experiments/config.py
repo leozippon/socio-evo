@@ -134,6 +134,12 @@ class ExperimentConfig(StrictModel):
                 Conditions.model_validate(conditions | intervention.conditions)
             )
         places = {place.id: place for place in self.environment.places}
+        if self.simulation.lunch_place is not None:
+            lunch = places.get(self.simulation.lunch_place)
+            if self.simulation.scheduling not in ("activities", "realtime"):
+                raise ValueError("lunch_place requires activities or realtime scheduling")
+            if lunch is None or lunch.kind != PlaceKind.SOCIAL or not lunch.is_open("12:00"):
+                raise ValueError("lunch_place must name a social place open at noon")
         calendar, scenes = self.simulation.calendar, self.simulation.scenes
         for meeting in self.simulation.meetings:
             for changes in meeting.enacts.values():

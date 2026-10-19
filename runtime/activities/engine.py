@@ -88,6 +88,8 @@ class ActivityEngine:
         self.pending: dict[str, PendingTool] = {}
         self.current: dict[str, str] = {}
         self.queue = EventQueue()
+        self.daily_waiting = set()
+        self.daily_life = dict(state.get("daily_life", {}))
         self.serial = state.get("serial", 0)
         self.now = 0
         self.end = 0
@@ -100,6 +102,7 @@ class ActivityEngine:
             "invitations": {k: v.model_dump(mode="json") for k, v in self.invitations.items()},
             "handoffs": {k: v.model_dump(mode="json") for k, v in self.handoffs.items()},
             "assessments": self.assessments,
+            "daily_life": self.daily_life,
             "serial": self.serial,
             "outside": dict(self.outside),
             "selection_feedback": dict(self.selection_feedback),
@@ -169,6 +172,16 @@ class ActivityEngine:
             )
 
     def arrive(self, who, destination):
+        if self.sim.config.lunch_place:
+            for invitation in self.invitations.values():
+                if invitation.status == "pending" and who in invitation.confirmed:
+                    self.queue.add(
+                        max(
+                            self.now,
+                            invitation.start - self.travel_seconds(destination, invitation.place),
+                        ),
+                        "daily_choice",
+                    )
         self.outside.pop(who, None)
         self.env.move(
             who,
@@ -430,6 +443,15 @@ class ActivityEngine:
                 "You can start or join a public conversation with people here without an "
                 "invitation, or arrange a meeting for later. Invitations wait until you are free. "
                 "Use help for instructions and the repository work guide for work details.",
+                *(
+                    [
+                        "At noon everyone walks to lunch after finishing started operations "
+                        "or travel; "
+                        "evenings are free."
+                    ]
+                    if self.sim.config.lunch_place
+                    else []
+                ),
                 self.clock_rules(),
                 "Workplaces admit residents 07:00–22:00; coding hours are "
                 "08:00–12:00 and 14:00–18:00. Repository work requires an assigned job "
@@ -738,6 +760,7 @@ class ActivityEngine:
                 "You are waiting outside the closed venue. "
                 + (f"It opens at {clock(opening)}." if opening else "It will not reopen today.")
             )
+        context += self.daily_context(who)
         context += self.activity_context(who, active, menu)
         if active:
             context += active.feedback.get(who, [])[-4:]
@@ -1320,6 +1343,12 @@ class ActivityEngine:
             self.invitations[invitation.id] = invitation
             self.queue.add(start, "appointment", invitation=invitation.id)
             self.queue.add(grace, "invitation_expired", priority=3, invitation=invitation.id)
+        if self.sim.config.lunch_place:
+            for person in invitation.confirmed:
+                departure = invitation.start - self.travel_seconds(
+                    self.env.world.locations[person], invitation.place
+                )
+                self.queue.add(max(self.now, departure), "daily_choice")
         audience = [invitation.owner, *invitation.invited]
         self.emit(
             EventKind.DISCUSSION,
@@ -1827,6 +1856,92 @@ class ActivityEngine:
             outside=True,
         )
 
+    def daily_context(self, who):
+        if not self.sim.config.lunch_place:
+            return []
+        day = day_of(self.now // 60)
+        if at(day, "12:00") <= self.now < at(day, "14:00"):
+            return [
+                "Lunch is at "
+                + self.sim.config.lunch_place
+                + ". At the restaurant, rest while eating or start/join a conversation; "
+                "named invitations are optional."
+            ]
+        if self.now >= at(day, "18:00"):
+            return [
+                "Evening is free: talk at the restaurant, cafe or bar, or go home to rest. "
+                "Choose your company and destination."
+            ]
+        return []
+
+    def daily_choices(self):
+        """Finish started operations and travel before offering daily transitions."""
+        if not self.sim.config.lunch_place or self.now >= self.end:
+            return
+        self.daily_waiting.clear()
+        day = day_of(self.now // 60)
+        state = self.daily_life.setdefault(str(day), {"lunched": [], "evening": [], "reminded": []})
+        for who in self.sim.agents:
+            if who in self.pending or who in getattr(self, "running", {}):
+                continue
+            activity = self.activities.get(self.current.get(who))
+            if isinstance(activity, MoveActivity):
+                continue
+            if (
+                not hasattr(self, "running")
+                and isinstance(activity, ConversationActivity)
+                and who not in state["lunched"]
+                and self.now >= at(day, "12:00")
+                and any(person in self.pending for person in activity.participants)
+            ):
+                self.daily_waiting.add(who)
+                continue
+            if self.now >= at(day, "12:00") and who not in state["lunched"]:
+                destination = self.sim.config.lunch_place
+                if self.env.world.locations[who] == destination:
+                    state["lunched"].append(who)
+                    self.feedback(
+                        who, "You arrived for lunch. Rest while eating or converse freely."
+                    )
+                else:
+                    self.leave(who, "Time for the daily lunch; work progress is preserved.")
+                    if who in self.current:
+                        continue
+                    self.select(who, Choice(operation="select_move", target=destination))
+                    continue
+            if self.now >= at(day, "18:00") and who not in state["evening"]:
+                state["evening"].append(who)
+                if isinstance(
+                    self.activities.get(self.current.get(who)), WorkActivity | RestActivity
+                ):
+                    self.leave(who, "Evening choices are available.")
+                self.feedback(who, self.daily_context(who)[0])
+            for invitation in self.invitations.values():
+                key = invitation.id + ":" + who
+                if (
+                    invitation.status != "pending"
+                    or who not in invitation.confirmed
+                    or self.now > invitation.grace_end
+                    or key in state["reminded"]
+                ):
+                    continue
+                departure = invitation.start - self.travel_seconds(
+                    self.env.world.locations[who], invitation.place
+                )
+                if self.now >= departure:
+                    state["reminded"].append(key)
+                    if (
+                        isinstance(self.activities.get(self.current.get(who)), RestActivity)
+                        and self.activities[self.current[who]].wake_invitations
+                    ):
+                        self.leave(who, "Suggested departure time for your confirmed appointment.")
+                    self.feedback(
+                        who,
+                        f"Appointment {invitation.id} at {clock(invitation.start)}: "
+                        f"suggested departure {clock(departure)} for {invitation.place}. "
+                        "Choose whether to travel; your current operation finishes first.",
+                    )
+
     def boundary(self):
         self.admit_waiters()
         for who, place_id in list(self.env.world.locations.items()):
@@ -1888,16 +2003,22 @@ class ActivityEngine:
                         audience=[invitation.owner, *invitation.invited],
                         invitation=invitation.id,
                     )
+        elif scheduled.kind == "daily_choice":
+            self.daily_choices()
         elif scheduled.kind == "intervention":
             self.sim._intervene(self.now // 60, scheduled.data["payload"])
         else:
             self.boundary()
+            self.daily_choices()
 
     def prepare_day(self, start):
         self.now = start * 60
         self.end = self.sim.config.calendar.end(day_of(start)) * 60
         self.queue = EventQueue()
         day = day_of(start)
+        self.daily_life = (
+            {str(day): self.daily_life[str(day)]} if str(day) in self.daily_life else {}
+        )
         for text in ("08:00", "12:00", "14:00", "18:00", "22:00"):
             moment = at(day, text)
             if moment >= self.now:
@@ -1915,6 +2036,18 @@ class ActivityEngine:
             )
         for invitation in self.invitations.values():
             if invitation.status == "pending":
+                if self.sim.config.lunch_place:
+                    for person in invitation.confirmed:
+                        self.queue.add(
+                            max(
+                                self.now,
+                                invitation.start
+                                - self.travel_seconds(
+                                    self.env.world.locations[person], invitation.place
+                                ),
+                            ),
+                            "daily_choice",
+                        )
                 self.queue.add(
                     max(self.now, invitation.start), "appointment", invitation=invitation.id
                 )
@@ -1969,6 +2102,7 @@ class ActivityEngine:
             for event in due:
                 await self.process(event)
             self.env.pair_applicants(self.now // 60, self.sim.rng)
+            self.daily_choices()
             self.start_ready_conversations()
             self.wake_rests()
             if self.now >= self.end:
@@ -1978,6 +2112,7 @@ class ActivityEngine:
                 who
                 for who in self.sim.agents
                 if who not in self.pending
+                and who not in self.daily_waiting
                 and (
                     who not in self.current
                     or isinstance(
@@ -1990,6 +2125,7 @@ class ActivityEngine:
                 self.sim._bound_lapses()
             immediately_ready = any(
                 who not in self.pending
+                and who not in self.daily_waiting
                 and (
                     who not in self.current
                     or isinstance(

@@ -216,6 +216,14 @@ environment:
     y: 1
     hours:
     - 18:00-22:00
+  - id: restaurant
+    kind: social
+    name: the Riverside Restaurant
+    description: A restaurant near the Workshop, serving lunch and evening meals where residents can talk over food.
+    x: 4
+    y: 4
+    hours:
+    - 11:30-22:00
   posting_mode: replenish
   replacement_timing: immediate
   strict_acceptance: true
@@ -235,6 +243,7 @@ tasks:
   evaluation_seconds: 600
 simulation:
   scheduling: realtime
+  lunch_place: restaurant
   days: 42
   checkpoint_days: 1
   postings:

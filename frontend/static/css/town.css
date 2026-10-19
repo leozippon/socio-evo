@@ -698,3 +698,5 @@ body[data-view="town"] { overflow: hidden; }
 .conversation-messages header { display: flex; flex-wrap: wrap; gap: 10px; font-size: 12px; }
 .conversation-messages time { color: var(--muted); font-variant-numeric: tabular-nums; }
 .conversation-messages p { margin: 6px 0 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.conversation-messages .conversation-membership { display: flex; gap: 10px; padding: 8px 0; color: var(--muted); font-size: 12px; }

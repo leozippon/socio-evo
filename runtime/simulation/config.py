@@ -93,6 +93,7 @@ class SimulationConfig(StrictModel):
     (see `Simulation`)."""
 
     scheduling: Literal["scenes", "independent", "activities", "realtime"] = "scenes"
+    lunch_place: str | None = None
     activity_timing: Timing = Timing()
     realtime: RealtimeTiming = RealtimeTiming()
     grading_minutes: int = Field(default=20, ge=5, le=120, multiple_of=5)
