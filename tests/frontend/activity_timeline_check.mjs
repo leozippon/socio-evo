@@ -52,3 +52,29 @@ const shared = [
 const members = activityIntervals(shared,503);
 assert.equal(members[0].end,502);
 assert.equal(members[1].end,null);
+const model = await import("../../frontend/static/js/town/activity-model.js");
+const sharedEvents = [
+  {seq:0,time:500,kind:"activity_entered",actor:"Mei",audience:["Mei"],payload:{activity:"chat",activity_type:"conversation",participants:["Mei"]}},
+  {seq:1,time:501,kind:"speech",actor:"Aisha",audience:["Mei","Aisha"],payload:{activity:"chat"}},
+  {seq:2,time:502,kind:"tool_started",actor:"Aisha",audience:["Aisha"],payload:{activity:"chat",tool:"private_tool"}},
+  {seq:3,time:503,kind:"activity_left",actor:"Mei",audience:["Mei"],payload:{activity:"chat",reason:"Left"}},
+  {seq:4,time:504,kind:"speech",actor:"Aisha",audience:["Aisha"],payload:{activity:"chat"}},
+  {seq:5,time:505,kind:"activity_entered",actor:"Mei",audience:["Mei"],payload:{activity:"chat",activity_type:"conversation",participants:["Mei","Aisha"]}},
+];
+const sessions = activityIntervals(sharedEvents,506);
+assert.deepEqual(model.activityTranscript(sharedEvents,sessions[0],506).map(e=>e.seq),[0,1,3]);
+assert.deepEqual(model.activityTranscript(sharedEvents,sessions[1],506).map(e=>e.seq),[5],"resumed membership does not repeat earlier conversation");
+assert.deepEqual(model.activityTranscript(sharedEvents,sessions[0],501).map(e=>e.seq),[0,1],"transcripts honor replay cutoff");
+const totals = model.residentActivitySummary(sessions,"Mei",1,506);
+assert.equal(totals.count,2);
+assert.equal(totals.seconds.conversation,240);
+assert.equal(model.activityDuration(3661),"1h 01m 01s");
+assert.equal(model.activityDuration(13),"13s");
+const { parse } = await import("../../frontend/static/js/router.js");
+const link = model.activityLink({experiment:"demo",run:"seed-0000",query:{}},"Mei",506,sessions[1]);
+const route = parse(link);
+assert.equal(route.view,"person");
+assert.equal(route.agent,"Mei");
+assert.equal(route.query.tab,"activities");
+assert.equal(route.query.activity,sessions[1].id);
+assert.equal(parseStamp(route.query.t),506);

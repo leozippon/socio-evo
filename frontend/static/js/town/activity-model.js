@@ -1,3 +1,6 @@
+import { dayOf, dayStart, stamp } from "../clock.js";
+import { href } from "../router.js";
+
 // Activity intervals are membership intervals, not tool durations. Planned end times are
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
 export const ACTIVITY_LABELS = { rest: "Rest", move: "Move", work: "Work", conversation: "Conversation" };
@@ -11,18 +14,20 @@ export function activityIntervals(events, through, reader = null) {
     if (reader && event.actor !== reader && !(event.audience ?? []).includes(reader)) continue;
     if (event.kind === "activity_entered") {
       const previous = active.get(event.actor);
-      if (previous) { previous.end = event.time; previous.reason = "Next activity started"; }
+      if (previous) { previous.end = event.time; previous.endSeq = event.seq - 1; previous.reason = "Next activity started"; }
       const interval = {
-        id: `${event.seq}:${event.actor}`, activity: p.activity, actor: event.actor,
+        id: `${event.seq}:${event.actor}`, startSeq: event.seq, endSeq: null, participants: [...(p.participants ?? [event.actor])], activity: p.activity, actor: event.actor,
         type: p.activity_type, start: event.time, end: null, place: event.place,
         reason: null, tool: null,
       };
+      for (const peer of active.values()) if (peer.activity === p.activity && !peer.participants.includes(event.actor)) peer.participants.push(event.actor);
       intervals.push(interval);
       active.set(event.actor, interval);
     } else if (event.kind === "activity_left") {
       const interval = active.get(event.actor);
       if (interval?.activity === p.activity) {
         interval.end = event.time;
+        interval.endSeq = event.seq;
         interval.reason = p.reason ?? "Activity ended";
         interval.tool = null;
         active.delete(event.actor);
@@ -36,4 +41,33 @@ export function activityIntervals(events, through, reader = null) {
     }
   }
   return intervals.sort((a, b) => a.start - b.start);
+}
+
+/** Recorded events for one resident's membership, including speech actually heard there. */
+export function activityTranscript(events, interval, through) {
+  return events.filter((event) => {
+    if (event.time > through || event.seq < interval.startSeq || (interval.endSeq != null && event.seq > interval.endSeq)) return false;
+    const p = event.payload ?? {};
+    if (event.actor === interval.actor) return !p.activity || p.activity === interval.activity;
+    return ["speech", "conversation_message"].includes(event.kind) && p.activity === interval.activity && (event.audience ?? []).includes(interval.actor);
+  });
+}
+
+export function residentActivitySummary(intervals, actor, day, through) {
+  const start = dayStart(day), end = Math.min(through, start + 1440);
+  const rows = intervals.filter((row) => row.actor === actor && row.start <= end && (row.end ?? end) >= start);
+  const seconds = Object.fromEntries(Object.keys(ACTIVITY_LABELS).map((type) => [type, 0]));
+  for (const row of rows) seconds[row.type] = (seconds[row.type] ?? 0) + Math.max(0, Math.round((Math.min(row.end ?? end, end) - Math.max(row.start, start)) * 60));
+  return { count: rows.length, seconds, current: rows.findLast((row) => row.end == null) ?? null };
+}
+
+export function activityDuration(seconds) {
+  const whole = Math.max(0, Math.round(seconds));
+  const hour = Math.floor(whole / 3600), minute = Math.floor(whole / 60) % 60, second = whole % 60;
+  return hour ? `${hour}h ${String(minute).padStart(2, "0")}m ${String(second).padStart(2, "0")}s` : minute ? `${minute}m ${String(second).padStart(2, "0")}s` : `${second}s`;
+}
+
+export function activityLink(route, actor, through, interval = null, day = dayOf(through)) {
+  return href({ view: "person", experiment: route.experiment, run: route.run, agent: actor,
+    query: { tab: "activities", day: String(day), t: stamp(through), activity: interval?.id ?? null } });
 }

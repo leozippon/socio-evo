@@ -6,7 +6,7 @@
 // A snapshot of the state is kept at the start of every day it has passed, so a jump costs at
 // most one day of events, and playing forward applies only the events it crosses.
 
-import { dayOf, eventTime } from "./clock.js";
+import { dayOf, normalizeEventTimes } from "./clock.js";
 
 /** The state before the first event: everyone at home with their starting balance. */
 export function initialState(world) {
@@ -264,11 +264,7 @@ export class Replay {
     if (!events.length) throw new Error(`day ${day} has no events`);
     // Legacy environment events may only carry a minute stamp between precise events.
     // Keep their log order, inheriting the latest precise timestamp in that minute.
-    let through = 0;
-    events = events.map((event) => {
-      through = Math.max(through, eventTime(event));
-      return { ...event, time: through };
-    });
+    events = normalizeEventTimes(events);
     const old = this.days.get(day);
     if (old) this.firsts.delete(old[0].seq);
     this.days.set(day, events);

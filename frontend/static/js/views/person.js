@@ -14,10 +14,12 @@ import { bystanders } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { markers, placeById } from "../world.js";
 import { traitFigures, variantOf } from "./evaluation.js";
+import { personActivities } from "./person-activities.js";
 import { LEVELS, stat } from "./overview.js";
 
 const TABS = [
   ["overview", "Overview"],
+  ["activities", "Activities"],
   ["policy", "Policy"],
   ["history", "History"],
   ["mind", "Beliefs & diary"],
@@ -49,6 +51,7 @@ export function mountPerson(root, ctx) {
   let traits = null;
   let charts = [];
   let token = 0;
+  let activityFocus = null;
   let reveal = false; // the reader picked a version, so show it once loaded
 
   const agentName = () => route.agent;
@@ -87,7 +90,7 @@ export function mountPerson(root, ctx) {
       h(
         "nav",
         { class: "people-switch", "aria-label": "People" },
-        cast.names.map((name) => h("a", { class: `person-pick${name === agentName() ? " on" : ""}`, href: href({ ...route, agent: name }), "aria-current": name === agentName() ? "page" : null }, cast.badge(name, 18), name)),
+        cast.names.map((name) => h("a", { class: `person-pick${name === agentName() ? " on" : ""}`, href: href({ ...route, agent: name, query: { ...route.query, activity: null } }), "aria-current": name === agentName() ? "page" : null }, cast.badge(name, 18), name)),
       ),
       h(
         "div",
@@ -101,7 +104,11 @@ export function mountPerson(root, ctx) {
           h("p", { class: "backstory" }, agent.backstory),
         ),
       ),
-      h(
+      tab() === "activities" ? h("div", { class: "as-of" },
+        h("span", { class: "eyebrow" }, "Activity snapshot"),
+        h("b", {}, formatTime(Math.min(source.doc.last_time_seconds != null ? source.doc.last_time_seconds / 60 : source.doc.last_time ?? 0, parseStamp(route.query.t) ?? Infinity))),
+        h("span", { class: "muted small-text" }, "Research view · recorded events"),
+        h("a", { class: "ghost small", href: href(sibling(route, "town", { query: { agent: agentName(), panel: "activities" } })) }, "See in town")) : h(
         "div",
         { class: "as-of" },
         h("span", { class: "eyebrow" }, "As of"),
@@ -118,7 +125,7 @@ export function mountPerson(root, ctx) {
       h(
         "nav",
         { class: "subnav", "aria-label": `${agent.name}'s file` },
-        TABS.map(([key, label]) => h("a", { href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null } }), "aria-selected": String(tab() === key) }, label)),
+        TABS.map(([key, label]) => h("a", { href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null, activity: key === "activities" ? route.query.activity : null } }), "aria-selected": String(tab() === key) }, label)),
       ),
     );
   }
@@ -474,6 +481,8 @@ export function mountPerson(root, ctx) {
     ];
   }
 
+  const activitiesTab = () => personActivities({ source, world, cast, places, route, go });
+
   function traitsTab(moment, version, made) {
     if (!evaluation.scores.length) return h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "Evaluate chosen days with ", h("code", {}, `python -m experiments.evaluate runs/${route.experiment}/${route.run} --days 0 7 14`), "."));
     const rows = evaluation.scores.filter((row) => row.agent === agentName() && variantOf(row) === "full");
@@ -521,7 +530,7 @@ export function mountPerson(root, ctx) {
       const moment = asOf();
       const version = versionAt(moment.time);
       if (!page.querySelector(".person-body")) fill(page, head(moment), h("div", { class: "person-body" }, h("div", { class: "loading" }, "Loading…")));
-      const content = await { overview, policy: policyTab, history: historyTab, mind: mindTab, decisions: decisionsTab, traits: traitsTab }[tab()](moment, version, made);
+      const content = await { overview, activities: activitiesTab, policy: policyTab, history: historyTab, mind: mindTab, decisions: decisionsTab, traits: traitsTab }[tab()](moment, version, made);
       if (ticket !== token) {
         for (const chart of made) chart.destroy();
         return;
@@ -529,6 +538,9 @@ export function mountPerson(root, ctx) {
       fill(page, head(moment), h("div", { class: "person-body" }, content));
       for (const chart of charts) chart.destroy();
       charts = made;
+      const focus = tab() === "activities" ? `${agentName()}:${route.query.day}:${route.query.activity ?? ""}` : null;
+      if (route.query.activity && focus !== activityFocus) page.querySelector("#person-activity-detail")?.scrollIntoView({ block: "start" });
+      activityFocus = focus;
     } catch (error) {
       if (ticket !== token) return;
       fill(page, h("div", { class: "card" }, emptyState(`${agentName()}'s file could not be loaded.`, error.message)));
@@ -544,7 +556,7 @@ export function mountPerson(root, ctx) {
       return true;
     },
     async live({ changes }) {
-      if (changes && (changes.agents.includes(agentName()) || changes.measures || changes.evaluation) && !route.query.v) render();
+      if (changes && (changes.agents.includes(agentName()) || changes.measures || changes.evaluation || (tab() === "activities" && changes.days.length)) && !route.query.v) render();
     },
     destroy() {
       for (const chart of charts) chart.destroy();

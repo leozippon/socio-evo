@@ -5,7 +5,7 @@
 //   #/study/<study>                       the arms of a study compared; ?window=&contrast=
 //   #/run/<experiment>/<run>              the run's dashboard; ?section=
 //   #/run/<experiment>/<run>/town         the town; ?t=<day>-<HH:MM>&agent=&truth=0&as=1&only=1&panel=&speed=
-//   #/run/<experiment>/<run>/people/<agent>   one person; ?t=&tab=&v=<commit>&day=
+//   #/run/<experiment>/<run>/people/<agent>   one person; ?t=&tab=&v=<commit>&day=&activity=<membership-key>
 //   #/run/<experiment>/<run>/evaluation   held-out evaluation; ?agent=&day=&probe=&dimension=&variant=
 
 const VIEWS = { "": "overview", town: "town", people: "person", evaluation: "evaluation" };

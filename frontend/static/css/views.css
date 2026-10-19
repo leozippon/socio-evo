@@ -332,3 +332,24 @@ table.stakes tr.switch td { font-weight: 650; }
 .experiment-dialog input { width: 100%; box-sizing: border-box; padding: .65rem; font: inherit; }
 .experiment-dialog .management-buttons { justify-content: flex-end; margin-top: 1rem; }
 .management-error { color: var(--danger, #a33327); min-height: 1.4em; }
+
+/* A resident's daily activity ledger and deep-linked activity transcript. */
+.activity-ledger-heading { margin-top: 22px; gap: 16px; }
+.activity-ledger-heading h2 { margin-bottom: 4px; }
+.activity-table-wrap { margin: 18px 0 24px; }
+.activity-table td:nth-child(4) { white-space: normal; min-width: 130px; text-align: left; }
+.activity-table .selected-activity { background: #dedbc455; }
+.activity-type-label { display: inline-flex; gap: 6px; align-items: center; }
+.activity-type-label i { width: 8px; height: 8px; border-radius: 2px; }
+.activity-detail { scroll-margin-top: 90px; margin: 20px 0; }
+.activity-detail h2 { margin: 0; }
+.activity-detail-period { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.activity-facts { display: grid; grid-template-columns: 100px 1fr; gap: 7px 16px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 13px; }
+.activity-facts dt { color: var(--muted); }
+.activity-facts dd { margin: 0; overflow-wrap: anywhere; }
+.activity-detail-log { padding: 0; list-style: none; }
+.activity-detail-log > li { padding: 12px 0; border-bottom: 1px solid var(--line); }
+.activity-log-event header { font-size: 12px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.activity-log-event p { margin: 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.activity-output { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 440px; overflow: auto; font-size: 12px; }
+.activity-log-event summary { cursor: pointer; overflow-wrap: anywhere; }

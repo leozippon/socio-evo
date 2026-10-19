@@ -17,6 +17,15 @@ export const hhmmss = (minute) => {
 };
 export const eventTime = (event) => Number.isFinite(event.payload?.sim_seconds) ? event.payload.sim_seconds / 60 : event.time;
 
+/** Preserve event sequence when precise seconds and legacy minute stamps are mixed. */
+export function normalizeEventTimes(events) {
+  let through = 0;
+  return events.map((event) => {
+    through = Math.max(through, eventTime(event));
+    return { ...event, time: through };
+  });
+}
+
 /** Minutes after midnight of an `HH:MM` string. */
 export function parseHHMM(text) {
   const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text);

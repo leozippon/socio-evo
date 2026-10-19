@@ -87,7 +87,7 @@ export function mountTown(root, ctx) {
   const panels = {
     now: new NowPanel(),
     people: new PeoplePanel(),
-    activities: new ActivitiesPanel({ onJump: (time) => seek(time, true) }),
+    activities: new ActivitiesPanel(),
     feed: new FeedPanel({
       onFollow: (on) => {
         view.only = on;
@@ -207,6 +207,7 @@ export function mountTown(root, ctx) {
       places,
       lookups,
       dayEvents,
+      route,
       activityEvents: replay.sortedDays().flatMap((d) => replay.eventsOf(d)).filter((e) => e.seq <= state.seq),
       bystanders: bystanders(dayEvents),
       reader: view.lens && view.selected && replay.perspectives ? view.selected : null,
