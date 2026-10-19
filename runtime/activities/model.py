@@ -156,6 +156,9 @@ class Invitation(MutableState):
     public: bool = False
     status: Literal["pending", "started", "cancelled"] = "pending"
     conversation: str | None = None
+    declined: list[str] = Field(default_factory=list)
+    supersedes: str | None = None
+    superseded_by: str | None = None
 
 
 class Handoff(MutableState):

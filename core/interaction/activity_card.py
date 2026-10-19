@@ -46,16 +46,24 @@ def invitation_form(label="invite people", name="invite", menu=None):
     )
 
 
-def invitation_responses(menu, tools=("accept", "decline")):
+def invitation_responses(menu, tools=("accept", "decline", "defer")):
     result = []
-    for name in ("accept", "decline"):
+    for name in ("accept", "decline", "defer"):
         ids = (
             menu.get("accept_invitations", menu.get("invitations", []))
             if name == "accept"
+            else menu.get("defer_invitations", [])
+            if name == "defer"
             else menu.get("invitations", [])
         )
         if ids and name in tools:
-            result.append(tool(name + " invitation", name, {"invitation": (_one_of(ids), None)}))
+            fields = {"invitation": (_one_of(ids), None)}
+            if name == "defer":
+                fields["at"] = (
+                    CLOCK,
+                    "Propose a later time today; everyone else must confirm again.",
+                )
+            result.append(tool(name + " invitation", name, fields))
     return result
 
 

@@ -225,7 +225,7 @@ async def test_closing_finishes_started_command_then_preserves_work(rt, monkeypa
     rt.flush_leaves()
     assert activity.status == "paused"
     assert rt.env.board.claim_of("Mei")
-    assert rt.activities[rt.current["Mei"]].kind == "move"
+    assert "Mei" not in rt.current and rt.outside["Mei"] == "workshop"
     assert any("finished after closing" in p.text for p in rt.env.perceive("Mei"))
 
 

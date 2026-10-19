@@ -261,7 +261,10 @@ class ActivityEngine:
         return [
             i.id
             for i in self.invitations.values()
-            if i.status == "pending" and who in i.invited and self.now <= i.grace_end
+            if i.status == "pending"
+            and who in i.invited
+            and who not in i.declined
+            and self.now <= i.grace_end
         ]
 
     def ready_for_invitation(self, who, invitation):
@@ -285,6 +288,8 @@ class ActivityEngine:
                 status = (
                     "expired"
                     if self.now > invitation.grace_end
+                    else "declined"
+                    if who in invitation.declined
                     else "confirmed_waiting"
                     if who in invitation.confirmed
                     else "awaiting_response"
@@ -295,7 +300,9 @@ class ActivityEngine:
                     status = "ended"
             readiness = {}
             for person in dict.fromkeys((invitation.owner, *invitation.invited)):
-                if person not in invitation.confirmed:
+                if person in invitation.declined:
+                    readiness[person] = "declined"
+                elif person not in invitation.confirmed:
                     readiness[person] = "awaiting_response"
                 elif self.env.world.locations[person] != invitation.place or person in self.outside:
                     readiness[person] = "not_at_meeting"
@@ -368,7 +375,9 @@ class ActivityEngine:
             "Finish or leave an activity before choosing another. Progress survives leaving work.",
             "Invitations do not interrupt tools. Confirm, leave time to travel, then choose "
             "wait for confirmed conversation at the meeting place. Already-confirmed "
-            "invitations need no second accept. Read readiness to see why a chat is waiting.",
+            "invitations need no second accept. Read readiness to see why a chat is waiting. "
+            "Respond to pending invitations with accept, decline, or defer invitation. "
+            "Defer proposes a later time and requires everyone else to confirm again.",
             "Your invitations: " + json.dumps(self.invitation_views(who)),
         ]
         if menu.get("realtime"):
@@ -523,6 +532,9 @@ class ActivityEngine:
             "people": people,
             "places": places,
             "invitations": self.invitation_ids(who),
+            "defer_invitations": [
+                i for i in self.invitation_ids(who) if not self.invitations[i].conversation
+            ],
             "accept_invitations": [
                 i for i in self.invitation_ids(who) if who not in self.invitations[i].confirmed
             ],
@@ -575,10 +587,11 @@ class ActivityEngine:
                 "invite_here",
                 "accept",
                 "decline",
+                "defer",
             ]
         else:
             claim = self.env.board.claim_of(who)
-            tools = ["help", "leave", "board", "feedback", "invite", "accept", "decline"]
+            tools = ["help", "leave", "board", "feedback", "invite", "accept", "decline", "defer"]
             if claim is None:
                 tools.append("claim")
             else:
@@ -625,6 +638,7 @@ class ActivityEngine:
             "claim": 0,
             "accept": 0,
             "decline": 0,
+            "defer": 0,
             "board": self.timing.search_seconds,
             "feedback": self.timing.search_seconds,
             "guide": self.timing.search_seconds,
@@ -715,6 +729,10 @@ class ActivityEngine:
         invites = self.invitation_views(who)
         context.append("Your conversation invitations/appointments: " + json.dumps(invites))
         context.append(
+            "For invitations awaiting your response, explicitly accept, decline, or propose "
+            "a later time with defer invitation at your next decision opportunity. Do not "
+            "silently discard an invitation when choosing a long rest. Defer is a proposal, "
+            "not an accepted appointment; other residents must confirm again. "
             "For confirmed appointments, leave time to finish your current operation, travel "
             "and arrive by the start/grace time above. If confirmed and at the meeting place, "
             "choose wait for confirmed conversation rather than accepting again or entering "
@@ -1065,7 +1083,12 @@ class ActivityEngine:
             ):
                 raise Rejected("That conversation is not open to you here.")
             self.enter(activity, who, min(self.now + action.seconds, activity.latest_end))
-        elif action.operation == "activity_tool" and action.tool in ("invite", "accept", "decline"):
+        elif action.operation == "activity_tool" and action.tool in (
+            "invite",
+            "accept",
+            "decline",
+            "defer",
+        ):
             # Free residents may arrange/confirm conversations without reserving anybody.
             self.invitation_action(who, action.tool, action.arguments)
         else:
@@ -1145,11 +1168,13 @@ class ActivityEngine:
             self.queue.add(
                 invitation.grace_end, "invitation_expired", priority=3, invitation=invitation.id
             )
-        elif tool in ("accept", "decline"):
-            invitation = self.invitations[args["invitation"]]
+        elif tool in ("accept", "decline", "defer"):
+            invitation = self.invitations.get(args.get("invitation"))
             if (
-                invitation.status != "pending"
+                invitation is None
+                or invitation.status != "pending"
                 or who not in invitation.invited
+                or who in invitation.declined
                 or self.now > invitation.grace_end
             ):
                 raise Rejected("That invitation is no longer available.")
@@ -1158,10 +1183,44 @@ class ActivityEngine:
                     return  # Replayed/stale accepts do not emit another invitation notification.
                 invitation.confirmed.append(who)
             elif tool == "decline":
-                invitation.invited = tuple(p for p in invitation.invited if p != who)
+                invitation.declined.append(who)
                 invitation.confirmed = [p for p in invitation.confirmed if p != who]
-                if not invitation.invited:
+                if all(p in invitation.declined for p in invitation.invited):
                     invitation.status = "cancelled"
+            else:
+                if invitation.conversation:
+                    raise Rejected(
+                        "An ongoing conversation cannot be rescheduled; leave or arrange a new one."
+                    )
+                start = at(day_of(self.now // 60), args["at"])
+                if start <= max(self.now, invitation.start) or start >= self.end:
+                    raise Rejected("Propose a later time today, before day end.")
+                if not self.env.world.places[invitation.place].is_open(clock_of(start // 60)):
+                    raise Rejected("That meeting place will be closed at the proposed time.")
+                old = invitation
+                others = tuple(
+                    p for p in (old.owner, *old.invited) if p != who and p not in old.declined
+                )
+                invitation = Invitation(
+                    id=self.identifier("invitation"),
+                    owner=who,
+                    invited=others,
+                    confirmed=[who],
+                    place=old.place,
+                    topic=old.topic,
+                    start=start,
+                    duration=old.duration,
+                    grace_end=min(self.end, start + self.timing.appointment_grace_seconds),
+                    public=old.public,
+                    supersedes=old.id,
+                )
+                old.status = "cancelled"
+                old.superseded_by = invitation.id
+                self.invitations[invitation.id] = invitation
+                self.queue.add(start, "appointment", invitation=invitation.id)
+                self.queue.add(
+                    invitation.grace_end, "invitation_expired", priority=3, invitation=invitation.id
+                )
         else:
             people = tuple(dict.fromkeys(args["people"]))
             if not people or who in people or any(p not in self.env.agents for p in people):
@@ -1229,6 +1288,9 @@ class ActivityEngine:
             place_id=invitation.place,
             start_seconds=invitation.start,
             grace_seconds=invitation.grace_end,
+            response=tool,
+            declined=list(invitation.declined),
+            supersedes=invitation.supersedes,
         )
 
     def start_ready_conversations(self):
@@ -1258,7 +1320,9 @@ class ActivityEngine:
                     for other in activity.participants:
                         self.sim._met[who].update([other] if other != who else [])
                         self.sim._met[other].update([who] if other != who else [])
-                if all(p in activity.members for p in invitation.invited):
+                if all(
+                    p in activity.members or p in invitation.declined for p in invitation.invited
+                ):
                     invitation.status = "started"
                 continue
             if len(people) < 2 or not self.env.world.places[invitation.place].is_open(
@@ -1325,7 +1389,7 @@ class ActivityEngine:
         try:
             if tool == "leave":
                 self.leave(who, "Paused or left voluntarily.")
-            elif tool in ("invite", "invite_here", "accept", "decline"):
+            elif tool in ("invite", "invite_here", "accept", "decline", "defer"):
                 self.invitation_action(who, tool, args)
             elif tool == "board":
                 self.feedback(who, self.env.board_view(who))
@@ -1693,37 +1757,35 @@ class ActivityEngine:
                     update={"grace_days": claim.grace_days + day - claim.due_day}
                 )
 
+    def close_venue_for(self, who, place):
+        """Close indoor access without choosing the resident's next destination."""
+        self.leave(who, "The place closed; choose your next activity outside.")
+        self.outside[who] = place
+        self.feedback(
+            who,
+            f"{self.env.world.places[place].name} is closed. You are outside its doors. "
+            "Choose where to go, wait outside, or respond to invitations. "
+            "You are not being sent home; everyone returns home at day end.",
+            outside=True,
+        )
+
     def boundary(self):
         self.admit_waiters()
         for who, place_id in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
             if isinstance(activity, MoveActivity) and self.now < self.end:
                 continue
-            place = self.env.world.places[place_id]
             if who in self.outside and self.now < self.end:
                 continue
-            if self.now >= self.end or (
-                place.kind != PlaceKind.HOME and not place.is_open(clock_of(self.now // 60))
-            ):
-                self.leave(who, "The place or day closed.")
+            place = self.env.world.places[place_id]
+            if self.now >= self.end:
+                self.leave(who, "The day closed.")
                 self.outside.pop(who, None)
                 home = self.env.config.homes[who]
-                if place_id == home:
-                    continue
-                if self.now >= self.end:
+                if place_id != home:
                     self.env.move(who, home, time=self.now // 60, closing=True)
-                else:
-                    until = min(self.end, self.now + self.travel_seconds(place_id, home))
-                    activity = MoveActivity(
-                        id=self.identifier("move"),
-                        place=place_id,
-                        origin=place_id,
-                        destination=home,
-                        start=self.now,
-                        latest_end=until,
-                    )
-                    self.enter(activity, who, until)
-                    self.queue.add(until, "arrival", priority=0, who=who, activity=activity.id)
+            elif place.kind != PlaceKind.HOME and not place.is_open(clock_of(self.now // 60)):
+                self.close_venue_for(who, place_id)
 
     async def process(self, scheduled):
         if scheduled.kind == "tool":

@@ -450,7 +450,8 @@ async def test_full_event_driver_uses_two_layers_without_per_tool_activity_repla
     resident = ScriptedResident(select_mei, tool_mei)
     engine.sim.agents["Mei"] = resident
     await engine.run(time_at(1, "07:00"))
-    assert selection_count == 5  # rest, move, work, rest at work, rest after forced closing move
+    # Initial rest/move/work, then rest interrupted at noon, reopening and evening closing.
+    assert selection_count == 7
     assert [o.time for o in resident.tools] == [480, 480, 485, 490]
     assert engine.env.providers[Trade.PROGRAMMING].commands == [("Mei", "inspect"), ("Mei", "test")]
     assert not engine.current and not engine.pending
@@ -508,7 +509,7 @@ async def test_stale_wait_event_cannot_complete_a_new_operation(engine):
     assert len(activity.messages) == 2
 
 
-async def test_tool_finishes_at_closing_then_exit_movement_takes_time(engine):
+async def test_tool_finishes_at_closing_then_resident_chooses_next_activity(engine):
     engine.now = at(1, "11:55")
     work(engine)
     await claim(engine)
@@ -516,10 +517,9 @@ async def test_tool_finishes_at_closing_then_exit_movement_takes_time(engine):
     await complete(engine, at(1, "12:00"))
     engine.boundary()
     assert len(engine.env.providers[Trade.PROGRAMMING].commands) == 1
-    moving = engine.activities[engine.current["Mei"]]
-    assert moving.kind == "move" and engine.env.world.locations["Mei"] == "workshop"
-    await complete(engine, moving.latest_end)
-    assert engine.env.world.locations["Mei"] == engine.env.config.homes["Mei"]
+    assert "Mei" not in engine.current
+    assert engine.env.world.locations["Mei"] == "workshop"
+    assert engine.outside["Mei"] == "workshop"
 
 
 async def test_move_can_cross_origin_closing_and_cannot_use_work_tools(engine):

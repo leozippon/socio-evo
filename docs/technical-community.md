@@ -20,6 +20,22 @@ The community profiles now use the opt-in [independent action clock](independent
 Initial task stock is posted at 07:00; successful acceptance immediately replaces a job. Each resident then chooses a new action
 when their own previous action finishes; the old scene scheduler remains available.
 
+## Closing and conversation responses
+
+In the activity and realtime schedulers, a venue closing at noon or 18:00 ends indoor
+activities after already-started realtime operations finish. Residents remain outside
+that venue and choose their own next activity, including waiting for reopening or
+moving to an open social venue. There is no automatic homeward trip before day end.
+At 22:00 everyone still returns home. Paused tasks and repository progress survive.
+
+At a decision opportunity, residents are prompted to accept, decline or defer pending
+conversation invitations. Accepting twice emits no duplicate notification. Declining
+preserves the invitation history and does not cancel other group members' participation.
+`defer invitation` proposes a later open time today: the original is superseded and all
+other participating residents must confirm the new proposal. Old confirmations never
+silently carry over. Started conversations cannot be rescheduled through this tool.
+Invitations and replies do not interrupt running work or reserve a busy resident.
+
 ## Free preparation hour
 
 07:00–08:00 is optional preparation time using the same four activities. A resident

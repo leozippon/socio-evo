@@ -558,24 +558,14 @@ class RealtimeEngine(ActivityEngine):
             if who in self.running:
                 self.deferred[who] = "The place or day closed; finish the started operation."
                 continue
-            self.leave(who, "The place or day closed.")
-            self.outside.pop(who, None)
-            home = self.env.config.homes[who]
-            if place != home:
-                if self.now >= self.end:
+            if self.now >= self.end:
+                self.leave(who, "The day closed.")
+                self.outside.pop(who, None)
+                home = self.env.config.homes[who]
+                if place != home:
                     self.env.move(who, home, time=self.now // 60, closing=True)
-                else:
-                    until = self.now + self.travel_seconds(place, home)
-                    move = MoveActivity(
-                        id=self.identifier("move"),
-                        place=place,
-                        origin=place,
-                        destination=home,
-                        start=self.now,
-                        latest_end=until,
-                    )
-                    self.enter(move, who, until)
-                    self.queue.add(until, "arrival", priority=0, who=who, activity=move.id)
+            else:
+                self.close_venue_for(who, place)
 
     def flush_leaves(self):
         for ident in list(self.closing):
