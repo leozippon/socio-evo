@@ -35,6 +35,9 @@ class SWEbenchTaskProvider:
         evaluation_seconds: int = 600,
         community: bool = False,
         repository_guidance: bool = False,
+        strict_http_cache: bool = False,
+        evaluation_preflight: bool = False,
+        http_cache: Path | None = None,
         independent_workspaces: bool = False,
         solo_deadline_days: int = 2,
         joint_deadline_days: int = 2,
@@ -48,6 +51,11 @@ class SWEbenchTaskProvider:
         self.community = community
         self.independent_workspaces = independent_workspaces
         self.repository_guidance = repository_guidance
+        if evaluation_preflight and not strict_http_cache:
+            raise ValueError("evaluation_preflight requires strict_http_cache")
+        self.strict_http_cache = strict_http_cache
+        self.evaluation_preflight = evaluation_preflight
+        self.http_cache = (http_cache or dataset.parent / "http-cache.json").resolve()
         self.preflights: dict[str, dict] = {}
         self.solo_deadline_days = solo_deadline_days
         self.joint_deadline_days = joint_deadline_days
@@ -60,6 +68,8 @@ class SWEbenchTaskProvider:
     def part(self, instance: str) -> Part:
         row = self.rows[instance]
         notes = ""
+        if self.evaluation_preflight:
+            self._preflight(instance)
         if self.repository_guidance:
             from tasks.swebench.preflight import operating_notes
 
@@ -107,13 +117,29 @@ class SWEbenchTaskProvider:
         )
 
     def _preflight(self, instance: str) -> dict:
-        from tasks.swebench.preflight import inspect_environment
+        from tasks.swebench.preflight import (
+            EnvironmentPreflightError,
+            inspect_environment,
+            inspect_evaluation_environment,
+        )
 
         if instance not in self.preflights:
             row = self.rows[instance]
-            self.preflights[instance] = inspect_environment(
+            readiness = (
+                inspect_evaluation_environment(row, self.http_cache, self.root / "preflight")
+                if self.evaluation_preflight
+                else None
+            )
+            report = inspect_environment(
                 instance, row["repo"], row["base_commit"], self.root / "preflight"
             )
+            if readiness and report["image_id"] != readiness["image_id"]:
+                raise EnvironmentPreflightError(
+                    "Repository preflight image differs from official evaluation image"
+                )
+            if readiness:
+                report["evaluation_readiness"] = readiness
+            self.preflights[instance] = report
         return self.preflights[instance]
 
     def sample_available(self, rng, workers: int, issued: list[str]) -> tuple[Part, ...]:
@@ -197,12 +223,16 @@ class SWEbenchTaskProvider:
         folder.mkdir(parents=True, exist_ok=True)
         if key in self.containers:
             return self.containers[key], folder
-        checked = self._preflight(part.reference) if self.repository_guidance else None
+        checked = (
+            self._preflight(part.reference)
+            if (self.repository_guidance or self.evaluation_preflight)
+            else None
+        )
         name = "socio-town-" + uuid.uuid4().hex[:16]
         command(container_args(name, image_for(part.reference)))
         container = self.client.containers.get(name)
         self.containers[key] = container
-        if self.repository_guidance:
+        if self.repository_guidance or self.evaluation_preflight:
             from tasks.swebench.preflight import EnvironmentPreflightError
 
             if checked["image_id"] != container.image.id:
@@ -434,12 +464,22 @@ class SWEbenchTaskProvider:
             run_id,
         ]
         env = dict(os.environ)
-        http_cache = self.dataset.parent / "http-cache.json"
+        http_cache = self.http_cache
+        env["SWE_BENCH_HTTP_CACHE_STRICT"] = "1" if self.strict_http_cache else "0"
+        env.pop("SWE_BENCH_HTTP_CACHE", None)
+        if self.strict_http_cache and not http_cache.exists():
+            raise RuntimeError(f"Strict metadata cache is missing: {http_cache}")
         if http_cache.exists():
-            env["SWE_BENCH_HTTP_CACHE"] = str(http_cache)
-            (folder / "http-cache.sha256").write_text(
-                hashlib.sha256(http_cache.read_bytes()).hexdigest()
-            )
+            # Pin the exact metadata used by this grading attempt, even if a preparation
+            # job later atomically replaces the shared source cache.
+            from tasks.swebench.http_cache import cached_getter
+
+            data = http_cache.read_bytes()
+            snapshot = folder / "http-cache.json"
+            snapshot.write_bytes(data)
+            cached_getter(snapshot, None, strict=True)
+            env["SWE_BENCH_HTTP_CACHE"] = str(snapshot)
+            (folder / "http-cache.sha256").write_text(hashlib.sha256(data).hexdigest())
         project = str(Path(__file__).resolve().parents[2])
         env["PYTHONPATH"] = project + os.pathsep + env.get("PYTHONPATH", "")
         with (folder / "evaluator.log").open("w") as log:

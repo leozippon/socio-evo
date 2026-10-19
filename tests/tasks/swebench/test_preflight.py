@@ -179,6 +179,9 @@ def test_cli_preflights_first_draw_without_model_or_experiment(tmp_path, monkeyp
         return {"guide": "Verified launcher", "image_id": "test"}
 
     monkeypatch.setattr(preflight, "inspect_environment", inspect)
+    monkeypatch.setattr(
+        preflight, "inspect_evaluation_environment", lambda *a: {"image_id": "test"}
+    )
     monkeypatch.setattr(sys, "argv", ["preflight", str(config), "--seed", "0", "--out", str(out)])
     preflight.main()
     assert len(seen) == len(set(seen)) == 7
@@ -231,3 +234,47 @@ def test_work_guide_is_public_repeatable_and_uses_correct_test_labels(tmp_path):
         )
         == guide
     )
+
+
+def test_official_readiness_uses_strict_spec_and_existing_image_only(tmp_path, monkeypatch):
+    from tasks.swebench import environment_spec
+
+    cache = tmp_path / "http.json"
+    cache.write_text("{}")
+    spec = dict(instance="org__repo-1", image="swebench/exact:latest", status="passed")
+    monkeypatch.setattr(environment_spec, "inspect_spec", lambda row, path: spec.copy())
+    seen = []
+    client = SimpleNamespace(
+        images=SimpleNamespace(
+            get=lambda name: (seen.append(name) or SimpleNamespace(id="sha256:exact"))
+        ),
+        close=lambda: None,
+    )
+    monkeypatch.setitem(sys.modules, "docker", SimpleNamespace(from_env=lambda: client))
+    report = preflight.inspect_evaluation_environment(
+        {"instance_id": "org__repo-1"}, cache, tmp_path
+    )
+    assert report["image_id"] == "sha256:exact" and seen == ["swebench/exact:latest"]
+
+
+def test_failed_offline_readiness_blocks_publication_even_without_work_guide(tmp_path, monkeypatch):
+    data = tmp_path / "data.json"
+    data.write_text(
+        json.dumps([dict(instance_id="org__repo-1", repo="org/repo", base_commit="base")])
+    )
+    provider = SWEbenchTaskProvider(
+        data,
+        (),
+        tmp_path / "run",
+        community=True,
+        strict_http_cache=True,
+        evaluation_preflight=True,
+    )
+
+    def unavailable(*args):
+        raise preflight.EnvironmentPreflightError("missing official requirements cache")
+
+    monkeypatch.setattr(preflight, "inspect_evaluation_environment", unavailable)
+    with pytest.raises(preflight.EnvironmentPreflightError, match="requirements cache"):
+        provider.sample_available(__import__("random").Random(0), 1, [])
+    assert provider.preflights == {}

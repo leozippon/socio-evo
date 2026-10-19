@@ -645,3 +645,109 @@ async def test_pending_acceptance_prompt_allows_rest_socializing_and_explains_jo
     assert engine.env.board.claim_of("Mei") is None
     assert "awaiting background acceptance" not in engine.current_facts("Mei")
     await engine.close()
+
+
+async def test_infrastructure_failure_retries_same_snapshot_and_pays_only_once(engine, monkeypatch):
+    from core.environment import Assessment
+    from core.environment.rejection import AssessmentUnavailable, Rejected
+
+    work(engine)
+    await claim(engine)
+    provider = next(iter(engine.env.providers.values()))
+    provider.patches[("Mei", "task-1")] = "original frozen repair"
+    seen = []
+
+    async def assess(part, patch):
+        seen.append(patch)
+        if len(seen) == 1:
+            raise AssessmentUnavailable("GitHub timed out")
+        return Assessment(passed=True, quality=1, feedback="Accepted")
+
+    monkeypatch.setattr(provider, "assess", assess)
+    await engine.submit("Mei", "Original report")
+    await asyncio.sleep(0)
+    engine.now += engine.timing.assessment_seconds
+    await engine.assessment("task-1")
+    entry = engine.assessments["task-1"]
+    assert entry["retry_at"] == engine.now + engine.timing.assessment_retry_seconds
+    assert entry["retry_attempts"] == 1
+    assert engine.env.board.claim_of("Mei") is not None
+    assert not any(e["kind"] == "payment" for e in events(engine))
+    notice = [e for e in events(engine) if e["kind"] == "work_delayed"][-1]
+    assert notice["payload"]["automatic_retry"] is True
+    assert "Do not resubmit" in notice["text"]
+    assert "automatically retry" in engine.current_facts("Mei")
+    provider.patches[("Mei", "task-1")] = "later different work"
+    with pytest.raises(Rejected):
+        await engine.submit("Mei", "Do not replace pending snapshot")
+    engine.now = entry["retry_at"] - 1
+    await engine.assessment("task-1")
+    assert len(seen) == 1 and "task-1" not in engine.futures
+    engine.now += 1
+    await engine.assessment("task-1")
+    await asyncio.sleep(0)
+    await engine.assessment("task-1")
+    assert seen == ["original frozen repair", "original frozen repair"]
+    assert not engine.assessments and engine.env.board.claim_of("Mei") is None
+    assert len([e for e in events(engine) if e["kind"] == "payment"]) == 1
+    await engine.assessment("task-1")
+    assert len(seen) == 2
+    await engine.close()
+
+
+async def test_real_failed_verdict_is_returned_for_rework_without_automatic_retry(
+    engine, monkeypatch
+):
+    from core.environment import Assessment
+
+    work(engine)
+    await claim(engine)
+    provider = next(iter(engine.env.providers.values()))
+
+    async def failed(*args):
+        return Assessment(passed=False, quality=0, feedback="Regression failed")
+
+    monkeypatch.setattr(provider, "assess", failed)
+    await engine.submit("Mei", "Repair")
+    await asyncio.sleep(0)
+    engine.now += engine.timing.assessment_seconds
+    await engine.assessment("task-1")
+    assert not engine.assessments
+    assert engine.env.board.claim_of("Mei") is not None
+    assert not any(e["kind"] == "work_delayed" for e in events(engine))
+    await engine.close()
+
+
+async def test_pending_retry_restores_backoff_without_early_request(engine, monkeypatch):
+    from core.environment.rejection import AssessmentUnavailable
+
+    work(engine)
+    await claim(engine)
+    provider = next(iter(engine.env.providers.values()))
+    seen = []
+
+    async def outage(*args):
+        seen.append(args)
+        raise AssessmentUnavailable("offline")
+
+    monkeypatch.setattr(provider, "assess", outage)
+    await engine.submit("Mei", "Repair")
+    await asyncio.sleep(0)
+    engine.now += engine.timing.assessment_seconds
+    await engine.assessment("task-1")
+    saved = json.loads(json.dumps(engine.state()))
+    restored = ActivityEngine(engine.sim, saved)
+    retry = saved["assessments"]["task-1"]["retry_at"]
+    restored.now, restored.end = retry - 1, engine.end
+    restored.start_assessment("task-1")
+    assert not restored.futures and len(seen) == 1
+    restored.now = retry
+    restored.start_assessment("task-1")
+    await asyncio.sleep(0)
+    await restored.assessment("task-1")
+    assert len(seen) == 2
+    assert restored.assessments["task-1"]["retry_attempts"] == 2
+    assert restored.assessments["task-1"]["retry_at"] == retry + 600
+    assert restored.env.board.claim_of("Mei").grace_days == 1
+    await restored.close()
+    await engine.close()

@@ -1,0 +1,302 @@
+{
+  "https://raw.githubusercontent.com/django/django/0668164b4ac93a5be79f5b87fae83c657124d9ab/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:16.651012+00:00",
+    "sha256": "13d46653a202f77fa38d7010828dfecfe9feba95281a150c55c4c5356f46c5ef",
+    "source_url": "https://raw.githubusercontent.com/django/django/0668164b4ac93a5be79f5b87fae83c657124d9ab/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "asgiref >= 3.2\nargon2-cffi >= 16.1.0\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow >= 6.2.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npython-memcached >= 1.59\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nselenium\nsqlparse >= 0.2.2\ntblib >= 1.5.0\n"
+  },
+  "https://raw.githubusercontent.com/django/django/0fbdb9784da915fce5dcc1fe82bac9b4785749e5/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:24.206760+00:00",
+    "sha256": "e61305aaf64706a8dc64cbfd2b00270347ab5ec84fdc00d515532a3b4f3f0a4e",
+    "source_url": "https://raw.githubusercontent.com/django/django/0fbdb9784da915fce5dcc1fe82bac9b4785749e5/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "aiosmtpd\nasgiref >= 3.6.0\nargon2-cffi >= 19.2.0\nbackports.zoneinfo; python_version < '3.9'\nbcrypt\nblack\ndocutils\ngeoip2; python_version < '3.12'\njinja2 >= 2.11.0\nnumpy; python_version < '3.12'\nPillow >= 6.2.1; sys.platform != 'win32' or python_version < '3.12'\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npymemcache >= 3.4.0\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nredis >= 3.4.0\nselenium\nsqlparse >= 0.3.1\ntblib >= 1.5.0\ntzdata\ncolorama; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/django/django/3545e844885608932a692d952c12cd863e2320b5/tests/requirements/base.txt": {
+    "fetched_at": "2026-10-19T13:22:29.507721+00:00",
+    "sha256": "a7a7ef3e60a519806a914415b2b3993d23c4248e26e2752c926be201d3eb8632",
+    "source_url": "https://raw.githubusercontent.com/django/django/3545e844885608932a692d952c12cd863e2320b5/tests/requirements/base.txt",
+    "status_code": 200,
+    "text": "argon2-cffi >= 16.1.0\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow\nPyYAML\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npytz\nselenium\nsqlparse\ntblib\n"
+  },
+  "https://raw.githubusercontent.com/django/django/3545e844885608932a692d952c12cd863e2320b5/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:27.732039+00:00",
+    "sha256": "9b512f6e76e063821fd759ad509f17ea6c7c8dd949f02779dafb90527da944b1",
+    "source_url": "https://raw.githubusercontent.com/django/django/3545e844885608932a692d952c12cd863e2320b5/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "-r base.txt\npython3-memcached\n"
+  },
+  "https://raw.githubusercontent.com/django/django/419a78300f7cd27611196e1e464d50fd0385ff27/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:15.452819+00:00",
+    "sha256": "1269a16630c3f5b6626aa5376e99b4aa70957b6905f3d80af25de1b7e0149a2d",
+    "source_url": "https://raw.githubusercontent.com/django/django/419a78300f7cd27611196e1e464d50fd0385ff27/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "asgiref ~= 3.2\nargon2-cffi >= 16.1.0\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow != 5.4.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npython-memcached >= 1.59\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nselenium\nsqlparse >= 0.2.2\ntblib >= 1.5.0\n"
+  },
+  "https://raw.githubusercontent.com/django/django/475cffd1d64c690cdad16ede4d5e81985738ceb4/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:20.983362+00:00",
+    "sha256": "c6914798d20359debd717f262d16b9d3d68cb544da0c02c6f099f583022e6016",
+    "source_url": "https://raw.githubusercontent.com/django/django/475cffd1d64c690cdad16ede4d5e81985738ceb4/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "asgiref >= 3.3.2\nargon2-cffi >= 16.1.0\nbackports.zoneinfo; python_version < '3.9'\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow >= 6.2.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npymemcache >= 3.4.0\n# RemovedInDjango41Warning.\npython-memcached >= 1.59\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nredis >= 3.0.0\nselenium\nsqlparse >= 0.2.2\ntblib >= 1.5.0\ntzdata\ncolorama; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/django/django/4a72da71001f154ea60906a2f74898d32b7322a7/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:25.549237+00:00",
+    "sha256": "a845bbab9646b9f24f2f67990dce9b5e221c595ed61abdb16e6152d0d51b0db4",
+    "source_url": "https://raw.githubusercontent.com/django/django/4a72da71001f154ea60906a2f74898d32b7322a7/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "aiosmtpd\nasgiref >= 3.7.0\nargon2-cffi >= 19.2.0\nbcrypt\nblack\ndocutils\ngeoip2; python_version < '3.12'\njinja2 >= 2.11.0\nnumpy; python_version < '3.12'\nPillow >= 6.2.1; sys.platform != 'win32' or python_version < '3.12'\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npymemcache >= 3.4.0\npywatchman; sys.platform != 'win32'\nPyYAML\nredis >= 3.4.0\nselenium >= 4.8.0\nsqlparse >= 0.3.1\ntblib >= 1.5.0\ntzdata\ncolorama; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/django/django/4fc35a9c3efdc9154efce28cb23cb84f8834517e/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:11.599801+00:00",
+    "sha256": "7ecd6fdf3f828964c5221e2e5bc6ff3aa871a8efa2c6c69e5f4252f7b8abaf9c",
+    "source_url": "https://raw.githubusercontent.com/django/django/4fc35a9c3efdc9154efce28cb23cb84f8834517e/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "argon2-cffi >= 16.1.0\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow != 5.4.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npython-memcached >= 1.59\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nselenium\nsqlparse\ntblib\n"
+  },
+  "https://raw.githubusercontent.com/django/django/647480166bfe7532e8c471fef0146e3a17e6c0c9/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:23.101495+00:00",
+    "sha256": "7b6bc06f594a8d5fd431e6247fd446d2542f7ef43ba3ea1aed680494b469208e",
+    "source_url": "https://raw.githubusercontent.com/django/django/647480166bfe7532e8c471fef0146e3a17e6c0c9/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "aiosmtpd\nasgiref >= 3.4.1\nargon2-cffi >= 16.1.0\nbackports.zoneinfo; python_version < '3.9'\nbcrypt\nblack\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow >= 6.2.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npymemcache >= 3.4.0\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nredis >= 3.0.0\nselenium\nsqlparse >= 0.2.2\ntblib >= 1.5.0\ntzdata\ncolorama; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/django/django/65dfb06a1ab56c238cc80f5e1c31f61210c4577d/tests/requirements/py3.txt": {
+    "fetched_at": "2026-10-19T13:22:19.093506+00:00",
+    "sha256": "e32c4946b199fa2953047822c7814fe12859a898438b75ddf51168fdac3d5783",
+    "source_url": "https://raw.githubusercontent.com/django/django/65dfb06a1ab56c238cc80f5e1c31f61210c4577d/tests/requirements/py3.txt",
+    "status_code": 200,
+    "text": "asgiref >= 3.3.2\nargon2-cffi >= 16.1.0\nbackports.zoneinfo; python_version < '3.9'\nbcrypt\ndocutils\ngeoip2\njinja2 >= 2.9.2\nnumpy\nPillow >= 6.2.0\n# pylibmc/libmemcached can't be built on Windows.\npylibmc; sys.platform != 'win32'\npymemcache >= 3.4.0\n# RemovedInDjango41Warning.\npython-memcached >= 1.59\npytz\npywatchman; sys.platform != 'win32'\nPyYAML\nselenium\nsqlparse >= 0.2.2\ntblib >= 1.5.0\ntzdata\ncolorama; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/0849036fd992a2dd133a0cffc3f84f58ccf1840f/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:48.956036+00:00",
+    "sha256": "159a5531eba3ce443924e3ef87664d4e015c2cf7d3dfdbf4682e6228ced9d9b0",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/0849036fd992a2dd133a0cffc3f84f58ccf1840f/environment.yml",
+    "status_code": 200,
+    "text": "# To set up a development environment using conda run:\n#\n#   conda env create -f environment.yml\n#   conda activate mpl-dev\n#   pip install -e .\n#\nname: mpl-dev\nchannels:\n  - conda-forge\ndependencies:\n  # runtime dependencies\n  - cairocffi\n  - contourpy>=1.0.1\n  - cycler>=0.10.0\n  - fonttools>=4.22.0\n  - importlib-resources>=3.2.0\n  - kiwisolver>=1.0.1\n  - numpy>=1.21\n  - pillow>=6.2\n  - pybind11>=2.6.0\n  - pygobject\n  - pyparsing>=2.3.1\n  - pyqt\n  - python-dateutil>=2.1\n  - setuptools\n  - setuptools_scm\n  - wxpython\n  # building documentation\n  - colorspacious\n  - graphviz\n  - ipython\n  - ipywidgets\n  - numpydoc>=0.8\n  - packaging\n  - pydata-sphinx-theme\n  - pyyaml\n  - sphinx>=1.8.1,!=2.0.0\n  - sphinx-copybutton\n  - sphinx-gallery>=0.12\n  - sphinx-design\n  - pip\n  - pip:\n      - mpl-sphinx-theme\n      - sphinxcontrib-svg2pdfconverter\n      - pikepdf\n  # testing\n  - coverage\n  - flake8>=3.8\n  - flake8-docstrings>=1.4.0\n  - gtk4\n  - ipykernel\n  - nbconvert[execute]!=6.0.0,!=6.0.1,!=7.3.0,!=7.3.1\n  - nbformat!=5.0.0,!=5.0.1\n  - pandas!=0.25.0\n  - psutil\n  - pre-commit\n  - pydocstyle>=5.1.0\n  - pytest!=4.6.0,!=5.4.0\n  - pytest-cov\n  - pytest-rerunfailures\n  - pytest-timeout\n  - pytest-xdist\n  - tornado\n  - pytz\n  - black\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/42259bb9715bbacbbb2abc8005df836f3a7fd080/requirements/dev/dev-requirements.txt": {
+    "fetched_at": "2026-10-19T13:22:33.178942+00:00",
+    "sha256": "d5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/42259bb9715bbacbbb2abc8005df836f3a7fd080/requirements/dev/dev-requirements.txt",
+    "status_code": 404,
+    "text": "404: Not Found"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/42259bb9715bbacbbb2abc8005df836f3a7fd080/requirements/testing/travis_all.txt": {
+    "fetched_at": "2026-10-19T13:22:35.394708+00:00",
+    "sha256": "731a6aafa2f5257b736e080fa155133aabd8a4ae46fa3302adbb2fb6a28b7ddc",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/42259bb9715bbacbbb2abc8005df836f3a7fd080/requirements/testing/travis_all.txt",
+    "status_code": 200,
+    "text": "# pip requirements for all the travis builds\n\ncoverage\npytest!=4.6.0\npytest-cov\npytest-rerunfailures\npytest-timeout\npytest-xdist\npython-dateutil\ntornado\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/73909bcb408886a22e2b84581d6b9e6d9907c813/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:46.828310+00:00",
+    "sha256": "35845479d4d37a76c3c0e6fed45780ea9ccae50e6cb02b55e3780d33a4e4ff28",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/73909bcb408886a22e2b84581d6b9e6d9907c813/environment.yml",
+    "status_code": 200,
+    "text": "# To set up a development environment using conda run:\n#\n#   conda env create -f environment.yml\n#   conda activate mpl-dev\n#   pip install -e .\n#\nname: mpl-dev\nchannels:\n  - conda-forge\ndependencies:\n  # runtime dependencies\n  - cairocffi\n  - contourpy>=1.0.1\n  - cycler>=0.10.0\n  - fonttools>=4.22.0\n  - importlib-resources>=3.2.0\n  - kiwisolver>=1.0.1\n  - numpy>=1.21\n  - pillow>=6.2\n  - pybind11>=2.6.0\n  - pygobject\n  - pyparsing\n  - pyqt\n  - python-dateutil>=2.1\n  - setuptools\n  - setuptools_scm\n  - wxpython\n  # building documentation\n  - colorspacious\n  - graphviz\n  - ipython\n  - ipywidgets\n  - numpydoc>=0.8\n  - packaging\n  - pydata-sphinx-theme\n  - pyyaml\n  - sphinx>=1.8.1,!=2.0.0\n  - sphinx-copybutton\n  - sphinx-gallery>=0.10\n  - sphinx-design\n  - pip\n  - pip:\n      - mpl-sphinx-theme\n      - sphinxcontrib-svg2pdfconverter\n      - pikepdf\n  # testing\n  - coverage\n  - flake8>=3.8\n  - flake8-docstrings>=1.4.0\n  - gtk4\n  - ipykernel\n  - nbconvert[execute]!=6.0.0,!=6.0.1\n  - nbformat!=5.0.0,!=5.0.1\n  - pandas!=0.25.0\n  - psutil\n  - pre-commit\n  - pydocstyle>=5.1.0\n  - pytest!=4.6.0,!=5.4.0\n  - pytest-cov\n  - pytest-rerunfailures\n  - pytest-timeout\n  - pytest-xdist\n  - tornado\n  - pytz\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/d0628598f8d9ec7b0da6b60e7b29be2067b6ea17/requirements/dev/dev-requirements.txt": {
+    "fetched_at": "2026-10-19T13:22:30.902463+00:00",
+    "sha256": "d5558cd419c8d46bdc958064cb97f963d1ea793866414c025906ec15033512ed",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/d0628598f8d9ec7b0da6b60e7b29be2067b6ea17/requirements/dev/dev-requirements.txt",
+    "status_code": 404,
+    "text": "404: Not Found"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/d0628598f8d9ec7b0da6b60e7b29be2067b6ea17/requirements/testing/travis_all.txt": {
+    "fetched_at": "2026-10-19T13:22:32.021419+00:00",
+    "sha256": "5543e61e81657d651b58176d59a8f0594172024e20ede4833780632fe78dc79d",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/d0628598f8d9ec7b0da6b60e7b29be2067b6ea17/requirements/testing/travis_all.txt",
+    "status_code": 200,
+    "text": "# pip requirements for all the travis builds\n\ncodecov\ncoverage\ncycler\nnumpy\npillow\npyparsing\npytest\npytest-cov\npytest-faulthandler\npytest-rerunfailures\npytest-timeout\npytest-xdist\npython-dateutil\ntornado\ntox\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/de98877e3dc45de8dd441d008f23d88738dc015d/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:45.044353+00:00",
+    "sha256": "1cf4031db9f3a6f283b1981ee455129c5e19550aecf7fba1fbd1b2fdee8cc338",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/de98877e3dc45de8dd441d008f23d88738dc015d/environment.yml",
+    "status_code": 200,
+    "text": "# To set up a development environment using conda run:\n#\n#   conda env create -f environment.yml\n#   conda activate mpl-dev\n#   pip install -e .\n#\nname: mpl-dev\nchannels:\n  - conda-forge\ndependencies:\n  - cairocffi\n  - contourpy>=1.0.1\n  - cycler>=0.10.0\n  - fonttools>=4.22.0\n  - kiwisolver>=1.0.1\n  - numpy>=1.19\n  - pillow>=6.2\n  - pygobject\n  - pyparsing\n  - pyqt\n  - python-dateutil>=2.1\n  - setuptools\n  - setuptools_scm\n  - wxpython\n  # building documentation\n  - colorspacious\n  - graphviz\n  - ipython\n  - ipywidgets\n  - numpydoc>=0.8\n  - packaging\n  - pydata-sphinx-theme\n  - sphinx>=1.8.1,!=2.0.0\n  - sphinx-copybutton\n  - sphinx-gallery>=0.10\n  - sphinx-design\n  - pip\n  - pip:\n      - mpl-sphinx-theme\n      - sphinxcontrib-svg2pdfconverter\n      - pikepdf\n  # testing\n  - coverage\n  - flake8>=3.8\n  - flake8-docstrings>=1.4.0\n  - gtk3\n  - ipykernel\n  - nbconvert[execute]!=6.0.0,!=6.0.1\n  - nbformat!=5.0.0,!=5.0.1\n  - pandas!=0.25.0\n  - psutil\n  - pre-commit\n  - pydocstyle>=5.1.0\n  - pytest!=4.6.0,!=5.4.0\n  - pytest-cov\n  - pytest-rerunfailures\n  - pytest-timeout\n  - pytest-xdist\n  - tornado\n  - pytz\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../doc/doc-requirements.txt": {
+    "fetched_at": "2026-10-19T13:22:38.414407+00:00",
+    "sha256": "44918dc977acb959d8816ce4bef4ac0ea5c142b48a2a7e54b406228b7f59b3bc",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../doc/doc-requirements.txt",
+    "status_code": 200,
+    "text": "# Requirements for building docs\n#\n# You will first need a matching Matplotlib installation\n# e.g (from the Matplotlib root directory)\n#     pip install -e .\n#\n# Install the documentation requirements with:\n#     pip install -r requirements/doc/doc-requirements.txt\n#\nsphinx>=1.8.1,!=2.0.0,<4.3.0\ncolorspacious\nipython\nipywidgets\nnumpydoc>=0.8\npackaging>=20\npyparsing<3.0.0\nmpl-sphinx-theme\nsphinxcontrib-svg2pdfconverter>=1.1.0\nsphinx-gallery>=0.10\nsphinx-copybutton\nsphinx-panels\nscipy\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/all.txt": {
+    "fetched_at": "2026-10-19T13:22:40.664221+00:00",
+    "sha256": "ee0c3313648ccaad7194f80daa3d5ece5626c8d5defdd5c2388a0c8e06f0c0cc",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/all.txt",
+    "status_code": 200,
+    "text": "# pip requirements for all the CI builds\n\ncertifi\ncoverage\npyparsing<3.0.0\npytest!=4.6.0,!=5.4.0\npytest-cov\npytest-rerunfailures\npytest-timeout\npytest-xdist\npython-dateutil\ntornado\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/extra.txt": {
+    "fetched_at": "2026-10-19T13:22:41.842891+00:00",
+    "sha256": "4369eb73ab66569d087481aec7a86ce48e520db4660d2cda3b18d17d4afc710f",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/extra.txt",
+    "status_code": 200,
+    "text": "# Extra pip requirements for the Python 3.7+ builds\n\nipykernel\nnbconvert[execute]!=6.0.0,!=6.0.1\nnbformat!=5.0.0,!=5.0.1\npandas!=0.25.0\npikepdf\npytz\npywin32; sys.platform == 'win32'\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/flake8.txt": {
+    "fetched_at": "2026-10-19T13:22:42.957341+00:00",
+    "sha256": "fbbecd6748cb65b725f39b925f65590f99678752320576fdcde1515b1736f569",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/../testing/flake8.txt",
+    "status_code": 200,
+    "text": "# Extra pip requirements for the GitHub Actions flake8 build\n\nflake8>=3.8\n# versions less than 5.1.0 raise on some interp'd docstrings\npydocstyle>=5.1.0\n# 1.4.0 adds docstring-convention=all\nflake8-docstrings>=1.4.0\n"
+  },
+  "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/dev-requirements.txt": {
+    "fetched_at": "2026-10-19T13:22:37.003213+00:00",
+    "sha256": "ef9202083ca8ea6c0297f01b33b49bf2cdbbb5f3d4a4c1e928a8a884531b6a1c",
+    "source_url": "https://raw.githubusercontent.com/matplotlib/matplotlib/f93c0a3dcb82feed0262d758626c90d4002685f3/requirements/dev/dev-requirements.txt",
+    "status_code": 200,
+    "text": "-r ../doc/doc-requirements.txt\n-r ../testing/all.txt\n-r ../testing/extra.txt\n-r ../testing/flake8.txt\n"
+  },
+  "https://raw.githubusercontent.com/pallets/flask/182ce3dd15dfa3537391c3efaf9c3ff407d134d4/requirements/dev.txt": {
+    "sha256": "17a3a89a82a1daeed7ff1ce12d869c0d06684c7ee46f46a31383201b509b293c",
+    "status_code": 200,
+    "text": "# SHA1:54b5b77ec8c7a0064ffa93b2fd16cb0130ba177c\n#\n# This file is autogenerated by pip-compile-multi\n# To update, run:\n#\n#    pip-compile-multi\n#\n-r docs.txt\n-r tests.txt\n-r typing.txt\nbuild==0.10.0\n    # via pip-tools\ncachetools==5.3.0\n    # via tox\ncfgv==3.3.1\n    # via pre-commit\nchardet==5.1.0\n    # via tox\nclick==8.1.3\n    # via\n    #   pip-compile-multi\n    #   pip-tools\ncolorama==0.4.6\n    # via tox\ndistlib==0.3.6\n    # via virtualenv\nfilelock==3.11.0\n    # via\n    #   tox\n    #   virtualenv\nidentify==2.5.22\n    # via pre-commit\nnodeenv==1.7.0\n    # via pre-commit\npip-compile-multi==2.6.2\n    # via -r requirements/dev.in\npip-tools==6.13.0\n    # via pip-compile-multi\nplatformdirs==3.2.0\n    # via\n    #   tox\n    #   virtualenv\npre-commit==3.2.2\n    # via -r requirements/dev.in\npyproject-api==1.5.1\n    # via tox\npyproject-hooks==1.0.0\n    # via build\npyyaml==6.0\n    # via pre-commit\ntoposort==1.10\n    # via pip-compile-multi\ntox==4.4.11\n    # via -r requirements/dev.in\nvirtualenv==20.21.0\n    # via\n    #   pre-commit\n    #   tox\nwheel==0.40.0\n    # via pip-tools\n\n# The following packages are considered to be unsafe in a requirements file:\n# pip\n# setuptools\n"
+  },
+  "https://raw.githubusercontent.com/pallets/flask/182ce3dd15dfa3537391c3efaf9c3ff407d134d4/requirements/docs.txt": {
+    "sha256": "cbcc45ba27aadcd09ef4dc24ad404ca2965fe6c22df74a778d3210bba79ea9af",
+    "status_code": 200,
+    "text": "# SHA1:323f1c1134d78952ea63131c187303def63b56bd\n#\n# This file is autogenerated by pip-compile-multi\n# To update, run:\n#\n#    pip-compile-multi\n#\nalabaster==0.7.13\n    # via sphinx\nbabel==2.12.1\n    # via sphinx\ncertifi==2022.12.7\n    # via requests\ncharset-normalizer==3.1.0\n    # via requests\ndocutils==0.17.1\n    # via\n    #   sphinx\n    #   sphinx-tabs\nidna==3.4\n    # via requests\nimagesize==1.4.1\n    # via sphinx\njinja2==3.1.2\n    # via sphinx\nmarkupsafe==2.1.2\n    # via jinja2\npackaging==23.0\n    # via\n    #   pallets-sphinx-themes\n    #   sphinx\npallets-sphinx-themes==2.0.3\n    # via -r requirements/docs.in\npygments==2.15.0\n    # via\n    #   sphinx\n    #   sphinx-tabs\nrequests==2.28.2\n    # via sphinx\nsnowballstemmer==2.2.0\n    # via sphinx\nsphinx==4.5.0\n    # via\n    #   -r requirements/docs.in\n    #   pallets-sphinx-themes\n    #   sphinx-issues\n    #   sphinx-tabs\n    #   sphinxcontrib-log-cabinet\nsphinx-issues==3.0.1\n    # via -r requirements/docs.in\nsphinx-tabs==3.3.1\n    # via -r requirements/docs.in\nsphinxcontrib-applehelp==1.0.4\n    # via sphinx\nsphinxcontrib-devhelp==1.0.2\n    # via sphinx\nsphinxcontrib-htmlhelp==2.0.1\n    # via sphinx\nsphinxcontrib-jsmath==1.0.1\n    # via sphinx\nsphinxcontrib-log-cabinet==1.0.1\n    # via -r requirements/docs.in\nsphinxcontrib-qthelp==1.0.3\n    # via sphinx\nsphinxcontrib-serializinghtml==1.1.5\n    # via sphinx\nurllib3==1.26.15\n    # via requests\n"
+  },
+  "https://raw.githubusercontent.com/pallets/flask/182ce3dd15dfa3537391c3efaf9c3ff407d134d4/requirements/tests.txt": {
+    "sha256": "cbcb41ffa768bb301f32dbb7f519e2c5d4f546429f1b5258e1e53ad6543a4938",
+    "status_code": 200,
+    "text": "# SHA1:3c8dde35aba20388b22430b17974af8ef8205b4f\n#\n# This file is autogenerated by pip-compile-multi\n# To update, run:\n#\n#    pip-compile-multi\n#\nasgiref==3.6.0\n    # via -r requirements/tests.in\niniconfig==2.0.0\n    # via pytest\npackaging==23.0\n    # via pytest\npluggy==1.0.0\n    # via pytest\npytest==7.3.0\n    # via -r requirements/tests.in\npython-dotenv==1.0.0 ; python_version >= \"3.8\"\n    # via -r requirements/tests.in\n"
+  },
+  "https://raw.githubusercontent.com/pallets/flask/182ce3dd15dfa3537391c3efaf9c3ff407d134d4/requirements/typing.txt": {
+    "sha256": "264180b90a1f705e309a90621248c1d7088ad12286bd5810ff070929a19dbd53",
+    "status_code": 200,
+    "text": "# SHA1:7cc3f64d4e78db89d81680ac81503d5ac35d31a9\n#\n# This file is autogenerated by pip-compile-multi\n# To update, run:\n#\n#    pip-compile-multi\n#\ncffi==1.15.1\n    # via cryptography\ncryptography==40.0.1\n    # via -r requirements/typing.in\nmypy==1.2.0\n    # via -r requirements/typing.in\nmypy-extensions==1.0.0\n    # via mypy\npycparser==2.21\n    # via cffi\ntypes-contextvars==2.4.7.2\n    # via -r requirements/typing.in\ntypes-dataclasses==0.6.6\n    # via -r requirements/typing.in\ntypes-setuptools==67.6.0.7\n    # via -r requirements/typing.in\ntyping-extensions==4.5.0\n    # via mypy\n"
+  },
+  "https://raw.githubusercontent.com/pydata/xarray/087ebbb78668bdf5d2d41c3b2553e3f29ce75be1/ci/requirements/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:56.098043+00:00",
+    "sha256": "a1e50da7e893e135cc1cf9a25bae175cc259c3a51cf78aa7fcd2b3aca3436db1",
+    "source_url": "https://raw.githubusercontent.com/pydata/xarray/087ebbb78668bdf5d2d41c3b2553e3f29ce75be1/ci/requirements/environment.yml",
+    "status_code": 200,
+    "text": "name: xarray-tests\nchannels:\n  - conda-forge\n  - nodefaults\ndependencies:\n  - aiobotocore\n  - boto3\n  - bottleneck\n  - cartopy\n  - cdms2\n  - cftime\n  - dask-core\n  - distributed\n  - flox\n  - fsspec!=2021.7.0\n  - h5netcdf\n  - h5py\n  - hdf5\n  - hypothesis\n  - iris\n  - lxml  # Optional dep of pydap\n  - matplotlib-base\n  - nc-time-axis\n  - netcdf4\n  - numba\n  - numbagg\n  - numexpr\n  - numpy<1.24\n  - packaging\n  - pandas\n  - pint\n  - pip\n  - pooch\n  - pre-commit\n  - pseudonetcdf\n  - pydap\n  - pytest\n  - pytest-cov\n  - pytest-env\n  - pytest-xdist\n  - pytest-timeout\n  - rasterio\n  - scipy\n  - seaborn\n  - sparse\n  - toolz\n  - typing_extensions\n  - zarr\n"
+  },
+  "https://raw.githubusercontent.com/pydata/xarray/1c198a191127c601d091213c4b3292a8bb3054e1/ci/requirements/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:50.337969+00:00",
+    "sha256": "3d37256ff3b4c0cc1092371deb7de12c2162883b591a9aecb790c591474befa5",
+    "source_url": "https://raw.githubusercontent.com/pydata/xarray/1c198a191127c601d091213c4b3292a8bb3054e1/ci/requirements/environment.yml",
+    "status_code": 200,
+    "text": "name: xarray-tests\nchannels:\n  - conda-forge\n  - nodefaults\ndependencies:\n  - aiobotocore\n  - boto3\n  - bottleneck\n  - cartopy\n  - cdms2\n  - cfgrib\n  - cftime\n  - dask\n  - distributed\n  - h5netcdf\n  - h5py\n  - hdf5\n  - hypothesis\n  - iris\n  - lxml    # Optional dep of pydap\n  - matplotlib-base\n  - nc-time-axis\n  - netcdf4\n  - numba\n  - numexpr\n  - numpy\n  - pandas\n  - pint\n  - pip\n  - pooch\n  - pre-commit\n  - pseudonetcdf\n  - pydap\n  # - pynio: not compatible with netCDF4>1.5.3; only tested in py37-bare-minimum\n  - pytest\n  - pytest-cov\n  - pytest-env\n  - pytest-xdist\n  - rasterio\n  - scipy\n  - seaborn\n  - setuptools\n  - sparse\n  - toolz\n  - zarr\n  - pip:\n    - numbagg\n"
+  },
+  "https://raw.githubusercontent.com/pydata/xarray/50ea159bfd0872635ebf4281e741f3c87f0bef6b/ci/requirements/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:54.285502+00:00",
+    "sha256": "db0aafadda0e4e7fa2964b90e026ffd7ea64c48bd2e87855b84ae111ad3ab6b6",
+    "source_url": "https://raw.githubusercontent.com/pydata/xarray/50ea159bfd0872635ebf4281e741f3c87f0bef6b/ci/requirements/environment.yml",
+    "status_code": 200,
+    "text": "name: xarray-tests\nchannels:\n  - conda-forge\n  - nodefaults\ndependencies:\n  - aiobotocore\n  - boto3\n  - bottleneck\n  - cartopy\n  - cdms2\n  - cfgrib\n  - cftime\n  - dask-core\n  - distributed\n  - flox\n  - fsspec!=2021.7.0\n  - h5netcdf\n  - h5py\n  - hdf5\n  - hypothesis\n  - iris\n  - lxml # Optional dep of pydap\n  - matplotlib-base\n  - nc-time-axis\n  - netcdf4\n  - numba\n  - numexpr\n  - numpy\n  - packaging\n  - pandas\n  - pint\n  - pip\n  - pooch\n  - pre-commit\n  - pseudonetcdf\n  - pydap\n  # - pynio: not compatible with netCDF4>1.5.3; only tested in py37-bare-minimum\n  - pytest\n  - pytest-cov\n  - pytest-env\n  - pytest-xdist\n  - rasterio\n  - scipy\n  - seaborn\n  - sparse\n  - toolz\n  - typing_extensions\n  - zarr\n  - pip:\n      - numbagg\n"
+  },
+  "https://raw.githubusercontent.com/pydata/xarray/d7931f9014a26e712ff5f30c4082cf0261f045d3/ci/requirements/environment.yml": {
+    "fetched_at": "2026-10-19T13:22:52.263902+00:00",
+    "sha256": "96467ea0a2a7f9e67f069b1d318a5746e1723d9b5ff79223b682415dfde8b41c",
+    "source_url": "https://raw.githubusercontent.com/pydata/xarray/d7931f9014a26e712ff5f30c4082cf0261f045d3/ci/requirements/environment.yml",
+    "status_code": 200,
+    "text": "name: xarray-tests\nchannels:\n  - conda-forge\n  - nodefaults\ndependencies:\n  - aiobotocore\n  - boto3\n  - bottleneck\n  - cartopy\n  - cdms2\n  - cfgrib\n  - cftime\n  - dask-core\n  - distributed\n  - flox\n  - fsspec!=2021.7.0\n  - h5netcdf\n  - h5py\n  - hdf5\n  - hypothesis\n  - iris\n  - lxml # Optional dep of pydap\n  - matplotlib-base\n  - nc-time-axis\n  - netcdf4\n  - numba\n  - numexpr\n  - numpy\n  - packaging\n  - pandas\n  - pint\n  - pip\n  - pooch\n  - pre-commit\n  - pseudonetcdf\n  # - pydap  # https://github.com/pydap/pydap/pull/210\n  # - pynio: not compatible with netCDF4>1.5.3; only tested in py37-bare-minimum\n  - pytest\n  - pytest-cov\n  - pytest-env\n  - pytest-xdist\n  - rasterio\n  - scipy\n  - seaborn\n  - sparse\n  - toolz\n  - typing_extensions\n  - zarr\n  - pip:\n      - numbagg\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test.txt": {
+    "fetched_at": "2026-10-19T13:23:03.878834+00:00",
+    "sha256": "06acb37a4f4313101291951001dbb829d071af63c923f2abb5a9ee0477a0c623",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test.txt",
+    "status_code": 200,
+    "text": "-r requirements_test_pre_commit.txt\n-r requirements_test_min.txt\ncoveralls~=3.3\ncoverage~=6.4\npre-commit~=2.19\ntbump~=6.9.0\ncontributors-txt>=0.7.3\npytest-cov~=3.0\npytest-profiling~=1.7\npytest-xdist~=2.5\n# Type packages for mypy\ntypes-pkg_resources==0.1.3\ntox>=3\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test_min.txt": {
+    "fetched_at": "2026-10-19T13:23:06.616774+00:00",
+    "sha256": "951dfa754cb7006d3e4fe3d8b057028de7bf51a72d9ea721178b249d6559abf0",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test_min.txt",
+    "status_code": 200,
+    "text": "-e .[testutils,spelling]\n# astroid dependency is also defined in setup.cfg\nastroid==2.11.6  # Pinned to a specific version for tests\ntyping-extensions~=4.2\npytest~=7.1\npytest-benchmark~=3.4\npytest-timeout~=2.1\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test_pre_commit.txt": {
+    "fetched_at": "2026-10-19T13:23:05.499761+00:00",
+    "sha256": "ed113e6e5e168797c8394abdaf8d2fea901cca4ee7d04bb0c80ce958d5fa846d",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/680edebc686cad664bbed934a490aeafa775f163/requirements_test_pre_commit.txt",
+    "status_code": 200,
+    "text": "# Everything in this file should reflect the pre-commit configuration\n# in .pre-commit-config.yaml\nblack==22.3.0\nflake8==4.0.1\nflake8-typing-imports==1.12.0\nisort==5.10.1\nmypy==0.960\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/a0ce6e424e3a208f3aed1cbf6e16c40853bec3c0/requirements_test.txt": {
+    "fetched_at": "2026-10-19T13:23:14.194028+00:00",
+    "sha256": "8475e9aeeb371c56e1f0685457ba723aab0d1e4401a9f695b867807ea42f5392",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/a0ce6e424e3a208f3aed1cbf6e16c40853bec3c0/requirements_test.txt",
+    "status_code": 200,
+    "text": "-r requirements_test_min.txt\ncoverage~=7.3\ntbump~=6.10.0\ncontributors-txt>=1.0.0\npytest-cov~=4.1\npytest-profiling~=1.7\npytest-xdist~=3.3\nsix\n# Type packages for mypy\ntypes-pkg_resources==0.1.3\ntox>=3\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/a0ce6e424e3a208f3aed1cbf6e16c40853bec3c0/requirements_test_min.txt": {
+    "fetched_at": "2026-10-19T13:23:17.117900+00:00",
+    "sha256": "2a76f226b699b1c9fc4a9d3653ff1e6eabce4125db0bcb29b5ec86ccc7e41a08",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/a0ce6e424e3a208f3aed1cbf6e16c40853bec3c0/requirements_test_min.txt",
+    "status_code": 200,
+    "text": ".[testutils,spelling]\n# astroid dependency is also defined in pyproject.toml\nastroid==3.0.0a9  # Pinned to a specific version for tests\ntyping-extensions~=4.7\npy~=1.11.0\npytest~=7.4\npytest-benchmark~=4.0\npytest-timeout~=2.1\ntowncrier~=23.6\nrequests\n# Voluntary for test purpose, not actually used in prod, see #8904\nsetuptools==41.6.0\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test.txt": {
+    "fetched_at": "2026-10-19T13:23:00.860949+00:00",
+    "sha256": "0701317a1e457ef3e7c0449351e766be6f769ae01a3e277dd09e04598aa84e93",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test.txt",
+    "status_code": 200,
+    "text": "-r requirements_test_pre_commit.txt\n-r requirements_test_min.txt\ncoveralls~=3.2\ncoverage~=5.5\npre-commit~=2.15;python_full_version>=\"3.6.2\"\ntbump~=6.3.2\npyenchant~=3.2\npytest-cov~=2.12\npytest-profiling~=1.7\npytest-xdist~=2.3\n# Type packages for mypy\ntypes-pkg_resources==0.1.3\ntypes-toml==0.1.5\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test_min.txt": {
+    "fetched_at": "2026-10-19T13:23:02.710203+00:00",
+    "sha256": "4e12d250604547b4613b5fdafb6aa86e93ee5a8a9b56407b96ed8e947793ba87",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test_min.txt",
+    "status_code": 200,
+    "text": "-e .\n# astroid dependency is also defined in setup.cfg\nastroid==2.8.0  # Pinned to a specific version for tests\npytest~=6.2\npytest-benchmark~=3.4\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test_pre_commit.txt": {
+    "fetched_at": "2026-10-19T13:23:01.748757+00:00",
+    "sha256": "42e3f97ad8c2311373dce88df8159d713af871ec8a05b365bf9c8c407bc4d646",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/bc95cd34071ec2e71de5bca8ff95cc9b88e23814/requirements_test_pre_commit.txt",
+    "status_code": 200,
+    "text": "# Everything in this file should reflect the pre-commit configuration\n# in .pre-commit-config.yaml\nblack==21.8b0;python_full_version>=\"3.6.2\"\nflake8==3.9.2\nisort==5.9.3\nmypy==0.910\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test.txt": {
+    "fetched_at": "2026-10-19T13:22:57.316245+00:00",
+    "sha256": "2455645a52483d47b84ec26b47a28b3aa0ce5f482f5e0cb08b24becfab58a7f0",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test.txt",
+    "status_code": 200,
+    "text": "-r requirements_test_pre_commit.txt\n-r requirements_test_min.txt\ncoveralls~=3.2\ncoverage~=5.5\npre-commit~=2.13;python_full_version>=\"3.6.2\"\ntbump~=6.3.2\npyenchant~=3.2\npytest-cov~=2.12\npytest-profiling~=1.7\npytest-xdist~=2.3\n# Type packages for mypy\ntypes-pkg_resources==0.1.3\ntypes-toml==0.1.3\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test_min.txt": {
+    "fetched_at": "2026-10-19T13:22:59.795519+00:00",
+    "sha256": "e8909b6c67f05b83cfe825ff2b5acabd0b75ec95af46c9a3da8f384cc983c4a9",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test_min.txt",
+    "status_code": 200,
+    "text": "-e .\nastroid==2.6.5  # Pinned to a specific version for tests\npytest~=6.2\npytest-benchmark~=3.4\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test_pre_commit.txt": {
+    "fetched_at": "2026-10-19T13:22:58.630171+00:00",
+    "sha256": "0023d629611f0ce2e31f5ced1097ffa8f8236cfe0d2a8a66b6f186d3ccfca9d8",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/c04f92ef68e5ea779a60bfddb91dc677c5470fd0/requirements_test_pre_commit.txt",
+    "status_code": 200,
+    "text": "# Everything in this file should reflect the pre-commit configuration\n# in .pre-commit-config.yaml\nblack==21.7b0;python_full_version>=\"3.6.2\"\nflake8==3.9.2\nisort==5.9.2\nmypy==0.910\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test.txt": {
+    "fetched_at": "2026-10-19T13:23:07.834148+00:00",
+    "sha256": "77f293223fb68a571dd25afa80eabb90b3d91e32ab83440f4836415eaf7cc5ce",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test.txt",
+    "status_code": 200,
+    "text": "-r requirements_test_pre_commit.txt\n-r requirements_test_min.txt\ncoveralls~=3.3\ncoverage~=6.4\npre-commit~=2.20\ntbump~=6.9.0\ncontributors-txt>=0.9.0\npytest-cov~=3.0\npytest-profiling~=1.7\npytest-xdist~=2.5\n# Type packages for mypy\ntypes-pkg_resources==0.1.3\ntox>=3\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test_min.txt": {
+    "fetched_at": "2026-10-19T13:23:12.203799+00:00",
+    "sha256": "5da2bc0c0ab0dcfac34d8ef5ef991bef8992c93c34a54e89dd7914a510e1ea67",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test_min.txt",
+    "status_code": 200,
+    "text": "-e .[testutils,spelling]\n# astroid dependency is also defined in pyproject.toml\nastroid==2.12.13  # Pinned to a specific version for tests\ntyping-extensions~=4.4\npy~=1.11.0\npytest~=7.2\npytest-benchmark~=4.0\npytest-timeout~=2.1\ntowncrier~=22.8\nrequests\n"
+  },
+  "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test_pre_commit.txt": {
+    "fetched_at": "2026-10-19T13:23:09.415456+00:00",
+    "sha256": "4a505d95c2f3d4f290ff67b2b99f64ef29b4490436251806c11a6c2e3c134e54",
+    "source_url": "https://raw.githubusercontent.com/pylint-dev/pylint/e90702074e68e20dc8e5df5013ee3ecf22139c3e/requirements_test_pre_commit.txt",
+    "status_code": 200,
+    "text": "# Everything in this file should reflect the pre-commit configuration\n# in .pre-commit-config.yaml\nblack==22.6.0\nflake8==5.0.4\nflake8-typing-imports==1.13.0\nisort==5.10.1\nmypy==0.971\n"
+  }
+}

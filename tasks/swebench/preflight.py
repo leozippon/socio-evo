@@ -6,11 +6,12 @@ import uuid
 from datetime import UTC, datetime
 from pathlib import Path
 
+from core.environment.rejection import TaskUnavailable
 from tasks.swebench.docker_exec import captured_exec
 from tasks.swebench.pilot import command, container_args, execute, image_for
 
 
-class EnvironmentPreflightError(RuntimeError):
+class EnvironmentPreflightError(TaskUnavailable):
     """Infrastructure is not ready; do not publish the issue or score a resident."""
 
 
@@ -169,6 +170,9 @@ def main():
         args.out,
         community=True,
         repository_guidance=True,
+        strict_http_cache=config.tasks.strict_http_cache,
+        evaluation_preflight=config.tasks.evaluation_preflight,
+        http_cache=config.tasks.http_cache_path,
         command_seconds=config.tasks.command_seconds,
         solo_deadline_days=config.tasks.solo_deadline_days,
         joint_deadline_days=config.tasks.joint_deadline_days,
@@ -181,6 +185,36 @@ def main():
     )
     env.post(time_at(1, config.simulation.calendar.day_start), args.seed)
     print(f"Preflight passed for {len(provider.preflights)} initial issues; reports: {args.out}")
+
+
+def inspect_evaluation_environment(row: dict, cache: Path, out: Path) -> dict:
+    """Require offline official spec generation and its exact local instance image."""
+    from tasks.swebench.environment_spec import inspect_spec
+
+    report = {"instance": row["instance_id"], "status": "failed"}
+    client = None
+    out.mkdir(parents=True, exist_ok=True)
+    try:
+        import docker
+
+        report.update(inspect_spec(row, cache))
+        report["status"] = "failed"  # Spec generation alone is not complete readiness.
+        client = docker.from_env()
+        image = client.images.get(report["image"])  # Never pull/build over the network here.
+        report["image_id"] = image.id
+        report["status"] = "passed"
+        return report
+    except Exception as error:
+        report["error"] = str(error)
+        raise EnvironmentPreflightError(
+            f"Official evaluation environment not ready for {row['instance_id']}: {error}"
+        ) from error
+    finally:
+        if client is not None:
+            client.close()
+        (out / f"{row['instance_id']}-evaluation.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
 
 
 if __name__ == "__main__":

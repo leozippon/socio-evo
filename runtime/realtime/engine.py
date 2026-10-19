@@ -709,7 +709,9 @@ class RealtimeEngine(ActivityEngine):
         while self.assessments:
             self.now = max(self.now, self.clock.now())
             for job, entry in list(self.assessments.items()):
-                if self.futures[job].done() and entry["due"] <= self.now:
+                self.start_assessment(job)
+                future = self.futures.get(job)
+                if future is not None and future.done() and entry["due"] <= self.now:
                     await self.assessment(job)
             if not self.assessments:
                 break
@@ -718,7 +720,9 @@ class RealtimeEngine(ActivityEngine):
                 break
             pending = [task for task in self.futures.values() if not task.done()]
             due = [
-                entry["due"] for job, entry in self.assessments.items() if self.futures[job].done()
+                max(entry["due"], entry.get("retry_at", entry["due"]))
+                for job, entry in self.assessments.items()
+                if job not in self.futures or self.futures[job].done()
             ]
             timeout = min(remaining, self.clock.delay(min(due))) if due else remaining
             if pending:

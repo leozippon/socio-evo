@@ -30,6 +30,9 @@ class TasksConfig(StrictModel):
     instances: tuple[str, ...] = ()
     community: bool = False
     repository_guidance: bool = False
+    strict_http_cache: bool = False
+    evaluation_preflight: bool = False
+    http_cache: str | None = None
     dataset_variant: Literal["lite", "verified"] = "verified"
     solo_deadline_days: int = Field(default=2, ge=1)
     joint_deadline_days: int = Field(default=2, ge=1)
@@ -53,7 +56,15 @@ class TasksConfig(StrictModel):
     def _guidance_needs_repository_provider(self):
         if self.repository_guidance and self.provider != "swebench":
             raise ValueError("repository_guidance requires the swebench provider")
+        if self.evaluation_preflight and not self.strict_http_cache:
+            raise ValueError("evaluation_preflight requires strict_http_cache")
+        if (self.evaluation_preflight or self.strict_http_cache) and self.provider != "swebench":
+            raise ValueError("offline evaluation readiness requires the swebench provider")
         return self
+
+    @property
+    def http_cache_path(self) -> Path | None:
+        return PROJECT_ROOT / Path(self.http_cache).expanduser() if self.http_cache else None
 
     @property
     def bank_path(self) -> Path:

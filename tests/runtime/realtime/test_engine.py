@@ -637,3 +637,29 @@ async def test_scheduler_stop_closes_pending_selection_record(rt):
     await rt.close_running()
     assert not rt.running and not rt.selection_rests
     assert selection_events(rt)[-1]["payload"]["end"] * 60 == at(1, "08:00:30")
+
+
+async def test_final_settlement_preserves_backoff_without_missing_future_or_resubmission(
+    rt, monkeypatch
+):
+    from core.environment.rejection import AssessmentUnavailable
+
+    work(rt)
+    await take(rt)
+    provider = next(iter(rt.env.providers.values()))
+    seen = []
+
+    async def outage(*args):
+        seen.append(args)
+        raise AssessmentUnavailable("metadata unavailable")
+
+    monkeypatch.setattr(provider, "assess", outage)
+    await rt.submit("Mei", "Frozen repair")
+    await asyncio.sleep(0)
+    rt.now += rt.timing.assessment_seconds
+    await rt.assessment("task-1")
+    rt.settings = rt.settings.model_copy(update={"final_grading_wait_seconds": 0})
+    assert await rt.settle_final() is True
+    assert len(seen) == 1
+    assert rt.state()["assessments"]["task-1"]["retry_attempts"] == 1
+    await rt.close()

@@ -224,6 +224,9 @@ tasks:
   provider: swebench
   community: true
   repository_guidance: true
+  strict_http_cache: true
+  http_cache: tasks/swebench/metadata/verified-4.1.0-http-cache.json
+  evaluation_preflight: true
   dataset_variant: verified
   bank: /personal_fast_storage/datasets/swebench-verified/test.json
   instances: []

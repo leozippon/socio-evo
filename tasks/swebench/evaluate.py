@@ -39,7 +39,11 @@ def exec_run_with_timeout(container, cmd, timeout=60):
 def main():
     cache = os.environ.get("SWE_BENCH_HTTP_CACHE")
     python_spec.requests = SimpleNamespace(
-        get=cached_getter(Path(cache) if cache else None, requests.get)
+        get=cached_getter(
+            Path(cache) if cache else None,
+            requests.get,
+            strict=os.environ.get("SWE_BENCH_HTTP_CACHE_STRICT") == "1",
+        )
     )
     docker.models.containers.Container.exec_run = exec_run
     docker_utils.exec_run_with_timeout = exec_run_with_timeout

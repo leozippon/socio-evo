@@ -77,6 +77,11 @@ relationship analytics are retained; these are not a new private relationship-sc
 
 ## Preparation and launch
 
+New profiles require [offline evaluation readiness](offline-swebench-evaluation.md).
+The Verified metadata snapshot is bundled; prepare official Docker images before
+launch. Infrastructure faults in activity/realtime acceptance retry the original
+submitted snapshot in the background, without asking residents to submit again.
+
 Official evaluation needs a Linux host with working Docker and the project's SWE-bench
 optional dependencies. The model endpoint and dataset paths in these profiles must exist
 on that host. These commands do not deploy a model or configure Docker:

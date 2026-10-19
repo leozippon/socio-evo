@@ -252,3 +252,21 @@ async def test_legacy_multipart_job_replaced_only_after_all_parts_pass(env):
     replacement = other.board.listings[posted.payload["task"]["id"]].task
     assert replacement.worker_count == 2
     assert len(replacement.parts) == 2
+
+
+async def test_unready_replacement_does_not_undo_successful_acceptance(immediate, monkeypatch):
+    from core.environment.rejection import TaskUnavailable
+
+    env = immediate
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+
+    def not_ready(*args):
+        raise TaskUnavailable("missing cached environment metadata")
+
+    monkeypatch.setattr(next(iter(env.providers.values())), "sample_available", not_ready)
+    events = await act(env, "Ana", deliver("task-1", "perfect"))
+    assert env.board.claim_of("Ana") is None
+    assert len([e for e in events if e.kind == EventKind.PAYMENT]) == 1
+    [held] = [e for e in events if e.kind == EventKind.TASK_REPLACEMENT_UNAVAILABLE]
+    assert held.payload["reason"] == "environment_unready"
+    assert not any(e.kind == EventKind.TASK_POSTED for e in events)

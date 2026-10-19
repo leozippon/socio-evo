@@ -18,7 +18,7 @@ from pydantic import JsonValue, NonNegativeInt, PositiveInt
 from core.environment.conditions import Conditions
 from core.environment.config import EnvironmentConfig
 from core.environment.log import EventLog
-from core.environment.rejection import AssessmentUnavailable, Rejected
+from core.environment.rejection import AssessmentUnavailable, Rejected, TaskUnavailable
 from core.environment.society import (
     Assessment,
     Board,
@@ -713,15 +713,31 @@ class Environment:
                 if self.world.locations[person] == task.sheet
             ]
         )
-        event = self._post_one(
-            time,
-            random.Random(f"replacement:{task.id}:{time}"),
-            task.worker_count,
-            0,
-            task.sheet,
-            task.trade,
-            audience,
-        )
+        try:
+            event = self._post_one(
+                time,
+                random.Random(f"replacement:{task.id}:{time}"),
+                task.worker_count,
+                0,
+                task.sheet,
+                task.trade,
+                audience,
+            )
+        except TaskUnavailable:
+            # Acceptance/payment already happened; an unready next job cannot undo it.
+            return [
+                self.emit(
+                    EventKind.TASK_REPLACEMENT_UNAVAILABLE,
+                    "The replacement job's environment is not ready; its notice is held back.",
+                    time=time,
+                    audience=audience,
+                    payload={
+                        "task_id": task.id,
+                        "required_workers": task.worker_count,
+                        "reason": "environment_unready",
+                    },
+                )
+            ]
         if event is not None:
             return [event]
         return [

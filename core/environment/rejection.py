@@ -11,3 +11,7 @@ class Rejected(Exception):
 
 class AssessmentUnavailable(Exception):
     """Infrastructure could not produce a verdict; never evidence of poor work."""
+
+
+class TaskUnavailable(RuntimeError):
+    """A new job's environment is not ready for publication."""

@@ -224,6 +224,8 @@ tasks:
   provider: swebench
   community: true
   repository_guidance: true
+  strict_http_cache: true
+  evaluation_preflight: true
   dataset_variant: lite
   bank: /personal_fast_storage/datasets/swebench-lite/test.json
   instances: []

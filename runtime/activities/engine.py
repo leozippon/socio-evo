@@ -467,6 +467,8 @@ class ActivityEngine:
             if self.now < due
             else "Checking is still pending; feedback will arrive when ready."
         )
+        if entry.get("retry_at"):
+            timing += f" The clerk will automatically retry at {clock(entry['retry_at'])}."
         return (
             f" Your job {claim.task.id} is awaiting background acceptance. {timing} "
             "You may leave Work to socialize or rest while waiting. Do not resubmit. "
@@ -1555,6 +1557,8 @@ class ActivityEngine:
         if job in self.futures:
             return
         entry = self.assessments[job]
+        if self.now < entry.get("retry_at", 0):
+            return
         claim = self.env.board.claims.get(job)
         if claim is None:
             return
@@ -1567,14 +1571,27 @@ class ActivityEngine:
                 return AssessmentUnavailable(str(error))
 
         self.futures[job] = asyncio.create_task(run())
+        entry.pop("retry_at", None)
 
     async def assessment(self, job):
         if job not in self.assessments:
             return
         entry = self.assessments[job]
+        if self.now < entry.get("retry_at", 0):
+            return
+        if job not in self.env.board.claims:
+            self.assessments.pop(job)
+            future = self.futures.pop(job, None)
+            if future:
+                future.cancel()
+                await asyncio.gather(future, return_exceptions=True)
+            return
         future = self.futures.get(job)
         if future is None:
-            return
+            self.start_assessment(job)
+            future = self.futures.get(job)
+            if future is None:
+                return
         if not future.done():
             if not entry["delayed"]:
                 entry["delayed"] = True
@@ -1590,6 +1607,38 @@ class ActivityEngine:
             self.queue.add(self.now + 300, "assessment", job=job)
             return
         result = future.result()
+        if isinstance(result, AssessmentUnavailable):
+            claim = self.env.board.claims[job]
+            day = day_of(self.now // 60)
+            extra = int(claim.assessment_fault_day != day)
+            self.env.board.claims[job] = claim.model_copy(
+                update={
+                    "grace_days": claim.grace_days + extra,
+                    "assessment_fault_day": day,
+                }
+            )
+            attempt = entry.get("retry_attempts", 0) + 1
+            delay = min(
+                self.timing.assessment_retry_seconds * 2 ** min(attempt - 1, 16),
+                self.timing.assessment_retry_max_seconds,
+            )
+            entry.update(retry_attempts=attempt, retry_at=self.now + delay, delayed=True)
+            del self.futures[job]
+            self.queue.add(entry["retry_at"], "assessment", job=job)
+            self.emit(
+                EventKind.WORK_DELAYED,
+                "The checking service is unavailable, not a failed repair. "
+                "The clerk retains your submitted snapshot and will automatically retry at "
+                f"{clock(entry['retry_at'])}. Do not resubmit; you may socialize or rest.",
+                actor=entry["agent"],
+                audience=list(claim.workers),
+                task_id=job,
+                automatic_retry=True,
+                retry_attempts=attempt,
+                retry_at=entry["retry_at"],
+                grace_days_added=extra,
+            )
+            return
         if job in self.env.board.claims:
             await self.env._submit(
                 entry["agent"],
@@ -1707,7 +1756,9 @@ class ActivityEngine:
                         self.queue.add(moment, "boundary", priority=2)
         for job, entry in self.assessments.items():
             self.start_assessment(job)
-            self.queue.add(max(self.now, entry["due"]), "assessment", job=job)
+            self.queue.add(
+                max(self.now, entry.get("retry_at", entry["due"])), "assessment", job=job
+            )
         for invitation in self.invitations.values():
             if invitation.status == "pending":
                 self.queue.add(
