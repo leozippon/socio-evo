@@ -28,9 +28,9 @@ def test_whole_second_clock_and_activity_timeline():
 
 
 @pytest.mark.skipif(shutil.which("node") is None, reason="node is not installed")
-def test_resident_received_events_and_replay_cutoffs():
+def test_original_perspective_wording_and_complete_feed():
     result = subprocess.run(
-        ["node", str(Path(__file__).with_name("perceptions_check.mjs"))],
+        ["node", str(Path(__file__).with_name("perspective_check.mjs"))],
         capture_output=True,
         text=True,
     )
