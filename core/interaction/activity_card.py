@@ -137,6 +137,7 @@ def activity_forms(layer, menu):
         ),
         "board": tool("view the notice board", "board"),
         "feedback": tool("read work feedback", "feedback"),
+        "guide": tool("read repository work guide", "guide"),
         "read_code": tool(
             "read code",
             "read_code",

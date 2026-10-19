@@ -82,6 +82,30 @@ class SWEbenchTaskProvider:
             reference=instance,
         )
 
+    def work_guide(self, part: Part) -> str:
+        """Public operating instructions only; never grading fields or reference patches."""
+        from tasks.swebench.preflight import operating_notes, recipe
+
+        row = self.rows[part.reference]
+        report = (
+            self._preflight(part.reference)
+            if self.repository_guidance
+            else {"guide": recipe(row["repo"])[1]}
+        )
+        return (
+            "SWE-bench work guide for " + row["repo"] + ":\n"
+            "1. Inspect the public issue and existing repository files before editing.\n"
+            "2. Discover existing tests and select a focused test entry point; "
+            "do not guess paths.\n"
+            "3. Edit source, inspect your diff, and run relevant tests. A failed launcher or zero "
+            "collected tests is not a passed test. Read failures before retrying.\n"
+            "4. Partners keep private workspaces; exchange and apply explicit code handoffs.\n"
+            "5. Submit WORKTREE from a work activity. In a conversation, first leave and "
+            "resume work; saying 'submitted' does not execute a submission. Wait for the "
+            "actual background assessment receipt/result.\n"
+            + operating_notes(report, self.command_seconds, self.community)
+        )
+
     def _preflight(self, instance: str) -> dict:
         from tasks.swebench.preflight import inspect_environment
 

@@ -81,6 +81,7 @@ class ActivityEngine:
         self.now = 0
         self.end = 0
         self.transitions: dict[tuple[int, str], int] = {}
+        self.selection_feedback = dict(state.get("selection_feedback", {}))
 
     def state(self):
         return {
@@ -90,6 +91,7 @@ class ActivityEngine:
             "assessments": self.assessments,
             "serial": self.serial,
             "outside": dict(self.outside),
+            "selection_feedback": dict(self.selection_feedback),
         }
 
     def identifier(self, prefix):
@@ -110,6 +112,8 @@ class ActivityEngine:
 
     def feedback(self, who, text, **payload):
         active = self.activities.get(self.current.get(who))
+        if not active:
+            self.selection_feedback[who] = text
         if active:
             active.feedback.setdefault(who, []).append(text)
         if isinstance(active, WorkActivity) and active.task_id:
@@ -312,6 +316,8 @@ class ActivityEngine:
                 activity.task_id = claim.task.id
                 common["partners"] = [p for p in claim.workers if p != who]
                 provider = self.env.providers[claim.task.trade]
+                if callable(getattr(provider, "work_guide", None)):
+                    tools.append("guide")
                 if self.can_code(who):
                     tools += ["read_code", "search", "diff"]
                     relay = self.relay_session(claim.task.id)
@@ -351,6 +357,7 @@ class ActivityEngine:
             "decline": 0,
             "board": self.timing.search_seconds,
             "feedback": self.timing.search_seconds,
+            "guide": self.timing.search_seconds,
             "read": 1,
             "reply": 1,
             "wait": 1,
@@ -383,6 +390,8 @@ class ActivityEngine:
             )
             + ".",
         ]
+        if not active and who in self.selection_feedback:
+            context.append("Recent activity-selection feedback: " + self.selection_feedback[who])
         if who in self.outside:
             opening = self.next_opening(place)
             context.append(
@@ -412,6 +421,11 @@ class ActivityEngine:
                     "Read to see their content; a notification is not the message itself."
                 )
             elif isinstance(active, WorkActivity):
+                claim = self.env.board.claim_of(who)
+                if claim:
+                    provider = self.env.providers[claim.task.trade]
+                    if callable(getattr(provider, "work_guide", None)):
+                        context.append(provider.work_guide(claim.task.parts[0]))
                 context += [
                     f"Work mode: {active.mode}. Relay owner: {active.relay_owner}.",
                     "Your repository is private. Partners exchange explicit versioned handoffs; "
@@ -421,7 +435,10 @@ class ActivityEngine:
             context.append(
                 "Choose rest, movement, work, or a conversation. "
                 "There is no morning planning step. Choosing an activity costs no time. "
-                "Work can be paused and resumed without discarding its progress."
+                "Work can be paused and resumed without discarding its progress. "
+                "Rest until a clock time means its next occurrence; an earlier time means "
+                "tomorrow. Overnight rest is capped at today's day end, then nightly "
+                "processing handles the night. A rest ending exactly now is invalid."
             )
         context += [self.env.board_view(who), self.env.status_view(who, include_evidence=False)]
         invites = [
@@ -517,6 +534,8 @@ class ActivityEngine:
                 self.reject(who, reply.action, str(error))
 
     def reject(self, who, action, reason):
+        if who not in self.current:
+            self.selection_feedback[who] = str(reason)
         self.env._reject(
             who,
             action.model_dump(mode="json"),
@@ -543,6 +562,7 @@ class ActivityEngine:
             event_cursor=self.env.log.count,
         )
         activity.status = "active"
+        self.selection_feedback.pop(who, None)
         activity.latest_end = max(activity.latest_end, until)
         self.activities[activity.id] = activity
         self.current[who] = activity.id
@@ -651,6 +671,16 @@ class ActivityEngine:
             )
         if action.operation == "select_rest":
             until = at(day_of(self.now // 60), action.arguments["until"])
+            # Clock-only morning values after evening mean the next occurrence.
+            # Sleep crosses midnight conceptually; this day's activity ends at day close.
+            if until < self.now:
+                until += 24 * 60 * 60
+            if until == self.now:
+                raise Rejected(
+                    "Rest must end after the current time. Choose a later clock time; "
+                    "an earlier clock time means tomorrow, capped at today's day end."
+                )
+            until = min(until, self.end)
             self.enter(
                 RestActivity(
                     id=self.identifier("rest"),
@@ -983,6 +1013,12 @@ class ActivityEngine:
                 self.feedback(who, self.env.board_view(who))
             elif tool == "feedback":
                 self.feedback(who, self.env.status_view(who))
+            elif tool == "guide":
+                claim = self.env.board.claim_of(who)
+                if claim is None:
+                    raise Rejected("Claim a job before reading its repository work guide.")
+                provider = self.env.providers[claim.task.trade]
+                self.feedback(who, provider.work_guide(claim.task.parts[0]))
             elif tool == "claim":
                 claim = ClaimTask(task_id=args["job"], partner=args.get("partner"))
                 await self.env.execute(

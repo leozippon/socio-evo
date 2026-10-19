@@ -185,3 +185,49 @@ def test_cli_preflights_first_draw_without_model_or_experiment(tmp_path, monkeyp
     assert "Preflight passed for 7" in capsys.readouterr().out
     assert not (out / "manifest.json").exists()
     assert not (out / "agents").exists()
+
+
+def test_work_guide_is_public_repeatable_and_uses_correct_test_labels(tmp_path):
+    data = tmp_path / "data.json"
+    data.write_text(
+        json.dumps(
+            [
+                dict(
+                    instance_id="django__django-1",
+                    repo="django/django",
+                    patch="HIDDEN_GOLD",
+                    test_patch="HIDDEN_TESTS",
+                )
+            ]
+        )
+    )
+    provider = SWEbenchTaskProvider(data, (), tmp_path / "run", community=True)
+    from core.environment import Part
+
+    guide = provider.work_guide(
+        Part(
+            title="Issue",
+            specification="Public",
+            reward=60,
+            deadline_days=2,
+            reference="django__django-1",
+        )
+    )
+    assert "python tests/runtests.py --settings=test_sqlite" in guide
+    assert "backends.base.test_operations" in guide
+    assert "a source module under django/ is not a test label" in guide
+    assert "read failures" in guide.lower()
+    assert "WORKTREE" in guide and "private workspaces" in guide
+    assert "HIDDEN" not in guide
+    assert (
+        provider.work_guide(
+            Part(
+                title="Issue",
+                specification="Public",
+                reward=60,
+                deadline_days=2,
+                reference="django__django-1",
+            )
+        )
+        == guide
+    )

@@ -28,7 +28,12 @@ def recipe(repo: str) -> tuple[str, str]:
             "Its test entry point is tests/runtests.py; use the repository's test_sqlite settings. "
             "From /testbed: python tests/runtests.py --settings=test_sqlite <test-label>. "
             "Replace <test-label> with the package/module/class/test under tests/ that you "
-            "choose after inspecting the repository; do not prefix it with django.tests. "
+            "choose after inspecting the repository; do not prefix it with django.tests or tests. "
+            "For example, tests/backends/base/test_operations.py becomes "
+            "backends.base.test_operations, not tests.backends.base.test_operations; "
+            "tests/admin_checks/tests.py becomes admin_checks. Confirm the path exists first. "
+            "Discover modules with find tests -name 'test*.py' and inspect contributor docs; "
+            "a source module under django/ is not a test label. "
             "Inspect python tests/runtests.py --help for options. Do not assume manage.py "
             "or pytest is available, and do not invent settings merely to start the suite."
         )
@@ -117,6 +122,12 @@ def operating_notes(report: dict, command_seconds: int, community: bool) -> str:
         if community
         else "Each action starts a new shell; export required variables in the same command."
     )
+    verification = (
+        "Environment preflight checked the launcher and basic setup, not the whole test "
+        "suite or the correctness of a repair. "
+        if report.get("status") == "passed"
+        else "These are operating instructions, not proof that the test environment was checked. "
+    )
     return (
         "\n\nRepository operating notes (shared environment instructions):\n"
         "Commands start in /testbed with the testbed Python environment activated. "
@@ -127,9 +138,9 @@ def operating_notes(report: dict, command_seconds: int, community: bool) -> str:
         "and output is truncated to 16000 characters. Use focused commands. "
         "Bash pipefail is enabled: a failing command piped into head/tail remains a failure; "
         "early-closing readers may also cause SIGPIPE. Always read the output: exit code 0 "
-        "does not prove any test ran or passed. Environment preflight checked the launcher "
-        "and basic setup, not the whole test suite or the correctness of a repair. "
-        "Choose relevant tests yourself; official acceptance happens only after submission."
+        "does not prove any test ran or passed. "
+        + verification
+        + "Choose relevant tests yourself; official acceptance happens only after submission."
     )
 
 

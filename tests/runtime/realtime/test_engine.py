@@ -460,3 +460,34 @@ async def test_hearing_during_inference_keeps_persistent_memory_in_time_order(rt
     records = listener.memory.episodic.read()
     assert [r.time for r in records] == sorted(r.time for r in records)
     assert any("new discovery" in r.text for r in records)
+
+
+def test_realtime_sleep_until_morning_does_not_repeat_failed_selections(rt):
+    rt.now = at(1, "18:08")
+    rt.select("Mei", choose("select_rest", arguments={"until": "06:00", "wake": False}))
+    assert rt.activities[rt.current["Mei"]].members["Mei"].end == rt.end
+    assert not rt.available("Mei")
+
+
+async def test_repository_guide_is_pinned_and_readable_as_work_tool(rt, monkeypatch):
+    provider = next(iter(rt.env.providers.values()))
+    monkeypatch.setattr(
+        provider, "work_guide", lambda part: "PUBLIC GUIDE: use tests/runtests.py", raising=False
+    )
+    work(rt)
+    await take(rt)
+    observation = rt.observation("Mei")
+    assert "PUBLIC GUIDE" in observation.situation
+    assert "guide" in rt.menu("Mei")["tools"]
+    card = Card(observation.allowed)
+    reply = card.model.model_validate(
+        {"thought": "Check the launcher", "do": "read repository work guide"}
+    )
+    decision = card.decision(reply)
+    assert decision.action.tool == "guide"
+    rt.schedule("Mei", decision.action)
+    await finish(rt, "Mei")
+    activity = rt.activities[rt.current["Mei"]]
+    assert "PUBLIC GUIDE" in activity.feedback["Mei"][-1]
+    assert not provider.commands, "reading instructions must not run repository code"
+    assert "guide" not in rt.menu("Jonas").get("tools", [])
