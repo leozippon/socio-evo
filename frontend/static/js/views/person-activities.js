@@ -24,7 +24,7 @@ export async function personActivities({ source, world, cast, places, route, go 
   const rows = activityIntervals(events, cutoff).filter((row) => row.actor === route.agent);
   const summary = residentActivitySummary(rows, route.agent, day, cutoff);
   const selected = rows.find((row) => row.id === route.query.activity);
-  const place = (row) => places.has(row.place) ? shortName(places.get(row.place)) : row.place || "Not recorded";
+  const place = (row) => `${row.outside ? "Outside · " : ""}${places.has(row.place) ? shortName(places.get(row.place)) : row.place || "Not recorded"}`;
   const reveal = (row, event) => revealCurrentActivity(event, row.id, selected?.id,
     () => document.getElementById("person-activity-detail")?.scrollIntoView({ block: "start", behavior: "smooth" }));
   const rowLink = (row) => activityLink(route, route.agent, through, row, day);

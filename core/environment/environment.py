@@ -456,29 +456,58 @@ class Environment:
         """The percepts of the events `agent` witnessed since it last perceived."""
         return self.log.perceive(agent)
 
-    def move(self, agent: str, place: str, *, time: int, closing: bool = False) -> list[Event]:
+    def move(
+        self,
+        agent: str,
+        place: str,
+        *,
+        time: int,
+        closing: bool = False,
+        allow_closed: bool = False,
+        sim_seconds: int | None = None,
+    ) -> list[Event]:
         """Move `agent` to `place`, witnessed by the others at the origin and the destination;
         with `closing`, the move is told to those it leaves behind as the place closing for
         the night.
 
         An unknown place, or one closed at `time`, is rejected, also if the agent is already
         there; otherwise moving to where the agent already is changes nothing.
+        Activity schedulers may opt into `allow_closed` to record arrival outside the doors;
+        this does not permit indoor work or attendance. Legacy callers retain closed-place
+        rejection.
         """
         origin = self.world.locations[agent]
         try:
-            self.world.move(agent, place, clock_of(time))
+            self.world.move(agent, place, clock_of(time), allow_closed=allow_closed)
         except Rejected as rejection:
             attempt = {"kind": "move", "place": place}
             return [self._reject(agent, attempt, rejection, time=time, place=origin, scene=None)]
         if place == origin:
             return []
-        self.firms.attend(agent, place)
+        outside = allow_closed and not self.world.places[place].is_open(clock_of(time))
+        if not outside:
+            self.firms.attend(agent, place)
         names = {key: self.world.places[key].name for key in (origin, place)}
         if closing:
             text = f"{capital(names[origin])} closed for the night, and {agent} went home."
+        elif outside:
+            text = (
+                f"{agent} arrived outside {names[place]} from {names[origin]}; "
+                "the doors are closed."
+            )
         else:
             text = f"{agent} went from {names[origin]} to {names[place]}."
-        moved = self._moved(agent, origin, text, time=time, place=place, scene=None, told=closing)
+        moved = self._moved(
+            agent,
+            origin,
+            text,
+            time=time,
+            place=place,
+            scene=None,
+            told=closing,
+            outside=outside,
+            sim_seconds=sim_seconds,
+        )
         return [moved]
 
     async def execute(
@@ -1007,6 +1036,8 @@ class Environment:
         place: str,
         scene: str | None,
         told: bool = False,
+        outside: bool = False,
+        sim_seconds: int | None = None,
     ) -> Event:
         """The news that `agent` went from `origin` to where it is now, for the others there
         and at `origin`, as an event of `place`: told to a witness at the destination as an
@@ -1023,7 +1054,7 @@ class Environment:
             if here == destination:
                 if destination == home:
                     return f"{agent} came home from {came}."
-                return f"{agent} arrived at {went} from {came}."
+                return f"{agent} arrived {'outside' if outside else 'at'} {went} from {came}."
             if here == origin and not told:
                 return f"{agent} left {came} for {went}."
             return text
@@ -1036,7 +1067,12 @@ class Environment:
             actor=agent,
             place=place,
             scene=scene,
-            payload={"origin": origin, "destination": destination},
+            payload={
+                "origin": origin,
+                "destination": destination,
+                **({"outside": True} if outside else {}),
+                **({"sim_seconds": sim_seconds} if sim_seconds is not None else {}),
+            },
         )
 
     def _speak(self, agent: str, action: Speak, others: list[str], **where) -> list[Event]:

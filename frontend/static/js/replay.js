@@ -17,6 +17,7 @@ export function initialState(world) {
     seq: -1, // the last event applied
     time: 0, // the moment shown; at or after the last event applied
     locations: each((agent) => home[agent.name]),
+    outside: {}, // actor -> closed venue; physical arrival is separate from admission
     balances: each((agent) => agent.initial_balance ?? world.initial_balance),
     esteem: each(() => null), // as last published; null until first rated
     conditions: { ...world.conditions },
@@ -108,6 +109,9 @@ export function apply(state, event) {
       break;
     }
     case "move": {
+      state.outside ??= {};
+      if (p.outside) state.outside[event.actor] = p.destination;
+      else delete state.outside[event.actor];
       state.locations[event.actor] = p.destination;
       // Going home from a scene under way leaves it.
       const scene = state.scenes[event.scene];
@@ -136,7 +140,11 @@ export function apply(state, event) {
       state.activities ??= {};
       state.activities[event.actor] = p;
       break;
+    case "activity_feedback":
+      if (p.outside === false && state.outside) delete state.outside[event.actor];
+      break;
     case "activity_entered":
+      if (p.outside === true) { state.outside ??= {}; state.outside[event.actor] = event.place; }
       state.sessions ??= {};
       state.activities ??= {};
       state.sessions[event.actor] = { ...p, action: { kind: p.activity_type } };

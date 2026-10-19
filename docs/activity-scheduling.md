@@ -123,3 +123,9 @@ private/relay handoffs, delayed grading, checkpoint recovery and legacy replay.
 Handoff merge/conflict tests use real local Git through a container adapter.
 No live Docker official-harness run, deployment or model experiment is part of
 this implementation verification.
+
+## Early arrival and work relocation
+
+Travel to a public venue is allowed before opening. Arrival at a closed venue records an outside location and starts a wakeable rest until the next opening (or day end). Opening admits waiting residents and ends their rest so they can decide again. Indoor work and conversation remain unavailable outside; waiters do not become conversation participants merely by reaching the venue. The normal closing/22:00 return rules still apply. Legacy non-activity movement rejects closed destinations unless explicitly opted in.
+
+Starting work searches for a live collaboration at the current place first, then one's own vacant local public session. A foreign inactive/public session never forces travel or blocks a new local session. Explicitly resuming a vacant accessible work session may relocate it while preserving its task, history, relay mode and workspace keys. An active session with participants cannot be relocated; joining it requires the same location. Global relay write permissions still apply across independent sessions.

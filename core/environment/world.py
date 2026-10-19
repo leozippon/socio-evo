@@ -122,12 +122,13 @@ class World:
             if place.kind is kind
         )
 
-    def move(self, agent: str, place: str, clock: str) -> str:
+    def move(self, agent: str, place: str, clock: str, *, allow_closed: bool = False) -> str:
         """Put `agent` at `place` at `clock` and return where it was; raises Rejected for an
-        unknown place or one closed at `clock`, also if the agent is already there."""
+        unknown place or one closed at `clock`. `allow_closed` records physical arrival
+        outside a venue without implying admission; legacy callers leave it false."""
         if place not in self.places:
             raise Rejected(f"There is no place called {place!r} in town.")
-        if not self.places[place].is_open(clock):
+        if not allow_closed and not self.places[place].is_open(clock):
             name = self.places[place].name
             raise Rejected(f"{name[:1].upper()}{name[1:]} is closed at {clock}.")
         origin = self.locations[agent]

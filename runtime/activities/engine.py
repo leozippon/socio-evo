@@ -71,6 +71,7 @@ class ActivityEngine:
         self.handoffs = {
             key: Handoff.model_validate(value) for key, value in state.get("handoffs", {}).items()
         }
+        self.outside = dict(state.get("outside", {}))
         self.assessments = dict(state.get("assessments", {}))
         self.futures = {}
         self.pending: dict[str, PendingTool] = {}
@@ -88,6 +89,7 @@ class ActivityEngine:
             "handoffs": {k: v.model_dump(mode="json") for k, v in self.handoffs.items()},
             "assessments": self.assessments,
             "serial": self.serial,
+            "outside": dict(self.outside),
         }
 
     def identifier(self, prefix):
@@ -120,6 +122,72 @@ class ActivityEngine:
             **payload,
         )
 
+    def next_opening(self, place):
+        return next(
+            (
+                at(day_of(self.now // 60), opening)
+                for opening, _ in self.env.world.places[place].spans()
+                if at(day_of(self.now // 60), opening) > self.now
+            ),
+            None,
+        )
+
+    def admit_waiters(self):
+        for who, place in list(self.outside.items()):
+            if self.now >= self.end or not self.env.world.places[place].is_open(
+                clock_of(self.now // 60)
+            ):
+                continue
+            activity = self.activities.get(self.current.get(who))
+            if isinstance(activity, MoveActivity):
+                continue  # Leaving the doorway is still a movement, not an admission.
+            self.outside.pop(who)
+            if isinstance(activity, RestActivity):
+                self.leave(who, "The doors opened; you may enter.")
+            self.env.firms.attend(who, place)
+            self.feedback(
+                who,
+                f"The doors of {self.env.world.places[place].name} are open. You are now inside.",
+                outside=False,
+            )
+
+    def arrive(self, who, destination):
+        self.outside.pop(who, None)
+        self.env.move(
+            who, destination, time=self.now // 60, allow_closed=True, sim_seconds=self.now
+        )
+        closed = not self.env.world.places[destination].is_open(clock_of(self.now // 60))
+        self.leave(
+            who,
+            "Arrived outside the closed destination." if closed else "Arrived at the destination.",
+        )
+        if closed and self.now < self.end:
+            self.outside[who] = destination
+            until = min(self.next_opening(destination) or self.end, self.end)
+            self.enter(
+                RestActivity(
+                    id=self.identifier("rest"),
+                    place=destination,
+                    start=self.now,
+                    latest_end=until,
+                    wake_invitations=True,
+                ),
+                who,
+                until,
+            )
+            opening = self.next_opening(destination)
+            self.feedback(
+                who,
+                f"You are outside {self.env.world.places[destination].name}. "
+                + (
+                    f"Wait at the door until {clock(opening)}; "
+                    "entering and indoor work are unavailable before opening."
+                    if opening
+                    else "It will not reopen today; you may wait outside or move elsewhere."
+                ),
+                outside=True,
+            )
+
     def close_at(self, place):
         p = self.env.world.places[place]
         closing = p.closing(clock_of(self.now // 60))
@@ -141,7 +209,8 @@ class ActivityEngine:
         place = self.env.world.places[self.env.world.locations[who]]
         text = clock_of(self.now // 60)
         return (
-            place.kind == PlaceKind.WORK
+            who not in self.outside
+            and place.kind == PlaceKind.WORK
             and place.is_open(text)
             and ("08:00" <= text < "12:00" or "14:00" <= text < "18:00")
         )
@@ -179,6 +248,7 @@ class ActivityEngine:
         return (
             activity.status == "active"
             and len(activity.participants) >= 2
+            and who not in self.outside
             and self.env.world.locations[who] == activity.place
             and (activity.public or who in activity.invited)
         )
@@ -198,16 +268,17 @@ class ActivityEngine:
             for p in self.env.world.places.values()
             if p.kind != PlaceKind.HOME or who in p.residents
         }
-        common = {"people": people, "places": places, "invitations": self.invitation_ids(who)}
+        common = {
+            "people": people,
+            "places": places,
+            "invitations": self.invitation_ids(who),
+            "outside": who in self.outside,
+        }
         if who not in self.current:
             moves = {
                 name: ident
                 for name, ident in places.items()
-                if ident != place
-                and self.now + self.travel_seconds(place, ident) <= self.end
-                and self.env.world.places[ident].is_open(
-                    clock_of((self.now + self.travel_seconds(place, ident)) // 60)
-                )
+                if ident != place and self.now + self.travel_seconds(place, ident) <= self.end
             }
             return {
                 **common,
@@ -217,7 +288,8 @@ class ActivityEngine:
                     for a in self.activities.values()
                     if isinstance(a, WorkActivity)
                     and a.status != "ended"
-                    and a.place == place
+                    and (a.place == place or not a.participants)
+                    and who not in self.outside
                     and self.work_access(who, a)
                 ],
                 "conversations": [
@@ -303,8 +375,22 @@ class ActivityEngine:
         layer = "tool" if active else "selection"
         context = [
             f"The time is {clock(self.now)}. You are at {self.env.world.places[place].name}.",
-            "People here: " + ", ".join(self.env.world.occupants(place)) + ".",
+            "People here: "
+            + ", ".join(
+                p
+                for p in self.env.world.occupants(place)
+                if (p in self.outside) == (who in self.outside)
+            )
+            + ".",
         ]
+        if who in self.outside:
+            opening = self.next_opening(place)
+            context.append(
+                "You are OUTSIDE the closed venue, waiting at its door, not inside. "
+                + (f"It opens at {clock(opening)}. " if opening else "It will not reopen today. ")
+                + "You cannot work or join an indoor conversation until admitted. "
+                "You may wait or move elsewhere."
+            )
         if active:
             remaining = self.remaining(who)
             context += [
@@ -356,7 +442,9 @@ class ActivityEngine:
             "Invitations do not interrupt a running tool or reserve other people. "
             "At 22:00 return home; ordinary nightly costs, journals and reflection follow. "
             "Workplaces permit code work only 08:00–12:00 and 14:00–18:00. "
-            "Outside those hours you can inspect notices and claim work, but not code.\n"
+            "Outside those hours you can inspect notices and claim work, but not code. "
+            "You may travel to a closed public venue before opening and wait outside its doors. "
+            "Arrival outside does not grant indoor access; opening admits waiting residents.\n"
             + "\n".join(
                 f"{p.name}: {p.kind}; open {p.spans()}" for p in self.env.world.places.values()
             )
@@ -468,6 +556,7 @@ class ActivityEngine:
             start=self.now / 60,
             end=until / 60,
             participants=list(activity.participants),
+            outside=who in self.outside,
         )
 
     def leave(self, who, reason):
@@ -551,6 +640,15 @@ class ActivityEngine:
 
     def select(self, who, action):
         place = self.env.world.locations[who]
+        if who in self.outside and action.operation in (
+            "select_work",
+            "resume_work",
+            "select_conversation",
+        ):
+            raise Rejected(
+                "You are outside the closed venue; "
+                "wait for opening before entering an indoor activity."
+            )
         if action.operation == "select_rest":
             until = at(day_of(self.now // 60), action.arguments["until"])
             self.enter(
@@ -566,7 +664,9 @@ class ActivityEngine:
             )
         elif action.operation == "select_move":
             if action.target not in self.menu(who)["moves"].values():
-                raise Rejected("That destination cannot be reached while open.")
+                raise Rejected(
+                    "That destination is unavailable or cannot be reached before the day ends."
+                )
             until = self.now + self.travel_seconds(place, action.target)
             activity = MoveActivity(
                 id=self.identifier("move"),
@@ -583,30 +683,48 @@ class ActivityEngine:
                 activity = self.activities[action.target]
                 if (
                     not isinstance(activity, WorkActivity)
-                    or activity.place != place
+                    or activity.status == "ended"
                     or not self.work_access(who, activity)
                 ):
                     raise Rejected("You cannot resume that work here.")
                 claim = self.env.board.claim_of(who)
                 if activity.task_id and (claim is None or activity.task_id != claim.task.id):
                     raise Rejected("You no longer hold this work's job.")
+                if activity.place != place:
+                    if activity.participants:
+                        raise Rejected(
+                            "Go to this active work's location before joining its participants."
+                        )
+                    # No one is using this session. Its job, workspace keys, handoffs and
+                    # notes survive; historical locations remain in the immutable log.
+                    activity.place = place
             else:
                 claim = self.env.board.claim_of(who)
+                candidates = [
+                    a
+                    for a in self.activities.values()
+                    if isinstance(a, WorkActivity)
+                    and a.public
+                    and a.status != "ended"
+                    and claim
+                    and a.task_id == claim.task.id
+                    and a.place == place
+                    and self.work_access(who, a)
+                ]
+                # Prefer a live collaboration here, then one's own vacant local session.
+                # An old activity elsewhere never locks where a resident may start work.
                 shared = next(
                     (
                         a
-                        for a in self.activities.values()
-                        if isinstance(a, WorkActivity)
-                        and a.public
-                        and a.status != "ended"
-                        and claim
-                        and a.task_id == claim.task.id
+                        for a in candidates
+                        if a.status == "active" and any(p != who for p in a.participants)
                     ),
                     None,
                 )
+                shared = shared or next(
+                    (a for a in candidates if not a.participants and who in a.members), None
+                )
                 if shared:
-                    if shared.place != place:
-                        raise Rejected("Go to your partners' public work location before joining.")
                     self.enter(shared, who, self.now + action.seconds)
                     return
                 activity = WorkActivity(
@@ -780,7 +898,9 @@ class ActivityEngine:
             people = [
                 p
                 for p in invitation.confirmed
-                if self.available(p) and self.env.world.locations[p] == invitation.place
+                if self.available(p)
+                and p not in self.outside
+                and self.env.world.locations[p] == invitation.place
             ]
             if invitation.conversation:
                 activity = self.activities[invitation.conversation]
@@ -1173,15 +1293,19 @@ class ActivityEngine:
                 )
 
     def boundary(self):
+        self.admit_waiters()
         for who, place_id in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
             if isinstance(activity, MoveActivity) and self.now < self.end:
                 continue
             place = self.env.world.places[place_id]
+            if who in self.outside and self.now < self.end:
+                continue
             if self.now >= self.end or (
                 place.kind != PlaceKind.HOME and not place.is_open(clock_of(self.now // 60))
             ):
                 self.leave(who, "The place or day closed.")
+                self.outside.pop(who, None)
                 home = self.env.config.homes[who]
                 if place_id == home:
                     continue
@@ -1225,8 +1349,7 @@ class ActivityEngine:
             who = scheduled.data["who"]
             active = self.activities.get(self.current.get(who))
             if active and active.id == scheduled.data["activity"]:
-                self.env.move(who, active.destination, time=self.now // 60)
-                self.leave(who, "Arrived at the destination.")
+                self.arrive(who, active.destination)
         elif scheduled.kind == "assessment":
             await self.assessment(scheduled.data["job"])
         elif scheduled.kind == "invitation_expired":

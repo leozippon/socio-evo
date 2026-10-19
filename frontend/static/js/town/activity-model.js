@@ -18,7 +18,7 @@ export function activityIntervals(events, through, reader = null) {
       const interval = {
         id: `${event.seq}:${event.actor}`, startSeq: event.seq, endSeq: null, participants: [...(p.participants ?? [event.actor])], activity: p.activity, actor: event.actor,
         type: p.activity_type, start: event.time, end: null, place: event.place,
-        reason: null, tool: null,
+        reason: null, tool: null, outside: Boolean(p.outside),
       };
       for (const peer of active.values()) if (peer.activity === p.activity && !peer.participants.includes(event.actor)) peer.participants.push(event.actor);
       intervals.push(interval);

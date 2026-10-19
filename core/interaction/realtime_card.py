@@ -25,6 +25,8 @@ def realtime_forms(layer, menu):
             ),
         ),
     ]
+    if menu.get("outside"):
+        result = result[:1]  # Waiting/movement, never indoor work before admission.
     if menu.get("moves"):
         result.append(
             _Form(

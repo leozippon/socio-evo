@@ -324,13 +324,13 @@ Within a day the events are those the simulation recorded in order: the day open
 | `decision` | the agent | none | `thought` (private), `action` (see below) |
 | `lapse` | the agent | none | `agent`, `level` and `trigger` (null for a moment in which the agent did nothing; else the night step it skipped, as in `evolution`), `failures` (how each attempt at a reply failed, in order): no valid reply could be obtained, so nothing was done or committed |
 | `draw` | none | the claimants | `task_id`, `order`: agents who claimed one task in the same turn, in the drawn order in which their claims were taken |
-| `move` | the agent | others at origin and destination | `origin`, `destination` (place ids); a resident leaving a scene for home moves within that scene, at the place it left |
-| `activity_entered` | the resident | relevant participants | `sim_seconds`, `activity`, `activity_type`, `start`, `end` (latest allowed end), `participants`: membership begins |
+| `move` | the agent | others at origin and destination | `origin`, `destination` (place ids); a resident leaving a scene for home moves within that scene, at the place it left, optional `outside` and `sim_seconds` for door-waiting arrivals |
+| `activity_entered` | the resident | relevant participants | `sim_seconds`, `outside` (waiting outside a closed venue), `activity`, `activity_type`, `start`, `end` (latest allowed end), `participants`: membership begins |
 | `activity_left` | the resident | relevant participants | `sim_seconds`, `activity`, `activity_type`, `start`, `end` (actual end), `reason`, `result`: membership ends |
 | `tool_started` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`, `arguments`, `start`, `end`, `timing`: operation starts; real-time operations have no predicted end |
 | `tool_completed` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`, `start`, `end`, `wall_seconds`, `multiplier`, `elapsed_sim_seconds`: operation finishes |
 | `tool_cancelled` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`: operation cancelled |
-| `activity_feedback` | the resident | relevant participants | `sim_seconds`, `activity`, `task_id`: feedback for a participant; event text contains the feedback |
+| `activity_feedback` | the resident | relevant participants | `sim_seconds`, `outside` (false on admission), `activity`, `task_id`: feedback for a participant; event text contains the feedback |
 | `conversation_message` | the resident | relevant participants | `sim_seconds`, `activity`, `message`, `participants`: message in the fixed-cost conversation scheduler |
 | `conversation_read` | the resident | relevant participants | `sim_seconds`, `activity`, `messages`: legacy explicit message reading; real-time conversation delivers speech directly |
 | `code_handoff` | the resident | relevant participants | `sim_seconds`, `activity`, `task_id`, `handoff`, `to`, `description`: code handoff between collaborators |

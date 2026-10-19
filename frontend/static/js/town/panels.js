@@ -212,7 +212,7 @@ export class PeoplePanel {
               "button",
               { type: "button", class: `person-row${m.selected === name ? " on" : ""}`, "aria-pressed": String(m.selected === name), onclick: () => m.select(name) },
               m.cast.badge(name, 28),
-              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? shortName(place) : ""), status.length ? h("span", { class: "person-job" }, m.cast.mention(status.join(" · "))) : null),
+              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? `${m.state.outside?.[name] ? "Outside · " : ""}${shortName(place)}` : ""), status.length ? h("span", { class: "person-job" }, m.cast.mention(status.join(" · "))) : null),
               h(
                 "span",
                 { class: "person-figures" },

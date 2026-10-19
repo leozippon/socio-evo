@@ -111,6 +111,8 @@ class RealtimeEngine(ActivityEngine):
             "No new work operation starts after closing; an already started operation can finish. "
             "Workplaces allow coding 08:00–12:00 and 14:00–18:00. "
             "Invitations do not interrupt a tool; finish it before joining. "
+            "You may travel to a closed public venue before opening and wait outside. "
+            "Opening admits waiters; being outside does not permit indoor work or conversation. "
             "The day closes at 22:00. Rest and movement retain simulated durations."
         )
         setting = self.env.config.setting.backdrop + "\n" + self.env.rules_view()
@@ -460,9 +462,12 @@ class RealtimeEngine(ActivityEngine):
             await self.commit_tool(who, job, finished)
 
     def boundary(self):
+        self.admit_waiters()
         for who, place in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
             if isinstance(activity, MoveActivity) and self.now < self.end:
+                continue
+            if who in self.outside and self.now < self.end:
                 continue
             closed = self.now >= self.end or not self.env.world.places[place].is_open(
                 clock(self.now)
@@ -483,6 +488,7 @@ class RealtimeEngine(ActivityEngine):
                 self.deferred[who] = "The place or day closed; finish the started operation."
                 continue
             self.leave(who, "The place or day closed.")
+            self.outside.pop(who, None)
             home = self.env.config.homes[who]
             if place != home:
                 if self.now >= self.end:

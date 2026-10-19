@@ -325,7 +325,7 @@ export function mountTown(root, ctx) {
         "div",
         { class: "selected-head" },
         cast.badge(view.selected, 34),
-        h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · at ${shortName(place)}` : ""}`), status.length ? h("span", { class: "selected-job" }, cast.mention(status.join(" · "))) : null),
+        h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · ${m.state.outside?.[view.selected] ? "outside" : "at"} ${shortName(place)}` : ""}`), status.length ? h("span", { class: "selected-job" }, cast.mention(status.join(" · "))) : null),
         h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(view.time) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),

@@ -21,7 +21,7 @@ export class ActivitiesPanel {
     const rows = !m.truth && !reader ? [] : activityIntervals(m.activityEvents, now, reader);
     const today = rows.filter((row) => (row.end ?? now) >= base && row.start < base + 1440);
     const current = new Map(rows.filter((row) => row.end == null).map((row) => [row.actor, row]));
-    const place = (row) => m.places.has(row.place) ? shortName(m.places.get(row.place)) : row.place || "Not recorded";
+    const place = (row) => `${row.outside ? "Outside · " : ""}${m.places.has(row.place) ? shortName(m.places.get(row.place)) : row.place || "Not recorded"}`;
     const link = (name, row = null) => activityLink(m.route, name, now, row, day);
     const tooltip = h("div", { class: "activity-tooltip", role: "tooltip", id: "activity-hover", hidden: true });
     const hide = () => { tooltip.hidden = true; };
@@ -39,7 +39,7 @@ export class ActivitiesPanel {
     };
     const lanes = m.world.agents.map(({ name }) => {
       const active = current.get(name), known = m.truth || name === reader;
-      const status = active ? `${label(active)}${active.tool ? ` · ${active.tool}` : ""}` : known ? "Between activities" : "Not observed";
+      const status = active ? `${active.outside && active.type === "rest" ? "Waiting outside" : label(active)}${active.tool ? ` · ${active.tool}` : ""}` : known ? "Between activities" : "Not observed";
       return h("div", { class: "activity-lane" },
         h("a", { class: "linkish activity-person", href: link(name), "aria-label": `${name}'s daily activities` },
           m.cast.badge(name, 18), h("span", {}, h("b", {}, name), h("small", {}, status))),
@@ -64,7 +64,7 @@ export class ActivitiesPanel {
       h("div", { class: "activity-residents" }, m.world.agents.map(({ name }) => {
         const summary = residentActivitySummary(rows, name, day, now);
         const known = m.truth || name === reader;
-        const status = summary.current ? label(summary.current) : "Between activities";
+        const status = summary.current ? (summary.current.outside && summary.current.type === "rest" ? "Waiting outside" : label(summary.current)) : "Between activities";
         return h("a", { class: "activity-resident-card", href: link(name) },
           m.cast.badge(name, 28), h("div", {}, h("b", {}, name), h("small", {}, known ? `${status} · ${summary.count} activities` : "Not observed"),
             known ? h("small", {}, `Work ${activityDuration(summary.seconds.work)} · Conversation ${activityDuration(summary.seconds.conversation)}`) : null),

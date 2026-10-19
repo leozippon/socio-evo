@@ -96,3 +96,15 @@ const loadedDay = replay.eventsOf(1);
 replay.load(1,loadedDay);
 assert.equal(replay.state.seq,-1);
 assert.equal(replay.seek(481).seq,1);
+// Outside arrival is distinct from indoor admission and is cleared on movement/home return.
+const {initialState,apply} = await import("../../frontend/static/js/replay.js");
+const outside = initialState(world);
+apply(outside,{seq:0,time:470,actor:"Mei",place:"workshop",kind:"move",payload:{origin:"home",destination:"workshop",outside:true}});
+assert.equal(outside.locations.Mei,"workshop");
+assert.equal(outside.outside.Mei,"workshop");
+apply(outside,{seq:1,time:480,actor:"Mei",kind:"activity_feedback",payload:{outside:false}});
+assert.equal(outside.outside.Mei,undefined);
+apply(outside,{seq:2,time:720,actor:"Mei",place:"workshop",kind:"activity_entered",payload:{outside:true,activity:"door-rest",activity_type:"rest"}});
+assert.equal(outside.outside.Mei,"workshop");
+apply(outside,{seq:3,time:1320,actor:"Mei",kind:"move",payload:{origin:"workshop",destination:"home"}});
+assert.equal(outside.outside.Mei,undefined);
