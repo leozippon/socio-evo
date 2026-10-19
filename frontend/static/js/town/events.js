@@ -7,7 +7,7 @@
 // private remark shows its words in the truth view and to those who heard it, and is "something
 // said privately" to everyone else.
 
-import { hhmm, minuteOf } from "../clock.js";
+import { hhmmss, minuteOf } from "../clock.js";
 import { fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { current } from "../replay.js";
@@ -276,7 +276,7 @@ export function line(event, m) {
 /** Whether a feed shows an event at all: a private remark's bystanders are told by its own line. */
 export const shown = (event) => event.kind !== "speech_unheard";
 
-export const clockOf = (event) => hhmm(minuteOf(event.time));
+export const clockOf = (event) => hhmmss(minuteOf(event.time));
 
 /** Events of these kinds that happen together read better as one line. */
 const GROUPS = {

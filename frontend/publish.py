@@ -315,6 +315,10 @@ def publish_run(site: Site, root: Path) -> tuple[dict[str, Any], Analysed]:
         "settled_day": run.settled_day,
         "last_day": run.last_day,
         "last_time": run.events[-1].time if run.events else None,
+        "last_time_seconds": max(
+            (max(event.time * 60, event.payload.get("sim_seconds", 0)) for event in run.events),
+            default=None,
+        ),
         "events": len(run.events),
         "world": ref("world.json", digests["world"], True),
         "measures": ref("measures.json", digests["measures"], False),

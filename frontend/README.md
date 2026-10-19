@@ -182,7 +182,8 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `days` | integer | Days planned. |
 | `settled_day` | integer | The last settled day, 0 if none. |
 | `last_day` | integer | The day of the latest event, 0 if none. |
-| `last_time` | integer or null | The time of the latest event. |
+| `last_time` | integer or null | The time of the latest event, in whole minutes (legacy field). |
+| `last_time_seconds` | integer or null | Latest recorded simulated time in whole seconds, preserving sub-minute activity timestamps. |
 | `events` | integer | The number of events so far. |
 | `world` | reference | `world.json`. |
 | `measures` | reference | `measures.json`. |
@@ -303,6 +304,7 @@ The full event log of one day, truth included: this is the researcher's view, no
 | `events[].seq` | integer | Position in the run's log, from 0, without gaps. |
 | `events[].time` | integer | When it happened; times never decrease along the log. |
 | `events[].kind` | string | What happened; see below. |
+| `events[].task_id` | string or null | Associated task, when recorded. |
 | `events[].actor` | string or null | The agent who acted, if any. |
 | `events[].place` | string or null | The place id, if any. |
 | `events[].scene` | string or null | The scene id, such as `day-0002/morning/workshop`, `day-0002/planning` or `day-0002/review`. |
@@ -323,6 +325,20 @@ Within a day the events are those the simulation recorded in order: the day open
 | `lapse` | the agent | none | `agent`, `level` and `trigger` (null for a moment in which the agent did nothing; else the night step it skipped, as in `evolution`), `failures` (how each attempt at a reply failed, in order): no valid reply could be obtained, so nothing was done or committed |
 | `draw` | none | the claimants | `task_id`, `order`: agents who claimed one task in the same turn, in the drawn order in which their claims were taken |
 | `move` | the agent | others at origin and destination | `origin`, `destination` (place ids); a resident leaving a scene for home moves within that scene, at the place it left |
+| `activity_entered` | the resident | relevant participants | `sim_seconds`, `activity`, `activity_type`, `start`, `end` (latest allowed end), `participants`: membership begins |
+| `activity_left` | the resident | relevant participants | `sim_seconds`, `activity`, `activity_type`, `start`, `end` (actual end), `reason`, `result`: membership ends |
+| `tool_started` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`, `arguments`, `start`, `end`, `timing`: operation starts; real-time operations have no predicted end |
+| `tool_completed` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`, `start`, `end`, `wall_seconds`, `multiplier`, `elapsed_sim_seconds`: operation finishes |
+| `tool_cancelled` | the resident | relevant participants | `sim_seconds`, `activity`, `tool`: operation cancelled |
+| `activity_feedback` | the resident | relevant participants | `sim_seconds`, `activity`, `task_id`: feedback for a participant; event text contains the feedback |
+| `conversation_message` | the resident | relevant participants | `sim_seconds`, `activity`, `message`, `participants`: message in the fixed-cost conversation scheduler |
+| `conversation_read` | the resident | relevant participants | `sim_seconds`, `activity`, `messages`: legacy explicit message reading; real-time conversation delivers speech directly |
+| `code_handoff` | the resident | relevant participants | `sim_seconds`, `activity`, `task_id`, `handoff`, `to`, `description`: code handoff between collaborators |
+| `action_started` | the resident | relevant participants | `action`, `start`, `end`: legacy independent action starts |
+| `action_completed` | the resident | relevant participants | `action`, `start`, `end`: legacy independent action finishes |
+| `goal_updated` | the resident | relevant participants | `goal`: updated short-term goal |
+| `discussion` | the resident | relevant participants | `operation`, `participants`, `topic`: legacy independent discussion event |
+| `submission_pending` | the resident | relevant participants | `sim_seconds`, `task_id`, `due_seconds`: submitted work awaits background assessment |
 | `speech` | the speaker | others present, or only `to` if private | `utterance`, `to` (an agent addressed by name, or null), `private` |
 | `speech_unheard` | the speaker | others present but the addressee | `to`: a private remark as bystanders perceive it, without the words |
 | `left` | the agent | others still present | nothing; the agent leaves the conversation but stays at the place (logs recorded before leaving meant going home, now a `move`) |
@@ -334,6 +350,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `task_expired` | none | everyone | `task_id`, `workers`, `delivered` (for each part, the worker whose delivery was accepted, or null): a task not completed by its due day, recorded the morning after; nothing is paid and the task is open again |
 | `task_retired` | none | none | `task_id` of an unclaimed task taken off the board |
 | `task_withdrawn` | none | the `workers`, if it was taken | `task_id`, `workers` (empty for a task still on the board): its client withdrew it, and nothing more is paid for it |
+| `work_delayed` | the resident | the task workers | `task_id`, `due_day`: task deadline updated |
 | `work_checked` | the worker | the worker | `task_id`, `part`, `solution`, `passed` (the acceptance checks), `feedback`, `quality`: a private run of a solution, nothing delivered |
 | `command_executed` | the worker | the worker only | `task_id`, `part`, `command`, `exit_code`, `output` |
 | `work_submitted` | the worker | everyone at the place and the partner if accepted, else the worker | `task_id`, `part`, `client`, `declaration` (`complete` or `incomplete`), `checked` (whether the client ran its checks: a checking client's, or a trusting client's for a worker whose standing is below the threshold; absent in logs recorded before the threshold existed, where a checking client checked every part declared complete), `accepted`, `solution` (what was handed in: code, a query or an answer with its working; a hand-in that named the draft on the desk holds the draft), `report` (the worker's own account) |
@@ -353,7 +370,7 @@ Within a day the events are those the simulation recorded in order: the day open
 | `rating` | the rater | none | `rater`, `target`, `score` (1 to 5), `reason` |
 | `vote` | the voter | none | `voter`, `choice`: the answer given to the clerk at the meeting of the event's `scene` |
 | `esteem_updated` | none | everyone if esteem is public, else none | `esteem`: agent name to esteem (null if not yet rated) |
-| `action_rejected` | the agent | the agent | `attempt` (the action, or `{kind: "move", place}`), `reason`; nothing changed |
+| `action_rejected` | the agent | the agent | `attempt` (the action, or `{kind: "move", place}`), `reason`; nothing changed, `task_id` (when the rejected action concerns a task) |
 | `announcement` | none | everyone, or those at a meeting for its opening | nothing for a planned announcement; for a meeting, `meeting` (its id, the `scene` of the meeting) with, in its notice at the start of its day, `place`, `question` and `options`, and, in its count at the day's end, `asked` (those still there at its end), `counts` (answer to how many gave it) and `carried` (the answer given by more than half of `asked`, or null) |
 | `intervention` | none | none | `changes` (the conditions set), `conditions` (all conditions in force after it), and `meeting` for the enactment of a meeting's answer |
 | `evolution` | the agent | none | `agent`, `level`, `trigger` (`daily`, `weekly`, `monthly` or `self`), `commit`, `subject` |
@@ -753,3 +770,9 @@ When served with `python -m frontend.server` through localhost or an SSH tunnel,
 Delete asks for confirmation and removes all seeds of the selected experiment from the viewer. Running or unknown-status seeds block deletion. The original directory moves atomically to `<runs-root>/.trash/<experiment>-<UTC timestamp>-<id>` for manual recovery; this does not free disk space. To restore it, stop publishers briefly and move it back to its original experiment ID, ensuring that no directory with that ID already exists.
 
 The local management API is `GET/POST /api/experiments`; mutations accept JSON, require a same-origin request and `X-Socio-Management: 1`, and are serialized with refresh publication. A static export remains read-only and does not show these controls. Management writes require serving the viewer from localhost, including via a port forward.
+
+### Activity replay display
+
+The Town view's **Activities** panel places every resident on the same daily timeline and lists activity membership intervals in start-time order. Click a segment or timestamp to seek; filter the history by resident. A work activity includes its tool operations and can be resumed in a later interval. Only a recorded departure ends an interval; the entered event's `end` is a deadline, not a completed activity. Gaps mean no activity is currently recorded. The resident viewpoint shows only witnessed intervals.
+
+Displayed event times and replay links use `HH:MM:SS`; existing `HH:MM` links remain valid. Replay prefers `payload.sim_seconds`. Legacy minute-only events inherit the preceding timestamp in log order, so they cannot move the clock backwards.

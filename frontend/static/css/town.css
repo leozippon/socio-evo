@@ -654,3 +654,37 @@ body[data-view="town"] { overflow: hidden; }
 .ties-svg .node-halo { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1; }
 .ties-svg .arrow.passed .arrow-line { stroke-dasharray: 3 3; }
 .chosen { font-size: 12.5px; margin: 4px 0; }
+
+/* Activity membership, separate from the tools performed inside it. */
+.activities-panel { padding: 16px; }
+.activity-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+.activity-heading h3, .activity-heading h4 { margin: 0; }
+.activity-heading time, .activity-time { font-variant-numeric: tabular-nums; font-size: 12px; }
+.activity-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; font-size: 12px; }
+.activity-legend span { display: flex; align-items: center; gap: 5px; }
+.activity-legend i { width: 9px; height: 9px; border-radius: 2px; }
+.activity-rest { background: #c7c1af; }
+.activity-move { background: #cb9e62; }
+.activity-work { background: #6a988b; }
+.activity-conversation { background: #9b89b3; }
+.activity-lanes { margin-bottom: 24px; }
+.activity-axis, .activity-lane { display: grid; grid-template-columns: 138px minmax(90px, 1fr); gap: 10px; align-items: center; }
+.activity-axis { color: var(--muted); font-size: 10px; padding-bottom: 7px; }
+.activity-ruler { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
+.activity-lane { min-height: 53px; border-top: 1px solid var(--line); }
+.activity-person { display: flex; align-items: center; gap: 7px; text-align: left; min-width: 0; }
+.activity-person small { display: block; color: var(--muted); font-size: 10px; overflow-wrap: anywhere; }
+.activity-track { height: 25px; position: relative; background: repeating-linear-gradient(to right, transparent 0, transparent calc(25% - 1px), var(--line) 25%); border-bottom: 1px solid var(--line); }
+.activity-block { position: absolute; height: 16px; top: 4px; padding: 0; border: 0; border-radius: 2px; min-width: 2px; cursor: pointer; }
+.activity-block.ongoing { outline: 1px solid var(--ink-2); outline-offset: 1px; }
+.activity-block:hover, .activity-block:focus-visible { z-index: 2; outline: 2px solid var(--ink); }
+.activity-cursor { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--ink); pointer-events: none; }
+.activity-history { list-style: none; margin: 0; padding: 0; }
+.activity-history li { display: grid; grid-template-columns: 132px 1fr; gap: 10px; border-top: 1px solid var(--line); padding: 12px 0; }
+.activity-time { text-align: left; align-self: start; }
+.activity-history b, .activity-location, .activity-history small { display: block; }
+.activity-location, .activity-history small { color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.chronicle-list button { grid-template-columns: 66px 1fr; }
+@media (min-width: 1200px) {
+  .town:has(.activities-panel) { grid-template-columns: minmax(300px, 1fr) minmax(460px, 560px); }
+}

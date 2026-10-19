@@ -304,7 +304,7 @@ def measure(run: RunData) -> Measures:
                     today[actor].utterances += 1
                     for listener in event.audience:
                         edge(day, actor, listener).heard += 1
-                    if payload["to"] is not None:
+                    if payload.get("to") is not None:
                         edge(day, actor, payload["to"]).addressed += 1
                 case EventKind.LEFT:
                     scenes[event.scene].left[actor] = event.time

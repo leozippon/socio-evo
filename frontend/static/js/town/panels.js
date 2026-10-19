@@ -1,7 +1,7 @@
 // The town's panels. Each renders one moment: `m` holds the replay state, the day's events up
 // to that moment, whether the truth is shown, who is selected and whose wording is read.
 
-import { dayOf, hhmm, minuteOf } from "../clock.js";
+import { dayOf, hhmmss, minuteOf } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { current, holdings } from "../replay.js";
@@ -76,7 +76,7 @@ function askingList(m) {
         "li",
         { class: `asking fate-${asking.fate.replace(" ", "-")}` },
         h("span", { class: "asking-who" }, m.cast.badge(asking.asker, 15), icon("ask", 13), m.cast.badge(asking.partner, 15)),
-        h("span", { class: "asking-what" }, m.cast.mention(`${asking.asker} asked ${asking.partner}`), h("span", { class: "muted" }, ` · ${jobName(asking.task_id)} · ${hhmm(minuteOf(asking.time))}`)),
+        h("span", { class: "asking-what" }, m.cast.mention(`${asking.asker} asked ${asking.partner}`), h("span", { class: "muted" }, ` · ${jobName(asking.task_id)} · ${hhmmss(minuteOf(asking.time))}`)),
         h("span", { class: "fate" }, FATES[asking.fate] ?? asking.fate),
       ),
     ),
@@ -140,7 +140,7 @@ export class NowPanel {
       const own = decisions.findLast((e) => e.actor === m.selected);
       if (own) body.push(h("p", { class: "turn-label" }, `${m.selected}'s latest decision, ${clockOf(own)}`), decisionCard(own, m.dayEvents.filter((e) => e.time === own.time), m, { focus: true }));
     }
-    body.push(h("p", { class: "turn-label" }, ago > 0 ? `The latest turn, ${ago} min ago at ${clockOf(latest)}` : `This turn, ${clockOf(latest)}`, m.truth ? null : h("span", { class: "muted" }, " · thoughts hidden")));
+    body.push(h("p", { class: "turn-label" }, ago > 0 ? `The latest turn, ${Math.round(ago * 60)} sec ago at ${clockOf(latest)}` : `This turn, ${clockOf(latest)}`, m.truth ? null : h("span", { class: "muted" }, " · thoughts hidden")));
     if (m.truth) {
       const told = new Set(inTurn.flatMap((d) => outcomes(turn, d, m).map((e) => e.seq)));
       // What the town learnt before the turn's decisions (the morning's notices) comes first.
@@ -151,7 +151,7 @@ export class NowPanel {
       const cards = inTurn.map((e) => decisionCard(e, turn, m, { focus: e.actor === m.selected }));
       body.pop();
       if (before.length) body.push(h("p", { class: "turn-label" }, `In the town, ${clockOf(latest)}`), h("ul", { class: "outcomes news" }, before.map((e) => outcomeItem(e, m))));
-      body.push(h("p", { class: "turn-label" }, ago > 0 ? `The latest turn, ${ago} min ago at ${clockOf(latest)}` : `This turn, ${clockOf(latest)}`), ...cards);
+      body.push(h("p", { class: "turn-label" }, ago > 0 ? `The latest turn, ${Math.round(ago * 60)} sec ago at ${clockOf(latest)}` : `This turn, ${clockOf(latest)}`), ...cards);
       if (after.length) body.push(h("p", { class: "turn-label" }, "Also in the town"), h("ul", { class: "outcomes news" }, after.map((e) => outcomeItem(e, m))));
     } else {
       const seen = m.dayEvents.filter((e) => e.time >= latest.time && isPublic(e) && e.kind !== "decision" && shown(e) && (e.time === latest.time || (e.kind !== "move" && e.kind !== "left")));
@@ -201,9 +201,9 @@ export class PeoplePanel {
           const esteem = m.state.esteem[name];
           const owes = m.cast.agent(name).obligation ?? 0;
           const status = jobStatus(name, m);
-          const activity = m.state.activities?.[name];
+          const activity = m.state.sessions?.[name] ?? m.state.activities?.[name];
           const goal = (m.truth || m.reader === name) ? m.state.goals?.[name] : null;
-          if (activity) status.push(`${activity.action?.operation ?? activity.action?.kind ?? "busy"} · ${clockOf({ time: activity.start })}${activity.end == null ? "–running" : `–${clockOf({ time: activity.end })}`}`);
+          if (activity) status.push(`${activity.action?.operation ?? activity.action?.kind ?? "busy"} · ${clockOf({ time: activity.start })}${activity.end == null ? "–running" : "–ongoing"}`);
           if (goal) status.push(`Goal: ${goal}`);
           return h(
             "li",
@@ -262,7 +262,7 @@ export class FeedPanel {
     const rows = [];
     for (const item of items) {
       if (item.time !== lastTime) {
-        rows.push(h("li", { class: "feed-time" }, hhmm(minuteOf(item.time))));
+        rows.push(h("li", { class: "feed-time" }, hhmmss(minuteOf(item.time))));
         lastTime = item.time;
       }
       rows.push(this.item(item, m));
@@ -582,7 +582,7 @@ export class ChroniclePanel {
     const broke = balances.filter(([, v]) => v < 0);
     fill(
       this.el,
-      h("p", { class: "note" }, `Day ${m.state.day || 1} up to ${hhmm(minuteOf(m.state.time))}, in its notable moments. Pick one to go there.`),
+      h("p", { class: "note" }, `Day ${m.state.day || 1} up to ${hhmmss(minuteOf(m.state.time))}, in its notable moments. Pick one to go there.`),
       notes.length
         ? h(
             "ol",

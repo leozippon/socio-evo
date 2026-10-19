@@ -96,7 +96,7 @@ export class Timeline {
   runTime(x) {
     const day = Math.min(this.run.days, Math.floor(x / this.dayWidth()) + 1);
     const within = (x - (day - 1) * this.dayWidth()) / this.dayWidth();
-    return dayStart(day) + Math.round(this.from + within * (this.to - this.from));
+    return dayStart(day) + Math.round((this.from + within * (this.to - this.from)) * 60) / 60;
   }
 
   dayX(minute) {
@@ -104,7 +104,7 @@ export class Timeline {
   }
 
   dayTime(x) {
-    return dayStart(dayOf(this.time)) + Math.round(this.from + (x / this.width) * (this.to - this.from));
+    return dayStart(dayOf(this.time)) + Math.round((this.from + (x / this.width) * (this.to - this.from)) * 60) / 60;
   }
 
   setRun(run) {

@@ -1,4 +1,4 @@
-// Simulated time: integer minutes since 00:00 on day 1 (frontend/README.md, "How the bundle works").
+// Simulated time: minutes (including whole-second fractions) since 00:00 on day 1 (frontend/README.md, "How the bundle works").
 // Pure functions, shared by the replay engine (which also runs under node) and every view.
 
 export const DAY = 1440;
@@ -8,22 +8,29 @@ export const minuteOf = (time) => ((time % DAY) + DAY) % DAY;
 export const dayStart = (day) => (day - 1) * DAY;
 
 const pad = (n) => String(n).padStart(2, "0");
-export const hhmm = (minute) => `${pad(Math.floor(minute / 60))}:${pad(minute % 60)}`;
+export const hhmm = (minute) => `${pad(Math.floor(minute / 60))}:${pad(Math.floor(minute % 60))}`;
+
+/** A clock display shown to whole seconds, never fractional digits. */
+export const hhmmss = (minute) => {
+  const seconds = ((Math.floor(minute * 60 + 1e-7) % 86400) + 86400) % 86400;
+  return `${pad(Math.floor(seconds / 3600))}:${pad(Math.floor(seconds / 60) % 60)}:${pad(seconds % 60)}`;
+};
+export const eventTime = (event) => Number.isFinite(event.payload?.sim_seconds) ? event.payload.sim_seconds / 60 : event.time;
 
 /** Minutes after midnight of an `HH:MM` string. */
 export function parseHHMM(text) {
-  const match = /^(\d{1,2}):(\d{2})$/.exec(text);
+  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(text);
   if (!match) throw new Error(`not a clock time: ${text}`);
-  return Number(match[1]) * 60 + Number(match[2]);
+  return Number(match[1]) * 60 + Number(match[2]) + Number(match[3] ?? 0) / 60;
 }
 
 export const timeAt = (day, clock) => dayStart(day) + parseHHMM(clock);
-export const formatTime = (time) => `Day ${dayOf(time)} · ${hhmm(minuteOf(time))}`;
+export const formatTime = (time) => `Day ${dayOf(time)} · ${hhmmss(minuteOf(time))}`;
 
 /** The compact, URL-friendly form of a time: `5-09:05` is day 5 at 09:05. */
-export const stamp = (time) => `${dayOf(time)}-${hhmm(minuteOf(time))}`;
+export const stamp = (time) => `${dayOf(time)}-${hhmmss(minuteOf(time))}`;
 export function parseStamp(text) {
-  const match = /^(\d+)-(\d{1,2}:\d{2})$/.exec(text ?? "");
+  const match = /^(\d+)-(\d{1,2}:\d{2}(?::\d{2})?)$/.exec(text ?? "");
   return match ? timeAt(Number(match[1]), match[2]) : null;
 }
 

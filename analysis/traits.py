@@ -369,7 +369,7 @@ def traits(run: RunData) -> Traits:
                 rows[recipient, day].gifts_received += 1
                 pair(day, giver, recipient).money += amount
                 pair(day, giver, recipient).gifts += 1
-            case EventKind.SPEECH if payload["private"]:
+            case EventKind.SPEECH if payload.get("private", False):
                 rows[actor, day].private_remarks += 1
                 pair(day, actor, payload["to"]).private_remarks += 1
             case EventKind.DECISION if payload["thought"].strip():

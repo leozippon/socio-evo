@@ -7,7 +7,7 @@
 // the map fills the screen and a bottom sheet holds the timeline, always in reach of a thumb,
 // with the panels above it: dragged or tapped up to read, down to watch.
 
-import { calendarOf, dayOf, dayStart, hhmm, minuteOf, parseStamp, slotAt, stamp } from "../clock.js";
+import { calendarOf, dayOf, dayStart, hhmm, hhmmss, minuteOf, parseStamp, slotAt, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { Replay, current } from "../replay.js";
@@ -16,6 +16,7 @@ import { CLIENTS, actionSummary, bystanders, handedAs, isPublic, jobName, partsO
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
 import { BoardPanel, ChroniclePanel, FeedPanel, NowPanel, PeoplePanel, jobStatus } from "../town/panels.js";
+import { ActivitiesPanel } from "../town/activities.js";
 import { SPEEDS, Timeline } from "../town/timeline.js";
 import { placeById, shortName } from "../world.js";
 
@@ -24,6 +25,7 @@ const SKIP_SPEED = 240; // simulated minutes per second across quiet stretches
 const PANELS = [
   ["now", "Now"],
   ["people", "People"],
+  ["activities", "Activities"],
   ["feed", "Feed"],
   ["board", "Board"],
   ["ties", "Ties"],
@@ -40,7 +42,7 @@ export function mountTown(root, ctx) {
   const replay = new Replay(world);
   const lookups = { tasks: replay.tasks, places };
   const running = () => source.doc.status === "running";
-  const liveEnd = () => source.doc.last_time ?? 0;
+  const liveEnd = () => source.doc.last_time_seconds != null ? source.doc.last_time_seconds / 60 : source.doc.last_time ?? 0;
 
   const view = {
     time: 0,
@@ -85,6 +87,7 @@ export function mountTown(root, ctx) {
   const panels = {
     now: new NowPanel(),
     people: new PeoplePanel(),
+    activities: new ActivitiesPanel({ onJump: (time) => seek(time, true) }),
     feed: new FeedPanel({
       onFollow: (on) => {
         view.only = on;
@@ -204,6 +207,7 @@ export function mountTown(root, ctx) {
       places,
       lookups,
       dayEvents,
+      activityEvents: replay.sortedDays().flatMap((d) => replay.eventsOf(d)).filter((e) => e.seq <= state.seq),
       bystanders: bystanders(dayEvents),
       reader: view.lens && view.selected && replay.perspectives ? view.selected : null,
       dayStart: replay.snapshots.get(state.day)?.balances ?? null,
@@ -321,14 +325,14 @@ export function mountTown(root, ctx) {
         { class: "selected-head" },
         cast.badge(view.selected, 34),
         h("div", { class: "selected-text" }, h("b", {}, agent.name), h("span", { class: "muted" }, `${agent.occupation}${place ? ` · at ${shortName(place)}` : ""}`), status.length ? h("span", { class: "selected-job" }, cast.mention(status.join(" · "))) : null),
-        h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
+        h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(view.time) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
       view.truth && own
         ? h(
             "button",
             { type: "button", class: "selected-thought truth", "aria-expanded": "false", title: "Read the whole thought", onclick: (event) => event.currentTarget.setAttribute("aria-expanded", String(event.currentTarget.classList.toggle("open"))) },
-            h("span", { class: "truth-tag" }, icon("thought", 13), `thinks, ${hhmm(minuteOf(own.time))} · ${actionSummary(own.payload.action, { places })}`),
+            h("span", { class: "truth-tag" }, icon("thought", 13), `thinks, ${hhmmss(minuteOf(own.time))} · ${actionSummary(own.payload.action, { places })}`),
             h("span", { class: "thought-text" }, own.payload.thought),
           )
         : null,
@@ -367,7 +371,7 @@ export function mountTown(root, ctx) {
       shownSeq = m.state.seq;
     }
     const now = performance.now();
-    if (changed && (!view.playing || now - lastPanels > 250)) {
+    if ((changed || view.panel === "activities") && (!view.playing || now - lastPanels > 250)) {
       lastPanels = now;
       refreshPanel();
     }
@@ -383,7 +387,7 @@ export function mountTown(root, ctx) {
       ...route,
       query: {
         ...route.query,
-        t: stamp(Math.floor(view.time)),
+        t: stamp(view.time),
         agent: view.selected,
         truth: view.truth ? null : "0",
         panel: view.panel === "now" ? null : view.panel,
@@ -495,7 +499,7 @@ export function mountTown(root, ctx) {
       timeline.setCursor(time, { playing: false, follow: view.follow && running(), truth: view.truth, speed: view.speed, phase: "" });
       if (!(await ensure(time)) || view.time !== time || destroyed) return;
     } else if (page.classList.contains("failed")) unavailable(null);
-    replay.seek(Math.floor(time));
+    replay.seek(Math.floor(time * 60 + 1e-7) / 60);
     paint(false);
   }
 
@@ -545,7 +549,7 @@ export function mountTown(root, ctx) {
     }
     const before = replay.state.seq;
     view.time = time;
-    replay.seek(Math.floor(time));
+    replay.seek(Math.floor(time * 60 + 1e-7) / 60);
     const effects = [];
     if (replay.state.seq > before && replay.state.seq - before < 80)
       for (let seq = before + 1; seq <= replay.state.seq; seq++) {
@@ -583,6 +587,7 @@ export function mountTown(root, ctx) {
 
   function showPanel(key, user = false) {
     view.panel = key;
+    panelBody.scrollTop = 0;
     for (const tab of panelTabs.children) tab.setAttribute("aria-selected", String(tab.dataset.panel === key));
     refreshPanel(true);
     sync();
@@ -618,7 +623,7 @@ export function mountTown(root, ctx) {
   // Start ----------------------------------------------------------------------------------------
   async function start() {
     replay.expect(source.doc.event_days.map((d) => d.day));
-    timeline.setRun({ eventDays: source.doc.event_days, last: source.doc.last_time, running: running(), loaded: new Set() });
+    timeline.setRun({ eventDays: source.doc.event_days, last: liveEnd(), running: running(), loaded: new Set() });
     // The selection and the panels are drawn once the moment is shown, not for the empty town
     // before it: the first paint draws them.
     if (!source.doc.event_days.length) {
@@ -666,7 +671,7 @@ export function mountTown(root, ctx) {
       if (!changes) return;
       const days = source.doc.event_days.map((d) => d.day);
       replay.expect(days);
-      timeline.setRun({ eventDays: source.doc.event_days, last: source.doc.last_time, running: running(), loaded: new Set(replay.days.keys()) });
+      timeline.setRun({ eventDays: source.doc.event_days, last: liveEnd(), running: running(), loaded: new Set(replay.days.keys()) });
       try {
         await Promise.all(changes.days.filter((day) => replay.has(day) || day <= dayOf(view.time) || view.follow).map((day) => fetchDay(day)));
       } catch (error) {
@@ -677,7 +682,7 @@ export function mountTown(root, ctx) {
       timeline.setDay(replay.eventsOf(dayOf(view.time)));
       if (view.follow) await seek(liveEnd());
       else {
-        replay.seek(Math.floor(view.time));
+        replay.seek(Math.floor(view.time * 60 + 1e-7) / 60);
         paint(false);
       }
       if (view.panel === "ties") refreshPanel(true);

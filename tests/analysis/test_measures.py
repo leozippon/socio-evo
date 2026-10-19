@@ -241,3 +241,30 @@ def test_a_log_recorded_before_tasks_had_parts_measures_as_it_meant(town, tmp_pa
     assert deliveries and {(action.part, action.declaration) for action in deliveries} == {
         (1, "complete")
     }
+
+
+def test_activity_conversation_without_legacy_speech_fields(town):
+    """Direct conversation speech must not stop live publication of a running town."""
+    from analysis import traits
+    from core.interaction import EventKind
+
+    run = read_run(town)
+    original = next(
+        event
+        for event in run.events
+        if event.kind == EventKind.SPEECH
+        and not event.payload.get("private")
+        and event.payload.get("to") is None
+    )
+    direct = original.model_copy(
+        update={
+            "payload": {
+                "activity": "conversation-live",
+                "participants": list(original.audience),
+                "message": {"author": original.actor, "text": original.text},
+            }
+        }
+    )
+    changed = replace(run, events=tuple(direct if e.seq == original.seq else e for e in run.events))
+    assert measure(changed) == measure(run)
+    assert traits(changed) == traits(run)
