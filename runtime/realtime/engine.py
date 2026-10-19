@@ -134,7 +134,11 @@ class RealtimeEngine(ActivityEngine):
 
     def observation(self, who):
         observation = super().observation(who)
-        situation = observation.situation
+        situation = observation.situation.replace(
+            "Choosing an activity costs no time.",
+            "Choosing the next activity uses elapsed wall time, recorded as "
+            "Rest · Choosing next activity.",
+        )
         situation = "\n".join(
             line
             for line in situation.splitlines()
@@ -171,6 +175,7 @@ class RealtimeEngine(ActivityEngine):
             self.env.config.setting.backdrop
             + "\n"
             + self.env.rules_view()
+            + self.prework_context(who)
             + "\n"
             + self.activity_contract(who, self.menu(who))
         )

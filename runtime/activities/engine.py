@@ -454,6 +454,39 @@ class ActivityEngine:
             "Repository tools still require a Work activity and an assigned job. "
             f"Today ends at {clock(self.end)}. Historical timestamps are not the current clock."
             + self.assessment_waiting(who)
+            + self.prework_context(who)
+        )
+
+    def prework_context(self, who):
+        day = day_of(self.now // 60)
+        opening = at(day, "08:00")
+        if not at(day, "07:00") <= self.now < opening:
+            return ""
+        place = self.env.world.locations[who]
+        journeys = []
+        for destination in self.env.world.places.values():
+            if destination.kind != PlaceKind.WORK:
+                continue
+            seconds = self.travel_seconds(place, destination.id) if place != destination.id else 0
+            journeys.append(
+                f"{destination.name}: {seconds} seconds travel; depart by "
+                f"{clock(opening - seconds)} for an 08:00 arrival"
+                if self.now + seconds <= opening
+                else f"{destination.name}: {seconds} seconds travel; an 08:00 arrival "
+                "is no longer possible from here"
+            )
+        return (
+            "\n07:00–08:00 is free pre-work preparation time, not a compulsory activity or plan. "
+            "Choose among the same four activities. At home, Work can view the notice board, "
+            "claim jobs, read prior work feedback/notes and arrange partners. Repository tools "
+            "(including code reads/edits, commands, tests, handoffs and submission) stay "
+            "unavailable before 08:00 and still require an open workplace afterwards. "
+            "You may send invitations or arrange appointments, or chat with co-present "
+            "residents at an open location; invitations do not teleport anyone. "
+            "Alternatively travel early or keep resting. A closed workplace still means "
+            "waiting outside until opening; prepare at home before travelling. "
+            "Allow for travel and decision time yourself; no automatic commute is scheduled. "
+            "Current travel estimates: " + "; ".join(journeys) + "."
         )
 
     def assessment_waiting(self, who):
@@ -695,6 +728,7 @@ class ActivityEngine:
             + self.activity_contract(who, menu)
             + "\n"
             + self.env.rules_view()
+            + self.prework_context(who)
             + "\nThere is no morning plan. First choose an activity, then use its tools. "
             "Tool effects and messages become visible only when the operation finishes. "
             "The remaining budget is a ceiling, not prepaid time. Read replies explicitly. "

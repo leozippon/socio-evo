@@ -20,6 +20,24 @@ The community profiles now use the opt-in [independent action clock](independent
 Initial task stock is posted at 07:00; successful acceptance immediately replaces a job. Each resident then chooses a new action
 when their own previous action finishes; the old scene scheduler remains available.
 
+## Free preparation hour
+
+07:00–08:00 is optional preparation time using the same four activities. A resident
+may select Work at home to inspect public notices, claim a job, review prior work
+feedback/notes or arrange partners; no new planning call or compulsory activity is
+introduced. Invitations and appointments can be arranged remotely. In-person
+conversation still requires co-presence and an open location (for example shared
+homes); public venue opening hours and home access rules do not change.
+
+Repository reads/edits, commands, tests, handoffs and submissions remain locked
+before 08:00 and require an open workplace afterwards. Residents decide when to
+travel; current travel/departure estimates are shown during preparation. Early
+arrivals wait outside until the doors open. At 08:00 a held job can be continued in
+Work without resetting progress; there is no automatic commute or forced work.
+Residents who do not need preparation may keep resting. In realtime mode activity
+selection itself uses wall time, so departure estimates also remind residents to
+allow for decision latency.
+
 ## Work lifecycle
 
 - Initially six solo issues and one joint issue are posted. With `posting_mode: replenish`
