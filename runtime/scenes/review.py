@@ -3,8 +3,9 @@
 from collections.abc import Mapping, Sequence
 
 from core.environment import Environment
-from core.interaction import Allowance, Decision, MayPass, MayRate
+from core.interaction import Allowance, Decision, Event, MayPass, MayRate
 from runtime.scenes import situations
+from runtime.scenes.review_context import work_review_context
 from runtime.scenes.scene import Scene
 
 
@@ -19,6 +20,11 @@ class Review(Scene):
     ) -> None:
         super().__init__(env, id, None, list(met), start, 0)
         self.met = met
+        with env.log.path.open() as source:
+            events = [Event.model_validate_json(line) for line in source if line.strip()]
+        self.work_context = {
+            who: work_review_context(events, who, start) for who in self.participants
+        }
 
     def ask(self) -> list[str]:
         return list(self.participants)
@@ -27,7 +33,8 @@ class Review(Scene):
         return (MayRate(whom=tuple(self.met[agent])), MayPass())
 
     def situation(self, agent: str) -> str:
-        return situations.review(self.met[agent])
+        # Mandatory situation survives recency/relevance selection and token packing.
+        return situations.review(self.met[agent]) + "\n\n" + self.work_context[agent]
 
     async def carry_out(self, agent: str, decision: Decision, time: int) -> None:
         await self.env.execute(agent, decision.action, time=time, scene=self.id, witnesses=[agent])

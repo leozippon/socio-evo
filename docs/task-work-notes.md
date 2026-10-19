@@ -97,3 +97,28 @@ It is explicitly attributed to the resident and is not treated as a verified obs
 The latest summary as of the decision time is injected together with separately labelled
 factual excerpts under the shared token budget. Historical entries remain available for
 active recall. `state.json` includes the latest summary but remains a derived view.
+
+## Peer review: own receipts versus witnessed work
+
+Evening Review now pins an attributed work ledger in its mandatory situation text, independently
+of lexical/recency retrieval and optional memory token allocation. It contains today's own task,
+submission/acceptance/rejection/delay notices, own payment receipts, and a separate section for
+other residents' jobs personally witnessed. Every record carries a timestamp, event source,
+task id and actor. A pending submission is not an accepted repair; another resident's payment
+or an observed delivery is not the reviewer's income or work.
+
+The source is the event log filtered by the reviewer's audience permission and review time.
+Only witness-facing text is rendered; hidden work_assessed truth, private code/test patches,
+others' private payment records and future events are excluded. Public assignment membership
+handles jointly assigned jobs and prior-day claims; expiration/reassignment avoids crediting
+another worker's later repair to the former assignee. Reading this ledger does not consume
+pending percepts or change ratings, rewards, journals or archived experiment data.
+
+Task note headings also explain that 'your notes' means a private record held by you, which
+may describe someone else's work. Observed entries identify the actor explicitly; authored
+intentions and interpretations remain labeled separately from confirmed results.
+
+Validation: 263 regression tests passed across scheduling, SWE-bench, interaction schemas,
+active/context retrieval, work notes and replay. Dedicated checks cover receipts in the actual
+Agent review request with context budgeting both enabled and disabled, joint/carryover work,
+reassignment, unavailable/failed assessment, private/hidden/future data and perception cursors.

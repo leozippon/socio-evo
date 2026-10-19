@@ -172,7 +172,11 @@ class WorkNotes:
         view = next((r for r in reversed(records) if r["type"] == "work_view"), None)
         if not selected and view:
             selected = [view]
-        lines = [f"Your work notes for {job_name(task)}:"]
+        lines = [
+            f"Your work notes for {job_name(task)}:",
+            "This is your private record about the job, including things you witnessed "
+            "others do. It does not establish that you were assigned or completed this job.",
+        ]
         note = next((r for r in reversed(records) if r["type"] == "note"), None)
         if note:
             selected = [note, *selected]
@@ -184,6 +188,8 @@ class WorkNotes:
                 if record["type"] == "intention"
                 else "What you saw"
             )
+            if record["type"] == "observation":
+                label = f"Witnessed event; actor: {record.get('actor') or 'environment'}"
             if record["type"] == "note":
                 label = "Your own working summary (interpretation, not a verified result)"
             text = record["text"]
