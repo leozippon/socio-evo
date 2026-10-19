@@ -450,6 +450,8 @@ class MayResign(_Allowance):
 class MayActivity(_Allowance):
     kind: Literal[ActionKind.ACTIVITY] = ActionKind.ACTIVITY
     waits: dict[str, int] = {}
+    layer: Literal["legacy", "selection", "tool"] = "legacy"
+    menu: dict[str, Any] = Field(default_factory=dict)
     planning: bool = False
     moves: dict[str, str] = {}
     people: tuple[str, ...] = ()
@@ -461,6 +463,10 @@ class MayActivity(_Allowance):
     extension: bool = False
 
     def forms(self) -> list[_Form]:
+        if self.layer != "legacy":
+            from core.interaction.activity_card import activity_forms
+
+            return activity_forms(self.layer, self.menu)
         result = []
         if self.planning:
             return [

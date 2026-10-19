@@ -13,7 +13,7 @@ import re
 from enum import StrEnum
 from typing import Annotated, Literal, get_args
 
-from pydantic import Field
+from pydantic import Field, JsonValue
 
 from infrastructure.config import StrictModel
 
@@ -196,10 +196,19 @@ class Activity(StrictModel):
         "extend",
         "agree",
         "wait",
+        "select_rest",
+        "select_move",
+        "select_work",
+        "select_conversation",
+        "resume_work",
+        "activity_tool",
     ]
     target: str = ""
     topic: str = Field(default="", max_length=1000)
     minutes: int = Field(default=20, ge=5, le=60, multiple_of=5)
+    seconds: int = Field(default=0, ge=0, le=86400)
+    tool: str = ""
+    arguments: dict[str, JsonValue] = Field(default_factory=dict)
     until: int | None = Field(default=None, ge=0)
     remote: bool = False
 

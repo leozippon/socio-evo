@@ -136,6 +136,27 @@ export function apply(state, event) {
       state.activities ??= {};
       state.activities[event.actor] = p;
       break;
+    case "activity_entered":
+      state.sessions ??= {};
+      state.activities ??= {};
+      state.sessions[event.actor] = { ...p, action: { kind: p.activity_type } };
+      state.activities[event.actor] = state.sessions[event.actor];
+      break;
+    case "tool_started":
+      state.activities ??= {};
+      state.activities[event.actor] = { ...p, action: { kind: p.tool } };
+      break;
+    case "tool_completed":
+    case "tool_cancelled":
+      if (state.activities) {
+        if (state.sessions?.[event.actor]) state.activities[event.actor] = state.sessions[event.actor];
+        else delete state.activities[event.actor];
+      }
+      break;
+    case "activity_left":
+      if (state.sessions) delete state.sessions[event.actor];
+      if (state.activities) delete state.activities[event.actor];
+      break;
     case "action_completed":
       if (state.activities) delete state.activities[event.actor];
       break;

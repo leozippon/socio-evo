@@ -35,6 +35,7 @@ class SWEbenchTaskProvider:
         evaluation_seconds: int = 600,
         community: bool = False,
         repository_guidance: bool = False,
+        independent_workspaces: bool = False,
         solo_deadline_days: int = 2,
         joint_deadline_days: int = 2,
     ):
@@ -45,6 +46,7 @@ class SWEbenchTaskProvider:
             "instances": sorted(self.rows),
         }
         self.community = community
+        self.independent_workspaces = independent_workspaces
         self.repository_guidance = repository_guidance
         self.preflights: dict[str, dict] = {}
         self.solo_deadline_days = solo_deadline_days
@@ -97,7 +99,15 @@ class SWEbenchTaskProvider:
         part = self.part(rng.choice(available))
         days = self.joint_deadline_days if workers == 2 else self.solo_deadline_days
         text = part.specification
-        if workers == 2:
+        if workers == 2 and self.independent_workspaces:
+            text += (
+                "\nThis is one repair for two partners, each with a private checkout. "
+                "Choose parallel subtasks or a serial relay. Export an immutable code handoff "
+                "and explicitly apply a partner's version; resolve conflicts before submitting. "
+                "Either partner may submit their integrated WORKTREE; unshared changes in "
+                "another checkout are never automatically included."
+            )
+        elif workers == 2:
             text += (
                 "\nThis is one shared repair for two partners. Both use the same checkout; "
                 "changes made by either are visible to the other. Coordinate file edits, "
@@ -107,7 +117,7 @@ class SWEbenchTaskProvider:
         return (part.model_copy(update={"deadline_days": days, "specification": text}),)
 
     def _key(self, part, worker: str, task_id: str) -> str:
-        owner = "shared" if self.community else worker
+        owner = "shared" if self.community and not self.independent_workspaces else worker
         return hashlib.sha256(f"{owner}:{task_id}:{part.reference}".encode()).hexdigest()[:20]
 
     def checkpoint(self, day: int) -> None:
@@ -263,6 +273,51 @@ class SWEbenchTaskProvider:
             json.dumps({"worker": worker, "command": script, **result})
         )
         return result
+
+    async def export_handoff(self, part: Part, worker: str, task_id: str) -> str:
+        if not self.independent_workspaces:
+            raise ValueError("Code handoffs require independent workspaces")
+        return await self.prepare_submission(part, worker, task_id, "WORKTREE")
+
+    async def apply_handoff(self, part: Part, worker: str, task_id: str, patch: str) -> dict:
+        """Three-way merge into a private disposable checkout; conflict keeps its old snapshot."""
+        if not self.independent_workspaces:
+            raise ValueError("Code handoffs require independent workspaces")
+        return await asyncio.to_thread(self._apply_handoff, part, worker, task_id, patch)
+
+    def _apply_handoff(self, part, worker, task_id, patch):
+        with self._lock:
+            container, folder = self._workspace(part, worker, task_id)
+            try:
+                if len(patch.encode()) > 2_000_000:
+                    return {"exit_code": 1, "output": "Handoff exceeds the patch size limit."}
+                if not patch.strip():
+                    return {"exit_code": 0, "output": "No changes in this handoff."}
+                buf = io.BytesIO()
+                with tarfile.open(fileobj=buf, mode="w") as archive:
+                    data = patch.encode()
+                    item = tarfile.TarInfo("resident-handoff.patch")
+                    item.size = len(data)
+                    archive.addfile(item, io.BytesIO(data))
+                container.put_archive("/tmp", buf.getvalue())
+                staged = captured_exec(container, ["git", "-C", "/testbed", "add", "-A"])
+                if staged.exit_code:
+                    return {"exit_code": 1, "output": staged.output.decode()}
+                result = captured_exec(
+                    container,
+                    ["git", "-C", "/testbed", "apply", "--3way", "/tmp/resident-handoff.patch"],
+                )
+                if result.exit_code:
+                    return {"exit_code": result.exit_code, "output": result.output.decode()}
+                try:
+                    self._snapshot(container, folder)
+                except WorkBudgetExceeded as exc:
+                    return {"exit_code": 1, "output": str(exc)}
+                return {"exit_code": 0, "output": result.output.decode() or "Code handoff applied."}
+            finally:
+                # A conflict never gets snapshotted, so all partially applied files disappear.
+                container.remove(force=True)
+                self.containers.pop(self._key(part, worker, task_id), None)
 
     def desk_view(self, part: Part, worker: str, task_id: str) -> str:
         key = self._key(part, worker, task_id)

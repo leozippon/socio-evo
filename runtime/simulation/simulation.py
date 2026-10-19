@@ -100,6 +100,7 @@ class Checkpoint(StrictModel):
     rng: tuple[int, tuple[int, ...], float | None]
     agents: dict[str, str]
     goals: dict[str, str] = {}
+    activity_state: dict[str, JsonValue] = {}
 
 
 class Simulation:
@@ -126,6 +127,8 @@ class Simulation:
         self.day = day
         """The last day completed."""
         self.goals: dict[str, str] = {}
+        self.activity_state = {}
+        self.activity_engine = None
         self._stop = self.config.days
         self._met: dict[str, set[str]] = {}
         self._held: list[tuple[Called, Meeting | None]] = []
@@ -198,6 +201,7 @@ class Simulation:
         queue = TriggerQueue(checkpoint.queue)
         simulation = cls(run, setup, env, agents, queue, rng, checkpoint.day)
         simulation.goals = dict(checkpoint.goals)
+        simulation.activity_state = dict(checkpoint.activity_state)
         return simulation
 
     async def run(self, until_day: int | None = None) -> RunStatus:
@@ -235,8 +239,19 @@ class Simulation:
     async def _start_day(self, time: int) -> None:
         day, calendar = day_of(time), self.config.calendar
         self._started = wall.perf_counter()
+        if self.config.scheduling == "activities":
+            if self.activity_engine is None:
+                from runtime.activities.engine import ActivityEngine
+
+                self.activity_engine = ActivityEngine(self, self.activity_state)
+            self.activity_engine.protect_assessment_deadlines(day)
         self.env.start_day(time, self.rng)
         self._met, self._held = {agent: set() for agent in self.agents}, []
+        if self.config.scheduling == "activities":
+            self.env.post(time, self.seed)
+            await self.activity_engine.run(time)
+            self.queue.push(Trigger(time=calendar.end(day), kind=TriggerKind.DAY_END))
+            return
         if self.config.scheduling == "independent":
             from runtime.scheduler.activity import ActivityClock
 
@@ -523,6 +538,9 @@ class Simulation:
         checkpoint = Checkpoint(
             day=self.day,
             goals=dict(self.goals),
+            activity_state=self.activity_engine.state()
+            if self.activity_engine
+            else self.activity_state,
             environment=self.env.state(),
             queue=tuple(self.queue.state()),
             rng=self.rng.getstate(),

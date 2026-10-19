@@ -104,6 +104,8 @@ async def run(
     try:
         return root, await simulation.run(until_day)
     finally:
+        if simulation.activity_engine is not None:
+            await simulation.activity_engine.close()
         await close_providers(parts)
 
 
@@ -159,6 +161,7 @@ def task_providers(config: ExperimentConfig, run_root: Path):
             evaluation_seconds=config.tasks.evaluation_seconds,
             community=config.tasks.community,
             repository_guidance=config.tasks.repository_guidance,
+            independent_workspaces=config.simulation.scheduling == "activities",
             solo_deadline_days=config.tasks.solo_deadline_days,
             joint_deadline_days=config.tasks.joint_deadline_days,
         )

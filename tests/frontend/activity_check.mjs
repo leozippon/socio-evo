@@ -30,3 +30,15 @@ apply(state, event("task_posted", 540, { task: { id: "legacy-solo" } }));
 apply(state, event("task_claimed", 545, { task_id: "legacy-solo", due_day: 2 }));
 assert.equal(state.claims["legacy-solo"].parts.length, 1);
 console.log("Shared deliverable and deadline replay checks passed");
+
+// New sessions remain visible between tools; older activity events still work.
+apply(state, event("activity_entered", 600, { activity: "work-1", activity_type: "work", start: 600, end: 660 }));
+assert.equal(state.activities.Mei.action.kind, "work");
+apply(state, event("tool_started", 601, { activity: "work-1", tool: "command", start: 601, end: 606 }));
+assert.equal(state.activities.Mei.action.kind, "command");
+apply(state, event("tool_completed", 606, { activity: "work-1" }));
+assert.equal(state.activities.Mei.action.kind, "work");
+apply(state, event("activity_left", 610, { activity: "work-1" }));
+assert.equal(state.activities.Mei, undefined);
+assert.equal(state.sessions.Mei, undefined);
+console.log("Session and tool replay checks passed");

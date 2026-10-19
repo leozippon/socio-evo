@@ -91,6 +91,14 @@ class Agent:
     def id(self) -> str:
         return self.profile.name
 
+    async def choose_activity(self, observation: Observation) -> Decision:
+        """Choose a new activity only when not participating in one."""
+        return await self.act(observation.model_copy(update={"decision_layer": "choose_activity"}))
+
+    async def choose_tool(self, observation: Observation) -> Decision:
+        """Continue or leave the current activity using only its available tools."""
+        return await self.act(observation.model_copy(update={"decision_layer": "activity_tool"}))
+
     async def act(self, observation: Observation) -> Decision:
         """Store the new percepts, recall memories, answer on the moment's card, and record
         the decision the answer means. News of the kinds the moment shows as it stands (the
@@ -127,7 +135,7 @@ class Agent:
             reply = await self._decide(observation, recall, skills, card, system)
         else:
             reply = await self.ask(
-                "act",
+                observation.decision_layer,
                 observation.time,
                 prompts.decision_prompt(observation, recall, self.cognition, self.setting),
                 card.model,
@@ -231,7 +239,7 @@ class Agent:
                         h.render(self.setting) for h in hits
                     )
             prompt += "\n\n" + instruction + "\n\n" + form(model)
-            request = self._request("act", observation.time, system, prompt)
+            request = self._request(observation.decision_layer, observation.time, system, prompt)
             request = request.model_copy(
                 update={
                     "json_schema": model.model_json_schema(),

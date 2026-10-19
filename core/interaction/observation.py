@@ -1,5 +1,7 @@
 """What the environment presents to one agent at a decision point."""
 
+from typing import Literal
+
 from pydantic import Field
 
 from core.interaction.card import Allowance
@@ -27,6 +29,7 @@ class Observation(StrictModel):
     evidence: tuple[str, ...] = ()
     """Current desk evidence, budgeted ahead of historical memory; not new events."""
 
+    decision_layer: Literal["act", "choose_activity", "activity_tool"] = "act"
     correction_context: str = ""
     goal_updates: bool = False
     agent: str

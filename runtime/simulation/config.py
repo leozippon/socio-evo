@@ -6,6 +6,7 @@ from pydantic import Discriminator, Field, JsonValue, PositiveInt, Tag, model_va
 
 from core.interaction import time_at
 from infrastructure.config import StrictModel
+from runtime.activities.model import Timing
 from runtime.scenes import SceneConfig
 from runtime.scheduler import Calendar, Clock
 
@@ -90,7 +91,8 @@ class SimulationConfig(StrictModel):
     `max_lapse_share` of its decisions and night steps have lapsed for want of a valid reply
     (see `Simulation`)."""
 
-    scheduling: Literal["scenes", "independent"] = "scenes"
+    scheduling: Literal["scenes", "independent", "activities"] = "scenes"
+    activity_timing: Timing = Timing()
     grading_minutes: int = Field(default=20, ge=5, le=120, multiple_of=5)
     days: PositiveInt
     calendar: Calendar
@@ -103,7 +105,7 @@ class SimulationConfig(StrictModel):
     @model_validator(mode="after")
     def _fits(self) -> "SimulationConfig":
         calendar = self.calendar
-        if self.scheduling == "independent":
+        if self.scheduling in ("independent", "activities"):
             if calendar.day_start != "07:00" or calendar.day_end != "22:00":
                 raise ValueError("independent scheduling requires 07:00–22:00 days")
             if self.meetings:

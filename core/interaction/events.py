@@ -10,6 +10,15 @@ from infrastructure.config import StrictModel
 
 
 class EventKind(StrEnum):
+    ACTIVITY_ENTERED = "activity_entered"
+    ACTIVITY_LEFT = "activity_left"
+    TOOL_STARTED = "tool_started"
+    TOOL_COMPLETED = "tool_completed"
+    TOOL_CANCELLED = "tool_cancelled"
+    ACTIVITY_FEEDBACK = "activity_feedback"
+    CONVERSATION_MESSAGE = "conversation_message"
+    CONVERSATION_READ = "conversation_read"
+    CODE_HANDOFF = "code_handoff"
     ACTION_STARTED = "action_started"
     ACTION_COMPLETED = "action_completed"
     GOAL_UPDATED = "goal_updated"
@@ -140,6 +149,8 @@ class Event(StrictModel):
         seen["task_id"] = None
         # Only a public routing identifier, never evaluation results or hidden tests.
         work_kinds = {
+            EventKind.CODE_HANDOFF,
+            EventKind.ACTIVITY_FEEDBACK,
             EventKind.TASK_POSTED,
             EventKind.TASK_CLAIMED,
             EventKind.TASK_PROPOSED,
