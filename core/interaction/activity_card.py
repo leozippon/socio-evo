@@ -116,9 +116,7 @@ def activity_forms(layer, menu):
                     "wake for invitations": (
                         bool,
                         "Allow nearby public-chat opportunities and invitations "
-                        "to wake you to choose; "
-                        "this never joins automatically. Prefer true while waiting; false means "
-                        "deliberately undisturbed rest.",
+                        "to wake you to choose whether to join; false leaves rest undisturbed.",
                     ),
                 },
                 lambda r: Activity(

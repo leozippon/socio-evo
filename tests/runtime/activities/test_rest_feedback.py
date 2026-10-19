@@ -35,7 +35,6 @@ def test_no_activity_feedback_survives_checkpoint_and_clears_on_success(engine):
     engine.feedback("Mei", str(caught.value))
     restored = ActivityEngine(engine.sim, engine.state())
     restored.now, restored.end = engine.now, engine.end
-    assert "Recent activity-selection feedback" in restored.observation("Mei").situation
     assert "after the current time" in restored.observation("Mei").situation
     restored.select("Mei", choose("select_rest", arguments={"until": "06:00"}))
     assert "Mei" not in restored.selection_feedback

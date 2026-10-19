@@ -28,6 +28,7 @@ class Timing(StrictModel):
     assessment_seconds: int = Field(default=1200, ge=1)
     assessment_retry_seconds: int = Field(default=300, ge=1, le=3600)
     assessment_retry_max_seconds: int = Field(default=3600, ge=1, le=86400)
+    # Accepted for historical frozen configurations; no longer changes resident prompts.
     warning_seconds: int = Field(default=300, ge=0)
     max_zero_transitions: int = Field(default=12, ge=2, le=100)
     max_read_lines: int = Field(default=400, ge=1, le=2000)

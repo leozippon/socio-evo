@@ -25,28 +25,16 @@ def recipe(repo: str) -> tuple[str, str]:
             "python -c 'import django; django.setup(); print(django.get_version())'"
         )
         guide = (
-            "This is Django's source repository, not a generated Django application. "
-            "Its test entry point is tests/runtests.py; use the repository's test_sqlite settings. "
-            "From /testbed: python tests/runtests.py --settings=test_sqlite <test-label>. "
-            "Replace <test-label> with the package/module/class/test under tests/ that you "
-            "choose after inspecting the repository; do not prefix it with django.tests or tests. "
-            "For example, tests/backends/base/test_operations.py becomes "
-            "backends.base.test_operations, not tests.backends.base.test_operations; "
-            "tests/admin_checks/tests.py becomes admin_checks. Confirm the path exists first. "
-            "Discover modules with find tests -name 'test*.py' and inspect contributor docs; "
-            "a source module under django/ is not a test label. "
-            "Inspect python tests/runtests.py --help for options. Do not assume manage.py "
-            "or pytest is available, and do not invent settings merely to start the suite."
+            "For Django, run python tests/runtests.py --settings=test_sqlite <test-label>. "
+            "Labels are relative to tests/: tests/backends/base/test_operations.py uses "
+            "backends.base.test_operations; tests/admin_checks/tests.py uses admin_checks. "
+            "The repository's contributor documentation and launcher --help describe options."
         )
     else:
         check = "python -m pytest --version && python -m pytest --help >/dev/null"
         guide = (
-            "The installed pytest launcher has been checked. From /testbed: "
-            "python -m pytest <test-path>. Replace <test-path> with an existing test file "
-            "or node you select after inspecting the repository. Use ls/find and the "
-            "repository's contributor documentation to locate tests; their directory may "
-            "be tests/ or testing/ or another location. Do not assume a path from memory. "
-            "Use python -m pytest --help to inspect options."
+            "Run python -m pytest <test-path>, using a test file or node from the repository. "
+            "Contributor documentation and python -m pytest --help describe test options."
         )
     return check, guide
 
@@ -117,31 +105,27 @@ def inspect_environment(instance: str, repo: str, base_commit: str, out: Path) -
 
 def operating_notes(report: dict, command_seconds: int, community: bool) -> str:
     persistence = (
-        "Only repository changes captured in the Git patch persist between actions. "
-        "Ignored files, installed packages, running processes and exported shell variables "
-        "are not durable; set necessary variables in the same command."
+        "Repository changes captured in the Git patch persist between commands. "
+        "Ignored files, installed packages, processes and shell variables are temporary."
         if community
-        else "Each action starts a new shell; export required variables in the same command."
+        else "Files persist between commands; each command starts a new shell."
     )
     verification = (
-        "Environment preflight checked the launcher and basic setup, not the whole test "
-        "suite or the correctness of a repair. "
+        "The launcher and basic setup passed environment preflight."
         if report.get("status") == "passed"
-        else "These are operating instructions, not proof that the test environment was checked. "
+        else "Environment preflight has not been performed."
     )
     return (
-        "\n\nRepository operating notes (shared environment instructions):\n"
+        "\n\nRepository operating notes:\n"
         "Commands start in /testbed with the testbed Python environment activated. "
         + report["guide"]
         + "\n"
         + persistence
-        + f" Network access is disabled. Each command has a {command_seconds}-second limit "
-        "and output is truncated to 16000 characters. Use focused commands. "
-        "Bash pipefail is enabled: a failing command piped into head/tail remains a failure; "
-        "early-closing readers may also cause SIGPIPE. Always read the output: exit code 0 "
-        "does not prove any test ran or passed. "
+        + f" Network access is disabled. Commands use Bash with pipefail, have a "
+        f"{command_seconds}-second limit, and return at most 16000 output characters. "
         + verification
-        + "Choose relevant tests yourself; official acceptance happens only after submission."
+        + " Local test results are shown in the test runner's report; "
+        "client acceptance is reported after submission."
     )
 
 

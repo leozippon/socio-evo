@@ -1,8 +1,6 @@
-# Real-time town activities
+# Real-time activity scheduling
 
-Use `simulation.scheduling: realtime` for the shared real-time driver. The `scenes`,
-`independent` and fixed-cost `activities` entries remain available. A complete example
-is `experiments/configs/community/realtime.yaml`; adding it does not start an experiment.
+`simulation.scheduling: realtime` is the opt-in wall-clock variant of [Activity scheduling](activity-scheduling.md). The `scenes`, `independent` and fixed-cost `activities` schedulers remain available. Example configuration: `experiments/configs/community/realtime.yaml`.
 
 ```yaml
 simulation:
@@ -13,101 +11,28 @@ simulation:
     final_grading_wait_seconds: 30
 ```
 
-## Time conversion
+## Shared clock
 
-`town elapsed seconds = observed wall elapsed seconds × multiplier`.
-The multiplier must be finite and greater than zero. At 15, the active 07:00–22:00
-window lasts approximately one real hour. At 24, that same 15-hour window lasts
-37.5 real minutes. Nightly accounting, review, evolution, checkpoint I/O and offline
-time are outside this active-day clock; this is not a promise that the entire program,
-including nightly model calls, finishes a day in exactly one real hour.
+Town time advances by observed wall time multiplied by `multiplier`, which must be finite and positive. At 15, the active 07:00–22:00 period lasts about one real hour; at 24, about 37.5 minutes. Nightly accounting, reflection, evolution, checkpoint I/O and time while the program is stopped are outside this active-day clock, so a complete run day is not guaranteed to finish within that duration.
 
-All residents share one monotonic clock. Their model requests and tools run as
-independently completing asynchronous jobs. A slow request does not impose a round
-barrier on the others. Server queues, network latency, retries, parsing and tool startup
-are part of observed wall latency, not separately measured GPU compute time. Model and
-Docker services may still serialize requests internally. Keep model/concurrency/hardware
-settings stable for comparisons. Record the multiplier together with latency data.
+Residents share one monotonic clock, while model requests and tools complete independently. Request queues, network latency, retries, parsing and startup contribute to observed wall time; this is not a measurement of GPU compute time. Services may serialize work internally, so keep model, concurrency and hardware settings stable when comparing runs and record the multiplier with latency data. Activity choices and actual request time advance the shared clock. Administrative controls add no artificial delay. Rest, travel and appointment grace use their configured simulated durations. Idle time does not fast-forward to another resident's completion; the 0.1-second default poll is also woken by task completion.
 
-Activity selection also takes its actual model-request time. Claims and administrative
-controls add no artificial minutes, but the shared clock still advances while their
-requests run. Work/chat forms do not ask for a chosen duration. Rest-until, travel distance
-and appointment grace continue to use configured simulated durations, converted to real
-waiting by the multiplier. Idle time never fast-forwards to the next resident's completion.
-The default poll interval is 0.1 real seconds; task completion wakes the loop immediately.
+The clock anchor is reset at day start and checkpoint recovery. Recovery replays the last completed day, not an in-progress command, and excludes offline time.
 
-Each day or checkpoint recovery rebases the monotonic anchor. Recovery replays from the
-last completed-day checkpoint, not from a live in-progress command. It never charges the
-hours the program was stopped as town time.
+## Conversation and work
 
-## Onsite conversation
+Conversation uses the activity membership rules in [Activity scheduling](activity-scheduling.md), with direct speech delivery. When a speaker's model response finishes, its utterance is delivered to current participants and enters their episodic memory as witnessed speech. There is no explicit read action, unread backlog, or length-based read and reply charge. Participants can speak concurrently without fixed turn order; everyone shares the same elapsed interval. A response already being generated cannot absorb new arrivals, which are ingested before that resident's next decision. Bystanders are not added automatically. Late joiners receive later speech only, and departed members receive no future messages.
 
-Conversations have no arbitrary 30-minute or other preselected budget. A participant
-chooses to continue speaking, wait, invite someone or leave. Venue/day closure still
-applies. Immediate and scheduled invitations require confirmed, present, available members;
-a model/tool request already in progress is busy and cannot be hijacked by an invitation.
+For a two-person conversation, an utterance already underway finishes and is heard before the group closes. A silent wait can be interrupted and does not keep the group open. In a larger group, one member may leave while the others continue. Speech events record generation start and end, observed generation time, full text and delivery audience.
 
-When a speaker's model response finishes generating, its utterance is delivered to the
-current onsite conversation participants. There is no `read` action, unread backlog,
-length-based reading charge, or additional word-count speaking charge. Completed utterances
-are ordinary witnessed speech events and enter recipients' episodic memory automatically.
-A participant generating its own response cannot retroactively change that in-flight prompt;
-it ingests arrivals when that decision returns, before the next decision, maintaining
-chronological memory records. Bystanders are not silently added as participants.
+Code reads, edits, tests, handoff application and submission snapshot collection use their actual runtime; the fixed costs in `activities` mode do not apply. Existing input bounds, process timeouts, private workspaces, versioned handoffs and official acceptance remain in force. An outstanding operation is shown as running until it completes.
 
-Everyone experiences the same elapsed conversation interval on the shared clock; listening
-does not add a second copy of the speaker's duration. Multiple residents may generate
-speech concurrently; there is no forced turn rotation. Speech records include generation
-start/end and observed generation wall seconds, separately from the negligible delivery step.
+New code operations require an open work venue and the 08:00–12:00 or 14:00–18:00 work window. An operation started before closing may finish afterward; its result is recorded, work pauses and the resident chooses what to do next. A response based on an obsolete work or selection context cannot start a new operation after closing. Day-close operations are drained before nightly bookkeeping. If an operation crosses the civil day, the driver fails explicitly rather than writing events with backward dates; configure real request and process timeouts for the chosen multiplier.
 
-For two-person closure, an already started utterance finishes and is heard before both
-participants exit. A silent wait is interruptible and does not hold the group open. In a
-larger group, a participant can leave while the others continue. Late joiners receive only
-subsequently delivered speech; departed members do not receive future utterances. Delivery
-audiences and full speech text are recorded for replay and research.
+Claims, notes and private patches persist across activities and days. Completed or expired job bindings are retired without transferring old relay ownership to a new task. Only the relay owner can launch code-writing tools. Simultaneous claims observed in the same clock second are ordered by the seeded draw; existing collaborator matching rules remain in effect.
 
-## Work and closing
+## Settlement and recovery
 
-Reading code, editing, testing, handoff application and submission snapshot collection use
-actual tool runtime. The old fixed 60/120/300-second action costs are not charged in this
-mode. Existing input bounds, real process timeouts, private workspaces, explicit versioned
-handoffs and official acceptance are retained. The viewer labels an outstanding operation
-as running, rather than inventing a completion time.
+Submission freezes the patch when snapshot collection finishes, then official grading runs in the background. The first feedback is due after 20 simulated minutes; this is a client-service rule, not a fixed work charge. Residents can continue with other activities while they wait. Infrastructure failures are not failed repairs.
 
-New code operations are allowed only in an open work venue, 08:00–12:00 and 14:00–18:00.
-An already started operation may finish after closing; its result is recorded, work pauses,
-and the resident leaves. A response generated from an obsolete work/selection context
-cannot start a fresh operation after closure. Day-close operations are drained before night
-bookkeeping, so completion/return-home/night events stay chronological. If an operation is
-so slow that it crosses the civil day, the driver fails explicitly rather than writing
-backwards dates; configure real request/process timeouts appropriately for the multiplier.
-
-Claims, notes and private patches persist across activity/day boundaries. Completed or
-expired job bindings are retired, preserving history without transferring old relay owners
-to a new task. Only the relay owner can launch code-writing tools. Independently completed
-claims observed at the same clock second are drawn in seeded order; collaborator offers
-continue to use the existing matching rules.
-
-## Acceptance, completion and recovery
-
-Submission freezes the worker's patch at its actual collection completion. Official grading
-runs in the background; the existing first-feedback threshold is 20 simulated minutes after
-submission. This is a client-service rule, not a fixed duration charged to work. Residents
-can do other things while waiting. An infrastructure failure is not a failed repair.
-
-After the last day, settlement waits at most `final_grading_wait_seconds` real seconds,
-without rerunning residents or charging another day. That bound may be set to zero. If
-submission results are still pending, the run is `interrupted`, with frozen submissions in
-its checkpoint, rather than falsely `completed`. The ordinary resume entry finishes these
-receipts without replaying the finished day or paying twice. Settlement resumes its saved
-logical timestamp, excluding offline time.
-
-## Verification scope
-
-Tests use controlled monotonic clocks, scripted real Agent instances and repository/grading
-stand-ins. They cover independent request completion, measured runtime, direct speech,
-join/exit privacy, closing/draining, wait interruption, persistent memory order, work
-retirement and day/final-settlement recovery, plus regression coverage of older drivers.
-No real model service, remote deployment or official Docker evaluation is launched by this
-verification. In-flight model/tool coroutines are canceled and joined on driver failure;
-provider cleanup remains responsible for external workspace/process resources.
+After the last day, settlement waits up to `final_grading_wait_seconds` real seconds, including zero if configured. If results remain pending, the run is marked `interrupted` with frozen submissions in its checkpoint rather than reported as complete. Resume finishes those receipts without replaying the finished day or paying twice. Settlement continues from its saved logical timestamp and does not include offline time.

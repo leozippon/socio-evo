@@ -1,148 +1,42 @@
 # Activity scheduling
 
-For the opt-in wall-clock driver and directly heard conversation, see
-[Real-time scheduling](realtime-scheduling.md). This document describes the retained
-fixed-cost `activities` entry.
+`simulation.scheduling: activities` is an opt-in driver in which each resident chooses an activity and then uses tools within it. The default `scenes` scheduler and the existing `independent` mode remain available. See [Real-time scheduling](realtime-scheduling.md) for the wall-clock variant. Example configuration: `experiments/configs/community/activities.yaml`.
 
-The opt-in `simulation.scheduling: activities` mode implements event-driven activity
-selection. The `scenes` and `independent` entries remain available and existing run
-configurations are unchanged. A complete example is
-`experiments/configs/community/activities.yaml`. This change does not launch a run.
+## Prompt and decisions
 
-## Decisions and the clock
+The system context holds stable information: who the resident is and the town's enduring rules. Each user prompt supplies only the current situation: time and place, people present, current work or conversation, available choices, and the limits that matter now. The activity card lists permitted tools and the facts needed to choose among them. The environment checks every operation again when it starts, so concise prompts do not weaken time, access, permission, or settlement rules. A resident can request `help` for detailed, generated instructions when needed; help does not alter activity state and carries no configured simulated-time cost.
 
-An agent calls `choose_activity` when free and `choose_tool` while working or
-conversing. Both reuse the existing automatic retrieval, active recall, context
-budget and task notes. There is no morning planning call. Rest and movement finish
-without polling the model every five minutes. Activity selection, claiming jobs,
-confirming partners, accepting invitations and leaving take no simulated time.
-Repeated zero-time decisions are bounded and reported as an error rather than
-silently advancing the clock.
+There is no morning itinerary. A resident chooses among Work, Conversation, Rest and Move, then makes tool decisions while the activity continues. Selection and administrative choices such as claiming a job, confirming a partner, accepting an invitation and leaving do not consume configured simulated time. Repeated zero-time decisions are bounded and reported as an error.
 
-`ActivityEngine` processes a seconds-based heap of completion, boundary, invitation
-and assessment events. All effects due at a moment finish before new observations
-are constructed. Residents can have different operation completion times; a slow
-operation does not consume other residents' simulated budgets. The implementation
-awaits real repository commands when applying their completion event, so wall-clock
-throughput is not a guarantee of parallel Docker execution.
+The event engine processes operation completions, activity boundaries, invitations and assessments in timestamp order. All effects due at a moment are applied before new observations are built. Each resident has an independent simulated budget; a slow operation does not spend another resident's activity time. Applying repository changes still awaits the real command, so simulated concurrency does not guarantee parallel Docker execution.
 
-An activity's duration is a ceiling, not an additional charge. Before each tool,
-the prompt gives exact current time, location, remaining seconds, latest end,
-available tools and minimum costs. It adds a warning during the last five minutes.
-Actual size-dependent costs are checked again before launch. There is no prompt
-injection into an already running model call or terminal command; reminders are
-received at the next tool decision. An operation that does not fit is rejected
-without executing it. Finishing exactly at the boundary is allowed.
+An activity's duration is a limit, not a prepaid charge. Prompts state the current time, remaining duration, latest end, available tools and minimum costs. Size-dependent costs are checked again before launch. An operation that does not fit is rejected without execution; finishing exactly at the boundary is allowed.
 
-Default costs, configurable under `simulation.activity_timing`:
+Default costs are configurable under `simulation.activity_timing`:
 
 | Operation | Simulated cost |
 | --- | --- |
 | Read code | 60 seconds per requested 100-line block, at most 400 lines |
 | Apply patch | 120 seconds per 100 patch lines, at most 16 KB |
-| Command or local test | 300 seconds; provider wall timeout and resource limits still apply |
-| Search, diff, notice board or work feedback | 60 seconds |
-| Export/apply handoff | 60 seconds |
-| Submit | 60 seconds |
-| Invitation inside an activity | 60 seconds |
-| Read conversation messages | 500 text units/minute, rounded up to whole seconds |
-| Reply | 250 text units/minute, rounded up to whole seconds |
-| Movement | Manhattan distance on town coordinates × 60 seconds |
+| Command or local test | 300 seconds, subject to provider timeouts and resource limits |
+| Search, diff, board or work feedback | 60 seconds |
+| Export or apply a handoff; submit; invite within an activity | 60 seconds each |
+| Read conversation messages | 500 text units per minute, rounded up to seconds |
+| Reply | 250 text units per minute, rounded up to seconds |
+| Move | Manhattan distance on town coordinates × 60 seconds |
 
-A text unit is one CJK character or one other letter/digit word. Punctuation is
-not counted. Read captures the unread message set at launch, allowing an upfront
-cost; newer messages require another read. Reply content is known before launch.
-Free residents may arrange appointments during activity selection. Work tools
-operate only in work venues during 08:00–12:00 and 14:00–18:00. Notice viewing,
-claiming, invitations and other non-code controls remain available outside work
-hours. Closed venues trigger a timed trip home; the 22:00 day boundary returns
-residents home for the existing nightly sequence.
+A text unit is one CJK character or one other letter/digit word; punctuation is not counted. Reading captures the unread messages at launch, and newer messages require another read. Reply text is known before its cost is charged. Work tools are available only at a work venue during 08:00–12:00 and 14:00–18:00. At those boundaries, residents choose what to do next; the 22:00 day boundary returns everyone home for the nightly sequence.
 
-## Work and acceptance
+## Work and conversation
 
-A work activity may pause or be resumed. Claims, private repository snapshots and
-per-task notes outlive activities and simulated days. Joining a public work activity
-does not create a shared writable checkout. SWE-bench uses independent workspaces
-for this scheduler; legacy shared-workspace behavior remains the default for old
-schedulers.
+Work can pause and resume. Claims, private repository snapshots and task notes persist across activities and days. Joining public work does not grant a shared writable checkout. Parallel work uses versioned patch handoffs that the recipient must apply; conflicts preserve the recipient's snapshot and return feedback. Relay work gives one participant at a time permission to write, with permission passing only after successful application or a decline.
 
-Parallel work uses explicit patch handoffs. A handoff freezes a versioned diff;
-its recipient must apply it. A three-way Git conflict leaves the saved recipient
-snapshot unchanged and returns feedback. Relay work gives one participant write
-permission at a time, including any older private activity for that same job.
-Offering a relay handoff releases write permission; successful application passes
-it to the recipient, while declining returns it to the sender. A conflict keeps
-the handoff pending for resolution or decline.
+Submission freezes the patch and starts official assessment in the background. The first check is due after 20 simulated minutes; unfinished assessment reports delay and is checked again every five minutes. Infrastructure errors are not failed repairs and do not earn rewards. Pending claims are protected from expiry while assessment is outstanding. Existing acceptance and settlement rules determine success and payment.
 
-Submission freezes the patch and starts official assessment in the background.
-The submitter can choose another activity immediately. The first check is due
-20 simulated minutes later. An unfinished assessment reports delay, then is checked
-every five simulated minutes. Infrastructure errors are not failed repairs and do
-not pay rewards. Existing official acceptance and settlement rules determine actual
-success and payment. Pending claims are protected from expiration while the
-assessment is outstanding.
+Private chats and public groups use one conversation activity with a message stream and separate join/read positions. Members can read, reply, wait or leave. Waiting resumes when a new reply arrives; late joiners see only later messages, and leaving ends future delivery. Invitations do not interrupt running work. An appointment starts only when at least two confirmed members are present and available; the default grace period is five minutes.
 
-## Conversation membership
+## Persistence and records
 
-A single `ConversationActivity` covers private chats and public groups. It has a
-message stream and separate per-member join/read positions, without fixed turns.
-Members choose read, reply, wait or leave. Waiting wakes on a completed new reply.
-Joining reveals only subsequent messages; leaving removes future delivery. Fewer
-than two remaining members ends the conversation and cancels unfinished tools.
-Notifications contain no message body; the explicit read result supplies it.
-Research event payloads retain full content with audience information.
+Nightly checkpoints save paused activities, message positions, invitations, handoffs and frozen submissions alongside the existing agent, economy and repository state. Recovery returns to the last completed-day checkpoint; it does not snapshot a command midway. Pending grading can resume from the same frozen patch. Exact seconds are retained in event payloads, while the legacy event timestamp remains a minute projection for memory, economy and day indexing. Activity outcomes summarize witnessed feedback and progress without adding a reflection call.
 
-Invitations never interrupt running work tools. A resident can finish an operation,
-leave work, move and join. Appointments start only with at least two confirmed,
-present, available people. The default grace is five minutes; insufficient turnout
-cancels the appointment. Rest can opt into invitation wake-up. Public/invited
-permissions are checked again on joining.
-
-## Persistence, logs and verification
-
-Nightly checkpoints include paused activities, messages/cursors, invitations,
-immutable handoffs and frozen pending submissions. Existing agent history,
-economy and repository checkpoints remain in use. Recovery rolls back to the last
-completed day; it is not a mid-command snapshot. Pending grading can restart from
-the same frozen patch after recovery. Experiment cleanup cancels outstanding
-assessment coroutines before closing providers. A final day may still have pending
-assessment if the real harness has not finished; its frozen submission remains in
-the checkpoint, and it must not be interpreted as a pass or failure.
-
-New log kinds distinguish activity entry/exit, tool start/completion/cancellation,
-message notification/read, handoff and feedback. `payload.sim_seconds` preserves
-exact seconds; the existing event `time` is the integer-minute projection used by
-legacy memory, economy and day indexing. The viewer shows session/tool occupancy;
-historical minute-based views can aggregate several sub-minute events together.
-Activity outcomes summarize witnessed feedback and retained progress; they do not
-add a free model reflection call.
-
-Deterministic local tests cover clock ordering, cost/boundary rejection, separate
-agent decision entry points, membership privacy, message races, invitation grace,
-private/relay handoffs, delayed grading, checkpoint recovery and legacy replay.
-Handoff merge/conflict tests use real local Git through a container adapter.
-No live Docker official-harness run, deployment or model experiment is part of
-this implementation verification.
-
-## Early arrival and work relocation
-
-Travel to a public venue is allowed before opening. Arrival at a closed venue records an outside location and starts a wakeable rest until the next opening (or day end). Opening admits waiting residents and ends their rest so they can decide again. Indoor work and conversation remain unavailable outside; waiters do not become conversation participants merely by reaching the venue. The normal closing/22:00 return rules still apply. Legacy non-activity movement rejects closed destinations unless explicitly opted in.
-
-Starting work searches for a live collaboration at the current place first, then one's own vacant local public session. A foreign inactive/public session never forces travel or blocks a new local session. Explicitly resuming a vacant accessible work session may relocate it while preserving its task, history, relay mode and workspace keys. An active session with participants cannot be relocated; joining it requires the same location. Global relay write permissions still apply across independent sessions.
-
-## Activity help
-
-Every activity (Work, Conversation, Rest, Move) and the activity-selection entry offers
-`{"thought": "Check what I can do here", "do": "help"}`. The action maps to the `help` tool
-and returns environment-generated instructions directly, without a model-generated answer.
-It includes current capabilities and tools, actual permitted reply forms/arguments, clock
-and opening facts, town rules, invitations/readiness, and switching instructions. Assigned
-Work activities also include the provider's public repository work guide.
-
-Help does not run commands, submit work, join/leave an activity, advance the simulation clock,
-change membership/message cursors, or consume pending percepts. No fixed time charge is added;
-ordinary real-time model-call latency still applies. It emits private tool start/completion
-and feedback records for the requester. It cannot interrupt an already running operation.
-Rest and travel keep their existing completion timers; exposing help does not introduce
-periodic model decisions during those activities. Legacy and real-time entry points both
-support it. Regression coverage: 225 selected scheduling/provider/schema/frontend tests pass.
+The real-time driver keeps these activity, work and persistence rules while changing time accounting and speech delivery; see [Real-time scheduling](realtime-scheduling.md).

@@ -86,6 +86,15 @@ def test_guidance_uses_only_public_environment_information_and_caches(tmp_path, 
     assert "SECRET" not in a.specification and "SECRET" not in str(calls)
     assert "pipefail" in a.specification and "60-second" in a.specification
     assert "Ignored files" in a.specification
+    assert "Work activity" not in a.specification
+    p.independent_workspaces = True
+    activity_part = p.part("org__repo-1")
+    assert len(calls) == 1
+    assert "Repository operating notes" not in activity_part.specification
+    assert "repository work guide" in activity_part.specification
+    guide = p.work_guide(activity_part)
+    assert "Use python -m pytest" in guide and "private workspaces" in guide
+    assert "60-second" in guide and "SECRET" not in guide
     assert p._preflight("org__repo-1")["image_id"] == "test"
     # A resumed provider must check again; no stale success trusted from disk.
     p2 = SWEbenchTaskProvider(data, (), tmp_path / "run", repository_guidance=True)
@@ -112,7 +121,10 @@ def test_real_shell_pipeline_exit_survives_output_filter(
     assert execute("container", script, 5)["exit_code"] == expected
 
 
-def test_failed_preflight_does_not_return_a_task_or_cache_success(tmp_path, monkeypatch):
+@pytest.mark.parametrize("independent", [False, True])
+def test_failed_preflight_does_not_return_a_task_or_cache_success(
+    tmp_path, monkeypatch, independent
+):
     data = tmp_path / "data.json"
     data.write_text(
         json.dumps(
@@ -126,7 +138,9 @@ def test_failed_preflight_does_not_return_a_task_or_cache_success(tmp_path, monk
             ]
         )
     )
-    p = SWEbenchTaskProvider(data, (), tmp_path / "run", repository_guidance=True)
+    p = SWEbenchTaskProvider(
+        data, (), tmp_path / "run", repository_guidance=True, independent_workspaces=independent
+    )
 
     def fail(*args):
         raise preflight.EnvironmentPreflightError("Missing test launcher")
@@ -204,7 +218,9 @@ def test_work_guide_is_public_repeatable_and_uses_correct_test_labels(tmp_path):
             ]
         )
     )
-    provider = SWEbenchTaskProvider(data, (), tmp_path / "run", community=True)
+    provider = SWEbenchTaskProvider(
+        data, (), tmp_path / "run", community=True, independent_workspaces=True
+    )
     from core.environment import Part
 
     guide = provider.work_guide(
@@ -218,8 +234,7 @@ def test_work_guide_is_public_repeatable_and_uses_correct_test_labels(tmp_path):
     )
     assert "python tests/runtests.py --settings=test_sqlite" in guide
     assert "backends.base.test_operations" in guide
-    assert "a source module under django/ is not a test label" in guide
-    assert "read failures" in guide.lower()
+    assert "Labels are relative to tests/" in guide
     assert "WORKTREE" in guide and "private workspaces" in guide
     assert "HIDDEN" not in guide
     assert (

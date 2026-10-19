@@ -154,8 +154,7 @@ def test_invitation_responses_offered_in_work_and_prompts(scheduler):
         if name == "defer":
             reply["at"] = "09:00"
         assert card.decision(card.model.model_validate(reply)).action.tool == name
-    assert "explicitly accept, decline" in e.observation("Tomas").situation
-    assert "Defer proposes a later time" in e.activity_help("Tomas")
+    assert first.id in e.observation("Tomas").situation
     with pytest.raises(ValidationError):
         card.model.model_validate(
             {"thought": "No time", "do": "defer invitation", "invitation": first.id}

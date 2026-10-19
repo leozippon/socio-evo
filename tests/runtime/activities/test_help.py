@@ -40,7 +40,7 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     queue = copy.deepcopy(gate.queue.events)
     members = {key: copy.deepcopy(a.members) for key, a in gate.activities.items()}
     text = gate.schedule("Mei", action)
-    assert "Activity help" in text and f"capabilities: {kind}" in text
+    assert "Activity help" in text
     assert '"do": "help"' in text
     assert gate.now == now and gate.current == current and gate.queue.events == queue
     assert {key: a.members for key, a in gate.activities.items()} == members
@@ -48,9 +48,8 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     assert not gate.pending
     if fixture == "rt":
         assert not gate.running
-        assert "Speech arrives directly" in text
+        assert "You hear completed speech directly" in text
     if kind == "conversation":
-        assert "To submit: choose pause or leave" in text
         assert '"do": "submit your repair"' not in text
     if kind in ("rest", "move"):
         with pytest.raises(ValidationError):
@@ -68,6 +67,11 @@ async def test_work_help_includes_public_repository_guide_without_running_code(r
     monkeypatch.setattr(
         provider, "work_guide", lambda part: "PUBLIC REPOSITORY GUIDE", raising=False
     )
+    observation = rt.observation("Mei")
+    assert "PUBLIC REPOSITORY GUIDE" not in observation.situation
+    assert "repository work guide" in observation.setting
+    assert "guide" in rt.menu("Mei")["tools"]
+    assert "task-1" in observation.situation
     text = rt.schedule("Mei", activities.use("help"))
     assert "PUBLIC REPOSITORY GUIDE" in text
     assert not provider.commands
@@ -89,3 +93,32 @@ async def test_help_does_not_interrupt_a_running_realtime_tool(rt):
             rt.schedule("Mei", activities.use("help"))
     finally:
         await rt.close_running()
+
+
+@pytest.mark.parametrize("fixture", ["engine", "rt"])
+def test_setting_stays_stable_while_current_activity_and_clock_change(request, fixture):
+    from runtime.activities.model import at, clock
+
+    gate = request.getfixturevalue(fixture)
+    setting = gate.observation("Mei").setting
+    work = activities.work(gate)
+    working = gate.observation("Mei")
+    assert working.setting == setting
+    assert work.id in working.situation and work.id not in setting
+    assert clock(work.members["Mei"].end) in working.situation
+    gate.leave("Mei", "Talk instead")
+    conversation = activities.conversation(gate)
+    gate.now = at(1, "08:05:07")
+    talking = gate.observation("Mei")
+    assert talking.setting == setting
+    assert conversation.id in talking.situation
+    assert "08:05:07" in talking.situation and "08:05:07" not in setting
+    with pytest.raises(ValidationError):
+        Card(talking.allowed).model.model_validate(
+            {"thought": "Try work", "do": "submit your repair", "report": "Done"}
+        )
+    assert (
+        "read" in gate.menu("Mei")["tools"]
+        if fixture == "engine"
+        else ("read" not in gate.menu("Mei")["tools"])
+    )

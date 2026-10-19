@@ -83,7 +83,7 @@ def test_new_cards_do_not_require_activity_duration_or_offer_read(rt):
     forms = json.dumps(Card(rt.observation("Mei").allowed).model.model_json_schema())
     assert "read new messages" not in forms
     assert "remaining usable time" not in rt.observation("Mei").situation
-    assert "actual elapsed wall time" in rt.observation("Mei").setting
+    assert "actual elapsed time" in rt.observation("Mei").setting
 
 
 async def test_slow_model_does_not_hold_fast_resident_or_double_count_time(rt):
@@ -469,7 +469,7 @@ def test_realtime_sleep_until_morning_does_not_repeat_failed_selections(rt):
     assert not rt.available("Mei")
 
 
-async def test_repository_guide_is_pinned_and_readable_as_work_tool(rt, monkeypatch):
+async def test_repository_guide_is_available_on_demand_as_work_tool(rt, monkeypatch):
     provider = next(iter(rt.env.providers.values()))
     monkeypatch.setattr(
         provider, "work_guide", lambda part: "PUBLIC GUIDE: use tests/runtests.py", raising=False
@@ -477,7 +477,8 @@ async def test_repository_guide_is_pinned_and_readable_as_work_tool(rt, monkeypa
     work(rt)
     await take(rt)
     observation = rt.observation("Mei")
-    assert "PUBLIC GUIDE" in observation.situation
+    assert "PUBLIC GUIDE" not in observation.situation
+    assert "repository work guide" in observation.setting
     assert "guide" in rt.menu("Mei")["tools"]
     card = Card(observation.allowed)
     reply = card.model.model_validate(
@@ -535,11 +536,11 @@ def test_realtime_contract_has_no_read_action_and_pins_current_facts(rt):
     conversation(rt)
     rt.now = at(1, "16:00")
     observation = rt.observation("Mei")
-    assert "No code edits, tests or submissions happen here" in observation.setting
-    assert "pause or leave" in observation.correction_context
+    assert rt.current["Mei"] in observation.situation
+    assert "conversation" in observation.situation
     assert "Town coding period is OPEN, closes at 18:00:00, 7200" in observation.situation
-    assert "You hear completed speech directly" in observation.situation
-    assert '"read"' not in rt.activity_contract("Mei", rt.menu("Mei"))
+    assert "You hear completed speech directly" in observation.setting
+    assert '"read"' not in rt.activity_contract("Mei")
 
 
 def selection_events(rt, who="Mei"):

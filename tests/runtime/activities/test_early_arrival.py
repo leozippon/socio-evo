@@ -36,7 +36,7 @@ async def test_early_arrival_is_inside_and_rest_is_optional(gate):
     waiting = gate.activities[gate.current["Mei"]]
     assert waiting.kind == "rest" and waiting.members["Mei"].end == at(1, "08:00")
     assert not gate.can_code("Mei")
-    assert "you are inside" in gate.observation("Mei").situation
+    assert ", inside." in gate.observation("Mei").situation
     moved = next(e for e in events(gate) if e["kind"] == "move" and e["actor"] == "Mei")
     assert not moved["payload"].get("outside", False)
     assert "outside" not in moved["text"]

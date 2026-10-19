@@ -399,66 +399,74 @@ class ActivityEngine:
             )
         return views
 
-    def activity_contract(self, who, menu):
+    def activity_contract(self, who):
         active = self.activities.get(self.current.get(who))
         kind = active.kind if active else "selection"
         descriptions = {
-            "selection": "Choose the next activity. Start a local conversation with people here "
-            "without invitations, or join an open conversation. "
-            "Work tools require entering Work first.",
-            "rest": "Wait until the chosen time. Allow social wake-ups while waiting for "
-            "work or people; choose undisturbed rest only deliberately. No numeric fatigue "
-            "or energy depletion forces rest.",
-            "move": "Travel only; you cannot code or join an in-person conversation in transit.",
-            "work": "Inspect/claim jobs, read the guide, edit/test code, exchange handoffs "
-            "and submit "
-            "using only the tools currently listed. Tools may be unavailable due to hours "
-            "or assignment. To talk, pause or leave work, then join a conversation.",
-            "conversation": "Talk, wait for speech, invite or leave. No code edits, tests or "
-            "submissions happen here. To submit: choose pause or leave, select "
-            "or resume Work, then submit your repair. Keep that next intention. "
-            "Saying 'I submitted' is speech, not a submission receipt. If a work "
-            "action is invalid, do not replace it with a claim it happened.",
+            "selection": "Choose rest, movement, work, or a conversation.",
+            "rest": "You are resting until your chosen time.",
+            "move": "You are travelling to your destination.",
+            "work": "You can use the work choices shown below, or pause or leave.",
+            "conversation": "You can talk with the people here, wait, or leave.",
         }
+        return descriptions[kind]
+
+    def clock_rules(self):
         return (
-            f"Current activity capabilities: {kind}. "
-            + descriptions[kind]
-            + " Available tools now: "
-            + json.dumps(menu.get("tools", []))
-            + ". Call help for settings and usage instructions. "
-            "Activity choice and tool choice are separate; do not use a work id to join a chat."
+            "Choosing an activity takes no time. Each operation takes the time shown; "
+            "its effects appear when it finishes and it must fit before the activity ends. "
+            "You read new conversation messages to see their content."
+        )
+
+    def town_setting(self):
+        """Town rules belong in the stable setting; current circumstances do not."""
+        return "\n".join(
+            [
+                self.env.config.setting.backdrop,
+                self.env.rules_view(),
+                "You spend your time resting, moving, working, or in conversation. "
+                "When free, choose an activity; while in one, continue it or leave before "
+                "choosing another. Paused work keeps its progress. "
+                "You can start or join a public conversation with people here without an "
+                "invitation, or arrange a meeting for later. Invitations wait until you are free. "
+                "Use help for instructions and the repository work guide for work details.",
+                self.clock_rules(),
+                "Workplaces admit residents 07:00–22:00; coding hours are "
+                "08:00–12:00 and 14:00–18:00. Repository work requires an assigned job "
+                "and a Work activity at an open workplace. Outside coding hours, Work "
+                "still allows notices, claiming, feedback, and arranging partners. "
+                "At 22:00 you return home for the night.",
+                *[
+                    f"{p.name}: {p.kind.value}; "
+                    + ("access 07:00–22:00" if p.kind == PlaceKind.WORK else f"open {p.spans()}")
+                    for p in self.env.world.places.values()
+                ],
+            ]
         )
 
     def activity_help(self, who):
-        """Deterministic instructions; never call observation() or consume its percepts."""
+        """Deterministic instructions; never consume observations or pending messages."""
         from core.interaction.card import Card, form
 
         menu = self.menu(who)
         active = self.activities.get(self.current.get(who))
         sections = [
-            "Activity help (environment rules, not an action result)",
+            "Activity help",
             self.current_facts(who),
-            self.activity_contract(who, menu),
-            self.env.rules_view(),
-            "Rest waits until its clock deadline (earlier times mean tomorrow, capped at "
-            "day end). Movement only travels; it does not permit work in transit. "
-            "Finish or leave an activity before choosing another. Progress survives leaving work.",
-            "Invitations do not interrupt tools. Confirm, leave time to travel, then choose "
-            "wait for confirmed conversation at the meeting place. Already-confirmed "
-            "invitations need no second accept. Read readiness to see why a chat is waiting. "
-            "Respond to pending invitations with accept, decline, or defer invitation. "
-            "Defer proposes a later time and requires everyone else to confirm again.",
+            self.activity_contract(who),
+            self.clock_rules(),
+            "Rest ends at the next occurrence of the chosen clock time, capped at day end. "
+            "Social wake-ups offer you a choice when someone invites you or speaks nearby. "
+            "Movement takes time according to distance. Work progress survives leaving; "
+            "partners keep private repositories and exchange explicit code handoffs.",
+            "For an invitation, accept, decline, or propose a later time. A changed time "
+            "requires fresh confirmation. A confirmed meeting starts when at least two "
+            "confirmed people are present and free, within its arrival grace period. "
+            "At the meeting place, wait for the confirmed conversation to become ready.",
             "Your invitations: " + json.dumps(self.invitation_views(who)),
         ]
-        if menu.get("realtime"):
-            sections.append(
-                "Realtime mode: one real second advances "
-                f"{self.settings.multiplier:g} town seconds. Model requests and tools use "
-                "actual elapsed wall time. Speech arrives directly; there is no read charge "
-                "or read action. Help executes no code and adds no fixed simulated charge."
-            )
-        else:
-            sections.append("Tool costs in simulated seconds: " + json.dumps(menu.get("costs", {})))
+        if not menu.get("realtime"):
+            sections.append("Tool costs in seconds: " + json.dumps(menu.get("costs", {})))
         if isinstance(active, WorkActivity):
             claim = self.env.board.claim_of(who)
             if claim:
@@ -466,10 +474,7 @@ class ActivityEngine:
                 if callable(getattr(provider, "work_guide", None)):
                     sections.append(provider.work_guide(claim.task.parts[0]))
             else:
-                sections.append(
-                    "Claim a job before using repository tools. The notice board "
-                    "lists public task requirements; help does not claim a job."
-                )
+                sections.append("Take a job from the notice board to begin repository work.")
         sections.append(
             form(Card((MayActivity(layer="tool" if active else "selection", menu=menu),)).model)
         )
@@ -525,47 +530,12 @@ class ActivityEngine:
         place = self.env.world.places[self.env.world.locations[who]]
         venue_open = self.venue_open(place.id)
         return (
-            f"Authoritative current facts: day {today}, clock {clock(self.now)}. "
+            f"It is {clock(self.now)} on day {today}. "
+            f"You are at {place.name}, {'outside' if who in self.outside else 'inside'}. "
+            f"The venue is {'OPEN' if venue_open else 'CLOSED'}. "
             f"Town coding period is {work_period}. "
-            f"Your current venue is {'OPEN' if venue_open else 'CLOSED'}; "
-            f"you are {'outside' if who in self.outside else 'inside'}. "
             f"Current location permits code work now: {self.can_code(who)}. "
-            "Repository tools still require a Work activity and an assigned job. "
-            f"Today ends at {clock(self.end)}. Historical timestamps are not the current clock."
-            + self.assessment_waiting(who)
-            + self.prework_context(who)
-        )
-
-    def prework_context(self, who):
-        day = day_of(self.now // 60)
-        opening = at(day, "08:00")
-        if not at(day, "07:00") <= self.now < opening:
-            return ""
-        place = self.env.world.locations[who]
-        journeys = []
-        for destination in self.env.world.places.values():
-            if destination.kind != PlaceKind.WORK:
-                continue
-            seconds = self.travel_seconds(place, destination.id) if place != destination.id else 0
-            journeys.append(
-                f"{destination.name}: {seconds} seconds travel; depart by "
-                f"{clock(opening - seconds)} for an 08:00 arrival"
-                if self.now + seconds <= opening
-                else f"{destination.name}: {seconds} seconds travel; an 08:00 arrival "
-                "is no longer possible from here"
-            )
-        return (
-            "\n07:00–08:00 is free pre-work preparation time, not a compulsory activity or plan. "
-            "Choose among the same four activities. At home, Work can view the notice board, "
-            "claim jobs, read prior work feedback/notes and arrange partners. Repository tools "
-            "(including code reads/edits, commands, tests, handoffs and submission) stay "
-            "unavailable before 08:00 and still require an open workplace afterwards. "
-            "You may send invitations or arrange appointments, or chat with co-present "
-            "residents at an open location; invitations do not teleport anyone. "
-            "Alternatively travel early or keep resting. Workplaces have "
-            "no restriction on entering: you may wait or chat inside before code work opens. "
-            "Allow for travel and decision time yourself; no automatic commute is scheduled. "
-            "Current travel estimates: " + "; ".join(journeys) + "."
+            f"Today ends at {clock(self.end)}." + self.assessment_waiting(who)
         )
 
     def assessment_waiting(self, who):
@@ -582,14 +552,8 @@ class ActivityEngine:
         if entry.get("retry_at"):
             timing += f" The clerk will automatically retry at {clock(entry['retry_at'])}."
         return (
-            f" Current acceptance status: your job {claim.task.id} is awaiting background "
-            f"acceptance. {timing} "
-            "Any earlier completed verdict belongs to a previous submission, not this pending one. "
-            "You may leave Work to socialize or rest while waiting. Do not resubmit. "
-            "The current claim still occupies your one-job slot until acceptance; "
-            "you cannot claim another job yet. After successful acceptance you may "
-            "compete for newly posted jobs with everyone else, without priority. "
-            "A failed repair stays assigned for rework."
+            f" Your job {claim.task.id} is awaiting background acceptance. {timing} "
+            "It occupies your one-job slot while checking is pending."
         )
 
     def menu(self, who):
@@ -734,13 +698,29 @@ class ActivityEngine:
             "invite_here": self.timing.invite_seconds,
         }[tool]
 
+    def activity_context(self, who, active, menu):
+        if active is None:
+            return []
+        remaining = self.remaining(who)
+        context = [
+            f"You are participating in {active.kind} {active.id}. "
+            f"Latest end: {clock(active.members[who].end)}; "
+            f"remaining usable time: {remaining} seconds.",
+            "Tool costs in seconds: " + json.dumps(menu.get("costs", {})),
+        ]
+        if menu.get("blocked"):
+            context.append("Too little time for: " + json.dumps(menu["blocked"]))
+        if isinstance(active, ConversationActivity):
+            context.append(f"Topic: {active.topic}. Unread messages: {len(active.unread(who))}.")
+        return context
+
     def observation(self, who):
         active = self.activities.get(self.current.get(who))
         place = self.env.world.locations[who]
         menu = self.menu(who)
         layer = "tool" if active else "selection"
         context = [
-            f"The time is {clock(self.now)}. You are at {self.env.world.places[place].name}.",
+            self.current_facts(who),
             "People here: "
             + ", ".join(
                 p
@@ -748,133 +728,52 @@ class ActivityEngine:
                 if (p in self.outside) == (who in self.outside)
             )
             + ".",
+            self.activity_contract(who),
         ]
         if not active and who in self.selection_feedback:
-            context.append("Recent activity-selection feedback: " + self.selection_feedback[who])
+            context.append("Recent feedback: " + self.selection_feedback[who])
         if who in self.outside:
             opening = self.next_opening(place)
             context.append(
-                "You are OUTSIDE the closed venue, waiting at its door, not inside. "
-                + (f"It opens at {clock(opening)}. " if opening else "It will not reopen today. ")
-                + "You cannot work or join an indoor conversation until admitted. "
-                "You may wait or move elsewhere."
+                "You are waiting outside the closed venue. "
+                + (f"It opens at {clock(opening)}." if opening else "It will not reopen today.")
             )
+        context += self.activity_context(who, active, menu)
         if active:
-            remaining = self.remaining(who)
-            context += [
-                f"You are participating in {active.kind} {active.id}. "
-                f"Latest end: {clock(active.members[who].end)}; "
-                f"remaining usable time: {remaining} seconds.",
-                "Choose a tool within this activity, or pause/leave it. "
-                "You choose your next activity only after leaving this one.",
-                "Tool costs in simulated seconds (reserved before execution): "
-                + json.dumps(menu.get("costs", {})),
-                "Unavailable because time is insufficient: " + json.dumps(menu.get("blocked", {})),
-            ]
-            if remaining <= self.timing.warning_seconds:
-                context.append("Time reminder: prepare to pause or hand over your progress.")
             context += active.feedback.get(who, [])[-4:]
-            if isinstance(active, ConversationActivity):
+            if isinstance(active, WorkActivity):
                 context.append(
-                    f"Topic: {active.topic}. Unread messages: {len(active.unread(who))}. "
-                    "Read to see their content; a notification is not the message itself."
+                    f"Job: {active.task_id or 'none assigned'}. "
+                    f"Work mode: {active.mode}. Relay owner: {active.relay_owner}. "
+                    "Your repository is private; partners exchange code handoffs."
                 )
-            elif isinstance(active, WorkActivity):
-                claim = self.env.board.claim_of(who)
-                if claim:
-                    provider = self.env.providers[claim.task.trade]
-                    if callable(getattr(provider, "work_guide", None)):
-                        context.append(provider.work_guide(claim.task.parts[0]))
-                context += [
-                    f"Work mode: {active.mode}. Relay owner: {active.relay_owner}.",
-                    "Your repository is private. Partners exchange explicit versioned handoffs; "
-                    "their unshared changes are not on your desk.",
-                ]
-        else:
-            context.append(
-                "Choose rest, movement, work, or a conversation. "
-                "There is no morning planning step. Choosing an activity costs no time. "
-                "Work can be paused and resumed without discarding its progress. "
-                "Rest until a clock time means its next occurrence; an earlier time means "
-                "tomorrow. Overnight rest is capped at today's day end, then nightly "
-                "processing handles the night. A rest ending exactly now is invalid."
-            )
         context += [self.env.board_view(who), self.env.status_view(who, include_evidence=False)]
-        context += [self.current_facts(who), self.activity_contract(who, menu)]
-        invites = self.invitation_views(who)
-        context.append("Your conversation invitations/appointments: " + json.dumps(invites))
-        context.append(
-            "For invitations awaiting your response, explicitly accept, decline, or propose "
-            "a later time with defer invitation at your next decision opportunity. Do not "
-            "silently discard an invitation when choosing a long rest. Defer is a proposal, "
-            "not an accepted appointment; other residents must confirm again. "
-            "For confirmed appointments, leave time to finish your current operation, travel "
-            "and arrive by the start/grace time above. If confirmed and at the meeting place, "
-            "choose wait for confirmed conversation rather than accepting again or entering "
-            "empty work. Invitations never interrupt running work; finish or pause it yourself."
-        )
-        context.append(
-            "Local social life: starting or joining a public conversation here needs no invitation "
-            "or appointment. This is the ordinary way to chat, "
-            "including inside workplaces before coding hours. "
-            "Public talk can be heard by co-present residents. "
-            "Listeners choose whether to join; working residents finish their current operation "
-            "and may pause Work first. Rest with social wake-ups lets you consider a chat, "
-            "not automatically join. Turn wake-ups off only for deliberate undisturbed rest. "
-            "There is no numeric fatigue/energy rule requiring you to rest. "
-            "Open conversations here: "
-            + json.dumps(
-                [
-                    {"id": a.id, "topic": a.topic, "participants": list(a.participants)}
-                    for a in self.activities.values()
-                    if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
-                ]
-            )
-        )
-        context.append("Available public/paused work: " + json.dumps(menu.get("work", [])))
+        invitations = self.invitation_views(who)
+        if invitations:
+            context.append("Your invitations/appointments: " + json.dumps(invitations))
+        conversations = [
+            {"id": a.id, "topic": a.topic, "participants": list(a.participants)}
+            for a in self.activities.values()
+            if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
+        ]
+        if conversations:
+            context.append("Open conversations here: " + json.dumps(conversations))
+        if menu.get("work"):
+            context.append("Available public/paused work: " + json.dumps(menu["work"]))
         situation = "\n".join(context)
-        setting = (
-            self.env.config.setting.backdrop
-            + "\nLocal conversations need no invitation. Start or join a public conversation "
-            "with co-present people, including workplaces before coding hours. Listen without "
-            "joining; leave Work after an operation if you wish to take part.\n"
-            + self.activity_contract(who, menu)
-            + "\n"
-            + self.env.rules_view()
-            + self.prework_context(who)
-            + "\nThere is no morning plan. First choose an activity, then use its tools. "
-            "Tool effects and messages become visible only when the operation finishes. "
-            "The remaining budget is a ceiling, not prepaid time. Read replies explicitly. "
-            "Invitations do not interrupt a running tool or reserve other people. "
-            "At 22:00 return home; ordinary nightly costs, journals and reflection follow. "
-            "Workplaces permit code work only 08:00–12:00 and 14:00–18:00. "
-            "Outside those hours you can inspect notices and claim work, but not code. "
-            "Workplaces admit residents 07:00–22:00, including before coding hours and at lunch. "
-            "Arriving does not automatically choose Rest. Chat or wait inside, or move elsewhere.\n"
-            + "\n".join(
-                f"{p.name}: {p.kind}; "
-                + (
-                    f"access 07:00–22:00; code hours {p.spans()}"
-                    if p.kind == PlaceKind.WORK
-                    else f"open {p.spans()}"
-                )
-                for p in self.env.world.places.values()
-            )
-        )
         return Observation(
             agent=who,
             time=self.now // 60,
             place=place,
             scene=f"day-{day_of(self.now // 60):04d}/activities",
             situation=situation,
-            setting=setting,
+            setting=self.town_setting(),
             percepts=self.env.perceive(who),
             evidence=self.env.work_evidence(who),
             allowed=(MayActivity(layer=layer, menu=menu),),
             places=situations.place_names(self.env, who),
             decision_layer="activity_tool" if active else "choose_activity",
-            correction_context=situation[:5000]
-            + "\nRespect the available tools and remaining time.",
+            correction_context=situation[:5000],
         )
 
     async def decisions(self, people):
@@ -1878,7 +1777,7 @@ class ActivityEngine:
                 EventKind.WORK_DELAYED,
                 "The checking service is unavailable, not a failed repair. "
                 "The clerk retains your submitted snapshot and will automatically retry at "
-                f"{clock(entry['retry_at'])}. Do not resubmit; you may socialize or rest.",
+                f"{clock(entry['retry_at'])}.",
                 actor=entry["agent"],
                 audience=list(claim.workers),
                 task_id=job,
@@ -1924,8 +1823,7 @@ class ActivityEngine:
         self.feedback(
             who,
             f"{self.env.world.places[place].name} is closed. You are outside its doors. "
-            "Choose where to go, wait outside, or respond to invitations. "
-            "You are not being sent home; everyone returns home at day end.",
+            "Choose where to go, wait outside, or respond to invitations.",
             outside=True,
         )
 

@@ -30,17 +30,19 @@ async def tool(driver, action, who="Mei"):
         await complete(driver, driver.pending[who].end)
 
 
-def test_free_preparation_is_in_system_user_and_help_without_new_activity(morning):
+def test_morning_shows_current_facts_and_activity_choices(morning):
+    from core.interaction import Card
+
     observation = morning.observation("Mei")
-    for text in (observation.setting, observation.situation, morning.activity_help("Mei")):
-        assert "07:00–08:00 is free pre-work preparation time" in text
-        assert "not a compulsory activity or plan" in text
-        assert "you may wait or chat inside before code work opens" in text
-        assert "depart by" in text
+    assert "07:00:00" in observation.situation
+    assert "Current location permits code work now: False" in observation.situation
+    card = Card(observation.allowed)
+    card.model.model_validate(
+        {"thought": "Wait", "do": "rest", "until": "08:00", "wake for invitations": True}
+    )
     assert not morning.current
-    if isinstance(morning, RealtimeEngine):
-        assert "Choosing an activity costs no time" not in observation.situation
-        assert "uses elapsed wall time" in observation.situation
+    assert "07:00–22:00" in observation.setting
+    assert "repository work guide" in observation.setting
 
 
 async def test_home_work_preparation_can_claim_and_review_but_not_execute_code(morning):
@@ -85,7 +87,6 @@ async def test_morning_claim_survives_commute_and_code_opens_at_eight(morning):
     morning.select("Mei", choose("select_work", seconds=3600))
     assert morning.env.board.claim_of("Mei").task.id == "task-1"
     assert {"read_code", "edit", "command", "test", "submit"} <= set(morning.menu("Mei")["tools"])
-    assert "free pre-work preparation time" not in morning.current_facts("Mei")
     await morning.close()
 
 
@@ -135,8 +136,3 @@ def test_shared_home_conversation_and_remote_partner_invitation_are_available(mo
     appointment = list(morning.invitations.values())[-1]
     assert appointment.status == "pending"
     assert morning.env.world.locations["Tomas"] == morning.env.config.homes["Tomas"]
-
-
-def test_travel_guidance_never_promises_impossible_eight_oclock_arrival(morning):
-    morning.now = at(1, "07:59:59")
-    assert "an 08:00 arrival is no longer possible" in morning.prework_context("Mei")

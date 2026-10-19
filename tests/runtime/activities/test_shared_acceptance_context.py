@@ -49,9 +49,8 @@ async def test_shared_failed_verdict_is_current_in_work_rest_and_selection(sched
     # A newer submission has a different current state from the last completed verdict.
     base.work(e, "Mei")
     await e.submit("Mei", "A revised repair")
-    assert "previous submission" in e.assessment_waiting("Tomas")
+    assert "awaiting background acceptance" in e.assessment_waiting("Tomas")
     obs = e.observation("Tomas")
     assert "Latest completed client verdict" in obs.situation
-    assert "Current acceptance status" in obs.situation
     assert "awaiting background acceptance" in obs.situation
     await e.close()

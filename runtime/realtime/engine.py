@@ -132,59 +132,26 @@ class RealtimeEngine(ActivityEngine):
             menu.update(tools=sorted(tools), costs={}, blocked={})
         return menu
 
-    def observation(self, who):
-        observation = super().observation(who)
-        situation = observation.situation.replace(
-            "Choosing an activity costs no time.",
-            "Choosing the next activity uses elapsed wall time, recorded as "
-            "Rest · Choosing next activity.",
-        )
-        situation = "\n".join(
-            line
-            for line in situation.splitlines()
-            if not any(
-                word in line
-                for word in (
-                    "Tool costs in simulated",
-                    "Unavailable because time",
-                    "remaining usable time",
-                    "Choose a tool within",
-                    "Read to see their content",
-                    "Topic:",
-                )
-            )
-        )
-        activity = self.activities.get(self.current.get(who))
-        if isinstance(activity, ConversationActivity):
-            situation += "\nConversation topic: " + activity.topic
-        situation += (
-            "\nThis town uses one shared real-time clock. "
+    def clock_rules(self):
+        return (
             f"One real second advances {self.settings.multiplier:g} town seconds. "
-            "Your model requests and tools use their actual elapsed wall time, including queues. "
-            "No fixed command, speaking or reading charge is added. "
-            "You hear completed speech directly; there is no read action. "
-            "Work and conversation have no chosen duration. Continue or leave voluntarily. "
-            "No new work operation starts after closing; an already started operation can finish. "
-            "Workplaces allow coding 08:00–12:00 and 14:00–18:00. "
-            "Invitations do not interrupt a tool; finish it before joining. "
-            "Workplaces admit residents 07:00–22:00, independently of coding hours. "
-            "Arrive inside early and choose chatting, waiting, or another activity. "
-            "The day closes at 22:00. Rest and movement retain simulated durations."
+            "Thinking and work take their actual elapsed time. "
+            "Work continues until you leave or coding hours close; "
+            "conversation continues until you leave or the venue closes. "
+            "an operation already started may finish after coding closes. "
+            "You hear completed speech directly. Rest and travel take their stated time."
         )
-        setting = (
-            self.env.config.setting.backdrop
-            + "\nLocal spontaneous chat is the normal social path: start or join with "
-            "co-present people without invitations, including workplaces before coding hours. "
-            "A listener chooses whether to join; work is never forcibly interrupted.\n"
-            + self.env.rules_view()
-            + self.prework_context(who)
-            + "\n"
-            + self.activity_contract(who, self.menu(who))
-        )
-        setting += "\nThis town uses" + situation.split("\nThis town uses", 1)[-1]
-        return observation.model_copy(
-            update={"setting": setting, "situation": situation, "correction_context": situation}
-        )
+
+    def activity_context(self, who, active, menu):
+        if active is None:
+            return []
+        context = [
+            f"You are participating in {active.kind} {active.id}. "
+            f"Latest end: {clock(active.members[who].end)}."
+        ]
+        if isinstance(active, ConversationActivity):
+            context.append(f"Topic: {active.topic}.")
+        return context
 
     def select(self, who, action):
         if self.now >= self.end:

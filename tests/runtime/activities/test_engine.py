@@ -175,7 +175,8 @@ async def test_tools_cannot_cross_budget_or_work_closing(engine):
     with pytest.raises(Rejected, match="unavailable"):
         engine.schedule("Mei", use("test", command="pytest"))
     observation = engine.observation("Mei")
-    assert "240 seconds" in observation.situation and "Time reminder" in observation.situation
+    assert "240 seconds" in observation.situation
+    assert "test" in engine.menu("Mei")["blocked"]
     engine.schedule("Mei", use("read_code", path="x.py", line=1, lines=100))
     await complete(engine, at(1, "11:57"))
     assert engine.remaining("Mei") == 180
@@ -634,10 +635,8 @@ async def test_pending_acceptance_prompt_allows_rest_socializing_and_explains_jo
     await engine.submit("Mei", "Ready for acceptance")
     prompt = engine.observation("Mei")
     assert "awaiting background acceptance" in prompt.situation
-    assert "socialize or rest" in prompt.situation
     assert "one-job slot" in prompt.situation
-    assert "without priority" in prompt.situation
-    assert "Do not resubmit" in engine.activity_help("Mei")
+    assert "submit" not in engine.menu("Mei").get("tools", [])
     assert "claim" not in engine.menu("Mei").get("tools", [])
     engine.now += engine.timing.assessment_seconds
     await asyncio.sleep(0)
@@ -675,7 +674,7 @@ async def test_infrastructure_failure_retries_same_snapshot_and_pays_only_once(e
     assert not any(e["kind"] == "payment" for e in events(engine))
     notice = [e for e in events(engine) if e["kind"] == "work_delayed"][-1]
     assert notice["payload"]["automatic_retry"] is True
-    assert "Do not resubmit" in notice["text"]
+    assert "automatically retry" in notice["text"]
     assert "automatically retry" in engine.current_facts("Mei")
     provider.patches[("Mei", "task-1")] = "later different work"
     with pytest.raises(Rejected):

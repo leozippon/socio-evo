@@ -97,8 +97,8 @@ def test_busy_owner_is_explained_and_confirmed_wait_is_explicit(engine):
 def test_conversation_contract_routes_submit_via_work(engine):
     activity = base.conversation(engine)
     observation = engine.observation("Mei")
-    assert "No code edits, tests or submissions happen here" in observation.situation
-    assert "pause or leave" in observation.setting and "resume Work" in observation.setting
+    assert activity.id in observation.situation
+    assert "conversation" in observation.situation
     card = Card(observation.allowed)
     with pytest.raises(ValidationError):
         card.model.model_validate(
@@ -121,7 +121,6 @@ def test_clock_and_open_state_are_computed_not_inferred(engine, when, expected):
     facts = engine.current_facts("Mei")
     assert expected in facts
     assert "Current location permits code work now: False" in facts
-    assert "Repository tools still require a Work activity" in facts
 
 
 def test_cancelled_confirmed_wait_releases_resident(engine):

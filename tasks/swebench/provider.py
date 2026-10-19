@@ -74,20 +74,20 @@ class SWEbenchTaskProvider:
         if self.repository_guidance:
             from tasks.swebench.preflight import operating_notes
 
-            notes = operating_notes(self._preflight(instance), self.command_seconds, self.community)
+            report = self._preflight(instance)
+            # Legacy schedulers have no on-demand guide; keep their instructions inline.
+            if not self.independent_workspaces:
+                notes = operating_notes(report, self.command_seconds, self.community)
+        if self.independent_workspaces:
+            notes = (
+                " Read the repository work guide while working for environment and test commands."
+            )
         return Part(
             title=f"Repair {row['repo']}: {row['problem_statement'].splitlines()[0][:100]}",
             specification=public_issue(row) + "\n\n"
-            "Your desk has an isolated checkout at /testbed and its installed Python "
-            "dependencies. Choose 'use the terminal' to inspect files, edit them, and run "
-            "tests with a shell command. Each command starts in /testbed with the testbed "
-            "Python environment; only files persist between commands. No network is "
-            "available. Do not rewrite git history or weaken tests. To try your repair "
-            "with the client or hand it in, put exactly WORKTREE in the code field: the "
-            "clerk collects your current diff. You may instead supply a complete unified "
-            "diff. The client checks the repair and regressions in a separate checkout. "
-            "Passing local tests alone does not guarantee acceptance. Keep terminal "
-            "output short. You can discuss your diagnosis with neighbours." + notes,
+            "Your checkout is at /testbed. Use the available terminal choices to inspect, "
+            "edit, and test the repository. To hand in the current diff, use WORKTREE; "
+            "a complete unified diff is also accepted." + notes,
             reward=60,
             deadline_days=self.solo_deadline_days,
             reference=instance,
@@ -103,17 +103,20 @@ class SWEbenchTaskProvider:
             if self.repository_guidance
             else {"guide": recipe(row["repo"])[1]}
         )
+        workspace = (
+            "Partners keep private workspaces and exchange code through explicit handoffs. "
+            if self.independent_workspaces
+            else "Partners on a shared job use the same checkout. "
+            if self.community
+            else "Your checkout is private. "
+        )
         return (
-            "SWE-bench work guide for " + row["repo"] + ":\n"
-            "1. Inspect the public issue and existing repository files before editing.\n"
-            "2. Discover existing tests and select a focused test entry point; "
-            "do not guess paths.\n"
-            "3. Edit source, inspect your diff, and run relevant tests. A failed launcher or zero "
-            "collected tests is not a passed test. Read failures before retrying.\n"
-            "4. Partners keep private workspaces; exchange and apply explicit code handoffs.\n"
-            "5. Submit WORKTREE from a work activity. In a conversation, first leave and "
-            "resume work; saying 'submitted' does not execute a submission. Wait for the "
-            "actual background assessment receipt/result.\n"
+            "Repository work guide for "
+            + row["repo"]
+            + ":\n"
+            + workspace
+            + "Hand in WORKTREE to send the current diff for client acceptance, "
+            "or supply a complete unified diff.\n"
             + operating_notes(report, self.command_seconds, self.community)
         )
 
