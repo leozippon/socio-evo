@@ -255,7 +255,7 @@ export class FeedPanel {
     if (!m.truth) events = events.filter((e) => isPublic(e) || e.kind === "scene_started" || e.kind === "day_started");
     if (m.selected && m.follow) {
       const heard = (e) => m.bystanders.get(e.seq)?.audience.includes(m.selected);
-      events = events.filter((e) => (m.truth ? involved(e).includes(m.selected) : witnessed(e, m.selected) || heard(e)) || (e.kind === "scene_started" && e.payload.participants?.includes(m.selected)) || e.kind === "day_started");
+      events = events.filter((e) => ((m.truth && involved(e).includes(m.selected)) || witnessed(e, m.selected) || heard(e)) || (e.kind === "scene_started" && e.payload.participants?.includes(m.selected)) || e.kind === "day_started");
     }
     const items = feedItems(events);
     let lastTime = null;
