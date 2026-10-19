@@ -44,6 +44,7 @@ class EnvironmentConfig(StrictModel):
     esteem_half_life_days: PositiveFloat
     task_shelf_life_days: PositiveInt | None
     posting_mode: Literal["append", "replenish"] = "append"
+    replacement_timing: Literal["morning", "immediate"] = "morning"
     strict_acceptance: bool = False
 
     @model_validator(mode="after")

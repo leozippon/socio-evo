@@ -371,7 +371,8 @@ class RealtimeEngine(ActivityEngine):
             self.queue.add(due, "assessment", job=job.task_id)
             self.emit(
                 EventKind.SUBMISSION_PENDING,
-                "Repair submitted for background assessment.",
+                "Repair submitted for background assessment. "
+                + self.assessment_waiting(who).strip(),
                 actor=who,
                 audience=list(claim.workers),
                 task_id=job.task_id,

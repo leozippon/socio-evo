@@ -573,7 +573,8 @@ class Environment:
         events = [self.emit(EventKind.DAY_STARTED, f"{day} began.", time=time)]
         events += [self._lapse(claim, time) for claim in self.board.expire(time)]
         open_before = dict(self.board.offers)
-        for task in self.board.retire(time, self.config.task_shelf_life_days):
+        retired = self.board.retire(time, self.config.task_shelf_life_days)
+        for task in retired:
             events.append(
                 self.emit(
                     EventKind.TASK_RETIRED,
@@ -583,6 +584,8 @@ class Environment:
                 )
             )
         events += self._offers_ended(open_before, time=time, gone="came_down")
+        for task in retired:
+            events += self._replace_task(task, time)
         for defect in self.board.discover(rng, self.conditions.defect_discovery_prob):
             events += self._defect(defect, time)
         return events
@@ -641,7 +644,6 @@ class Environment:
     ) -> list[Event]:
         """Post `counts` one-part and two-part tasks of `trade` (drawn by the mix if None) on
         the board or the job `sheet`, for `audience` to see."""
-        mix = self.conditions.trade_mix
         events = []
         for size, count in zip((1, 2), counts, strict=True):
             if self.config.posting_mode == "replenish":
@@ -656,31 +658,87 @@ class Environment:
                 )
             for index in range(count):
                 rng = random.Random(f"{seed}:{time}:{size}:{index}")
-                if trade is not None:
-                    drawn = trade
-                elif len(mix) == 1:
-                    [drawn] = mix
-                else:
-                    [drawn] = rng.choices(list(mix), weights=list(mix.values()))
-                provider = self.providers[drawn]
-                workers = None
-                if getattr(provider, "community", False):
-                    parts = provider.sample_available(
-                        rng, size, self.board.issued_references.get(drawn.value, [])
-                    )
-                    if not parts:
-                        break
-                    workers = size
-                elif hasattr(provider, "sample_posting"):
-                    parts = provider.sample_posting(rng, size, index)
-                else:
-                    parts = provider.sample(rng, size)
-                trusting = rng.random() < self.conditions.trusting_client_prob
-                if self.config.strict_acceptance:
-                    trusting = False
-                client = Client.TRUSTING if trusting else Client.CHECKING
-                events.append(self._put_up(time, drawn, sheet, parts, client, audience, workers))
+                event = self._post_one(time, rng, size, index, sheet, trade, audience)
+                if event is None:
+                    break
+                events.append(event)
         return events
+
+    def _post_one(
+        self,
+        time: int,
+        rng: random.Random,
+        size: int,
+        index: int,
+        sheet: str | None,
+        trade: Trade | None,
+        audience: Sequence[str],
+    ) -> Event | None:
+        """Draw one new issue; size is the worker count, not necessarily part count."""
+        mix = self.conditions.trade_mix
+        if trade is not None:
+            drawn = trade
+        elif len(mix) == 1:
+            [drawn] = mix
+        else:
+            [drawn] = rng.choices(list(mix), weights=list(mix.values()))
+        provider = self.providers[drawn]
+        workers = None
+        if getattr(provider, "community", False):
+            parts = provider.sample_available(
+                rng, size, self.board.issued_references.get(drawn.value, [])
+            )
+            if not parts:
+                return None
+            workers = size
+        elif hasattr(provider, "sample_posting"):
+            parts = provider.sample_posting(rng, size, index)
+        else:
+            parts = provider.sample(rng, size)
+        trusting = rng.random() < self.conditions.trusting_client_prob
+        if self.config.strict_acceptance:
+            trusting = False
+        client = Client.TRUSTING if trusting else Client.CHECKING
+        return self._put_up(time, drawn, sheet, parts, client, audience, workers)
+
+    def _replace_task(self, task: Task, time: int) -> list[Event]:
+        if self.config.posting_mode != "replenish" or self.config.replacement_timing != "immediate":
+            return []
+        audience = (
+            self._at_board()
+            if task.sheet is None
+            else [
+                person
+                for person in self.firms.people(task.sheet)
+                if self.world.locations[person] == task.sheet
+            ]
+        )
+        event = self._post_one(
+            time,
+            random.Random(f"replacement:{task.id}:{time}"),
+            task.worker_count,
+            0,
+            task.sheet,
+            task.trade,
+            audience,
+        )
+        if event is not None:
+            return [event]
+        return [
+            self.emit(
+                EventKind.TASK_REPLACEMENT_UNAVAILABLE,
+                f"No unused issue is available to replace {job_name(task.id)} "
+                f"with another {task.worker_count}-person job. "
+                "The clerk will retry at the next posting.",
+                time=time,
+                audience=audience,
+                payload={
+                    "task_id": task.id,
+                    "required_workers": task.worker_count,
+                    "reason": "pool_exhausted",
+                },
+            )
+        ]
 
     def _put_up(
         self,
@@ -849,9 +907,19 @@ class Environment:
             )
         if self.config.posting_mode == "replenish":
             work += (
-                " Each morning the clerk replaces completed jobs to restore the usual "
-                "number of outstanding jobs for one and for two. Open and taken jobs both "
-                "occupy a place; expired jobs return in the same place."
+                (
+                    " After a job passes final acceptance, the clerk immediately posts one new "
+                    "job for the same number of workers. A retired unclaimed notice is likewise "
+                    "replaced. New jobs are publicly available; previous workers have no priority. "
+                    "Failed acceptance leaves the existing job for rework, without a new job. "
+                    "Expired claims reopen the original job without an extra replacement."
+                )
+                if self.config.replacement_timing == "immediate"
+                else (
+                    " Each morning the clerk replaces completed jobs to restore the usual "
+                    "number of outstanding jobs for one and for two. Open and taken jobs both "
+                    "occupy a place; expired jobs return in the same place."
+                )
             )
         if self.config.task_shelf_life_days is None:
             work += " Unclaimed notices stay on the board until taken."
@@ -1483,7 +1551,10 @@ class Environment:
             **where,
         )
         if accepted and claim.complete:
-            return [submitted, assessed, *self._settle(claim, time)]
+            events = [submitted, assessed, *self._settle(claim, time)]
+            if assessment.passed:
+                events += self._replace_task(task, time)
+            return events
         return [submitted, assessed]
 
     def _settle(self, claim: Claim, time: int) -> list[Event]:

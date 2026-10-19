@@ -17,14 +17,21 @@ reflection and self-modification remain. A separate daytime home-learning action
 implemented by this change.
 
 The community profiles now use the opt-in [independent action clock](independent-scheduling.md).
-Tasks are replenished at 07:00 before goal planning. Each resident then chooses a new action
+Initial task stock is posted at 07:00; successful acceptance immediately replaces a job. Each resident then chooses a new action
 when their own previous action finishes; the old scene scheduler remains available.
 
 ## Work lifecycle
 
-- Initially six solo issues and one joint issue are posted. Each morning only vacancies
-  left by completed jobs are filled. Open and claimed issues both count toward stock.
-- No unclaimed notice expires. Expired claims return the same issue to the board unpaid.
+- Initially six solo issues and one joint issue are posted. With `posting_mode: replenish`
+  and `replacement_timing: immediate`, successful final acceptance archives the completed
+  job through its retained delivery/evaluation records and immediately posts one new job
+  with the same worker count (and trade/job sheet). New jobs use the existing public
+  competition and team-confirmation rules; the previous submitter has no priority.
+  Open and claimed jobs count toward stock, so the next morning does not add duplicates.
+  Old configs default to `replacement_timing: morning`; append mode is unchanged.
+- Community profiles keep unclaimed notices indefinitely. If a shelf life is configured,
+  a retired unclaimed notice immediately receives a same-worker-count replacement.
+  Expired claims return the same issue to the board unpaid, without adding another job.
   A claim initially allows two days, including the claiming day; solo and joint limits
   are independently configurable.
 - One claim per person. Existing random claim conflict resolution remains. Joint jobs
@@ -34,7 +41,11 @@ when their own previous action finishes; the old scene scheduler remains availab
   patch (`WORKTREE` collects it). This does not require two separate deliveries.
 - Local tests run through the terminal. Final acceptance uses the official SWE-bench
   evaluator in a separate checkout. Only a passed result pays. Failed attempts can be
-  revised before the deadline; an incomplete declaration never bypasses checks.
+  revised before the deadline without posting another job; an incomplete declaration
+  never bypasses checks. While background acceptance is pending, the job still occupies
+  its workers' one-job slots. Prompts explicitly allow leaving Work to socialize or rest,
+  explain the expected feedback time (and possible delay), and prohibit resubmission.
+  Successful acceptance releases the slots; residents can then compete for new jobs.
 - A solo issue pays 60. With the configured 1.5 joint premium a joint issue pays 90 total,
   split equally (45 each). Statements in submitted reports are retained as written even
   when the resident's declaration differs from the verified result.
@@ -43,7 +54,9 @@ when their own previous action finishes; the old scene scheduler remains availab
   day. Diagnostic details stay in `repositories/assessment_errors.jsonl`.
 - Issues are selected without replacement from the bank, with issued references persisted
   in the environment checkpoint. If the finite bank is exhausted, replenishment stops;
-  issues are not silently recycled. Customers and the clerk remain rules, not LLM agents.
+  issues are not silently recycled. Immediate replacement emits
+  `task_replacement_unavailable` when no unused issue remains. Customers and the clerk
+  remain rules, not LLM agents.
 
 ## Memory and context
 

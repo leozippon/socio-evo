@@ -217,6 +217,7 @@ environment:
     hours:
     - 18:00-22:00
   posting_mode: replenish
+  replacement_timing: immediate
   strict_acceptance: true
 tasks:
   provider: swebench

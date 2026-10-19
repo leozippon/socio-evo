@@ -138,3 +138,117 @@ def test_shared_invitation_has_no_artificial_part_selection(env):
         if f.get("properties", {}).get("do", {}).get("const") == "take a job for two"
     ]
     assert invitations and all("part" not in f["properties"] for f in invitations)
+
+
+@pytest.fixture
+def immediate(env):
+    env.config = env.config.model_copy(update={"replacement_timing": "immediate"})
+    return env
+
+
+async def test_success_immediately_replaces_solo_publicly_without_priority(immediate):
+    env = immediate
+    original = env.board.listings["task-1"].task
+    await act(env, "Ana", ClaimTask(task_id=original.id))
+    events = await act(env, "Ana", deliver(original.id, "perfect"))
+    [posted] = [e for e in events if e.kind == EventKind.TASK_POSTED]
+    task = env.board.listings[posted.payload["task"]["id"]].task
+    assert posted.time == next(e.time for e in events if e.kind == EventKind.WORK_ASSESSED)
+    assert task.worker_count == 1 and task.parts[0].reference != original.parts[0].reference
+    assert set(posted.audience) == set(AGENTS)
+    assert env.board.claim_of("Ana") is None
+    assert original.id not in env.board.listings and original.id not in env.board.claims
+    assert env.post(time_at(2, "08:00"), 0) == []
+    await act(env, "Ben", ClaimTask(task_id=task.id))
+    assert env.board.claim_of("Ben").task.id == task.id
+    lost = await act(env, "Ana", ClaimTask(task_id=task.id))
+    assert lost[0].kind == EventKind.ACTION_REJECTED
+
+
+async def test_joint_replacement_requires_same_workers_and_only_on_pass(immediate):
+    env = immediate
+    await act(env, "Ana", ClaimTask(task_id="task-3", partner="Ben"))
+    await act(env, "Ben", ClaimTask(task_id="task-3", partner="Ana"))
+    failed = await act(env, "Ana", deliver("task-3", "bad"))
+    assert not any(e.kind == EventKind.TASK_POSTED for e in failed)
+    assert len(env.board.listings) == 2 and "task-3" in env.board.claims
+    passed = await act(env, "Ben", deliver("task-3", "perfect"))
+    [posted] = [e for e in passed if e.kind == EventKind.TASK_POSTED]
+    assert posted.payload["task"]["required_workers"] == 2
+    assert len(posted.payload["task"]["parts"]) == 1
+    assert len([e for e in passed if e.kind == EventKind.PAYMENT]) == 2
+    assert len(env.board.listings) == 3
+    assert env.post(time_at(2, "08:00"), 0) == []
+    duplicate = await act(env, "Ben", deliver("task-3", "perfect"))
+    assert duplicate[0].kind == EventKind.ACTION_REJECTED
+    assert len(env.board.listings) == 3
+
+
+async def test_expiry_reopens_original_but_retired_notices_get_same_type_replacement(immediate):
+    env = immediate
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    before = env.board.next_number
+    events = env.start_day(time_at(4, "07:00"), random.Random(0))
+    assert "task-1" in env.board.listings
+    assert env.board.next_number == before
+    assert not any(e.kind == EventKind.TASK_POSTED for e in events)
+    env.config = env.config.model_copy(update={"task_shelf_life_days": 1})
+    events = env.start_day(time_at(6, "07:00"), random.Random(0))
+    retired = [e for e in events if e.kind == EventKind.TASK_RETIRED]
+    posted = [e for e in events if e.kind == EventKind.TASK_POSTED]
+    assert len(retired) == len(posted) == 3
+    assert sorted(e.payload["task"]["required_workers"] for e in posted) == [1, 1, 2]
+    assert all(e.time == time_at(6, "07:00") for e in posted)
+    assert env.post(time_at(6, "08:00"), 0) == []
+
+
+async def test_exhausted_pool_is_reported_without_reusing_issue(immediate):
+    env = immediate
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    trade = next(iter(env.providers))
+    env.board.issued_references[trade.value] = [str(n) for n in range(30)]
+    events = await act(env, "Ana", deliver("task-1", "perfect"))
+    assert not any(e.kind == EventKind.TASK_POSTED for e in events)
+    assert any(e.kind == "task_replacement_unavailable" for e in events)
+    assert env.board.claim_of("Ana") is None
+    assert len(env.board.listings) == 2
+
+
+async def test_assessment_service_outage_does_not_replace_job(immediate):
+    env = immediate
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+
+    async def unavailable(*args):
+        raise AssessmentUnavailable("temporary outage")
+
+    env.providers[next(iter(env.providers))].assess = unavailable
+    events = await act(env, "Ana", deliver("task-1", "perfect"))
+    assert [e.kind for e in events] == [EventKind.WORK_DELAYED]
+    assert env.board.claim_of("Ana").task.id == "task-1"
+    assert len(env.board.listings) == 2
+
+
+async def test_immediate_timing_does_not_change_append_mode(env):
+    env.config = env.config.model_copy(
+        update={"posting_mode": "append", "replacement_timing": "immediate"}
+    )
+    await act(env, "Ana", ClaimTask(task_id="task-1"))
+    events = await act(env, "Ana", deliver("task-1", "perfect"))
+    assert not any(e.kind == EventKind.TASK_POSTED for e in events)
+
+
+async def test_legacy_multipart_job_replaced_only_after_all_parts_pass(env):
+    config = env.config.model_copy(update={"replacement_timing": "immediate"})
+    other = Environment.create(config, AGENTS, Provider(), env.log.path.parent / "multi.jsonl")
+    other.post(time_at(1, "08:00"), 0)
+    go(other, "office", *AGENTS)
+    await act(other, "Ana", ClaimTask(task_id="task-3", partner="Ben", part=1))
+    await act(other, "Ben", ClaimTask(task_id="task-3"))
+    partial = await act(other, "Ana", deliver("task-3", "perfect", part=1))
+    assert not any(e.kind == EventKind.TASK_POSTED for e in partial)
+    assert "task-3" in other.board.claims
+    final = await act(other, "Ben", deliver("task-3", "perfect", part=2))
+    [posted] = [e for e in final if e.kind == EventKind.TASK_POSTED]
+    replacement = other.board.listings[posted.payload["task"]["id"]].task
+    assert replacement.worker_count == 2
+    assert len(replacement.parts) == 2

@@ -453,6 +453,27 @@ class ActivityEngine:
             f"Current location permits code work now: {self.can_code(who)}. "
             "Repository tools still require a Work activity and an assigned job. "
             f"Today ends at {clock(self.end)}. Historical timestamps are not the current clock."
+            + self.assessment_waiting(who)
+        )
+
+    def assessment_waiting(self, who):
+        claim = self.env.board.claim_of(who)
+        if claim is None or claim.task.id not in self.assessments:
+            return ""
+        entry = self.assessments[claim.task.id]
+        due = entry["due"]
+        timing = (
+            f"First feedback is expected at {clock(due)}; checking may take longer."
+            if self.now < due
+            else "Checking is still pending; feedback will arrive when ready."
+        )
+        return (
+            f" Your job {claim.task.id} is awaiting background acceptance. {timing} "
+            "You may leave Work to socialize or rest while waiting. Do not resubmit. "
+            "The current claim still occupies your one-job slot until acceptance; "
+            "you cannot claim another job yet. After successful acceptance you may "
+            "compete for newly posted jobs with everyone else, without priority. "
+            "A failed repair stays assigned for rework."
         )
 
     def menu(self, who):
@@ -1522,7 +1543,7 @@ class ActivityEngine:
         self.queue.add(due, "assessment", job=claim.task.id)
         self.emit(
             EventKind.SUBMISSION_PENDING,
-            "Repair submitted. First feedback is due at " + clock(due) + ".",
+            "Repair submitted. " + self.assessment_waiting(who).strip(),
             actor=who,
             audience=list(claim.workers),
             task_id=claim.task.id,

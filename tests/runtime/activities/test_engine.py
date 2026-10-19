@@ -626,3 +626,22 @@ async def test_private_group_invites_newcomer_without_interrupting_existing_memb
     assert set(activity.participants) == {"Mei", "Tomas", "Aisha"}
     assert not activity.unread("Aisha")
     assert invitation.status == "started"
+
+
+async def test_pending_acceptance_prompt_allows_rest_socializing_and_explains_job_slot(engine):
+    work(engine)
+    await claim(engine)
+    await engine.submit("Mei", "Ready for acceptance")
+    prompt = engine.observation("Mei")
+    assert "awaiting background acceptance" in prompt.situation
+    assert "socialize or rest" in prompt.situation
+    assert "one-job slot" in prompt.situation
+    assert "without priority" in prompt.situation
+    assert "Do not resubmit" in engine.activity_help("Mei")
+    assert "claim" not in engine.menu("Mei").get("tools", [])
+    engine.now += engine.timing.assessment_seconds
+    await asyncio.sleep(0)
+    await engine.assessment("task-1")
+    assert engine.env.board.claim_of("Mei") is None
+    assert "awaiting background acceptance" not in engine.current_facts("Mei")
+    await engine.close()

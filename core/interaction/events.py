@@ -51,6 +51,8 @@ class EventKind(StrEnum):
     """A task not completed by its deadline; nothing is paid and it returns to the board."""
     TASK_RETIRED = "task_retired"
     """An unclaimed task taken off the board after its shelf life; truth-only."""
+    TASK_REPLACEMENT_UNAVAILABLE = "task_replacement_unavailable"
+    """The finite issue pool could not supply a same-worker-count replacement."""
     TASK_WITHDRAWN = "task_withdrawn"
     """A task its client withdrew, from the board or from its workers, with nothing more paid
     for it; private to its workers, truth-only for a task nobody had taken."""
