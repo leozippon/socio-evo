@@ -86,6 +86,7 @@ class Activity(MutableState):
 class RestActivity(Activity):
     kind: Literal["rest"] = "rest"
     wake_invitations: bool = True
+    waiting_for: str | None = None
 
 
 class MoveActivity(Activity):

@@ -491,3 +491,52 @@ async def test_repository_guide_is_pinned_and_readable_as_work_tool(rt, monkeypa
     assert "PUBLIC GUIDE" in activity.feedback["Mei"][-1]
     assert not provider.commands, "reading instructions must not run repository code"
     assert "guide" not in rt.menu("Jonas").get("tools", [])
+
+
+async def test_confirmed_wait_allows_staggered_decisions_to_meet_without_interrupting(rt):
+    from tests.runtime.activities.test_activity_context import invite
+
+    invitation = invite(rt, None)
+    rt.invitation_action("Tomas", "accept", {"invitation": invitation.id})
+    gate = asyncio.Event()
+
+    class Resident:
+        async def choose_activity(self, observation):
+            await gate.wait()
+            return Decision(
+                thought="Wait for my meeting",
+                action=choose("select_rest", arguments={"invitation": invitation.id, "wake": True}),
+            )
+
+    rt.sim.agents["Mei"] = Resident()
+    rt.start_decision("Mei")
+    menu = rt.observation("Tomas")
+    assert "confirmed_waiting" in menu.situation
+    assert "busy_finish_current_operation" in menu.situation
+    card = Card(menu.allowed)
+    response = card.model.model_validate(
+        {
+            "thought": "Leave time to meet",
+            "do": "wait for confirmed conversation",
+            "invitation": invitation.id,
+        }
+    )
+    rt.select("Tomas", card.decision(response).action)
+    rt.start_ready_conversations()
+    assert invitation.status == "pending"
+    gate.set()
+    await finish(rt, "Mei")
+    rt.start_ready_conversations()
+    assert invitation.status == "started"
+    assert set(rt.activities[invitation.conversation].participants) == {"Mei", "Tomas"}
+
+
+def test_realtime_contract_has_no_read_action_and_pins_current_facts(rt):
+    conversation(rt)
+    rt.now = at(1, "16:00")
+    observation = rt.observation("Mei")
+    assert "No code edits, tests or submissions happen here" in observation.setting
+    assert "pause or leave" in observation.correction_context
+    assert "Town coding period is OPEN, closes at 18:00:00, 7200" in observation.situation
+    assert "You hear completed speech directly" in observation.situation
+    assert '"read"' not in rt.activity_contract("Mei", rt.menu("Mei"))

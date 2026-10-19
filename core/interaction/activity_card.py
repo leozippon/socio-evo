@@ -46,6 +46,37 @@ def invitation_form(label="invite people", name="invite", menu=None):
     )
 
 
+def invitation_responses(menu, tools=("accept", "decline")):
+    result = []
+    for name in ("accept", "decline"):
+        ids = (
+            menu.get("accept_invitations", menu.get("invitations", []))
+            if name == "accept"
+            else menu.get("invitations", [])
+        )
+        if ids and name in tools:
+            result.append(tool(name + " invitation", name, {"invitation": (_one_of(ids), None)}))
+    return result
+
+
+def confirmed_wait_forms(menu):
+    if not menu.get("ready_invitations"):
+        return []
+    return [
+        _Form(
+            "wait for confirmed conversation",
+            {"invitation": (_one_of(menu["ready_invitations"]), None)},
+            lambda r: Activity(
+                operation="select_rest",
+                arguments={
+                    "invitation": r["invitation"],
+                    "wake": True,
+                },
+            ),
+        )
+    ]
+
+
 def activity_forms(layer, menu):
     if layer == "selection" and menu.get("realtime"):
         from core.interaction.realtime_card import realtime_forms
@@ -112,15 +143,8 @@ def activity_forms(layer, menu):
             )
         if menu.get("people") and menu.get("places"):
             result.append(invitation_form("arrange a conversation", menu=menu))
-        if menu.get("invitations"):
-            for name in ("accept", "decline"):
-                result.append(
-                    tool(
-                        name + " invitation",
-                        name,
-                        {"invitation": (_one_of(menu["invitations"]), None)},
-                    )
-                )
+        result.extend(invitation_responses(menu))
+        result.extend(confirmed_wait_forms(menu))
         return result
     tools = set(menu["tools"])
     result = [tool("pause or leave", "leave")]
@@ -189,14 +213,5 @@ def activity_forms(layer, menu):
                 )
     if "invite" in tools and menu.get("people") and menu.get("places"):
         result.append(invitation_form(menu=menu))
-    if menu.get("invitations"):
-        for name in ("accept", "decline"):
-            if name in tools:
-                result.append(
-                    tool(
-                        name + " invitation",
-                        name,
-                        {"invitation": (_one_of(menu["invitations"]), None)},
-                    )
-                )
+    result.extend(invitation_responses(menu, tools))
     return result

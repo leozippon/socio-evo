@@ -141,3 +141,51 @@ rest/day-end clamping, same-day waits, equal-time correction, persisted no-activ
 legacy rejection feedback, realtime rest availability, persistent/readable guide tool and
 public-only provider instructions. No new experiment was launched and the frozen completed
 experiment was not modified.
+
+## Approved follow-up: activity contracts, invitations and current facts
+
+Implemented after the initial review:
+
+- Both system setting and current observation/correction context state what the current
+  activity permits and list its current tools. Conversation explicitly disallows code edits,
+  tests and submissions and explains leave → Work → submit. Speech is never a tool receipt.
+  The realtime entry retains direct speech/no read action and the old scheduler remains usable.
+- Invitation projections now show `awaiting_response`, `confirmed_waiting`, `started`, `ended`
+  or terminal state, confirmation list, participant readiness, start/grace clock, travel time
+  and suggested depart-by time. Confirmed recipients can decline but cannot select accept
+  again; stale repeated accepts emit no duplicate notification. Equivalent immediate pending
+  invitations reuse the existing commitment; distinct future/immediate meetings stay separate.
+- An explicit **wait for confirmed conversation** choice enters interruptible rest at the
+  meeting place. It leaves an idle interval in which the other participant can finish their
+  current tool/model call. It does not interrupt their work or reserve them automatically.
+  Cancellation releases the waiter, deadlines still apply, and waiting for one named meeting
+  cannot accidentally start a different pending meeting. Reminders ask residents to finish or
+  pause work and allow travel time before confirmed appointments.
+- Every activity observation includes authoritative current clock, whether the town coding
+  interval is open, its closing time/seconds remaining or next opening, venue open state,
+  inside/outside state, and location eligibility. Work activity/assignment requirements remain
+  explicit and separate from whether the place permits coding. This avoids implying that
+  physical presence in an open workshop authorizes work while in a conversation.
+
+Observation/evaluation rules were investigated but NOT modified:
+
+- A public successful delivery is delivered to occupants of its work venue plus claim workers
+  (`Environment._submit` audience). Aisha's observation of Olga is such a permitted public
+  event, not a read of Olga's files. Commands and decision thoughts are private to their
+  assigned audiences. Official `work_assessed` payload is truth-only and not projected to
+  residents; only the appropriate acceptance/rejection notice is delivered. Payment records
+  go to payees/partners rather than granting everyone access to private balances.
+- Each resident stores the percepts they received in their own episodic stream and task-scoped
+  notes. Thus a resident can have a private note about a witnessed public job by someone else.
+- At day close the realtime/activity engine's `_met` records chiefly shared conversations and
+  speech. Review offers optional 1–5 ratings with reasons for those encountered peers; it is
+  not an all-residents vote or an official test of honesty. Ratings update the time-decayed
+  public esteem aggregate. Day costs and night diaries/reflection follow. In this experiment
+  the actual four ratings were Aisha→Olga 4, Olga→Aisha 5, Ravi→Kofi 5, Kofi→Ravi 5.
+- The earlier attribution/retrieval issue in peer-review context remains a separate change:
+  do not infer these prompt/meeting improvements have fixed missing own task facts at review.
+
+Follow-up validation: **213 tests passed**, covering activity/realtime scheduling, invitation
+readiness/waits/duplicates/cancellation, current-time facts, SWE-bench, interaction schemas
+and frontend replay. Ruff and diff whitespace checks passed. Changes are local; the completed
+experiment and its source snapshot were not modified, and no new experiment was started.

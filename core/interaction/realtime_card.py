@@ -1,7 +1,14 @@
 """Real-time forms: direct speech, no read action and no declared work/chat duration."""
 
 from core.interaction.actions import Activity
-from core.interaction.activity_card import CLOCK, SHORT, activity_forms, tool
+from core.interaction.activity_card import (
+    CLOCK,
+    SHORT,
+    activity_forms,
+    confirmed_wait_forms,
+    invitation_responses,
+    tool,
+)
 from core.interaction.card import _Form, _one_of
 
 
@@ -53,13 +60,8 @@ def realtime_forms(layer, menu):
         )
     if menu.get("people") and menu.get("places"):
         result.append(realtime_invitation(menu, "arrange a conversation"))
-    if menu.get("invitations"):
-        for name in ("accept", "decline"):
-            result.append(
-                tool(
-                    name + " invitation", name, {"invitation": (_one_of(menu["invitations"]), None)}
-                )
-            )
+    result.extend(invitation_responses(menu))
+    result.extend(confirmed_wait_forms(menu))
     return result
 
 

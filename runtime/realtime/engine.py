@@ -115,7 +115,13 @@ class RealtimeEngine(ActivityEngine):
             "Opening admits waiters; being outside does not permit indoor work or conversation. "
             "The day closes at 22:00. Rest and movement retain simulated durations."
         )
-        setting = self.env.config.setting.backdrop + "\n" + self.env.rules_view()
+        setting = (
+            self.env.config.setting.backdrop
+            + "\n"
+            + self.env.rules_view()
+            + "\n"
+            + self.activity_contract(who, self.menu(who))
+        )
         setting += "\nThis town uses" + situation.split("\nThis town uses", 1)[-1]
         return observation.model_copy(
             update={"setting": setting, "situation": situation, "correction_context": situation}

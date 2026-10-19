@@ -264,6 +264,128 @@ class ActivityEngine:
             if i.status == "pending" and who in i.invited and self.now <= i.grace_end
         ]
 
+    def ready_for_invitation(self, who, invitation):
+        if not self.available(who):
+            return False
+        activity = self.activities.get(self.current.get(who))
+        return not (
+            isinstance(activity, RestActivity)
+            and activity.waiting_for
+            and activity.waiting_for != invitation.id
+        )
+
+    def invitation_views(self, who):
+        """Expose commitments and readiness without other residents' private work contents."""
+        views = []
+        for invitation in self.invitations.values():
+            if who not in (invitation.owner, *invitation.invited):
+                continue
+            status = invitation.status
+            if status == "pending":
+                status = (
+                    "expired"
+                    if self.now > invitation.grace_end
+                    else "confirmed_waiting"
+                    if who in invitation.confirmed
+                    else "awaiting_response"
+                )
+            if status == "started" and invitation.conversation:
+                conversation = self.activities.get(invitation.conversation)
+                if conversation is None or conversation.status == "ended":
+                    status = "ended"
+            readiness = {}
+            for person in dict.fromkeys((invitation.owner, *invitation.invited)):
+                if person not in invitation.confirmed:
+                    readiness[person] = "awaiting_response"
+                elif self.env.world.locations[person] != invitation.place or person in self.outside:
+                    readiness[person] = "not_at_meeting"
+                elif not self.ready_for_invitation(person, invitation):
+                    readiness[person] = "busy_finish_current_operation_or_leave_activity"
+                else:
+                    readiness[person] = "ready"
+            views.append(
+                {
+                    **invitation.model_dump(),
+                    "status": status,
+                    "readiness": readiness,
+                    "start_clock": clock(invitation.start),
+                    "grace_clock": clock(invitation.grace_end),
+                    "your_confirmed": who in invitation.confirmed,
+                    "seconds_until_start": max(0, invitation.start - self.now),
+                    "depart_by": clock(
+                        max(
+                            0,
+                            invitation.start
+                            - self.travel_seconds(self.env.world.locations[who], invitation.place),
+                        )
+                    ),
+                    "travel_seconds": self.travel_seconds(
+                        self.env.world.locations[who], invitation.place
+                    ),
+                }
+            )
+        return views
+
+    def activity_contract(self, who, menu):
+        active = self.activities.get(self.current.get(who))
+        kind = active.kind if active else "selection"
+        descriptions = {
+            "selection": "Choose the next activity. Work tools require entering Work first.",
+            "rest": "Wait until the chosen time; invitations wake you only if allowed.",
+            "move": "Travel only; you cannot code or join an in-person conversation in transit.",
+            "work": "Inspect/claim jobs, read the guide, edit/test code, exchange handoffs "
+            "and submit "
+            "using only the tools currently listed. Tools may be unavailable due to hours "
+            "or assignment. To talk, pause or leave work, then join a conversation.",
+            "conversation": "Talk, wait for speech, invite or leave. No code edits, tests or "
+            "submissions happen here. To submit: choose pause or leave, select "
+            "or resume Work, then submit your repair. Keep that next intention. "
+            "Saying 'I submitted' is speech, not a submission receipt. If a work "
+            "action is invalid, do not replace it with a claim it happened.",
+        }
+        return (
+            f"Current activity capabilities: {kind}. "
+            + descriptions[kind]
+            + " Available tools now: "
+            + json.dumps(menu.get("tools", []))
+            + ". Activity choice and tool choice are separate; do not use a work id to join a chat."
+        )
+
+    def current_facts(self, who):
+        today = day_of(self.now // 60)
+        period_end = next(
+            (
+                at(today, end)
+                for start, end in (("08:00", "12:00"), ("14:00", "18:00"))
+                if at(today, start) <= self.now < at(today, end)
+            ),
+            None,
+        )
+        next_start = next(
+            (at(today, t) for t in ("08:00", "14:00") if at(today, t) > self.now), None
+        )
+        work_period = (
+            f"OPEN, closes at {clock(period_end)}, {period_end - self.now} seconds remaining"
+            if period_end
+            else "CLOSED; "
+            + (
+                f"next opens at {clock(next_start)}"
+                if next_start
+                else "next opens tomorrow at 08:00"
+            )
+        )
+        place = self.env.world.places[self.env.world.locations[who]]
+        venue_open = place.is_open(clock_of(self.now // 60))
+        return (
+            f"Authoritative current facts: day {today}, clock {clock(self.now)}. "
+            f"Town coding period is {work_period}. "
+            f"Your current venue is {'OPEN' if venue_open else 'CLOSED'}; "
+            f"you are {'outside' if who in self.outside else 'inside'}. "
+            f"Current location permits code work now: {self.can_code(who)}. "
+            "Repository tools still require a Work activity and an assigned job. "
+            f"Today ends at {clock(self.end)}. Historical timestamps are not the current clock."
+        )
+
     def menu(self, who):
         place = self.env.world.locations[who]
         people = [p for p in self.env.agents if p != who]
@@ -276,6 +398,18 @@ class ActivityEngine:
             "people": people,
             "places": places,
             "invitations": self.invitation_ids(who),
+            "accept_invitations": [
+                i for i in self.invitation_ids(who) if who not in self.invitations[i].confirmed
+            ],
+            "ready_invitations": [
+                i.id
+                for i in self.invitations.values()
+                if i.status == "pending"
+                and who in i.confirmed
+                and self.now < i.grace_end
+                and i.place == place
+                and who not in self.outside
+            ],
             "outside": who in self.outside,
         }
         if who not in self.current:
@@ -441,16 +575,21 @@ class ActivityEngine:
                 "processing handles the night. A rest ending exactly now is invalid."
             )
         context += [self.env.board_view(who), self.env.status_view(who, include_evidence=False)]
-        invites = [
-            i.model_dump(exclude={"confirmed"})
-            for i in self.invitations.values()
-            if i.status == "pending" and who in (i.owner, *i.invited)
-        ]
+        context += [self.current_facts(who), self.activity_contract(who, menu)]
+        invites = self.invitation_views(who)
         context.append("Your conversation invitations/appointments: " + json.dumps(invites))
+        context.append(
+            "For confirmed appointments, leave time to finish your current operation, travel "
+            "and arrive by the start/grace time above. If confirmed and at the meeting place, "
+            "choose wait for confirmed conversation rather than accepting again or entering "
+            "empty work. Invitations never interrupt running work; finish or pause it yourself."
+        )
         context.append("Available public/paused work: " + json.dumps(menu.get("work", [])))
         situation = "\n".join(context)
         setting = (
             self.env.config.setting.backdrop
+            + "\n"
+            + self.activity_contract(who, menu)
             + "\n"
             + self.env.rules_view()
             + "\nThere is no morning plan. First choose an activity, then use its tools. "
@@ -670,7 +809,15 @@ class ActivityEngine:
                 "wait for opening before entering an indoor activity."
             )
         if action.operation == "select_rest":
-            until = at(day_of(self.now // 60), action.arguments["until"])
+            waiting_for = action.arguments.get("invitation")
+            if waiting_for:
+                if waiting_for not in self.menu(who)["ready_invitations"]:
+                    raise Rejected(
+                        "Confirm and arrive at this pending meeting before waiting for it."
+                    )
+                until = min(self.end, self.invitations[waiting_for].grace_end)
+            else:
+                until = at(day_of(self.now // 60), action.arguments["until"])
             # Clock-only morning values after evening mean the next occurrence.
             # Sleep crosses midnight conceptually; this day's activity ends at day close.
             if until < self.now:
@@ -688,6 +835,7 @@ class ActivityEngine:
                     start=self.now,
                     latest_end=until,
                     wake_invitations=action.arguments.get("wake", True),
+                    waiting_for=waiting_for,
                 ),
                 who,
                 until,
@@ -864,7 +1012,9 @@ class ActivityEngine:
                 or self.now > invitation.grace_end
             ):
                 raise Rejected("That invitation is no longer available.")
-            if tool == "accept" and who not in invitation.confirmed:
+            if tool == "accept":
+                if who in invitation.confirmed:
+                    return  # Replayed/stale accepts do not emit another invitation notification.
                 invitation.confirmed.append(who)
             elif tool == "decline":
                 invitation.invited = tuple(p for p in invitation.invited if p != who)
@@ -884,6 +1034,28 @@ class ActivityEngine:
                 raise Rejected("Arrange a time later today, before day end.")
             if not self.env.world.places[place].is_open(clock_of(start // 60)):
                 raise Rejected("That meeting place will be closed.")
+            duplicate = next(
+                (
+                    i
+                    for i in self.invitations.values()
+                    if i.status == "pending"
+                    and self.now <= i.grace_end
+                    and i.owner == who
+                    and set(i.invited) == set(people)
+                    and i.place == place
+                    and i.topic.strip().casefold() == args["topic"].strip().casefold()
+                    and (i.start == start or (not args.get("at") and i.start <= self.now))
+                    and i.public == args.get("public", False)
+                ),
+                None,
+            )
+            if duplicate:
+                self.feedback(
+                    who,
+                    f"Invitation {duplicate.id} already covers this conversation; "
+                    "check its confirmation/readiness instead of sending another.",
+                )
+                return
             scheduled = bool(args.get("at"))
             grace = (
                 min(self.end, start + self.timing.appointment_grace_seconds)
@@ -928,7 +1100,7 @@ class ActivityEngine:
             people = [
                 p
                 for p in invitation.confirmed
-                if self.available(p)
+                if self.ready_for_invitation(p, invitation)
                 and p not in self.outside
                 and self.env.world.locations[p] == invitation.place
             ]
@@ -987,6 +1159,11 @@ class ActivityEngine:
         for who, ident in list(self.current.items()):
             activity = self.activities[ident]
             if not isinstance(activity, RestActivity) or not activity.wake_invitations:
+                continue
+            if activity.waiting_for:
+                invitation = self.invitations.get(activity.waiting_for)
+                if not invitation or invitation.status == "cancelled":
+                    self.leave(who, "The conversation you were waiting for was cancelled.")
                 continue
             member = activity.members[who]
             events = self.env.log.pending_events(who)
