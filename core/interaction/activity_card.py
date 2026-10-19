@@ -145,10 +145,12 @@ def activity_forms(layer, menu):
             result.append(invitation_form("arrange a conversation", menu=menu))
         result.extend(invitation_responses(menu))
         result.extend(confirmed_wait_forms(menu))
+        result.append(tool("help", "help"))
         return result
     tools = set(menu["tools"])
-    result = [tool("pause or leave", "leave")]
+    result = [tool("pause or leave", "leave")] if "leave" in tools else []
     definitions = {
+        "help": tool("help", "help"),
         "read": tool("read new messages", "read"),
         "invite_here": tool(
             "invite to this conversation",

@@ -129,3 +129,20 @@ this implementation verification.
 Travel to a public venue is allowed before opening. Arrival at a closed venue records an outside location and starts a wakeable rest until the next opening (or day end). Opening admits waiting residents and ends their rest so they can decide again. Indoor work and conversation remain unavailable outside; waiters do not become conversation participants merely by reaching the venue. The normal closing/22:00 return rules still apply. Legacy non-activity movement rejects closed destinations unless explicitly opted in.
 
 Starting work searches for a live collaboration at the current place first, then one's own vacant local public session. A foreign inactive/public session never forces travel or blocks a new local session. Explicitly resuming a vacant accessible work session may relocate it while preserving its task, history, relay mode and workspace keys. An active session with participants cannot be relocated; joining it requires the same location. Global relay write permissions still apply across independent sessions.
+
+## Activity help
+
+Every activity (Work, Conversation, Rest, Move) and the activity-selection entry offers
+`{"thought": "Check what I can do here", "do": "help"}`. The action maps to the `help` tool
+and returns environment-generated instructions directly, without a model-generated answer.
+It includes current capabilities and tools, actual permitted reply forms/arguments, clock
+and opening facts, town rules, invitations/readiness, and switching instructions. Assigned
+Work activities also include the provider's public repository work guide.
+
+Help does not run commands, submit work, join/leave an activity, advance the simulation clock,
+change membership/message cursors, or consume pending percepts. No fixed time charge is added;
+ordinary real-time model-call latency still applies. It emits private tool start/completion
+and feedback records for the requester. It cannot interrupt an already running operation.
+Rest and travel keep their existing completion timers; exposing help does not introduce
+periodic model decisions during those activities. Legacy and real-time entry points both
+support it. Regression coverage: 225 selected scheduling/provider/schema/frontend tests pass.

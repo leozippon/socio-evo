@@ -166,6 +166,8 @@ class RealtimeEngine(ActivityEngine):
     def schedule(self, who, action):
         if who in self.running:
             raise Rejected("Finish your current operation first.")
+        if action.operation == "activity_tool" and action.tool == "help":
+            return self.show_help(who)
         if who not in self.current:
             return self.select(who, action)
         if self.now >= self.end or self.current[who] in self.closing or who in self.deferred:

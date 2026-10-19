@@ -62,6 +62,7 @@ def realtime_forms(layer, menu):
         result.append(realtime_invitation(menu, "arrange a conversation"))
     result.extend(invitation_responses(menu))
     result.extend(confirmed_wait_forms(menu))
+    result.append(tool("help", "help"))
     return result
 
 

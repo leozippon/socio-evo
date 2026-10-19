@@ -348,8 +348,77 @@ class ActivityEngine:
             + descriptions[kind]
             + " Available tools now: "
             + json.dumps(menu.get("tools", []))
-            + ". Activity choice and tool choice are separate; do not use a work id to join a chat."
+            + ". Call help for settings and usage instructions. "
+            "Activity choice and tool choice are separate; do not use a work id to join a chat."
         )
+
+    def activity_help(self, who):
+        """Deterministic instructions; never call observation() or consume its percepts."""
+        from core.interaction.card import Card, form
+
+        menu = self.menu(who)
+        active = self.activities.get(self.current.get(who))
+        sections = [
+            "Activity help (environment rules, not an action result)",
+            self.current_facts(who),
+            self.activity_contract(who, menu),
+            self.env.rules_view(),
+            "Rest waits until its clock deadline (earlier times mean tomorrow, capped at "
+            "day end). Movement only travels; it does not permit work in transit. "
+            "Finish or leave an activity before choosing another. Progress survives leaving work.",
+            "Invitations do not interrupt tools. Confirm, leave time to travel, then choose "
+            "wait for confirmed conversation at the meeting place. Already-confirmed "
+            "invitations need no second accept. Read readiness to see why a chat is waiting.",
+            "Your invitations: " + json.dumps(self.invitation_views(who)),
+        ]
+        if menu.get("realtime"):
+            sections.append(
+                "Realtime mode: one real second advances "
+                f"{self.settings.multiplier:g} town seconds. Model requests and tools use "
+                "actual elapsed wall time. Speech arrives directly; there is no read charge "
+                "or read action. Help executes no code and adds no fixed simulated charge."
+            )
+        else:
+            sections.append("Tool costs in simulated seconds: " + json.dumps(menu.get("costs", {})))
+        if isinstance(active, WorkActivity):
+            claim = self.env.board.claim_of(who)
+            if claim:
+                provider = self.env.providers[claim.task.trade]
+                if callable(getattr(provider, "work_guide", None)):
+                    sections.append(provider.work_guide(claim.task.parts[0]))
+            else:
+                sections.append(
+                    "Claim a job before using repository tools. The notice board "
+                    "lists public task requirements; help does not claim a job."
+                )
+        sections.append(
+            form(Card((MayActivity(layer="tool" if active else "selection", menu=menu),)).model)
+        )
+        return "\n\n".join(sections)
+
+    def show_help(self, who):
+        text = self.activity_help(who)
+        activity = self.current.get(who)
+        self.emit(
+            EventKind.TOOL_STARTED,
+            f"{who} requested activity help.",
+            actor=who,
+            activity=activity,
+            tool="help",
+            start=self.now / 60,
+            end=self.now / 60,
+        )
+        self.feedback(who, text)
+        self.emit(
+            EventKind.TOOL_COMPLETED,
+            f"{who} finished help.",
+            actor=who,
+            activity=activity,
+            tool="help",
+            start=self.now / 60,
+            end=self.now / 60,
+        )
+        return text
 
     def current_facts(self, who):
         today = day_of(self.now // 60)
@@ -438,12 +507,22 @@ class ActivityEngine:
             }
         activity = self.activities[self.current[who]]
         if isinstance(activity, RestActivity | MoveActivity):
-            return {**common, "tools": [], "costs": {}, "blocked": {}}
+            return {**common, "tools": ["help"], "costs": {"help": 0}, "blocked": {}}
         if isinstance(activity, ConversationActivity):
-            tools = ["leave", "read", "reply", "wait", "invite", "invite_here", "accept", "decline"]
+            tools = [
+                "help",
+                "leave",
+                "read",
+                "reply",
+                "wait",
+                "invite",
+                "invite_here",
+                "accept",
+                "decline",
+            ]
         else:
             claim = self.env.board.claim_of(who)
-            tools = ["leave", "board", "feedback", "invite", "accept", "decline"]
+            tools = ["help", "leave", "board", "feedback", "invite", "accept", "decline"]
             if claim is None:
                 tools.append("claim")
             else:
@@ -485,6 +564,7 @@ class ActivityEngine:
 
     def minimum_cost(self, tool):
         return {
+            "help": 0,
             "leave": 0,
             "claim": 0,
             "accept": 0,
@@ -762,6 +842,8 @@ class ActivityEngine:
     def schedule(self, who, action):
         if who in self.pending:
             raise Rejected("Finish your current tool first.")
+        if action.operation == "activity_tool" and action.tool == "help":
+            return self.show_help(who)
         if who not in self.current:
             return self.select(who, action)
         if action.operation != "activity_tool":
@@ -798,6 +880,8 @@ class ActivityEngine:
         )
 
     def select(self, who, action):
+        if action.operation == "activity_tool" and action.tool == "help":
+            return self.show_help(who)
         place = self.env.world.locations[who]
         if who in self.outside and action.operation in (
             "select_work",
