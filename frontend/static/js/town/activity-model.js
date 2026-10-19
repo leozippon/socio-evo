@@ -5,7 +5,7 @@ import { href } from "../router.js";
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
 export const ACTIVITY_LABELS = { rest: "Rest", move: "Move", work: "Work", conversation: "Conversation" };
 export const activityLabel = (row) => row.type === "rest" && row.phase === "choosing_next_activity"
-  ? "Rest · Choosing next activity" : ACTIVITY_LABELS[row.type] ?? row.type;
+  ? "Deciding" : ACTIVITY_LABELS[row.type] ?? row.type;
 
 export function activityIntervals(events, through, reader = null) {
   const intervals = [];

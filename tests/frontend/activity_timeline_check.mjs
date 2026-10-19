@@ -117,7 +117,7 @@ const choosingEvents = [
   {seq:3,time:482,kind:"activity_entered",actor:"Mei",audience:["Mei"],payload:{activity:"w2",activity_type:"work"}},
 ];
 const choosing = activityIntervals(choosingEvents, 483);
-assert.equal(model.activityLabel(choosing[0]), "Rest · Choosing next activity");
+assert.equal(model.activityLabel(choosing[0]), "Deciding");
 assert.equal(model.activityLabel(choosing[1]), "Work");
 assert.equal(model.activityLabel({type:"rest"}), "Rest");
 assert.equal(choosing[0].end, choosing[1].start, "transition and work have no gap or overlap");
