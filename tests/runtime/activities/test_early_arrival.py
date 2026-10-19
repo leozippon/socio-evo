@@ -1,9 +1,8 @@
-"""Closed destinations are reachable; outside arrival never grants indoor access."""
+"""Workplace arrival is indoors; access does not grant coding permission."""
 
 import pytest
 
 from core.environment.rejection import Rejected
-from core.interaction import Card
 from runtime.activities.engine import ActivityEngine
 from runtime.activities.model import at
 from runtime.realtime.engine import RealtimeEngine
@@ -27,25 +26,26 @@ async def arrive(gate, who="Mei", destination="workshop"):
     return arrival
 
 
-async def test_closed_destination_arrival_waits_outside_until_opening(gate):
+async def test_early_arrival_is_inside_and_rest_is_optional(gate):
     assert "workshop" in gate.menu("Mei")["moves"].values()
     arrival = await arrive(gate)
     assert gate.env.world.locations["Mei"] == "workshop"
-    assert gate.outside["Mei"] == "workshop"
+    assert "Mei" not in gate.outside
     assert "Mei" not in gate.current  # Arrival does not choose Rest for the resident.
     gate.select("Mei", choose("select_rest", arguments={"until": "08:00", "wake": True}))
     waiting = gate.activities[gate.current["Mei"]]
     assert waiting.kind == "rest" and waiting.members["Mei"].end == at(1, "08:00")
     assert not gate.can_code("Mei")
-    assert "OUTSIDE" in gate.observation("Mei").situation
+    assert "you are inside" in gate.observation("Mei").situation
     moved = next(e for e in events(gate) if e["kind"] == "move" and e["actor"] == "Mei")
-    assert moved["payload"]["outside"] is True
+    assert not moved["payload"].get("outside", False)
+    assert "outside" not in moved["text"]
     assert moved["payload"]["sim_seconds"] == arrival
     assert not any(e["kind"] == "action_rejected" for e in events(gate))
     gate.now = at(1, "07:59")
     gate.boundary()
     assert gate.env.world.locations["Mei"] == "workshop"  # not sent home while waiting
-    gate.now = at(1, "08:00")
+    await complete(gate, at(1, "08:00"))
     gate.boundary()
     assert "Mei" not in gate.outside and "Mei" not in gate.current
     assert gate.can_code("Mei")
@@ -54,17 +54,15 @@ async def test_closed_destination_arrival_waits_outside_until_opening(gate):
     assert gate.activities[gate.current["Mei"]].kind == "work"
 
 
-async def test_outside_cannot_bypass_work_menu_or_see_indoor_occupants(gate):
+async def test_early_arrivals_see_each_other_but_cannot_use_repository_tools(gate):
     await arrive(gate)
-    gate.env.world.locations["Tomas"] = "workshop"  # a previously started indoor operation
-    observation = gate.observation("Mei")
-    assert "People here: Mei." in observation.situation
-    gate.leave("Mei", "An invitation woke this wait.")
-    schema = Card(gate.observation("Mei").allowed).model.model_json_schema()
-    assert '"const": "work"' not in __import__("json").dumps(schema)
-    for operation in ("select_work", "resume_work"):
-        with pytest.raises(Rejected, match="outside"):
-            gate.select("Mei", choose(operation, seconds=60, target="invalid"))
+    gate.env.world.locations["Tomas"] = "workshop"
+    assert "Tomas" in gate.menu("Mei")["nearby_people"]
+    gate.select("Mei", choose("select_work", seconds=1800))
+    assert not gate.can_code("Mei")
+    assert not ({"read_code", "edit", "command", "test", "submit"} & set(gate.menu("Mei")["tools"]))
+    gate.now = at(1, "08:00")
+    assert gate.can_code("Mei")
 
 
 async def test_lunch_arrival_waits_for_afternoon_reopening(gate):
@@ -75,16 +73,16 @@ async def test_lunch_arrival_waits_for_afternoon_reopening(gate):
     assert gate.activities[gate.current["Mei"]].members["Mei"].end == at(1, "14:00")
     gate.now = at(1, "13:00")
     gate.boundary()
-    assert "Mei" in gate.outside
-    gate.now = at(1, "14:00")
+    assert "Mei" not in gate.outside
+    await complete(gate, at(1, "14:00"))
     gate.boundary()
     assert "Mei" not in gate.outside and "Mei" not in gate.current
 
 
-async def test_destination_closes_during_travel_and_state_keeps_outside(gate):
+async def test_coding_closes_during_travel_but_arrival_is_inside(gate):
     gate.now = at(1, "11:59:59")
     await arrive(gate)
-    assert gate.now > at(1, "12:00") and "Mei" in gate.outside
+    assert gate.now > at(1, "12:00") and "Mei" not in gate.outside
     restored = type(gate)(gate.sim, state=gate.state())
     assert restored.outside == gate.outside
     assert not gate.can_code("Mei")

@@ -35,7 +35,7 @@ def test_free_preparation_is_in_system_user_and_help_without_new_activity(mornin
     for text in (observation.setting, observation.situation, morning.activity_help("Mei")):
         assert "07:00–08:00 is free pre-work preparation time" in text
         assert "not a compulsory activity or plan" in text
-        assert "prepare at home before travelling" in text
+        assert "you may wait or chat inside before code work opens" in text
         assert "depart by" in text
     assert not morning.current
     if isinstance(morning, RealtimeEngine):
@@ -76,7 +76,7 @@ async def test_morning_claim_survives_commute_and_code_opens_at_eight(morning):
     morning.select("Mei", choose("select_move", target="workshop"))
     arrival = morning.activities[morning.current["Mei"]].latest_end
     await complete(morning, arrival)
-    assert "Mei" in morning.outside and not morning.can_code("Mei")
+    assert "Mei" not in morning.outside and not morning.can_code("Mei")
     morning.now = at(1, "08:00")
     if isinstance(morning, RealtimeEngine):
         morning.clock.rebase(morning.now)

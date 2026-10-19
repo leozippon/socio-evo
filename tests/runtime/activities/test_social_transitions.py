@@ -19,7 +19,7 @@ def scheduler(request):
 
 
 @pytest.mark.parametrize("closing", ["12:00", "18:00"])
-def test_closing_releases_work_and_allows_choice_outside(scheduler, closing):
+def test_coding_closes_without_evicting_residents(scheduler, closing):
     e = scheduler
     e.now = at(1, "11:55" if closing == "12:00" else "17:55")
     old = base.work(e)
@@ -28,12 +28,11 @@ def test_closing_releases_work_and_allows_choice_outside(scheduler, closing):
     assert old.status == "paused"
     assert "Mei" not in e.current
     assert e.env.world.locations["Mei"] == "workshop"
-    assert e.outside["Mei"] == "workshop"
+    assert "Mei" not in e.outside
     count = e.env.log.count
     e.boundary()
-    assert e.env.log.count == count, "closing is idempotent for a resident outside"
-    with pytest.raises(Rejected, match="outside"):
-        e.select("Mei", base.choose("select_work", seconds=600))
+    assert e.env.log.count == count, "closing is idempotent for a resident inside"
+    assert not e.can_code("Mei")
     e.select(
         "Mei",
         base.choose("select_rest", arguments={"until": "14:00" if closing == "12:00" else "20:00"}),
@@ -49,7 +48,7 @@ def test_closing_releases_work_and_allows_choice_outside(scheduler, closing):
     assert e.activities[e.current["Mei"]].destination == destination
 
 
-def test_noon_outside_waiter_admitted_at_reopening(scheduler):
+def test_rest_inside_is_not_interrupted_when_code_hours_resume(scheduler):
     e = scheduler
     base.work(e)
     e.now = at(1, "12:00")
@@ -57,7 +56,7 @@ def test_noon_outside_waiter_admitted_at_reopening(scheduler):
     e.select("Mei", base.choose("select_rest", arguments={"until": "15:00"}))
     e.now = at(1, "14:00")
     e.boundary()
-    assert "Mei" not in e.outside and "Mei" not in e.current
+    assert "Mei" not in e.outside and "Mei" in e.current
     assert e.env.world.locations["Mei"] == "workshop"
 
 
@@ -120,7 +119,7 @@ def test_decline_keeps_history_and_notifies_declining_resident(scheduler):
     assert not first.conversation
 
 
-@pytest.mark.parametrize("when", ["08:05", "08:10", "12:30", "22:00"])
+@pytest.mark.parametrize("when", ["08:05", "08:10", "22:00"])
 def test_invalid_defer_does_not_destroy_original(scheduler, when):
     e = scheduler
     first = invite(e)
@@ -196,3 +195,24 @@ def test_started_conversation_cannot_be_rescheduled(scheduler):
     with pytest.raises(Rejected):
         e.invitation_action("Tomas", "defer", {"invitation": invitation.id, "at": "09:00"})
     assert invitation.status == "started"
+
+
+def test_lunch_appointment_inside_workplace_is_allowed(scheduler):
+    e = scheduler
+    first = invite(e)
+    e.invitation_action("Tomas", "defer", {"invitation": first.id, "at": "12:30"})
+    assert e.invitations[first.superseded_by].start == at(1, "12:30")
+
+
+@pytest.mark.parametrize("when", ["07:30", "12:30", "18:30"])
+def test_preparation_session_stays_inside_but_has_no_repository_tools(scheduler, when):
+    e = scheduler
+    e.now = at(1, when)
+    e.arrive("Mei", "workshop")
+    e.select("Mei", base.choose("select_work", seconds=1800))
+    current = e.current["Mei"]
+    e.boundary()
+    e.boundary()
+    assert e.current["Mei"] == current and not e.outside
+    assert not e.can_code("Mei")
+    assert not {"command", "edit", "test", "submit"} & set(e.menu("Mei")["tools"])

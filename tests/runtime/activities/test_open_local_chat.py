@@ -4,7 +4,6 @@ import asyncio
 
 import pytest
 
-from core.environment.rejection import Rejected
 from core.interaction import Card, ClaimTask
 from runtime.activities.model import ConversationActivity, RestActivity, at
 from tests.runtime.activities import test_engine as base
@@ -20,11 +19,9 @@ def scheduler(request):
     return request.getfixturevalue(request.param)
 
 
-def co_present(e, outside=False):
+def co_present(e):
     for who in ("Mei", "Tomas", "Aisha"):
-        e.env.move(who, "workshop", time=e.now // 60, allow_closed=True)
-        if outside:
-            e.outside[who] = "workshop"
+        e.arrive(who, "workshop")
 
 
 def start(e):
@@ -44,7 +41,7 @@ def test_arriving_before_opening_does_not_select_rest(scheduler):
     e = scheduler
     e.now = at(1, "07:30")
     e.arrive("Mei", "workshop")
-    assert "Mei" not in e.current and e.outside["Mei"] == "workshop"
+    assert "Mei" not in e.current and "Mei" not in e.outside
     assert not any(
         x["kind"] == "activity_entered"
         and x["payload"].get("activity_type") == "rest"
@@ -53,14 +50,13 @@ def test_arriving_before_opening_does_not_select_rest(scheduler):
     )
 
 
-@pytest.mark.parametrize("outside", [False, True])
-def test_start_and_join_without_invitation_or_forced_membership(scheduler, outside):
+@pytest.mark.parametrize("when", ["07:30", "08:00", "12:30", "18:30"])
+def test_start_and_join_without_invitation_or_forced_membership(scheduler, when):
     e = scheduler
-    if outside:
-        e.now = at(1, "07:30")
-    co_present(e, outside)
+    e.now = at(1, when)
+    co_present(e)
     chat = start(e)
-    assert chat.public and chat.spontaneous and chat.outside == outside
+    assert chat.public and chat.spontaneous and not chat.outside
     assert chat.participants == ("Mei",) and not e.invitations
     assert chat.id in e.menu("Tomas")["conversations"]
     card = Card(e.observation("Tomas").allowed)
@@ -109,30 +105,30 @@ def test_working_listener_is_not_interrupted(scheduler):
     assert "Tomas" in chat.participants
 
 
-def test_doorway_chat_stays_outside_on_opening_and_cannot_grant_indoor_work(scheduler):
+def test_early_chat_continues_at_eight_and_code_permission_opens(scheduler):
     e = scheduler
     e.now = at(1, "07:30")
-    co_present(e, True)
+    co_present(e)
     chat = start(e)
     e.select("Tomas", base.choose("select_conversation", target=chat.id, seconds=3600))
+    assert not e.can_code("Mei")
     e.now = at(1, "08:00")
     e.boundary()
-    assert e.outside["Mei"] == "workshop" and e.outside["Tomas"] == "workshop"
-    assert not e.can_code("Mei") and e.current["Mei"] == chat.id
-    e.leave("Tomas", "Finish chat")
-    e.admit_waiters()
-    assert "Mei" not in e.outside and "Tomas" not in e.outside
+    assert not e.outside and not chat.outside
+    assert e.can_code("Mei") and e.current["Mei"] == chat.id
+    assert "command" not in e.menu("Mei")["tools"], "coding still requires switching to Work"
 
 
-def test_inside_and_outside_cannot_join_or_hear_one_another(scheduler):
+def test_old_workplace_doorstep_checkpoint_migrates_to_indoor(scheduler):
     e = scheduler
+    e.now = at(1, "07:30")
     co_present(e)
-    e.outside["Tomas"] = "workshop"
     chat = start(e)
-    assert chat.id not in e.menu("Tomas")["conversations"]
-    assert "Tomas" not in e.conversation_audience(chat)
-    with pytest.raises(Rejected):
-        e.select("Tomas", base.choose("select_conversation", target=chat.id, seconds=60))
+    state = e.state()
+    state["outside"] = {"Mei": "workshop", "Tomas": "workshop"}
+    state["activities"][chat.id]["outside"] = True
+    restored = type(e)(e.sim, state=state)
+    assert not restored.outside and not restored.activities[chat.id].outside
 
 
 async def test_public_speech_reaches_listener_without_joining_or_interrupting_command(
@@ -166,9 +162,9 @@ async def test_public_speech_reaches_listener_without_joining_or_interrupting_co
     await rt.close()
 
 
-def test_outdoor_chat_survives_noon_but_ends_at_day_end(scheduler):
+def test_indoor_chat_survives_noon_but_ends_at_day_end(scheduler):
     e = scheduler
-    co_present(e, True)
+    co_present(e)
     chat = start(e)
     e.now = at(1, "12:00")
     e.boundary()

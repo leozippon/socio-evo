@@ -71,7 +71,18 @@ class ActivityEngine:
         self.handoffs = {
             key: Handoff.model_validate(value) for key, value in state.get("handoffs", {}).items()
         }
-        self.outside = dict(state.get("outside", {}))
+        # Old checkpoints may contain doorstep waits. Workplaces now admit early arrivals.
+        self.outside = {
+            who: place
+            for who, place in state.get("outside", {}).items()
+            if self.env.world.places[place].kind != PlaceKind.WORK
+        }
+        for activity in self.activities.values():
+            if (
+                isinstance(activity, ConversationActivity)
+                and self.env.world.places[activity.place].kind == PlaceKind.WORK
+            ):
+                activity.outside = False
         self.assessments = dict(state.get("assessments", {}))
         self.futures = {}
         self.pending: dict[str, PendingTool] = {}
@@ -160,9 +171,14 @@ class ActivityEngine:
     def arrive(self, who, destination):
         self.outside.pop(who, None)
         self.env.move(
-            who, destination, time=self.now // 60, allow_closed=True, sim_seconds=self.now
+            who,
+            destination,
+            time=self.now // 60,
+            allow_closed=True,
+            workplace_entry=self.venue_open(destination),
+            sim_seconds=self.now,
         )
-        closed = not self.env.world.places[destination].is_open(clock_of(self.now // 60))
+        closed = not self.venue_open(destination)
         self.leave(
             who,
             "Arrived outside the closed destination." if closed else "Arrived at the destination.",
@@ -182,7 +198,50 @@ class ActivityEngine:
                 outside=True,
             )
 
+    def venue_open(self, place, when=None):
+        """Workplace access is independent of the hours for repository operations."""
+        when = self.now if when is None else when
+        p = self.env.world.places[place]
+        if p.kind == PlaceKind.WORK:
+            return "07:00" <= clock_of(when // 60) < "22:00"
+        return p.is_open(clock_of(when // 60))
+
+    def activity_closes(self, activity):
+        if (
+            isinstance(activity, WorkActivity)
+            and self.env.world.places[activity.place].kind == PlaceKind.WORK
+        ):
+            return next(
+                (
+                    at(day_of(self.now // 60), end)
+                    for end in ("12:00", "18:00")
+                    if at(day_of(self.now // 60), end) > self.now
+                ),
+                self.end,
+            )
+        return self.close_at(activity.place)
+
+    def venue_or_work_closed(self, who, place):
+        if not self.venue_open(place):
+            return True
+        activity = self.activities.get(self.current.get(who))
+        if (
+            not isinstance(activity, WorkActivity)
+            or self.env.world.places[place].kind != PlaceKind.WORK
+        ):
+            return False
+        # End a work session at the coding boundary, but permit a new preparation-only
+        # session afterward. Otherwise every boundary check would eject that session again.
+        started = activity.members[who].start
+        day = day_of(self.now // 60)
+        return any(
+            started < at(day, closing) <= self.now < at(day, reopening)
+            for closing, reopening in (("12:00", "14:00"), ("18:00", "22:00"))
+        )
+
     def close_at(self, place):
+        if self.env.world.places[place].kind == PlaceKind.WORK:
+            return self.end
         p = self.env.world.places[place]
         closing = p.closing(clock_of(self.now // 60))
         return min(self.end, at(day_of(self.now // 60), closing)) if closing else self.end
@@ -198,7 +257,7 @@ class ActivityEngine:
         closing = (
             self.end
             if isinstance(activity, ConversationActivity) and activity.outside
-            else self.close_at(activity.place)
+            else self.activity_closes(activity)
         )
         return max(0, min(activity.members[who].end, closing, self.end) - self.now)
 
@@ -256,10 +315,7 @@ class ActivityEngine:
             and (who in self.outside) == activity.outside
             and self.env.world.locations[who] == activity.place
             and (activity.public or who in activity.invited)
-            and (
-                activity.outside
-                or self.env.world.places[activity.place].is_open(clock_of(self.now // 60))
-            )
+            and (activity.outside or self.venue_open(activity.place))
         )
 
     def conversation_audience(self, activity):
@@ -467,7 +523,7 @@ class ActivityEngine:
             )
         )
         place = self.env.world.places[self.env.world.locations[who]]
-        venue_open = place.is_open(clock_of(self.now // 60))
+        venue_open = self.venue_open(place.id)
         return (
             f"Authoritative current facts: day {today}, clock {clock(self.now)}. "
             f"Town coding period is {work_period}. "
@@ -506,8 +562,8 @@ class ActivityEngine:
             "unavailable before 08:00 and still require an open workplace afterwards. "
             "You may send invitations or arrange appointments, or chat with co-present "
             "residents at an open location; invitations do not teleport anyone. "
-            "Alternatively travel early or keep resting. A closed workplace still means "
-            "waiting outside until opening; prepare at home before travelling. "
+            "Alternatively travel early or keep resting. Workplaces have "
+            "no restriction on entering: you may wait or chat inside before code work opens. "
             "Allow for travel and decision time yourself; no automatic commute is scheduled. "
             "Current travel estimates: " + "; ".join(journeys) + "."
         )
@@ -760,8 +816,8 @@ class ActivityEngine:
         context.append(
             "Local social life: starting or joining a public conversation here needs no invitation "
             "or appointment. This is the ordinary way to chat, "
-            "including outside closed workplaces. "
-            "Public talk can be heard by co-present residents on the same side of the doors. "
+            "including inside workplaces before coding hours. "
+            "Public talk can be heard by co-present residents. "
             "Listeners choose whether to join; working residents finish their current operation "
             "and may pause Work first. Rest with social wake-ups lets you consider a chat, "
             "not automatically join. Turn wake-ups off only for deliberate undisturbed rest. "
@@ -780,7 +836,7 @@ class ActivityEngine:
         setting = (
             self.env.config.setting.backdrop
             + "\nLocal conversations need no invitation. Start or join a public conversation "
-            "with co-present people, including outside closed workplaces. Listen without "
+            "with co-present people, including workplaces before coding hours. Listen without "
             "joining; leave Work after an operation if you wish to take part.\n"
             + self.activity_contract(who, menu)
             + "\n"
@@ -793,10 +849,16 @@ class ActivityEngine:
             "At 22:00 return home; ordinary nightly costs, journals and reflection follow. "
             "Workplaces permit code work only 08:00–12:00 and 14:00–18:00. "
             "Outside those hours you can inspect notices and claim work, but not code. "
-            "You may travel to a closed public venue before opening and wait outside its doors. "
-            "Arrival outside does not grant indoor access; opening admits waiting residents.\n"
+            "Workplaces admit residents 07:00–22:00, including before coding hours and at lunch. "
+            "Arriving does not automatically choose Rest. Chat or wait inside, or move elsewhere.\n"
             + "\n".join(
-                f"{p.name}: {p.kind}; open {p.spans()}" for p in self.env.world.places.values()
+                f"{p.name}: {p.kind}; "
+                + (
+                    f"access 07:00–22:00; code hours {p.spans()}"
+                    if p.kind == PlaceKind.WORK
+                    else f"open {p.spans()}"
+                )
+                for p in self.env.world.places.values()
             )
         )
         return Observation(
@@ -885,7 +947,7 @@ class ActivityEngine:
         if not isinstance(activity, MoveActivity) and not (
             isinstance(activity, ConversationActivity) and activity.outside
         ):
-            until = min(until, self.close_at(activity.place))
+            until = min(until, self.activity_closes(activity))
         if until <= self.now:
             raise Rejected("There is no time left for this activity.")
         cursor = len(activity.messages) if isinstance(activity, ConversationActivity) else 0
@@ -1126,7 +1188,7 @@ class ActivityEngine:
             if not self.menu(who)["nearby_people"]:
                 raise Rejected("Nobody is within earshot here. Move somewhere with people first.")
             outside = who in self.outside
-            if not outside and not self.env.world.places[place].is_open(clock_of(self.now // 60)):
+            if not outside and not self.venue_open(place):
                 raise Rejected("This indoor venue is closed.")
             activity = ConversationActivity(
                 id=self.identifier("conversation"),
@@ -1277,7 +1339,7 @@ class ActivityEngine:
                 start = at(day_of(self.now // 60), args["at"])
                 if start <= max(self.now, invitation.start) or start >= self.end:
                     raise Rejected("Propose a later time today, before day end.")
-                if not self.env.world.places[invitation.place].is_open(clock_of(start // 60)):
+                if not self.venue_open(invitation.place, start):
                     raise Rejected("That meeting place will be closed at the proposed time.")
                 old = invitation
                 others = tuple(
@@ -1314,7 +1376,7 @@ class ActivityEngine:
             start = at(day_of(self.now // 60), args["at"]) if args.get("at") else self.now
             if start < self.now or start >= self.end:
                 raise Rejected("Arrange a time later today, before day end.")
-            if not self.env.world.places[place].is_open(clock_of(start // 60)):
+            if not self.venue_open(place, start):
                 raise Rejected("That meeting place will be closed.")
             duplicate = next(
                 (
@@ -1407,9 +1469,7 @@ class ActivityEngine:
                 ):
                     invitation.status = "started"
                 continue
-            if len(people) < 2 or not self.env.world.places[invitation.place].is_open(
-                clock_of(self.now // 60)
-            ):
+            if len(people) < 2 or not self.venue_open(invitation.place):
                 continue
             until = min(self.now + invitation.duration, self.close_at(invitation.place))
             if until <= self.now:
@@ -1850,6 +1910,15 @@ class ActivityEngine:
 
     def close_venue_for(self, who, place):
         """Close indoor access without choosing the resident's next destination."""
+        if self.env.world.places[place].kind == PlaceKind.WORK:
+            self.leave(who, "Code work closed; choose your next activity here or elsewhere.")
+            self.outside.pop(who, None)
+            self.feedback(
+                who,
+                "Code work is closed. You remain inside the workplace. "
+                "You may chat, rest, or move elsewhere; everyone returns home at 22:00.",
+            )
+            return
         self.leave(who, "The place closed; choose your next activity outside.")
         self.outside[who] = place
         self.feedback(
@@ -1875,7 +1944,7 @@ class ActivityEngine:
                 home = self.env.config.homes[who]
                 if place_id != home:
                     self.env.move(who, home, time=self.now // 60, closing=True)
-            elif place.kind != PlaceKind.HOME and not place.is_open(clock_of(self.now // 60)):
+            elif place.kind != PlaceKind.HOME and self.venue_or_work_closed(who, place_id):
                 self.close_venue_for(who, place_id)
 
     async def process(self, scheduled):

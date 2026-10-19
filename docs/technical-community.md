@@ -11,8 +11,8 @@ profiles and balances (120, 180, 30, 60, 250, 70, 80, 50). Living costs are 20 p
 Jonas additionally pays 8 and Ravi 10. Family members are background, not running agents.
 Lite runs three simulated days for debugging; Verified runs 42 days.
 
-The five homes retain their resident assignments. Workshop and library open 08:00–12:00
-and 14:00–18:00. Café Linde opens 08:00–22:00; Anchor opens 18:00–22:00. Existing nightly
+The five homes retain their resident assignments. Workshop and library admit residents indoors 07:00–22:00;
+coding is allowed only 08:00–12:00 and 14:00–18:00. Café Linde opens 08:00–22:00; Anchor opens 18:00–22:00. Existing nightly
 reflection and self-modification remain. A separate daytime home-learning action is not
 implemented by this change.
 
@@ -22,10 +22,11 @@ when their own previous action finishes; the old scene scheduler remains availab
 
 ## Closing and conversation responses
 
-In the activity and realtime schedulers, a venue closing at noon or 18:00 ends indoor
-activities after already-started realtime operations finish. Residents remain outside
-that venue and choose their own next activity, including waiting for reopening or
-moving to an open social venue. There is no automatic homeward trip before day end.
+In the activity and realtime schedulers, coding closing at noon or 18:00 ends Work
+sessions after already-started realtime operations finish. Residents remain inside
+the workplace and choose their next activity: chat, rest, preparation-only Work,
+or movement elsewhere. Rest and Conversation are not interrupted by coding boundaries.
+There is no automatic homeward trip before day end.
 At 22:00 everyone still returns home. Paused tasks and repository progress survive.
 
 At a decision opportunity, residents are prompted to accept, decline or defer pending
@@ -43,12 +44,13 @@ may select Work at home to inspect public notices, claim a job, review prior wor
 feedback/notes or arrange partners; no new planning call or compulsory activity is
 introduced. Invitations and appointments can be arranged remotely. In-person
 conversation still requires co-presence and an open location (for example shared
-homes); public venue opening hours and home access rules do not change.
+homes or workplaces before coding hours); social venue hours and private home access
+rules remain unchanged.
 
 Repository reads/edits, commands, tests, handoffs and submissions remain locked
 before 08:00 and require an open workplace afterwards. Residents decide when to
 travel; current travel/departure estimates are shown during preparation. Early
-arrivals wait outside until the doors open. At 08:00 a held job can be continued in
+arrivals enter the workplace directly and may chat or wait inside. At 08:00 a held job can be continued in
 Work without resetting progress; there is no automatic commute or forced work.
 Residents who do not need preparation may keep resting. In realtime mode activity
 selection itself uses wall time, so departure estimates also remind residents to
@@ -166,10 +168,10 @@ public talk, finish their current operation, then decide whether to pause and jo
 Public speech reaches listeners, but listeners are not activity members and do not
 consume conversation time. Invitation/private conversation audiences stay restricted.
 
-Doorways are valid conversation locations even while a workplace is closed. Indoor
-and outdoor listeners are distinct; doorway chat cannot grant indoor work access.
-An ongoing doorway conversation stays together when the doors open, and participants
-may enter after leaving it. Arrival itself no longer selects Rest automatically.
+Workplaces have no separate doorway/outside state. Residents may converse indoors
+before 08:00, at lunch and after coding hours; repository-tool permissions remain
+independent of physical access. Opening coding hours never interrupts an ongoing chat.
+Arrival itself does not select Rest automatically.
 A person opening a spontaneous floor may speak/wait for company or leave; once a
 conversation has had two members, dropping below two ends it as before. All daytime
 conversations end at22:00. Undisturbed rest remains available as a deliberate choice;

@@ -450,8 +450,8 @@ async def test_full_event_driver_uses_two_layers_without_per_tool_activity_repla
     resident = ScriptedResident(select_mei, tool_mei)
     engine.sim.agents["Mei"] = resident
     await engine.run(time_at(1, "07:00"))
-    # Initial rest/move/work, then rest interrupted at noon, reopening and evening closing.
-    assert selection_count == 7
+    # Initial rest/move/work, then uninterrupted rest inside the workplace until day end.
+    assert selection_count == 4
     assert [o.time for o in resident.tools] == [480, 480, 485, 490]
     assert engine.env.providers[Trade.PROGRAMMING].commands == [("Mei", "inspect"), ("Mei", "test")]
     assert not engine.current and not engine.pending
@@ -519,7 +519,7 @@ async def test_tool_finishes_at_closing_then_resident_chooses_next_activity(engi
     assert len(engine.env.providers[Trade.PROGRAMMING].commands) == 1
     assert "Mei" not in engine.current
     assert engine.env.world.locations["Mei"] == "workshop"
-    assert engine.outside["Mei"] == "workshop"
+    assert "Mei" not in engine.outside
 
 
 async def test_move_can_cross_origin_closing_and_cannot_use_work_tools(engine):

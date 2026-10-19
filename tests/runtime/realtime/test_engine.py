@@ -225,7 +225,7 @@ async def test_closing_finishes_started_command_then_preserves_work(rt, monkeypa
     rt.flush_leaves()
     assert activity.status == "paused"
     assert rt.env.board.claim_of("Mei")
-    assert "Mei" not in rt.current and rt.outside["Mei"] == "workshop"
+    assert "Mei" not in rt.current and "Mei" not in rt.outside
     assert any("finished after closing" in p.text for p in rt.env.perceive("Mei"))
 
 
@@ -383,11 +383,11 @@ async def test_cancellation_closes_inflight_requests(rt):
     assert job.task.cancelled() and not rt.running
 
 
-async def test_venue_closing_does_not_wait_out_silent_conversation_timers(rt):
+async def test_day_end_does_not_wait_out_silent_conversation_timers(rt):
     activity = conversation(rt)
     rt.schedule("Tomas", use("wait", seconds=3600))
     await asyncio.sleep(0)
-    rt.wall.value += (at(1, "12:00") - rt.now) / 15
+    rt.wall.value += (at(1, "22:00") - rt.now) / 15
     rt.now = rt.clock.now()
     rt.boundary()
     await asyncio.sleep(0)

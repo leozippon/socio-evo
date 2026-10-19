@@ -167,14 +167,14 @@ class RealtimeEngine(ActivityEngine):
             "No new work operation starts after closing; an already started operation can finish. "
             "Workplaces allow coding 08:00–12:00 and 14:00–18:00. "
             "Invitations do not interrupt a tool; finish it before joining. "
-            "You may travel to a closed public venue before opening and wait outside. "
-            "Opening admits waiters; being outside does not permit indoor work or conversation. "
+            "Workplaces admit residents 07:00–22:00, independently of coding hours. "
+            "Arrive inside early and choose chatting, waiting, or another activity. "
             "The day closes at 22:00. Rest and movement retain simulated durations."
         )
         setting = (
             self.env.config.setting.backdrop
             + "\nLocal spontaneous chat is the normal social path: start or join with "
-            "co-present people without invitations, including outside closed workplaces. "
+            "co-present people without invitations, including workplaces before coding hours. "
             "A listener chooses whether to join; work is never forcibly interrupted.\n"
             + self.env.rules_view()
             + self.prework_context(who)
@@ -546,9 +546,7 @@ class RealtimeEngine(ActivityEngine):
                 continue
             if who in self.outside and self.now < self.end:
                 continue
-            closed = self.now >= self.end or not self.env.world.places[place].is_open(
-                clock(self.now)
-            )
+            closed = self.now >= self.end or self.venue_or_work_closed(who, place)
             if not closed:
                 continue
             if isinstance(activity, ConversationActivity):

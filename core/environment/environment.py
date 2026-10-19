@@ -481,6 +481,7 @@ class Environment:
         time: int,
         closing: bool = False,
         allow_closed: bool = False,
+        workplace_entry: bool = False,
         sim_seconds: int | None = None,
     ) -> list[Event]:
         """Move `agent` to `place`, witnessed by the others at the origin and the destination;
@@ -490,7 +491,8 @@ class Environment:
         An unknown place, or one closed at `time`, is rejected, also if the agent is already
         there; otherwise moving to where the agent already is changes nothing.
         Activity schedulers may opt into `allow_closed` to record arrival outside the doors;
-        this does not permit indoor work or attendance. Legacy callers retain closed-place
+        `workplace_entry` instead records indoor arrival at workplaces during 07:00–22:00.
+        This grants no repository-tool permission. Legacy callers retain closed-place
         rejection.
         """
         origin = self.world.locations[agent]
@@ -501,7 +503,16 @@ class Environment:
             return [self._reject(agent, attempt, rejection, time=time, place=origin, scene=None)]
         if place == origin:
             return []
-        outside = allow_closed and not self.world.places[place].is_open(clock_of(time))
+        inside_workplace = (
+            workplace_entry
+            and self.world.places[place].kind == PlaceKind.WORK
+            and "07:00" <= clock_of(time) < "22:00"
+        )
+        outside = (
+            allow_closed
+            and not inside_workplace
+            and not self.world.places[place].is_open(clock_of(time))
+        )
         if not outside:
             self.firms.attend(agent, place)
         names = {key: self.world.places[key].name for key in (origin, place)}
