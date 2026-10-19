@@ -4,6 +4,8 @@ import { href } from "../router.js";
 // Activity intervals are membership intervals, not tool durations. Planned end times are
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
 export const ACTIVITY_LABELS = { rest: "Rest", move: "Move", work: "Work", conversation: "Conversation" };
+export const activityLabel = (row) => row.type === "rest" && row.phase === "choosing_next_activity"
+  ? "Rest · Choosing next activity" : ACTIVITY_LABELS[row.type] ?? row.type;
 
 export function activityIntervals(events, through, reader = null) {
   const intervals = [];
@@ -17,7 +19,7 @@ export function activityIntervals(events, through, reader = null) {
       if (previous) { previous.end = event.time; previous.endSeq = event.seq - 1; previous.reason = "Next activity started"; }
       const interval = {
         id: `${event.seq}:${event.actor}`, startSeq: event.seq, endSeq: null, participants: [...(p.participants ?? [event.actor])], activity: p.activity, actor: event.actor,
-        type: p.activity_type, start: event.time, end: null, place: event.place,
+        type: p.activity_type, phase: p.phase ?? null, start: event.time, end: null, place: event.place,
         reason: null, tool: null, outside: Boolean(p.outside),
       };
       for (const peer of active.values()) if (peer.activity === p.activity && !peer.participants.includes(event.actor)) peer.participants.push(event.actor);

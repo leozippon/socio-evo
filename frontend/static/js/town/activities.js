@@ -1,10 +1,10 @@
 import { calendarOf, dayOf, dayStart, hhmmss, minuteOf } from "../clock.js";
 import { fill, h } from "../dom.js";
 import { shortName } from "../world.js";
-import { activityDuration, activityIntervals, activityLink, ACTIVITY_LABELS, residentActivitySummary } from "./activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityLabel, ACTIVITY_LABELS, residentActivitySummary } from "./activity-model.js";
 
 const clock = (time) => hhmmss(minuteOf(time));
-const label = (row) => ACTIVITY_LABELS[row.type] ?? row.type;
+const label = activityLabel;
 
 /** A compact overview; full resident ledgers and transcripts live in People → Activities. */
 export class ActivitiesPanel {

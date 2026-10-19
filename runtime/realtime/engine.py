@@ -49,6 +49,58 @@ class RealtimeEngine(ActivityEngine):
         self.closing: set[str] = set()
         self.deferred: dict[str, str] = {}
         self.speech_times = {}
+        # Recording-only rest: current remains empty so selection and invitation
+        # readiness retain their existing semantics, rather than behaving like sleep.
+        self.selection_rests = {}
+
+    def begin_selection_rest(self, who):
+        if who in self.current or who in self.selection_rests or self.now >= self.end:
+            return
+        ident = self.identifier("choosing")
+        self.selection_rests[who] = (ident, self.now)
+        self.emit(
+            EventKind.ACTIVITY_ENTERED,
+            f"{who} is choosing the next activity.",
+            actor=who,
+            audience=[],  # Bookkeeping must not add artificial experiences to memory.
+            activity=ident,
+            activity_type="rest",
+            phase="choosing_next_activity",
+            start=self.now / 60,
+            end=None,
+            participants=[who],
+            outside=who in self.outside,
+        )
+
+    def end_selection_rest(self, who, reason):
+        entry = self.selection_rests.pop(who, None)
+        if entry is None:
+            return
+        ident, start = entry
+        self.emit(
+            EventKind.ACTIVITY_LEFT,
+            f"{who} stopped choosing the next activity: {reason}",
+            actor=who,
+            audience=[],
+            activity=ident,
+            activity_type="rest",
+            phase="choosing_next_activity",
+            reason=reason,
+            start=start / 60,
+            end=self.now / 60,
+        )
+
+    def emit(self, kind, text, *, actor=None, audience=None, **payload):
+        # Enter has already validated and registered the new membership. Close the
+        # transition first in the log, only after entry is known to have succeeded.
+        if kind == EventKind.ACTIVITY_ENTERED and not payload.get("phase"):
+            self.end_selection_rest(actor, "Next activity started.")
+        return super().emit(kind, text, actor=actor, audience=audience, **payload)
+
+    def prepare_day(self, start):
+        super().prepare_day(start)
+        for who in self.sim.agents:
+            self.begin_selection_rest(who)
 
     def retire_work(self):
         for activity in self.activities.values():
@@ -150,6 +202,7 @@ class RealtimeEngine(ActivityEngine):
         return asyncio.create_task(run())
 
     def start_decision(self, who):
+        self.begin_selection_rest(who)
         observation = self.observation(who)
         activity_id = self.current.get(who)
         agent = self.sim.agents[who]
@@ -233,6 +286,7 @@ class RealtimeEngine(ActivityEngine):
                 return
         super().leave(who, reason)
         self.remember(who)
+        self.begin_selection_rest(who)
 
     def remember(self, who):
         pending = self.running.get(who)
@@ -470,6 +524,9 @@ class RealtimeEngine(ActivityEngine):
             await self.commit_tool(who, job, finished)
 
     def boundary(self):
+        if self.now >= self.end:
+            for who in list(self.selection_rests):
+                self.end_selection_rest(who, "The day closed.")
         self.admit_waiters()
         for who, place in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
@@ -522,6 +579,7 @@ class RealtimeEngine(ActivityEngine):
             for who in list(activity.participants):
                 super().leave(who, "Conversation ended after all started speech was delivered.")
                 self.remember(who)
+                self.begin_selection_rest(who)
             self.closing.remove(ident)
         for who, reason in list(self.deferred.items()):
             if who not in self.running:
@@ -675,6 +733,8 @@ class RealtimeEngine(ActivityEngine):
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
         self.running.clear()
+        for who in list(self.selection_rests):
+            self.end_selection_rest(who, "The scheduler stopped.")
 
     async def close(self):
         await self.close_running()

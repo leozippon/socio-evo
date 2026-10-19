@@ -540,3 +540,100 @@ def test_realtime_contract_has_no_read_action_and_pins_current_facts(rt):
     assert "Town coding period is OPEN, closes at 18:00:00, 7200" in observation.situation
     assert "You hear completed speech directly" in observation.situation
     assert '"read"' not in rt.activity_contract("Mei", rt.menu("Mei"))
+
+
+def selection_events(rt, who="Mei"):
+    return [
+        e
+        for e in activity_tests.events(rt)
+        if e["actor"] == who and e["kind"] in ("activity_entered", "activity_left")
+    ]
+
+
+async def test_selection_rest_covers_model_latency_without_becoming_sleep(rt):
+    gate = asyncio.Event()
+
+    class Resident:
+        async def choose_activity(self, obs):
+            assert "Mei" not in rt.current
+            await gate.wait()
+            return Decision(thought="Work", action=choose("select_work"))
+
+    rt.env.move("Mei", "workshop", time=rt.now // 60)
+    rt.sim.agents["Mei"] = Resident()
+    rt.start_decision("Mei")
+    opening = selection_events(rt)[0]
+    assert opening["payload"]["phase"] == "choosing_next_activity"
+    assert opening["payload"]["sim_seconds"] == at(1, "08:00")
+    assert opening["audience"] == []  # No artificial percept changes the agent's memory.
+    assert not rt.available("Mei")  # An in-flight choice still protects invitation readiness.
+    rt.wall.value += 5
+    gate.set()
+    await finish(rt, "Mei")
+    events = selection_events(rt)
+    assert [e["kind"] for e in events] == ["activity_entered", "activity_left", "activity_entered"]
+    assert events[1]["payload"]["sim_seconds"] == events[2]["payload"]["sim_seconds"]
+    assert events[1]["payload"]["sim_seconds"] == at(1, "08:01:15")
+    assert not rt.selection_rests
+    assert rt.activities[rt.current["Mei"]].kind == "work"
+
+
+def test_selection_rest_survives_help_and_rejected_entry(rt):
+    from core.environment.rejection import Rejected
+
+    rt.begin_selection_rest("Mei")
+    original = rt.selection_rests["Mei"]
+    rt.schedule("Mei", use("help"))
+    with pytest.raises(Rejected):
+        rt.select("Mei", choose("select_rest", arguments={"until": "08:00"}))
+    rt.begin_selection_rest("Mei")
+    assert rt.selection_rests["Mei"] == original
+    assert len(selection_events(rt)) == 1
+    assert rt.available("Mei")
+    assert "Mei" not in rt.current
+
+
+def test_work_exit_opens_transition_and_conversation_join_closes_it(rt):
+    work(rt)
+    rt.now += 60
+    rt.leave("Mei", "Done working")
+    events = selection_events(rt)
+    assert events[-2]["kind"] == "activity_left"
+    assert events[-1]["payload"]["phase"] == "choosing_next_activity"
+    assert events[-2]["payload"]["sim_seconds"] == events[-1]["payload"]["sim_seconds"]
+    assert rt.available("Mei")
+    rt.now += 30
+    activity = conversation(rt)
+    events = selection_events(rt)
+    assert events[-2]["payload"]["phase"] == "choosing_next_activity"
+    assert events[-1]["payload"]["activity"] == activity.id
+    assert events[-2]["payload"]["sim_seconds"] == events[-1]["payload"]["sim_seconds"]
+    assert "Mei" not in rt.selection_rests
+
+
+def test_day_start_and_closing_bound_transition_rest(rt):
+    rt.prepare_day(420)
+    assert set(rt.selection_rests) == set(rt.sim.agents)
+    assert all(e["payload"]["sim_seconds"] == at(1, "07:00") for e in selection_events(rt))
+    rt.now = rt.end
+    rt.boundary()
+    assert not rt.selection_rests
+    assert selection_events(rt)[-1]["payload"]["sim_seconds"] == rt.end
+    rt.begin_selection_rest("Mei")
+    assert not rt.selection_rests
+
+
+async def test_scheduler_stop_closes_pending_selection_record(rt):
+    gate = asyncio.Event()
+
+    class Resident:
+        async def choose_activity(self, obs):
+            await gate.wait()
+
+    rt.sim.agents["Mei"] = Resident()
+    rt.start_decision("Mei")
+    rt.wall.value += 2
+    rt.now = rt.clock.now()
+    await rt.close_running()
+    assert not rt.running and not rt.selection_rests
+    assert selection_events(rt)[-1]["payload"]["end"] * 60 == at(1, "08:00:30")

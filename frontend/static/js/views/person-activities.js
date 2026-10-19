@@ -1,13 +1,13 @@
 import { dayOf, dayStart, formatTime, hhmmss, minuteOf, normalizeEventTimes, parseStamp, stamp } from "../clock.js";
 import { emptyState, h } from "../dom.js";
 import { href, sibling } from "../router.js";
-import { activityDuration, activityIntervals, activityLink, activityTranscript, ACTIVITY_LABELS, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityTranscript, activityLabel, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
 import { bystanders, line } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { shortName } from "../world.js";
 
 const clock = (time) => hhmmss(minuteOf(time));
-const label = (row) => ACTIVITY_LABELS[row.type] ?? row.type;
+const label = activityLabel;
 const pretty = (key) => key.replaceAll("_", " ");
 const OUTCOMES = new Set(["work_submitted", "work_assessed", "payment", "work_checked", "task_expired"]);
 

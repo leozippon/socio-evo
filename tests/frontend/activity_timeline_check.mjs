@@ -108,3 +108,20 @@ apply(outside,{seq:2,time:720,actor:"Mei",place:"workshop",kind:"activity_entere
 assert.equal(outside.outside.Mei,"workshop");
 apply(outside,{seq:3,time:1320,actor:"Mei",kind:"move",payload:{origin:"workshop",destination:"home"}});
 assert.equal(outside.outside.Mei,undefined);
+
+// Transition rests are real recorded intervals, separately labelled from sleep.
+const choosingEvents = [
+  {seq:0,time:480,kind:"activity_entered",actor:"Mei",audience:["Mei"],payload:{activity:"choosing-1",activity_type:"rest",phase:"choosing_next_activity"}},
+  {seq:1,time:481,kind:"decision",actor:"Mei",audience:["Mei"],payload:{layer:"choose_activity"}},
+  {seq:2,time:482,kind:"activity_left",actor:"Mei",audience:["Mei"],payload:{activity:"choosing-1",reason:"Next activity started."}},
+  {seq:3,time:482,kind:"activity_entered",actor:"Mei",audience:["Mei"],payload:{activity:"w2",activity_type:"work"}},
+];
+const choosing = activityIntervals(choosingEvents, 483);
+assert.equal(model.activityLabel(choosing[0]), "Rest · Choosing next activity");
+assert.equal(model.activityLabel(choosing[1]), "Work");
+assert.equal(model.activityLabel({type:"rest"}), "Rest");
+assert.equal(choosing[0].end, choosing[1].start, "transition and work have no gap or overlap");
+assert.equal(activityIntervals(choosingEvents,481)[0].end,null,"show transition before inference finishes");
+assert.equal(activityIntervals(choosingEvents,483,"Aisha").length,0,"transition stays private");
+assert.equal(model.residentActivitySummary(choosing,"Mei",1,483).seconds.rest,120);
+assert.deepEqual(model.activityTranscript(choosingEvents,choosing[0],483).map(e=>e.seq),[0,1,2]);
