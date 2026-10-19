@@ -143,6 +143,8 @@ class ActivityEngine:
             ):
                 continue
             activity = self.activities.get(self.current.get(who))
+            if isinstance(activity, ConversationActivity) and activity.outside:
+                continue  # Keep an ongoing doorway chat together when the doors open.
             if isinstance(activity, MoveActivity):
                 continue  # Leaving the doorway is still a movement, not an admission.
             self.outside.pop(who)
@@ -167,24 +169,12 @@ class ActivityEngine:
         )
         if closed and self.now < self.end:
             self.outside[who] = destination
-            until = min(self.next_opening(destination) or self.end, self.end)
-            self.enter(
-                RestActivity(
-                    id=self.identifier("rest"),
-                    place=destination,
-                    start=self.now,
-                    latest_end=until,
-                    wake_invitations=True,
-                ),
-                who,
-                until,
-            )
             opening = self.next_opening(destination)
             self.feedback(
                 who,
                 f"You are outside {self.env.world.places[destination].name}. "
                 + (
-                    f"Wait at the door until {clock(opening)}; "
+                    f"The doors open at {clock(opening)}; choose rest, movement or a local chat. "
                     "entering and indoor work are unavailable before opening."
                     if opening
                     else "It will not reopen today; you may wait outside or move elsewhere."
@@ -205,9 +195,12 @@ class ActivityEngine:
 
     def remaining(self, who):
         activity = self.activities[self.current[who]]
-        return max(
-            0, min(activity.members[who].end, self.close_at(activity.place), self.end) - self.now
+        closing = (
+            self.end
+            if isinstance(activity, ConversationActivity) and activity.outside
+            else self.close_at(activity.place)
         )
+        return max(0, min(activity.members[who].end, closing, self.end) - self.now)
 
     def can_code(self, who):
         place = self.env.world.places[self.env.world.locations[who]]
@@ -248,14 +241,31 @@ class ActivityEngine:
             None,
         )
 
+    def people_within_earshot(self, place, outside):
+        return tuple(
+            p
+            for p in self.env.world.occupants(place)
+            if (p in self.outside) == outside
+            and not isinstance(self.activities.get(self.current.get(p)), MoveActivity)
+        )
+
     def conversation_access(self, who, activity):
         return (
             activity.status == "active"
-            and len(activity.participants) >= 2
-            and who not in self.outside
+            and (len(activity.participants) >= 2 or activity.spontaneous)
+            and (who in self.outside) == activity.outside
             and self.env.world.locations[who] == activity.place
             and (activity.public or who in activity.invited)
+            and (
+                activity.outside
+                or self.env.world.places[activity.place].is_open(clock_of(self.now // 60))
+            )
         )
+
+    def conversation_audience(self, activity):
+        if activity.public and activity.spontaneous:
+            return self.people_within_earshot(activity.place, activity.outside)
+        return activity.participants
 
     def invitation_ids(self, who):
         return [
@@ -337,8 +347,12 @@ class ActivityEngine:
         active = self.activities.get(self.current.get(who))
         kind = active.kind if active else "selection"
         descriptions = {
-            "selection": "Choose the next activity. Work tools require entering Work first.",
-            "rest": "Wait until the chosen time; invitations wake you only if allowed.",
+            "selection": "Choose the next activity. Start a local conversation with people here "
+            "without invitations, or join an open conversation. "
+            "Work tools require entering Work first.",
+            "rest": "Wait until the chosen time. Allow social wake-ups while waiting for "
+            "work or people; choose undisturbed rest only deliberately. No numeric fatigue "
+            "or energy depletion forces rest.",
             "move": "Travel only; you cannot code or join an in-person conversation in transit.",
             "work": "Inspect/claim jobs, read the guide, edit/test code, exchange handoffs "
             "and submit "
@@ -532,6 +546,9 @@ class ActivityEngine:
         }
         common = {
             "people": people,
+            "nearby_people": [
+                p for p in self.people_within_earshot(place, who in self.outside) if p != who
+            ],
             "places": places,
             "invitations": self.invitation_ids(who),
             "defer_invitations": [
@@ -740,11 +757,31 @@ class ActivityEngine:
             "choose wait for confirmed conversation rather than accepting again or entering "
             "empty work. Invitations never interrupt running work; finish or pause it yourself."
         )
+        context.append(
+            "Local social life: starting or joining a public conversation here needs no invitation "
+            "or appointment. This is the ordinary way to chat, "
+            "including outside closed workplaces. "
+            "Public talk can be heard by co-present residents on the same side of the doors. "
+            "Listeners choose whether to join; working residents finish their current operation "
+            "and may pause Work first. Rest with social wake-ups lets you consider a chat, "
+            "not automatically join. Turn wake-ups off only for deliberate undisturbed rest. "
+            "There is no numeric fatigue/energy rule requiring you to rest. "
+            "Open conversations here: "
+            + json.dumps(
+                [
+                    {"id": a.id, "topic": a.topic, "participants": list(a.participants)}
+                    for a in self.activities.values()
+                    if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
+                ]
+            )
+        )
         context.append("Available public/paused work: " + json.dumps(menu.get("work", [])))
         situation = "\n".join(context)
         setting = (
             self.env.config.setting.backdrop
-            + "\n"
+            + "\nLocal conversations need no invitation. Start or join a public conversation "
+            "with co-present people, including outside closed workplaces. Listen without "
+            "joining; leave Work after an operation if you wish to take part.\n"
             + self.activity_contract(who, menu)
             + "\n"
             + self.env.rules_view()
@@ -845,7 +882,9 @@ class ActivityEngine:
         if who in self.current:
             raise Rejected("Leave the current activity before joining another.")
         until = min(until, self.end)
-        if not isinstance(activity, MoveActivity):
+        if not isinstance(activity, MoveActivity) and not (
+            isinstance(activity, ConversationActivity) and activity.outside
+        ):
             until = min(until, self.close_at(activity.place))
         if until <= self.now:
             raise Rejected("There is no time left for this activity.")
@@ -858,6 +897,8 @@ class ActivityEngine:
             event_cursor=self.env.log.count,
         )
         activity.status = "active"
+        if isinstance(activity, ConversationActivity) and len(activity.participants) >= 2:
+            activity.had_company = True
         self.selection_feedback.pop(who, None)
         activity.latest_end = max(activity.latest_end, until)
         self.activities[activity.id] = activity
@@ -911,7 +952,11 @@ class ActivityEngine:
             start=member.start / 60,
             end=self.now / 60,
         )
-        if isinstance(activity, ConversationActivity) and len(activity.participants) < 2:
+        if (
+            isinstance(activity, ConversationActivity)
+            and len(activity.participants) < 2
+            and (not activity.spontaneous or activity.had_company)
+        ):
             activity.status = "ended"
             for other in list(activity.participants):
                 self.leave(other, "Fewer than two people remain in the conversation.")
@@ -963,7 +1008,6 @@ class ActivityEngine:
         if who in self.outside and action.operation in (
             "select_work",
             "resume_work",
-            "select_conversation",
         ):
             raise Rejected(
                 "You are outside the closed venue; "
@@ -1078,13 +1122,49 @@ class ActivityEngine:
                 claim = self.env.board.claim_of(who)
                 activity.task_id = claim.task.id if claim else None
             self.enter(activity, who, self.now + action.seconds)
+        elif action.operation == "start_chat":
+            if not self.menu(who)["nearby_people"]:
+                raise Rejected("Nobody is within earshot here. Move somewhere with people first.")
+            outside = who in self.outside
+            if not outside and not self.env.world.places[place].is_open(clock_of(self.now // 60)):
+                raise Rejected("This indoor venue is closed.")
+            activity = ConversationActivity(
+                id=self.identifier("conversation"),
+                place=place,
+                start=self.now,
+                latest_end=self.end if outside else self.close_at(place),
+                topic=action.topic,
+                public=True,
+                spontaneous=True,
+                outside=outside,
+            )
+            self.enter(activity, who, activity.latest_end)
+            self.emit(
+                EventKind.DISCUSSION,
+                f"{who} opened a local conversation: {activity.topic}. "
+                "Join freely or continue your activity.",
+                actor=who,
+                audience=list(self.conversation_audience(activity)),
+                activity=activity.id,
+                participants=list(activity.participants),
+                public_conversation=True,
+                outside=outside,
+            )
         elif action.operation == "select_conversation":
-            activity = self.activities[action.target]
+            activity = self.activities.get(action.target)
             if not isinstance(activity, ConversationActivity) or not self.conversation_access(
                 who, activity
             ):
                 raise Rejected("That conversation is not open to you here.")
-            self.enter(activity, who, min(self.now + action.seconds, activity.latest_end))
+            self.enter(
+                activity,
+                who,
+                min(self.now + (action.seconds or self.end - self.now), activity.latest_end),
+            )
+            for other in activity.participants:
+                if other != who:
+                    self.sim._met[who].add(other)
+                    self.sim._met[other].add(who)
         elif action.operation == "activity_tool" and action.tool in (
             "invite",
             "accept",
@@ -1367,6 +1447,13 @@ class ActivityEngine:
             activity = self.activities[ident]
             if not isinstance(activity, RestActivity) or not activity.wake_invitations:
                 continue
+            member = activity.members[who]
+            if any(
+                e.seq >= member.event_cursor and e.payload.get("public_conversation")
+                for e in self.env.log.pending_events(who)
+            ):
+                self.leave(who, "A nearby public conversation opened; choose whether to join.")
+                continue
             if activity.waiting_for:
                 invitation = self.invitations.get(activity.waiting_for)
                 if not invitation or invitation.status == "cancelled":
@@ -1436,15 +1523,17 @@ class ActivityEngine:
                     author=who,
                     sent_at=self.now,
                     text=args["text"],
-                    audience=activity.participants,
+                    audience=self.conversation_audience(activity),
                 )
                 activity.messages.append(message)
                 # Only a read tool reveals the text; research logs retain its full payload.
                 self.emit(
                     EventKind.CONVERSATION_MESSAGE,
-                    f"{who} posted a new message.",
+                    f'{who} says: "{args["text"]}"'
+                    if activity.spontaneous
+                    else f"{who} posted a new message.",
                     actor=who,
-                    audience=list(activity.participants),
+                    audience=list(message.audience),
                     activity=activity.id,
                     message=message.model_dump(mode="json"),
                 )

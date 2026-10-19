@@ -102,3 +102,20 @@ Final grading uses the existing bounded real-time wait. If backoff or grading is
 still pending when that bound expires, the experiment remains resumable with the
 submitted snapshot; it does not manufacture a pass/fail or discard the job. Legacy
 scene-based synchronous submission retains its original retry behavior.
+
+## Replacement candidates and Docker storage
+
+An unready first candidate no longer blocks replacement if another unissued candidate
+passes readiness. The original first random draw is preserved; fallback order is
+reproducibly shuffled. Every candidate still requires the exact image and existing
+repository preflight; neither missing images nor failed launchers are treated as a
+resident failure. No network pull happens in a task draw. Exhausting the ready pool
+continues to produce an explicit environment-unready slot.
+
+For the2026-10-19Zenith setup, readiness reports and the14-issue prepared pool are at
+`/personal_fast_storage/qwen-serving/prepared-social-images-20261019/ready-pool.json`.
+Three missing images were added; three others could not register layers on the nearly
+full20GBroot disk. `docker system df` reported19.12GBofimages and no containers,
+volumes or build cache. Shared personal/public storage capacity does not establish
+Docker-root capacity. Prepare a larger disk/pool before a longer experiment; do not
+prune unrelated images or weaken preflight to make a notice publish.

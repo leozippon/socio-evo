@@ -32,6 +32,8 @@ async def test_closed_destination_arrival_waits_outside_until_opening(gate):
     arrival = await arrive(gate)
     assert gate.env.world.locations["Mei"] == "workshop"
     assert gate.outside["Mei"] == "workshop"
+    assert "Mei" not in gate.current  # Arrival does not choose Rest for the resident.
+    gate.select("Mei", choose("select_rest", arguments={"until": "08:00", "wake": True}))
     waiting = gate.activities[gate.current["Mei"]]
     assert waiting.kind == "rest" and waiting.members["Mei"].end == at(1, "08:00")
     assert not gate.can_code("Mei")
@@ -60,7 +62,7 @@ async def test_outside_cannot_bypass_work_menu_or_see_indoor_occupants(gate):
     gate.leave("Mei", "An invitation woke this wait.")
     schema = Card(gate.observation("Mei").allowed).model.model_json_schema()
     assert '"const": "work"' not in __import__("json").dumps(schema)
-    for operation in ("select_work", "resume_work", "select_conversation"):
+    for operation in ("select_work", "resume_work"):
         with pytest.raises(Rejected, match="outside"):
             gate.select("Mei", choose(operation, seconds=60, target="invalid"))
 
@@ -68,6 +70,8 @@ async def test_outside_cannot_bypass_work_menu_or_see_indoor_occupants(gate):
 async def test_lunch_arrival_waits_for_afternoon_reopening(gate):
     gate.now = at(1, "12:30")
     await arrive(gate)
+    assert "Mei" not in gate.current
+    gate.select("Mei", choose("select_rest", arguments={"until": "14:00", "wake": True}))
     assert gate.activities[gate.current["Mei"]].members["Mei"].end == at(1, "14:00")
     gate.now = at(1, "13:00")
     gate.boundary()

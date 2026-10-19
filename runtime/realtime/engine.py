@@ -173,7 +173,9 @@ class RealtimeEngine(ActivityEngine):
         )
         setting = (
             self.env.config.setting.backdrop
-            + "\n"
+            + "\nLocal spontaneous chat is the normal social path: start or join with "
+            "co-present people without invitations, including outside closed workplaces. "
+            "A listener chooses whether to join; work is never forcibly interrupted.\n"
             + self.env.rules_view()
             + self.prework_context(who)
             + "\n"
@@ -306,7 +308,10 @@ class RealtimeEngine(ActivityEngine):
 
     def speak(self, who, text, activity):
         audience = tuple(
-            p for p in activity.participants if self.env.world.locations[p] == activity.place
+            p
+            for p in self.conversation_audience(activity)
+            if self.env.world.locations[p] == activity.place
+            and (p in self.outside) == activity.outside
         )
         message = Message(
             id=len(activity.messages), author=who, sent_at=self.now, text=text, audience=audience
@@ -319,13 +324,14 @@ class RealtimeEngine(ActivityEngine):
             actor=who,
             audience=list(audience),
             activity=activity.id,
-            participants=list(audience),
+            participants=list(activity.participants),
             message=message.model_dump(mode="json"),
             **generation,
         )
         for person in audience:
-            activity.members[person].cursor = len(activity.messages)
-            self.sim._met[person].update(p for p in audience if p != person)
+            if person in activity.participants:
+                activity.members[person].cursor = len(activity.messages)
+                self.sim._met[person].update(p for p in activity.participants if p != person)
             self.remember(person)
             waiting = self.running.get(person)
             if waiting and waiting.action and waiting.action.tool == "wait":

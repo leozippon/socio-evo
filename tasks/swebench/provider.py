@@ -18,6 +18,7 @@ from core.environment import Assessment, Part
 from core.environment.rejection import AssessmentUnavailable
 from tasks.swebench.docker_exec import captured_exec
 from tasks.swebench.pilot import command, container_args, execute, image_for, public_issue
+from tasks.swebench.preflight import EnvironmentPreflightError
 
 
 class WorkBudgetExceeded(RuntimeError):
@@ -146,7 +147,26 @@ class SWEbenchTaskProvider:
         available = sorted(set(self.rows) - set(issued))
         if not available:
             return ()
-        part = self.part(rng.choice(available))
+        first = rng.choice(available)
+        candidates = [first, *[i for i in available if i != first]]
+        # Preserve the original first draw; only shuffle alternatives when readiness fails.
+        failures = []
+        part = None
+        for position, instance in enumerate(candidates):
+            try:
+                part = self.part(instance)
+                break
+            except EnvironmentPreflightError as error:
+                failures.append(f"{instance}: {error}")
+                if position == 0:
+                    remaining = candidates[1:]
+                    rng.shuffle(remaining)
+                    candidates[1:] = remaining
+        if part is None:
+            raise EnvironmentPreflightError(
+                f"No ready unissued issue among {len(candidates)} candidates. "
+                + "; ".join(failures[:3])
+            )
         days = self.joint_deadline_days if workers == 2 else self.solo_deadline_days
         text = part.specification
         if workers == 2 and self.independent_workspaces:

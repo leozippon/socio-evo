@@ -155,3 +155,29 @@ Python lint, JavaScript syntax and diff whitespace checks passed. Broader compat
 runs also encountered existing host requirements: missing bubblewrap on macOS and an
 unsupported resource-limit setup in the direct execution harness. These checks do not
 establish that the Docker evaluator or model service is available on the deployment host.
+
+## Spontaneous local conversations
+
+Activity/realtime residents can `start a local conversation` with people physically
+here, without an invitation, or join an existing public floor. Starting the floor
+does not force anyone else to participate. Co-present resting residents who permit
+social wake-ups can choose to join or return to rest. Working residents hear local
+public talk, finish their current operation, then decide whether to pause and join.
+Public speech reaches listeners, but listeners are not activity members and do not
+consume conversation time. Invitation/private conversation audiences stay restricted.
+
+Doorways are valid conversation locations even while a workplace is closed. Indoor
+and outdoor listeners are distinct; doorway chat cannot grant indoor work access.
+An ongoing doorway conversation stays together when the doors open, and participants
+may enter after leaving it. Arrival itself no longer selects Rest automatically.
+A person opening a spontaneous floor may speak/wait for company or leave; once a
+conversation has had two members, dropping below two ends it as before. All daytime
+conversations end at22:00. Undisturbed rest remains available as a deliberate choice;
+there is no numeric fatigue/energy rule requiring residents to use it.
+
+SWE-bench task draws preserve their original first random candidate. If its environment
+is unready, they try other unissued candidates in reproducible shuffled order and
+publish the first that passes existing readiness checks. They never download during
+the draw. If all candidates fail readiness, the slot is explicitly held back; this
+is infrastructure unavailability, not a resident's failed repair. The usable local
+image pool is finite and should be prepared before longer experiments.

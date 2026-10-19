@@ -200,6 +200,7 @@ class Activity(StrictModel):
         "select_move",
         "select_work",
         "select_conversation",
+        "start_chat",
         "resume_work",
         "activity_tool",
     ]

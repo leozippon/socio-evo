@@ -132,6 +132,9 @@ class ConversationActivity(Activity):
     tools: tuple[str, ...] = ("read", "reply", "wait", "invite", "leave")
     kind: Literal["conversation"] = "conversation"
     topic: str
+    spontaneous: bool = False
+    outside: bool = False
+    had_company: bool = False
     public: bool = False
     invited: tuple[str, ...] = ()
     messages: list[Message] = Field(default_factory=list)

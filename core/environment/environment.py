@@ -930,7 +930,7 @@ class Environment:
             work = (
                 "You may hold one job at a time. Jobs for two need an invitation and the "
                 "other person's agreement, or the clerk pairs applicants where that is the rule. "
-                "Partners share one repository and one repair. Divide the work, review each "
+                "Partners work on one issue and one repair. Divide the work, review each "
                 "other's changes or take turns as you choose. Either partner can hand in the "
                 "integrated repair and report. Use the terminal for local tests. The client "
                 "runs its checks on delivery; only a repair that passes is accepted and paid. "

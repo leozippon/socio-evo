@@ -67,6 +67,23 @@ def invitation_responses(menu, tools=("accept", "decline", "defer")):
     return result
 
 
+def open_chat_forms(menu):
+    if not menu.get("nearby_people"):
+        return []
+    return [
+        _Form(
+            "start a local conversation",
+            {
+                "topic": (
+                    SHORT,
+                    "Speak freely to people here; no appointment or invitation is required.",
+                )
+            },
+            lambda r: Activity(operation="start_chat", topic=r["topic"]),
+        )
+    ]
+
+
 def confirmed_wait_forms(menu):
     if not menu.get("ready_invitations"):
         return []
@@ -94,7 +111,16 @@ def activity_forms(layer, menu):
         result = [
             _Form(
                 "rest",
-                {"until": (CLOCK, None), "wake for invitations": (bool, None)},
+                {
+                    "until": (CLOCK, None),
+                    "wake for invitations": (
+                        bool,
+                        "Allow nearby public-chat opportunities and invitations "
+                        "to wake you to choose; "
+                        "this never joins automatically. Prefer true while waiting; false means "
+                        "deliberately undisturbed rest.",
+                    ),
+                },
                 lambda r: Activity(
                     operation="select_rest",
                     arguments={"until": r["until"], "wake": r["wake for invitations"]},
@@ -149,6 +175,7 @@ def activity_forms(layer, menu):
                     ),
                 )
             )
+        result.extend(open_chat_forms(menu))
         if menu.get("people") and menu.get("places"):
             result.append(invitation_form("arrange a conversation", menu=menu))
         result.extend(invitation_responses(menu))

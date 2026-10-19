@@ -101,3 +101,43 @@ def test_strict_evaluation_requires_explicit_existing_cache(provider):
     provider.strict_http_cache = True
     with pytest.raises(RuntimeError, match="Strict metadata cache is missing"):
         provider._assess(provider.part("org__repo-1"), "diff --git a/x b/x")
+
+
+def test_replenishment_skips_unready_first_draw_without_duplicate_or_gold_access(
+    provider, monkeypatch
+):
+    from tasks.swebench.preflight import EnvironmentPreflightError
+
+    original = provider.part
+    calls = []
+    first = random.Random(0).choice(sorted(provider.rows))
+
+    def ready(instance):
+        calls.append(instance)
+        if instance == first:
+            raise EnvironmentPreflightError("exact evaluation image missing")
+        return original(instance)
+
+    monkeypatch.setattr(provider, "part", ready)
+    result = provider.sample_available(random.Random(0), 1, [])
+    assert len(result) == 1 and result[0].reference != first
+    assert calls[0] == first and len(calls) == 2
+    assert "SECRET" not in result[0].specification
+    assert provider.sample_available(random.Random(0), 1, list(provider.rows)) == ()
+
+
+def test_replenishment_exhaustion_is_environment_unready_not_resident_failure(
+    provider, monkeypatch
+):
+    from tasks.swebench.preflight import EnvironmentPreflightError
+
+    tried = []
+
+    def missing(instance):
+        tried.append(instance)
+        raise EnvironmentPreflightError("missing image")
+
+    monkeypatch.setattr(provider, "part", missing)
+    with pytest.raises(EnvironmentPreflightError, match="No ready unissued issue"):
+        provider.sample_available(random.Random(0), 2, [])
+    assert sorted(tried) == sorted(provider.rows) and len(tried) == len(set(tried))
