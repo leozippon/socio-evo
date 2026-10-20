@@ -102,6 +102,7 @@ class ActivityEngine:
                 if isinstance(activity, RestActivity) and len(activity.members) == 1:
                     self.rest_activities[next(iter(activity.members))] = activity.id
         self.rest_requests = {}
+        self.deferred_invitation_replies = dict(state.get("deferred_invitation_replies", {}))
 
     def state(self):
         return {
@@ -115,6 +116,7 @@ class ActivityEngine:
             "selection_feedback": dict(self.selection_feedback),
             "rest_intents": dict(self.rest_intents),
             "rest_activities": dict(self.rest_activities),
+            "deferred_invitation_replies": dict(self.deferred_invitation_replies),
         }
 
     def identifier(self, prefix):
@@ -345,11 +347,35 @@ class ActivityEngine:
             return self.people_within_earshot(activity.place, activity.outside)
         return activity.participants
 
+    def deferred_invitation_ids(self, who):
+        return {
+            ident
+            for reply in self.deferred_invitation_replies.get(who, [])
+            for ident in (reply["payload"].get("invitation"), reply["payload"].get("supersedes"))
+            if ident
+        }
+
+    def deliver_invitation_replies(self, who):
+        for reply in self.deferred_invitation_replies.pop(who, []):
+            self.emit(
+                EventKind.DISCUSSION,
+                reply["text"],
+                actor=reply["actor"],
+                audience=[who],
+                **reply["payload"],
+                source_event_id=reply["source_event_id"],
+                deferred_reply=True,
+            )
+        # A direct Work-to-Rest transition entered before the notifications were delivered.
+        # Wake before the realtime resident consumes those percepts into memory.
+        self.wake_rests()
+
     def invitation_ids(self, who):
         return [
             i.id
             for i in self.invitations.values()
             if i.status == "pending"
+            and i.id not in self.deferred_invitation_ids(who)
             and who in i.invited
             and who not in i.declined
             and self.now <= i.grace_end
@@ -365,10 +391,12 @@ class ActivityEngine:
             and activity.waiting_for != invitation.id
         )
 
-    def invitation_views(self, who):
+    def invitation_views(self, who, *, include_deferred=False):
         """Expose commitments and readiness without other residents' private work contents."""
         views = []
         for invitation in self.invitations.values():
+            if not include_deferred and invitation.id in self.deferred_invitation_ids(who):
+                continue
             if who not in (invitation.owner, *invitation.invited):
                 continue
             status = invitation.status
@@ -495,7 +523,7 @@ class ActivityEngine:
             "requires fresh confirmation. A confirmed meeting starts when at least two "
             "confirmed people are present and free, within its arrival grace period. "
             "At the meeting place, wait for the confirmed conversation to become ready.",
-            "Your invitations: " + json.dumps(self.invitation_views(who)),
+            "Your invitations: " + json.dumps(self.invitation_views(who, include_deferred=True)),
         ]
         if not menu.get("realtime"):
             sections.append("Tool costs in seconds: " + json.dumps(menu.get("costs", {})))
@@ -613,6 +641,7 @@ class ActivityEngine:
                 i.id
                 for i in self.invitations.values()
                 if i.status == "pending"
+                and i.id not in self.deferred_invitation_ids(who)
                 and who in i.confirmed
                 and self.now < i.grace_end
                 and i.place == place
@@ -950,6 +979,8 @@ class ActivityEngine:
             for other in list(activity.participants):
                 self.leave(other, "Fewer than two people remain in the conversation.")
         self.finish_rest_transition(who)
+        if who in self.deferred_invitation_replies:
+            self.deliver_invitation_replies(who)
 
     def start_rest(self, who, until, *, wake=True, waiting_for=None):
         """Reuse one resident's idle activity; each entry is a fresh membership."""
@@ -1267,6 +1298,7 @@ class ActivityEngine:
         return data, cost
 
     def invitation_action(self, who, tool, args):
+        reply_owner = None
         if tool == "invite_here":
             activity = self.activities[self.current[who]]
             people = tuple(dict.fromkeys(args["people"]))
@@ -1300,6 +1332,7 @@ class ActivityEngine:
                 or self.now > invitation.grace_end
             ):
                 raise Rejected("That invitation is no longer available.")
+            reply_owner = invitation.owner if invitation.owner != who else None
             if tool == "accept":
                 if who in invitation.confirmed:
                     return  # Replayed/stale accepts do not emit another invitation notification.
@@ -1410,7 +1443,11 @@ class ActivityEngine:
                 )
                 self.queue.add(max(self.now, departure), "daily_choice")
         audience = [invitation.owner, *invitation.invited]
-        self.emit(
+        owner_activity = self.activities.get(self.current.get(reply_owner))
+        delayed = owner_activity is not None and not isinstance(owner_activity, RestActivity)
+        if delayed:
+            audience = [person for person in audience if person != reply_owner]
+        event = self.emit(
             EventKind.DISCUSSION,
             f"{who} {tool}: {invitation.topic}, at {clock(invitation.start)}; "
             f"confirmed: {', '.join(invitation.confirmed)}. Nobody is reserved.",
@@ -1424,6 +1461,17 @@ class ActivityEngine:
             declined=list(invitation.declined),
             supersedes=invitation.supersedes,
         )
+        if delayed:
+            self.deferred_invitation_replies.setdefault(reply_owner, []).append(
+                {
+                    "source_event_id": event.seq,
+                    "actor": who,
+                    "text": event.text,
+                    "payload": {
+                        key: value for key, value in event.payload.items() if key != "sim_seconds"
+                    },
+                }
+            )
         return {"invitation": invitation.id, "created": tool in ("invite", "invite_here", "defer")}
 
     def start_ready_conversations(self):
@@ -1506,6 +1554,16 @@ class ActivityEngine:
                 continue
             if activity.waiting_for:
                 invitation = self.invitations.get(activity.waiting_for)
+                if any(
+                    e.seq >= member.event_cursor
+                    and e.kind == EventKind.DISCUSSION
+                    and e.payload.get("response") in ("accept", "decline", "defer")
+                    and activity.waiting_for
+                    in (e.payload.get("invitation"), e.payload.get("supersedes"))
+                    for e in self.env.log.pending_events(who)
+                ):
+                    self.leave(who, "A reply arrived for the conversation you are waiting for.")
+                    continue
                 if not invitation or invitation.status == "cancelled":
                     self.leave(who, "The conversation you were waiting for was cancelled.")
                 continue

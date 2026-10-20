@@ -169,3 +169,114 @@ def test_waiting_for_one_meeting_cannot_start_a_different_pending_meeting(engine
     engine.start_ready_conversations()
     assert first.status == "pending"
     assert second.status == "started"
+
+
+@pytest.mark.parametrize("response", ["accept", "decline", "defer"])
+def test_waiting_owner_wakes_for_own_invitation_reply(engine, response):
+    invitation = invite(engine)
+    engine.start_rest("Mei", engine.end, waiting_for=invitation.id)
+    engine.env.perceive("Mei")
+    arguments = {"invitation": invitation.id}
+    if response == "defer":
+        arguments["at"] = "08:30"
+    engine.invitation_action("Tomas", response, arguments)
+    engine.wake_rests()
+    assert "Mei" not in engine.current
+
+
+@pytest.mark.parametrize("response", ["accept", "decline", "defer"])
+async def test_busy_owner_receives_reply_only_after_activity_leave_and_rest_can_wake(
+    engine, response
+):
+    invitation = invite(engine)
+    base.work(engine)
+    engine.env.perceive("Mei")
+    arguments = {"invitation": invitation.id}
+    if response == "defer":
+        arguments["at"] = "08:30"
+    engine.invitation_action("Tomas", response, arguments)
+    assert not any(p.kind == "discussion" for p in engine.env.perceive("Mei"))
+    assert not engine.invitation_views("Mei")
+    assert engine.invitation_views("Mei", include_deferred=True)
+    assert invitation.id in engine.activity_help("Mei")
+    state = engine.state()
+    assert (
+        type(engine)(engine.sim, state).state()["deferred_invitation_replies"]
+        == state["deferred_invitation_replies"]
+    )
+    # Finishing a tool is still the same Work activity: its next observation stays quiet.
+    engine.schedule("Mei", base.use("board"))
+    await base.complete(engine, engine.now + engine.timing.search_seconds)
+    observation = engine.observation("Mei")
+    assert not any(p.kind == "discussion" for p in observation.percepts)
+    assert f"Tomas {response}:" not in observation.situation
+    engine.now += 60
+    engine.select("Mei", base.choose("select_rest", arguments={"until": "10:00", "wake": True}))
+    rest = engine.activities[engine.rest_activities["Mei"]]
+    assert isinstance(rest, RestActivity)
+    notices = engine.env.log.pending_events("Mei")
+    reply = next(e for e in notices if e.payload.get("deferred_reply"))
+    assert reply.payload["sim_seconds"] == engine.now
+    entered = next(
+        e for e in notices if e.kind == "activity_entered" and e.payload.get("activity") == rest.id
+    )
+    assert reply.seq > entered.seq
+    assert engine.invitation_views("Mei")
+    engine.wake_rests()
+    assert "Mei" not in engine.current
+
+
+async def test_public_board_lists_current_workers_and_soft_partner_preference(engine):
+    base.work(engine)
+    await base.claim(engine)
+    board = engine.env.board_view("Tomas")
+    assert "Workers already holding jobs:" in board
+    assert "Mei" in board.split("Workers already holding jobs:", 1)[1]
+    assert "prefer residents who do not already hold a job" in board
+
+
+def test_waiting_rest_ignores_unrelated_reply_but_new_invite_still_wakes_invitee(engine):
+    invitation = invite(engine)
+    engine.invitation_action(
+        "Mei",
+        "invite",
+        {
+            "people": ["Aisha"],
+            "place": "the Workshop",
+            "at": "08:30",
+            "minutes": 20,
+            "topic": "Other review",
+            "public": False,
+        },
+    )
+    other = next(i for i in engine.invitations.values() if i.id != invitation.id)
+    engine.start_rest("Mei", engine.end, waiting_for=invitation.id)
+    engine.invitation_action("Aisha", "accept", {"invitation": other.id})
+    engine.wake_rests()
+    assert "Mei" in engine.current
+    engine.start_rest("Tomas", engine.end)
+    engine.invitation_action(
+        "Aisha",
+        "invite",
+        {
+            "people": ["Tomas"],
+            "place": "the Workshop",
+            "at": "09:00",
+            "minutes": 20,
+            "topic": "New invitation",
+            "public": False,
+        },
+    )
+    engine.wake_rests()
+    assert "Mei" in engine.current and "Tomas" not in engine.current
+
+
+def test_deferred_reply_respects_explicit_uninterruptible_rest(engine):
+    invitation = invite(engine)
+    base.work(engine)
+    engine.env.perceive("Mei")
+    engine.invitation_action("Tomas", "accept", {"invitation": invitation.id})
+    engine.select("Mei", base.choose("select_rest", arguments={"until": "10:00", "wake": False}))
+    engine.wake_rests()
+    assert isinstance(engine.activities[engine.current["Mei"]], RestActivity)
+    assert any(e.payload.get("deferred_reply") for e in engine.env.log.pending_events("Mei"))

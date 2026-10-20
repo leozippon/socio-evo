@@ -1012,7 +1012,18 @@ class Environment:
         told = [f"On {where}:", *notices] if notices else []
         if len(given) < len(self.notices_for(agent, place)):
             told.append(TOO_LATE)
-        return "\n".join(told) if told else f"There are no notices on {where}."
+        if not told:
+            told.append(f"There are no notices on {where}.")
+        workers = [
+            f"{job_name(claim.task.id)}: {', '.join(claim.workers)}"
+            for claim in self.board.claims.values()
+        ]
+        told.append("Workers already holding jobs: " + ("; ".join(workers) or "none") + ".")
+        told.append(
+            "When choosing a partner for a group job, prefer residents who do not "
+            "already hold a job; you may still choose another partner."
+        )
+        return "\n".join(told)
 
     def _vacancies(self) -> list[str]:
         """The establishments with a place to fill, by place id."""

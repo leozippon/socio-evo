@@ -15,3 +15,11 @@ Immediate invitations continue using the existing null/now input and take their 
 ## Validation and delivery
 
 Cover an appointment crossed during a real-time decision, expired today Rest and valid tomorrow Rest, immediate invitation execution time, no created invitation/id on rejection, genuine success lookup, and frontend failure versus unknown historical completion. Run focused tests, the combined Python selection and relevant existing frontend checks, then lint/format and independently review. Commit and push together with living documentation. On Zenith, validate the complete candidate on Linux before switching the future default; publish only changed frontend assets with backups and existing publication locking. Preserve the current frozen experiment, old results and all services; do not launch or restart an experiment for this task.
+
+## Supplement: partner availability and invitation replies
+
+The board also shows current job holders from the same claim source used to decide whether a resident is already occupied. A single brief suggestion for team jobs prefers residents without a claim; it does not prohibit other choices or reveal private work.
+
+Invitation responses wake a resting sender according to the existing wake settings, including a Rest waiting for that particular invitation. Match rescheduling through the original invitation/supersedes relationship and ignore unrelated replies for a targeted wait. Incoming invitations retain their existing Rest wakeup behavior.
+
+For a sender in another Activity, preserve the original response in the event log but defer automatic delivery until the Activity ends. A small persisted queue is sufficient; omit the affected invitation from automatic views while its response is held, while an explicit help/status query can still read the actual state. Deliver the private notification at the current clock after any direct Rest transition, keep its source-event reference, and do not replay accept/decline side effects or introduce older timestamps into memory. Test a busy next-tool observation, end-of-Activity delivery, a direct transition into Rest, relevant versus unrelated replies and checkpoint restoration. No new notification framework or experiment restart is required.
