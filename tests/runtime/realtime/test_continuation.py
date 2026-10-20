@@ -108,7 +108,7 @@ async def test_driver_restarts_latest_observation_after_stream_cleanup(
             expected = "invalid old action" if late_result == "invalid" else "obsolete"
             assert any(expected in m.content for m in history)
         else:
-            assert any(m.reasoning_content == "draft reasoning" for m in history)
+            assert all(m.reasoning_content is None for m in history)
             assert any("unfinished" in m.content for m in history)
         latest = history[-1].content
         if change == "speech":
@@ -118,8 +118,11 @@ async def test_driver_restarts_latest_observation_after_stream_cleanup(
         await until(lambda: any(m.text == "Current answer" for m in activity.messages))
         if retry:
             retried = requests[2]
-            assert sum(m.content == latest for m in retried.messages) == 1
-            assert sum(m.reasoning_content == "resumed draft" for m in retried.messages) == 1
+            assert (
+                sum('"participants": ["Mei", "Tomas"]' in m.content for m in retried.messages) >= 1
+            )
+            assert sum(m.role == "assistant" for m in retried.messages) == 1
+            assert all(m.reasoning_content is None for m in retried.messages)
             assert retried.after_invalid is (retry == "invalid")
             if retry == "invalid":
                 assert "could not be read" in retried.messages[-1].content.lower()

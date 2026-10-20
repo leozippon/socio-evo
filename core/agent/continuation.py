@@ -9,7 +9,6 @@ from infrastructure.llm.base import LLMPartial, Message
 class DecisionContinuation:
     def __init__(self):
         self.messages = ()
-        self.request_messages = ()
         self.notes = []
         self._commit = None
         self.committed = False
@@ -47,37 +46,27 @@ class ContinuationClient:
     async def complete(self, request):
         continuation = self.continuation
         incoming = request.messages
+        # Structured retries carry previous replies/corrections in their incoming
+        # messages. Keep the original base and only the latest correction; the
+        # latest draft lives here, independently of those retry exchanges.
+        split = next((i for i, m in enumerate(incoming) if m.role == "assistant"), len(incoming))
+        base = incoming[:split]
+        correction = incoming[-1].content if split < len(incoming) else None
         if continuation.messages:
-            previous = continuation.request_messages
-            if previous and incoming[: len(previous)] == previous:
-                # Structured retries append the rejected answer and a correction. The
-                # answer is already retained here, including its separate reasoning.
-                extra = incoming[len(previous) :]
-                if (
-                    extra
-                    and extra[0].role == "assistant"
-                    and continuation.messages[-1].role == "assistant"
-                    and extra[0].content == continuation.messages[-1].content
-                ):
-                    extra = extra[1:]
-                if not extra:
-                    extra = (
-                        Message(
-                            role="user", content="Continue thinking and give your complete reply."
-                        ),
+            latest = base[-1]
+            instruction = correction or (
+                "Your draft has not been acted on. "
+                "Use the current situation and give your complete reply."
+            )
+            request = request.model_copy(
+                update={
+                    "messages": (
+                        *base[:-1],
+                        continuation.messages[-1],
+                        Message(role="user", content=latest.content + "\n\n" + instruction),
                     )
-            else:
-                extra = (
-                    Message(
-                        role="user",
-                        content=(
-                            "You have not acted yet. Here is the current situation. "
-                            "Continue thinking and choose what to do.\n\n"
-                        )
-                        + incoming[-1].content,
-                    ),
-                )
-            request = request.model_copy(update={"messages": (*continuation.messages, *extra)})
+                }
+            )
         if self.budget is not None:
             from core.agent.context import ContextOverflow, Counter, input_limit
 
@@ -114,13 +103,8 @@ class ContinuationClient:
         stream = getattr(self.client, "complete_stream", None)
         try:
             response = await (stream(request, partial) if stream else self.client.complete(request))
-            continuation.request_messages = incoming
-            continuation.messages = (
-                *request.messages,
-                Message(
-                    role="assistant", content=response.text, reasoning_content=response.reasoning
-                ),
-            )
+            if response.text:
+                continuation.messages = (Message(role="assistant", content=response.text),)
             task = asyncio.current_task()
             if task is not None and task.cancelling():
                 partial.text = response.text
@@ -128,15 +112,8 @@ class ContinuationClient:
                 raise asyncio.CancelledError
             return response
         except asyncio.CancelledError:
-            continuation.request_messages = incoming
-            continuation.messages = (
-                *request.messages,
-                Message(
-                    role="assistant",
-                    content=partial.text,
-                    reasoning_content=partial.reasoning or None,
-                ),
-            )
+            if partial.text:
+                continuation.messages = (Message(role="assistant", content=partial.text),)
             continuation._commit = None
             continuation.notes.clear()
             raise

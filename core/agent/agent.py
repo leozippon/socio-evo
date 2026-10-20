@@ -30,6 +30,13 @@ from infrastructure.llm import (
 T = TypeVar("T", bound=BaseModel)
 
 
+def _correction(request: LLMRequest, context: str):
+    """Keep unique repair guidance without repeating the current situation."""
+    if not context or context in request.messages[-1].content:
+        return correction
+    return lambda model, error: correction(model, error) + "\n" + context
+
+
 class Agent:
     """The agent stored at `path`, living in a town of `setting`, by whose calendar and
     currency it tells itself days and money.
@@ -299,7 +306,7 @@ class Agent:
                 self._completion_client(),
                 request,
                 model,
-                correction=lambda m, e: correction(m, e) + "\n" + observation.correction_context,
+                correction=_correction(request, observation.correction_context),
             )
             answer = reply
             while isinstance(answer, RootModel):
@@ -401,8 +408,7 @@ class Agent:
             self._completion_client(),
             request,
             reply,
-            correction=lambda m, e: correction(m, e)
-            + ("\n" + correction_context if correction_context else ""),
+            correction=_correction(request, correction_context),
         )
 
     async def write(self, purpose: str, time: int, prompt: str) -> str:
