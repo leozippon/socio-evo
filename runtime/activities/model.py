@@ -81,7 +81,7 @@ class Activity(MutableState):
     feedback: dict[str, list[str]] = Field(default_factory=dict)
     result: dict[str, str] = Field(default_factory=dict)
 
-    def interrupts_reply(self, event, targets):
+    def interrupts_reply(self, event, targets, who=None):
         return False
 
     @property
@@ -130,6 +130,7 @@ class Message(StrictModel):
     sent_at: int
     text: str
     audience: tuple[str, ...]
+    addressed_targets: tuple[str, ...] = ()
 
 
 class ConversationActivity(Activity):
@@ -143,10 +144,14 @@ class ConversationActivity(Activity):
     invited: tuple[str, ...] = ()
     messages: list[Message] = Field(default_factory=list)
 
-    def interrupts_reply(self, event, targets):
-        if not targets or event.payload.get("activity") != self.id:
+    def interrupts_reply(self, event, targets, who=None):
+        if event.payload.get("activity") != self.id:
             return False
-        return event.kind == "speech" or (event.kind == "activity_left" and event.actor in targets)
+        return (
+            event.kind == "speech"
+            and event.actor != who
+            and who in event.payload.get("addressed_targets", ())
+        ) or (event.kind == "activity_left" and event.actor in targets)
 
     def unread(self, who: str) -> list[Message]:
         member = self.members[who]

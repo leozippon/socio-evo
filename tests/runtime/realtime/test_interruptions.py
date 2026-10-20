@@ -129,7 +129,9 @@ async def test_speech_before_body_first_turn_keeps_event_ids_and_percepts(rt):
     rt.start_decision("Tomas")
     await finish(rt, "Tomas")
     # The body task exists but has not had its first event-loop turn.
+    rt.speech_times["Mei"] = {"addressed_targets": ["Tomas"]}
     rt.speak("Mei", "First unconsumed speech", activity)
+    rt.speech_times["Mei"] = {"addressed_targets": ["Tomas"]}
     rt.speak("Mei", "Second unconsumed speech", activity)
     await rt.refresh_decisions()
     await asyncio.sleep(0)

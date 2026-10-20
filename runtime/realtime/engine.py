@@ -111,7 +111,7 @@ class RealtimeEngine(ActivityEngine):
             for who, job in list(self.running.items()):
                 if self.activities.get(job.activity) and self.activities[
                     job.activity
-                ].interrupts_reply(event, job.targets):
+                ].interrupts_reply(event, job.targets, who):
                     self.invalidate_decision(who, event=event, changed_fields=["reply_targets"])
         elif kind == EventKind.DISCUSSION and payload.get("conversation_started"):
             for who in list(self.running):
@@ -285,7 +285,7 @@ class RealtimeEngine(ActivityEngine):
             return
         active = self.activities.get(job.activity)
         if event is not None:
-            reply = active is not None and active.interrupts_reply(event, job.targets)
+            reply = active is not None and active.interrupts_reply(event, job.targets, who)
             if not reply and not self.interrupts_selection(who, job, event):
                 return
         elif not job.targets:
@@ -460,6 +460,14 @@ class RealtimeEngine(ActivityEngine):
         if hasattr(agent, "perceive"):
             agent.perceive(self.env.perceive(who))
 
+    def repeated_reply(self, who, action, activity):
+        if not activity.messages or activity.messages[-1].author != who:
+            return False
+        message = activity.messages[-1]
+        return " ".join(message.text.split()) == " ".join(action.arguments["text"].split()) and set(
+            message.addressed_targets
+        ) == set(action.arguments["targets"])
+
     def speak(self, who, text, activity):
         audience = tuple(
             p
@@ -467,11 +475,16 @@ class RealtimeEngine(ActivityEngine):
             if self.env.world.locations[p] == activity.place
             and (p in self.outside) == activity.outside
         )
+        generation = self.speech_times.pop(who, {})
         message = Message(
-            id=len(activity.messages), author=who, sent_at=self.now, text=text, audience=audience
+            id=len(activity.messages),
+            author=who,
+            sent_at=self.now,
+            text=text,
+            audience=audience,
+            addressed_targets=tuple(generation.get("addressed_targets", ())),
         )
         activity.messages.append(message)
-        generation = self.speech_times.pop(who, {})
         event = self.emit(
             EventKind.SPEECH,
             f'{who} says: "{text}"',
@@ -480,7 +493,7 @@ class RealtimeEngine(ActivityEngine):
             activity=activity.id,
             participants=list(activity.participants),
             message=message.model_dump(mode="json"),
-            **generation,
+            **{**generation, "addressed_targets": list(message.addressed_targets)},
         )
         for person in audience:
             if person in activity.participants:
@@ -686,6 +699,14 @@ class RealtimeEngine(ActivityEngine):
                 if targets != job.targets:
                     raise Rejected("Keep the addressed members chosen for this reply.")
                 self.prepare(who, action)
+            if isinstance(action, Choice) and action.tool == "reply":
+                if self.repeated_reply(who, action, active):
+                    action = Choice(
+                        operation="activity_tool",
+                        tool="wait",
+                        arguments={"seconds": max(1, self.remaining(who))},
+                    )
+                    self.feedback(who, "You already said this; nobody has replied since. You wait.")
             if isinstance(action, Choice) and action.tool == "reply":
                 self.speech_times[who] = {
                     "addressed_targets": list(job.targets),
