@@ -45,6 +45,10 @@ class ContinuationClient:
 
     async def complete(self, request):
         continuation = self.continuation
+        if self.budget is not None:
+            from core.agent.context import unpack
+
+            request = unpack(request)
         incoming = request.messages
         # Structured retries carry previous replies/corrections in their incoming
         # messages. Keep the original base and only the latest correction; the
@@ -68,7 +72,7 @@ class ContinuationClient:
                 }
             )
         if self.budget is not None:
-            from core.agent.context import ContextOverflow, Counter, input_limit
+            from core.agent.context import ContextOverflow, Counter, input_limit, repack
 
             if request.sampling.max_tokens is None:
                 request = request.model_copy(
@@ -78,6 +82,7 @@ class ContinuationClient:
                         )
                     }
                 )
+            request = repack(request, self.budget)
             counter = Counter(self.budget)
             limit = input_limit(self.budget, request)
             count = counter.request(request)

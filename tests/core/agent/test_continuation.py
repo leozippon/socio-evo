@@ -367,8 +367,115 @@ async def test_packed_input_near_limit_rejects_added_draft_without_discarding_it
         async def complete(self, request):
             raise AssertionError("overflow must fail before the backend")
 
-    with pytest.raises(ContextOverflow, match="Input budget exceeded"):
+    with pytest.raises(ContextOverflow, match="exceeds input budget"):
         await ContinuationClient(NeverCalled(), continuation, budget=budget).complete(request)
     assert continuation.messages[0].content == "draft" * 100
     with pytest.raises(RuntimeError, match="no completed decision"):
         continuation.commit()
+
+
+@pytest.mark.parametrize("mode", ["resume", "invalid", "busy"])
+async def test_optional_evidence_repacked_after_draft_and_correction(mode):
+    from pydantic import BaseModel
+
+    from core.agent.config import ContextBudgetConfig
+    from core.agent.context import Block, Counter, pack
+    from infrastructure.llm.base import LLMBusyError, Sampling
+    from infrastructure.llm.structured import complete_structured
+
+    class Reply(BaseModel):
+        answer: int
+
+    budget = ContextBudgetConfig(
+        enabled=True, input_tokens=1000, context_tokens=1500, output_tokens=400, safety_tokens=100
+    )
+    mandatory = "latest required scene"
+    request = pack(
+        LLMRequest(
+            messages=(
+                Message(role="system", content="identity"),
+                Message(role="user", content=mandatory),
+            ),
+            sampling=Sampling(max_tokens=400),
+            json_schema=Reply.model_json_schema(),
+        ),
+        [Block("evidence", "optional evidence " * 150, 50)],
+        budget,
+    )
+    assert Counter(budget).request(request) > 900
+    continuation = DecisionContinuation()
+    if mode == "resume":
+        continuation.messages = (Message(role="assistant", content="draft" * 50),)
+    requests = []
+
+    class Replies:
+        async def complete(self, asked):
+            requests.append(asked)
+            if mode != "resume" and len(requests) == 1:
+                return LLMResponse(text="invalid answer " * 15, latency=0)
+            if mode == "busy" and len(requests) == 2:
+                raise LLMBusyError("busy")
+            return LLMResponse(text='{"answer":1}', latency=0)
+
+    result = await complete_structured(
+        ContinuationClient(Replies(), continuation, budget=budget),
+        request,
+        Reply,
+        correction=lambda model, error: "Use a valid integer.",
+    )
+    assert result.answer == 1
+    final = requests[-1]
+    assert Counter(budget).request(final) <= 1000
+    assert final.sampling.max_tokens == 400
+    assert sum(mandatory in m.content for m in final.messages) == 1
+    assert sum(m.role == "assistant" for m in final.messages) == 1
+    assert final.metadata["context_usage"]["input_count"] == Counter(budget).request(final)
+    if mode != "resume":
+        assert "Use a valid integer." in final.messages[-1].content
+    if mode == "busy":
+        assert requests[-1].messages == requests[-2].messages
+
+
+async def test_cancelled_draft_reserved_before_packing_changed_environment():
+    from core.agent.config import ContextBudgetConfig
+    from core.agent.context import Block, Counter, pack
+
+    cfg = ContextBudgetConfig(
+        input_tokens=1000, context_tokens=1500, output_tokens=400, safety_tokens=100
+    )
+    continuation = DecisionContinuation()
+    seen = []
+
+    class Stream:
+        async def complete_stream(self, request, partial):
+            seen.append(request)
+            if len(seen) == 1:
+                partial.text = "unfinished draft " * 15
+                raise asyncio.CancelledError
+            return LLMResponse(text="done", latency=0)
+
+    client = ContinuationClient(Stream(), continuation, budget=cfg)
+
+    def scene(name):
+        return pack(
+            LLMRequest(
+                messages=(
+                    Message(role="system", content="identity"),
+                    Message(role="user", content=f"scene-{name}"),
+                )
+            ),
+            [Block("optional", f"evidence-{name} " * 300, 50)],
+            cfg,
+        )
+
+    with pytest.raises(asyncio.CancelledError):
+        await client.complete(scene("old"))
+    await client.complete(scene("new"))
+    final = seen[-1]
+    assert Counter(cfg).request(final) <= 1000
+    assert final.messages[1].content == "unfinished draft " * 15
+    assert "scene-new" in final.messages[-1].content
+    assert all(
+        "scene-old" not in m.content and "evidence-old" not in m.content for m in final.messages
+    )
+    assert sum("scene-new" in m.content for m in final.messages) == 1

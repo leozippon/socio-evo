@@ -163,12 +163,12 @@ async def test_retry_growth_guard_never_sends_oversized_context():
             )
         }
     )
-    await client.complete(req)
-    assert len(seen[0].messages) == 2
-    assert Counter(cfg).request(seen[0]) <= 500
+    with pytest.raises(ContextOverflow):
+        await client.complete(req)
+    assert not seen
     with pytest.raises(ContextOverflow):
         await client.complete(request("too long " * 1000))
-    assert len(seen) == 1
+    assert not seen
 
 
 async def test_budget_holds_through_invalid_reply_and_card_is_still_validated(agent, observe):
@@ -178,7 +178,7 @@ async def test_budget_holds_through_invalid_reply_and_card_is_still_validated(ag
     def answer(req):
         seen.append(req)
         if len(seen) == 1:
-            return {"do": "say", "to": "Nobody", "words": "x" * 30000, "thought": "x"}
+            return {"do": "say", "to": "Nobody", "words": "x" * 300, "thought": "x"}
         return {"thought": "Now valid.", "do": "carry on quietly"}
 
     agent.client = ScriptedClient(answer)
@@ -410,3 +410,45 @@ async def test_tokenizer_budget_counts_ids_and_reasoning_before_sending(
     with pytest.raises(ContextOverflow):
         await client.complete(oversized)
     assert len(seen) == 1
+
+
+async def test_structured_retry_repacks_optional_evidence_without_dropping_latest_repair():
+    from infrastructure.config import StrictModel
+    from infrastructure.llm.structured import complete_structured
+
+    class Reply(StrictModel):
+        answer: int
+
+    cfg = ContextBudgetConfig(
+        input_tokens=1000, context_tokens=1500, output_tokens=400, safety_tokens=100
+    )
+    req = pack(
+        request(
+            "required scene",
+            sampling=Sampling(max_tokens=400),
+            json_schema=Reply.model_json_schema(),
+        ),
+        [Block("optional", "evidence " * 300, 50)],
+        cfg,
+    )
+    seen = []
+
+    def answer(asked):
+        seen.append(asked)
+        return "bad " * 35 if len(seen) < 3 else '{"answer":1}'
+
+    result = await complete_structured(
+        BudgetClient(ScriptedClient(answer), cfg),
+        req,
+        Reply,
+        correction=lambda model, error: "Use an integer.",
+    )
+    assert result.answer == 1
+    assert len(seen) == 3
+    assert all(Counter(cfg).request(r) <= 1000 for r in seen)
+    assert len(seen[-1].messages) == 4
+    assert seen[-1].messages[-2].content == "bad " * 35
+    assert seen[-1].messages[-1].content.endswith("Use an integer.")
+    assert sum("Use an integer." in m.content for m in seen[-1].messages) == 1
+    dumped = seen[-1].model_dump(mode="json")
+    assert "required_messages" not in dumped and "context_blocks" not in dumped

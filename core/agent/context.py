@@ -5,6 +5,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 
+from pydantic import Field
+
 from core.agent.config import ContextBudgetConfig
 from infrastructure.llm.base import LLMCallError, LLMClient, LLMRequest, LLMResponse, Message
 
@@ -103,6 +105,29 @@ class BudgetPrompt(str):
         return value
 
 
+class _PackedRequest(LLMRequest):
+    # In-process source material only: never send or log the unselected evidence.
+    required_messages: tuple[Message, ...] = Field(exclude=True)
+    context_blocks: tuple[Block, ...] = Field(exclude=True)
+
+
+def unpack(request: LLMRequest) -> LLMRequest:
+    """Restore required input and the latest structured repair, before packing again."""
+    if isinstance(request, _PackedRequest):
+        repair = request.messages[len(request.required_messages) :]
+        if len(repair) > 2 and repair[-2].role == "assistant" and repair[-1].role == "user":
+            repair = repair[-2:]
+        return request.model_copy(update={"messages": (*request.required_messages, *repair)})
+    return request
+
+
+def repack(request: LLMRequest, config: ContextBudgetConfig) -> LLMRequest:
+    """Pack optional evidence after callers have assembled all required messages."""
+    if isinstance(request, _PackedRequest):
+        return pack(request, list(request.context_blocks), config)
+    return request
+
+
 def pack(request: LLMRequest, blocks: list[Block], config: ContextBudgetConfig) -> LLMRequest:
     """Request contains mandatory identity/situation/format; allocate the rest by priority.
 
@@ -163,7 +188,12 @@ def pack(request: LLMRequest, blocks: list[Block], config: ContextBudgetConfig) 
                 else "omitted",
             }
         )
-    result = assemble()
+    assembled = assemble()
+    result = _PackedRequest(
+        **{name: getattr(assembled, name) for name in LLMRequest.model_fields},
+        required_messages=request.messages,
+        context_blocks=tuple(blocks),
+    )
     return result.model_copy(
         update={
             "metadata": {
@@ -196,15 +226,7 @@ class BudgetClient:
                 }
             )
         limit = input_limit(self.config, request)
-        messages = list(request.messages)
-        # Repair messages are disposable; the packed original request is not. Keep the
-        # latest correction if possible, never a dangling old assistant reply.
-        while counter.request(request) > limit and len(messages) > 2:
-            if len(messages) >= 4:
-                del messages[2:4]
-            else:
-                messages.pop()
-            request = request.model_copy(update={"messages": tuple(messages)})
+        request = repack(unpack(request), self.config)
         count = counter.request(request)
         if count > limit:
             raise ContextOverflow(f"Input budget exceeded: {count} > {limit} ({counter.method})")
