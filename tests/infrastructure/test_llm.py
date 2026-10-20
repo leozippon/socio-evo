@@ -153,13 +153,13 @@ class Server:
         )
 
 
-async def test_a_reply_cut_off_is_asked_for_again_with_half_the_limit():
+async def test_a_reply_cut_off_keeps_the_output_allowance():
     client = Server(None, None, '{"answer": 7}')
     assert await complete_structured(client, _request(), Verdict) == Verdict(answer=7)
     assert [request.messages for request in client.requests] == [_request().messages] * 3
     assert [request.metadata["attempt"] for request in client.requests] == [1, 2, 3]
     limits = [request.sampling.max_tokens for request in client.requests]
-    assert limits == [None, LIMIT // 2, LIMIT // 2]
+    assert limits == [None, None, None]
     assert not any(request.after_invalid for request in client.requests)
     with pytest.raises(StructuredOutputError) as failure:
         await complete_structured(Server(None, None, None), _request(), Verdict)
@@ -168,7 +168,7 @@ async def test_a_reply_cut_off_is_asked_for_again_with_half_the_limit():
     text = Server(None, "A whole entry.")
     assert await complete_text(text, _request()) == "A whole entry."
     assert [request.json_schema for request in text.requests] == [None, None]
-    assert [request.sampling.max_tokens for request in text.requests] == [None, LIMIT // 2]
+    assert [request.sampling.max_tokens for request in text.requests] == [None, None]
     with pytest.raises(StructuredOutputError, match="cut off"):
         await complete_text(Server(None, None), _request(), attempts=2)
 
@@ -189,8 +189,8 @@ async def test_every_attempt_is_logged_with_how_it_failed(tmp_path):
     assert [record["failure"] for record in records[3:]] == list(failure.value.failures)
     assert [record["response"]["max_tokens"] for record in records[:3]] == [
         LIMIT,
-        LIMIT // 2,
-        LIMIT // 2,
+        LIMIT,
+        LIMIT,
     ]
     assert all("verdict" not in record["request"] for record in records)
 

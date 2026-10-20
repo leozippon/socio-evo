@@ -137,3 +137,124 @@ def test_tokenizer_budget_counts_reasoning_once_even_when_template_omits_it(pres
         messages=(Message(role="assistant", content="x", reasoning_content="reason"),)
     )
     assert counter.request(request) == 23
+
+
+async def test_truncated_then_invalid_preserves_drafts_and_correction_once():
+    from pydantic import BaseModel
+
+    from infrastructure.llm.base import Sampling
+    from infrastructure.llm.structured import complete_structured
+
+    class Reply(BaseModel):
+        answer: int
+
+    requests = []
+
+    class Replies:
+        async def complete(self, request):
+            requests.append(request)
+            return [
+                LLMResponse(text="", reasoning="partial plan", truncated=True, latency=0),
+                LLMResponse(text='{"answer":"bad"}', reasoning="continued plan", latency=0),
+                LLMResponse(text='{"answer":7}', latency=0),
+            ][len(requests) - 1]
+
+    continuation = DecisionContinuation()
+    client = ContinuationClient(Replies(), continuation)
+    result = await complete_structured(
+        client,
+        LLMRequest(
+            messages=(Message(role="user", content="unique scene"),),
+            sampling=Sampling(max_tokens=4096),
+        ),
+        Reply,
+    )
+    assert result.answer == 7
+    assert [r.sampling.max_tokens for r in requests] == [4096] * 3
+    assert [r.after_invalid for r in requests] == [False, False, True]
+    final = requests[-1].messages
+    assert sum(m.content == "unique scene" for m in final) == 1
+    assert [m.reasoning_content for m in final if m.role == "assistant"] == [
+        "partial plan",
+        "continued plan",
+    ]
+    assert sum(m.content == '{"answer":"bad"}' for m in final) == 1
+    assert "invalid" in final[-1].content
+
+
+async def test_cancel_then_changed_observation_then_retry_shares_context():
+    from pydantic import BaseModel
+
+    from infrastructure.llm.structured import complete_structured
+
+    class Reply(BaseModel):
+        answer: int
+
+    entered = asyncio.Event()
+    requests = []
+
+    class Stream:
+        async def complete_stream(self, request, partial):
+            requests.append(request)
+            if len(requests) == 1:
+                partial.reasoning = "cancelled draft"
+                partial.text = '{"answer":'
+                entered.set()
+                await asyncio.Event().wait()
+            if len(requests) == 2:
+                return LLMResponse(text="", reasoning="new draft", truncated=True, latency=0)
+            return LLMResponse(text='{"answer":9}', latency=0)
+
+    continuation = DecisionContinuation()
+    client = ContinuationClient(Stream(), continuation)
+    task = asyncio.create_task(
+        complete_structured(
+            client, LLMRequest(messages=(Message(role="user", content="old scene"),)), Reply
+        )
+    )
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    result = await complete_structured(
+        client, LLMRequest(messages=(Message(role="user", content="new scene"),)), Reply
+    )
+    assert result.answer == 9
+    final = requests[-1].messages
+    assert sum("new scene" in m.content for m in final) == 1
+    assert [m.reasoning_content for m in final if m.role == "assistant"] == [
+        "cancelled draft",
+        "new draft",
+    ]
+    with pytest.raises(RuntimeError, match="no completed decision"):
+        continuation.commit()
+
+
+async def test_busy_retry_keeps_the_pending_json_correction():
+    from pydantic import BaseModel
+
+    from infrastructure.llm.base import LLMBusyError
+    from infrastructure.llm.structured import complete_structured
+
+    class Reply(BaseModel):
+        answer: int
+
+    requests = []
+
+    class Replies:
+        async def complete(self, request):
+            requests.append(request)
+            if len(requests) == 1:
+                return LLMResponse(text="bad answer", reasoning="retained draft", latency=0)
+            if len(requests) == 2:
+                raise LLMBusyError("busy")
+            return LLMResponse(text='{"answer":1}', latency=0)
+
+    result = await complete_structured(
+        ContinuationClient(Replies(), DecisionContinuation()),
+        LLMRequest(messages=(Message(role="user", content="scene"),)),
+        Reply,
+    )
+    assert result.answer == 1
+    assert requests[2].messages == requests[1].messages
+    assert "invalid" in requests[2].messages[-1].content

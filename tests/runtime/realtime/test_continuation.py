@@ -23,10 +23,11 @@ async def until(predicate):
     await asyncio.wait_for(poll(), 2)
 
 
+@pytest.mark.parametrize("retry", [None, "truncated", "invalid"])
 @pytest.mark.parametrize("late_result", [False, True, "invalid"])
 @pytest.mark.parametrize("change", ["speech", "membership"])
 async def test_driver_restarts_latest_observation_after_stream_cleanup(
-    rt, tmp_path, monkeypatch, late_result, change
+    rt, tmp_path, monkeypatch, late_result, change, retry
 ):
     started, cancelled, cleanup, resumed, final = (asyncio.Event() for _ in range(5))
     requests = []
@@ -56,6 +57,14 @@ async def test_driver_restarts_latest_observation_after_stream_cleanup(
             if len(requests) == 2:
                 resumed.set()
                 await final.wait()
+                if retry:
+                    return LLMResponse(
+                        text="" if retry == "truncated" else "invalid new action",
+                        reasoning="resumed draft",
+                        truncated=retry == "truncated",
+                        latency=1,
+                    )
+            if len(requests) == (3 if retry else 2):
                 return LLMResponse(
                     text=json.dumps({"thought": "latest", "do": "reply", "text": "Current answer"}),
                     latency=1,
@@ -107,6 +116,13 @@ async def test_driver_restarts_latest_observation_after_stream_cleanup(
         assert '"participants": ["Mei", "Tomas"]' in latest
         final.set()
         await until(lambda: any(m.text == "Current answer" for m in activity.messages))
+        if retry:
+            retried = requests[2]
+            assert sum(m.content == latest for m in retried.messages) == 1
+            assert sum(m.reasoning_content == "resumed draft" for m in retried.messages) == 1
+            assert retried.after_invalid is (retry == "invalid")
+            if retry == "invalid":
+                assert "could not be read" in retried.messages[-1].content.lower()
         assert sum(m.text == "Current answer" for m in activity.messages) == 1
         assert not any(m.text == "Stale answer" for m in activity.messages)
         rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]

@@ -367,3 +367,46 @@ async def test_current_desk_evidence_reaches_model_without_displacing_job(
         assert "[excerpt shortened]" in prompt
     else:
         assert evidence in prompt
+
+
+@pytest.mark.parametrize("as_mapping", [False, True])
+@pytest.mark.parametrize("preserve_reasoning", [False, True])
+async def test_tokenizer_budget_counts_ids_and_reasoning_before_sending(
+    monkeypatch, as_mapping, preserve_reasoning
+):
+    from collections import UserDict
+
+    from core.agent import context
+
+    class LocalTokenizer:
+        def encode(self, text, **kwargs):
+            return list(text.encode())
+
+        def apply_chat_template(self, messages, **kwargs):
+            size = 31 + sum(len(m["content"].encode()) for m in messages)
+            if preserve_reasoning:
+                size += sum(len((m.get("reasoning_content") or "").encode()) for m in messages)
+            ids = [0] * size
+            return UserDict(input_ids=ids, attention_mask=[1] * size) if as_mapping else ids
+
+    monkeypatch.setattr(context, "_tokenizer", lambda path: LocalTokenizer())
+    cfg = ContextBudgetConfig(input_tokens=200, tokenizer_path="/local/tokenizer")
+    req = request("task", json_schema={"type": "object"})
+    req = req.model_copy(
+        update={
+            "messages": (
+                *req.messages,
+                Message(role="assistant", content="", reasoning_content="r" * 100),
+            )
+        }
+    )
+    expected = 31 + len("IDENTITYtask") + 100 + len(json.dumps(req.json_schema))
+    assert Counter(cfg).request(req) == expected
+    seen = []
+    client = BudgetClient(ScriptedClient(lambda r: seen.append(r) or "ok"), cfg)
+    await client.complete(req)
+    assert seen[0].metadata["context_usage"]["input_count"] == expected
+    oversized = request("x" * 200)
+    with pytest.raises(ContextOverflow):
+        await client.complete(oversized)
+    assert len(seen) == 1

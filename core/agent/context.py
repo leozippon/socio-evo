@@ -1,6 +1,7 @@
 """Priority packing and a final guard on every enabled call, including repair attempts."""
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -29,24 +30,23 @@ class Counter:
             return len(self.tokenizer.encode(value, add_special_tokens=False))
         return len(value.encode("utf-8"))
 
+    def _chat_tokens(self, messages: list[dict]) -> int:
+        encoded = self.tokenizer.apply_chat_template(
+            messages, tokenize=True, add_generation_prompt=True
+        )
+        # Transformers may return BatchEncoding rather than a flat token list.
+        return len(encoded["input_ids"] if isinstance(encoded, Mapping) else encoded)
+
     def request(self, request: LLMRequest) -> int:
         messages = [m.model_dump() for m in request.messages]
         if self.tokenizer is not None:
-            size = len(
-                self.tokenizer.apply_chat_template(
-                    messages, tokenize=True, add_generation_prompt=True
-                )
-            )
+            size = self._chat_tokens(messages)
             reasoning = sum(self.text(m.reasoning_content or "") for m in request.messages)
             if reasoning:
                 # Some chat templates omit reasoning history; count it regardless, while
                 # avoiding a second charge when the template already includes it.
                 plain = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
-                baseline = len(
-                    self.tokenizer.apply_chat_template(
-                        plain, tokenize=True, add_generation_prompt=True
-                    )
-                )
+                baseline = self._chat_tokens(plain)
                 size = max(size, baseline + reasoning)
         else:
             size = (

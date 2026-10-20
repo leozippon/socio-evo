@@ -6,10 +6,8 @@ An attempt also fails when the client gives up on a reply that does not come in 
 other error of the client propagates at once: the backend itself failed.
 
 Every request carries the verdict its reply will be given, so that a log of the calls says how
-each attempt failed. Once a reply has come, every later attempt is allowed half the token limit
-the client reports that reply was given: a reply that loops until the limit cuts it off, or runs
-far beyond the usual length, tends to do so again when asked again, while the first attempt
-keeps the whole limit, since some valid replies run to thousands of tokens.
+each attempt failed. Retries retain the requested output allowance; the client's context
+guard checks the assembled conversation before it reaches the backend.
 """
 
 import re
@@ -56,13 +54,13 @@ async def complete_text(client: LLMClient, request: LLMRequest, *, attempts: int
     number."""
     request = request.model_copy(update={"verdict": _text_failure})
     failures: list[str] = []
-    text, limit = "", None
+    text = ""
     for attempt in range(1, _check(attempts) + 1):
-        asked = _attempt(request, request.messages, attempt, limit)
+        asked = _attempt(request, request.messages, attempt)
         response = await _call(client, asked, failures)
         if response is None:
             continue
-        text, limit = response.text, limit or response.max_tokens
+        text = response.text
         failure = _text_failure(response)
         if failure is None:
             return text
@@ -97,12 +95,12 @@ async def complete_structured(
     )
     messages = request.messages
     failures: list[str] = []
-    text, limit = "", None
+    text = ""
     for attempt in range(1, _check(attempts) + 1):
-        response = await _call(client, _attempt(request, messages, attempt, limit), failures)
+        response = await _call(client, _attempt(request, messages, attempt), failures)
         if response is None:
             continue
-        text, limit = response.text, limit or response.max_tokens
+        text = response.text
         reply = _read(model, response)
         if not isinstance(reply, _Unread):
             return reply
@@ -168,12 +166,8 @@ def _check(attempts: int) -> int:
     return attempts
 
 
-def _attempt(
-    request: LLMRequest, messages: tuple[Message, ...], attempt: int, limit: int | None
-) -> LLMRequest:
-    """`request` with `messages` as attempt number `attempt`, allowed half of `limit`, the
-    token limit of the first reply, once there is one."""
-    update = {"messages": messages, "metadata": {**request.metadata, "attempt": attempt}}
-    if limit is not None:
-        update["sampling"] = request.sampling.model_copy(update={"max_tokens": (limit + 1) // 2})
-    return request.model_copy(update=update)
+def _attempt(request: LLMRequest, messages: tuple[Message, ...], attempt: int) -> LLMRequest:
+    """Keep the output allowance and label this bounded attempt."""
+    return request.model_copy(
+        update={"messages": messages, "metadata": {**request.metadata, "attempt": attempt}}
+    )
