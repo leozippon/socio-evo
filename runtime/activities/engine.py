@@ -477,7 +477,7 @@ class ActivityEngine:
             self.current_facts(who),
             self.activity_contract(who),
             self.clock_rules(),
-            "Rest ends at the next occurrence of the chosen clock time, capped at day end. "
+            "Rest ends at the chosen clock time today, capped at day end. "
             "Social wake-ups offer you a choice when someone invites you or speaks nearby. "
             "Movement takes time according to distance. Work progress survives leaving; "
             "partners keep private repositories and exchange explicit code handoffs.",
@@ -1007,16 +1007,10 @@ class ActivityEngine:
                 until = min(self.end, self.invitations[waiting_for].grace_end)
             else:
                 until = at(day_of(self.now // 60), action.arguments["until"])
-            # Clock-only morning values after evening mean the next occurrence.
-            # Sleep crosses midnight conceptually; this day's activity ends at day close.
-            if until < self.now:
-                until += 24 * 60 * 60
-            if until == self.now:
-                raise Rejected(
-                    "Rest must end after the current time. Choose a later clock time; "
-                    "an earlier clock time means tomorrow, capped at today's day end."
-                )
             until = min(until, self.end)
+            if until <= self.now:
+                self.selection_feedback.pop(who, None)
+                return
             self.enter(
                 RestActivity(
                     id=self.identifier("rest"),

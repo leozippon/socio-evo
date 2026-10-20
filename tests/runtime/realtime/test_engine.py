@@ -269,6 +269,48 @@ async def test_real_driver_rest_day_with_no_requests_after_closing(engine):
     assert [e["time"] for e in rows] == sorted(e["time"] for e in rows)
 
 
+async def test_rest_deadline_passed_during_model_latency_selects_again(rt):
+    decisions = []
+    selected_again = asyncio.Event()
+
+    class Resident:
+        async def choose_activity(self, obs):
+            decisions.append(rt.now)
+            if len(decisions) == 1:
+                # A 10:28 decision returns at 10:31:43, after its 10:30 deadline.
+                rt.wall.value += 223 / rt.clock.multiplier
+                until = "10:30"
+            else:
+                selected_again.set()
+                until = "22:00"
+            return Decision(
+                thought="Rest", action=choose("select_rest", arguments={"until": until})
+            )
+
+    rt.sim.agents = {"Mei": Resident()}
+    driver = asyncio.create_task(rt.run(at(1, "10:28") // 60))
+    try:
+        await asyncio.wait_for(selected_again.wait(), timeout=2)
+        while "Mei" not in rt.current:
+            await asyncio.sleep(0)
+        assert decisions == [at(1, "10:28"), at(1, "10:31:43")]
+        rest = rt.activities[rt.current["Mei"]]
+        assert rest.start == at(1, "10:31:43")
+        assert rest.members["Mei"].end == at(1, "22:00")
+        assert len(rt.activities) == 1  # The expired choice did not create a sleep.
+        rt.wall.value += (at(1, "22:00") - rt.now) / rt.clock.multiplier + 0.01
+        await asyncio.wait_for(driver, timeout=2)
+    finally:
+        if not driver.done():
+            driver.cancel()
+            await asyncio.gather(driver, return_exceptions=True)
+    assert at(1, "22:00") <= rt.now < at(2, "00:00")
+    assert not rt.current
+    rows = [json.loads(x) for x in rt.env.log.path.read_text().splitlines()]
+    seconds = [row["payload"]["sim_seconds"] for row in rows if "sim_seconds" in row["payload"]]
+    assert seconds == sorted(seconds)
+
+
 async def test_speech_wakes_wait_without_an_extra_read_action(rt):
     activity = conversation(rt)
     rt.schedule("Tomas", use("wait", seconds=300))
@@ -462,13 +504,6 @@ async def test_hearing_during_inference_keeps_persistent_memory_in_time_order(rt
     assert any("new discovery" in r.text for r in records)
 
 
-def test_realtime_sleep_until_morning_does_not_repeat_failed_selections(rt):
-    rt.now = at(1, "18:08")
-    rt.select("Mei", choose("select_rest", arguments={"until": "06:00", "wake": False}))
-    assert rt.activities[rt.current["Mei"]].members["Mei"].end == rt.end
-    assert not rt.available("Mei")
-
-
 async def test_repository_guide_is_available_on_demand_as_work_tool(rt, monkeypatch):
     provider = next(iter(rt.env.providers.values()))
     monkeypatch.setattr(
@@ -586,7 +621,7 @@ def test_selection_rest_survives_help_and_rejected_entry(rt):
     original = rt.selection_rests["Mei"]
     rt.schedule("Mei", use("help"))
     with pytest.raises(Rejected):
-        rt.select("Mei", choose("select_rest", arguments={"until": "08:00"}))
+        rt.select("Mei", choose("select_move", target="missing"))
     rt.begin_selection_rest("Mei")
     assert rt.selection_rests["Mei"] == original
     assert len(selection_events(rt)) == 1
