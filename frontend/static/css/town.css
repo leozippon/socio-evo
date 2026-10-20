@@ -664,7 +664,7 @@ body[data-view="town"] { overflow: hidden; }
 .activity-legend span { display: flex; align-items: center; gap: 5px; }
 .activity-legend i { width: 9px; height: 9px; border-radius: 2px; }
 .activity-rest { background: #beb9ab; }
-.activity-planning { background: #d5927b; }
+.activity-planning { background: #7f9fbd; }
 .activity-move { background: #d2ac6a; }
 .activity-work { background: #7fa393; }
 .activity-conversation { background: #a391b4; }

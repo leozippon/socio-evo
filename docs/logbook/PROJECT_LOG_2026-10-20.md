@@ -147,3 +147,7 @@ At 2026-10-20 19:12:56 Asia/Shanghai, the four frontend assets from 20984693af95
 The five activity colors now share a softer natural palette: Rest #beb9ab, Planning #d5927b, Move #d2ac6a, Work #7fa393 and Conversation #a391b4. The shared CSS classes apply these colors consistently to timeline blocks, the legend and personal markers. No activity mapping, event format or scheduler behavior changed. Existing activity timeline checks and git diff --check passed.
 
 At 2026-10-20 19:18:41 Asia/Shanghai, the viewer published the CSS from 6c1db7d786ca6072b434821b2c17ddecf43de3bd. Commit, viewer source, published and HTTP hashes matched and all five color values were verified. The prior CSS was backed up; viewer and experiment processes were unchanged, and the experiment remained running at frozen 3a32cdb. Receipt is /private/tmp/socio-activity-palette-20261020/receipt.json.
+
+## Blue Planning marker
+
+At the user's request, Planning now uses blue #7f9fbd instead of the subtle terracotta variation; the other four activity colors remain unchanged. This is a single shared CSS declaration covering timeline, legend and resident markers. Git diff --check passed.
