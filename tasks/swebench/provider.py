@@ -312,14 +312,23 @@ class SWEbenchTaskProvider:
 
     def _snapshot(self, container, folder: Path) -> str:
         base = json.loads((folder / "workspace.json").read_text())["baseline"]
-        added = captured_exec(container, ["git", "-C", "/testbed", "add", "-N", "."])
-        diff = captured_exec(container, ["git", "-C", "/testbed", "diff", "--binary", base])
-        if added.exit_code or diff.exit_code:
-            raise RuntimeError("cannot save resident repository changes")
+        for stage, args in (
+            ("add", ["add", "-N", "."]),
+            ("diff", ["diff", "--binary", base]),
+        ):
+            diff = captured_exec(container, ["git", "-C", "/testbed", *args])
+            if diff.exit_code:
+                output = diff.output.decode(errors="replace")[-4000:]
+                raise RuntimeError(
+                    "cannot save resident repository changes: "
+                    f"git {stage} exited with code {diff.exit_code}: {output}"
+                )
         if self.community and len(diff.output) > 2_000_000:
             raise WorkBudgetExceeded("Edits exceed the 2 MB limit; this action was rolled back.")
         patch = diff.output.decode()
-        (folder / "working.patch").write_text(patch)
+        temporary = folder / "working.patch.tmp"
+        temporary.write_text(patch)
+        temporary.replace(folder / "working.patch")
         return patch
 
     async def run_command(self, part: Part, worker: str, task_id: str, script: str) -> dict:
@@ -339,6 +348,24 @@ class SWEbenchTaskProvider:
                 self._snapshot(container, folder)
             except WorkBudgetExceeded as exc:
                 result = {"exit_code": 1, "output": str(exc)}
+            except Exception as exc:
+                # Keep the failed action and Git error before deleting its container.
+                try:
+                    with (folder / "snapshot_errors.jsonl").open("a") as log:
+                        log.write(
+                            json.dumps(
+                                {
+                                    "worker": worker,
+                                    "command": script,
+                                    "result": result,
+                                    "error": str(exc),
+                                }
+                            )
+                            + "\n"
+                        )
+                except OSError as diagnostic_error:
+                    exc.add_note(f"Could not persist snapshot diagnostics: {diagnostic_error}")
+                raise
         finally:
             if self.community:
                 # Persist only the worktree patch; kill all processes, including detached children.
