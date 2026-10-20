@@ -54,7 +54,7 @@ async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
                 "partner": None,
             }
         # Work outside opening hours is unavailable; a task can still be claimed at home.
-        return {"thought": "Save the repair for workshop hours.", "do": "pause or leave"}
+        return {"thought": "Save the repair for workshop hours.", "do": "leave this activity"}
 
     provider = PrivateRepositories()
     setup = Setup(

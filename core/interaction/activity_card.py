@@ -185,7 +185,7 @@ def activity_forms(layer, menu):
         result.append(tool("help", "help"))
         return result
     tools = set(menu["tools"])
-    result = [tool("pause or leave", "leave")] if "leave" in tools else []
+    result = [tool("leave this activity", "leave")] if "leave" in tools else []
     definitions = {
         "help": tool("help", "help"),
         "read": tool("read new messages", "read"),
@@ -218,6 +218,8 @@ def activity_forms(layer, menu):
         "submit": tool("submit your repair", "submit", {"report": (TEXT, None)}),
     }
     result.extend(form for name, form in definitions.items() if name in tools)
+    if "leave" in tools:
+        result.append(rest_form())
     if "claim" in tools and menu.get("jobs"):
         result.append(
             tool(

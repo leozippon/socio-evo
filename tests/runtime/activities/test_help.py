@@ -53,7 +53,7 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
         assert '"do": "submit your repair"' not in text
     if kind in ("rest", "move"):
         with pytest.raises(ValidationError):
-            card.model.model_validate({"thought": "Cancel", "do": "pause or leave"})
+            card.model.model_validate({"thought": "Cancel", "do": "leave this activity"})
     events = activities.events(gate)
     help_events = [e for e in events if e["payload"].get("tool") == "help"]
     assert [e["kind"] for e in help_events] == ["tool_started", "tool_completed"]

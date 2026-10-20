@@ -50,6 +50,7 @@ async def test_tomorrow_rest_closes_today_and_resumes_at_home(scheduler, restore
     scheduler.prepare_day(time_at(2, "07:00"))
     rest = scheduler.activities[scheduler.current["Mei"]]
     assert isinstance(rest, RestActivity)
+    assert rest.id == first.id
     assert rest.place == scheduler.env.config.homes["Mei"]
     assert rest.members["Mei"].end == at(2, "07:45")
     assert rest.wake_invitations is False

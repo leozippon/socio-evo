@@ -281,7 +281,7 @@ class RealtimeEngine(ActivityEngine):
             raise Rejected("Finish your current operation first.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
-        if who not in self.current:
+        if who not in self.current or action.operation == "select_rest":
             return self.select(who, action)
         if self.now >= self.end or self.current[who] in self.closing or who in self.deferred:
             raise Rejected("The activity is closing; no new operation may start.")
@@ -652,6 +652,9 @@ class RealtimeEngine(ActivityEngine):
             if any(p in self.running for p in activity.participants):
                 continue
             for who in list(activity.participants):
+                self.deferred.pop(who, None)
+                if self.current.get(who) != ident:
+                    continue  # Another participant's exit may have completed this transition.
                 super().leave(who, "Conversation ended after all started speech was delivered.")
                 self.remember(who)
                 self.begin_selection_rest(who)

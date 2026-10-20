@@ -125,3 +125,11 @@ assert.equal(activityIntervals(choosingEvents,481)[0].end,null,"show transition 
 assert.equal(activityIntervals(choosingEvents,483,"Aisha").length,0,"transition stays private");
 assert.equal(model.residentActivitySummary(choosing,"Mei",1,483).seconds.rest,120);
 assert.deepEqual(model.activityTranscript(choosingEvents,choosing[0],483).map(e=>e.seq),[0,1,2]);
+
+const rests = [
+  {seq: 0, time: 420, actor: "Mei", kind: "activity_entered", payload: {activity: "rest-reused", activity_type: "rest"}},
+  {seq: 1, time: 430, actor: "Mei", kind: "activity_left", payload: {activity: "rest-reused"}},
+  {seq: 2, time: 450, actor: "Mei", kind: "activity_entered", payload: {activity: "rest-reused", activity_type: "rest"}},
+  {seq: 3, time: 480, actor: "Mei", kind: "activity_left", payload: {activity: "rest-reused"}},
+];
+assert.deepEqual(activityIntervals(rests, 480).map(row => [row.start, row.end]), [[420, 430], [450, 480]], "reusing a resident's Rest keeps separate logged membership intervals");

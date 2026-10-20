@@ -96,6 +96,12 @@ class ActivityEngine:
         self.transitions: dict[tuple[int, str], int] = {}
         self.selection_feedback = dict(state.get("selection_feedback", {}))
         self.rest_intents = dict(state.get("rest_intents", {}))
+        self.rest_activities = dict(state.get("rest_activities", {}))
+        if "rest_activities" not in state:
+            for activity in self.activities.values():
+                if isinstance(activity, RestActivity) and len(activity.members) == 1:
+                    self.rest_activities[next(iter(activity.members))] = activity.id
+        self.rest_requests = {}
 
     def state(self):
         return {
@@ -108,6 +114,7 @@ class ActivityEngine:
             "outside": dict(self.outside),
             "selection_feedback": dict(self.selection_feedback),
             "rest_intents": dict(self.rest_intents),
+            "rest_activities": dict(self.rest_activities),
         }
 
     def identifier(self, prefix):
@@ -421,8 +428,8 @@ class ActivityEngine:
             "selection": "Choose rest, movement, work, or a conversation.",
             "rest": "You are resting until your chosen time.",
             "move": "You are travelling to your destination.",
-            "work": "You can use the work choices shown below, or pause or leave.",
-            "conversation": "You can talk with the people here, wait, or leave.",
+            "work": "Use the work choices, switch to rest, or leave this activity.",
+            "conversation": "Talk, wait, switch to rest, or leave this activity.",
         }
         return descriptions[kind]
 
@@ -820,16 +827,7 @@ class ActivityEngine:
                 lapse(self.env, who, reply, time=self.now // 60)
                 if who in self.current:
                     self.leave(who, "No valid decision could be obtained.")
-                self.enter(
-                    RestActivity(
-                        id=self.identifier("rest"),
-                        place=self.env.world.locations[who],
-                        start=self.now,
-                        latest_end=self.end,
-                    ),
-                    who,
-                    self.end,
-                )
+                self.start_rest(who, self.end)
                 continue
             key = (self.now, who)
             self.transitions[key] = self.transitions.get(key, 0) + 1
@@ -950,13 +948,57 @@ class ActivityEngine:
             activity.status = "ended"
             for other in list(activity.participants):
                 self.leave(other, "Fewer than two people remain in the conversation.")
+        self.finish_rest_transition(who)
+
+    def start_rest(self, who, until, *, wake=True, waiting_for=None):
+        """Reuse one resident's idle activity; each entry is a fresh membership."""
+        if who in self.current:
+            raise Rejected("Leave the current activity before joining another.")
+        if min(until, self.end, self.close_at(self.env.world.locations[who])) <= self.now:
+            raise Rejected("There is no time left for this activity.")
+        ident = self.rest_activities.get(who)
+        activity = self.activities.get(ident)
+        if activity is None:
+            activity = RestActivity(
+                id=self.identifier("rest"),
+                place=self.env.world.locations[who],
+                start=self.now,
+                latest_end=until,
+            )
+            self.rest_activities[who] = activity.id
+        else:
+            activity.place = self.env.world.locations[who]
+            activity.start = self.now
+            activity.latest_end = until
+            activity.members = {}
+            activity.feedback = {}
+            activity.result = {}
+        activity.wake_invitations = wake
+        activity.waiting_for = waiting_for
+        self.enter(activity, who, until)
+        if until > self.end:
+            self.rest_intents[who] = {"until": until, "wake": wake}
+
+    def finish_rest_transition(self, who):
+        request = self.rest_requests.pop(who, None)
+        if request is None:
+            return
+        if request["until"] <= self.now:
+            self.feedback(who, "The chosen rest ending time has passed; choose a new activity.")
+            return
+        if self.now >= self.end:
+            # A started speech may finish after closing. Preserve the wake deadline
+            # without logging an activity that cannot enter until the next morning.
+            self.rest_intents[who] = {"until": request["until"], "wake": request["wake"]}
+            return
+        self.start_rest(who, **request)
 
     def schedule(self, who, action):
         if who in self.pending:
             raise Rejected("Finish your current tool first.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
-        if who not in self.current:
+        if who not in self.current or action.operation == "select_rest":
             return self.select(who, action)
         if action.operation != "activity_tool":
             raise Rejected("Choose a tool or leave your current activity first.")
@@ -1020,23 +1062,23 @@ class ActivityEngine:
                 )
             if until <= self.now:
                 raise Rejected("That rest ending time has passed; choose a future time.")
-            self.enter(
-                RestActivity(
-                    id=self.identifier("rest"),
-                    place=place,
-                    start=self.now,
-                    latest_end=until,
-                    wake_invitations=action.arguments.get("wake", True),
-                    waiting_for=waiting_for,
-                ),
-                who,
-                until,
-            )
-            if until > self.end:
-                self.rest_intents[who] = {
-                    "until": until,
-                    "wake": action.arguments.get("wake", True),
-                }
+            if self.now >= self.end:
+                raise Rejected("The day has closed.")
+            active = self.activities.get(self.current.get(who))
+            if active is not None and not isinstance(active, WorkActivity | ConversationActivity):
+                raise Rejected("Finish your current activity before choosing rest.")
+            if min(until, self.end, self.close_at(place)) <= self.now:
+                raise Rejected("There is no time left for this activity.")
+            request = {
+                "until": until,
+                "wake": action.arguments.get("wake", True),
+                "waiting_for": waiting_for,
+            }
+            if active is None:
+                self.start_rest(who, **request)
+            else:
+                self.rest_requests[who] = request
+                self.leave(who, "Switched to rest.")
         elif action.operation == "select_move":
             if action.target not in self.menu(who)["moves"].values():
                 raise Rejected(
@@ -2027,17 +2069,7 @@ class ActivityEngine:
             if intent["until"] <= self.now:
                 del self.rest_intents[who]
                 continue
-            self.enter(
-                RestActivity(
-                    id=self.identifier("rest"),
-                    place=self.env.world.locations[who],
-                    start=self.now,
-                    latest_end=intent["until"],
-                    wake_invitations=intent["wake"],
-                ),
-                who,
-                intent["until"],
-            )
+            self.start_rest(who, intent["until"], wake=intent["wake"])
         day = day_of(start)
         self.daily_life = (
             {str(day): self.daily_life[str(day)]} if str(day) in self.daily_life else {}
