@@ -236,7 +236,7 @@ def activity_forms(layer, menu):
             "reply",
             {
                 "targets": (
-                    Annotated[list[_one_of(targets)], Field(min_length=1)],
+                    Annotated[list[_one_of(targets)], Field(min_length=1, max_length=len(targets))],
                     "Name everyone you are addressing; for the group list all current members.",
                 ),
             },

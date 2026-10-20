@@ -369,3 +369,35 @@ def test_rest_card_requires_a_valid_explicit_day_and_clock(realtime, changes):
         del answer["day"]
     with pytest.raises(ValidationError):
         card.model.model_validate(answer)
+
+
+@pytest.mark.parametrize("targets", [["Mei"], ["Mei", "Aisha", "Ravi"]])
+def test_conversation_intent_targets_are_bounded_by_current_recipients(targets):
+    from core.interaction.card import MayActivity
+
+    card = Card(
+        [
+            MayActivity(
+                layer="tool",
+                menu={
+                    "realtime": True,
+                    "reply_phase": "intent",
+                    "reply_targets": targets,
+                    "people": targets,
+                    "tools": ["reply", "wait"],
+                },
+            )
+        ]
+    )
+    schema = card.model.model_json_schema()
+    reply_schema = next(
+        node
+        for node in schema["$defs"].values()
+        if node.get("properties", {}).get("do", {}).get("const") == "reply"
+    )
+    assert reply_schema["properties"]["targets"]["maxItems"] == len(targets)
+    for recipients in (targets[:1], list(reversed(targets))):
+        reply = card.model.model_validate({"do": "reply", "targets": recipients})
+        assert card.decision(reply).action.arguments["targets"] == recipients
+    with pytest.raises(ValidationError):
+        card.model.model_validate({"do": "reply", "targets": [targets[0]] * (len(targets) + 1)})
