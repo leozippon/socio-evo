@@ -34,7 +34,7 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     reply = card.model.model_validate(
         {
             "do": "help",
-            **({} if fixture == "rt" and kind == "conversation" else {"thought": "Read the rules"}),
+            "thought": "Read the rules",
         }
     )
     action = card.decision(reply).action

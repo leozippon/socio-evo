@@ -44,11 +44,7 @@ def test_activity_card_can_switch_directly_to_rest(scheduler, kind):
     card = Card(scheduler.observation("Mei").allowed)
     reply = card.model.model_validate(
         {
-            **(
-                {}
-                if isinstance(scheduler, RealtimeEngine) and kind == "conversation"
-                else {"thought": "Wait here"}
-            ),
+            "thought": "Wait here",
             "do": "rest",
             "day": "today",
             "until": "08:00",

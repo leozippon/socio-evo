@@ -38,7 +38,12 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
             requests.append(request)
             if request.metadata["decision_phase"] == "intent":
                 target = "Mei" if len(requests) == 1 else "Aisha"
-                return LLMResponse(text=json.dumps({"do": "reply", "targets": [target]}), latency=0)
+                return LLMResponse(
+                    text=json.dumps(
+                        {"thought": "Choose whom to address", "do": "reply", "targets": [target]}
+                    ),
+                    latency=0,
+                )
             body_calls.append(request)
             if len(body_calls) == 1:
                 partial.text = '{"thought":"Old private thought","text":"unfinished'
@@ -121,7 +126,7 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
             await finish(rt, "Tomas")
         assert sum(m.text == "Current answer" for m in activity.messages) == 1
         assert not any(m.text == "Stale answer" for m in activity.messages)
-        assert '"thought"' not in json.dumps(requests[0].json_schema)
+        assert '"thought"' in json.dumps(requests[0].json_schema)
         for request in body_calls:
             assert set(request.json_schema["properties"]) == {"thought", "text"}
             usage = request.metadata["context_usage"]
@@ -173,7 +178,10 @@ async def test_body_finishing_after_day_close_keeps_memory_chronological(rt, tmp
     class Client:
         async def complete_stream(self, request, partial):
             if request.metadata["decision_phase"] == "intent":
-                return LLMResponse(text='{"do":"reply","targets":["Mei"]}', latency=0)
+                return LLMResponse(
+                    text='{"thought":"Choose whom to address","do":"reply","targets":["Mei"]}',
+                    latency=0,
+                )
             started.set()
             await release.wait()
             return LLMResponse(
@@ -215,7 +223,10 @@ async def test_streamed_conversation_decisions_only_resume_for_addressed_speech(
         async def complete_stream(self, request, partial):
             requests.append(request)
             if phase == "body" and request.metadata["decision_phase"] == "intent":
-                return LLMResponse(text='{"do":"reply","targets":["Mei"]}', latency=0)
+                return LLMResponse(
+                    text='{"thought":"Choose whom to address","do":"reply","targets":["Mei"]}',
+                    latency=0,
+                )
             partial.text = '{"text":"Draft' if phase == "body" else '{"do":"wait"'
             await asyncio.Event().wait()
 
@@ -257,7 +268,12 @@ async def test_duplicate_speech_waits_and_feedback_reaches_real_agent(rt, tmp_pa
                 targets = ["Mei", "Aisha"] if group else ["Mei"]
                 if len(requests) > 2:
                     targets.reverse()
-                return LLMResponse(text=json.dumps({"do": "reply", "targets": targets}), latency=0)
+                return LLMResponse(
+                    text=json.dumps(
+                        {"thought": "Choose whom to address", "do": "reply", "targets": targets}
+                    ),
+                    latency=0,
+                )
             return LLMResponse(
                 text=json.dumps({"thought": "Choose my words", "text": next(texts)}), latency=0
             )
@@ -299,7 +315,12 @@ async def test_repeat_guard_allows_changed_context_or_reply(rt, tmp_path, change
             nonlocal body_calls
             if request.metadata["decision_phase"] == "intent":
                 target = "Aisha" if body_calls and change == "targets" else "Mei"
-                return LLMResponse(text=json.dumps({"do": "reply", "targets": [target]}), latency=0)
+                return LLMResponse(
+                    text=json.dumps(
+                        {"thought": "Choose whom to address", "do": "reply", "targets": [target]}
+                    ),
+                    latency=0,
+                )
             body_calls += 1
             text = "Changed" if body_calls > 1 and change == "text" else "Same words"
             return LLMResponse(
@@ -341,7 +362,10 @@ async def test_completed_wait_intent_is_invalidated_before_commit(rt, tmp_path):
             calls.append(request)
             if len(calls) > 1:
                 await release.wait()
-            return LLMResponse(text='{"do":"wait for messages","seconds":60}', latency=0)
+            return LLMResponse(
+                text='{"thought":"Wait for another reply","do":"wait for messages","seconds":60}',
+                latency=0,
+            )
 
     config = load_config(Path("experiments/configs/community/realtime.yaml"), ExperimentConfig)
     seed = next(a for a in config.agents if a.profile.name == "Tomas")
@@ -363,4 +387,7 @@ async def test_completed_wait_intent_is_invalidated_before_commit(rt, tmp_path):
     release.set()
     await finish(rt, "Tomas")
     assert rt.running["Tomas"].action.tool == "wait"
+    rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]
+    accepted = [row for row in rows if row["kind"] == "decision" and row["actor"] == "Tomas"]
+    assert len(accepted) == 1 and accepted[0]["payload"]["thought"] == "Wait for another reply"
     await rt.close_running()

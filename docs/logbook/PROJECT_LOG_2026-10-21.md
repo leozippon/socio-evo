@@ -45,3 +45,13 @@ The summary requires a real successor within the replay cutoff and does not borr
 All three existing local frontend checks and git diff --check passed. The shared-summary import was checked for cycles; backend behavior and the preceding 621-test Linux result are unaffected.
 
 Code 9b8ad2c7037296390a1e36c31b076fab04937189 was deployed at 01:01:20 Asia/Shanghai. Final Linux frontend checks and native syntax checks passed; candidate/source/site/remote HTTP/local port-8765 HTTP hashes match for both changed assets with no-store headers. The complete future default and launcher point to this snapshot. Current experiment and service identities, other assets and old results remain unchanged. Evidence: /private/tmp/socio-planning-outcome-20261021/.
+
+## Conversation action-selection thought
+
+Kofi's reported day-2 Wait decision is event 3600 in the frozen d34b514 experiment, linked to request 2c60c43909f343758f70dfbe75592e3e. Its stored thought is an empty string. The earlier 373c5c3 repair restored thought only to reply-body generation; compact Conversation action-selection forms still omitted it, so Wait and Leave would also remain empty in new runs using that code. This was a missing schema requirement, not lost rendering or a recoverable hidden explanation.
+
+The shared answer-card model now always requires the existing thought field, described briefly, including Conversation action selection. Intent still carries no speech text, reply body still omits a redundant do field, and recipient bounds remain unchanged. Missing, empty or whitespace-only historical thoughts are explicitly labeled as unrecorded in research cards; actual text is preserved, and neither private text nor the placeholder is shown outside the research view. No historical data or backend reasoning is substituted for an explanation that was never recorded. Thinking settings remain unchanged.
+
+Targeted tests reproduce missing intent explanations and the blank legacy card before the change, then verify Wait/Leave/reply-target explanations reach decisions, reply and Work schemas remain valid, bounded targets remain bounded, and actual DOM rendering handles missing/blank/normal values and visibility. Focused Python checks passed 131 tests.
+
+The final combined local infrastructure, agent, interaction, activities, realtime, scheduler/activity-clock and community-config selection passed 624 tests in 51.20 seconds. Existing compact-form fixtures were updated to supply the required explanation without removing their behavior assertions. A real Agent Wait continuation now verifies the final recorded decision contains its explanation. All three frontend checks, modified Python lint/format and git diff --check passed.

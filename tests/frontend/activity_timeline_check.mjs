@@ -250,3 +250,21 @@ assert.equal(outcome({ kind: "activity", operation: "select_rest", arguments: { 
 assert.equal(outcome({ kind: "activity", operation: "select_rest", arguments: { until: "07:45", day: "tomorrow" } }, { activity_type: "work" }), "Work · House", "a different chosen type cannot describe the actual entry");
 assert.equal(outcome(null, { activity_type: "rest" }), "Rest · House", "missing choice details preserve only recorded facts");
 console.log("Concrete Planning outcomes and reported event-shape DOM checks passed");
+
+
+// Legacy blank thought is missing recorded data, never an assertion that no thinking happened.
+const { decisionCard } = await import("../../frontend/static/js/town/panels.js");
+const thoughtContext = { truth: true, places: new Map(), cast: { badge: () => new DetailNode() }, lookups: {}, select: () => {} };
+const thoughtDecision = { seq: 1, time: 480, actor: "Mei", payload: { action: { kind: "activity", operation: "activity_tool", tool: "wait", arguments: { seconds: 60 } } } };
+for (const thought of [undefined, "", "  \n \t"]) {
+  const card = decisionCard({ ...thoughtDecision, payload: { ...thoughtDecision.payload, thought } }, [], thoughtContext);
+  assert(card.textContent.includes("No thought recorded for this decision."));
+}
+const recordedThought = "  Wait for a reply.  ";
+const recordedDecision = { ...thoughtDecision, payload: { ...thoughtDecision.payload, thought: recordedThought } };
+assert(decisionCard(recordedDecision, [], thoughtContext).findClass("thought").textContent.includes(recordedThought), "nonempty recorded thought remains verbatim");
+const privateCard = decisionCard(recordedDecision, [], { ...thoughtContext, truth: false });
+assert.equal(privateCard.findClass("thought"), undefined);
+assert(!privateCard.textContent.includes(recordedThought));
+assert(!decisionCard(thoughtDecision, [], { ...thoughtContext, truth: false }).textContent.includes("No thought recorded"));
+console.log("Recorded thought and research-view privacy DOM checks passed");

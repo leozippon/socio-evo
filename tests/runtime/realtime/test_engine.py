@@ -493,7 +493,7 @@ async def test_hearing_during_inference_keeps_persistent_memory_in_time_order(rt
                 text=json.dumps(
                     {"thought": "Accept their help", "text": "Thank you"}
                     if request.metadata.get("decision_phase") == "reply_body"
-                    else {"do": "reply", "targets": ["Mei"]}
+                    else {"thought": "Choose whom to address", "do": "reply", "targets": ["Mei"]}
                 ),
                 latency=1,
             )

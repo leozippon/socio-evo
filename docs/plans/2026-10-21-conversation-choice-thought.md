@@ -1,0 +1,7 @@
+# Conversation choice explanations
+
+Conversation action selection currently omits thought, while reply-body generation includes it. Restore the same required brief private explanation used by other decision cards for Wait, Leave and reply-target choices. Keep the existing two-stage action/body structure, recipient bounds and thinking configuration. Do not add speech to intent cards, fabricate historical explanations or substitute model reasoning for a recorded answer field.
+
+Use the shared answer-card schema as the single source, with no additional length restrictions or repeated prompt reminders. The research decision card labels missing, empty or whitespace-only historical explanations as unrecorded, preserves actual text, and reveals neither text nor the placeholder outside the research view.
+
+Verify intent explanations reach decisions, ordinary Work and reply-body behavior remain intact, recipient limits remain bounded, and the actual frontend card handles absent/blank/normal text and visibility. Run the combined Python selection and three frontend checks, then commit and push with living documentation. Validate the final complete candidate on Linux before updating the future default and publishing only changed frontend assets under the existing lock. Preserve running experiments, old logs and services; historical data cannot acquire an explanation that was never generated.

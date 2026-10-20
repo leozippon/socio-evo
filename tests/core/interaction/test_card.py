@@ -157,32 +157,40 @@ def test_the_card_lists_the_real_choices_in_the_towns_words():
     assert form(Card(WORK).model) == "\n".join(
         [
             "Answer in one of these forms:",
-            '{"thought": "…", "do": "take a job", "job": one of 25, 28}',
-            '{"thought": "…", "do": "take a job for two", "job": 31, '
+            '{"thought": "…" Briefly explain your choice., '
+            '"do": "take a job", "job": one of 25, 28}',
+            '{"thought": "…" Briefly explain your choice., "do": "take a job for two", "job": 31, '
             '"with": one of "Aisha", "Tomas", "part": one of 1, 2}',
-            '{"thought": "…", "do": "say", "to": one of "Aisha", "Tomas", or null for everyone, '
+            '{"thought": "…" Briefly explain your choice., '
+            '"do": "say", "to": one of "Aisha", "Tomas", or null for everyone, '
             '"words": "…"}',
-            '{"thought": "…", "do": "say privately", "to": one of "Aisha", "Tomas", "words": "…"}',
-            '{"thought": "…", "do": "hand over money", "to": one of "Aisha", "Tomas", '
+            '{"thought": "…" Briefly explain your choice., '
+            '"do": "say privately", "to": one of "Aisha", "Tomas", "words": "…"}',
+            '{"thought": "…" Briefly explain your choice., '
+            '"do": "hand over money", "to": one of "Aisha", "Tomas", '
             '"dollars": a whole number, "note": "…"}',
-            '{"thought": "…", "do": "carry on quietly"}',
+            '{"thought": "…" Briefly explain your choice., "do": "carry on quietly"}',
         ]
     )
     by_lot = MayClaim(alone=(), together=("task-31",), partners=None)
     assert form(Card([by_lot]).model).splitlines()[1:] == [
-        '{"thought": "…", "do": "put your name down for a job for two", "job": 31}'
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "put your name down for a job for two", "job": 31}'
     ]
     working = Card(
         [MayCheck(task_id="task-3", parts=(1, 2)), MaySubmit(task_id="task-3", parts=(1,))]
     )
     assert form(working.model).splitlines()[1:] == [
-        '{"thought": "…", "do": "try your code", "part": one of 1, 2, "code": "…"}',
-        '{"thought": "…", "do": "hand in", "code": "…", "as": one of "finished", "unfinished", '
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "try your code", "part": one of 1, 2, "code": "…"}',
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "hand in", "code": "…", "as": one of "finished", "unfinished", '
         '"telling the client": "…"}',
     ]
     alone = Card([MaySpeak(to=("Tomas",))])
     assert form(alone.model).splitlines()[1] == (
-        '{"thought": "…", "do": "say", "to": "Tomas" or null for everyone, "words": "…"}'
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "say", "to": "Tomas" or null for everyone, "words": "…"}'
     )
 
 
@@ -195,9 +203,10 @@ def test_the_card_does_not_offer_again_what_the_resident_asked_and_still_stands(
     )
     card = Card([asking])
     assert form(card.model).splitlines()[1:] == [
-        '{"thought": "…", "do": "take a job for two", "job": 31, '
+        '{"thought": "…" Briefly explain your choice., "do": "take a job for two", "job": 31, '
         '"with": one of "Aisha", "Kofi", "part": one of 1, 2}',
-        '{"thought": "…", "do": "take a job for two", "job": 28, "with": "Aisha", '
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "take a job for two", "job": 28, "with": "Aisha", '
         '"part": one of 1, 2}',
     ]
 
@@ -211,7 +220,8 @@ def test_the_card_does_not_offer_again_what_the_resident_asked_and_still_stands(
     assert asked(31, "Kofi") == ClaimTask(task_id="task-31", partner="Kofi", part=1)
     by_lot = MayClaim(together=("task-28", "task-31"), partners=None, standing=("task-28", None))
     assert form(Card([by_lot]).model).splitlines()[1:] == [
-        '{"thought": "…", "do": "put your name down for a job for two", "job": 31}'
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "put your name down for a job for two", "job": 31}'
     ]
     alone = MayClaim(together=("task-28",), partners=("Kofi",), standing=("task-28", "Kofi"))
     assert alone.forms() == []
@@ -239,7 +249,8 @@ def test_a_reply_can_only_name_what_is_really_there(answer):
 def test_an_answer_to_the_clerk_is_one_of_the_meetings_answers():
     meeting = Card([MayVote(options=("yes", "no")), MayPass()])
     assert form(meeting.model).splitlines()[1] == (
-        '{"thought": "…", "do": "give the clerk your answer", "answer": one of "no", "yes"}'
+        '{"thought": "…" Briefly explain your choice., '
+        '"do": "give the clerk your answer", "answer": one of "no", "yes"}'
     )
     with pytest.raises(ValidationError):
         meeting.model.model_validate(
@@ -397,10 +408,18 @@ def test_conversation_intent_targets_are_bounded_by_current_recipients(targets):
     )
     assert reply_schema["properties"]["targets"]["maxItems"] == len(targets)
     for recipients in (targets[:1], list(reversed(targets))):
-        reply = card.model.model_validate({"do": "reply", "targets": recipients})
+        reply = card.model.model_validate(
+            {"thought": "Address these members", "do": "reply", "targets": recipients}
+        )
         assert card.decision(reply).action.arguments["targets"] == recipients
     with pytest.raises(ValidationError):
-        card.model.model_validate({"do": "reply", "targets": [targets[0]] * (len(targets) + 1)})
+        card.model.model_validate(
+            {
+                "thought": "Address these members",
+                "do": "reply",
+                "targets": [targets[0]] * (len(targets) + 1),
+            }
+        )
 
 
 def test_conversation_body_requires_private_thought_and_keeps_it_out_of_speech():
@@ -427,3 +446,39 @@ def test_conversation_body_requires_private_thought_and_keeps_it_out_of_speech()
     assert decision.action.arguments == {"text": "I can help.", "targets": ["Mei"]}
     with pytest.raises(ValidationError):
         card.model.model_validate({"text": "I can help."})
+
+
+@pytest.mark.parametrize(
+    "answer,tool",
+    [
+        ({"do": "wait for messages", "seconds": 60}, "wait"),
+        ({"do": "leave this activity"}, "leave"),
+        ({"do": "reply", "targets": ["Mei"]}, "reply"),
+    ],
+)
+def test_conversation_choice_preserves_explicit_thought(answer, tool):
+    from core.interaction.card import MayActivity
+
+    card = Card(
+        [
+            MayActivity(
+                layer="tool",
+                menu={
+                    "realtime": True,
+                    "reply_phase": "intent",
+                    "reply_targets": ["Mei"],
+                    "people": ["Mei"],
+                    "tools": ["reply", "wait", "leave"],
+                },
+            )
+        ]
+    )
+    thought = "I will choose what fits this conversation."
+    reply = card.model.model_validate({"thought": thought, **answer})
+    decision = card.decision(reply)
+    assert decision.thought == thought and decision.action.tool == tool
+    for node in card.model.model_json_schema()["$defs"].values():
+        assert "thought" in node["required"]
+        assert "text" not in node["properties"]
+    with pytest.raises(ValidationError):
+        card.model.model_validate(answer)

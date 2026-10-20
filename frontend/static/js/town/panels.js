@@ -36,7 +36,7 @@ export function decisionCard(decision, events, m, { focus = false, extra = null 
   const result = outcomes(events, decision, m);
   const texts = actionTexts(action);
   const code = m.truth ? actionCode(action) : null;
-  const thinking = m.truth ? h("div", { class: "truth thought" }, truthTag("thought"), h("p", {}, thought)) : null;
+  const thinking = m.truth ? h("div", { class: "truth thought" }, truthTag("thought"), h("p", {}, thought?.trim() ? thought : "No thought recorded for this decision.")) : null;
   return h(
     "article",
     { class: `decision${focus ? " focus" : ""}`, "data-agent": decision.actor },
