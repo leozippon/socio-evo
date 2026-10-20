@@ -58,7 +58,7 @@ export async function personActivities({ source, world, cast, places, route, go 
     const task = transcript.map((event) => event.payload.task_id ?? event.payload.arguments?.task_id ?? event.payload.action?.task_id ?? event.payload.action?.arguments?.task_id).find(Boolean);
     const later = task && selected.endSeq != null ? events.filter((event) => event.seq > selected.endSeq && OUTCOMES.has(event.kind) && event.payload.task_id === task && (event.actor === route.agent || event.payload.agent === route.agent || (event.audience ?? []).includes(route.agent))) : [];
     const renderEvent = (event) => {
-      if (event.kind === "decision") return h("li", {}, decisionCard(event, transcript.filter((row) => row.time === event.time), m));
+      if (event.kind === "decision") return h("li", {}, decisionCard(event, transcript.filter((row) => row.time === event.time && !(row.kind === "activity_left" && row.seq === selected.endSeq)), m));
       const title = `${clock(event.time)} · ${event.actor ? `${event.actor} · ` : ""}${pretty(event.kind)}`;
       const data = event.kind === "tool_started" ? event.payload.arguments : event.kind === "command_executed" ? event.payload.command : null;
       return h("li", { class: "activity-log-event" },

@@ -170,6 +170,7 @@ class DetailNode {
   setAttribute(name, value) { this.attrs[name] = value; }
   addEventListener() {}
   get textContent() { return this.value + this.children.map((node) => node.textContent).join(""); }
+  findClass(name) { return (this.attrs.class ?? "").split(" ").includes(name) ? this : this.children.map((node) => node.findClass(name)).find(Boolean); }
 }
 globalThis.Node = DetailNode;
 globalThis.document = {
@@ -178,22 +179,38 @@ globalThis.document = {
 };
 const { personActivities } = await import("../../frontend/static/js/views/person-activities.js");
 const stopped = "Mei stopped choosing the next activity: Next activity started.";
-const detailEvents = choosingEvents.filter((event) => event.kind !== "decision").map((event) => ({
-  ...event, place: "workshop", text: event.kind === "activity_left" ? stopped : event.kind,
-  payload: event.kind === "activity_left" ? { ...event.payload, reason: stopped } : event.payload,
+const detailEvents = choosingEvents.map((event) => ({
+  ...event, time: event.kind === "decision" ? 482 : event.time,
+  place: "workshop", text: event.kind === "activity_left" ? stopped : event.kind,
+  payload: event.kind === "activity_left" ? { ...event.payload, reason: stopped }
+    : event.kind === "decision" ? { ...event.payload, thought: "I will rest until later.",
+      action: { kind: "activity", operation: "select_rest", arguments: { until: "14:00", day: "today", wake: true } } }
+    : event.kind === "activity_entered" && event.seq === 3 ? { ...event.payload, activity_type: "rest" } : event.payload,
 }));
+let detailNodes;
 const renderPlanning = async (recorded, through = 483) => {
   const nodes = await personActivities({
     source: { doc: { last_time: through, event_days: [{ day: 1 }] }, eventDay: async () => recorded },
-    world: {}, cast: { mention: (text) => text }, places: new Map([["workshop", { name: "the Workshop" }]]),
+    world: {}, cast: { mention: (text) => text, badge: () => new DetailNode() }, places: new Map([["workshop", { name: "the Workshop" }]]),
     route: { view: "person", experiment: "demo", run: "one", agent: "Mei", query: { activity: "0:Mei" } }, go: () => {},
   });
+  detailNodes = nodes;
   return nodes.map((node) => node.textContent).join("");
 };
 const detailText = await renderPlanning(detailEvents);
 assert.equal(detailText.split(stopped).length - 1, 1, "the same Planning ending is rendered only once");
-assert(detailText.includes("Next activityWork · Workshop"), "the actual Work entry supplies the result and place");
+assert(detailText.includes("Next activityRest · Workshop"), "the actual Rest entry supplies the result and place");
 assert(!detailText.includes("Status" + stopped), "Status does not repeat the end log entry");
 assert(!(await renderPlanning(detailEvents, 481)).includes("Next activity"), "rewinding hides the future selection");
-assert(!(await renderPlanning(detailEvents.slice(0, 2))).includes("Next activityWork"), "a reason without successful entry never invents the chosen activity");
+assert(!(await renderPlanning(detailEvents.slice(0, 3))).includes("Next activityRest"), "a reason without successful entry never invents the chosen activity");
 console.log("Planning successor and resident detail rendering checks passed");
+
+
+const rejected = { ...detailEvents[2], kind: "action_rejected", text: "Rest not started: requested time has passed.", payload: {} };
+await renderPlanning([...detailEvents.slice(0, 2), rejected]);
+assert(detailNodes.map((node) => node.findClass("decision")).find(Boolean).textContent.includes(rejected.text), "rejection feedback remains visible in its decision card");
+const workEntry = { ...detailEvents[0], payload: { activity: "work-1", activity_type: "work" } };
+const toolDecision = { ...detailEvents[1], payload: { thought: "Check the board.", action: { kind: "activity", operation: "activity_tool", tool: "board", arguments: {} } } };
+const feedback = { ...detailEvents[2], kind: "activity_feedback", text: "The board has two open jobs.", payload: { activity: "work-1" } };
+await renderPlanning([workEntry, toolDecision, feedback]);
+assert(detailNodes.map((node) => node.findClass("decision")).find(Boolean).textContent.includes(feedback.text), "ordinary tool feedback remains visible in its decision card");
