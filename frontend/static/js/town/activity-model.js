@@ -3,9 +3,9 @@ import { href } from "../router.js";
 
 // Activity intervals are membership intervals, not tool durations. Planned end times are
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
-export const ACTIVITY_LABELS = { rest: "Rest", move: "Move", work: "Work", conversation: "Conversation" };
-export const activityLabel = (row) => row.type === "rest" && row.phase === "choosing_next_activity"
-  ? "Planning" : ACTIVITY_LABELS[row.type] ?? row.type;
+export const ACTIVITY_LABELS = { rest: "Rest", planning: "Planning", move: "Move", work: "Work", conversation: "Conversation" };
+export const activityType = (row) => row.type === "rest" && row.phase === "choosing_next_activity" ? "planning" : row.type;
+export const activityLabel = (row) => ACTIVITY_LABELS[activityType(row)] ?? row.type;
 
 export function activityIntervals(events, through, reader = null) {
   const intervals = [];

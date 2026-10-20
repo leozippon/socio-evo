@@ -2,7 +2,7 @@ import { calendarOf, dayOf, dayStart, hhmmss, minuteOf } from "../clock.js";
 import { fill, h } from "../dom.js";
 import { speechText } from "./events.js";
 import { shortName } from "../world.js";
-import { activityDuration, activityIntervals, activityLink, activityLabel, ACTIVITY_LABELS, activityConversations } from "./activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityType, activityLabel, ACTIVITY_LABELS, activityConversations } from "./activity-model.js";
 
 const clock = (time) => hhmmss(minuteOf(time));
 const label = activityLabel;
@@ -46,7 +46,7 @@ export class ActivitiesPanel {
           m.cast.badge(name, 18), h("span", {}, h("b", {}, name), h("small", {}, status))),
         h("div", { class: "activity-track", "aria-label": `${name}: ${status}` },
           today.filter((row) => row.actor === name).map((row) => h("a", {
-            href: link(name, row), class: `activity-block activity-${row.type}${row.end == null ? " ongoing" : ""}`,
+            href: link(name, row), class: `activity-block activity-${activityType(row)}${row.end == null ? " ongoing" : ""}`,
             style: { left: `${percent(row.start)}%`, width: `${Math.max(0.35, percent(row.end ?? now) - percent(row.start))}%` },
             "aria-label": `${name} · ${label(row)} · ${clock(row.start)}–${row.end == null ? "ongoing" : clock(row.end)}`,
             "aria-describedby": "activity-hover", onpointerenter: (event) => show(row, event), onpointerleave: hide,

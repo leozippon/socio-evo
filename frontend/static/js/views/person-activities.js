@@ -1,7 +1,7 @@
 import { dayOf, dayStart, formatTime, hhmmss, minuteOf, normalizeEventTimes, parseStamp, stamp } from "../clock.js";
 import { emptyState, h } from "../dom.js";
 import { href, sibling } from "../router.js";
-import { activityDuration, activityIntervals, activityLink, activityTranscript, activityLabel, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityType, activityTranscript, activityLabel, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
 import { bystanders, line } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { shortName } from "../world.js";
@@ -37,7 +37,7 @@ export async function personActivities({ source, world, cast, places, route, go 
     h("tbody", {}, rows.map((row) => h("tr", { class: row.id === selected?.id ? "selected-activity" : "" },
       h("td", {}, h("a", { href: rowLink(row), onclick: (event) => reveal(row, event) }, clock(row.start))),
       h("td", {}, row.end == null ? "Ongoing" : clock(row.end)),
-      h("td", {}, h("span", { class: "activity-type-label" }, h("i", { class: `activity-${row.type}` }), label(row))),
+      h("td", {}, h("span", { class: "activity-type-label" }, h("i", { class: `activity-${activityType(row)}` }), label(row))),
       h("td", {}, place(row)),
       h("td", {}, activityDuration(((row.end ?? cutoff) - row.start) * 60)),
       h("td", {}, row.end == null ? "In progress" : "Ended"),
