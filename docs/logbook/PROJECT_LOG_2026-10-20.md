@@ -139,3 +139,5 @@ A 68.8-second initial comparison ended 109.5 seconds after launch: events increa
 ## Distinct Planning display color
 
 Planning now uses coral #d77958 in the town activity timeline, personal activity markers and activity legend. A shared display-type helper maps the existing choosing-next-activity Rest phase to Planning, keeping labels and colors consistent without changing logged activity types or scheduler behavior. Existing frontend timeline checks, JavaScript syntax checks and git diff --check passed.
+
+At 2026-10-20 19:12:56 Asia/Shanghai, the four frontend assets from 20984693af9598681c1c29051273470d6a8ef5b2 were backed up and updated in the separate viewer under its existing publication lock. Source, published and HTTP resource hashes matched the commit; Planning color/helper checks and Node syntax passed. The viewer and experiment processes were unchanged, community-budget-3d-20261020-190607 remained running at frozen 3a32cdb, and no service restart was needed. Receipt is /private/tmp/socio-planning-color-20261020/receipt.json.
