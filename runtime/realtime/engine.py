@@ -138,6 +138,33 @@ class RealtimeEngine(ActivityEngine):
             if claim is None and not activity.participants:
                 activity.status = "ended"
 
+    def team_busy(self, who):
+        activity = self.activities.get(self.current.get(who))
+        peers = activity.participants if isinstance(activity, ConversationActivity) else (who,)
+        for person in peers:
+            job = self.running.get(person)
+            if job and job.action and job.action.tool == "wait":
+                job.task.cancel()
+        return any(p in self.running for p in peers) or super().team_busy(who)
+
+    def finish_team_discussion(self, discussion):
+        if any(p in self.running for p in discussion.participants):
+            self.closing.add(discussion.id)
+            for who in discussion.participants:
+                self.deferred[who] = "Both partners agreed; finish the started speech."
+                job = self.running.get(who)
+                if job and job.action and job.action.tool == "wait":
+                    job.task.cancel()
+            return
+        super().finish_team_discussion(discussion)
+
+    def wake_plan_waiters(self, activity):
+        super().wake_plan_waiters(activity)
+        for who in activity.participants:
+            job = self.running.get(who)
+            if job and job.action and job.action.tool == "wait":
+                job.task.cancel()
+
     def available(self, who):
         return who not in self.running and super().available(who)
 
@@ -351,6 +378,11 @@ class RealtimeEngine(ActivityEngine):
     def schedule(self, who, action):
         if who in self.running:
             raise Rejected("Finish your current operation first.")
+        if self.team_transitioning(who) and not (
+            action.tool == "reply"
+            and isinstance(self.activities.get(self.current.get(who)), ConversationActivity)
+        ):
+            raise Rejected("Your task partners are assembling or finishing their work discussion.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
         if who not in self.current or action.operation == "select_rest":
@@ -518,6 +550,8 @@ class RealtimeEngine(ActivityEngine):
         tool, args = action.tool, action.arguments
         activity = self.activities[job.activity]
         outcome = {}
+        if tool in REPOSITORY | {"submit", "handoff", "apply_handoff"}:
+            self.require_work_ready(who)
         if tool in REPOSITORY:
             event = self.emit(
                 EventKind.COMMAND_EXECUTED,
@@ -583,9 +617,9 @@ class RealtimeEngine(ActivityEngine):
                 version=hashlib.sha256(result.encode()).hexdigest(),
             )
             self.handoffs[handoff.id] = handoff
-            relay = self.relay_session(job.task_id)
-            if relay:
-                relay.relay_owner = None
+            team = self.team_of(who)
+            if self.work_mode(who) == "relay":
+                team.relay_owner = None
             self.emit(
                 EventKind.CODE_HANDOFF,
                 f"{who} offered code: {handoff.description}",
@@ -605,9 +639,9 @@ class RealtimeEngine(ActivityEngine):
                 )
             else:
                 handoff.status = "accepted"
-                relay = self.relay_session(job.task_id)
-                if relay:
-                    relay.relay_owner = who
+                team = self.team_of(who)
+                if self.work_mode(who) == "relay":
+                    team.relay_owner = who
                 self.emit(
                     EventKind.CODE_HANDOFF,
                     f"{who} applied {handoff.id}.",
@@ -643,6 +677,8 @@ class RealtimeEngine(ActivityEngine):
         )
         if (
             tool == "reply"
+            and not activity.task_id
+            and not self.team_transitioning(who)
             and not self.interruption_stop(who, job)
             and self.remaining(who) > 0
             and not job.received_speech
@@ -708,6 +744,9 @@ class RealtimeEngine(ActivityEngine):
                 ):
                     raise Rejected("Choose current conversation members to address.")
                 if not job.targets:
+                    if self.team_transitioning(who):
+                        self.remember(who)
+                        return
                     if self.interruption_stop(who, job):
                         self.remember(who)
                         return
@@ -926,7 +965,8 @@ class RealtimeEngine(ActivityEngine):
                 self.now = max(self.now, target)
                 self.flush_leaves()
                 self.daily_choices()
-                self.env.pair_applicants(self.now // 60, self.sim.rng)
+                self.consume_claim_events(self.env.pair_applicants(self.now // 60, self.sim.rng))
+                self.advance_team_discussions()
                 await self.refresh_decisions()
                 if self.now < self.end:
                     self.start_ready_conversations()
@@ -935,6 +975,7 @@ class RealtimeEngine(ActivityEngine):
                         activity = self.activities.get(self.current.get(who))
                         if (
                             who not in self.running
+                            and not self.team_transitioning(who)
                             and who not in self.deferred
                             and (
                                 activity is None

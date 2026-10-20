@@ -21,10 +21,8 @@ def realtime_forms(layer, menu):
         rest_form(),
         _Form(
             "work",
-            {"public": (bool, None), "mode": (_one_of(["parallel", "relay"]), None)},
-            lambda r: Activity(
-                operation="select_work", arguments={"public": r["public"], "mode": r["mode"]}
-            ),
+            {"public": (bool, None)},
+            lambda r: Activity(operation="select_work", arguments={"public": r["public"]}),
         ),
     ]
     if menu.get("outside"):

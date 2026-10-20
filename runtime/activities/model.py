@@ -101,6 +101,26 @@ class MoveActivity(Activity):
     destination: str
 
 
+class WorkPlan(MutableState):
+    id: str
+    author: str
+    mode: Literal["parallel", "relay"]
+    responsibilities: dict[str, str]
+    relay_first: str | None = None
+    accepted_at: int | None = None
+
+
+class TeamWork(MutableState):
+    claim_event_id: int | None = None
+    claim_time: int
+    workers: tuple[str, ...]
+    place: str
+    assembling: bool = True
+    conversation: str | None = None
+    proposal: WorkPlan | None = None
+    relay_owner: str | None = None
+
+
 class WorkActivity(Activity):
     tools: tuple[str, ...] = (
         "board",
@@ -119,6 +139,7 @@ class WorkActivity(Activity):
     kind: Literal["work"] = "work"
     task_id: str | None = None
     public: bool = False
+    # Legacy checkpoint input only; task-level TeamWork owns all collaboration permissions.
     mode: Literal["parallel", "relay"] = "parallel"
     relay_owner: str | None = None
     history: list[dict] = Field(default_factory=list)
@@ -137,6 +158,7 @@ class ConversationActivity(Activity):
     tools: tuple[str, ...] = ("read", "reply", "wait", "invite", "leave")
     kind: Literal["conversation"] = "conversation"
     topic: str
+    task_id: str | None = None
     spontaneous: bool = False
     outside: bool = False
     had_company: bool = False

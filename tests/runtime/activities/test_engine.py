@@ -97,11 +97,9 @@ def use(name, **args):
     return Choice(operation="activity_tool", tool=name, arguments=args)
 
 
-def work(engine, who="Mei", seconds=3600, public=False, mode="parallel"):
+def work(engine, who="Mei", seconds=3600, public=False):
     engine.env.move(who, "workshop", time=engine.now // 60)
-    engine.select(
-        who, choose("select_work", seconds=seconds, arguments={"public": public, "mode": mode})
-    )
+    engine.select(who, choose("select_work", seconds=seconds, arguments={"public": public}))
     return engine.activities[engine.current[who]]
 
 
@@ -115,6 +113,52 @@ async def claim(engine, who="Mei", job="task-1", partner=None):
     engine.schedule(who, use("claim", job=job, partner=partner))
     await complete(engine, engine.now)
     return engine.env.board.claim_of(who)
+
+
+async def perform(engine, who, tool, **args):
+    engine.schedule(who, use(tool, **args))
+    if hasattr(engine, "running"):
+        job = engine.running[who]
+        await asyncio.gather(job.task, return_exceptions=True)
+        if not job.task.cancelled():
+            engine.now = max(engine.now, job.task.result().end)
+        await engine.finish(who, job)
+    else:
+        await complete(engine, engine.pending[who].end)
+
+
+async def agree_team(engine, mode="parallel", first=None, resume=True):
+    claim = engine.env.board.claim_of("Mei")
+    previous = {p: engine.activities.get(engine.current.get(p)) for p in claim.workers}
+    engine.advance_team_discussions()
+    team = engine.teams[claim.task.id]
+    while team.conversation is None:
+        moment = engine.queue.next_time()
+        await complete(engine, moment)
+        engine.advance_team_discussions()
+    for who in claim.workers:
+        await perform(engine, who, "reply", text=f"I can take responsibility for {who}'s part.")
+    await perform(
+        engine,
+        "Mei",
+        "propose_work_plan",
+        mode=mode,
+        your_role="Implement the repair",
+        partner_role="Review and test the repair",
+        relay_first=first,
+    )
+    await perform(engine, "Tomas", "confirm_work_plan", proposal=team.proposal.id)
+    engine.advance_team_discussions()
+    if hasattr(engine, "flush_leaves"):
+        engine.flush_leaves()
+    assert engine.work_ready("Mei") and engine.work_ready("Tomas")
+    if resume:
+        for who, old in previous.items():
+            if old is not None and old.kind == "work":
+                engine.select(who, choose("resume_work", target=old.id, seconds=3600))
+            else:
+                engine.select(who, choose("select_work", seconds=3600))
+    return team
 
 
 def conversation(engine, people=("Mei", "Tomas"), public=False):
@@ -207,6 +251,7 @@ async def test_public_work_private_workspaces_and_explicit_handoff(engine):
     joint = "task-7"
     await claim(engine, "Mei", joint, "Tomas")
     await claim(engine, "Tomas", joint, "Mei")
+    await agree_team(engine)
     # Join one public work activity; operations remain independent.
     engine.leave("Tomas", "join partner")
     activity.task_id = joint
@@ -227,10 +272,11 @@ async def test_public_work_private_workspaces_and_explicit_handoff(engine):
 
 
 async def test_handoff_conflict_preserves_recipient_and_relay_ownership(engine):
-    activity = work(engine, public=True, mode="relay")
+    activity = work(engine, public=True)
     work(engine, "Tomas")
     await claim(engine, "Mei", "task-7", "Tomas")
     await claim(engine, "Tomas", "task-7", "Mei")
+    await agree_team(engine, mode="relay", first="Mei")
     activity.task_id = "task-7"
     engine.leave("Tomas", "join")
     engine.select("Tomas", choose("resume_work", target=activity.id, seconds=1800))
@@ -241,7 +287,7 @@ async def test_handoff_conflict_preserves_recipient_and_relay_ownership(engine):
     engine.schedule("Mei", use("handoff", to="Tomas", description="Your turn"))
     await complete(engine, engine.now + 60)
     handoff = next(iter(engine.handoffs.values()))
-    assert activity.relay_owner is None
+    assert engine.team_of("Mei").relay_owner is None
     provider.conflict = True
     engine.schedule("Tomas", use("apply_handoff", handoff=handoff.id))
     await complete(engine, engine.now + 60)
@@ -249,7 +295,7 @@ async def test_handoff_conflict_preserves_recipient_and_relay_ownership(engine):
     provider.conflict = False
     engine.schedule("Tomas", use("apply_handoff", handoff=handoff.id))
     await complete(engine, engine.now + 60)
-    assert activity.relay_owner == "Tomas" and "edit" in engine.menu("Tomas")["tools"]
+    assert engine.team_of("Mei").relay_owner == "Tomas" and "edit" in engine.menu("Tomas")["tools"]
 
 
 async def test_message_visibility_read_cursor_and_no_fixed_turns(engine):
@@ -558,7 +604,6 @@ async def test_actual_agent_entrypoints_share_memory_but_separate_request_purpos
                 "do": "work",
                 "minutes": 60,
                 "public": False,
-                "mode": "parallel",
             }
         return {
             "thought": "Choose this issue",
@@ -585,9 +630,10 @@ async def test_actual_agent_entrypoints_share_memory_but_separate_request_purpos
 
 async def test_relay_permissions_cover_preexisting_private_work(engine):
     private = work(engine, "Tomas")
-    shared = work(engine, "Mei", public=True, mode="relay")
+    shared = work(engine, "Mei", public=True)
     await claim(engine, "Mei", "task-7", "Tomas")
     await claim(engine, "Tomas", "task-7", "Mei")
+    await agree_team(engine, mode="relay", first="Mei")
     engine.menu("Mei")  # bind the newly claimed job to its public session
     assert "edit" in engine.menu("Mei")["tools"]
     assert "edit" not in engine.menu("Tomas")["tools"]
@@ -597,7 +643,7 @@ async def test_relay_permissions_cover_preexisting_private_work(engine):
     handoff = next(iter(engine.handoffs))
     engine.schedule("Tomas", use("apply_handoff", handoff=handoff))
     await complete(engine, engine.now + engine.timing.handoff_seconds)
-    assert shared.relay_owner == "Tomas"
+    assert engine.team_of("Mei").relay_owner == "Tomas"
     assert "edit" in engine.menu("Tomas")["tools"]
     assert "edit" not in engine.menu("Mei")["tools"]
 

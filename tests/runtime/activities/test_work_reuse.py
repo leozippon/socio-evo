@@ -29,6 +29,8 @@ async def posted_job(gate, who="Jonas", partner=None, job="task-1"):
             scene="activities",
             witnesses=[],
         )
+    if partner:
+        await activity_tests.agree_team(gate, resume=False)
     return gate.env.board.claim_of(who)
 
 

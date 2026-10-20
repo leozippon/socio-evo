@@ -24,6 +24,7 @@ async def test_shared_failed_verdict_is_current_in_work_rest_and_selection(sched
     base.work(e, "Tomas")
     await act(e.env, "Mei", ClaimTask(task_id="task-7", partner="Tomas"))
     await act(e.env, "Tomas", ClaimTask(task_id="task-7", partner="Mei"))
+    await base.agree_team(e)
     provider = next(iter(e.env.providers.values()))
 
     async def failed(*args):

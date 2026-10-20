@@ -35,7 +35,6 @@ async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
                     "do": "work",
                     "minutes": 10,
                     "public": False,
-                    "mode": "parallel",
                 }
             return {
                 "thought": "Rest until tomorrow.",

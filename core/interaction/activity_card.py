@@ -138,12 +138,11 @@ def activity_forms(layer, menu):
                 {
                     "minutes": (MINUTES, None),
                     "public": (bool, None),
-                    "mode": (Literal["parallel", "relay"], None),
                 },
                 lambda r: Activity(
                     operation="select_work",
                     seconds=r["minutes"] * 60,
-                    arguments={"public": r["public"], "mode": r["mode"]},
+                    arguments={"public": r["public"]},
                 ),
             ),
         ]
@@ -251,6 +250,29 @@ def activity_forms(layer, menu):
     result.extend(form for name, form in definitions.items() if name in tools)
     if "leave" in tools:
         result.append(rest_form())
+    if "propose_work_plan" in tools:
+        result.append(
+            tool(
+                "propose work plan",
+                "propose_work_plan",
+                {
+                    "mode": (Literal["parallel", "relay"], None),
+                    "your_role": (SHORT, None),
+                    "partner_role": (SHORT, None),
+                    "relay_first": (_one_of(menu["team_workers"]) | None, None),
+                },
+            )
+        )
+    if "confirm_work_plan" in tools:
+        result.append(
+            tool(
+                "confirm partner's work plan",
+                "confirm_work_plan",
+                {
+                    "proposal": (_one_of([menu["work_proposal"]]), None),
+                },
+            )
+        )
     if "claim" in tools and menu.get("jobs"):
         result.append(
             tool(

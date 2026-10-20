@@ -76,9 +76,7 @@ def test_invalid_multiplier(value):
 
 def test_new_cards_do_not_require_activity_duration_or_offer_read(rt):
     card = Card(rt.observation("Mei").allowed)
-    reply = card.model.model_validate(
-        {"thought": "Work now", "do": "work", "public": False, "mode": "parallel"}
-    )
+    reply = card.model.model_validate({"thought": "Work now", "do": "work", "public": False})
     rt.select("Mei", card.decision(reply).action)
     forms = json.dumps(Card(rt.observation("Mei").allowed).model.model_json_schema())
     assert "read new messages" not in forms
@@ -240,10 +238,11 @@ async def test_closing_finishes_started_command_then_preserves_work(rt, monkeypa
 
 
 async def test_completed_relay_never_rebinds_to_new_job(rt):
-    shared = work(rt, "Mei", public=True, mode="relay")
+    shared = work(rt, "Mei", public=True)
     work(rt, "Tomas")
     await take(rt, "Mei", "task-7", "Tomas")
     await take(rt, "Tomas", "task-7", "Mei")
+    await activity_tests.agree_team(rt, mode="relay", first="Mei")
     rt.menu("Mei")
     rt.leave("Tomas", "Join")
     rt.select("Tomas", choose("resume_work", target=shared.id))

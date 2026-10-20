@@ -32,7 +32,9 @@ from runtime.activities.model import (
     Message,
     MoveActivity,
     RestActivity,
+    TeamWork,
     WorkActivity,
+    WorkPlan,
     at,
     clock,
     units,
@@ -49,6 +51,20 @@ class PendingTool:
     end: int
     prepared: dict
     token: str = ""
+
+
+REPOSITORY_TOOLS = {
+    "read_code",
+    "search",
+    "diff",
+    "edit",
+    "command",
+    "test",
+    "submit",
+    "handoff",
+    "apply_handoff",
+    "decline_handoff",
+}
 
 
 class ActivityLoopError(RuntimeError):
@@ -83,6 +99,7 @@ class ActivityEngine:
                 and self.env.world.places[activity.place].kind == PlaceKind.WORK
             ):
                 activity.outside = False
+        self.teams = {k: TeamWork.model_validate(v) for k, v in state.get("teams", {}).items()}
         self.assessments = dict(state.get("assessments", {}))
         self.futures = {}
         self.pending: dict[str, PendingTool] = {}
@@ -109,6 +126,7 @@ class ActivityEngine:
             "activities": {k: v.model_dump(mode="json") for k, v in self.activities.items()},
             "invitations": {k: v.model_dump(mode="json") for k, v in self.invitations.items()},
             "handoffs": {k: v.model_dump(mode="json") for k, v in self.handoffs.items()},
+            "teams": {k: v.model_dump(mode="json") for k, v in self.teams.items()},
             "assessments": self.assessments,
             "daily_life": self.daily_life,
             "serial": self.serial,
@@ -309,20 +327,276 @@ class ActivityEngine:
             activity.public and claim and claim.task.id == activity.task_id
         )
 
-    def relay_session(self, task_id):
-        """A relay owns the job's write permission, including older private sessions."""
-        return next(
-            (
-                a
-                for a in self.activities.values()
-                if isinstance(a, WorkActivity)
-                and a.public
-                and a.mode == "relay"
-                and a.task_id == task_id
-                and a.status != "ended"
-            ),
-            None,
+    def team_of(self, who):
+        claim = self.env.board.claim_of(who)
+        team = self.teams.get(claim.task.id) if claim else None
+        if team and (team.claim_time, team.workers) == (claim.time, claim.workers):
+            return team
+        return None
+
+    def work_ready(self, who):
+        claim = self.env.board.claim_of(who)
+        if not claim:
+            return False
+        if len(claim.workers) == 1:
+            return True
+        team = self.team_of(who)
+        discussion = self.activities.get(team.conversation) if team else None
+        return bool(
+            team
+            and team.proposal
+            and team.proposal.accepted_at is not None
+            and discussion
+            and discussion.status == "ended"
+            and not discussion.participants
         )
+
+    def require_work_ready(self, who):
+        if not self.work_ready(who):
+            raise Rejected("Finish the task discussion and agree on a work plan before coding.")
+
+    def work_mode(self, who):
+        team = self.team_of(who)
+        return team.proposal.mode if team and team.proposal else "parallel"
+
+    def team_transitioning(self, who):
+        team = self.team_of(who)
+        return bool(
+            team
+            and (
+                team.assembling
+                or (
+                    team.proposal
+                    and team.proposal.accepted_at is not None
+                    and not self.work_ready(who)
+                )
+            )
+        )
+
+    def team_busy(self, who):
+        active = self.activities.get(self.current.get(who))
+        peers = active.participants if isinstance(active, ConversationActivity) else ()
+        return who in self.pending or any(
+            p in self.pending and self.pending[p].action.tool != "wait" for p in peers
+        )
+
+    def new_team(self, claim, event=None):
+        for handoff in self.handoffs.values():
+            if handoff.task_id == claim.task.id and handoff.status == "offered":
+                handoff.status = "declined"
+        places = [p.id for p in self.env.world.places.values() if p.kind == PlaceKind.WORK]
+        if not places:
+            raise Rejected("A team discussion needs a public workplace.")
+        preferred = event.place if event else self.env.world.locations[claim.workers[0]]
+        team = TeamWork(
+            claim_event_id=event.seq if event else None,
+            claim_time=claim.time,
+            workers=claim.workers,
+            place=preferred if preferred in places else places[0],
+        )
+        self.teams[claim.task.id] = team
+        return team
+
+    def consume_claim_events(self, events):
+        for event in events:
+            if event.kind != EventKind.TASK_CLAIMED:
+                continue
+            task_id = event.payload["task_id"]
+            claim = self.env.board.claims.get(task_id)
+            if not claim or len(claim.workers) != 2:
+                continue
+            if tuple(event.payload["workers"]) != claim.workers or event.time != claim.time:
+                continue
+            old = self.teams.get(task_id)
+            if old and old.claim_event_id is not None and old.claim_event_id >= event.seq:
+                continue
+            self.new_team(claim, event)
+
+    def reconcile_teams(self):
+        for task_id, team in list(self.teams.items()):
+            claim = self.env.board.claims.get(task_id)
+            if not claim or (claim.time, claim.workers) != (team.claim_time, team.workers):
+                del self.teams[task_id]
+        for claim in self.env.board.claims.values():
+            if len(claim.workers) == 2 and claim.task.id not in self.teams:
+                self.new_team(claim)
+
+    def advance_team_discussions(self):
+        """Settle existing operations, travel, then hold the job's required local discussion."""
+        self.reconcile_teams()
+        for task_id, team in self.teams.items():
+            discussion = self.activities.get(team.conversation)
+            accepted = team.proposal and team.proposal.accepted_at is not None
+            if accepted:
+                if discussion and discussion.participants:
+                    self.finish_team_discussion(discussion)
+                continue
+            if not team.assembling or self.now >= self.end or not self.venue_open(team.place):
+                continue
+            for who in team.workers:
+                active = self.activities.get(self.current.get(who))
+                pending = self.pending.get(who)
+                if pending and pending.action.tool == "wait":
+                    del self.pending[who]
+                    self.record_tool_completion(
+                        who, pending, "wait", pending.action.arguments, active, {}
+                    )
+                if isinstance(active, MoveActivity) or self.team_busy(who):
+                    continue
+                here = self.env.world.locations[who] == team.place and who not in self.outside
+                if isinstance(active, RestActivity) and here:
+                    continue
+                if active:
+                    self.leave(who, "Meet your task partner to agree on the work plan.")
+                if who in self.current:
+                    continue
+                self.rest_intents.pop(who, None)
+                if not here:
+                    travel = self.travel_seconds(self.env.world.locations[who], team.place)
+                    if self.now + travel <= self.end:
+                        self.select(who, Choice(operation="select_move", target=team.place))
+                    continue
+                self.start_rest(who, self.end, wake=False)
+            if any(
+                self.team_busy(who)
+                or self.env.world.locations[who] != team.place
+                or who in self.outside
+                or not isinstance(self.activities.get(self.current.get(who)), RestActivity)
+                for who in team.workers
+            ):
+                continue
+            for who in team.workers:
+                self.leave(who, "Your task partner is here; begin the work discussion.")
+            discussion = ConversationActivity(
+                id=self.identifier("conversation"),
+                task_id=task_id,
+                place=team.place,
+                start=self.now,
+                latest_end=self.close_at(team.place),
+                topic=f"Agree on the work mode and responsibilities for {task_id}",
+                invited=team.workers,
+            )
+            team.conversation, team.proposal, team.assembling = discussion.id, None, False
+            for who in team.workers:
+                self.enter(discussion, who, discussion.latest_end)
+                self.sim._met[who].update(p for p in team.workers if p != who)
+            self.emit(
+                EventKind.DISCUSSION,
+                "The task partners began their work discussion.",
+                audience=list(team.workers),
+                activity=discussion.id,
+                task_id=task_id,
+                participants=list(team.workers),
+                conversation_started=True,
+            )
+
+    def finish_team_discussion(self, discussion):
+        if any(
+            who in self.pending and self.pending[who].action.tool != "wait"
+            for who in discussion.participants
+        ):
+            return
+        for who in list(discussion.participants):
+            pending = self.pending.pop(who, None)
+            if pending:
+                self.record_tool_completion(
+                    who, pending, "wait", pending.action.arguments, discussion, {}
+                )
+            self.leave(who, "Both partners agreed on their work plan.")
+
+    def work_plan_action(self, who, tool, args):
+        team = self.team_of(who)
+        activity = self.activities.get(self.current.get(who))
+        if (
+            not team
+            or not isinstance(activity, ConversationActivity)
+            or activity.id != team.conversation
+            or set(activity.participants) != set(team.workers)
+            or activity.status != "active"
+            or any(self.env.world.locations[p] != activity.place for p in team.workers)
+            or activity.id in getattr(self, "closing", ())
+            or (team.proposal and team.proposal.accepted_at is not None)
+        ):
+            raise Rejected("Agree on this plan together in the current task discussion.")
+        if tool == "propose_work_plan":
+            partner = next(p for p in team.workers if p != who)
+            roles = {who: args["your_role"].strip(), partner: args["partner_role"].strip()}
+            mode, first = args["mode"], args.get("relay_first")
+            if any(not text or len(text) > 2000 for text in roles.values()):
+                raise Rejected(
+                    "Give each partner a nonempty responsibility of at most 2000 characters."
+                )
+            if mode not in ("parallel", "relay") or (
+                (mode == "parallel" and first is not None)
+                or (mode == "relay" and first not in team.workers)
+            ):
+                raise Rejected("Choose parallel with no first writer, or relay with one partner.")
+            team.proposal = WorkPlan(
+                id=self.identifier("plan"),
+                author=who,
+                mode=mode,
+                responsibilities=roles,
+                relay_first=first,
+            )
+            self.wake_plan_waiters(activity)
+        else:
+            plan = team.proposal
+            if not plan or args.get("proposal") != plan.id or plan.author == who:
+                raise Rejected(
+                    "Confirm your partner's current proposal, not your own or an old one."
+                )
+            if not all(
+                any(
+                    m.author == person
+                    and m.text.strip()
+                    and all(other in m.audience for other in team.workers if other != person)
+                    for m in activity.messages
+                )
+                for person in team.workers
+            ):
+                raise Rejected("Both partners must speak to each other before confirming the plan.")
+            plan.accepted_at = self.now
+            team.relay_owner = plan.relay_first
+        self.emit(
+            EventKind.DISCUSSION,
+            (
+                "A work plan was proposed."
+                if tool == "propose_work_plan"
+                else "Both partners agreed on the work plan."
+            ),
+            actor=who,
+            audience=list(team.workers),
+            activity=activity.id,
+            task_id=activity.task_id,
+            work_plan=team.proposal.model_dump(mode="json"),
+        )
+
+    def wake_plan_waiters(self, activity):
+        for who in activity.participants:
+            pending = self.pending.get(who)
+            if pending and pending.action.tool == "wait":
+                del self.pending[who]
+                self.record_tool_completion(
+                    who, pending, "wait", pending.action.arguments, activity, {}
+                )
+
+    def team_context(self, who):
+        team = self.team_of(who)
+        if not team:
+            return []
+        plan = team.proposal
+        if plan:
+            return [
+                "Task work plan: "
+                + json.dumps(plan.model_dump(mode="json"))
+                + f" Relay writer: {team.relay_owner}."
+                + ("" if plan.accepted_at is not None else " Awaiting partner confirmation.")
+            ]
+        return [
+            "This job needs a work discussion before coding. Both partners must speak, "
+            "then propose parallel or relay and each person's responsibility; "
+            "the other partner confirms the proposal."
+        ]
 
     def people_within_earshot(self, place, outside):
         return tuple(
@@ -700,15 +974,14 @@ class ActivityEngine:
                 provider = self.env.providers[claim.task.trade]
                 if callable(getattr(provider, "work_guide", None)):
                     tools.append("guide")
-                if self.can_code(who):
+                if self.can_code(who) and self.work_ready(who):
                     tools += ["read_code", "search", "diff"]
-                    relay = self.relay_session(claim.task.id)
-                    if (relay is None and activity.mode == "parallel") or (
-                        (relay or activity).relay_owner == who
-                    ):
+                    team = self.team_of(who)
+                    relay = self.work_mode(who) == "relay"
+                    if not relay or team.relay_owner == who:
                         tools += ["edit", "command", "test", "submit"]
                     if hasattr(provider, "export_handoff") and (
-                        relay is None or relay.relay_owner == who
+                        not relay or team.relay_owner == who
                     ):
                         tools.append("handoff")
                     if hasattr(provider, "apply_handoff"):
@@ -721,6 +994,14 @@ class ActivityEngine:
                 if claim.task.id in self.assessments:
                     tools = [t for t in tools if t != "submit"]
             common["jobs"] = [listing.task.id for listing in self.env.board.listings.values()]
+        if isinstance(activity, ConversationActivity) and activity.task_id:
+            team = self.team_of(who)
+            if team and team.conversation == activity.id:
+                tools = ["help", "leave", "read", "reply", "wait", "propose_work_plan"]
+                common["team_workers"] = list(team.workers)
+                if team.proposal and team.proposal.author != who:
+                    tools.append("confirm_work_plan")
+                    common["work_proposal"] = team.proposal.id
         remaining = self.remaining(who)
         costs = {name: self.minimum_cost(name) for name in tools}
         common.update(
@@ -733,6 +1014,8 @@ class ActivityEngine:
 
     def minimum_cost(self, tool):
         return {
+            "propose_work_plan": 0,
+            "confirm_work_plan": 0,
             "help": 0,
             "leave": 0,
             "claim": 0,
@@ -799,6 +1082,7 @@ class ActivityEngine:
                 "You are waiting outside the closed venue. "
                 + (f"It opens at {clock(opening)}." if opening else "It will not reopen today.")
             )
+        context += self.team_context(who)
         context += self.daily_context(who)
         context += self.activity_context(who, active, menu)
         if active:
@@ -806,7 +1090,7 @@ class ActivityEngine:
             if isinstance(active, WorkActivity):
                 context.append(
                     f"Job: {active.task_id or 'none assigned'}. "
-                    f"Work mode: {active.mode}. Relay owner: {active.relay_owner}. "
+                    f"Work mode: {self.work_mode(who)}. "
                     "Your repository is private; partners exchange code handoffs."
                 )
         context += [self.env.board_view(who), self.env.status_view(who, include_evidence=False)]
@@ -1028,6 +1312,12 @@ class ActivityEngine:
     def schedule(self, who, action):
         if who in self.pending:
             raise Rejected("Finish your current tool first.")
+        if self.team_transitioning(who) and not (
+            action.tool == "reply"
+            and isinstance(self.activities.get(self.current.get(who)), ConversationActivity)
+            and not self.work_ready(who)
+        ):
+            raise Rejected("Your task partners are assembling or finishing their work discussion.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
         if who not in self.current or action.operation == "select_rest":
@@ -1132,6 +1422,12 @@ class ActivityEngine:
             self.enter(activity, who, until)
             self.queue.add(until, "arrival", priority=0, who=who, activity=activity.id)
         elif action.operation in ("select_work", "resume_work"):
+            self.reconcile_teams()
+            team = self.team_of(who)
+            if team and not self.work_ready(who):
+                team.assembling = not (team.proposal and team.proposal.accepted_at is not None)
+                self.advance_team_discussions()
+                return
             if action.operation == "resume_work":
                 activity = self.activities[action.target]
                 if (
@@ -1186,8 +1482,6 @@ class ActivityEngine:
                     start=self.now,
                     latest_end=self.now + action.seconds,
                     public=action.arguments.get("public", False),
-                    mode=action.arguments.get("mode", "parallel"),
-                    relay_owner=who,
                 )
                 claim = self.env.board.claim_of(who)
                 activity.task_id = claim.task.id if claim else None
@@ -1252,6 +1546,8 @@ class ActivityEngine:
         activity = self.activities[self.current[who]]
         data = {}
         cost = self.minimum_cost(tool)
+        if tool in REPOSITORY_TOOLS:
+            self.require_work_ready(who)
         if tool == "read":
             messages = activity.unread(who)
             data["messages"] = [m.model_dump() for m in messages]
@@ -1591,6 +1887,8 @@ class ActivityEngine:
         tool = action.tool
         outcome = {}
         try:
+            if tool in REPOSITORY_TOOLS:
+                self.require_work_ready(who)
             if tool == "leave":
                 self.leave(who, "Paused or left voluntarily.")
             elif tool in ("invite", "invite_here", "accept", "decline", "defer"):
@@ -1607,16 +1905,19 @@ class ActivityEngine:
                 self.feedback(who, provider.work_guide(claim.task.parts[0]))
             elif tool == "claim":
                 claim = ClaimTask(task_id=args["job"], partner=args.get("partner"))
-                await self.env.execute(
+                emitted = await self.env.execute(
                     who,
                     claim,
                     time=self.now // 60,
                     scene="activities",
                     witnesses=self.env.world.occupants(activity.place),
                 )
+                self.consume_claim_events(emitted)
                 current = self.env.board.claim_of(who)
                 if current:
                     activity.task_id = current.task.id
+            elif tool in ("propose_work_plan", "confirm_work_plan"):
+                self.work_plan_action(who, tool, args)
             elif tool == "read":
                 messages = pending.prepared["messages"]
                 if messages:
@@ -1768,7 +2069,9 @@ class ActivityEngine:
 
     async def handoff_tool(self, who, tool, args, activity):
         claim = self.env.board.claim_of(who)
-        activity = self.relay_session(claim.task.id) or activity
+        self.require_work_ready(who)
+        team = self.team_of(who)
+        relay = self.work_mode(who) == "relay"
         provider = self.env.providers[claim.task.trade]
         part = claim.task.parts[0]
         if tool == "handoff":
@@ -1784,8 +2087,8 @@ class ActivityEngine:
                 version=hashlib.sha256(patch.encode()).hexdigest(),
             )
             self.handoffs[handoff.id] = handoff
-            if activity.mode == "relay" and activity.relay_owner == who:
-                activity.relay_owner = None
+            if relay and team.relay_owner == who:
+                team.relay_owner = None
             self.emit(
                 EventKind.CODE_HANDOFF,
                 f"{who} offered code {handoff.version[:12]}: {handoff.description}",
@@ -1806,8 +2109,8 @@ class ActivityEngine:
                 raise Rejected("This handoff is not available.")
             if tool == "decline_handoff":
                 handoff.status = "declined"
-                if activity.mode == "relay":
-                    activity.relay_owner = handoff.sender
+                if relay:
+                    team.relay_owner = handoff.sender
                 self.feedback(who, "The code handoff was declined; your workspace did not change.")
                 return
             result = await provider.apply_handoff(part, who, claim.task.id, handoff.patch)
@@ -1818,8 +2121,8 @@ class ActivityEngine:
                 )
                 return
             handoff.status = "accepted"
-            if activity.mode == "relay":
-                activity.relay_owner = who
+            if relay:
+                team.relay_owner = who
             self.emit(
                 EventKind.CODE_HANDOFF,
                 f"{who} applied code handoff {handoff.id}.",
@@ -1832,6 +2135,7 @@ class ActivityEngine:
             )
 
     async def submit(self, who, report):
+        self.require_work_ready(who)
         claim = self.env.board.claim_of(who)
         if claim is None or claim.task.id in self.assessments:
             raise Rejected("There is no unsubmitted job to send for assessment.")
@@ -2150,6 +2454,10 @@ class ActivityEngine:
         self.now = start * 60
         self.end = self.sim.config.calendar.end(day_of(start)) * 60
         self.queue = EventQueue()
+        self.reconcile_teams()
+        for team in self.teams.values():
+            if not team.proposal or team.proposal.accepted_at is None:
+                team.assembling = True
         for who, intent in list(self.rest_intents.items()):
             if intent["until"] <= self.now:
                 del self.rest_intents[who]
@@ -2241,7 +2549,8 @@ class ActivityEngine:
                 due = [e for e in due if e not in claims] + claims
             for event in due:
                 await self.process(event)
-            self.env.pair_applicants(self.now // 60, self.sim.rng)
+            self.consume_claim_events(self.env.pair_applicants(self.now // 60, self.sim.rng))
+            self.advance_team_discussions()
             self.daily_choices()
             self.start_ready_conversations()
             self.wake_rests()
@@ -2252,6 +2561,7 @@ class ActivityEngine:
                 who
                 for who in self.sim.agents
                 if who not in self.pending
+                and not self.team_transitioning(who)
                 and who not in self.daily_waiting
                 and (
                     who not in self.current
@@ -2265,6 +2575,7 @@ class ActivityEngine:
                 self.sim._bound_lapses()
             immediately_ready = any(
                 who not in self.pending
+                and not self.team_transitioning(who)
                 and who not in self.daily_waiting
                 and (
                     who not in self.current
