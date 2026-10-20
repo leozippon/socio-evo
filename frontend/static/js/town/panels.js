@@ -429,12 +429,17 @@ export class BoardPanel {
             handed.map((e) => {
               const p = current(e);
               const q = assessed.get(e.seq);
+              const claim = this.replay.taskEvents(p.task_id, e.seq).findLast((event) => event.kind === "task_claimed");
+              const workers = current(claim ?? {}).workers?.filter((name) => typeof name === "string") ?? [];
+              const team = workers.length ? workers : [e.actor];
+              const who = `${team.join(", ")}; submitted by ${e.actor}`;
               const outcome = p.accepted ? (p.declaration === "incomplete" ? "accepted at the lower price" : p.client === "trusting" ? "accepted on the word" : "examples passed") : "handed back";
               return row(p.task_id, {
                 extra: h(
                   "span",
-                  { class: "task-who" },
-                  m.cast.badge(e.actor, 16),
+                  { class: "task-who", title: who, "aria-label": who },
+                  team.map((worker) => m.cast.badge(worker, 16)),
+                  h("small", {}, `submitted by ${e.actor}`),
                   m.truth && q ? h("span", { class: `quality${q.quality < 1 ? " flawed" : ""}`, title: "True quality: the share of hidden checks passed" }, icon("eye", 12), fmt.num(q.quality, 2)) : null,
                 ),
                 below: h("span", { class: `handed${p.accepted ? "" : " back"}` }, `${clockOf(e)} · ${partName(p.task_id, p.part ?? 1, this.replay.tasks)} as ${handedAs(p.declaration)} · ${outcome}`),

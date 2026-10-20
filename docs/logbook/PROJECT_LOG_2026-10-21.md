@@ -79,3 +79,11 @@ The final combined local selection passed 655 tests in 50.51 seconds, including 
 The user also requested TASK_CLAIMED as a Rest wakeup. Newly witnessed claims use their existing same-location audience, membership event cursor and wake-enabled setting, and are checked before invitation-specific waits. This wakes both ordinary Rest and confirmed-meeting waits without adding broadcasts or Work/Planning interruptions. The Rest form description is updated at its existing source to describe the expanded wakeup setting.
 
 Independent boundary review reproduced a cross-conversation speech omission in the initial message-list design; the final single-flag design fixes it without extending EventLog or adding persistent state. Targeted revalidation passed 22 tests, including the original speech-arrival scenarios, the new Rest conditions and unchanged Work/Planning/reply interruption rules. No blocking findings remain.
+
+## Board team badges after submission
+
+At day 1 around 13:20 in community-thought-3d-20261021-015020, task-7 was claimed by Kofi and Jonas at 08:09 and submitted by Jonas at 10:01; task-9 was claimed by the same pair at 10:08 and submitted by Kofi at 12:07. Both submissions were accepted. The Board's Taken section already rendered all claim workers, but Handed in today rendered only the submitter. Acceptance had removed the live claims, so looking only at current claims could not recover those teams.
+
+Handed-in rows now use the last recorded task claim at or before that submission to display all actual worker badges. They retain an explicit submitted-by label, and their tooltip/accessibility label names the team and submitter. Solo work keeps one badge; missing worker history shows only the known submitter rather than inventing a partner. The existing replay history lookup supports claims from earlier days and remains bounded by the submission event sequence.
+
+A new Board DOM check covers accepted work after live-claim removal, a prior-day claim, solo work and missing history. It and all three existing frontend checks passed, as did an independent rerun of the Board check and git diff --check. This changes only the Board renderer; no experiment records are edited.
