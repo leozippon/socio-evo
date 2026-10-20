@@ -1,7 +1,7 @@
 import { dayOf, dayStart, formatTime, hhmmss, minuteOf, normalizeEventTimes, parseStamp, stamp } from "../clock.js";
 import { emptyState, h } from "../dom.js";
 import { href, sibling } from "../router.js";
-import { activityDuration, activityIntervals, activityLink, activityType, activityTranscript, activityLabel, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
+import { activityDuration, activityIntervals, activityLink, activityType, activityTranscript, activityLabel, planningSuccessor, residentActivitySummary, revealCurrentActivity } from "../town/activity-model.js";
 import { bystanders, line } from "../town/events.js";
 import { decisionCard } from "../town/panels.js";
 import { shortName } from "../world.js";
@@ -47,6 +47,10 @@ export async function personActivities({ source, world, cast, places, route, go 
   let detail = h("div", { class: "card activity-detail-hint" }, emptyState(route.query.activity ? "This activity is not available at this moment." : "Select an activity to inspect it.", "Open a row to see its tools, feedback and received conversation in chronological order."));
   if (selected) {
     const transcript = activityTranscript(events, selected, cutoff);
+    const successor = planningSuccessor(events, selected, cutoff);
+    const nextPlace = successor?.payload.destination ?? successor?.place;
+    const nextPlaceLabel = nextPlace ? (places.has(nextPlace) ? shortName(places.get(nextPlace)) : nextPlace) : null;
+    const nextActivity = successor ? `${label({ type: successor.payload.activity_type })}${nextPlaceLabel ? ` · ${successor.payload.activity_type === "move" && !successor.payload.destination ? "From " : ""}${nextPlaceLabel}` : ""}` : null;
     const tasks = new Map(events.filter((event) => event.kind === "task_posted").map((event) => [event.payload.task.id, event]));
     const m = { cast, places, lookups: { tasks, places }, truth: true, reader: null, bystanders: bystanders(transcript), select: () => {} };
     const received = transcript.filter((event) => ["speech", "conversation_message"].includes(event.kind));
@@ -69,7 +73,8 @@ export async function personActivities({ source, world, cast, places, route, go 
       h("dl", { class: "activity-facts" },
         h("dt", {}, "Place"), h("dd", {}, selected.type === "move" ? `From ${place(selected)}` : place(selected)),
         h("dt", {}, "Participants"), h("dd", {}, [...participants].join(", ")),
-        h("dt", {}, "Status"), h("dd", {}, selected.end == null ? `In progress as of ${formatTime(cutoff)}` : selected.reason),
+        h("dt", {}, "Status"), h("dd", {}, selected.end == null ? `In progress as of ${formatTime(cutoff)}` : activityType(selected) === "planning" ? "Ended" : selected.reason),
+        nextActivity ? [h("dt", {}, "Next activity"), h("dd", {}, nextActivity)] : null,
         h("dt", {}, "Activity ID"), h("dd", {}, h("code", {}, selected.activity)),
         task ? [h("dt", {}, "Task"), h("dd", {}, task)] : null),
       h("h3", {}, "Activity log"), h("p", { class: "note" }, "Recorded in delivery order. Includes this resident's operations and speech received while participating. Research view includes recorded thoughts."),

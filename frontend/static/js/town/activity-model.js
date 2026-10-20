@@ -45,6 +45,15 @@ export function activityIntervals(events, through, reader = null) {
   return intervals.sort((a, b) => a.start - b.start);
 }
 
+/** A Planning result is the resident's actual entry, not a proposed or rejected choice. */
+export function planningSuccessor(events, interval, through) {
+  if (activityType(interval) !== "planning" || interval.endSeq == null || interval.end > through) return null;
+  const next = events.filter((event) => event.actor === interval.actor && event.seq > interval.endSeq && event.time <= through)
+    .sort((a, b) => a.seq - b.seq)[0];
+  return next?.kind === "activity_entered" && next.time === interval.end && next.payload?.activity_type
+    && next.payload.phase !== "choosing_next_activity" ? next : null;
+}
+
 /** Recorded events for one resident's membership, including speech actually heard there. */
 export function activityTranscript(events, interval, through) {
   return events.filter((event) => {

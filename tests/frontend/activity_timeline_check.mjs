@@ -141,3 +141,59 @@ assert.match(toolCompletionText(completion({ error: "Rejected" })), /failed invi
 assert.equal(toolCompletionText(completion({})), "Mei ended invite.");
 assert.match(toolCompletionText(completion({ success: true, created: true, invitation: "invitation-1" })), /created invitation invitation-1/);
 assert.equal(toolCompletionText(completion({ success: true, tool: "test" })), "Mei ended test.");
+
+
+// Planning exposes only a confirmed successor, never a proposal, reason string or future entry.
+assert.equal(model.planningSuccessor(choosingEvents, choosing[0], 483)?.payload.activity, "w2");
+assert.equal(model.planningSuccessor(choosingEvents, choosing[0], 481), null);
+assert.equal(model.planningSuccessor(choosingEvents.slice(0, 3), choosing[0], 483), null);
+const otherActorEntry = { ...choosingEvents[3], seq: 2.5, actor: "Aisha" };
+assert.equal(model.planningSuccessor([...choosingEvents, otherActorEntry], choosing[0], 483)?.payload.activity, "w2");
+for (const type of ["rest", "conversation"]) {
+  const entered = { ...choosingEvents[3], payload: { activity: "next", activity_type: type } };
+  assert.equal(model.planningSuccessor([...choosingEvents.slice(0, 3), entered], choosing[0], 483), entered);
+}
+assert.equal(model.planningSuccessor([
+  ...choosingEvents.slice(0, 3),
+  { ...choosingEvents[3], payload: { activity: "choosing-2", activity_type: "rest", phase: "choosing_next_activity" } },
+  { ...choosingEvents[3], seq: 4 },
+], choosing[0], 483), null, "a new Planning period must not be skipped to infer success");
+assert.equal(model.planningSuccessor([
+  ...choosingEvents.slice(0, 3), { ...choosingEvents[3], time: 483 },
+], choosing[0], 483), null, "a later entry is not proof that this Planning succeeded");
+
+
+// Render the actual resident detail: retain the original ending once and show the real successor.
+class DetailNode {
+  constructor(text = "") { this.value = text; this.children = []; this.attrs = {}; }
+  append(node) { this.children.push(node); }
+  setAttribute(name, value) { this.attrs[name] = value; }
+  addEventListener() {}
+  get textContent() { return this.value + this.children.map((node) => node.textContent).join(""); }
+}
+globalThis.Node = DetailNode;
+globalThis.document = {
+  createElement: () => new DetailNode(), createElementNS: () => new DetailNode(),
+  createTextNode: (text) => new DetailNode(text),
+};
+const { personActivities } = await import("../../frontend/static/js/views/person-activities.js");
+const stopped = "Mei stopped choosing the next activity: Next activity started.";
+const detailEvents = choosingEvents.filter((event) => event.kind !== "decision").map((event) => ({
+  ...event, place: "workshop", text: event.kind === "activity_left" ? stopped : event.kind,
+  payload: event.kind === "activity_left" ? { ...event.payload, reason: stopped } : event.payload,
+}));
+const renderPlanning = async (recorded, through = 483) => {
+  const nodes = await personActivities({
+    source: { doc: { last_time: through, event_days: [{ day: 1 }] }, eventDay: async () => recorded },
+    world: {}, cast: { mention: (text) => text }, places: new Map([["workshop", { name: "the Workshop" }]]),
+    route: { view: "person", experiment: "demo", run: "one", agent: "Mei", query: { activity: "0:Mei" } }, go: () => {},
+  });
+  return nodes.map((node) => node.textContent).join("");
+};
+const detailText = await renderPlanning(detailEvents);
+assert.equal(detailText.split(stopped).length - 1, 1, "the same Planning ending is rendered only once");
+assert(detailText.includes("Next activityWork · Workshop"), "the actual Work entry supplies the result and place");
+assert(!detailText.includes("Status" + stopped), "Status does not repeat the end log entry");
+assert(!(await renderPlanning(detailEvents, 481)).includes("Next activity"), "rewinding hides the future selection");
+assert(!(await renderPlanning(detailEvents.slice(0, 2))).includes("Next activityWork"), "a reason without successful entry never invents the chosen activity");
+console.log("Planning successor and resident detail rendering checks passed");
