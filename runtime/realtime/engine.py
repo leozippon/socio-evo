@@ -513,6 +513,7 @@ class RealtimeEngine(ActivityEngine):
         action, result = job.action, finished.value
         tool, args = action.tool, action.arguments
         activity = self.activities[job.activity]
+        outcome = {}
         if tool in REPOSITORY:
             event = self.emit(
                 EventKind.COMMAND_EXECUTED,
@@ -618,14 +619,14 @@ class RealtimeEngine(ActivityEngine):
             # Environment-only operations have no artificial execution charge.
             from runtime.activities.engine import PendingTool
 
-            await super().complete_tool(
+            outcome = await super().complete_tool(
                 who,
                 PendingTool(job.activity, job.action, job.start, self.now, {}),
                 record_completion=False,
             )
         self.emit(
             EventKind.TOOL_COMPLETED,
-            f"{who} finished {tool}.",
+            f"{who} {'failed' if outcome.get('success') is False else 'ended'} {tool}.",
             actor=who,
             activity=job.activity,
             tool=tool,
@@ -634,6 +635,7 @@ class RealtimeEngine(ActivityEngine):
             wall_seconds=finished.wall_seconds,
             multiplier=self.settings.multiplier,
             elapsed_sim_seconds=self.now - job.start,
+            **outcome,
         )
 
     async def finish(self, who, job):

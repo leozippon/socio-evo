@@ -69,7 +69,7 @@ def test_activity_card_can_switch_directly_to_rest(scheduler, kind):
 
 def test_expired_rest_does_not_exit_work(scheduler):
     active = work(scheduler)
-    with pytest.raises(Rejected, match="has passed"):
+    with pytest.raises(Rejected, match="Rest not started"):
         rest(scheduler, until="06:59")
     assert scheduler.current["Mei"] == active.id
     assert active.members["Mei"].active

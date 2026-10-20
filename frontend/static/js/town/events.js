@@ -225,6 +225,16 @@ function privateLine(event, m) {
   return h("span", { class: "private-line unheard" }, h("span", { class: "private-tag" }, icon("lock", 11), "privately"), " ", m.cast.mention(text));
 }
 
+export function toolCompletionText(event) {
+  const p = event.payload ?? {};
+  const tool = p.tool ?? "operation";
+  if (p.success === false || p.error || p.status === "rejected" || p.status === "failed")
+    return `${event.actor ?? "Resident"} failed ${tool}.${p.error ? ` ${p.error}` : ""}`;
+  if (p.success === true && p.created === true && p.invitation)
+    return `${event.actor ?? "Resident"} created invitation ${p.invitation}.`;
+  return `${event.actor ?? "Resident"} ended ${tool}.`;
+}
+
 /**
  * The line of text the feed shows for an event, as a node. `m` gives the cast, what tasks and
  * places are called (`lookups`), whether the truth is shown, the chosen reader (`reader`) and
@@ -234,6 +244,8 @@ export function line(event, m) {
   const { cast } = m;
   const p = event.payload;
   switch (event.kind) {
+    case "tool_completed":
+      return h("span", {}, cast.mention(toolCompletionText(event)));
     case "decision":
       return h("span", {}, cast.mention(event.actor), " ", actionSummary(p.action, m.lookups));
     case "speech":

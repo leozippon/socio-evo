@@ -94,7 +94,9 @@ def test_past_today_and_unknown_day_are_rejected(scheduler, day):
     arguments = {"until": "07:00"}
     if day is not None:
         arguments["day"] = day
-    with pytest.raises(Rejected, match="today or tomorrow" if day == "yesterday" else "has passed"):
+    with pytest.raises(
+        Rejected, match="today or tomorrow" if day == "yesterday" else "Rest not started"
+    ):
         scheduler.select("Mei", choose("select_rest", arguments=arguments))
     assert "Mei" not in scheduler.current
     assert not scheduler.rest_intents

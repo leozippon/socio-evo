@@ -73,7 +73,11 @@ def realtime_invitation(menu, label="invite people"):
         {
             "people": (Annotated[list[_one_of(menu["people"])], Field(min_length=1)], None),
             "place": (_one_of(menu["places"]), None),
-            "at": (CLOCK | None, "Use null for now; otherwise arrange a meeting today."),
+            "at": (
+                CLOCK | None,
+                "Use null to discuss now, at the time this invitation is sent; "
+                "otherwise give a meeting time today.",
+            ),
             "topic": (SHORT, None),
             "public": (bool, None),
         },

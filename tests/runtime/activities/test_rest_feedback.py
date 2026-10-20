@@ -15,11 +15,11 @@ choose = activity_tests.choose
 def test_expired_same_day_rest_leaves_resident_ready_to_choose(engine, until):
     engine.now = at(1, "19:00")
     engine.feedback("Mei", "Previous selection failed.")
-    with pytest.raises(Rejected, match="has passed") as caught:
+    with pytest.raises(Rejected, match="Rest not started") as caught:
         engine.select("Mei", choose("select_rest", arguments={"until": until, "wake": False}))
     engine.feedback("Mei", str(caught.value))
     assert "Mei" not in engine.current
-    assert "has passed" in engine.observation("Mei").situation
+    assert "Rest not started" in engine.observation("Mei").situation
     assert not engine.activities
     assert not engine.queue.events
 

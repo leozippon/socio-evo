@@ -425,7 +425,8 @@ class ActivityEngine:
         active = self.activities.get(self.current.get(who))
         kind = active.kind if active else "selection"
         descriptions = {
-            "selection": "Choose rest, movement, work, or a conversation.",
+            "selection": "Choose rest, movement, work, or a conversation. "
+            "You may enter Work first, then claim a job there.",
             "rest": "You are resting until your chosen time.",
             "move": "You are travelling to your destination.",
             "work": "Use the work choices, switch to rest, or leave this activity.",
@@ -1061,7 +1062,11 @@ class ActivityEngine:
                     day_of(self.now // 60) + int(day == "tomorrow"), action.arguments["until"]
                 )
             if until <= self.now:
-                raise Rejected("That rest ending time has passed; choose a future time.")
+                raise Rejected(
+                    f"Rest not started: requested day {day_of(until // 60)} "
+                    f"{clock(until)}; now day {day_of(self.now // 60)} {clock(self.now)}. "
+                    "Choose a future ending time today or tomorrow."
+                )
             if self.now >= self.end:
                 raise Rejected("The day has closed.")
             active = self.activities.get(self.current.get(who))
@@ -1348,7 +1353,11 @@ class ActivityEngine:
             place = places[args["place"]]
             start = at(day_of(self.now // 60), args["at"]) if args.get("at") else self.now
             if start < self.now or start >= self.end:
-                raise Rejected("Arrange a time later today, before day end.")
+                raise Rejected(
+                    f"Invitation not sent: requested day {day_of(start // 60)} "
+                    f"{clock(start)}; now day {day_of(self.now // 60)} {clock(self.now)}. "
+                    "Choose another time today before day end, or use null for now."
+                )
             if not self.venue_open(place, start):
                 raise Rejected("That meeting place will be closed.")
             duplicate = next(
@@ -1372,7 +1381,7 @@ class ActivityEngine:
                     f"Invitation {duplicate.id} already covers this conversation; "
                     "check its confirmation/readiness instead of sending another.",
                 )
-                return
+                return {"invitation": duplicate.id, "created": False}
             scheduled = bool(args.get("at"))
             grace = (
                 min(self.end, start + self.timing.appointment_grace_seconds)
@@ -1415,6 +1424,7 @@ class ActivityEngine:
             declined=list(invitation.declined),
             supersedes=invitation.supersedes,
         )
+        return {"invitation": invitation.id, "created": tool in ("invite", "invite_here", "defer")}
 
     def start_ready_conversations(self):
         for invitation in self.invitations.values():
@@ -1515,11 +1525,12 @@ class ActivityEngine:
         activity = self.activities[pending.activity]
         action, args = pending.action, pending.action.arguments
         tool = action.tool
+        outcome = {}
         try:
             if tool == "leave":
                 self.leave(who, "Paused or left voluntarily.")
             elif tool in ("invite", "invite_here", "accept", "decline", "defer"):
-                self.invitation_action(who, tool, args)
+                outcome = {"success": True, **(self.invitation_action(who, tool, args) or {})}
             elif tool == "board":
                 self.feedback(who, self.env.board_view(who))
             elif tool == "feedback":
@@ -1625,22 +1636,25 @@ class ActivityEngine:
                     }
                 )
         except (Rejected, ValueError, KeyError) as error:
+            outcome = {"success": False, "error": str(error)}
             self.reject(who, action, str(error))
             self.feedback(who, str(error))
         finally:
             if record_completion:
-                self.record_tool_completion(who, pending, tool, args, activity)
+                self.record_tool_completion(who, pending, tool, args, activity, outcome)
+        return outcome
 
-    def record_tool_completion(self, who, pending, tool, args, activity):
+    def record_tool_completion(self, who, pending, tool, args, activity, outcome):
         self.emit(
             EventKind.TOOL_COMPLETED,
-            f"{who} finished {tool}.",
+            f"{who} {'failed' if outcome.get('success') is False else 'ended'} {tool}.",
             actor=who,
             activity=activity.id,
             tool=tool,
             start=pending.start / 60,
             end=self.now / 60,
             arguments=args,
+            **outcome,
         )
 
     def command_for(self, tool, args):

@@ -715,3 +715,79 @@ async def test_final_settlement_preserves_backoff_without_missing_future_or_resu
     assert len(seen) == 1
     assert rt.state()["assessments"]["task-1"]["retry_attempts"] == 1
     await rt.close()
+
+
+@pytest.mark.parametrize("requested", ["08:10", None])
+async def test_invitation_result_uses_execution_time_and_reports_creation(rt, requested):
+    work(rt)
+
+    class Resident:
+        async def choose_tool(self, observation):
+            rt.clock.rebase(at(1, "08:16:03"))
+            return Decision(
+                thought="Invite Tomas",
+                action=use(
+                    "invite",
+                    people=["Tomas"],
+                    place="the Workshop",
+                    at=requested,
+                    topic="Repair review",
+                    public=False,
+                ),
+            )
+
+    rt.sim.agents["Mei"] = Resident()
+    rt.start_decision("Mei")
+    await finish(rt, "Mei")
+    await finish(rt, "Mei")
+    rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]
+    result = next(r for r in reversed(rows) if r["kind"] == "tool_completed")
+    assert result["payload"]["success"] is (requested is None)
+    if requested is not None:
+        assert not rt.invitations
+        assert "invitation" not in result["payload"]
+        assert "08:10:00" in result["payload"]["error"]
+        assert "08:16:03" in result["payload"]["error"]
+        assert "not sent" in result["payload"]["error"]
+        assert not any(r["kind"] == "discussion" for r in rows)
+        observation = rt.observation("Mei")
+        assert "08:16:03" in observation.situation
+        assert any("08:10:00" in p.text and "not sent" in p.text for p in observation.percepts)
+    else:
+        invitation = rt.invitations[result["payload"]["invitation"]]
+        assert invitation.start == at(1, "08:16:03")
+        assert result["payload"]["created"] is True
+        assert any(v["id"] == invitation.id for v in rt.invitation_views("Mei"))
+        assert invitation.id in rt.observation("Mei").situation
+
+
+def test_expired_rest_feedback_names_requested_and_current_day_and_clock(rt):
+    from core.environment.rejection import Rejected
+
+    rt.now = at(2, "08:16:03")
+    rt.end = at(2, "22:00")
+    with pytest.raises(Rejected, match="Rest not started") as error:
+        rt.select("Mei", choose("select_rest", arguments={"day": "today", "until": "08:10"}))
+    assert "day 2" in str(error.value)
+    assert "08:10:00" in str(error.value) and "08:16:03" in str(error.value)
+
+
+async def test_repeated_invitation_returns_existing_id_without_claiming_creation(rt):
+    work(rt)
+    action = use(
+        "invite",
+        people=["Tomas"],
+        place="the Workshop",
+        at=None,
+        topic="Repair review",
+        public=False,
+    )
+    for _ in range(2):
+        rt.schedule("Mei", action)
+        await finish(rt, "Mei")
+    rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]
+    results = [r["payload"] for r in rows if r["kind"] == "tool_completed"]
+    assert len(rt.invitations) == 1
+    assert results[-1]["invitation"] == results[-2]["invitation"]
+    assert results[-1]["success"] is True and results[-1]["created"] is False
+    assert sum(r["kind"] == "discussion" for r in rows) == 1

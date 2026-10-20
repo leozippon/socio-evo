@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { formatTime, hhmm, hhmmss, parseStamp, stamp } from "../../frontend/static/js/clock.js";
+import { toolCompletionText } from "../../frontend/static/js/town/events.js";
 import { Replay } from "../../frontend/static/js/replay.js";
 import { activityIntervals } from "../../frontend/static/js/town/activity-model.js";
 
@@ -133,3 +134,10 @@ const rests = [
   {seq: 3, time: 480, actor: "Mei", kind: "activity_left", payload: {activity: "rest-reused"}},
 ];
 assert.deepEqual(activityIntervals(rests, 480).map(row => [row.start, row.end]), [[420, 430], [450, 480]], "reusing a resident's Rest keeps separate logged membership intervals");
+
+const completion = (payload) => ({ actor: "Mei", payload: { tool: "invite", ...payload }, text: "Mei finished invite." });
+assert.match(toolCompletionText(completion({ success: false, error: "Invitation not sent" })), /failed invite.*not sent/);
+assert.match(toolCompletionText(completion({ error: "Rejected" })), /failed invite/);
+assert.equal(toolCompletionText(completion({})), "Mei ended invite.");
+assert.match(toolCompletionText(completion({ success: true, created: true, invitation: "invitation-1" })), /created invitation invitation-1/);
+assert.equal(toolCompletionText(completion({ success: true, tool: "test" })), "Mei ended test.");
