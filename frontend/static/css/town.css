@@ -663,11 +663,11 @@ body[data-view="town"] { overflow: hidden; }
 .activity-legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 14px 0; font-size: 12px; }
 .activity-legend span { display: flex; align-items: center; gap: 5px; }
 .activity-legend i { width: 9px; height: 9px; border-radius: 2px; }
-.activity-rest { background: #c7c1af; }
-.activity-planning { background: #d77958; }
-.activity-move { background: #cb9e62; }
-.activity-work { background: #6a988b; }
-.activity-conversation { background: #9b89b3; }
+.activity-rest { background: #beb9ab; }
+.activity-planning { background: #d5927b; }
+.activity-move { background: #d2ac6a; }
+.activity-work { background: #7fa393; }
+.activity-conversation { background: #a391b4; }
 .activity-lanes { margin-bottom: 24px; }
 .activity-axis, .activity-lane { display: grid; grid-template-columns: 138px minmax(90px, 1fr); gap: 10px; align-items: center; }
 .activity-axis { color: var(--muted); font-size: 10px; padding-bottom: 7px; }
