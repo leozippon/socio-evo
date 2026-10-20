@@ -23,7 +23,7 @@ async def until(predicate):
     await asyncio.wait_for(poll(), 2)
 
 
-@pytest.mark.parametrize("retry", [None, "truncated", "invalid"])
+@pytest.mark.parametrize("retry", [None, "truncated", "invalid", "missing_thought"])
 @pytest.mark.parametrize("late_result", [False, True])
 @pytest.mark.parametrize("change", ["speech", "target_left"])
 async def test_body_restart_retains_draft_latest_scene_and_commits_once(
@@ -41,7 +41,7 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
                 return LLMResponse(text=json.dumps({"do": "reply", "targets": [target]}), latency=0)
             body_calls.append(request)
             if len(body_calls) == 1:
-                partial.text = '{"text":"unfinished'
+                partial.text = '{"thought":"Old private thought","text":"unfinished'
                 started.set()
                 try:
                     await asyncio.Event().wait()
@@ -49,18 +49,29 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
                     cancelled.set()
                     await cleanup.wait()
                     if late_result:
-                        return LLMResponse(text='{"text":"Stale answer"}', latency=0)
+                        return LLMResponse(
+                            text='{"thought":"Stale private thought","text":"Stale answer"}',
+                            latency=0,
+                        )
                     raise
             if len(body_calls) == 2:
                 resumed.set()
                 await final.wait()
                 if retry:
                     return LLMResponse(
-                        text="" if retry == "truncated" else "invalid body",
+                        text=(
+                            ""
+                            if retry == "truncated"
+                            else '{"text":"Missing private thought"}'
+                            if retry == "missing_thought"
+                            else "invalid body"
+                        ),
                         truncated=retry == "truncated",
                         latency=0,
                     )
-            return LLMResponse(text='{"text":"Current answer"}', latency=0)
+            return LLMResponse(
+                text='{"thought":"Current private thought","text":"Current answer"}', latency=0
+            )
 
     config = load_config(Path("experiments/configs/community/realtime.yaml"), ExperimentConfig)
     seed = next(a for a in config.agents if a.profile.name == "Tomas")
@@ -112,14 +123,14 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
         assert not any(m.text == "Stale answer" for m in activity.messages)
         assert '"thought"' not in json.dumps(requests[0].json_schema)
         for request in body_calls:
-            assert set(request.json_schema["properties"]) == {"text"}
+            assert set(request.json_schema["properties"]) == {"thought", "text"}
             usage = request.metadata["context_usage"]
             assert usage["input_count"] <= usage["input_limit"]
             assert request.sampling.max_tokens == 4096
             assert request.metadata["decision_id"] == logical_id
         if retry:
             assert len(body_calls) == 3
-            assert body_calls[-1].after_invalid is (retry == "invalid")
+            assert body_calls[-1].after_invalid is (retry != "truncated")
         rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]
         cancelled_rows = [
             r for r in rows if r["kind"] == "tool_cancelled" and r["actor"] == "Tomas"
@@ -136,8 +147,18 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
         assert cancelled_rows[0]["payload"]["mode"] == "resume"
         assert body_calls[0].metadata["request_id"] != body_calls[1].metadata["request_id"]
         assert cancelled_rows[0]["payload"]["request_id"] == body_calls[0].metadata["request_id"]
+        accepted = [r for r in rows if r["kind"] == "decision" and r["actor"] == "Tomas"]
+        assert len(accepted) == 1
+        assert accepted[0]["payload"]["thought"] == "Current private thought"
+        assert all("private thought" not in m.text for m in activity.messages)
+        assert any("private thought" in m.content for m in history if m.role == "assistant")
         records = listener.memory.episodic.read()
         assert sum("Current answer" in r.text for r in records if r.kind is None) == 1
+        assert not any(
+            "Old private thought" in r.text or "Stale private thought" in r.text
+            for r in records
+            if r.kind is None
+        )
     finally:
         cleanup.set()
         final.set()
@@ -155,7 +176,9 @@ async def test_body_finishing_after_day_close_keeps_memory_chronological(rt, tmp
                 return LLMResponse(text='{"do":"reply","targets":["Mei"]}', latency=0)
             started.set()
             await release.wait()
-            return LLMResponse(text='{"text":"Closing answer"}', latency=0)
+            return LLMResponse(
+                text='{"thought":"Closing private thought","text":"Closing answer"}', latency=0
+            )
 
     config = load_config(Path("experiments/configs/community/realtime.yaml"), ExperimentConfig)
     seed = next(a for a in config.agents if a.profile.name == "Tomas")
@@ -235,7 +258,9 @@ async def test_duplicate_speech_waits_and_feedback_reaches_real_agent(rt, tmp_pa
                 if len(requests) > 2:
                     targets.reverse()
                 return LLMResponse(text=json.dumps({"do": "reply", "targets": targets}), latency=0)
-            return LLMResponse(text=json.dumps({"text": next(texts)}), latency=0)
+            return LLMResponse(
+                text=json.dumps({"thought": "Choose my words", "text": next(texts)}), latency=0
+            )
 
     config = load_config(Path("experiments/configs/community/realtime.yaml"), ExperimentConfig)
     seed = next(a for a in config.agents if a.profile.name == "Tomas")
@@ -277,7 +302,9 @@ async def test_repeat_guard_allows_changed_context_or_reply(rt, tmp_path, change
                 return LLMResponse(text=json.dumps({"do": "reply", "targets": [target]}), latency=0)
             body_calls += 1
             text = "Changed" if body_calls > 1 and change == "text" else "Same words"
-            return LLMResponse(text=json.dumps({"text": text}), latency=0)
+            return LLMResponse(
+                text=json.dumps({"thought": "Choose my words", "text": text}), latency=0
+            )
 
     config = load_config(Path("experiments/configs/community/realtime.yaml"), ExperimentConfig)
     seed = next(a for a in config.agents if a.profile.name == "Tomas")

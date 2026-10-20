@@ -249,7 +249,10 @@ class Agent:
             if any(
                 getattr(a, "menu", {}).get("reply_phase") == "body" for a in observation.allowed
             ):
-                instruction = "Write your reply to the addressed members."
+                instruction = (
+                    "Briefly state your private thought in thought, then write only the words "
+                    "you will say to the addressed members in text."
+                )
             if can_write:
                 instruction += (
                     "\nYou may update one of your existing job notes before acting. "

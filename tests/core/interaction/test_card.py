@@ -401,3 +401,29 @@ def test_conversation_intent_targets_are_bounded_by_current_recipients(targets):
         assert card.decision(reply).action.arguments["targets"] == recipients
     with pytest.raises(ValidationError):
         card.model.model_validate({"do": "reply", "targets": [targets[0]] * (len(targets) + 1)})
+
+
+def test_conversation_body_requires_private_thought_and_keeps_it_out_of_speech():
+    from core.interaction.card import MayActivity
+
+    card = Card(
+        [
+            MayActivity(
+                layer="tool",
+                menu={
+                    "realtime": True,
+                    "reply_phase": "body",
+                    "reply_targets": ["Mei"],
+                },
+            )
+        ]
+    )
+    schema = card.model.model_json_schema()
+    assert set(schema["required"]) == {"thought", "text"}
+    assert "do" not in schema["properties"]
+    reply = card.model.model_validate({"thought": "I want to reassure Mei.", "text": "I can help."})
+    decision = card.decision(reply)
+    assert decision.thought == "I want to reassure Mei."
+    assert decision.action.arguments == {"text": "I can help.", "targets": ["Mei"]}
+    with pytest.raises(ValidationError):
+        card.model.model_validate({"text": "I can help."})

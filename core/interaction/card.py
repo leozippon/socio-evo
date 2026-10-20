@@ -721,7 +721,7 @@ def _model(index: int, form: _Form, *, compact=False) -> type[BaseModel]:
     fields: dict[str, Any] = (
         {} if compact and form.does == "reply body" else {DOES: (Literal[form.does], ...)}
     )
-    if not compact:
+    if not compact or form.does == "reply body":
         fields = {THOUGHT: (str, ...), **fields}
     for position, (key, (annotation, word)) in enumerate(form.fields.items()):
         fields[f"field_{position}"] = (annotation, Field(alias=key, description=word))
