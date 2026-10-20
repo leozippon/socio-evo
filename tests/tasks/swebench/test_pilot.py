@@ -23,6 +23,13 @@ def test_container_has_no_host_mounts_or_network_or_docker_socket():
     assert not {"--privileged", "-v", "--volume", "--mount", "--env-file"} & set(args)
 
 
+def test_default_django_test_parallelism_matches_container_cpu_quota():
+    args = container_args("pilot", "image")
+    cpus = args[args.index("--cpus") + 1]
+    environment = args[args.index("--env") + 1]
+    assert environment == f"DJANGO_TEST_PROCESSES={cpus}"
+
+
 def test_image_names_are_validated_before_docker_access():
     assert image_for("astropy__astropy-12907").endswith("astropy_1776_astropy-12907:latest")
     with pytest.raises(ValueError):

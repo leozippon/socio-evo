@@ -28,6 +28,8 @@ from infrastructure.llm import (
 )
 from tasks.swebench.docker_exec import captured_exec
 
+CONTAINER_CPUS = 2
+
 
 class PilotConfig(StrictModel):
     llm: LLMConfig
@@ -82,7 +84,9 @@ def container_args(name: str, image: str) -> list[str]:
         "--memory",
         "6g",
         "--cpus",
-        "2",
+        str(CONTAINER_CPUS),
+        "--env",
+        f"DJANGO_TEST_PROCESSES={CONTAINER_CPUS}",
         image,
         "sleep",
         "infinity",
