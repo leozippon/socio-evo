@@ -81,6 +81,9 @@ class Activity(MutableState):
     feedback: dict[str, list[str]] = Field(default_factory=dict)
     result: dict[str, str] = Field(default_factory=dict)
 
+    def interrupts_reply(self, event, targets):
+        return False
+
     @property
     def participants(self) -> tuple[str, ...]:
         return tuple(who for who, member in self.members.items() if member.active)
@@ -139,6 +142,11 @@ class ConversationActivity(Activity):
     public: bool = False
     invited: tuple[str, ...] = ()
     messages: list[Message] = Field(default_factory=list)
+
+    def interrupts_reply(self, event, targets):
+        if not targets or event.payload.get("activity") != self.id:
+            return False
+        return event.kind == "speech" or (event.kind == "activity_left" and event.actor in targets)
 
     def unread(self, who: str) -> list[Message]:
         member = self.members[who]

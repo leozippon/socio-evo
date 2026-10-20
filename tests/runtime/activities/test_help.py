@@ -31,7 +31,12 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     gate = request.getfixturevalue(fixture)
     enter(gate, kind)
     card = Card(gate.observation("Mei").allowed)
-    reply = card.model.model_validate({"thought": "Read the rules", "do": "help"})
+    reply = card.model.model_validate(
+        {
+            "do": "help",
+            **({} if fixture == "rt" and kind == "conversation" else {"thought": "Read the rules"}),
+        }
+    )
     action = card.decision(reply).action
     assert action.tool == "help" and not action.arguments
     gate.emit(EventKind.ACTIVITY_FEEDBACK, "Unread before help", actor="Mei")

@@ -184,6 +184,18 @@ def activity_forms(layer, menu):
         result.extend(confirmed_wait_forms(menu))
         result.append(tool("help", "help"))
         return result
+    if menu.get("reply_phase") == "body":
+        return [
+            _Form(
+                "reply body",
+                {"text": (TEXT, None)},
+                lambda r: Activity(
+                    operation="activity_tool",
+                    tool="reply",
+                    arguments={"text": r["text"], "targets": menu["reply_targets"]},
+                ),
+            )
+        ]
     tools = set(menu["tools"])
     result = [tool("leave this activity", "leave")] if "leave" in tools else []
     definitions = {
@@ -217,6 +229,20 @@ def activity_forms(layer, menu):
         "test": tool("run local tests", "test", {"command": (TEXT, None)}),
         "submit": tool("submit your repair", "submit", {"report": (TEXT, None)}),
     }
+    if menu.get("reply_phase") == "intent":
+        targets = menu["reply_targets"]
+        definitions["reply"] = tool(
+            "reply",
+            "reply",
+            {
+                "targets": (
+                    Annotated[list[_one_of(targets)], Field(min_length=1)],
+                    "Name everyone you are addressing; for the group list all current members.",
+                ),
+            },
+        )
+        if not targets:
+            tools.discard("reply")
     result.extend(form for name, form in definitions.items() if name in tools)
     if "leave" in tools:
         result.append(rest_form())

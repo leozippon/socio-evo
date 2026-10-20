@@ -610,7 +610,10 @@ class Card:
                 )
                 for f in self._forms
             ]
-        self._models = [_model(index, form) for index, form in enumerate(self._forms)]
+        compact = any(isinstance(a, MayActivity) and a.menu.get("reply_phase") for a in allowed)
+        self._models = [
+            _model(index, form, compact=compact) for index, form in enumerate(self._forms)
+        ]
         self.model: type[BaseModel] = (
             self._models[0] if len(self._models) == 1 else RootModel[Union[tuple(self._models)]]  # noqa: UP007
         )
@@ -620,7 +623,9 @@ class Card:
         values = answer.model_dump(by_alias=True)
         form = self._forms[self._models.index(type(answer))]
         return Decision(
-            thought=values[THOUGHT], action=form.action(values), goal=values.get("current goal")
+            thought=values.get(THOUGHT, ""),
+            action=form.action(values),
+            goal=values.get("current goal"),
         )
 
 
@@ -712,8 +717,12 @@ def _one_of(values: Iterable[Any]) -> Any:
     return Literal[tuple(sorted(values))]
 
 
-def _model(index: int, form: _Form) -> type[BaseModel]:
-    fields: dict[str, Any] = {THOUGHT: (str, ...), DOES: (Literal[form.does], ...)}
+def _model(index: int, form: _Form, *, compact=False) -> type[BaseModel]:
+    fields: dict[str, Any] = (
+        {} if compact and form.does == "reply body" else {DOES: (Literal[form.does], ...)}
+    )
+    if not compact:
+        fields = {THOUGHT: (str, ...), **fields}
     for position, (key, (annotation, word)) in enumerate(form.fields.items()):
         fields[f"field_{position}"] = (annotation, Field(alias=key, description=word))
     return create_model(f"Form{index}", __base__=StrictModel, **fields)

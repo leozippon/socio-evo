@@ -147,12 +147,20 @@ async def test_speech_is_heard_directly_without_reading_or_length_charge(rt):
     class Speaker:
         async def choose_tool(self, obs):
             await gate.wait()
-            return Decision(thought="Explain", action=use("reply", text=text))
+            return Decision(
+                thought="Explain",
+                action=use(
+                    "reply",
+                    targets=["Tomas"],
+                    **({"text": text} if obs.allowed[0].menu["reply_phase"] == "body" else {}),
+                ),
+            )
 
     rt.sim.agents["Mei"] = Speaker()
     rt.start_decision("Mei")
     rt.wall.value += 5
     gate.set()
+    await finish(rt, "Mei")
     await finish(rt, "Mei")
     await finish(rt, "Mei")
     heard = [p for p in rt.env.perceive("Tomas") if p.kind == EventKind.SPEECH]
@@ -164,14 +172,14 @@ async def test_speech_is_heard_directly_without_reading_or_length_charge(rt):
     assert "read" not in rt.menu("Tomas")["tools"]
 
 
-async def test_two_person_exit_waits_for_started_speech(rt):
+async def test_two_person_exit_during_intent_does_not_start_speech(rt):
     activity = conversation(rt)
     gate = asyncio.Event()
 
     class Listener:
         async def choose_tool(self, obs):
             await gate.wait()
-            return Decision(thought="Answer", action=use("reply", text="The final answer"))
+            return Decision(thought="Answer", action=use("reply", targets=["Mei"]))
 
     rt.sim.agents["Tomas"] = Listener()
     rt.start_decision("Tomas")
@@ -185,7 +193,7 @@ async def test_two_person_exit_waits_for_started_speech(rt):
         await finish(rt, "Tomas")
     rt.flush_leaves()
     assert activity.status == "ended" and not activity.participants
-    assert any("The final answer" in p.text for p in rt.env.perceive("Mei"))
+    assert not any("The final answer" in p.text for p in rt.env.perceive("Mei"))
 
 
 async def test_join_leave_and_onsite_delivery_permissions(rt):
@@ -482,7 +490,11 @@ async def test_hearing_during_inference_keeps_persistent_memory_in_time_order(rt
         async def complete(self, request):
             await gate.wait()
             return LLMResponse(
-                text=json.dumps({"thought": "Respond", "do": "reply", "text": "Thank you"}),
+                text=json.dumps(
+                    {"text": "Thank you"}
+                    if request.metadata.get("decision_phase") == "reply_body"
+                    else {"do": "reply", "targets": ["Mei"]}
+                ),
                 latency=1,
             )
 

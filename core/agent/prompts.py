@@ -396,9 +396,14 @@ def decision_prompt(
         memories = _memories(records, observation.time, limits, setting)
         sections.append(REMEMBER.format(memories=memories))
     sections.extend(observation.evidence)
+    phase = next((getattr(a, "menu", {}).get("reply_phase") for a in observation.allowed), None)
+    instruction = {
+        "intent": "Choose your next action; for a reply, name the people you will address.",
+        "body": "Write the words you will say to the addressed members in the text field.",
+    }.get(phase, REPLY)
     sections += [
         NOW.format(time=_time(observation.time, setting), situation=observation.situation),
-        REPLY,
+        instruction,
     ]
     return "\n\n".join(sections)
 

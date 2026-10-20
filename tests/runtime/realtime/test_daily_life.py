@@ -48,13 +48,16 @@ async def test_lunch_drains_other_speaker_without_waiting_for_joint_idle(rt):
     async def utterance():
         await gate.wait()
         return Finished(
-            Decision(thought="finish sentence", action=use("reply", text="See you at lunch.")),
+            Decision(
+                thought="finish sentence",
+                action=use("reply", targets=["Mei"], text="See you at lunch."),
+            ),
             at(1, "12:01"),
             1,
         )
 
     task = asyncio.create_task(utterance())
-    job = Running(task, "decision", activity.id, rt.now)
+    job = Running(task, "decision", activity.id, rt.now, targets=("Mei",))
     rt.running["Tomas"] = job
     rt.now = at(1, "12:00")
     rt.daily_choices()

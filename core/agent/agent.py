@@ -217,6 +217,8 @@ class Agent:
         recall_limit = settings.max_queries if settings.enabled else 0
         notes = self.cognition.work_notes
         can_edit = notes.enabled and notes.editable and bool(self.memory.work.tasks())
+        if any(getattr(a, "menu", {}).get("reply_phase") for a in observation.allowed):
+            recall_limit, can_edit = 0, False
         rounds = recall_limit + int(can_edit)
         note_update = None
         actions = (
@@ -244,6 +246,10 @@ class Agent:
                 if can_recall
                 else "Choose what to do now using what you know."
             )
+            if any(
+                getattr(a, "menu", {}).get("reply_phase") == "body" for a in observation.allowed
+            ):
+                instruction = "Write your reply to the addressed members."
             if can_write:
                 instruction += (
                     "\nYou may update one of your existing job notes before acting. "

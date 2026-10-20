@@ -8,6 +8,8 @@ from infrastructure.llm.base import LLMPartial, Message
 
 class DecisionContinuation:
     def __init__(self):
+        self.reply_draft = ()
+        self.metadata = {}
         self.messages = ()
         self.notes = []
         self._commit = None
@@ -49,6 +51,9 @@ class ContinuationClient:
             from core.agent.context import unpack
 
             request = unpack(request)
+        request = request.model_copy(
+            update={"metadata": {**request.metadata, **continuation.metadata}}
+        )
         incoming = request.messages
         # Structured retries carry previous replies/corrections in their incoming
         # messages. Keep the original base and only the latest correction; the

@@ -3,7 +3,8 @@
 import asyncio
 import hashlib
 import inspect
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from uuid import uuid4
 
 from core.environment.rejection import Rejected
 from core.interaction import ClaimTask, Decision, EventKind, SubmitWork, day_of
@@ -41,8 +42,12 @@ class Running:
     action: Choice | None = None
     task_id: str | None = None
     continuation: object | None = None
-    visible: object = None
     invalidated: bool = False
+    cancel_recorded: bool = False
+    targets: tuple[str, ...] = ()
+    decision_id: str = ""
+    request_id: str = ""
+    causes: list = field(default_factory=list)
 
 
 class RealtimeEngine(ActivityEngine):
@@ -57,6 +62,7 @@ class RealtimeEngine(ActivityEngine):
         # Recording-only rest: current remains empty so selection and invitation
         # readiness retain their existing semantics, rather than behaving like sleep.
         self.selection_rests = {}
+        self._lifecycle_transition = False
 
     def begin_selection_rest(self, who):
         if who in self.current or who in self.selection_rests or self.now >= self.end:
@@ -100,7 +106,14 @@ class RealtimeEngine(ActivityEngine):
         # transition first in the log, only after entry is known to have succeeded.
         if kind == EventKind.ACTIVITY_ENTERED and not payload.get("phase"):
             self.end_selection_rest(actor, "Next activity started.")
-        return super().emit(kind, text, actor=actor, audience=audience, **payload)
+        event = super().emit(kind, text, actor=actor, audience=audience, **payload)
+        if kind == EventKind.ACTIVITY_LEFT:
+            for who, job in list(self.running.items()):
+                if self.activities.get(job.activity) and self.activities[
+                    job.activity
+                ].interrupts_reply(event, job.targets):
+                    self.invalidate_decision(who, event=event, changed_fields=["reply_targets"])
+        return event
 
     def prepare_day(self, start):
         super().prepare_day(start)
@@ -130,6 +143,11 @@ class RealtimeEngine(ActivityEngine):
     def menu(self, who):
         menu = super().menu(who)
         menu["realtime"] = True
+        active = self.activities.get(self.current.get(who))
+        if isinstance(active, ConversationActivity):
+            menu.update(
+                reply_phase="intent", reply_targets=[p for p in active.participants if p != who]
+            )
         if "tools" in menu:
             # Availability is checked at launch, not by a guessed future duration.
             tools = set(menu["tools"]) | set(menu["blocked"])
@@ -180,59 +198,19 @@ class RealtimeEngine(ActivityEngine):
 
         return asyncio.create_task(run())
 
-    def decision_context(self, who):
-        """Only changing facts visible to this resident; elapsed time is not news."""
-        place = self.env.world.locations[who]
-        active = self.activities.get(self.current.get(who))
-        conversations = [
-            (a.id, a.topic, tuple(a.participants))
-            for a in self.activities.values()
-            if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
-        ]
-        invitations = [
-            {k: v for k, v in view.items() if k != "seconds_until_start"}
-            for view in self.invitation_views(who)
-        ]
-        ignored = {
-            EventKind.DECISION,
-            EventKind.TOOL_STARTED,
-            EventKind.TOOL_COMPLETED,
-            EventKind.TOOL_CANCELLED,
-        }
-        news = tuple(
-            event.seq
-            for event in self.env.log.pending_events(who)
-            if event.kind not in ignored and event.actor != who
-        )
-        claim = self.env.board.claim_of(who)
-        return (
-            self.current.get(who),
-            place,
-            who in self.outside,
-            tuple(
-                p
-                for p in self.env.world.occupants(place)
-                if (p in self.outside) == (who in self.outside)
-            ),
-            conversations,
-            invitations,
-            news,
-            tuple(active.feedback.get(who, [])) if active else (),
-            claim.model_dump() if claim else None,
-            tuple((h.id, h.status) for h in self.handoffs.values() if h.recipient == who),
-            who in self.deferred,
-            self.current.get(who) in self.closing,
-            self.now >= self.end,
-            self.venue_or_work_closed(who, place),
-        )
-
-    def start_decision(self, who, previous=None):
+    def start_decision(self, who, previous=None, *, targets=()):
         self.begin_selection_rest(who)
         activity_id = self.current.get(who)
         agent = self.sim.agents[who]
         method = agent.choose_tool if activity_id else agent.choose_activity
         supports_continuation = "continuation" in inspect.signature(method).parameters
         continuation = previous.continuation if previous else None
+        if previous and previous.targets and not targets:
+            active = self.activities.get(activity_id)
+            if active and all(p in active.participants for p in previous.targets):
+                targets = previous.targets
+            elif continuation is not None:
+                continuation.reply_draft = continuation.messages
         if supports_continuation and continuation is None:
             from core.agent import DecisionContinuation
 
@@ -242,7 +220,26 @@ class RealtimeEngine(ActivityEngine):
             # Consume incoming percepts only once the task actually starts. A task
             # cancelled before its first turn must leave them queued.
             observation = self.observation(who)
-            self.running[who].visible = self.decision_context(who)
+            if targets:
+                allowance = observation.allowed[0]
+                allowance = allowance.model_copy(
+                    update={
+                        "menu": {
+                            **allowance.menu,
+                            "reply_phase": "body",
+                            "reply_targets": list(targets),
+                        }
+                    }
+                )
+                observation = observation.model_copy(
+                    update={
+                        "allowed": (allowance,),
+                        "situation": observation.situation
+                        + "\nAddressed members: "
+                        + ", ".join(targets)
+                        + ". Write only the words you will say to these members in the text field.",
+                    }
+                )
             try:
                 if supports_continuation:
                     return await method(observation, continuation=continuation)
@@ -256,25 +253,81 @@ class RealtimeEngine(ActivityEngine):
             activity_id,
             previous.start if previous else self.now,
             continuation=continuation,
+            targets=tuple(targets),
+            decision_id=previous.decision_id if previous else uuid4().hex,
+            request_id=uuid4().hex,
         )
-        self.running[who].visible = self.decision_context(who)
+        job = self.running[who]
+        if continuation is not None:
+            continuation.metadata = {
+                "decision_id": job.decision_id,
+                "request_id": job.request_id,
+                "decision_phase": "reply_body" if targets else "intent",
+            }
 
-    def invalidate_decision(self, who):
+    def invalidate_decision(self, who, *, event=None, changed_fields=()):
         job = self.running.get(who)
-        if job and job.kind == "decision" and not job.invalidated:
+        if not job or job.kind != "decision" or not job.targets:
+            return
+        active = self.activities.get(job.activity)
+        if event is not None and (not active or not active.interrupts_reply(event, job.targets)):
+            return
+        if event is not None:
+            job.causes.append(
+                {
+                    "event_id": event.seq,
+                    "event_type": str(event.kind),
+                    "changed_fields": list(changed_fields),
+                }
+            )
+        if not job.invalidated:
             job.invalidated = True
             job.task.cancel()
 
+    def interruption_stop(self, who, job):
+        active = self.activities.get(job.activity)
+        return (
+            self.current.get(who) != job.activity
+            or not active
+            or active.status == "ended"
+            or job.activity in self.closing
+            or who in self.deferred
+            or self.now >= self.end
+        )
+
+    def record_decision_cancel(self, who, job, *, stop, changed_fields=()):
+        if job.cancel_recorded:
+            return
+        job.cancel_recorded = True
+        self.emit(
+            EventKind.TOOL_CANCELLED,
+            "Reply generation stopped." if stop else "Reply generation interrupted.",
+            actor=who,
+            audience=[],
+            activity=job.activity,
+            tool="reply" if job.targets else "decision",
+            decision_id=job.decision_id,
+            request_id=job.request_id,
+            mode="stop" if stop else "resume",
+            causes=job.causes,
+            changed_fields=sorted(
+                {*changed_fields, *(f for c in job.causes for f in c["changed_fields"])}
+            ),
+            event_ids=[c["event_id"] for c in job.causes],
+        )
+
+    async def restart_decision(self, who, job):
+        await asyncio.gather(job.task, return_exceptions=True)
+        stop = self.interruption_stop(who, job)
+        self.record_decision_cancel(who, job, stop=stop)
+        del self.running[who]
+        if not stop:
+            self.start_decision(who, job)
+
     async def refresh_decisions(self):
         for who, job in list(self.running.items()):
-            if job.kind != "decision":
-                continue
-            if job.invalidated or (
-                job.visible is not None and job.visible != self.decision_context(who)
-            ):
-                self.invalidate_decision(who)
-                await asyncio.gather(job.task, return_exceptions=True)
-                self.start_decision(who, job)
+            if job.kind == "decision" and job.invalidated:
+                await self.restart_decision(who, job)
 
     def schedule(self, who, action):
         if who in self.running:
@@ -285,8 +338,21 @@ class RealtimeEngine(ActivityEngine):
             return self.select(who, action)
         if self.now >= self.end or self.current[who] in self.closing or who in self.deferred:
             raise Rejected("The activity is closing; no new operation may start.")
-        if action.operation != "activity_tool" or action.tool not in self.menu(who)["tools"]:
+        menu = self.menu(who)
+        if action.operation != "activity_tool" or action.tool not in menu["tools"]:
             raise Rejected("Choose an available tool in your current activity.")
+        choices = {
+            "claim": ("job", "jobs"),
+            "accept": ("invitation", "accept_invitations"),
+            "decline": ("invitation", "invitations"),
+            "defer": ("invitation", "defer_invitations"),
+        }
+        if action.tool in choices:
+            argument, offered = choices[action.tool]
+            if action.arguments.get(argument) not in menu.get(offered, ()):
+                raise Rejected(
+                    "That choice is no longer available; choose from the current situation."
+                )
         # Reuse input bounds, never its estimated cost. Reading conversation is not offered.
         self.prepare(who, action)
         claim = self.env.board.claim_of(who)
@@ -330,12 +396,30 @@ class RealtimeEngine(ActivityEngine):
             timing="wall",
         )
 
+    def daily_choices(self):
+        self._lifecycle_transition = True
+        try:
+            super().daily_choices()
+        finally:
+            self._lifecycle_transition = False
+
     def leave(self, who, reason):
         activity = self.activities.get(self.current.get(who))
         if who in self.running:
             self.deferred[who] = reason
             return
-        if isinstance(activity, ConversationActivity) and len(activity.participants) <= 2:
+        targeted = (
+            not self._lifecycle_transition
+            and isinstance(activity, ConversationActivity)
+            and any(
+                who in job.targets and job.activity == activity.id for job in self.running.values()
+            )
+        )
+        if (
+            isinstance(activity, ConversationActivity)
+            and len(activity.participants) <= 2
+            and not targeted
+        ):
             for person in activity.participants:
                 job = self.running.get(person)
                 if job and job.action and job.action.tool == "wait":
@@ -371,7 +455,7 @@ class RealtimeEngine(ActivityEngine):
         )
         activity.messages.append(message)
         generation = self.speech_times.pop(who, {})
-        self.emit(
+        event = self.emit(
             EventKind.SPEECH,
             f'{who} says: "{text}"',
             actor=who,
@@ -385,9 +469,12 @@ class RealtimeEngine(ActivityEngine):
             if person in activity.participants:
                 activity.members[person].cursor = len(activity.messages)
                 self.sim._met[person].update(p for p in activity.participants if p != person)
+            job = self.running.get(person)
+            if person != who and job and job.activity == activity.id:
+                self.invalidate_decision(
+                    person, event=event, changed_fields=["conversation_speech"]
+                )
             self.remember(person)
-            if person != who:
-                self.invalidate_decision(person)
             waiting = self.running.get(person)
             if waiting and waiting.action and waiting.action.tool == "wait":
                 waiting.task.cancel()
@@ -419,6 +506,10 @@ class RealtimeEngine(ActivityEngine):
                 }
             )
         elif tool == "reply":
+            if self.current.get(who) != activity.id or any(
+                p not in activity.participants for p in args.get("targets", ())
+            ):
+                raise Rejected("The addressed members are no longer in this conversation.")
             self.speak(who, args["text"], activity)
         elif tool == "submit":
             claim = self.env.board.claim_of(who)
@@ -516,13 +607,8 @@ class RealtimeEngine(ActivityEngine):
         )
 
     async def finish(self, who, job):
-        if job.kind == "decision" and (
-            job.invalidated
-            or (job.visible is not None and job.visible != self.decision_context(who))
-        ):
-            self.invalidate_decision(who)
-            await asyncio.gather(job.task, return_exceptions=True)
-            self.start_decision(who, job)
+        if job.kind == "decision" and job.invalidated:
+            await self.restart_decision(who, job)
             return
         del self.running[who]
         if job.task.cancelled():
@@ -545,9 +631,6 @@ class RealtimeEngine(ActivityEngine):
                 for text in ("12:00", "18:00")
             )
             reply = finished.value
-            if job.continuation is not None and not isinstance(reply, StructuredOutputError):
-                job.continuation.commit()
-            self.remember(who)
             if isinstance(reply, StructuredOutputError):
                 lapse(self.env, who, reply, time=self.now // 60)
                 self.leave(who, "No valid model decision.")
@@ -560,9 +643,37 @@ class RealtimeEngine(ActivityEngine):
                         ),
                     )
                 return
+            if self.current.get(who) != job.activity:
+                raise Rejected("The activity changed before this decision could be used.")
             action = reply.action
             if isinstance(action, Choice) and action.tool == "reply":
+                active = self.activities.get(self.current.get(who))
+                targets = tuple(dict.fromkeys(action.arguments.get("targets", ())))
+                if (
+                    not isinstance(active, ConversationActivity)
+                    or not targets
+                    or any(p == who or p not in active.participants for p in targets)
+                ):
+                    raise Rejected("Choose current conversation members to address.")
+                if not job.targets:
+                    if self.interruption_stop(who, job):
+                        self.remember(who)
+                        return
+                    if "text" in action.arguments:
+                        raise Rejected("Choose whom to address before writing your reply.")
+                    if job.continuation is not None:
+                        job.continuation.messages = job.continuation.reply_draft
+                        job.continuation.reply_draft = ()
+                    self.start_decision(who, job, targets=targets)
+                    return
+                if targets != job.targets:
+                    raise Rejected("Keep the addressed members chosen for this reply.")
+                self.prepare(who, action)
+            if isinstance(action, Choice) and action.tool == "reply":
                 self.speech_times[who] = {
+                    "addressed_targets": list(job.targets),
+                    "decision_id": job.decision_id,
+                    "request_id": job.request_id,
                     "generation_start": job.start,
                     "generation_end": self.now,
                     "generation_wall_seconds": wall_seconds,
@@ -575,6 +686,8 @@ class RealtimeEngine(ActivityEngine):
                 EventKind.DECISION,
                 f"{who} chose {action.kind}.",
                 actor=who,
+                decision_id=job.decision_id,
+                request_id=job.request_id,
                 thought=reply.thought,
                 action=recorded_action,
                 layer="activity_tool" if job.activity else "choose_activity",
@@ -598,7 +711,10 @@ class RealtimeEngine(ActivityEngine):
                 if isinstance(action, Choice) and action.tool == "reply" and current:
                     activity = self.activities[current]
                     if isinstance(activity, ConversationActivity):
+                        if job.continuation is not None:
+                            job.continuation.commit()
                         self.speak(who, action.arguments["text"], activity)
+                        self.remember(who)
                 return
             if not isinstance(action, Choice):
                 raise Rejected("Choose an activity or an available activity tool.")
@@ -607,6 +723,9 @@ class RealtimeEngine(ActivityEngine):
             if self.transitions[key] > self.timing.max_zero_transitions:
                 raise ActivityLoopError(f"{who} repeatedly acted without advancing the wall clock")
             self.schedule(who, action)
+            if job.continuation is not None:
+                job.continuation.commit()
+            self.remember(who)
         else:
             await self.commit_tool(who, job, finished)
 
@@ -814,8 +933,13 @@ class RealtimeEngine(ActivityEngine):
 
     async def close_running(self):
         tasks = [j.task for j in self.running.values()]
-        for task in tasks:
-            task.cancel()
+        for who, job in self.running.items():
+            if not job.task.done():
+                job.task.cancel()
+                if job.kind == "decision":
+                    self.record_decision_cancel(
+                        who, job, stop=True, changed_fields=["scheduler_state"]
+                    )
         await asyncio.gather(*tasks, return_exceptions=True)
         self.running.clear()
         for who in list(self.selection_rests):
