@@ -113,6 +113,9 @@ class RealtimeEngine(ActivityEngine):
                     job.activity
                 ].interrupts_reply(event, job.targets):
                     self.invalidate_decision(who, event=event, changed_fields=["reply_targets"])
+        elif kind == EventKind.DISCUSSION and payload.get("conversation_started"):
+            for who in list(self.running):
+                self.invalidate_decision(who, event=event, changed_fields=["open_conversations"])
         return event
 
     def prepare_day(self, start):
@@ -265,12 +268,27 @@ class RealtimeEngine(ActivityEngine):
                 "decision_phase": "reply_body" if targets else "intent",
             }
 
+    def interrupts_selection(self, who, job, event):
+        if job.activity is not None or self.current.get(who) is not None or event.actor == who:
+            return False
+        activity = self.activities.get(event.payload.get("activity"))
+        return (
+            event.kind == EventKind.DISCUSSION
+            and event.payload.get("conversation_started")
+            and isinstance(activity, ConversationActivity)
+            and self.conversation_access(who, activity)
+        )
+
     def invalidate_decision(self, who, *, event=None, changed_fields=()):
         job = self.running.get(who)
-        if not job or job.kind != "decision" or not job.targets:
+        if not job or job.kind != "decision":
             return
         active = self.activities.get(job.activity)
-        if event is not None and (not active or not active.interrupts_reply(event, job.targets)):
+        if event is not None:
+            reply = active is not None and active.interrupts_reply(event, job.targets)
+            if not reply and not self.interrupts_selection(who, job, event):
+                return
+        elif not job.targets:
             return
         if event is not None:
             job.causes.append(
@@ -288,8 +306,7 @@ class RealtimeEngine(ActivityEngine):
         active = self.activities.get(job.activity)
         return (
             self.current.get(who) != job.activity
-            or not active
-            or active.status == "ended"
+            or (job.activity is not None and (not active or active.status == "ended"))
             or job.activity in self.closing
             or who in self.deferred
             or self.now >= self.end
@@ -301,7 +318,7 @@ class RealtimeEngine(ActivityEngine):
         job.cancel_recorded = True
         self.emit(
             EventKind.TOOL_CANCELLED,
-            "Reply generation stopped." if stop else "Reply generation interrupted.",
+            "Decision stopped." if stop else "Decision interrupted.",
             actor=who,
             audience=[],
             activity=job.activity,

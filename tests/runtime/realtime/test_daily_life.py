@@ -78,3 +78,23 @@ async def test_lunch_drains_other_speaker_without_waiting_for_joint_idle(rt):
     rt.flush_leaves()
     rt.daily_choices()
     assert all(isinstance(rt.activities[rt.current[who]], MoveActivity) for who in ("Mei", "Tomas"))
+
+
+def test_evening_context_expresses_work_and_life_interest_with_real_venues(rt):
+    enable(rt)
+    rt.env.world.places["cafe"] = rt.env.world.places["cafe"].model_copy(
+        update={"name": "Harbour Café"}
+    )
+    rt.env.world.places["tavern"] = rt.env.world.places["tavern"].model_copy(
+        update={"name": "Pilot Boat"}
+    )
+    rt.now = at(1, "18:00")
+    text = "\n".join(rt.daily_context("Mei"))
+    assert "After work, you would enjoy spending part of the evening with neighbours." in text
+    assert "share work experience and ideas that may help with your tasks" in text
+    assert "talk about everyday life and make friends" in text
+    assert "Good relationships can bring mutual support in future work and life." in text
+    assert "Choose your own company and place" in text
+    assert "Restaurant" in text and "Harbour Café" in text and "Pilot Boat" in text
+    assert "Café Linde" not in text and "Anchor" not in text
+    assert "Evening is free" not in text

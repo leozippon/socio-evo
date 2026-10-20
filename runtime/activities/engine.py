@@ -1182,6 +1182,7 @@ class ActivityEngine:
                 activity=activity.id,
                 participants=list(activity.participants),
                 public_conversation=True,
+                conversation_started=True,
                 outside=outside,
             )
         elif action.operation == "select_conversation":
@@ -1478,6 +1479,7 @@ class ActivityEngine:
                 activity=activity.id,
                 participants=people,
                 end_seconds=until,
+                conversation_started=True,
             )
 
     def wake_rests(self):
@@ -1918,9 +1920,14 @@ class ActivityEngine:
                 "named invitations are optional."
             ]
         if self.now >= at(day, "18:00"):
+            venues = [p.name for p in self.env.world.places.values() if p.kind == PlaceKind.SOCIAL]
+            examples = ", such as " + ", ".join(venues) if venues else ""
             return [
-                "Evening is free: talk at the restaurant, cafe or bar, or go home to rest. "
-                "Choose your company and destination."
+                "After work, you would enjoy spending part of the evening with neighbours. "
+                "You can share work experience and ideas that may help with your tasks, "
+                "or talk about everyday life and make friends. "
+                "Good relationships can bring mutual support in future work and life. "
+                f"Choose your own company and place{examples}."
             ]
         return []
 
