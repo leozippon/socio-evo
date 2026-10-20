@@ -163,7 +163,7 @@ assert.equal(model.planningSuccessor([
 ], choosing[0], 483), null, "a later entry is not proof that this Planning succeeded");
 
 
-// Render the actual resident detail: retain the original ending once and show the real successor.
+// Render the resident detail: one ending and one shared, confirmed outcome summary.
 class DetailNode {
   constructor(text = "") { this.value = text; this.children = []; this.attrs = {}; }
   append(node) { this.children.push(node); }
@@ -188,18 +188,20 @@ const detailEvents = choosingEvents.map((event) => ({
     : event.kind === "activity_entered" && event.seq === 3 ? { ...event.payload, activity_type: "rest" } : event.payload,
 }));
 let detailNodes;
-const renderPlanning = async (recorded, through = 483) => {
+const renderPlanning = async (recorded, through = 483, activity = "0:Mei", day = 1) => {
   const nodes = await personActivities({
-    source: { doc: { last_time: through, event_days: [{ day: 1 }] }, eventDay: async () => recorded },
+    source: { doc: { last_time: through, event_days: [{ day }] }, eventDay: async () => recorded },
     world: {}, cast: { mention: (text) => text, badge: () => new DetailNode() }, places: new Map([["workshop", { name: "the Workshop" }]]),
-    route: { view: "person", experiment: "demo", run: "one", agent: "Mei", query: { activity: "0:Mei" } }, go: () => {},
+    route: { view: "person", experiment: "demo", run: "one", agent: "Mei", query: { activity, day: String(day) } }, go: () => {},
   });
   detailNodes = nodes;
   return nodes.map((node) => node.textContent).join("");
 };
 const detailText = await renderPlanning(detailEvents);
-assert.equal(detailText.split(stopped).length - 1, 1, "the same Planning ending is rendered only once");
-assert(detailText.includes("Next activityRest · Workshop"), "the actual Rest entry supplies the result and place");
+const restSummary = "Rest until 14:00 today · Workshop";
+const restEnding = `Mei stopped choosing the next activity: ${restSummary}. Next activity started.`;
+assert.equal(detailText.split(restEnding).length - 1, 1, "the Planning ending is rendered only once");
+assert(detailText.includes(`Next activity${restSummary}`), "the field and ending share the confirmed result");
 assert(!detailText.includes("Status" + stopped), "Status does not repeat the end log entry");
 assert(!(await renderPlanning(detailEvents, 481)).includes("Next activity"), "rewinding hides the future selection");
 assert(!(await renderPlanning(detailEvents.slice(0, 3))).includes("Next activityRest"), "a reason without successful entry never invents the chosen activity");
@@ -214,3 +216,37 @@ const toolDecision = { ...detailEvents[1], payload: { thought: "Check the board.
 const feedback = { ...detailEvents[2], kind: "activity_feedback", text: "The board has two open jobs.", payload: { activity: "work-1" } };
 await renderPlanning([workEntry, toolDecision, feedback]);
 assert(detailNodes.map((node) => node.findClass("decision")).find(Boolean).textContent.includes(feedback.text), "ordinary tool feedback remains visible in its decision card");
+
+
+// Sanitized metadata from the reported day-2 membership (no recorded thoughts/content).
+const targetEvents = [
+  { seq: 4418, time: 2033, kind: "activity_entered", actor: "Mei", audience: [], place: "workshop", payload: { sim_seconds: 122000, activity: "choosing-329", activity_type: "rest", phase: "choosing_next_activity", end: null, participants: ["Mei"] } },
+  { seq: 4419, time: 2033, kind: "tool_completed", actor: "Mei", audience: ["Mei"], place: "workshop", payload: { sim_seconds: 122000, activity: "work-298", tool: "leave" } },
+  { seq: 4431, time: 2037, kind: "decision", actor: "Mei", audience: [], place: "workshop", payload: { sim_seconds: 122229, action: { kind: "activity", operation: "resume_work", target: "work-53", tool: "", arguments: {} }, layer: "choose_activity" } },
+  { seq: 4432, time: 2037, kind: "activity_left", actor: "Mei", audience: [], place: "workshop", text: stopped, payload: { sim_seconds: 122229, activity: "choosing-329", activity_type: "rest", phase: "choosing_next_activity", reason: "Next activity started." } },
+  { seq: 4433, time: 2037, kind: "activity_entered", actor: "Mei", audience: ["Mei"], place: "workshop", payload: { sim_seconds: 122229, activity: "work-53", activity_type: "work", end: 2160, participants: ["Mei"] } },
+];
+const targetText = await renderPlanning(targetEvents, parseStamp("2-21:16:38"), "4418:Mei", 2);
+const workSummary = "Resume Work · Workshop";
+const workEnding = `Mei stopped choosing the next activity: ${workSummary}. Next activity started.`;
+assert(targetText.includes(`Next activity${workSummary}`));
+assert.equal(targetText.split(workEnding).length - 1, 1);
+assert.equal(targetText.split(workSummary).length - 1, 2, "field and final log line use the same summary");
+assert(!(await renderPlanning(targetEvents, 122228 / 60, "4418:Mei", 2)).includes(workSummary), "precise cutoff hides the future outcome");
+assert(!(await renderPlanning(targetEvents.slice(0, -1), 2716, "4418:Mei", 2)).includes(workSummary), "a choice and reason alone are not success");
+const namedPlaces = new Map([["workshop", { name: "the Workshop" }], ["home", { name: "the House" }]]);
+const outcome = (action, entry, extra = []) => model.planningOutcomeSummary([
+  ...choosingEvents.slice(0, 1),
+  { ...detailEvents[1], payload: { action } },
+  ...extra,
+  choosingEvents[2],
+  { ...choosingEvents[3], place: "home", payload: { activity: "next", ...entry } },
+], choosing[0], 483, namedPlaces);
+assert.equal(outcome({ kind: "activity", operation: "select_move", target: "workshop" }, { activity_type: "move" }), "Move to Workshop");
+assert.equal(outcome({ kind: "activity", operation: "select_move", target: "workshop" }, { activity_type: "move" }, [{ seq: 1.5, time: 482, actor: "Mei", kind: "action_rejected", payload: {} }]), "Move · From House", "a failed choice supplies no destination");
+assert.equal(outcome({ kind: "activity", operation: "select_conversation", target: "next" }, { activity_type: "conversation", participants: ["Kofi", "Mei", "Olga"] }), "Join Conversation with Kofi, Olga · House");
+assert.equal(outcome({ kind: "activity", operation: "resume_work", target: "wrong" }, { activity_type: "work" }), "Work · House", "unmatched decisions do not label a resumed activity");
+assert.equal(outcome({ kind: "activity", operation: "select_rest", arguments: { until: "07:45", day: "tomorrow" } }, { activity_type: "rest" }), "Rest until 07:45 tomorrow · House");
+assert.equal(outcome({ kind: "activity", operation: "select_rest", arguments: { until: "07:45", day: "tomorrow" } }, { activity_type: "work" }), "Work · House", "a different chosen type cannot describe the actual entry");
+assert.equal(outcome(null, { activity_type: "rest" }), "Rest · House", "missing choice details preserve only recorded facts");
+console.log("Concrete Planning outcomes and reported event-shape DOM checks passed");

@@ -1,5 +1,6 @@
-import { dayOf, dayStart, stamp } from "../clock.js";
+import { dayOf, dayStart, formatTime, stamp } from "../clock.js";
 import { href } from "../router.js";
+import { shortName } from "../world.js";
 
 // Activity intervals are membership intervals, not tool durations. Planned end times are
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
@@ -52,6 +53,35 @@ export function planningSuccessor(events, interval, through) {
     .sort((a, b) => a.seq - b.seq)[0];
   return next?.kind === "activity_entered" && next.time === interval.end && next.payload?.activity_type
     && next.payload.phase !== "choosing_next_activity" ? next : null;
+}
+
+/** Describe only an entered successor; the immediately preceding choice may clarify it. */
+export function planningOutcomeSummary(events, interval, through, places = null) {
+  const next = planningSuccessor(events, interval, through);
+  if (!next) return null;
+  const p = next.payload, type = p.activity_type;
+  const previous = events.filter((event) => event.actor === interval.actor && event.seq >= interval.startSeq && event.seq < interval.endSeq && event.time <= through)
+    .sort((a, b) => a.seq - b.seq).at(-1);
+  const action = previous?.kind === "decision" && previous.time === next.time && previous.payload?.action?.kind === "activity" ? previous.payload.action : null;
+  const operation = action?.operation;
+  const where = (id) => places?.has(id) ? shortName(places.get(id)) : id;
+  let title = activityLabel({ type });
+  if (type === "work" && operation === "resume_work" && action.target === p.activity) title = "Resume Work";
+  else if (type === "work" && operation === "select_work") title = "Start Work";
+  else if (type === "conversation" && operation === "select_conversation" && action.target === p.activity) title = "Join Conversation";
+  else if (type === "conversation" && operation === "start_chat") title = "Start Conversation";
+  if (type === "rest") {
+    const args = operation === "select_rest" ? action.arguments : null;
+    if (args?.until && ["today", "tomorrow"].includes(args.day ?? "today")) title += ` until ${args.until} ${args.day ?? "today"}`;
+    else if (Number.isFinite(p.end) && p.end > next.time) title += ` until ${formatTime(p.end)}`;
+  }
+  if (type === "conversation") {
+    const peers = (p.participants ?? []).filter((name) => name !== interval.actor);
+    if (peers.length) title += ` with ${peers.join(", ")}`;
+  }
+  const destination = p.destination ?? (type === "move" && operation === "select_move" ? action.target : null);
+  if (type === "move" && destination) return `${title} to ${where(destination)}`;
+  return `${title}${next.place ? ` · ${type === "move" ? "From " : p.outside ? "Outside " : ""}${where(next.place)}` : ""}`;
 }
 
 /** Recorded events for one resident's membership, including speech actually heard there. */
