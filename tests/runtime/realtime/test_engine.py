@@ -42,7 +42,7 @@ def rt(engine):
 
 async def finish(rt, who):
     job = rt.running[who]
-    await job.task
+    await asyncio.gather(job.task, return_exceptions=True)
     if not job.task.cancelled():
         rt.now = job.task.result().end
     await rt.finish(who, job)
@@ -181,6 +181,8 @@ async def test_two_person_exit_waits_for_started_speech(rt):
     rt.wall.value += 2
     gate.set()
     await finish(rt, "Tomas")
+    if "Tomas" in rt.running:
+        await finish(rt, "Tomas")
     rt.flush_leaves()
     assert activity.status == "ended" and not activity.participants
     assert any("The final answer" in p.text for p in rt.env.perceive("Mei"))
@@ -499,6 +501,8 @@ async def test_hearing_during_inference_keeps_persistent_memory_in_time_order(rt
     gate.set()
     await finish(rt, "Tomas")
     await finish(rt, "Tomas")
+    if "Tomas" in rt.running:
+        await finish(rt, "Tomas")
     records = listener.memory.episodic.read()
     assert [r.time for r in records] == sorted(r.time for r in records)
     assert any("new discovery" in r.text for r in records)

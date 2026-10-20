@@ -2,6 +2,7 @@
 
 import asyncio
 import hashlib
+import inspect
 from dataclasses import dataclass
 
 from core.environment.rejection import Rejected
@@ -39,6 +40,9 @@ class Running:
     start: int
     action: Choice | None = None
     task_id: str | None = None
+    continuation: object | None = None
+    visible: object = None
+    invalidated: bool = False
 
 
 class RealtimeEngine(ActivityEngine):
@@ -176,20 +180,101 @@ class RealtimeEngine(ActivityEngine):
 
         return asyncio.create_task(run())
 
-    def start_decision(self, who):
+    def decision_context(self, who):
+        """Only changing facts visible to this resident; elapsed time is not news."""
+        place = self.env.world.locations[who]
+        active = self.activities.get(self.current.get(who))
+        conversations = [
+            (a.id, a.topic, tuple(a.participants))
+            for a in self.activities.values()
+            if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
+        ]
+        invitations = [
+            {k: v for k, v in view.items() if k != "seconds_until_start"}
+            for view in self.invitation_views(who)
+        ]
+        ignored = {
+            EventKind.DECISION,
+            EventKind.TOOL_STARTED,
+            EventKind.TOOL_COMPLETED,
+            EventKind.TOOL_CANCELLED,
+        }
+        news = tuple(
+            event.seq
+            for event in self.env.log.pending_events(who)
+            if event.kind not in ignored and event.actor != who
+        )
+        claim = self.env.board.claim_of(who)
+        return (
+            self.current.get(who),
+            place,
+            who in self.outside,
+            tuple(
+                p
+                for p in self.env.world.occupants(place)
+                if (p in self.outside) == (who in self.outside)
+            ),
+            conversations,
+            invitations,
+            news,
+            tuple(active.feedback.get(who, [])) if active else (),
+            claim.model_dump() if claim else None,
+            tuple((h.id, h.status) for h in self.handoffs.values() if h.recipient == who),
+            who in self.deferred,
+            self.current.get(who) in self.closing,
+            self.now >= self.end,
+            self.venue_or_work_closed(who, place),
+        )
+
+    def start_decision(self, who, previous=None):
         self.begin_selection_rest(who)
-        observation = self.observation(who)
         activity_id = self.current.get(who)
         agent = self.sim.agents[who]
+        method = agent.choose_tool if activity_id else agent.choose_activity
+        supports_continuation = "continuation" in inspect.signature(method).parameters
+        continuation = previous.continuation if previous else None
+        if supports_continuation and continuation is None:
+            from core.agent import DecisionContinuation
+
+            continuation = DecisionContinuation()
 
         async def ask():
+            # Consume incoming percepts only once the task actually starts. A task
+            # cancelled before its first turn must leave them queued.
+            observation = self.observation(who)
+            self.running[who].visible = self.decision_context(who)
             try:
-                method = agent.choose_tool if activity_id else agent.choose_activity
+                if supports_continuation:
+                    return await method(observation, continuation=continuation)
                 return await method(observation)
             except StructuredOutputError as error:
                 return error
 
-        self.running[who] = Running(self.timed_task(ask), "decision", activity_id, self.now)
+        self.running[who] = Running(
+            self.timed_task(ask),
+            "decision",
+            activity_id,
+            previous.start if previous else self.now,
+            continuation=continuation,
+        )
+        self.running[who].visible = self.decision_context(who)
+
+    def invalidate_decision(self, who):
+        job = self.running.get(who)
+        if job and job.kind == "decision" and not job.invalidated:
+            job.invalidated = True
+            job.task.cancel()
+
+    async def refresh_decisions(self):
+        for who, job in list(self.running.items()):
+            if job.kind != "decision":
+                continue
+            if job.invalidated or (
+                job.visible is not None and job.visible != self.decision_context(who)
+            ):
+                self.invalidate_decision(who)
+                await asyncio.gather(job.task, return_exceptions=True)
+                self.start_decision(who, job)
 
     def schedule(self, who, action):
         if who in self.running:
@@ -301,6 +386,8 @@ class RealtimeEngine(ActivityEngine):
                 activity.members[person].cursor = len(activity.messages)
                 self.sim._met[person].update(p for p in activity.participants if p != person)
             self.remember(person)
+            if person != who:
+                self.invalidate_decision(person)
             waiting = self.running.get(person)
             if waiting and waiting.action and waiting.action.tool == "wait":
                 waiting.task.cancel()
@@ -429,6 +516,14 @@ class RealtimeEngine(ActivityEngine):
         )
 
     async def finish(self, who, job):
+        if job.kind == "decision" and (
+            job.invalidated
+            or (job.visible is not None and job.visible != self.decision_context(who))
+        ):
+            self.invalidate_decision(who)
+            await asyncio.gather(job.task, return_exceptions=True)
+            self.start_decision(who, job)
+            return
         del self.running[who]
         if job.task.cancelled():
             if job.action:
@@ -444,12 +539,15 @@ class RealtimeEngine(ActivityEngine):
             return
         finished = job.task.result()
         if job.kind == "decision":
+            wall_seconds = (self.now - job.start) / self.settings.multiplier
             daily_boundary = self.sim.config.lunch_place and any(
                 job.start < at(day_of(self.now // 60), text) <= self.now
                 for text in ("12:00", "18:00")
             )
-            self.remember(who)
             reply = finished.value
+            if job.continuation is not None and not isinstance(reply, StructuredOutputError):
+                job.continuation.commit()
+            self.remember(who)
             if isinstance(reply, StructuredOutputError):
                 lapse(self.env, who, reply, time=self.now // 60)
                 self.leave(who, "No valid model decision.")
@@ -467,7 +565,7 @@ class RealtimeEngine(ActivityEngine):
                 self.speech_times[who] = {
                     "generation_start": job.start,
                     "generation_end": self.now,
-                    "generation_wall_seconds": finished.wall_seconds,
+                    "generation_wall_seconds": wall_seconds,
                 }
             recorded_action = action.model_dump(mode="json")
             if isinstance(action, Choice):
@@ -482,7 +580,7 @@ class RealtimeEngine(ActivityEngine):
                 layer="activity_tool" if job.activity else "choose_activity",
                 start=job.start / 60,
                 end=self.now / 60,
-                wall_seconds=finished.wall_seconds,
+                wall_seconds=wall_seconds,
                 multiplier=self.settings.multiplier,
                 elapsed_sim_seconds=self.now - job.start,
             )
@@ -578,6 +676,7 @@ class RealtimeEngine(ActivityEngine):
                         "A started operation exceeded the civil day; "
                         "refusing a backward night clock"
                     )
+                await self.refresh_decisions()
                 # Apply completions and timers in one chronological stream.
                 while True:
                     done = [(who, j) for who, j in self.running.items() if j.task.done()]
@@ -644,6 +743,7 @@ class RealtimeEngine(ActivityEngine):
                 self.flush_leaves()
                 self.daily_choices()
                 self.env.pair_applicants(self.now // 60, self.sim.rng)
+                await self.refresh_decisions()
                 if self.now < self.end:
                     self.start_ready_conversations()
                     self.wake_rests()

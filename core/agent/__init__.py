@@ -9,12 +9,14 @@ from core.agent.config import (
     Profile,
     WorkNotesConfig,
 )
+from core.agent.continuation import DecisionContinuation
 from core.agent.parameters import ModelSpec, Parameters
 
 __all__ = [
     "ActiveRecallConfig",
     "ContextBudgetConfig",
     "Agent",
+    "DecisionContinuation",
     "AgentSeed",
     "CognitionConfig",
     "ModelSpec",

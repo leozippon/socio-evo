@@ -213,3 +213,164 @@ def test_missing_api_key_fails_at_construction(monkeypatch):
     config = LLMConfig(base_url="http://llm.test/v1", api_key_env=KEY_VARIABLE, model="served")
     with pytest.raises(LLMConfigError, match=KEY_VARIABLE):
         OpenAICompatibleClient(config)
+
+
+async def test_stream_assembles_separate_reasoning_and_content(monkeypatch):
+    from infrastructure.llm.base import LLMPartial
+
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        chunks = []
+        for delta, finish in [
+            ({"reasoning": "think "}, None),
+            ({"reasoning_content": "more"}, None),
+            ({"content": "answer"}, "stop"),
+        ]:
+            chunks.append(
+                "data: "
+                + json.dumps(
+                    {
+                        "id": "s",
+                        "object": "chat.completion.chunk",
+                        "created": 0,
+                        "model": "served",
+                        "choices": [{"index": 0, "delta": delta, "finish_reason": finish}],
+                    }
+                )
+                + "\n\n"
+            )
+        return httpx2.Response(
+            200,
+            headers={"content-type": "text/event-stream"},
+            text="".join(chunks) + "data: [DONE]\n\n",
+        )
+
+    client = _client(monkeypatch, handler)
+    partial = LLMPartial()
+    response = await client.complete_stream(_request(), partial)
+    assert response.text == partial.text == "answer"
+    assert response.reasoning == partial.reasoning == "think more"
+    assert bodies[0]["stream"] is True
+
+
+async def test_cancelling_stream_closes_it_and_keeps_received_partial(monkeypatch):
+    from types import SimpleNamespace
+
+    from infrastructure.llm.base import LLMPartial
+
+    entered = asyncio.Event()
+    closed = asyncio.Event()
+
+    class Stream:
+        async def __aiter__(self):
+            yield SimpleNamespace(
+                usage=None,
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(
+                            content="draft", model_extra={"reasoning": "thought"}
+                        ),
+                        finish_reason=None,
+                    )
+                ],
+            )
+            entered.set()
+            await asyncio.Event().wait()
+
+        async def close(self):
+            closed.set()
+
+    async def create(**kwargs):
+        return Stream()
+
+    client = _client(monkeypatch, lambda request: None)
+    monkeypatch.setattr(client._client.chat.completions, "create", create)
+    partial = LLMPartial()
+    task = asyncio.create_task(client.complete_stream(_request(), partial))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert closed.is_set()
+    assert (partial.text, partial.reasoning) == ("draft", "thought")
+
+
+@pytest.mark.parametrize(
+    "failure", [429, httpx2.ReadTimeout("slow"), 500, httpx2.ConnectError("down")]
+)
+async def test_stream_retries_before_receiving_a_reply(monkeypatch, failure):
+    from infrastructure.llm.base import LLMPartial
+
+    waits = []
+
+    async def wait(seconds):
+        waits.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", wait)
+    received, refusing = _refusing(failure)
+
+    def handler(request):
+        if not received:
+            return refusing(request)
+        received.append(request)
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, text="data: [DONE]\n\n"
+        )
+
+    await _client(monkeypatch, handler, max_retries=1).complete_stream(_request(), LLMPartial())
+    assert len(received) == 2 and len(waits) == 1
+
+
+@pytest.mark.parametrize("failure", [429, httpx2.ReadTimeout("slow")])
+async def test_stream_busy_exhaustion_keeps_structured_retry_semantics(monkeypatch, failure):
+    from infrastructure.llm.base import LLMPartial
+
+    async def wait(seconds):
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", wait)
+    received, handler = _refusing(failure, failure, failure)
+    with pytest.raises(LLMBusyError, match="3 call"):
+        await _client(monkeypatch, handler, max_retries=2).complete_stream(_request(), LLMPartial())
+    assert len(received) == 3
+
+
+async def test_stream_failure_after_reasoning_does_not_retry_or_discard_partial(monkeypatch):
+    from types import SimpleNamespace
+
+    import openai
+
+    from infrastructure.llm.base import LLMPartial
+
+    calls = []
+    closed = []
+
+    class Stream:
+        async def __aiter__(self):
+            yield SimpleNamespace(
+                usage=None,
+                choices=[
+                    SimpleNamespace(
+                        delta=SimpleNamespace(content=None, model_extra={"reasoning": "received"}),
+                        finish_reason=None,
+                    )
+                ],
+            )
+            raise openai.APITimeoutError(request=httpx2.Request("POST", "http://llm.test"))
+
+        async def close(self):
+            closed.append(True)
+
+    async def create(**kwargs):
+        calls.append(kwargs)
+        return Stream()
+
+    client = _client(monkeypatch, lambda request: None, max_retries=2)
+    monkeypatch.setattr(client._client.chat.completions, "create", create)
+    partial = LLMPartial()
+    with pytest.raises(LLMCallError, match="partial reply"):
+        await client.complete_stream(_request(), partial)
+    assert partial.reasoning == "received"
+    assert len(calls) == len(closed) == 1

@@ -10,6 +10,7 @@ from pydantic import BaseModel, RootModel
 from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
 from core.agent.context import BudgetClient, BudgetPrompt, pack
+from core.agent.continuation import ContinuationClient, DecisionContinuation, current
 from core.agent.decision_context import blocks_for
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.memory.active import MemoryHit, Remember, search
@@ -91,15 +92,36 @@ class Agent:
     def id(self) -> str:
         return self.profile.name
 
-    async def choose_activity(self, observation: Observation) -> Decision:
+    async def choose_activity(
+        self, observation: Observation, *, continuation: DecisionContinuation | None = None
+    ) -> Decision:
         """Choose a new activity only when not participating in one."""
-        return await self.act(observation.model_copy(update={"decision_layer": "choose_activity"}))
+        return await self.act(
+            observation.model_copy(update={"decision_layer": "choose_activity"}),
+            continuation=continuation,
+        )
 
-    async def choose_tool(self, observation: Observation) -> Decision:
+    async def choose_tool(
+        self, observation: Observation, *, continuation: DecisionContinuation | None = None
+    ) -> Decision:
         """Continue or leave the current activity using only its available tools."""
-        return await self.act(observation.model_copy(update={"decision_layer": "activity_tool"}))
+        return await self.act(
+            observation.model_copy(update={"decision_layer": "activity_tool"}),
+            continuation=continuation,
+        )
 
-    async def act(self, observation: Observation) -> Decision:
+    async def act(
+        self, observation: Observation, *, continuation: DecisionContinuation | None = None
+    ) -> Decision:
+        if continuation is not None:
+            continuation.begin()
+        token = current.set(continuation)
+        try:
+            return await self._act(observation)
+        finally:
+            current.reset(token)
+
+    async def _act(self, observation: Observation) -> Decision:
         """Store the new percepts, recall memories, answer on the moment's card, and record
         the decision the answer means. News of the kinds the moment shows as it stands (the
         board, the standings) is stored but not recalled beside it.
@@ -143,30 +165,40 @@ class Agent:
                 correction_context=observation.correction_context,
             )
         decision = card.decision(reply)
-        if self.cognition.work_notes.enabled:
-            from core.interaction import job_id
 
-            reference = getattr(decision.action, "task_id", None)
-            tasks = (
-                {job_id(reference)} if reference is not None else memory.work.current(observation)
+        def commit():
+            if self.cognition.work_notes.enabled:
+                from core.interaction import job_id
+
+                reference = getattr(decision.action, "task_id", None)
+                tasks = (
+                    {job_id(reference)}
+                    if reference is not None
+                    else memory.work.current(observation)
+                )
+                for task in tasks - {None}:
+                    memory.work.record(
+                        task,
+                        observation.time,
+                        "intention",
+                        prompts.recollection(decision, self.setting.currency),
+                    )
+            memory.episodic.append(
+                [
+                    Record(
+                        time=observation.time,
+                        place=observation.place,
+                        where=observation.places.get(observation.place),
+                        text=prompts.recollection(decision, self.setting.currency),
+                    )
+                ]
             )
-            for task in tasks - {None}:
-                memory.work.record(
-                    task,
-                    observation.time,
-                    "intention",
-                    prompts.recollection(decision, self.setting.currency),
-                )
-        memory.episodic.append(
-            [
-                Record(
-                    time=observation.time,
-                    place=observation.place,
-                    where=observation.places.get(observation.place),
-                    text=prompts.recollection(decision, self.setting.currency),
-                )
-            ]
-        )
+
+        continuation = current.get()
+        if continuation is None:
+            commit()
+        else:
+            continuation.stage(commit)
         return decision
 
     async def _decide(self, observation, recall, skills, card, system):
@@ -279,7 +311,13 @@ class Agent:
                 if task in self.memory.work.tasks() and self.memory.work.entries(
                     task, observation.time
                 ):
-                    self.memory.work.write_note(task, observation.time, answer.note)
+                    continuation = current.get()
+                    if continuation is None:
+                        self.memory.work.write_note(task, observation.time, answer.note)
+                    else:
+                        continuation.notes.append(
+                            (self.memory.work, task, observation.time, answer.note)
+                        )
                     note_update = "Your work note was saved. Continue with your decision."
                 else:
                     note_update = "You have no notes for that job. No note was saved."
@@ -306,7 +344,13 @@ class Agent:
 
     def _completion_client(self):
         budget = self.cognition.context_budget
-        return BudgetClient(self.client, budget) if budget.enabled else self.client
+        continuation = current.get()
+        client = (
+            ContinuationClient(self.client, continuation, budget=budget if budget.enabled else None)
+            if continuation is not None
+            else self.client
+        )
+        return BudgetClient(client, budget) if budget.enabled and continuation is None else client
 
     def _work_prompt(self, purpose: str, time: int, prompt: str) -> str:
         if not self.cognition.work_notes.enabled or purpose not in {

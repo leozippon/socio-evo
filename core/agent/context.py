@@ -37,8 +37,25 @@ class Counter:
                     messages, tokenize=True, add_generation_prompt=True
                 )
             )
+            reasoning = sum(self.text(m.reasoning_content or "") for m in request.messages)
+            if reasoning:
+                # Some chat templates omit reasoning history; count it regardless, while
+                # avoiding a second charge when the template already includes it.
+                plain = [{k: v for k, v in m.items() if k != "reasoning_content"} for m in messages]
+                baseline = len(
+                    self.tokenizer.apply_chat_template(
+                        plain, tokenize=True, add_generation_prompt=True
+                    )
+                )
+                size = max(size, baseline + reasoning)
         else:
-            size = sum(self.text(m.content) + 16 for m in request.messages) + 16
+            size = (
+                sum(
+                    self.text(m.content) + self.text(m.reasoning_content or "") + 16
+                    for m in request.messages
+                )
+                + 16
+            )
         # Account for the response schema even when the backend enforces it out-of-band.
         if request.json_schema is not None:
             size += self.text(json.dumps(request.json_schema, ensure_ascii=False))

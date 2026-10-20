@@ -11,7 +11,8 @@ llm:
     max_tokens: 4096
   extra_body:
     chat_template_kwargs:
-      enable_thinking: false
+      enable_thinking: true
+      preserve_thinking: true
 agents:
 - profile:
     name: Mei

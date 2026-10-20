@@ -11,6 +11,7 @@ from infrastructure.config import StrictModel
 class Message(StrictModel):
     role: Literal["system", "user", "assistant"]
     content: str
+    reasoning_content: str | None = None
 
 
 class Sampling(StrictModel):
@@ -103,4 +104,17 @@ class StructuredOutputError(LLMError):
         self.error = self.failures[-1]
         super().__init__(
             f"no valid {what} after {self.attempts} attempt(s); last error: {self.error}"
+        )
+
+
+class LLMPartial:
+    """Mutable received stream data; remains available after cancellation."""
+
+    def __init__(self) -> None:
+        self.text = ""
+        self.reasoning = ""
+
+    def response(self, *, latency: float = 0, **fields) -> LLMResponse:
+        return LLMResponse(
+            text=self.text, reasoning=self.reasoning or None, latency=latency, **fields
         )

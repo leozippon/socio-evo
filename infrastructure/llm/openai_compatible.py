@@ -13,6 +13,7 @@ from infrastructure.llm.base import (
     LLMBusyError,
     LLMCallError,
     LLMConfigError,
+    LLMPartial,
     LLMRequest,
     LLMResponse,
     Usage,
@@ -59,20 +60,8 @@ class OpenAICompatibleClient:
         self._jitter = random.Random()
 
     async def complete(self, request: LLMRequest) -> LLMResponse:
-        arguments: dict[str, Any] = {
-            "model": request.model or self._config.model,
-            "messages": [message.model_dump() for message in request.messages],
-            **request.sampling.over(self._config.sampling).model_dump(exclude_none=True),
-        }
+        arguments = self._arguments(request)
         config = self._config
-        mode = config.structured_output
-        if request.after_invalid and config.structured_retry is not None:
-            mode = config.structured_retry
-        if request.json_schema is not None and mode == "json_schema":
-            schema = {"name": "response", "schema": request.json_schema}
-            arguments["response_format"] = {"type": "json_schema", "json_schema": schema}
-        elif request.json_schema is not None and mode == "json_object":
-            arguments["response_format"] = {"type": "json_object"}
         busy = broken = 0
         while True:
             try:
@@ -83,20 +72,8 @@ class OpenAICompatibleClient:
                     )
                     latency = time.perf_counter() - started
                 break
-            except (openai.RateLimitError, openai.APITimeoutError) as exc:
-                if busy == config.max_retries:
-                    raise LLMBusyError(
-                        f"no reply in time after {busy + 1} call(s); last: {_name(exc)}"
-                    ) from exc
-                await asyncio.sleep(self._wait(busy))
-                busy += 1
-            except (openai.APIConnectionError, openai.InternalServerError) as exc:
-                if broken == TRANSPORT_RETRIES:
-                    raise LLMCallError(f"{type(exc).__name__}: {exc}") from exc
-                await asyncio.sleep(self._wait(broken))
-                broken += 1
             except openai.OpenAIError as exc:
-                raise LLMCallError(f"{type(exc).__name__}: {exc}") from exc
+                busy, broken = await self._retry(exc, busy, broken)
         choice = completion.choices[0]
         extra = choice.message.model_extra or {}
         usage = completion.usage
@@ -112,6 +89,87 @@ class OpenAICompatibleClient:
             ),
             latency=latency,
         )
+
+    def _arguments(self, request: LLMRequest) -> dict[str, Any]:
+        arguments: dict[str, Any] = {
+            "model": request.model or self._config.model,
+            "messages": [message.model_dump(exclude_none=True) for message in request.messages],
+            **request.sampling.over(self._config.sampling).model_dump(exclude_none=True),
+        }
+        config = self._config
+        mode = config.structured_output
+        if request.after_invalid and config.structured_retry is not None:
+            mode = config.structured_retry
+        if request.json_schema is not None and mode == "json_schema":
+            schema = {"name": "response", "schema": request.json_schema}
+            arguments["response_format"] = {"type": "json_schema", "json_schema": schema}
+        elif request.json_schema is not None and mode == "json_object":
+            arguments["response_format"] = {"type": "json_object"}
+        return arguments
+
+    async def complete_stream(self, request: LLMRequest, partial: LLMPartial) -> LLMResponse:
+        arguments = self._arguments(request)
+        started = time.perf_counter()
+        stream = None
+        truncated = False
+        usage = None
+        busy = broken = 0
+        while True:
+            try:
+                async with self._slots:
+                    stream = await self._client.chat.completions.create(
+                        **arguments,
+                        extra_body=self._config.extra_body,
+                        stream=True,
+                        stream_options={"include_usage": True},
+                    )
+                    try:
+                        async for chunk in stream:
+                            if chunk.usage is not None:
+                                usage = Usage(
+                                    prompt_tokens=chunk.usage.prompt_tokens,
+                                    completion_tokens=chunk.usage.completion_tokens,
+                                )
+                            if not chunk.choices:
+                                continue
+                            choice = chunk.choices[0]
+                            partial.text += choice.delta.content or ""
+                            extra = choice.delta.model_extra or {}
+                            partial.reasoning += (
+                                extra.get("reasoning_content") or extra.get("reasoning") or ""
+                            )
+                            truncated = truncated or choice.finish_reason == "length"
+                    finally:
+                        await stream.close()
+                break
+            except openai.OpenAIError as exc:
+                if partial.text or partial.reasoning:
+                    raise LLMCallError(
+                        "stream failed after receiving a partial reply: "
+                        f"{type(exc).__name__}: {exc}"
+                    ) from exc
+                busy, broken = await self._retry(exc, busy, broken)
+        return partial.response(
+            latency=time.perf_counter() - started,
+            truncated=truncated,
+            max_tokens=arguments.get("max_tokens"),
+            usage=usage,
+        )
+
+    async def _retry(self, error: openai.OpenAIError, busy: int, broken: int) -> tuple[int, int]:
+        """Apply the same bounded pre-response retry policy to either completion mode."""
+        if isinstance(error, openai.RateLimitError | openai.APITimeoutError):
+            if busy == self._config.max_retries:
+                raise LLMBusyError(
+                    f"no reply in time after {busy + 1} call(s); last: {_name(error)}"
+                ) from error
+            await asyncio.sleep(self._wait(busy))
+            return busy + 1, broken
+        if isinstance(error, openai.APIConnectionError | openai.InternalServerError):
+            if broken < TRANSPORT_RETRIES:
+                await asyncio.sleep(self._wait(broken))
+                return busy, broken + 1
+        raise LLMCallError(f"{type(error).__name__}: {error}") from error
 
     def _wait(self, retry: int) -> float:
         """Seconds before retry `retry` + 1: the backoff doubled `retry` times, at most

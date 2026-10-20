@@ -70,7 +70,7 @@ async def test_lunch_drains_other_speaker_without_waiting_for_joint_idle(rt):
     speech = next(row for row in rows if row["kind"] == "speech" and row["actor"] == "Tomas")
     assert speech["payload"]["generation_start"] == at(1, "11:59")
     assert speech["payload"]["generation_end"] == at(1, "12:01")
-    assert speech["payload"]["generation_wall_seconds"] == 1
+    assert speech["payload"]["generation_wall_seconds"] == 120 / rt.settings.multiplier
     assert any(row["kind"] == "decision" and row["actor"] == "Tomas" for row in rows)
     rt.flush_leaves()
     rt.daily_choices()
