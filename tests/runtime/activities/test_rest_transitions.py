@@ -5,7 +5,7 @@ import json
 import pytest
 
 from core.environment.rejection import Rejected
-from core.interaction import Card
+from core.interaction import Card, ClaimTask, EventKind
 from runtime.activities.engine import ActivityEngine
 from runtime.activities.model import RestActivity, at
 from runtime.realtime.engine import RealtimeEngine
@@ -168,3 +168,45 @@ async def test_conversation_rest_waits_for_started_speech_before_transition(
         and r["payload"].get("activity_type") == "rest"
     )
     assert speech < rested
+
+
+@pytest.mark.parametrize("waiting_for", [False, True])
+@pytest.mark.parametrize("news", ["received", "old", "unheard", "disabled"])
+async def test_task_claim_wakes_only_enabled_rest_with_new_visible_news(
+    scheduler, waiting_for, news
+):
+    from tests.runtime.activities.test_activity_context import invite
+
+    scheduler.now = at(1, "08:00")
+    invitation = invite(scheduler) if waiting_for else None
+    scheduler.env.move("Tomas", "workshop", time=scheduler.now // 60)
+    working = work(scheduler)
+    if news == "unheard":
+        scheduler.env.move("Tomas", scheduler.env.config.homes["Tomas"], time=scheduler.now // 60)
+
+    def begin_rest():
+        scheduler.start_rest(
+            "Tomas",
+            at(1, "09:00"),
+            wake=news != "disabled",
+            waiting_for=invitation.id if invitation else None,
+        )
+
+    if news != "old":
+        begin_rest()
+    await scheduler.env.execute(
+        "Mei",
+        ClaimTask(task_id="task-1"),
+        time=scheduler.now // 60,
+        scene="activities",
+        witnesses=["Mei"],
+    )
+    claimed = next(r for r in base.events(scheduler) if r["kind"] == EventKind.TASK_CLAIMED)
+    assert ("Tomas" in claimed["audience"]) is (news != "unheard")
+    if news == "old":
+        begin_rest()
+    scheduler.wake_rests()
+    assert ("Tomas" not in scheduler.current) is (news == "received")
+    assert scheduler.current["Mei"] == working.id
+    if invitation:
+        assert invitation.status == "pending"

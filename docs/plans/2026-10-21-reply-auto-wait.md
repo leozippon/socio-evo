@@ -1,0 +1,13 @@
+# Wait automatically after a published reply
+
+For realtime Conversation, replace the routine post-reply model decision with the existing Wait operation after actual successful publication. Wait at most 300 simulated seconds, bounded by the activity deadline. New audible speech, closure and timeout retain the existing wakeup behavior. A timeout lets the resident choose to continue speaking, leave or rest; this avoids silently holding a speaker until venue closure. Do not add an action, prompt rule, configuration framework or fabricated model decision/thought.
+
+Reset a transient received-speech flag at each actual reply-body observation, including after a continuation. The existing speech-delivery loop sets it when other audible speech reaches that running operation, including speech from another public conversation. Carry it into the publication tool; if set, allow the ordinary next decision instead of waiting. This covers arrivals after inference but before publication without relying on unread cursors, consumed percepts or a scan of the current conversation alone. Publish the speech and record its tool completion before starting Wait, so the event sequence and frontend tool state remain truthful. The speaker’s own utterance must not wake the newly registered wait.
+
+Keep directed inference interruptions, duplicate-speech suppression and resident-chosen waits unchanged. Do not start Wait after rejection, during closure or deferred departure, after an Activity change or without remaining time. Leave fixed-cost activities mode and the running frozen experiment unchanged.
+
+Verify actual two-stage reply completion avoids the extra model request, audience speech and timeout wake it, already-arrived messages remain actionable, continuation refreshes the mark, closure/departure do not create new waits, and dedup remains intact. Run focused checks, the combined Python selection, existing frontend checks and lint/format, with one independent audit of the asynchronous boundaries. Commit and push with these docs; run Linux verification on the complete candidate before updating the future default. No current-run restart or frontend asset publication is required for a backend-only change.
+
+## Task claims wake Rest
+
+Add a newly witnessed TASK_CLAIMED event to Rest wakeups under the existing wake-enabled setting and membership event cursor. Apply it before the invitation-specific waiting branch so ordinary Rest and confirmed-meeting waits behave consistently. Preserve the event’s current same-location audience; do not broadcast new information or change Work/Planning interruption rules. Verify visible new claims wake, old or unseen claims do not, and disabled wakeups remain disabled.

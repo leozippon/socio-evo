@@ -48,6 +48,7 @@ class Running:
     decision_id: str = ""
     request_id: str = ""
     causes: list = field(default_factory=list)
+    received_speech: bool = False
 
 
 class RealtimeEngine(ActivityEngine):
@@ -224,6 +225,7 @@ class RealtimeEngine(ActivityEngine):
             # cancelled before its first turn must leave them queued.
             observation = self.observation(who)
             if targets:
+                self.running[who].received_speech = False
                 allowance = observation.allowed[0]
                 allowance = allowance.model_copy(
                     update={
@@ -500,6 +502,8 @@ class RealtimeEngine(ActivityEngine):
                 activity.members[person].cursor = len(activity.messages)
                 self.sim._met[person].update(p for p in activity.participants if p != person)
             job = self.running.get(person)
+            if person != who and job:
+                job.received_speech = True
             if person != who and job and job.activity == activity.id:
                 self.invalidate_decision(
                     person, event=event, changed_fields=["conversation_speech"]
@@ -637,6 +641,22 @@ class RealtimeEngine(ActivityEngine):
             elapsed_sim_seconds=self.now - job.start,
             **outcome,
         )
+        if (
+            tool == "reply"
+            and not self.interruption_stop(who, job)
+            and self.remaining(who) > 0
+            and not job.received_speech
+        ):
+            # Speech and reply completion precede the wait, so self-speech cannot
+            # wake it and the completion cannot clear the newly started wait.
+            self.schedule(
+                who,
+                Choice(
+                    operation="activity_tool",
+                    tool="wait",
+                    arguments={"seconds": min(300, self.remaining(who))},
+                ),
+            )
 
     async def finish(self, who, job):
         if job.kind == "decision" and job.invalidated:
@@ -763,6 +783,8 @@ class RealtimeEngine(ActivityEngine):
             if self.transitions[key] > self.timing.max_zero_transitions:
                 raise ActivityLoopError(f"{who} repeatedly acted without advancing the wall clock")
             self.schedule(who, action)
+            if action.tool == "reply":
+                self.running[who].received_speech = job.received_speech
             if job.continuation is not None:
                 job.continuation.commit()
             self.remember(who)

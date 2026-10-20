@@ -286,7 +286,10 @@ async def test_duplicate_speech_waits_and_feedback_reaches_real_agent(rt, tmp_pa
     activity = conversation(rt)
     if group:
         rt.enter(activity, "Aisha", rt.end)
-    for _ in range(2):
+    for turn in range(2):
+        if turn:
+            rt.running["Tomas"].task.cancel()
+            await finish(rt, "Tomas")
         rt.start_decision("Tomas")
         await finish(rt, "Tomas")
         await finish(rt, "Tomas")
@@ -335,6 +338,9 @@ async def test_repeat_guard_allows_changed_context_or_reply(rt, tmp_path, change
     activity = conversation(rt)
     rt.enter(activity, "Aisha", rt.end)
     for turn in range(2):
+        if turn:
+            rt.running["Tomas"].task.cancel()
+            await finish(rt, "Tomas")
         if turn and change == "new_speech":
             rt.speech_times["Mei"] = {"addressed_targets": ["Aisha"]}
             rt.speak("Mei", "Another member speaks", activity)

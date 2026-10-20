@@ -21,7 +21,8 @@ def rest_form():
             "until": (CLOCK, None),
             "wake for invitations": (
                 bool,
-                "Allow nearby public chats and invitations to wake you to choose whether to join.",
+                "Allow nearby public chats, invitations and task claims to wake you "
+                "to choose what to do next.",
             ),
         },
         lambda r: Activity(

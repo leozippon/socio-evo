@@ -1552,6 +1552,12 @@ class ActivityEngine:
             ):
                 self.leave(who, "A nearby public conversation opened; choose whether to join.")
                 continue
+            if any(
+                e.seq >= member.event_cursor and e.kind == EventKind.TASK_CLAIMED
+                for e in self.env.log.pending_events(who)
+            ):
+                self.leave(who, "A nearby task was claimed; choose what to do next.")
+                continue
             if activity.waiting_for:
                 invitation = self.invitations.get(activity.waiting_for)
                 if any(
