@@ -8,6 +8,7 @@ from core.interaction.activity_card import (
     confirmed_wait_forms,
     invitation_responses,
     open_chat_forms,
+    rest_form,
     tool,
 )
 from core.interaction.card import _Form, _one_of
@@ -17,23 +18,7 @@ def realtime_forms(layer, menu):
     if layer == "tool":
         return activity_forms(layer, menu)
     result = [
-        _Form(
-            "rest",
-            {
-                "until": (CLOCK, None),
-                "wake for invitations": (
-                    bool,
-                    "Allow nearby public-chat opportunities and invitations "
-                    "to wake you to choose; "
-                    "this never joins automatically. Prefer true while waiting; false means "
-                    "deliberately undisturbed rest.",
-                ),
-            },
-            lambda r: Activity(
-                operation="select_rest",
-                arguments={"until": r["until"], "wake": r["wake for invitations"]},
-            ),
-        ),
+        rest_form(),
         _Form(
             "work",
             {"public": (bool, None), "mode": (_one_of(["parallel", "relay"]), None)},

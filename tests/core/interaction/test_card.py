@@ -334,3 +334,38 @@ def test_an_answer_that_cannot_be_read_is_told_what_was_wrong_without_the_choice
     told = correction(card.model, error.value)
     assert told == (UNREADABLE if problem is None else UNREAD.format(problems=problem))
     assert not any(choice in told for choice in ("25", "28", "31", "Tomas", "Aisha", "say"))
+
+
+@pytest.mark.parametrize("realtime", [False, True])
+@pytest.mark.parametrize("day", ["today", "tomorrow"])
+@pytest.mark.parametrize("until", ["07:45", "10:30:17"])
+def test_rest_card_preserves_explicit_end_day(realtime, day, until):
+    from core.interaction.card import MayActivity
+
+    card = Card([MayActivity(layer="selection", menu={"realtime": realtime})])
+    reply = card.model.model_validate(
+        {"thought": "Rest", "do": "rest", "day": day, "until": until, "wake for invitations": False}
+    )
+    action = card.decision(reply).action
+    assert action.operation == "select_rest"
+    assert action.arguments == {"day": day, "until": until, "wake": False}
+    assert '"day": one of "today", "tomorrow"' in form(card.model)
+
+
+@pytest.mark.parametrize("realtime", [False, True])
+@pytest.mark.parametrize("changes", [{"day": None}, {"day": "yesterday"}, {"until": "25:00"}])
+def test_rest_card_requires_a_valid_explicit_day_and_clock(realtime, changes):
+    from core.interaction.card import MayActivity
+
+    card = Card([MayActivity(layer="selection", menu={"realtime": realtime})])
+    answer = {
+        "thought": "Rest",
+        "do": "rest",
+        "day": "today",
+        "until": "07:45",
+        "wake for invitations": True,
+    } | changes
+    if answer["day"] is None:
+        del answer["day"]
+    with pytest.raises(ValidationError):
+        card.model.model_validate(answer)

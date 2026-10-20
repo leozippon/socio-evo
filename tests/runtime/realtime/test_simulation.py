@@ -24,7 +24,13 @@ def setup_run(tmp_path, days=2):
     def answer(request):
         calls.append((request.metadata["agent"], request.metadata["purpose"]))
         assert request.metadata["purpose"] == "choose_activity"
-        return {"thought": "Rest", "do": "rest", "until": "22:00", "wake for invitations": False}
+        return {
+            "thought": "Rest",
+            "do": "rest",
+            "day": "today",
+            "until": "22:00",
+            "wake for invitations": False,
+        }
 
     provider = PrivateRepositories()
     simconfig = config.simulation.model_copy(

@@ -13,6 +13,24 @@ MINUTES = Annotated[int, Field(ge=1, le=240)]
 CLOCK = Annotated[str, Field(pattern=r"^(?:[01]\d|2[0-3]):[0-5]\d(?::[0-5]\d)?$")]
 
 
+def rest_form():
+    return _Form(
+        "rest",
+        {
+            "day": (Literal["today", "tomorrow"], "The day your rest ends."),
+            "until": (CLOCK, None),
+            "wake for invitations": (
+                bool,
+                "Allow nearby public chats and invitations to wake you to choose whether to join.",
+            ),
+        },
+        lambda r: Activity(
+            operation="select_rest",
+            arguments={"until": r["until"], "day": r["day"], "wake": r["wake for invitations"]},
+        ),
+    )
+
+
 def tool(label, name, fields=None):
     fields = fields or {}
     return _Form(
@@ -109,21 +127,7 @@ def activity_forms(layer, menu):
         return realtime_forms(layer, menu)
     if layer == "selection":
         result = [
-            _Form(
-                "rest",
-                {
-                    "until": (CLOCK, None),
-                    "wake for invitations": (
-                        bool,
-                        "Allow nearby public-chat opportunities and invitations "
-                        "to wake you to choose whether to join; false leaves rest undisturbed.",
-                    ),
-                },
-                lambda r: Activity(
-                    operation="select_rest",
-                    arguments={"until": r["until"], "wake": r["wake for invitations"]},
-                ),
-            ),
+            rest_form(),
             _Form(
                 "work",
                 {

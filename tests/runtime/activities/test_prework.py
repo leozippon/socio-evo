@@ -38,7 +38,13 @@ def test_morning_shows_current_facts_and_activity_choices(morning):
     assert "Current location permits code work now: False" in observation.situation
     card = Card(observation.allowed)
     card.model.model_validate(
-        {"thought": "Wait", "do": "rest", "until": "08:00", "wake for invitations": True}
+        {
+            "thought": "Wait",
+            "do": "rest",
+            "day": "today",
+            "until": "08:00",
+            "wake for invitations": True,
+        }
     )
     assert not morning.current
     assert "07:00–22:00" in observation.setting

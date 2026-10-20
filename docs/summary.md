@@ -10,7 +10,7 @@ The hypotheses, the dilemmas that put each trait at stake and the arms are in [e
 
 The original `scenes` scheduler remains the default for the shipped experiments, and `independent` remains available for existing configurations. Two opt-in schedulers let residents choose and stay in activities. `activities` uses configured simulated costs for work and conversation tools; `realtime` uses observed request and tool runtime on a shared wall clock, interrupting streamed decisions on relevant visible changes and continuing from their saved partial drafts before committing a final action. Both retain the town's economy, work acceptance, nightly reflection and checkpoint sequence. The concise prompt contract is the same in both: stable identity and town rules are supplied as system context, while each user prompt supplies the current place, time, people, work or conversation state, available choices and limits. Residents can ask for environment-generated help when they need detailed instructions. See [Activity scheduling](activity-scheduling.md) and [Real-time scheduling](realtime-scheduling.md) for the mode-specific rules and examples.
 
-The community examples of both activity schedulers set a fixed lunch place and leave evening social plans to residents.
+The community examples of both activity schedulers set a fixed lunch place and leave evening social plans to residents. Rest explicitly distinguishes today from tomorrow, and overnight wake times survive nightly bookkeeping and checkpoint recovery.
 
 ## The world
 

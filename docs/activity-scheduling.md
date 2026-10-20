@@ -12,6 +12,8 @@ The event engine processes operation completions, activity boundaries, invitatio
 
 An activity's duration is a limit, not a prepaid charge. Prompts state the current time, remaining duration, latest end, available tools and minimum costs. Size-dependent costs are checked again before launch. An operation that does not fit is rejected without execution; finishing exactly at the boundary is allowed.
 
+Rest names a clock time and whether it falls today or tomorrow. An elapsed time today is reported as expired; it never silently becomes tomorrow. An overnight wake time survives the normal day-end return home, nightly bookkeeping and checkpoints. At the next day start, residents remain resting until that deadline, or wake immediately if it has already passed. An actual interruption of Rest cancels the remaining plan.
+
 In configurations with `simulation.lunch_place`, noon is a fixed daily lunch destination. Residents finish an operation or move already underway, then travel there; an arrival after noon still counts for that day and does not trigger another lunch trip. Lunch adds no meal tool, hunger state or charge. At 18:00, residents in Work or a long Rest choose what to do for the evening; residents already in Conversation can continue. The evening remains theirs to arrange, including whether to meet anyone. This setting is used by the community `activities` and `realtime` examples; other schedulers remain unchanged.
 
 Default costs are configurable under `simulation.activity_timing`:

@@ -1,4 +1,4 @@
-"""Rest deadlines use the current day; failed selections retain actionable feedback."""
+"""Past rest deadlines are rejected; failed selections retain actionable feedback."""
 
 import pytest
 
@@ -15,9 +15,11 @@ choose = activity_tests.choose
 def test_expired_same_day_rest_leaves_resident_ready_to_choose(engine, until):
     engine.now = at(1, "19:00")
     engine.feedback("Mei", "Previous selection failed.")
-    engine.select("Mei", choose("select_rest", arguments={"until": until, "wake": False}))
+    with pytest.raises(Rejected, match="has passed") as caught:
+        engine.select("Mei", choose("select_rest", arguments={"until": until, "wake": False}))
+    engine.feedback("Mei", str(caught.value))
     assert "Mei" not in engine.current
-    assert "Mei" not in engine.selection_feedback
+    assert "has passed" in engine.observation("Mei").situation
     assert not engine.activities
     assert not engine.queue.events
 

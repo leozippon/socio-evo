@@ -95,6 +95,7 @@ class ActivityEngine:
         self.end = 0
         self.transitions: dict[tuple[int, str], int] = {}
         self.selection_feedback = dict(state.get("selection_feedback", {}))
+        self.rest_intents = dict(state.get("rest_intents", {}))
 
     def state(self):
         return {
@@ -106,6 +107,7 @@ class ActivityEngine:
             "serial": self.serial,
             "outside": dict(self.outside),
             "selection_feedback": dict(self.selection_feedback),
+            "rest_intents": dict(self.rest_intents),
         }
 
     def identifier(self, prefix):
@@ -477,7 +479,7 @@ class ActivityEngine:
             self.current_facts(who),
             self.activity_contract(who),
             self.clock_rules(),
-            "Rest ends at the chosen clock time today, capped at day end. "
+            "Rest ends at the chosen time today or tomorrow; tomorrow deadlines survive overnight. "
             "Social wake-ups offer you a choice when someone invites you or speaks nearby. "
             "Movement takes time according to distance. Work progress survives leaving; "
             "partners keep private repositories and exchange explicit code handoffs.",
@@ -905,6 +907,10 @@ class ActivityEngine:
         if ident is None:
             return
         activity = self.activities[ident]
+        # The nightly boundary ends membership, not a still-future waking time.
+        # Every earlier interruption (including venue closure or invitations) cancels it.
+        if isinstance(activity, RestActivity) and self.now < self.end:
+            self.rest_intents.pop(who, None)
         member = activity.members[who]
         member.active = False
         if pending := self.pending.pop(who, None):
@@ -998,6 +1004,9 @@ class ActivityEngine:
                 "wait for opening before entering an indoor activity."
             )
         if action.operation == "select_rest":
+            day = action.arguments.get("day", "today")
+            if day not in ("today", "tomorrow"):
+                raise Rejected("Choose today or tomorrow for the rest ending time.")
             waiting_for = action.arguments.get("invitation")
             if waiting_for:
                 if waiting_for not in self.menu(who)["ready_invitations"]:
@@ -1006,11 +1015,11 @@ class ActivityEngine:
                     )
                 until = min(self.end, self.invitations[waiting_for].grace_end)
             else:
-                until = at(day_of(self.now // 60), action.arguments["until"])
-            until = min(until, self.end)
+                until = at(
+                    day_of(self.now // 60) + int(day == "tomorrow"), action.arguments["until"]
+                )
             if until <= self.now:
-                self.selection_feedback.pop(who, None)
-                return
+                raise Rejected("That rest ending time has passed; choose a future time.")
             self.enter(
                 RestActivity(
                     id=self.identifier("rest"),
@@ -1023,6 +1032,11 @@ class ActivityEngine:
                 who,
                 until,
             )
+            if until > self.end:
+                self.rest_intents[who] = {
+                    "until": until,
+                    "wake": action.arguments.get("wake", True),
+                }
         elif action.operation == "select_move":
             if action.target not in self.menu(who)["moves"].values():
                 raise Rejected(
@@ -2009,6 +2023,21 @@ class ActivityEngine:
         self.now = start * 60
         self.end = self.sim.config.calendar.end(day_of(start)) * 60
         self.queue = EventQueue()
+        for who, intent in list(self.rest_intents.items()):
+            if intent["until"] <= self.now:
+                del self.rest_intents[who]
+                continue
+            self.enter(
+                RestActivity(
+                    id=self.identifier("rest"),
+                    place=self.env.world.locations[who],
+                    start=self.now,
+                    latest_end=intent["until"],
+                    wake_invitations=intent["wake"],
+                ),
+                who,
+                intent["until"],
+            )
         day = day_of(start)
         self.daily_life = (
             {str(day): self.daily_life[str(day)]} if str(day) in self.daily_life else {}
