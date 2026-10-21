@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+from pydantic import ValidationError
 
 from core.interaction import Card, ClaimTask
 from runtime.activities.model import ConversationActivity, RestActivity, at
@@ -187,3 +188,69 @@ def test_public_chat_can_interrupt_waiting_for_a_different_appointment_to_offer_
     e.wake_rests()
     assert "Tomas" not in e.current
     assert invitation.status == "pending" and chat.participants == ("Mei",)
+
+
+def test_invite_here_can_join_a_single_person_local_conversation(scheduler):
+    e = scheduler
+    co_present(e)
+    chat = start(e)
+    result = e.invitation_action("Mei", "invite_here", {"people": ["Tomas"]})
+    invitation = e.invitations[result["invitation"]]
+    e.start_ready_conversations()
+    assert invitation.status == "pending", "a solo local conversation can receive an invitee"
+    e.invitation_action("Tomas", "accept", {"invitation": invitation.id})
+    e.start_ready_conversations()
+    assert e.current["Tomas"] == chat.id
+    assert set(chat.participants) == {"Mei", "Tomas"}
+    assert invitation.status == "started"
+
+
+def test_invite_here_reuses_pending_people_without_notifying_them_again(scheduler):
+    e = scheduler
+    co_present(e)
+    chat = start(e)
+    first = e.invitation_action("Mei", "invite_here", {"people": ["Tomas"]})
+    e.start_ready_conversations()
+    e.now += 90
+    context = e.observation("Mei").situation
+    assert "Current conversation members: Mei." in context
+    assert "nobody else has joined" in context
+    assert "Tomas: awaiting response, 90 seconds" in context
+    assert "Tomas" not in e.menu("Mei")["invite_here_people"]
+    card = Card(e.observation("Mei").allowed)
+    with pytest.raises(ValidationError):
+        card.model.model_validate(
+            {"thought": "Invite again", "do": "invite to this conversation", "people": ["Tomas"]}
+        )
+    card.model.model_validate(
+        {"thought": "Invite someone new", "do": "invite to this conversation", "people": ["Aisha"]}
+    )
+    before = len([event for event in base.events(e) if event["kind"] == "discussion"])
+    repeated = e.invitation_action("Mei", "invite_here", {"people": ["Tomas"]})
+    assert repeated == {"invitation": first["invitation"], "created": False}
+    assert len(e.invitations) == 1
+    assert len([event for event in base.events(e) if event["kind"] == "discussion"]) == before
+    assert "already pending" in e.observation("Mei").situation
+    added = e.invitation_action("Mei", "invite_here", {"people": ["Tomas", "Aisha"]})
+    assert e.invitations[added["invitation"]].invited == ("Aisha",)
+    assert len(e.invitations) == 2 and chat.participants == ("Mei",)
+
+
+def test_accept_from_another_conversation_explains_leave_then_joins(scheduler):
+    e = scheduler
+    co_present(e)
+    target = start(e)
+    e.select("Tomas", base.choose("start_chat", topic="A separate chat"))
+    previous = e.current["Tomas"]
+    sent = e.invitation_action("Mei", "invite_here", {"people": ["Tomas"]})
+    invitation = e.invitations[sent["invitation"]]
+    e.invitation_action("Tomas", "accept", {"invitation": invitation.id})
+    e.start_ready_conversations()
+    assert e.current["Tomas"] == previous and invitation.status == "pending"
+    situation = e.observation("Tomas").situation
+    assert f"You are still in {previous}" in situation
+    assert "Leave your current activity" in situation
+    assert "Tomas: confirmed but not joined" in e.observation("Mei").situation
+    e.leave("Tomas", "Attend the confirmed conversation")
+    e.start_ready_conversations()
+    assert e.current["Tomas"] == target.id and invitation.status == "started"

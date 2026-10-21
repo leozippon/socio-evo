@@ -951,6 +951,20 @@ class ActivityEngine:
         if isinstance(activity, RestActivity | MoveActivity):
             return {**common, "tools": ["help"], "costs": {"help": 0}, "blocked": {}}
         if isinstance(activity, ConversationActivity):
+            already_invited = {
+                person
+                for invitation in self.invitations.values()
+                if invitation.conversation == activity.id
+                and invitation.status == "pending"
+                and self.now <= invitation.grace_end
+                for person in invitation.invited
+                if person not in invitation.declined
+            }
+            common["invite_here_people"] = [
+                person
+                for person in people
+                if person not in activity.participants and person not in already_invited
+            ]
             tools = [
                 "help",
                 "leave",
@@ -963,6 +977,8 @@ class ActivityEngine:
                 "decline",
                 "defer",
             ]
+            if not common["invite_here_people"]:
+                tools.remove("invite_here")
         else:
             claim = self.env.board.claim_of(who)
             tools = ["help", "leave", "board", "feedback", "invite", "accept", "decline", "defer"]
@@ -1042,6 +1058,106 @@ class ActivityEngine:
             "invite_here": self.timing.invite_seconds,
         }[tool]
 
+    def visible_invitee_conversation(self, who, person):
+        activity = self.activities.get(self.current.get(person))
+        if (
+            isinstance(activity, ConversationActivity)
+            and self.current.get(who) != activity.id
+            and self.conversation_access(who, activity)
+        ):
+            return activity
+        return None
+
+    def invitation_social_update(self, who, event):
+        activity = self.activities.get(self.current.get(who))
+        if not isinstance(activity, ConversationActivity):
+            return
+        activity.feedback.setdefault(who, []).append(event.text)
+        waiting = self.pending.get(who)
+        if waiting and waiting.activity == activity.id and waiting.action.tool == "wait":
+            del self.pending[who]
+            self.record_tool_completion(
+                who, waiting, "wait", waiting.action.arguments, activity, {}
+            )
+
+    def visible_invitation_owners(self, person, activity):
+        if not isinstance(activity, ConversationActivity):
+            return set()
+        return {
+            invitation.owner
+            for invitation in self.invitations.values()
+            if invitation.status == "pending"
+            and self.now <= invitation.grace_end
+            and person in invitation.invited
+            and person not in invitation.declined
+            and isinstance(
+                self.activities.get(self.current.get(invitation.owner)), ConversationActivity
+            )
+            and self.conversation_access(invitation.owner, activity)
+        }
+
+    def notify_invitee_conversation_change(self, person, activity, owners, change):
+        for owner in owners:
+            event = self.emit(
+                EventKind.DISCUSSION,
+                f"{person} {change} conversation {activity.id}: {activity.topic}. "
+                "You may wait or leave your conversation to choose another activity.",
+                actor=person,
+                audience=[owner],
+                invitation_update_for=owner,
+                visible_conversation=activity.id,
+            )
+            self.invitation_social_update(owner, event)
+
+    def conversation_context(self, who, activity):
+        context = [
+            f"Topic: {activity.topic}. Current conversation members: "
+            + ", ".join(activity.participants)
+            + "."
+        ]
+        if activity.participants == (who,):
+            context.append(
+                "You are the only member of this conversation; nobody else has joined it."
+            )
+        pending = []
+        for invitation in self.invitations.values():
+            if (
+                invitation.owner != who
+                or invitation.conversation != activity.id
+                or invitation.superseded_by
+                or (invitation.status != "pending" and not invitation.declined)
+                or self.now > invitation.grace_end
+            ):
+                continue
+            for person in invitation.invited:
+                if person in activity.participants:
+                    continue
+                status = (
+                    "declined"
+                    if person in invitation.declined
+                    else "confirmed but not joined"
+                    if person in invitation.confirmed
+                    else "awaiting response"
+                )
+                detail = (
+                    f"{person}: {status}, {max(0, self.now - invitation.start)} seconds "
+                    f"since invitation {invitation.id}"
+                )
+                visible = self.visible_invitee_conversation(who, person)
+                if visible:
+                    detail += (
+                        f"; currently in visible conversation {visible.id}: {visible.topic}; "
+                        "members: " + ", ".join(visible.participants)
+                    )
+                pending.append(detail)
+        if pending:
+            context.append(
+                "Invitations to this conversation: " + "; ".join(pending) + ". "
+                "Repeating the invitation does not make anyone join. You may wait or leave "
+                "this conversation and choose another activity."
+            )
+        return context
+
     def activity_context(self, who, active, menu):
         if active is None:
             return []
@@ -1055,7 +1171,8 @@ class ActivityEngine:
         if menu.get("blocked"):
             context.append("Too little time for: " + json.dumps(menu["blocked"]))
         if isinstance(active, ConversationActivity):
-            context.append(f"Topic: {active.topic}. Unread messages: {len(active.unread(who))}.")
+            context += self.conversation_context(who, active)
+            context.append(f"Unread messages: {len(active.unread(who))}.")
         return context
 
     def observation(self, who):
@@ -1230,8 +1347,13 @@ class ActivityEngine:
             participants=list(activity.participants),
             outside=who in self.outside,
         )
+        self.notify_invitee_conversation_change(
+            who, activity, self.visible_invitation_owners(who, activity), "joined"
+        )
 
     def leave(self, who, reason):
+        previous = self.activities.get(self.current.get(who))
+        observers = self.visible_invitation_owners(who, previous)
         ident = self.current.pop(who, None)
         if ident is None:
             return
@@ -1272,6 +1394,7 @@ class ActivityEngine:
             start=member.start / 60,
             end=self.now / 60,
         )
+        self.notify_invitee_conversation_change(who, activity, observers, "left")
         if (
             isinstance(activity, ConversationActivity)
             and len(activity.participants) < 2
@@ -1620,6 +1743,26 @@ class ActivityEngine:
                 p not in self.env.agents or p in activity.participants for p in people
             ):
                 raise Rejected("Invite residents who are not already in this conversation.")
+            pending = {
+                person: i
+                for i in self.invitations.values()
+                if i.status == "pending"
+                and i.conversation == activity.id
+                and self.now <= i.grace_end
+                for person in i.invited
+                if person not in i.declined
+            }
+            waiting = [person for person in people if person in pending]
+            if waiting:
+                self.feedback(
+                    who,
+                    "An invitation to this conversation is already pending for "
+                    + ", ".join(waiting)
+                    + ". Check its response/readiness; sending it again does not make anyone join.",
+                )
+            people = tuple(person for person in people if person not in pending)
+            if not people:
+                return {"invitation": pending[waiting[0]].id, "created": False}
             invitation = Invitation(
                 id=self.identifier("invitation"),
                 owner=who,
@@ -1651,6 +1794,15 @@ class ActivityEngine:
                 if who in invitation.confirmed:
                     return  # Replayed/stale accepts do not emit another invitation notification.
                 invitation.confirmed.append(who)
+                current = self.current.get(who)
+                if current and current != invitation.conversation:
+                    destination = invitation.conversation or "the confirmed meeting"
+                    self.feedback(
+                        who,
+                        f"Invitation {invitation.id} confirmed. You are still in {current}; "
+                        f"accepting does not leave it or join {destination}. "
+                        "Leave your current activity to become available for this meeting.",
+                    )
             elif tool == "decline":
                 invitation.declined.append(who)
                 invitation.confirmed = [p for p in invitation.confirmed if p != who]
@@ -1758,7 +1910,9 @@ class ActivityEngine:
                 self.queue.add(max(self.now, departure), "daily_choice")
         audience = [invitation.owner, *invitation.invited]
         owner_activity = self.activities.get(self.current.get(reply_owner))
-        delayed = owner_activity is not None and not isinstance(owner_activity, RestActivity)
+        delayed = owner_activity is not None and not isinstance(
+            owner_activity, RestActivity | ConversationActivity
+        )
         if delayed:
             audience = [person for person in audience if person != reply_owner]
         event = self.emit(
@@ -1772,9 +1926,23 @@ class ActivityEngine:
             start_seconds=invitation.start,
             grace_seconds=invitation.grace_end,
             response=tool,
+            invitation_update_for=reply_owner if not delayed else None,
             declined=list(invitation.declined),
             supersedes=invitation.supersedes,
         )
+        if reply_owner and not delayed:
+            self.invitation_social_update(reply_owner, event)
+        if tool == "invite_here":
+            for person in invitation.invited:
+                visible = self.visible_invitee_conversation(who, person)
+                if visible:
+                    self.feedback(
+                        who,
+                        f"{person} is currently in visible conversation {visible.id}: "
+                        f"{visible.topic}; members: {', '.join(visible.participants)}. "
+                        "The invitation does not make them leave it. You may wait or leave "
+                        "your conversation to choose another activity.",
+                    )
         if delayed:
             self.deferred_invitation_replies.setdefault(reply_owner, []).append(
                 {
@@ -1804,7 +1972,7 @@ class ActivityEngine:
             ]
             if invitation.conversation:
                 activity = self.activities[invitation.conversation]
-                if activity.status != "active" or len(activity.participants) < 2:
+                if activity.status != "active" or not activity.participants:
                     invitation.status = "cancelled"
                     continue
                 for who in people:
@@ -2051,12 +2219,12 @@ class ActivityEngine:
             check += "assert os.path.commonpath(['/testbed',p])=='/testbed'; "
             if tool == "read_code":
                 check += (
-                    "import itertools; f=open(p,encoding='utf-8',errors='replace'); "
-                    f"print(''.join(itertools.islice(f,{int(args['line']) - 1},"
-                    f"{int(args['line']) - 1 + int(args['lines'])})))"
+                    "import itertools,sys; f=open(p,encoding='utf-8',errors='replace'); "
+                    f"sys.stdout.buffer.write(''.join(itertools.islice(f,{int(args['line']) - 1},"
+                    f"{int(args['line']) - 1 + int(args['lines'])})).encode('utf-8'))"
                 )
                 return "python -c " + shlex.quote(check)
-            script = check + "\ncount=0\n"
+            script = check + "\nimport sys\ncount=0\n"
             script += (
                 "paths=[p] if os.path.isfile(p) else "
                 "(os.path.join(d,n) for d,_,ns in os.walk(p) "
@@ -2067,9 +2235,10 @@ class ActivityEngine:
                 " if os.path.commonpath(['/testbed',os.path.realpath(name)])"
                 "!='/testbed': continue\n try:\n"
                 "  with open(name,encoding='utf-8',errors='replace') as f:\n"
-                "   for i,line in enumerate(f,1):\n    if "
-                + repr(args["pattern"])
-                + " in line:\n     print('%s:%d:%s'%(name,i,line.rstrip())); count+=1\n"
+                "   for i,line in enumerate(f,1):\n    if " + repr(args["pattern"]) + " in line:\n"
+                "     sys.stdout.buffer.write(('%s:%d:%s\\n' % "
+                "(name,i,line.rstrip())).encode('utf-8'))\n"
+                "     count+=1\n"
                 "     if count>=200: raise SystemExit(0)\n"
                 " except (OSError,UnicodeError): pass\n"
             )

@@ -80,7 +80,15 @@ def invitation_responses(menu, tools=("accept", "decline", "defer")):
             else menu.get("invitations", [])
         )
         if ids and name in tools:
-            fields = {"invitation": (_one_of(ids), None)}
+            fields = {
+                "invitation": (
+                    _one_of(ids),
+                    "Confirm willingness to meet; this does not leave your current activity. "
+                    "Leave it before joining the other conversation."
+                    if name == "accept"
+                    else None,
+                )
+            }
             if name == "defer":
                 fields["at"] = (
                     CLOCK,
@@ -208,7 +216,17 @@ def activity_forms(layer, menu):
         "invite_here": tool(
             "invite to this conversation",
             "invite_here",
-            {"people": (Annotated[list[_one_of(menu["people"])], Field(min_length=1)], None)},
+            {
+                "people": (
+                    Annotated[
+                        list[_one_of(menu.get("invite_here_people", menu["people"]))],
+                        Field(min_length=1),
+                    ],
+                    "Ask others to join you; they choose whether and when to join. "
+                    "This does not join their conversation or merge conversations. "
+                    "If they have not responded, wait or leave instead of inviting them again.",
+                )
+            },
         ),
         "reply": tool("reply", "reply", {"text": (TEXT, None)}),
         "wait": tool(
@@ -226,7 +244,17 @@ def activity_forms(layer, menu):
                 "lines": (Annotated[int, Field(ge=1, le=menu.get("max_read_lines", 400))], None),
             },
         ),
-        "search": tool("search code", "search", {"path": (SHORT, None), "pattern": (SHORT, None)}),
+        "search": tool(
+            "search code for literal text",
+            "search",
+            {
+                "path": (SHORT, None),
+                "pattern": (
+                    SHORT,
+                    "Literal text to find; regular-expression syntax has no special meaning.",
+                ),
+            },
+        ),
         "diff": tool("inspect your changes", "diff"),
         "edit": tool("apply a code patch", "edit", {"patch": (TEXT, None)}),
         "command": tool("run a command", "command", {"command": (TEXT, None)}),

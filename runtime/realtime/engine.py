@@ -49,6 +49,7 @@ class Running:
     request_id: str = ""
     causes: list = field(default_factory=list)
     received_speech: bool = False
+    received_invitation_update: bool = False
 
 
 class RealtimeEngine(ActivityEngine):
@@ -118,6 +119,18 @@ class RealtimeEngine(ActivityEngine):
             for who in list(self.running):
                 self.invalidate_decision(who, event=event, changed_fields=["open_conversations"])
         return event
+
+    def invitation_social_update(self, who, event):
+        super().invitation_social_update(who, event)
+        activity = self.activities.get(self.current.get(who))
+        if not isinstance(activity, ConversationActivity):
+            return
+        job = self.running.get(who)
+        if job:
+            job.received_invitation_update = True
+        if job and job.action and job.action.tool == "wait":
+            job.task.cancel()
+        self.invalidate_decision(who, event=event, changed_fields=["invitation_status"])
 
     def prepare_day(self, start):
         super().prepare_day(start)
@@ -204,7 +217,7 @@ class RealtimeEngine(ActivityEngine):
             f"Latest end: {clock(active.members[who].end)}."
         ]
         if isinstance(active, ConversationActivity):
-            context.append(f"Topic: {active.topic}.")
+            context += self.conversation_context(who, active)
         return context
 
     def select(self, who, action):
@@ -253,6 +266,7 @@ class RealtimeEngine(ActivityEngine):
             observation = self.observation(who)
             if targets:
                 self.running[who].received_speech = False
+                self.running[who].received_invitation_update = False
                 allowance = observation.allowed[0]
                 allowance = allowance.model_copy(
                     update={
@@ -315,7 +329,16 @@ class RealtimeEngine(ActivityEngine):
         active = self.activities.get(job.activity)
         if event is not None:
             reply = active is not None and active.interrupts_reply(event, job.targets, who)
-            if not reply and not self.interrupts_selection(who, job, event):
+            invitation_update = (
+                isinstance(active, ConversationActivity)
+                and not job.targets
+                and event.payload.get("invitation_update_for") == who
+            )
+            if (
+                not reply
+                and not invitation_update
+                and not self.interrupts_selection(who, job, event)
+            ):
                 return
         elif not job.targets:
             return
@@ -709,6 +732,7 @@ class RealtimeEngine(ActivityEngine):
             and not self.interruption_stop(who, job)
             and self.remaining(who) > 0
             and not job.received_speech
+            and not job.received_invitation_update
         ):
             # Speech and reply completion precede the wait, so self-speech cannot
             # wake it and the completion cannot clear the newly started wait.
@@ -851,6 +875,7 @@ class RealtimeEngine(ActivityEngine):
             self.schedule(who, action)
             if action.tool == "reply":
                 self.running[who].received_speech = job.received_speech
+                self.running[who].received_invitation_update = job.received_invitation_update
             if job.continuation is not None:
                 job.continuation.commit()
             self.remember(who)

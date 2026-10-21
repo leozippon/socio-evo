@@ -1,6 +1,9 @@
 import asyncio
 import json
+import os
 import random
+import shlex
+import subprocess
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -10,6 +13,7 @@ from core.environment import Assessment, Environment, Trade
 from core.environment.rejection import Rejected
 from core.interaction import Card, Decision, time_at
 from core.interaction.actions import Activity as Choice
+from core.interaction.card import MayActivity, form
 from experiments.config import ExperimentConfig
 from infrastructure.config import load_config
 from runtime.activities.engine import ActivityEngine, ActivityLoopError
@@ -95,6 +99,17 @@ def choose(operation, **kwargs):
 
 def use(name, **args):
     return Choice(operation="activity_tool", tool=name, arguments=args)
+
+
+def run_repository_command(engine, tmp_path, tool, **args):
+    command = engine.command_for(tool, args).replace("'/testbed'", repr(str(tmp_path)))
+    return subprocess.run(
+        shlex.split(command),
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONIOENCODING": "ascii"},
+        capture_output=True,
+        check=False,
+    )
 
 
 def work(engine, who="Mei", seconds=3600, public=False):
@@ -199,6 +214,37 @@ def test_two_level_card_and_no_morning_goal(engine):
     assert "remaining usable time" in tool.situation
     assert "Tool costs" in tool.situation
     assert "select_work" not in str(Card(tool.allowed).model.model_json_schema())
+
+
+def test_read_code_writes_utf8_under_ascii_stdout(engine, tmp_path):
+    source = tmp_path / "source.py"
+    contents = "# café — 你好\n"
+    source.write_text(contents, encoding="utf-8")
+
+    read = run_repository_command(engine, tmp_path, "read_code", path="source.py", line=1, lines=1)
+    assert read.returncode == 0, read.stderr.decode("utf-8", errors="replace")
+    assert read.stdout.decode("utf-8") == contents
+
+
+def test_search_writes_utf8_and_matches_literal_pattern(engine, tmp_path):
+    source = tmp_path / "source.py"
+    contents = "# café — 你好 foo.*bar\n# café — 你好 fooXbar\n"
+    source.write_text(contents, encoding="utf-8")
+
+    search = run_repository_command(
+        engine, tmp_path, "search", path="source.py", pattern="foo.*bar"
+    )
+    assert search.returncode == 0, search.stderr.decode("utf-8", errors="replace")
+    output = search.stdout.decode("utf-8")
+    assert "café — 你好 foo.*bar" in output
+    assert "fooXbar" not in output
+
+
+def test_search_card_says_pattern_is_literal_not_regex():
+    card = Card([MayActivity(layer="tool", menu={"tools": ["search"], "people": []})])
+    rendered = form(card.model)
+    assert "literal" in rendered.lower()
+    assert "regular-expression" in rendered.lower()
 
 
 async def test_claim_is_zero_time_and_tool_effects_wait_until_completion(engine):
