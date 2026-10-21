@@ -818,7 +818,8 @@ class ActivityEngine:
             "rest": (
                 "Rest ends at the chosen time today or tomorrow; tomorrow's deadline survives "
                 "overnight. If invitation wake-ups are enabled, a social event may wake you "
-                "to choose what to do, without automatically joining a conversation."
+                "to choose what to do, without automatically joining a conversation. "
+                "Your own client verdict wakes you to choose again, whether accepted or returned."
             ),
             "move": (
                 "Travel takes time according to distance. New work or conversation activities "
@@ -2259,9 +2260,20 @@ class ActivityEngine:
     def wake_rests(self):
         for who, ident in list(self.current.items()):
             activity = self.activities[ident]
-            if not isinstance(activity, RestActivity) or not activity.wake_invitations:
+            if not isinstance(activity, RestActivity):
                 continue
             member = activity.members[who]
+            notice = self.env.latest_work_results.get(who)
+            if (
+                notice is not None
+                and notice.event >= member.event_cursor
+                and any(e.seq == notice.event for e in self.env.log.pending_events(who))
+            ):
+                outcome = "accepted" if notice.accepted else "returned for rework"
+                self.leave(who, f"Your repair was {outcome}; choose what to do next.")
+                continue
+            if not activity.wake_invitations:
+                continue
             if any(
                 e.seq >= member.event_cursor and e.payload.get("public_conversation")
                 for e in self.env.log.pending_events(who)
