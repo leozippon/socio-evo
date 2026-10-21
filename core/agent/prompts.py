@@ -146,8 +146,10 @@ MEMORY_KINDS = (
     "particular job's progress, commands, results and next steps. Keep those details in "
     "the job's work record, not in a notebook method. Feelings, personal impressions, "
     "relationship notes and balance snapshots are not methods; keep experiences in your "
-    "diary and durable conclusions among your beliefs. A financial or social method "
-    "belongs in the notebook if it gives a reusable procedure. Do not copy a belief "
+    "diary and durable conclusions among your beliefs. Methods may concern interpersonal "
+    "relationships, communication, managing daily life, money, rest, routines or work; "
+    "they need not involve programming. Describe a reusable procedure rather than an "
+    "impression of a person or a snapshot of your circumstances. Do not copy a belief "
     "into a method just to fill the notebook. Write no new method if none has emerged."
 )
 SKILL_EXAMPLE = (
@@ -160,7 +162,16 @@ SKILL_EXAMPLE = (
     "editing. If regressions appear, revise or revert the change. Stop and record the "
     "remaining uncertainty when verification is unavailable. This method omits job "
     "numbers, current progress and personal reflections so it can be used again on "
-    "another job. Adapt it to your own experience rather than copying it."
+    "another job. Adapt it to your own experience rather than copying it. "
+    "Everyday example — title: Coordinate a meeting when availability is uncertain. "
+    "Summary: Use when arranging a conversation around different schedules. "
+    "Method: Offer a purpose, place and time, then check the reply before making another "
+    "invitation. If the person declines or is busy, consider another time or another "
+    "person. If no reply arrives, choose a waiting limit that fits your other plans; "
+    "when it passes, move on or reconsider later. Check whether an arrangement was "
+    "confirmed; silence alone does not confirm it. Adjust the plan if availability "
+    "changes. A daily-life method can likewise describe how to plan spending, rest "
+    "or household routines, with a check and a condition for changing the plan."
 )
 REFLECT = (
     IN_BED + "What you have come to believe so far, numbered as you keep them:\n{beliefs}\n\n"

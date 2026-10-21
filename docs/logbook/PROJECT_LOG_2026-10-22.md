@@ -17,3 +17,8 @@ Local Activity/realtime plus shared-acceptance regression passed 439 tests, incl
 ## Separate personal methods from beliefs and work records
 
 Clarified the shared writing guidance used by nightly L0/L1 reviews, free revision, Activity notebook edits and experience Reflect. Skills describe reusable procedures with applicability, concrete steps, verification and adjustment/stop conditions. Insights hold revisable conclusions about experience, self, people or the world; job-specific progress and evidence remain in work records. Added a reusable debugging example, allow no new skill, and preserve financial/social procedures as valid methods. This changes prompts only; existing personal files and running experiment snapshots are preserved.
+
+
+## Include everyday and interpersonal methods
+
+Expanded the shared notebook guidance to explicitly include relationships, communication, daily-life management, spending, rest and routines alongside technical work. Added a meeting-coordination example with reply checks, a waiting limit and adjustment conditions; the distinction from personal impressions and situational snapshots remains.
