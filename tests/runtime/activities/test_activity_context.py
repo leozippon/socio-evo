@@ -198,7 +198,7 @@ async def test_busy_owner_receives_reply_only_after_activity_leave_and_rest_can_
     assert not any(p.kind == "discussion" for p in engine.env.perceive("Mei"))
     assert not engine.invitation_views("Mei")
     assert engine.invitation_views("Mei", include_deferred=True)
-    assert invitation.id in engine.activity_help("Mei")
+    assert invitation.id not in engine.activity_help("Mei")
     state = engine.state()
     assert (
         type(engine)(engine.sim, state).state()["deferred_invitation_replies"]
