@@ -51,7 +51,7 @@ from core.agent.evolution import Trigger as Cadence
 from core.environment import Environment, EnvironmentConfig, Place, PlaceKind, TaskProvider, Trade
 from core.interaction import EventKind, clock_of, day_of, time_at
 from infrastructure.config import StrictModel
-from infrastructure.llm import LLMClient
+from infrastructure.llm import LLMClient, StructuredOutputError
 from infrastructure.storage import RunDirectory, RunStatus
 from runtime.scenes import (
     Conversation,
@@ -561,6 +561,11 @@ class Simulation:
         self, agent: Agent, cadences: tuple[Cadence, ...], time: int
     ) -> list[Version | Lapse]:
         """Commit the day's experience, then evolve on each due cadence in turn."""
+        if agent.cognition.work_notes.enabled:
+            try:
+                await agent.summarize_work(time)
+            except StructuredOutputError as error:
+                lapse(self.env, agent.id, error, time=time, level="work notes", trigger="daily")
         History(agent.path, agent.setting.start_date).commit_experience(time)
         versions: list[Version | Lapse] = []
         for cadence in cadences:

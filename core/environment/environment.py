@@ -1383,7 +1383,8 @@ class Environment:
         )
         return self.emit(
             EventKind.COMMAND_EXECUTED,
-            f"At your desk the terminal returned exit code {result['exit_code']}:\n"
+            f"At your desk you ran:\n{action.command}\n"
+            f"The terminal returned exit code {result['exit_code']}:\n"
             f"{result['output']}",
             time=time,
             place=place,

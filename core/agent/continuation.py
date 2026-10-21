@@ -14,6 +14,7 @@ class DecisionContinuation:
         self.notes = []
         self._commit = None
         self.committed = False
+        self.summarizing_work = False
 
     def begin(self):
         if self.committed:

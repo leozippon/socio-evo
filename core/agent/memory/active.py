@@ -13,6 +13,7 @@ from pydantic import Field
 from core.agent.config import ActiveRecallConfig
 from core.agent.memory import Memory
 from core.agent.memory.retrieval import _STOPWORDS, _relevance, _words
+from core.agent.memory.work import operation
 from core.interaction import Setting, clock_of, day_of, lived_day
 from infrastructure.config import StrictModel
 
@@ -48,7 +49,9 @@ class MemoryHit:
         return f"[{source}]\n{self.text}"
 
 
-def search(memory: Memory, query: str, now: int, config: ActiveRecallConfig) -> list[MemoryHit]:
+def search(
+    memory: Memory, query: str, now: int, config: ActiveRecallConfig, *, summarized_work=False
+) -> list[MemoryHit]:
     root = memory.episodic.path.parent
 
     def safe(path: Path) -> bool:
@@ -71,7 +74,7 @@ def search(memory: Memory, query: str, now: int, config: ActiveRecallConfig) -> 
 
     if safe(memory.episodic.path):
         for index, record in enumerate(memory.episodic.read()):
-            if record.time <= now:
+            if record.time <= now and not (summarized_work and operation(record)):
                 minute = record.time % 1440
                 add(
                     f"memory/episodic.jsonl:record={index + 1}",
@@ -110,14 +113,17 @@ def search(memory: Memory, query: str, now: int, config: ActiveRecallConfig) -> 
                     now,
                 )
     for task in memory.work.tasks():
-        for entry in memory.work.entries(task, now):
+        entries = (
+            memory.work.summaries(task, now) if summarized_work else memory.work.entries(task, now)
+        )
+        for entry in entries:
             if entry["type"] == "work_view":
                 continue
             label = (
                 "Intended action, not a confirmed outcome"
                 if entry["type"] == "intention"
                 else "Your own working summary"
-                if entry["type"] == "note"
+                if entry["type"] in {"note", "summary"}
                 else "Observed"
             )
             add(
@@ -128,7 +134,9 @@ def search(memory: Memory, query: str, now: int, config: ActiveRecallConfig) -> 
             )
     scores = _relevance(_words(query) - _STOPWORDS, [hit.text for hit in documents])
     ranked = sorted(
-        zip(documents, scores, strict=True), key=lambda item: (item[1], item[0].time), reverse=True
+        zip(documents, scores, strict=True),
+        key=lambda item: (item[1], item[0].time),
+        reverse=True,
     )
     seen: set[str] = set()
     hits = []

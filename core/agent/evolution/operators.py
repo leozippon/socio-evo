@@ -231,6 +231,8 @@ async def _write_diary(agent: Agent, time: int) -> None:
     """Write the agent's diary entry for the day of `time`, from that day's episodic records."""
     day = day_of(time)
     today = [record for record in agent.memory.episodic.read() if day_of(record.time) == day]
+    if agent.cognition.work_notes.enabled:
+        today = agent.memory.work.project(today)
     diary = await agent.write(
         "diary", time, prompts.diary_prompt(time, today, agent.cognition, agent.setting)
     )

@@ -1109,6 +1109,12 @@ class ActivityEngine:
         situation = "\n".join(context)
         return Observation(
             agent=who,
+            own_task_id=(claim.task.id if (claim := self.env.board.claim_of(who)) else None),
+            work_activity=isinstance(active, WorkActivity),
+            work_feedback=(
+                tuple(active.feedback.get(who, [])[-4:]) if isinstance(active, WorkActivity) else ()
+            ),
+            operational_evidence=True,
             time=self.now // 60,
             place=place,
             scene=f"day-{day_of(self.now // 60):04d}/activities",
@@ -1249,6 +1255,7 @@ class ActivityEngine:
             actor=who,
             activity=ident,
             activity_type=activity.kind,
+            task_id=activity.task_id if isinstance(activity, WorkActivity) else None,
             reason=reason,
             result=summary,
             start=member.start / 60,

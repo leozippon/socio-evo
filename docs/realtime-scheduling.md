@@ -37,6 +37,8 @@ Code reads, edits, tests, handoff application and submission snapshot collection
 
 New code operations require an open work venue and the 08:00–12:00 or 14:00–18:00 work window. An operation started before closing may finish afterward; its result is recorded, work pauses and the resident chooses what to do next. A response based on an obsolete work or selection context cannot start a new operation after closing. Day-close operations are drained before nightly bookkeeping. If an operation crosses the civil day, the driver fails explicitly rather than writing events with backward dates; configure real request and process timeouts for the chosen multiplier.
 
+Work-note generation runs inside the resident’s interruptible exit decision while the shared clock and other residents continue. Mandatory lunch, evening and closing transitions cancel an unfinished summary and discard its old exit choice. Its original receipts remain available for later catch-up; an already-started repository operation retains the usual completion rule. The [agent memory contract](ARCHITECTURE.md#agent-coreagent) defines the journal, range reads and summary bounds.
+
 Claims, notes and private patches persist across activities and days. Completed or expired job bindings are retired without transferring old relay ownership to a new task. Only the relay owner can launch code-writing tools. Simultaneous claims observed in the same clock second are ordered by the seeded draw; existing collaborator matching rules remain in effect.
 
 ## Settlement and recovery

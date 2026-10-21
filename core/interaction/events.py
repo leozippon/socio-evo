@@ -151,6 +151,7 @@ class Event(StrictModel):
         seen["task_id"] = None
         # Only a public routing identifier, never evaluation results or hidden tests.
         work_kinds = {
+            EventKind.ACTIVITY_LEFT,
             EventKind.CODE_HANDOFF,
             EventKind.ACTIVITY_FEEDBACK,
             EventKind.TASK_POSTED,

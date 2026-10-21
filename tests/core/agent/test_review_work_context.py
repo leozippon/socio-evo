@@ -82,7 +82,6 @@ async def test_receipts_survive_peer_biased_retrieval_and_context_packing(agent,
     assert "YOUR task and acceptance" in prompt
     assert "The clerk paid you $60 for job 1" in prompt
     assert "OTHER PEOPLE'S work" in prompt and "Olga's job 2 passed" in prompt
-    assert "Witnessed event; actor: Olga" in prompt
-    assert "does not establish that you were assigned" in prompt
+    assert "Your work notes for job 2" not in prompt
     if budget:
         assert requests[-1].metadata["context_usage"]["input_count"] <= 24000

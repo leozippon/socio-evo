@@ -22,6 +22,8 @@ def setup_run(tmp_path, days=2):
     calls = []
 
     def answer(request):
+        if request.metadata["purpose"].startswith("work_summary"):
+            return {"summary": "The submitted repair is awaiting its client verdict."}
         calls.append((request.metadata["agent"], request.metadata["purpose"]))
         assert request.metadata["purpose"] == "choose_activity"
         return {

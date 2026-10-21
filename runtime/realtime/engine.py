@@ -447,7 +447,32 @@ class RealtimeEngine(ActivityEngine):
             timing="wall",
         )
 
+    def cancel_work_summary(self, who):
+        job = self.running.get(who)
+        if (
+            job is not None
+            and job.kind == "decision"
+            and job.continuation is not None
+            and job.continuation.summarizing_work
+        ):
+            job.invalidated = True
+            job.task.cancel()
+            return True
+        return False
+
     def daily_choices(self):
+        if self.sim.config.lunch_place:
+            state = self.daily_life.get(str(day_of(self.now // 60)), {})
+            for who in list(self.running):
+                if (
+                    self.now >= at(day_of(self.now // 60), "12:00")
+                    and who not in state.get("lunched", [])
+                ) or (
+                    self.now >= at(day_of(self.now // 60), "18:00")
+                    and who not in state.get("evening", [])
+                ):
+                    if self.cancel_work_summary(who):
+                        self.deferred[who] = "Work paused for the daily transition."
         self._lifecycle_transition = True
         try:
             super().daily_choices()
@@ -458,6 +483,7 @@ class RealtimeEngine(ActivityEngine):
         activity = self.activities.get(self.current.get(who))
         if who in self.running:
             self.deferred[who] = reason
+            self.cancel_work_summary(who)
             return
         targeted = (
             not self._lifecycle_transition
@@ -555,7 +581,8 @@ class RealtimeEngine(ActivityEngine):
         if tool in REPOSITORY:
             event = self.emit(
                 EventKind.COMMAND_EXECUTED,
-                f"At your desk the terminal returned exit code {result['exit_code']}:\n"
+                f"At your desk you ran:\n{self.command_for(tool, args)}\n"
+                f"The terminal returned exit code {result['exit_code']}:\n"
                 f"{result['output']}",
                 actor=who,
                 activity=activity.id,
@@ -856,6 +883,7 @@ class RealtimeEngine(ActivityEngine):
                 continue
             if who in self.running:
                 self.deferred[who] = "The place or day closed; finish the started operation."
+                self.cancel_work_summary(who)
                 continue
             if self.now >= self.end:
                 self.leave(who, "The day closed.")

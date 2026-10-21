@@ -26,6 +26,11 @@ class Observation(StrictModel):
     and passing an Event where a Percept is expected is rejected.
     """
 
+    own_task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
+    work_activity: bool = False
+    work_feedback: tuple[str, ...] = ()
+    operational_evidence: bool = False
+
     evidence: tuple[str, ...] = ()
     """Current desk evidence, budgeted ahead of historical memory; not new events."""
 

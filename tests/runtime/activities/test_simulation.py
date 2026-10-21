@@ -43,6 +43,8 @@ async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
                 "until": "22:00",
                 "wake for invitations": False,
             }
+        if purpose.startswith("work_summary"):
+            return {"summary": "The repair remains paused; no new code was run."}
         assert purpose == "activity_tool", purpose
         tools[day] = tools.get(day, 0) + 1
         if day == 1 and tools[day] == 1:
@@ -53,7 +55,10 @@ async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
                 "partner": None,
             }
         # Work outside opening hours is unavailable; a task can still be claimed at home.
-        return {"thought": "Save the repair for workshop hours.", "do": "leave this activity"}
+        return {
+            "thought": "Save the repair for workshop hours.",
+            "do": "leave this activity",
+        }
 
     provider = PrivateRepositories()
     setup = Setup(
@@ -81,7 +86,10 @@ async def test_two_day_real_agent_checkpoint_resume_preserves_work(tmp_path):
     assert provider.patches[("Mei", task)] == "retained private diff"
     assert paused[0].id in restored.activity_engine.activities
     assert restored.env.economy.balances["Mei"] == 80  # two daily living costs
-    assert all(purpose in ("choose_activity", "activity_tool") for _, purpose, _ in calls)
+    assert all(
+        purpose in ("choose_activity", "activity_tool", "work_summary", "work_summary_merge")
+        for _, purpose, _ in calls
+    )
     rows = [json.loads(line) for line in run.events_path.read_text().splitlines()]
     assert not any(row["kind"] == "goal_updated" for row in rows)
     assert len([row for row in rows if row["kind"] == "day_ended"]) == 2

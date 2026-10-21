@@ -64,6 +64,7 @@ def test_context_selects_current_or_related_but_not_all_notes(agent, observe):
     notes = agent.memory.work
     notes.observe(event().percept("Mei"))
     notes.record("task-2", time_at(1, "11:00"), "observation", "Telescope optics repaired.")
+    notes.save_summary("task-1", time_at(1, "11:00"), "Parser timezone failed.", (0, 0), (1, 28))
     cfg = WorkNotesConfig(enabled=True)
     work = observe(2).model_copy(
         update={
@@ -87,9 +88,12 @@ def test_recall_has_timestamp_provenance_and_excludes_future(agent):
     notes = agent.memory.work
     notes.observe(event().percept("Mei"))
     notes.record("task-1", time_at(3, "11:00"), "observation", "Future timezone secret.")
-    hits = search(agent.memory, "timezone", time_at(2, "12:00"), ActiveRecallConfig())
-    assert hits and "events.jsonl:id=event:1" in hits[0].source
-    assert "10:00" in hits[0].render(agent.setting)
+    notes.save_summary("task-1", time_at(1, "11:00"), "Timezone failure summary.", (0, 0), (1, 28))
+    hits = search(
+        agent.memory, "timezone", time_at(2, "12:00"), ActiveRecallConfig(), summarized_work=True
+    )
+    assert hits and "events.jsonl:id=summary:3" in hits[0].source
+    assert "11:00" in hits[0].render(agent.setting)
     assert all("Future" not in hit.text for hit in hits)
 
 
@@ -103,7 +107,12 @@ async def test_notes_injected_into_decision_and_nightly_context(agent, observe, 
     )
     agent.perceive([event().percept("Mei")])
     observation = observe(1).model_copy(
-        update={"time": time_at(1, "12:00"), "situation": "Ben asks about job 1."}
+        update={
+            "time": time_at(1, "12:00"),
+            "situation": "Ben asks about job 1.",
+            "own_task_id": "task-1",
+            "work_activity": True,
+        }
     )
     await agent.act(observation)
     request = script.requests[-1]
@@ -121,44 +130,43 @@ def test_disabled_does_not_create_notes(agent):
     assert not agent.memory.work.root.exists()
 
 
-async def test_resident_can_update_summary_then_act_without_overwriting_facts(agent, observe):
+async def test_resident_reads_early_range_without_summarizing_during_work(agent, observe):
     from infrastructure.llm import ScriptedClient
 
     agent.cognition = agent.cognition.model_copy(
-        update={
-            "work_notes": WorkNotesConfig(enabled=True, editable=True),
-            "context_budget": ContextBudgetConfig(enabled=True),
-        }
+        update={"work_notes": WorkNotesConfig(enabled=True)}
     )
     notes = agent.memory.work
-    notes.observe(event().percept("Mei"))
+    notes.record("task-1", 1, "observation", "EARLY_SECRET " + "x" * 10000)
+    notes.record("task-1", 2, "observation", "LATEST_RESULT")
     requests = []
 
     def reply(request):
         requests.append(request)
-        if len(requests) == 1:
-            return {
-                "thought": "Keep track of the evidence.",
-                "do": "update work notes",
-                "job": "1",
-                "note": "Parser test failed. Next: inspect timezone conversion.",
-            }
-        assert "Parser test failed. Next:" in request.messages[-1].content
         assert "update work notes" not in str(request.json_schema)
+        if len(requests) <= 2:
+            if len(requests) == 2:
+                assert "EARLY_SECRET" in request.messages[-1].content
+                assert "LATEST_RESULT" not in request.messages[-1].content
+            return {
+                "thought": "Read the next part",
+                "do": "read work record",
+                "start": 1,
+                "offset": 0 if len(requests) == 1 else 5900,
+            }
+        assert "characters 5900" in request.messages[-1].content
         return {
-            "thought": "Discuss the failure.",
+            "thought": "Discuss",
             "do": "say",
             "to": "Ben",
-            "words": "The parser test failed.",
+            "words": "I read the record.",
         }
 
     agent.client = ScriptedClient(reply)
-    await agent.act(observe(2).model_copy(update={"situation": "Discuss job 1."}))
-    assert len(requests) == 2
-    assert (notes.root / "task-1/note.md").read_text().startswith("Parser test failed.")
-    assert notes.state("task-1")["last_observation"]["text"] == "Parser timezone test failed."
-    assert notes.state("task-1")["last_note"]["type"] == "note"
-    assert all(r.metadata["context_usage"]["input_count"] <= 24000 for r in requests)
+    await agent.act(observe(2).model_copy(update={"own_task_id": "task-1", "work_activity": True}))
+    assert len(requests) == 3
+    assert notes.summaries("task-1") == []
+    assert len(notes.entries("task-1")) == 2
 
 
 def test_summary_as_of_time_and_symlink_protection(agent, tmp_path):

@@ -17,6 +17,7 @@ from core.agent.config import WorkNotesConfig
 from core.agent.context import Block
 from core.agent.memory.retrieval import _STOPWORDS, _relevance, _words
 from core.interaction import (
+    EventKind,
     Observation,
     Percept,
     Setting,
@@ -37,11 +38,38 @@ _GENERIC = _STOPWORDS | set(
 )
 
 
-class WriteWorkNote(StrictModel):
+# Only operational receipts are compressed; task-related conversation remains ordinary memory.
+OPERATIONS = {
+    EventKind.COMMAND_EXECUTED,
+    EventKind.WORK_CHECKED,
+    EventKind.WORK_DELAYED,
+    EventKind.ACTIVITY_FEEDBACK,
+    EventKind.CODE_HANDOFF,
+    EventKind.DESK,
+    EventKind.ACTIVITY_LEFT,
+}
+
+
+def operation(record) -> bool:
+    return record.task_id is not None and record.kind in OPERATIONS
+
+
+def reference(record):
+    if not operation(record):
+        return record
+    return record.model_copy(
+        update={
+            "text": f"Your operation on {job_name(record.task_id)} is in your private work record "
+            f"(source: percept:{record.seq}). Read that job's notes for the result."
+        }
+    )
+
+
+class ReadWorkLog(StrictModel):
     thought: str = Field(max_length=1000)
-    do: Literal["update work notes"]
-    job: str = Field(min_length=1, max_length=80)
-    note: str = Field(min_length=1, max_length=4000)
+    do: Literal["read work record"]
+    start: int = Field(default=1, ge=1)
+    offset: int = Field(default=0, ge=0)
 
 
 class WorkNotes:
@@ -71,7 +99,12 @@ class WorkNotes:
         path = self._directory(task) / "events.jsonl"
         if not path.exists():
             return []
-        return [entry for entry in read_jsonl(path) if now is None or entry["time"] <= now]
+        # Physical append order supplies stable identities for old journals too.
+        return [
+            dict(entry, entry=index)
+            for index, entry in enumerate(read_jsonl(path), 1)
+            if now is None or entry["time"] <= now
+        ]
 
     def tasks(self) -> list[str]:
         if not self._safe(self.root):
@@ -92,13 +125,13 @@ class WorkNotes:
         directory.mkdir(parents=True, exist_ok=True)
         if not self._safe(directory / "state.json") or not self._safe(directory / "state.tmp"):
             raise ValueError("symlinked note state is not writable")
-        append_jsonl(directory / "events.jsonl", entry)
+        append_jsonl(directory / "events.jsonl", dict(entry, entry=len(records) + 1))
         temporary = directory / "state.tmp"
         temporary.write_text(json.dumps(self.state(task), ensure_ascii=False, indent=2) + "\n")
         temporary.replace(directory / "state.json")
 
     def observe(self, percept: Percept) -> None:
-        if percept.task_id is None:
+        if not operation(percept):
             return
         self.append(
             percept.task_id,
@@ -151,57 +184,145 @@ class WorkNotes:
             "last_intention": latest("intention"),
             "last_work_view": latest("work_view"),
             "last_note": latest("note"),
+            "summary_through": list(self.cursor(task)),
         }
 
     @staticmethod
     def current(observation: Observation) -> set[str]:
         # Work-only allowances already identify the resident's own assigned job. No access
         # to the global board or another agent's assignment is needed.
-        return {
+        return ({observation.own_task_id} if observation.own_task_id else set()) | {
             task
             for allowance in observation.allowed
             if (reference := getattr(allowance, "task_id", None)) is not None
             and (task := job_id(reference)) is not None
         }
 
-    def render(self, task: str, now: int, config: WorkNotesConfig, setting: Setting) -> str:
+    def summaries(self, task: str, now: int | None = None) -> list[dict]:
         records = self.entries(task, now)
-        selected = [r for r in records if r["type"] not in {"work_view", "note"}][
-            -config.recent_entries :
+        replaced = {identity for e in records for identity in e.get("replaces", [])}
+        active = [
+            e for e in records if e["type"] in {"summary", "note"} and e["id"] not in replaced
         ]
-        view = next((r for r in reversed(records) if r["type"] == "work_view"), None)
-        if not selected and view:
-            selected = [view]
+        return sorted(
+            active,
+            key=lambda entry: (
+                tuple(entry.get("from", (0, 0))),
+                tuple(entry.get("through", (0, 0))),
+            ),
+        )
+
+    def cursor(self, task: str) -> tuple[int, int]:
+        summaries = self.summaries(task)
+        return max((tuple(e.get("through", (0, 0))) for e in summaries), default=(0, 0))
+
+    def chunk(
+        self, task: str, start: tuple[int, int], upper: int, size: int
+    ) -> tuple[str, tuple[int, int]]:
+        pieces, used, through = [], 0, start
+        for e in self.entries(task):
+            index = e["entry"]
+            if index > upper or index < start[0] or e["type"] not in {"observation", "intention"}:
+                continue
+            offset = start[1] if index == start[0] else 0
+            text = e["text"]
+            if offset >= len(text):
+                continue
+            header = f"Entry {index}, time {e['time']}, {e['type']}, characters {offset}:\n"
+            room = size - used - len(header)
+            if room <= 0:
+                break
+            part = text[offset : offset + room]
+            pieces.append(header + part)
+            used += len(header) + len(part)
+            through = (index, offset + len(part))
+            if through[1] < len(text):
+                break
+        return "\n".join(pieces), through
+
+    def save_summary(
+        self,
+        task: str,
+        time: int,
+        text: str,
+        start: tuple[int, int],
+        through: tuple[int, int],
+        replaces: list[str] | None = None,
+    ) -> None:
+        records = self.entries(task)
+        covered = [
+            e
+            for e in records
+            if start[0] <= e["entry"] <= through[0]
+            and e["type"] in {"observation", "intention"}
+            and not (e["entry"] == start[0] and start[1] >= len(e["text"]))
+        ]
+        self.append(
+            task,
+            {
+                "id": f"summary:{len(records) + 1}",
+                "time": time,
+                "type": "summary",
+                "text": text,
+                "source": "your working summary",
+                "from": list(start),
+                "through": list(through),
+                "period": [
+                    min((e["time"] for e in covered), default=time),
+                    max((e["time"] for e in covered), default=time),
+                ],
+                "replaces": replaces or [],
+            },
+        )
+
+    def read_range(self, task: str, start: int, offset: int, size: int = 6000) -> str:
+        text, through = self.chunk(task, (start, offset), len(self.entries(task)), size)
+        return (text or "No work operations in that range.") + (
+            f"\nContinue at entry {through[0]}, character {through[1]}." if text else ""
+        )
+
+    def project(self, records):
+        return [record for record in records if not operation(record)]
+
+    def render(
+        self,
+        task: str,
+        now: int,
+        config: WorkNotesConfig,
+        setting: Setting,
+        *,
+        recent: bool = False,
+    ) -> str:
         lines = [
             f"Your work notes for {job_name(task)}:",
-            "This is your private record about the job, including things you witnessed "
-            "others do. It does not establish that you were assigned or completed this job.",
+            "Your own working summaries are interpretations, not verified results.",
         ]
-        note = next((r for r in reversed(records) if r["type"] == "note"), None)
-        if note:
-            selected = [note, *selected]
-        for record in selected:
-            date = lived_day(day_of(record["time"]), setting.start_date)
-            when = f"{date}, {clock_of(record['time'])}"
-            label = (
-                "Chosen action and thought (not a confirmed result)"
-                if record["type"] == "intention"
-                else "What you saw"
-            )
-            if record["type"] == "observation":
-                label = f"Witnessed event; actor: {record.get('actor') or 'environment'}"
-            if record["type"] == "note":
-                label = "Your own working summary (interpretation, not a verified result)"
-            text = record["text"]
-            size = config.excerpt_chars
-            if len(text) > size:
-                half = max(1, (size - 30) // 2)
-                text = text[:half] + "\n[excerpt shortened]\n" + text[-half:]
-            lines.append(f"{when} — {label} (source: {record['source']}):\n{text}")
+        for record in self.summaries(task, now):
+            begin, end = record.get("period", [record["time"], record["time"]])
+
+            def when(time):
+                return f"{lived_day(day_of(time), setting.start_date)}, {clock_of(time)}"
+
+            lines.append(f"{when(begin)} to {when(end)} — {record['text']}")
+        if len(lines) == 2:
+            lines.append("Operations are saved; no working summary has been written yet.")
+        if recent:
+            records = [e for e in self.entries(task, now) if e["type"] == "observation"]
+            for record in records[-config.recent_entries :]:
+                text = record["text"]
+                if len(text) > config.excerpt_chars:
+                    half = (config.excerpt_chars - 30) // 2
+                    text = text[:half] + "\n[excerpt shortened]\n" + text[-half:]
+                lines.append(f"Recent operation (source: {record['source']}):\n{text}")
         return "\n\n".join(lines)
 
     def select(
-        self, observation: Observation, config: WorkNotesConfig, setting: Setting
+        self,
+        observation: Observation,
+        config: WorkNotesConfig,
+        setting: Setting,
+        *,
+        recent=True,
     ) -> list[Block]:
         current = self.current(observation)
         owned = self.tasks()
@@ -210,9 +331,7 @@ class WorkNotes:
         query = _words(query_text) - _GENERIC
         candidates = [task for task in owned if task not in current]
         texts = [
-            "\n".join(
-                e["text"] for e in self.entries(task, observation.time) if e["type"] != "work_view"
-            )
+            "\n".join(e["text"] for e in self.summaries(task, observation.time))
             for task in candidates
         ]
         scores = _relevance(query, texts)
@@ -229,7 +348,13 @@ class WorkNotes:
         return [
             Block(
                 f"work-note:{task}",
-                self.render(task, observation.time, config, setting),
+                self.render(
+                    task,
+                    observation.time,
+                    config,
+                    setting,
+                    recent=recent and observation.work_activity and task in current,
+                ),
                 95 if task in current else 60,
             )
             for task in [*sorted(current & set(owned)), *related]
