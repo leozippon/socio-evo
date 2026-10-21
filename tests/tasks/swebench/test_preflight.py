@@ -293,3 +293,53 @@ def test_failed_offline_readiness_blocks_publication_even_without_work_guide(tmp
     with pytest.raises(preflight.EnvironmentPreflightError, match="requirements cache"):
         provider.sample_available(__import__("random").Random(0), 1, [])
     assert provider.preflights == {}
+
+
+@pytest.mark.parametrize(
+    "repo,launcher",
+    [
+        ("django/django", "python tests/runtests.py --settings=test_sqlite"),
+        ("pytest-dev/pytest", "python -m pytest"),
+    ],
+)
+def test_fixed_work_context_reuses_public_rules_without_preflight(
+    tmp_path, monkeypatch, repo, launcher
+):
+    from core.environment import Part
+
+    data = tmp_path / "data.json"
+    data.write_text(
+        json.dumps(
+            [
+                dict(
+                    instance_id="org__repo-1",
+                    repo=repo,
+                    problem_statement="PUBLIC_ISSUE",
+                    patch="SECRET",
+                    test_patch="SECRET",
+                    FAIL_TO_PASS="SECRET",
+                )
+            ]
+        )
+    )
+    provider = SWEbenchTaskProvider(
+        data, (), tmp_path / "run", community=True, independent_workspaces=True
+    )
+
+    def forbidden(*args):
+        pytest.fail("Building current Work context must not run a preflight or evaluation")
+
+    monkeypatch.setattr(provider, "_preflight", forbidden)
+    part = Part(
+        title="Repair",
+        specification="PUBLIC_ISSUE",
+        reward=60,
+        deadline_days=2,
+        reference="org__repo-1",
+    )
+    text = provider.work_context(part)
+    assert launcher in text and "/testbed" in text and "testbed Python" in text
+    assert "Ignored files" in text and "60-second" in text
+    assert "SECRET" not in text and not provider.preflights
+    if repo == "django/django":
+        assert "Labels are relative to tests/" in text

@@ -755,6 +755,15 @@ class ActivityEngine:
             "You read new conversation messages to see their content."
         )
 
+    def work_rules(self):
+        return (
+            "Workplaces admit residents 07:00–22:00; coding hours are "
+            "08:00–12:00 and 14:00–18:00. Repository work requires an assigned job "
+            "and a Work activity at an open workplace. Outside coding hours, Work "
+            "still allows notices, claiming, feedback, and arranging partners. "
+            "At 22:00 you return home for the night."
+        )
+
     def town_setting(self):
         """Town rules belong in the stable setting; current circumstances do not."""
         return "\n".join(
@@ -777,11 +786,7 @@ class ActivityEngine:
                     else []
                 ),
                 self.clock_rules(),
-                "Workplaces admit residents 07:00–22:00; coding hours are "
-                "08:00–12:00 and 14:00–18:00. Repository work requires an assigned job "
-                "and a Work activity at an open workplace. Outside coding hours, Work "
-                "still allows notices, claiming, feedback, and arranging partners. "
-                "At 22:00 you return home for the night.",
+                self.work_rules(),
                 *[
                     f"{p.name}: {p.kind.value}; "
                     + ("access 07:00–22:00" if p.kind == PlaceKind.WORK else f"open {p.spans()}")
@@ -1208,17 +1213,20 @@ class ActivityEngine:
         place = self.env.world.locations[who]
         menu = self.menu(who)
         layer = "tool" if active else "selection"
-        context = [
-            self.current_facts(who),
-            "People here: "
-            + ", ".join(
-                p
-                for p in self.env.world.occupants(place)
-                if (p in self.outside) == (who in self.outside)
+        claim = self.env.board.claim_of(who)
+        focused = isinstance(active, WorkActivity) and claim is not None
+        context = [self.current_facts(who), self.activity_contract(who)]
+        if not focused:
+            context.insert(
+                1,
+                "People here: "
+                + ", ".join(
+                    p
+                    for p in self.env.world.occupants(place)
+                    if (p in self.outside) == (who in self.outside)
+                )
+                + ".",
             )
-            + ".",
-            self.activity_contract(who),
-        ]
         if not active and who in self.selection_feedback:
             context.append("Recent feedback: " + self.selection_feedback[who])
         if who in self.outside:
@@ -1231,23 +1239,42 @@ class ActivityEngine:
             isinstance(active, ConversationActivity) and active.task_id
         ):
             context += self.team_context(who)
-        context += self.daily_context(who)
+        if not focused:
+            context += self.daily_context(who)
         context += self.activity_context(who, active, menu)
         if active:
             context += active.feedback.get(who, [])[-4:]
             if isinstance(active, WorkActivity):
                 context.append(
-                    f"Job: {active.task_id or 'none assigned'}. "
+                    f"Job: {claim.task.id if focused else active.task_id or 'none assigned'}. "
                     f"Work mode: {self.work_mode(who)}. "
                     "Your repository is private; partners exchange code handoffs."
                 )
-        context += [
-            self.env.board_view(who),
+        if focused:
+            provider = self.env.providers[claim.task.trade]
+            if callable(getattr(provider, "work_context", None)):
+                context.append(provider.work_context(claim.task.parts[0]))
+        else:
+            context.append(self.env.board_view(who))
+        context.append(
             self.env.status_view(
-                who, include_evidence=False, include_specification=isinstance(active, WorkActivity)
-            ),
-        ]
+                who,
+                include_evidence=False,
+                include_specification=isinstance(active, WorkActivity),
+                work_only=focused,
+            )
+        )
         invitations = self.invitation_views(who)
+        if focused:
+            invitations = [
+                view
+                for view in invitations
+                if view["your_confirmed"]
+                and view["start"] - view["travel_seconds"]
+                <= self.now
+                <= self.invitations[view["id"]].grace_end
+                and self.invitations[view["id"]].status == "pending"
+            ]
         if invitations:
             context.append("Your invitations/appointments: " + json.dumps(invitations))
         conversations = [
@@ -1255,9 +1282,9 @@ class ActivityEngine:
             for a in self.activities.values()
             if isinstance(a, ConversationActivity) and self.conversation_access(who, a)
         ]
-        if conversations:
+        if conversations and not focused:
             context.append("Open conversations here: " + json.dumps(conversations))
-        if menu.get("work"):
+        if menu.get("work") and not focused:
             context.append("Available public/paused work: " + json.dumps(menu["work"]))
         situation = "\n".join(context)
         return Observation(
@@ -1265,8 +1292,8 @@ class ActivityEngine:
             activity_id=active.id if active else None,
             activity_visit_id=active.members[who].visit_id if active else None,
             activity_kind=active.kind if active else "selection",
-            activity_task_id=getattr(active, "task_id", None),
-            own_task_id=(claim.task.id if (claim := self.env.board.claim_of(who)) else None),
+            activity_task_id=claim.task.id if focused else getattr(active, "task_id", None),
+            own_task_id=claim.task.id if claim else None,
             work_activity=isinstance(active, WorkActivity),
             work_feedback=(
                 tuple(active.feedback.get(who, [])[-4:]) if isinstance(active, WorkActivity) else ()
@@ -1276,7 +1303,14 @@ class ActivityEngine:
             place=place,
             scene=f"day-{day_of(self.now // 60):04d}/activities",
             situation=situation,
-            setting=self.town_setting(),
+            setting=(
+                self.work_rules()
+                + "\n"
+                + self.clock_rules()
+                + "\nUse the repository work guide for work details."
+            )
+            if focused
+            else self.town_setting(),
             percepts=self.perceive(who),
             evidence=self.env.work_evidence(who),
             allowed=(MayActivity(layer=layer, menu=menu),),

@@ -1048,13 +1048,20 @@ class Environment:
         return f"{have}; the day costs you {listed(costs)}." if costs else f"{have}."
 
     def status_view(
-        self, agent: str, *, include_evidence: bool = True, include_specification: bool = True
+        self,
+        agent: str,
+        *,
+        include_evidence: bool = True,
+        include_specification: bool = True,
+        work_only: bool = False,
     ) -> str:
         """`agent`'s purse, the task it holds with the state of each part, what it last saw
         when a solution for a part was run, and its open proposal or application and those
         made to it."""
-        lines = [self.purse_view(agent), *self._position(agent)]
-        if notice := self.latest_work_results.get(agent):
+        claim = self.board.claim_of(agent)
+        lines = [self.purse_view(agent), *([] if work_only else self._position(agent))]
+        notice = self.latest_work_results.get(agent)
+        if notice and (not work_only or (claim and notice.task_id == claim.task.id)):
             outcome = "ACCEPTED" if notice.accepted else "REJECTED — rework required"
             lines.append(
                 f"Latest completed client verdict for YOUR work: {job_name(notice.task_id)}, "
@@ -1066,7 +1073,6 @@ class Environment:
                 "Older waiting notices do not override it; a later pending submission, "
                 "if any, is reported separately."
             )
-        claim = self.board.claim_of(agent)
         if claim is None:
             lines.append("You are not working on any job.")
         else:
@@ -1090,6 +1096,12 @@ class Environment:
                     include_evidence=include_evidence,
                     include_specification=include_specification,
                 )
+                if work_only and include_specification and claim.delivery(number):
+                    lines.append(
+                        "What the client asks for:\n" + task.parts[number - 1].specification
+                    )
+        if work_only:
+            return "\n".join(lines)
         if mine := self.board.offers.get(agent):
             job = _titled(self.board.listings[mine.task_id].task)
             if mine.partner is None:

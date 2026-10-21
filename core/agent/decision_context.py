@@ -20,12 +20,22 @@ EVIDENCE = {
 }
 
 
-def activity_records(records, observation, setting):
+def activity_records(records, observation, setting, *, current=False):
     """Filter automatic context only. Originals remain available to explicit recall."""
     if observation.activity_kind is None:
         return records
     kept = []
+    focused = observation.activity_kind == "work" and observation.own_task_id is not None
     for record in records:
+        if focused:
+            if record.task_id is not None and record.task_id != observation.own_task_id:
+                continue
+            if (
+                not current
+                and record.task_id is None
+                and not (record.kind is None and record.activity_id == observation.activity_id)
+            ):
+                continue
         if record.kind is None:
             # Legacy decisions mix deeds with private reasons; do not replay those reasons.
             if record.action is None or record.activity_id != observation.activity_id:

@@ -177,7 +177,9 @@ class Agent:
         self.perceive(observation.percepts, observation.places)
         new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
         if scoped:
-            visible = activity_records([Record.of(p) for p in new], observation, self.setting)
+            visible = activity_records(
+                [Record.of(p) for p in new], observation, self.setting, current=True
+            )
             ids = {r.seq for r in visible}
             new = tuple(
                 p.model_copy(update={"text": f"[source event {p.seq}] {p.text}"})

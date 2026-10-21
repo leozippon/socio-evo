@@ -93,6 +93,16 @@ class SWEbenchTaskProvider:
             reference=instance,
         )
 
+    def work_context(self, part: Part) -> str:
+        """Stable public operating facts, without a new preflight or grading metadata."""
+        from tasks.swebench.preflight import operating_notes, recipe
+
+        repo = self.rows[part.reference]["repo"]
+        report = self.preflights.get(part.reference, {"guide": recipe(repo)[1]})
+        return f"Repository: {repo}. Working directory: /testbed." + operating_notes(
+            report, self.command_seconds, self.community
+        )
+
     def work_guide(self, part: Part) -> str:
         """Public operating instructions only; never grading fields or reference patches."""
         from tasks.swebench.preflight import operating_notes, recipe
