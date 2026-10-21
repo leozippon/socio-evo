@@ -389,11 +389,13 @@ class Agent:
                     "\nYou may use skill to select a notebook method by its bracketed name, "
                     "or clear it with name null. You may revise skill from your experience, "
                     "or act directly. For a new or revised page, describe when it helps, "
-                    "what to try, and when to adjust or stop; source event numbers are optional. "
+                    "what to try, how to verify the result, and when to adjust or stop; "
+                    "source event numbers are optional. "
                     "Methods are your own revisable suggestions. Selecting one does not execute "
                     "it or require you to follow it. You remain free to rest, join a conversation, "
                     "leave, or choose any other available action."
                 )
+                instruction += "\n" + prompts.MEMORY_KINDS + "\n" + prompts.SKILL_EXAMPLE
             if skill_result:
                 instruction += "\n" + skill_result
             selected = self.personal_skills.selected

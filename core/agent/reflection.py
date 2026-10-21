@@ -464,6 +464,7 @@ async def _experience(
             for r in scope["records"]
         ]
         context = []
+        instruction += "\n" + prompts.MEMORY_KINDS + "\n" + prompts.SKILL_EXAMPLE
         for insight in insights:
             context.append(f"Current insight {insight.id}: {insight.text}")
         for skill in agent.memory.skills.read():

@@ -138,10 +138,35 @@ CAPACITY = (
     "You can keep {capacity} beliefs in mind; beyond that, the ones you have gone longest "
     "without revisiting slip away."
 )
+MEMORY_KINDS = (
+    "Keep these kinds of writing distinct. What you have come to believe holds "
+    "conclusions or revisable beliefs about experience, yourself, people or the world. "
+    "Your notebook holds reusable methods: state when to use the method, concrete "
+    "steps, how to check the result, and when to adjust or stop. Work records hold a "
+    "particular job's progress, commands, results and next steps. Keep those details in "
+    "the job's work record, not in a notebook method. Feelings, personal impressions, "
+    "relationship notes and balance snapshots are not methods; keep experiences in your "
+    "diary and durable conclusions among your beliefs. A financial or social method "
+    "belongs in the notebook if it gives a reusable procedure. Do not copy a belief "
+    "into a method just to fill the notebook. Write no new method if none has emerged."
+)
+SKILL_EXAMPLE = (
+    "Example notebook method — title: Verify a change against a reproduced failure. "
+    "Summary: Use when repairing a reproducible software bug. "
+    "Method: First reproduce the reported failure and record the result in the job's "
+    "work record. Trace the relevant inputs and call path, then make one small change. "
+    "Rerun the failing case and nearby regression tests; compare their results with the "
+    "baseline. If the failure cannot be reproduced, investigate the environment before "
+    "editing. If regressions appear, revise or revert the change. Stop and record the "
+    "remaining uncertainty when verification is unavailable. This method omits job "
+    "numbers, current progress and personal reflections so it can be used again on "
+    "another job. Adapt it to your own experience rather than copying it."
+)
 REFLECT = (
     IN_BED + "What you have come to believe so far, numbered as you keep them:\n{beliefs}\n\n"
     f"{GO_OVER} Then settle what you believe now: add new beliefs, reword numbered ones that "
     f"need it, and drop those that no longer hold. {ABOUT_SOMEONE} " + CAPACITY
+    + "\n\n" + MEMORY_KINDS
 )
 REQUEST = (
     "If you feel the need, you can also {options} tonight, instead of waiting for the usual "
@@ -157,6 +182,7 @@ SKILL_REVIEW = (
     "Your notebook as it stands:\n\n{pages}\n\n"
     "Write new pages or rewrite old ones (a page replaces any page with the same title), and "
     "take out the pages you no longer want. If nothing needs changing, leave it as it is."
+    + "\n\n" + MEMORY_KINDS + "\n\n" + SKILL_EXAMPLE
 )
 POLICY_REVIEW = (
     "It is {time}. Tonight you think again about what you have resolved about how to live and "
@@ -517,6 +543,7 @@ def _legacy_revision_prompt(
         ),
         capacity=capacity,
     )
+    text += "\n\n" + MEMORY_KINDS + "\n\n" + SKILL_EXAMPLE
     return text if account else f"{text} {FIRST_ACCOUNT}"
 
 
