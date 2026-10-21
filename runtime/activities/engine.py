@@ -791,40 +791,54 @@ class ActivityEngine:
         )
 
     def activity_help(self, who):
-        """Deterministic instructions; never consume observations or pending messages."""
-        from core.interaction.card import Card, form
-
-        menu = self.menu(who)
+        """Explain only the current activity's rules, without repeating its live view."""
         active = self.activities.get(self.current.get(who))
-        sections = [
-            "Activity help",
-            self.current_facts(who),
-            self.activity_contract(who),
-            self.clock_rules(),
-            "Rest ends at the chosen time today or tomorrow; tomorrow deadlines survive overnight. "
-            "Social wake-ups offer you a choice when someone invites you or speaks nearby. "
-            "Movement takes time according to distance. Work progress survives leaving; "
-            "partners keep private repositories and exchange explicit code handoffs.",
-            "For an invitation, accept, decline, or propose a later time. A changed time "
-            "requires fresh confirmation. A confirmed meeting starts when at least two "
-            "confirmed people are present and free, within its arrival grace period. "
-            "At the meeting place, wait for the confirmed conversation to become ready.",
-            "Your invitations: " + json.dumps(self.invitation_views(who, include_deferred=True)),
-        ]
-        if not menu.get("realtime"):
-            sections.append("Tool costs in seconds: " + json.dumps(menu.get("costs", {})))
-        if isinstance(active, WorkActivity):
-            claim = self.env.board.claim_of(who)
-            if claim:
-                provider = self.env.providers[claim.task.trade]
-                if callable(getattr(provider, "work_guide", None)):
-                    sections.append(provider.work_guide(claim.task.parts[0]))
-            else:
-                sections.append("Take a job from the notice board to begin repository work.")
-        sections.append(
-            form(Card((MayActivity(layer="tool" if active else "selection", menu=menu),)).model)
-        )
+        kind = active.kind if active else "selection"
+        rules = {
+            "selection": (
+                "Leave an existing activity before joining another. Work progress is preserved. "
+                "Taking a job requires entering Work. Public local conversations need no "
+                "appointment; accepting an invitation confirms willingness without reserving "
+                "anyone or making them travel."
+            ),
+            "work": (
+                "Repository work requires an assigned job and permitted coding hours. "
+                "Leaving preserves your job and private repository. Partners must agree on "
+                "their work plan before coding and explicitly exchange and apply code handoffs; "
+                "their edits are not shared automatically. Local tests do not count as final "
+                "acceptance: submitting freezes your repair for the client's checks. "
+                "Use the repository work guide for environment and test commands."
+            ),
+            "conversation": (
+                "Only current conversation members can be addressed directly. Inviting asks "
+                "others to join voluntarily; it neither merges conversations nor reserves "
+                "anyone. Accepting an invitation does not leave your current activity: "
+                "leave before joining another conversation."
+            ),
+            "rest": (
+                "Rest ends at the chosen time today or tomorrow; tomorrow's deadline survives "
+                "overnight. If invitation wake-ups are enabled, a social event may wake you "
+                "to choose what to do, without automatically joining a conversation."
+            ),
+            "move": (
+                "Travel takes time according to distance. New work or conversation activities "
+                "must wait until you arrive. Invitations do not change your destination "
+                "automatically."
+            ),
+            "reflect": (
+                "Reflection uses the saved record of a completed activity visit. A summary "
+                "records what happened; experience review considers lessons and your methods. "
+                "Original records are retained, and your interpretation is not a verified "
+                "result. Any deferred next activity waits until reflection finishes."
+            ),
+        }
+        sections = ["Activity help", rules[kind]]
+        if kind == "conversation":
+            sections.append(self.conversation_message_help())
         return "\n\n".join(sections)
+
+    def conversation_message_help(self):
+        return "Read new messages to see their content; unread replies can end a wait."
 
     def show_help(self, who):
         text = self.activity_help(who)

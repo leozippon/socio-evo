@@ -210,6 +210,9 @@ class RealtimeEngine(ActivityEngine):
             "You hear completed speech directly. Rest and travel take their stated time."
         )
 
+    def conversation_message_help(self):
+        return "You hear completed speech directly."
+
     def activity_context(self, who, active, menu):
         if active is None:
             return []

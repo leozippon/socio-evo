@@ -46,14 +46,17 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     members = {key: copy.deepcopy(a.members) for key, a in gate.activities.items()}
     text = gate.schedule("Mei", action)
     assert "Activity help" in text
-    assert '"do": "help"' in text
+    assert '"do":' not in text
+    assert gate.current_facts("Mei") not in text
+    assert "Your invitations:" not in text
+    assert "Tool costs" not in text
     assert gate.now == now and gate.current == current and gate.queue.events == queue
     assert {key: a.members for key, a in gate.activities.items()} == members
     assert unread <= {e.seq for e in gate.env.log.pending_events("Mei")}
     assert not gate.pending
     if fixture == "rt":
         assert not gate.running
-        assert "You hear completed speech directly" in text
+        assert ("You hear completed speech directly" in text) == (kind == "conversation")
     if kind == "conversation":
         assert '"do": "submit your repair"' not in text
     if kind in ("rest", "move"):
@@ -65,7 +68,7 @@ def test_help_exists_in_every_activity_and_preserves_state(request, fixture, kin
     assert all(e["audience"] == ["Mei"] for e in help_events)
 
 
-async def test_work_help_includes_public_repository_guide_without_running_code(rt, monkeypatch):
+async def test_work_help_points_to_separate_repository_guide_without_running_code(rt, monkeypatch):
     activities.work(rt)
     await realtime.take(rt)
     provider = next(iter(rt.env.providers.values()))
@@ -78,7 +81,11 @@ async def test_work_help_includes_public_repository_guide_without_running_code(r
     assert "guide" in rt.menu("Mei")["tools"]
     assert "task-1" in observation.situation
     text = rt.schedule("Mei", activities.use("help"))
-    assert "PUBLIC REPOSITORY GUIDE" in text
+    assert "PUBLIC REPOSITORY GUIDE" not in text
+    assert "repository work guide" in text
+    rt.schedule("Mei", activities.use("guide"))
+    await realtime.finish(rt, "Mei")
+    assert "PUBLIC REPOSITORY GUIDE" in rt.observation("Mei").situation
     assert not provider.commands
 
 
@@ -127,3 +134,38 @@ def test_setting_stays_stable_while_current_activity_and_clock_change(request, f
         if fixture == "engine"
         else ("read" not in gate.menu("Mei")["tools"])
     )
+
+
+@pytest.mark.parametrize("fixture", ["engine", "rt"])
+@pytest.mark.parametrize("kind", ["selection", "work", "conversation", "rest", "move", "reflect"])
+def test_help_uses_only_activity_rules_without_reading_live_views(
+    request, fixture, kind, monkeypatch
+):
+    from runtime.activities.model import ReflectActivity
+
+    gate = request.getfixturevalue(fixture)
+    if kind == "reflect":
+        activity = ReflectActivity(
+            id="reflect-help",
+            place=gate.env.world.locations["Mei"],
+            start=gate.now,
+            latest_end=gate.end,
+            purpose="summary",
+            source_activity_id="work-source",
+        )
+        gate.enter(activity, "Mei", gate.end)
+    else:
+        enter(gate, kind)
+
+    def unwanted(*args, **kwargs):
+        pytest.fail("Help must not rebuild live state, invitations, or action forms")
+
+    for name in ("menu", "current_facts", "activity_contract", "clock_rules", "invitation_views"):
+        monkeypatch.setattr(gate, name, unwanted)
+    text = gate.activity_help("Mei")
+    assert len(text) < 1000
+    assert ("code handoffs" in text) == (kind == "work")
+    assert ("members can be addressed" in text) == (kind == "conversation")
+    assert ("tomorrow's deadline" in text) == (kind == "rest")
+    assert ("your destination" in text) == (kind == "move")
+    assert ("saved record" in text) == (kind == "reflect")
