@@ -266,7 +266,7 @@ async def test_in_free_mode_every_night_files_one_reply_level_by_level(
         {"memory/diary/day-0001.md", "memory/insights.jsonl"},
         {"parameters/self.md"},
         {"memory/diary/day-0002.md", "memory/insights.jsonl"},
-        {"memory/skills/dates.md"},
+        {"memory/skills/dates.md", "memory/episodic.jsonl"},
         {"parameters/policy.md", "parameters/self.md"},
         {"memory/diary/day-0003.md"},
     ]

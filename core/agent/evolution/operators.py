@@ -7,7 +7,7 @@ from typing import Protocol
 from core.agent import prompts
 from core.agent.agent import Agent
 from core.agent.evolution.levels import Level, Trigger
-from core.agent.memory import Insight, Skill, name_of
+from core.agent.memory import Insight
 from core.interaction import MINUTES_PER_DAY, day_of
 
 
@@ -109,24 +109,13 @@ class SkillOperator:
             ),
             prompts.skill_reply([skill.title for skill in skills]),
         )
-        self.file(agent, reply.changes)
+        self.file(agent, reply.changes, time=context.time)
         return Change(subject=f"Review skills on Day {day}", body=reply.reflection)
 
     @staticmethod
-    def file(agent: Agent, changes: Sequence[prompts.WriteSkill | prompts.RetireSkill]) -> None:
-        """Write or take out the pages of the agent's notebook that `changes` name."""
+    def file(agent: Agent, changes: Sequence[prompts.WriteSkill | prompts.RetireSkill], *, time=0):
         for change in changes:
-            name = name_of(change.title)
-            if isinstance(change, prompts.WriteSkill):
-                page = Skill(
-                    name=name,
-                    title=change.title.strip(),
-                    description=change.summary,
-                    body=change.text,
-                )
-                agent.memory.skills.write(page)
-            else:
-                agent.memory.skills.remove(name)
+            agent.personal_skills.revise(change, time=time)
 
 
 class PolicyOperator:
@@ -213,7 +202,7 @@ class RevisionOperator:
         self.memory.file(agent, revision.beliefs, day)
         yield Level.L0, Change(subject=f"Reflect on Day {day}", body=reasoning)
         if revision.notebook:
-            SkillOperator.file(agent, revision.notebook)
+            SkillOperator.file(agent, revision.notebook, time=day * MINUTES_PER_DAY - 1)
             yield Level.L1, Change(subject=f"Review skills on Day {day}", body=reasoning)
         rewritten = []
         if revision.account is not None:

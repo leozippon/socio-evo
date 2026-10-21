@@ -50,7 +50,13 @@ class MemoryHit:
 
 
 def search(
-    memory: Memory, query: str, now: int, config: ActiveRecallConfig, *, summarized_work=False
+    memory: Memory,
+    query: str,
+    now: int,
+    config: ActiveRecallConfig,
+    *,
+    summarized_work=False,
+    skill_index_only=False,
 ) -> list[MemoryHit]:
     root = memory.episodic.path.parent
 
@@ -109,7 +115,15 @@ def search(
                 add(
                     f"memory/skills/{path.name}",
                     f"current note, read on day {day_of(now)}; creation time not recorded",
-                    path.read_text(encoding="utf-8"),
+                    (
+                        next(
+                            f"{s.title} [{s.name}]: {s.description}"
+                            for s in memory.skills.read()
+                            if s.name == path.stem
+                        )
+                        if skill_index_only
+                        else path.read_text(encoding="utf-8")
+                    ),
                     now,
                 )
     for task in memory.work.tasks():

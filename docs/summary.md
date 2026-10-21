@@ -52,13 +52,15 @@ At work or in company, anyone without a position may ask for a firm's place, and
 
 An agent is a directory of plain files, and in a run a git repository: a fixed profile, a policy (what it has resolved about how to live and work), skill notes (its notebook), insights (what it has come to believe about events, itself and particular people), a diary with one entry per night, an episodic memory of what it witnessed and did, and in the free mode an account of itself.
 
-At every decision it reads, in the second person, who it is, what it knows of the town (its backdrop, places, hours and rules), what it has resolved and its notebook's titles; then its most relevant notes, some of its beliefs and what it remembers, told as recollection; then the moment: where it is, who is there, how long what it does now will take, its purse, its job with the draft on its desk, and the board. Each fact is told once.
+Every decision supplies identity, town rules, personal policy and a notebook directory. In the Activity schedulers, task requirements and recent operational evidence belong to Work; a task-bound Conversation can see that task's summary, while other activities see current task status, invitations, people and accessible conversations. Past decision reasons and unrelated code are excluded from automatic context; original memories remain available through explicit recall.
 
-With work notes enabled, detailed commands, code changes and test output stay in a private journal for each job. Work decisions see that job’s summaries and recent feedback; other activities see relevant summaries alongside the current task facts. Residents can read a range of their current job’s original record. Notes are written when voluntarily leaving Work, with unfinished summaries caught up at night; conversation memory is unchanged. The [memory contract](ARCHITECTURE.md#agent-coreagent) describes coverage and bounds.
+Residents can optionally select, clear, create, revise or retire their own notebook methods during existing decisions. A selected method lasts for that Activity; switching activities clears it. Saving a method does not select it, and selecting it does not execute an action. Recorded versions, actual chosen actions and witnessed feedback support later revision, including the existing nightly review. No plan file, extra reflection call or wakeup is added, and Rest and Conversation choices keep their existing rules. The [memory contract](ARCHITECTURE.md#agent-coreagent) specifies the interfaces, limits and feedback associations.
+
+With work notes enabled, detailed commands, code changes and test output stay in a private journal for each job. Residents can explicitly read ranges of their current job's record. The existing summaries at voluntary Work exit and nightly catch-up remain unchanged.
 
 It answers with what goes through its head and the one thing it does, on an answer card that lists only what can really be done now: the jobs on the board, the people present, the places open. In every shipped world but the frozen pilot the first answer is written freely. Invalid answers receive a short correction and subsequent requests enforce the answer card where supported. Cut-off answers are retried without reducing the output allowance; streamed decisions retain received drafts without repeating the unchanged situation. Enabled context budgets account for required drafts and corrections before packing optional context, and reserve space for the complete output. If three attempts fail, the resident does nothing in that moment (or skips that night's step) and the lapse is recorded; a run fails once its lapses, at least ten, exceed 1% of its decisions and lapses together.
 
-Self-evolution happens at night, at levels that differ in depth and cadence:
+Scheduled self-evolution continues at night, at levels that differ in depth and cadence:
 
 | Level | What the agent changes | When |
 | --- | --- | --- |
@@ -67,11 +69,11 @@ Self-evolution happens at night, at levels that differ in depth and cadence:
 | L2 policy | Rewrites its policy in its own words | every 28 days |
 | L3 parameters, L4 meta | Fine-tunes its model; rewrites its own evolution procedure | not implemented |
 
-In its nightly reflection an agent may also ask for a skill review or a policy rewrite that same night, and must then wait seven days before asking again. With no level enabled, experience is still recorded but nothing is rewritten, which gives the no-evolution arm.
+In its nightly reflection an agent may also ask for a skill review or a policy rewrite that same night, and must then wait seven days before asking again. With no level enabled in the retained scene scheduler, experience is still recorded but nothing is rewritten, which gives its no-evolution arm. Activity notebook tools are independent of the nightly cadence.
 
 An exploratory free mode, `evolution: {mode: free}`, lets a resident's identity become its own writing and leaves it to decide when to change it. On its first night, after its diary, the resident writes who it is, and from the next day that account takes the place of its profile in everything it reads. Every night after the diary, one question asks what it would change in all it has written about itself and its ways, under its own headings, with no cadence and no waiting.
 
-Every change is a commit: the day's experience each night, and each evolution step a commit of its own carrying the agent's reasoning, its level and trigger, dated in simulated time. An agent's development can therefore be read with ordinary git, and any past version exported intact, which is what evaluation does.
+The day's experience is committed each night, and each scheduled evolution step has its own commit carrying the agent's reasoning, level and trigger. Daytime notebook edits save immediately with before/after snapshots in personal memory and enter the next scheduled commit. An agent's development can therefore be read with ordinary git, and any past version exported intact, which is what evaluation does.
 
 ## Where pressure comes from
 

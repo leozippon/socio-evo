@@ -3,7 +3,7 @@
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 
-from pydantic import NonNegativeInt
+from pydantic import Field, JsonValue, NonNegativeInt
 
 from core.interaction import EventKind, Percept, SimTime
 from infrastructure.config import StrictModel
@@ -24,6 +24,11 @@ class Record(StrictModel):
     kind: EventKind | None = None
     text: str
     task_id: str | None = None
+    activity_id: str | None = None
+    decision_id: str | None = None
+    action: dict[str, JsonValue] | None = None
+    skill_trace: dict[str, JsonValue] = Field(default_factory=dict)
+    related_decisions: tuple[str, ...] = ()
 
     @classmethod
     def of(cls, percept: Percept, names: Mapping[str, str] | None = None) -> "Record":
@@ -39,6 +44,7 @@ class Record(StrictModel):
             kind=percept.kind,
             text=percept.text,
             task_id=percept.task_id,
+            activity_id=percept.activity_id,
         )
 
 

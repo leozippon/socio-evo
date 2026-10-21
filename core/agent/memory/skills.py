@@ -1,8 +1,10 @@
 """Skills: procedural notes the agent writes for itself, one markdown file each, named by its
 title."""
 
+import hashlib
 import re
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 
 import yaml
 from pydantic import Field, model_validator
@@ -40,6 +42,10 @@ class Skill(StrictModel):
     description: str
     body: str
 
+    @property
+    def version(self) -> str:
+        return hashlib.sha256(self.model_dump_json().encode()).hexdigest()[:16]
+
     @model_validator(mode="after")
     def _named_by_its_title(self) -> "Skill":
         if name_of(self.title) != self.name:
@@ -57,7 +63,7 @@ class SkillLibrary:
 
     def read(self) -> list[Skill]:
         """Every skill, ordered by name."""
-        return [_parse(path) for path in sorted(self.directory.glob("*.md"))]
+        return [_parse(self._path(path.stem)) for path in sorted(self.directory.glob("*.md"))]
 
     def write(self, skill: Skill) -> None:
         """Create the note, or replace the note of the same name."""
@@ -66,17 +72,29 @@ class SkillLibrary:
             allow_unicode=True,
             sort_keys=False,
         )
+        path = self._path(skill.name)
         self.directory.mkdir(exist_ok=True)
-        self._path(skill.name).write_text(
-            f"---\n{front}---\n\n{skill.body.strip()}\n", encoding="utf-8"
-        )
+        # Never expose a half-written page to the next decision or nightly review.
+        with NamedTemporaryFile(mode="w", encoding="utf-8", dir=self.directory, delete=False) as f:
+            temporary = Path(f.name)
+            try:
+                f.write(f"---\n{front}---\n\n{skill.body.strip()}\n")
+                f.close()
+                temporary.replace(path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def remove(self, name: str) -> None:
         """Delete the note `name`; raises FileNotFoundError if there is none."""
         self._path(name).unlink()
 
     def _path(self, name: str) -> Path:
-        return self.directory / f"{name}.md"
+        if not isinstance(name, str) or not re.fullmatch(SKILL_NAME, name) or len(name) > 64:
+            raise ValueError("Invalid skill name")
+        path = self.directory / f"{name}.md"
+        if self.directory.parent.is_symlink() or self.directory.is_symlink() or path.is_symlink():
+            raise ValueError("Symlinked skill pages are not accessible")
+        return path
 
 
 def _parse(path: Path) -> Skill:

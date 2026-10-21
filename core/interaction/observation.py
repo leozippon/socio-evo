@@ -26,6 +26,10 @@ class Observation(StrictModel):
     and passing an Event where a Percept is expected is rejected.
     """
 
+    activity_id: str | None = None
+    activity_kind: Literal["selection", "work", "conversation", "rest", "move"] | None = None
+    activity_task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
+
     own_task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
     work_activity: bool = False
     work_feedback: tuple[str, ...] = ()

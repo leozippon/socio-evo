@@ -6,6 +6,7 @@ from core.agent.context import Block
 from core.agent.memory import Record, Skill
 from core.agent.memory.active import MemoryHit
 from core.agent.memory.retrieval import Recall
+from core.agent.memory.work import operation
 from core.interaction import EventKind, Observation, Setting
 
 EVIDENCE = {
@@ -17,6 +18,31 @@ EVIDENCE = {
     EventKind.WORK_SUBMITTED,
     EventKind.DEFECT_DISCOVERED,
 }
+
+
+def activity_records(records, observation, setting):
+    """Filter automatic context only. Originals remain available to explicit recall."""
+    if observation.activity_kind is None:
+        return records
+    kept = []
+    for record in records:
+        if record.kind is None:
+            # Legacy decisions mix deeds with private reasons; do not replay those reasons.
+            if record.action is None or record.activity_id != observation.activity_id:
+                continue
+            fact = (
+                f"You chose the {record.action.get('tool') or record.action['kind']} action."
+                if observation.work_activity
+                else prompts._recalled(record.action, "", setting.currency)
+            )
+            record = record.model_copy(update={"text": fact})
+        if record.kind in EVIDENCE or operation(record):
+            if not observation.work_activity or record.task_id != observation.activity_task_id:
+                continue
+        if record.skill_trace and record.skill_trace.get("event") != "action":
+            continue
+        kept.append(record)
+    return kept
 
 
 def blocks_for(

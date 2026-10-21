@@ -324,6 +324,25 @@ class WorkNotes:
         *,
         recent=True,
     ) -> list[Block]:
+        if observation.activity_kind is not None:
+            task = observation.activity_task_id
+            if task is None or observation.activity_kind not in {"work", "conversation"}:
+                return []
+            if not self.entries(task, observation.time):
+                return []
+            return [
+                Block(
+                    f"work-note:{task}",
+                    self.render(
+                        task,
+                        observation.time,
+                        config,
+                        setting,
+                        recent=recent and observation.work_activity,
+                    ),
+                    95,
+                )
+            ]
         current = self.current(observation)
         owned = self.tasks()
         query_text = " ".join([observation.situation, *(p.text for p in observation.percepts)])

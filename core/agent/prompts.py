@@ -348,9 +348,10 @@ def system_prompt(
     account: str | None = "",
     setting: str = "",
     skills: Sequence[Skill] = (),
+    skill_names: bool = False,
 ) -> str:
     """Who the resident is, what it knows of the town, what it has resolved and, when given,
-    the index of its notebook: the parts of a prompt that change only at night or when the
+    the index of its notebook: relatively stable context refreshed when personal writing or the
     town changes. Who it is is its own `account` of itself, under its name, once it has
     written one, and its profile until then. `policy` or `account` is None for a prompt that
     tells it, which leaves the resolutions out, and the account to the resident's name."""
@@ -369,7 +370,11 @@ def system_prompt(
     ]
     if skills:
         pages = "\n".join(
-            PAGE.format(title=skill.title, summary=_own(skill.description)) for skill in skills
+            PAGE.format(
+                title=f"{skill.title} [{skill.name}]" if skill_names else skill.title,
+                summary=_own(skill.description),
+            )
+            for skill in skills
         )
         sections.append(NOTEBOOK.format(pages=pages))
     return "\n\n".join(section for section in sections if section)
@@ -682,7 +687,7 @@ def _recalled(action: Mapping[str, Any], thought: str, currency: Currency) -> st
     and its particulars."""
     tell = _DEEDS.get(action["kind"])
     deed = tell(action, currency) if tell is not None else _did(action)
-    return f"{deed} {THOUGHT.format(thought=_own(thought))}"
+    return f"{deed} {THOUGHT.format(thought=_own(thought))}" if thought else deed
 
 
 def _did(action: Mapping[str, Any]) -> str:

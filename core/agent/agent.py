@@ -3,19 +3,27 @@
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import TypeVar, Union, get_args
+from uuid import uuid4
 
 import yaml
 from pydantic import BaseModel, Field, RootModel, create_model
 
 from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
-from core.agent.context import BudgetClient, BudgetPrompt, pack
+from core.agent.context import Block, BudgetClient, BudgetPrompt, pack
 from core.agent.continuation import ContinuationClient, DecisionContinuation, current
-from core.agent.decision_context import blocks_for
+from core.agent.decision_context import activity_records, blocks_for
 from core.agent.memory import Memory, Record, Retriever
 from core.agent.memory.active import MemoryHit, Remember, search
 from core.agent.memory.work import ReadWorkLog, operation, reference
 from core.agent.parameters import Parameters
+from core.agent.personal_skills import (
+    PersonalSkills,
+    ReviseSkill,
+    UseSkill,
+    feedback_context,
+    snapshot,
+)
 from core.interaction import (
     Card,
     Decision,
@@ -70,6 +78,7 @@ class Agent:
         self.memory = Memory(path / "memory")
         self.parameters = Parameters(path / "parameters")
         self._retriever = Retriever(cognition)
+        self.personal_skills = PersonalSkills(self.memory)
 
     @classmethod
     def create(
@@ -146,12 +155,30 @@ class Agent:
         if observation.agent != self.id:
             raise ValueError(f"observation for {observation.agent!r} given to {self.id!r}")
         memory, shown = self.memory, observation.shown
+        scoped = observation.activity_kind is not None
+        self.personal_skills.enter(observation)
         earlier = [record for record in memory.episodic.read() if record.kind not in shown]
         if self.cognition.work_notes.enabled:
             earlier = [record for record in earlier if not operation(record)]
+        earlier = activity_records(earlier, observation, self.setting)
         self.perceive(observation.percepts, observation.places)
         new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
-        observation = observation.model_copy(update={"percepts": new})
+        if scoped:
+            visible = activity_records([Record.of(p) for p in new], observation, self.setting)
+            ids = {r.seq for r in visible}
+            new = tuple(
+                p.model_copy(update={"text": f"[source event {p.seq}] {p.text}"})
+                for p in new
+                if p.seq in ids
+            )
+        observation = observation.model_copy(
+            update={
+                "percepts": new,
+                "evidence": ()
+                if scoped and not observation.work_activity
+                else observation.evidence,
+            }
+        )
         if self.cognition.work_notes.enabled:
             # Only the current Work feedback window is shown verbatim; every historical
             # route uses notes. The environment's evidence is already in its task view.
@@ -179,7 +206,8 @@ class Agent:
         )
         card = Card(observation.allowed, goal_updates=observation.goal_updates)
         if (
-            self.cognition.active_recall.enabled
+            scoped
+            or self.cognition.active_recall.enabled
             or self.cognition.context_budget.enabled
             or self.cognition.work_notes.enabled
         ):
@@ -207,6 +235,12 @@ class Agent:
         ):
             await self.summarize_work(observation.time, self.memory.work.current(observation))
 
+        selected = snapshot(self.personal_skills.selected)
+        continuation = current.get()
+        decision_id = (
+            continuation.metadata.get("decision_id") if continuation else None
+        ) or uuid4().hex
+
         def commit():
             memory.episodic.append(
                 [
@@ -214,6 +248,11 @@ class Agent:
                         time=observation.time,
                         place=observation.place,
                         where=observation.places.get(observation.place),
+                        activity_id=observation.activity_id,
+                        task_id=observation.activity_task_id,
+                        decision_id=decision_id if scoped else None,
+                        action=action.model_dump(mode="json") if scoped else None,
+                        skill_trace={"event": "action", "skill": selected} if selected else {},
                         text=(
                             "You chose to use your work tools; the result is in your work record."
                             if self.cognition.work_notes.enabled
@@ -252,9 +291,13 @@ class Agent:
         recall_limit = settings.max_queries if settings.enabled else 0
         notes = self.cognition.work_notes
         can_read_work = notes.enabled and bool(self.memory.work.current(observation))
-        if any(getattr(a, "menu", {}).get("reply_phase") for a in observation.allowed):
+        phase = next((getattr(a, "menu", {}).get("reply_phase") for a in observation.allowed), None)
+        skill_limit = 3 if observation.activity_kind is not None and phase != "body" else 0
+        skill_calls = 0
+        skill_result = ""
+        if phase:
             recall_limit, can_read_work = 0, False
-        rounds = recall_limit + (3 if can_read_work else 0)
+        rounds = recall_limit + (3 if can_read_work else 0) + skill_limit
         reads = 0
         work_read = None
         actions = (
@@ -268,6 +311,8 @@ class Agent:
             internal = ([Remember] if can_recall else []) + (
                 [ReadWorkLog] if can_read_record else []
             )
+            if skill_calls < skill_limit:
+                internal += [UseSkill, ReviseSkill]
             model = (
                 RootModel[Union[tuple((*internal, *actions))]]  # noqa: UP007
                 if internal
@@ -287,6 +332,17 @@ class Agent:
                     and hit.source.split("/")[2] in selected_jobs
                 )
             ]
+            if observation.activity_kind is not None:
+                skills = self.memory.skills.read()
+                system = prompts.system_prompt(
+                    self.profile,
+                    self.parameters.read_policy(),
+                    self.cognition,
+                    account=self.parameters.read_account(),
+                    setting=observation.setting,
+                    skills=skills,
+                    skill_names=True,
+                )
             instruction = (
                 "Before doing anything, you may recall something from your own experiences "
                 "or notes if you need it. Say what you want to recall in a few specific words. "
@@ -307,6 +363,40 @@ class Agent:
                     "\nYou may read a range of your current job's original work record. "
                     "Give its entry number and character offset; begin at entry 1, offset 0."
                 )
+            if skill_calls < skill_limit:
+                instruction += (
+                    "\nYou may use skill to select a notebook method by its bracketed name, "
+                    "or clear it with name null. You may revise skill from your experience, "
+                    "or act directly. For a new or revised page, describe when it helps, "
+                    "what to try, and when to adjust or stop; source event numbers are optional. "
+                    "Methods are your own revisable suggestions. Selecting one does not execute "
+                    "it or require you to follow it. You remain free to rest, join a conversation, "
+                    "leave, or choose any other available action."
+                )
+            if skill_result:
+                instruction += "\n" + skill_result
+            selected = self.personal_skills.selected
+            if selected is not None:
+                instruction += (
+                    f"\nYour selected method for this Activity: {selected.title} "
+                    f"({selected.version}).\n{selected.body[: self.cognition.text_chars]}"
+                )
+            method_feedback = (
+                feedback_context(
+                    self.memory,
+                    observation.time,
+                    activity_id=observation.activity_id,
+                    limit=2,
+                    include_methods=False,
+                )
+                if observation.activity_id is not None
+                else ""
+            )
+            method_blocks = (
+                [Block("skill-feedback", method_feedback, 65)] if method_feedback else []
+            )
+            if method_feedback and not budget.enabled:
+                instruction += "\n" + method_feedback
             if work_read is not None:
                 instruction += "\n" + work_read
             if queries:
@@ -344,6 +434,9 @@ class Agent:
                         "active_recall": audit,
                         "work_notes": [block.source for block in work_blocks],
                         "work_work_read": work_read,
+                        "activity_id": observation.activity_id,
+                        "selected_skill": snapshot(self.personal_skills.selected),
+                        "skill_operations": skill_calls,
                     },
                 }
             )
@@ -355,6 +448,7 @@ class Agent:
                             observation, recall, skills, visible_hits, self.cognition, self.setting
                         ),
                         *work_blocks,
+                        *method_blocks,
                     ],
                     budget,
                 )
@@ -367,6 +461,36 @@ class Agent:
             answer = reply
             while isinstance(answer, RootModel):
                 answer = answer.root
+            if isinstance(answer, UseSkill | ReviseSkill):
+                skill_calls += 1
+                try:
+                    if isinstance(answer, UseSkill):
+                        self.personal_skills.use(answer.name, observation)
+                        skill_result = "Your selected method has been updated."
+                    else:
+                        if isinstance(answer.change, prompts.WriteSkill) and (
+                            len(answer.change.text) > self.cognition.text_chars
+                            or len(answer.change.summary) > self.cognition.record_chars
+                        ):
+                            raise ValueError(
+                                f"Keep the method within {self.cognition.text_chars} characters "
+                                f"and its summary within {self.cognition.record_chars}."
+                            )
+                        self.personal_skills.revise(
+                            answer.change,
+                            time=observation.time,
+                            place=observation.place,
+                            activity_id=observation.activity_id,
+                            task_id=observation.activity_task_id,
+                            sources=answer.sources,
+                        )
+                        skill_result = "Your notebook change has been saved."
+                except (ValueError, FileNotFoundError) as error:
+                    skill_result = f"Notebook operation failed: {error}"
+                # A completed internal call is not an unexecuted external-action draft.
+                if (continuation := current.get()) is not None:
+                    continuation.messages = ()
+                continue
             if isinstance(answer, ReadWorkLog):
                 reads += 1
                 tasks = self.memory.work.current(observation)
@@ -388,6 +512,7 @@ class Agent:
                     observation.time,
                     settings,
                     summarized_work=notes.enabled,
+                    skill_index_only=observation.activity_kind is not None,
                 )
             )
             queries.append(answer.query)
@@ -543,6 +668,15 @@ class Agent:
         return BudgetClient(client, budget) if budget.enabled and continuation is None else client
 
     def _work_prompt(self, purpose: str, time: int, prompt: str) -> str:
+        if purpose in {"skills", "revise"}:
+            material = feedback_context(self.memory, time)
+            if material:
+                if isinstance(prompt, BudgetPrompt):
+                    prompt = BudgetPrompt(
+                        str(prompt), [*prompt.blocks, Block("skill-feedback", material, 75)]
+                    )
+                else:
+                    prompt = str(prompt) + "\n\n" + material
         if not self.cognition.work_notes.enabled or purpose not in {
             "diary",
             "reflect",
@@ -563,12 +697,33 @@ class Agent:
         `act` does so for an observation's percepts, and this is for those witnessed when no
         decision follows, such as late in the day."""
         percepts = tuple(percepts)
-        self.memory.episodic.append(
-            reference(Record.of(percept, places))
-            if self.cognition.work_notes.enabled
-            else Record.of(percept, places)
-            for percept in percepts
-        )
+        previous = self.memory.episodic.read()
+        seen = {r.seq for r in previous if r.seq is not None}
+        records = []
+        for percept in percepts:
+            if percept.seq in seen:
+                continue
+            seen.add(percept.seq)
+            record = Record.of(percept, places)
+            # Same-Activity feedback is an association, not proof the method caused it.
+            related = tuple(
+                r.decision_id
+                for r in previous
+                if r.decision_id
+                and r.skill_trace.get("event") == "action"
+                and r.time <= percept.time
+                and (
+                    (percept.activity_id is not None and r.activity_id == percept.activity_id)
+                    or (
+                        percept.activity_id is None
+                        and percept.task_id is not None
+                        and r.task_id == percept.task_id
+                    )
+                )
+            )
+            record = record.model_copy(update={"related_decisions": related})
+            records.append(reference(record) if self.cognition.work_notes.enabled else record)
+        self.memory.episodic.append(records)
         if self.cognition.work_notes.enabled:
             for percept in percepts:
                 self.memory.work.observe(percept)

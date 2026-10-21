@@ -1082,7 +1082,10 @@ class ActivityEngine:
                 "You are waiting outside the closed venue. "
                 + (f"It opens at {clock(opening)}." if opening else "It will not reopen today.")
             )
-        context += self.team_context(who)
+        if isinstance(active, WorkActivity) or (
+            isinstance(active, ConversationActivity) and active.task_id
+        ):
+            context += self.team_context(who)
         context += self.daily_context(who)
         context += self.activity_context(who, active, menu)
         if active:
@@ -1093,7 +1096,12 @@ class ActivityEngine:
                     f"Work mode: {self.work_mode(who)}. "
                     "Your repository is private; partners exchange code handoffs."
                 )
-        context += [self.env.board_view(who), self.env.status_view(who, include_evidence=False)]
+        context += [
+            self.env.board_view(who),
+            self.env.status_view(
+                who, include_evidence=False, include_specification=isinstance(active, WorkActivity)
+            ),
+        ]
         invitations = self.invitation_views(who)
         if invitations:
             context.append("Your invitations/appointments: " + json.dumps(invitations))
@@ -1109,6 +1117,9 @@ class ActivityEngine:
         situation = "\n".join(context)
         return Observation(
             agent=who,
+            activity_id=active.id if active else None,
+            activity_kind=active.kind if active else "selection",
+            activity_task_id=getattr(active, "task_id", None),
             own_task_id=(claim.task.id if (claim := self.env.board.claim_of(who)) else None),
             work_activity=isinstance(active, WorkActivity),
             work_feedback=(

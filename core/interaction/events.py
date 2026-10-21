@@ -120,6 +120,7 @@ class Percept(StrictModel):
     scene: str | None = None
     text: str
     task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
+    activity_id: str | None = None
 
 
 class Event(StrictModel):
@@ -142,6 +143,7 @@ class Event(StrictModel):
     audience: tuple[str, ...] = ()
     text: str
     task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
+    activity_id: str | None = None
     personal: dict[str, str] = Field(default_factory=dict)
     payload: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -149,6 +151,10 @@ class Event(StrictModel):
         """This event as `witness` perceives it: in its own wording, if it has one."""
         seen = self.model_dump(exclude={"payload", "audience", "personal"})
         seen["task_id"] = None
+        activity = self.activity_id or self.payload.get("activity")
+        seen["activity_id"] = (
+            activity if witness in self.audience and isinstance(activity, str) else None
+        )
         # Only a public routing identifier, never evaluation results or hidden tests.
         work_kinds = {
             EventKind.ACTIVITY_LEFT,

@@ -99,7 +99,11 @@ class Retriever:
             earlier=[older[index] for index in chosen],
             recent=list(records[split:]),
             insights=[insight for insight, _ in ranked_insights[: limits.insights]],
-            skills=[skill for skill, _ in ranked_skills[: limits.skills]],
+            skills=(
+                []
+                if observation.activity_kind is not None
+                else [skill for skill, _ in ranked_skills[: limits.skills]]
+            ),
         )
 
 

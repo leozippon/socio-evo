@@ -1047,7 +1047,9 @@ class Environment:
             costs.append(f"the {money(obligation)} you owe each day")
         return f"{have}; the day costs you {listed(costs)}." if costs else f"{have}."
 
-    def status_view(self, agent: str, *, include_evidence: bool = True) -> str:
+    def status_view(
+        self, agent: str, *, include_evidence: bool = True, include_specification: bool = True
+    ) -> str:
         """`agent`'s purse, the task it holds with the state of each part, what it last saw
         when a solution for a part was run, and its open proposal or application and those
         made to it."""
@@ -1058,8 +1060,9 @@ class Environment:
                 f"Latest completed client verdict for YOUR work: {job_name(notice.task_id)}, "
                 f"part {notice.part}, submitted by {notice.submitter}, "
                 f"day {day_of(notice.time)} {clock_of(notice.time)} (the clerk's record): "
-                f"{outcome}. {notice.feedback[:1000]} "
-                "This is an actual verdict, not a submission promise or a private local test. "
+                f"{outcome}. "
+                + (f"{notice.feedback[:1000]} " if include_specification else "")
+                + "This is an actual verdict, not a submission promise or a private local test. "
                 "Older waiting notices do not override it; a later pending submission, "
                 "if any, is reported separately."
             )
@@ -1080,7 +1083,13 @@ class Environment:
                 f"by the end of {self._day(claim.due_day)}{doing}."
             )
             for number in range(1, len(task.parts) + 1):
-                lines += self._part_status(claim, agent, number, include_evidence=include_evidence)
+                lines += self._part_status(
+                    claim,
+                    agent,
+                    number,
+                    include_evidence=include_evidence,
+                    include_specification=include_specification,
+                )
         if mine := self.board.offers.get(agent):
             job = _titled(self.board.listings[mine.task_id].task)
             if mine.partner is None:
@@ -2109,7 +2118,13 @@ class Environment:
         return f"; {STAFF_PAY}" if reader in self.firms.staff.get(task.sheet, ()) else ""
 
     def _part_status(
-        self, claim: Claim, agent: str, number: int, *, include_evidence: bool = True
+        self,
+        claim: Claim,
+        agent: str,
+        number: int,
+        *,
+        include_evidence: bool = True,
+        include_specification: bool = True,
     ) -> list[str]:
         """Part `number` of `claim` as `agent`'s status tells it: whether it is in, what it
         pays (each of its workers, or on a firm's job sheet the firm), and if it is not in, what
@@ -2139,8 +2154,10 @@ class Environment:
         full, low = money(times * price.finished), money(times * price.unfinished)
         lines = [
             f'Part {number}, "{part.title}": not in yet; it {pays(full)}, {low} if handed in as '
-            f"unfinished. What the client asks for:\n{part.specification}"
+            "unfinished."
         ]
+        if include_specification:
+            lines[-1] += f" What the client asks for:\n{part.specification}"
         if include_evidence:
             lines += self._part_evidence(claim, agent, number)
         return lines
