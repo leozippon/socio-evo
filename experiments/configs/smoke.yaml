@@ -2,8 +2,8 @@
 # Three residents for three days on the built-in bank, with jobs for one and for two, clients
 # who try the examples and clients who pay on the worker's word, partner choice, notices
 # posted morning and afternoon, two social places, and delivered code in the sandbox.
-# Cadences are compressed so that the weekly (L1) step runs on day 2 and the monthly (L2)
-# step on day 3; one intervention and one meeting on day 2.
+# L1 runs daily. The calendar's weekly interval is compressed to 2 days but has no L1
+# mapping; the monthly (L2) step runs on day 3. One intervention and one meeting fall on day 2.
 name: smoke
 
 llm:

@@ -65,11 +65,11 @@ Scheduled self-evolution continues at night, at levels that differ in depth and 
 | Level | What the agent changes | When |
 | --- | --- | --- |
 | L0 memory | Writes its diary, reflects, revises its insights; keeps a week of episodic records and at most 50 insights | every night |
-| L1 skills | Writes, rewrites or retires skill notes | weekly |
+| L1 skills | Writes, rewrites or retires skill notes | every night |
 | L2 policy | Rewrites its policy in its own words | every 28 days |
 | L3 parameters, L4 meta | Fine-tunes its model; rewrites its own evolution procedure | not implemented |
 
-In its nightly reflection an agent may also ask for a skill review or a policy rewrite that same night, and must then wait seven days before asking again. With no level enabled in the retained scene scheduler, experience is still recorded but nothing is rewritten, which gives its no-evolution arm. Activity notebook tools are independent of the nightly cadence.
+In its nightly reflection an agent may also ask for a skill review or a policy rewrite that same night, and must then wait seven days before asking again. By default, both L0 and L1 use the daily trigger, and the weekly trigger has no L1 mapping; an explicit schedule replaces those defaults. With no level enabled in the retained scene scheduler, experience is still recorded but nothing is rewritten, which gives its no-evolution arm. Activity notebook tools are independent of the nightly cadence.
 
 An exploratory free mode, `evolution: {mode: free}`, lets a resident's identity become its own writing and leaves it to decide when to change it. On its first night, after its diary, the resident writes who it is, and from the next day that account takes the place of its profile in everything it reads. Every night after the diary, one question asks what it would change in all it has written about itself and its ways, under its own headings, with no cadence and no waiting.
 
@@ -107,7 +107,7 @@ Install the package as the README describes. Delivered code and queries are chec
 | --- | --- |
 | `experiments/configs/town.yaml` | The town, with its two meetings |
 | `experiments/configs/city.yaml` | The city |
-| `experiments/configs/smoke.yaml` | The town in small, to check the loop against the model: three residents for three days on the built-in bank, the weekly and monthly steps on days 2 and 3, a rise in living cost and a meeting |
+| `experiments/configs/smoke.yaml` | The town in small, to check the loop against the model: three residents for three days on the built-in bank, daily L1 reviews and the monthly L2 step on day 3, a rise in living cost and a meeting |
 | `experiments/configs/firm.yaml` | The smoke town with a firm, for a trial of wages and careers |
 | `experiments/configs/pilot.yaml` | The first pilot's rules, frozen; run today, they play with the current code |
 | `experiments/studies/trust.yaml` | The arms of the experimental design |

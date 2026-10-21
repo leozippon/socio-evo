@@ -1,5 +1,6 @@
-# Smoke test: three agents for three days. Cadences are compressed so that the weekly (L1)
-# step runs on day 2 and the monthly (L2) step on day 3; one intervention on day 2.
+# One-day SWE-bench smoke test with three agents. L1 runs daily; the compressed 2-day weekly
+# calendar interval has no L1 mapping, and the monthly (L2) step is compressed to day 3, beyond
+# this run.
 name: zenith-swebench-town-v3
 
 llm:

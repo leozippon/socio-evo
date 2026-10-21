@@ -7,6 +7,12 @@ from pydantic import Field, PositiveInt, field_validator, model_validator
 from core.agent.evolution.levels import Level, Trigger
 from infrastructure.config import StrictModel
 
+_LEGACY_SCHEDULED_DEFAULT = {
+    Trigger.DAILY: (Level.L0,),
+    Trigger.WEEKLY: (Level.L1,),
+    Trigger.MONTHLY: (Level.L2,),
+}
+
 
 class Mode(StrEnum):
     """How an agent revises itself at night."""
@@ -53,8 +59,7 @@ class EvolutionConfig(StrictModel):
     levels: tuple[Level, ...] = (Level.L0, Level.L1, Level.L2)
     schedule: dict[Trigger, tuple[Level, ...]] = Field(
         default_factory=lambda: {
-            Trigger.DAILY: (Level.L0,),
-            Trigger.WEEKLY: (Level.L1,),
+            Trigger.DAILY: (Level.L0, Level.L1),
             Trigger.MONTHLY: (Level.L2,),
         }
     )
@@ -80,11 +85,15 @@ class EvolutionConfig(StrictModel):
                 "the free mode revises L0, L1 and L2 every night: levels must be those"
             )
         fields = type(self).model_fields
-        if cadences := [
-            name
-            for name in ("schedule", "self_trigger")
-            if getattr(self, name) != fields[name].get_default(call_default_factory=True)
-        ]:
+        cadences = []
+        if self.schedule not in (
+            fields["schedule"].get_default(call_default_factory=True),
+            _LEGACY_SCHEDULED_DEFAULT,
+        ):
+            cadences.append("schedule")
+        if self.self_trigger != fields["self_trigger"].get_default(call_default_factory=True):
+            cadences.append("self_trigger")
+        if cadences:
             raise ValueError(
                 f"the free mode has no cadences: {' and '.join(cadences)} cannot be set"
             )

@@ -38,7 +38,12 @@ def _changed(repository: Repository, commit: str) -> set[str]:
 
 async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, observe):
     evolver = Evolver(
-        EvolutionConfig(self_trigger=SelfTrigger(enabled=False), retention_days=2, max_insights=2)
+        EvolutionConfig(
+            schedule={DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)},
+            self_trigger=SelfTrigger(enabled=False),
+            retention_days=2,
+            max_insights=2,
+        )
     )
     history = History(agent.path, TOWN.start_date)
     script.reflections = {
@@ -128,7 +133,12 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
 
 
 async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agent, script):
-    evolver = Evolver(EvolutionConfig(self_trigger=SelfTrigger(levels=(L2,), cooldown_days=2)))
+    evolver = Evolver(
+        EvolutionConfig(
+            schedule={DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)},
+            self_trigger=SelfTrigger(levels=(L2,), cooldown_days=2),
+        )
+    )
     script.request = {"what": "resolutions", "why": "My plans changed."}
     for day in range(1, 5):
         await evolver.evolve(agent, DAILY, _end(day))
@@ -155,7 +165,9 @@ async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agen
 
 
 async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script):
-    evolver = Evolver(EvolutionConfig())
+    evolver = Evolver(
+        EvolutionConfig(schedule={DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)})
+    )
     script.request = {"what": "notebook", "why": "I want to look at my notes."}
     returned = await evolver.evolve(agent, DAILY, _end(1))
     assert await evolver.evolve(agent, WEEKLY, _end(1)) == []
@@ -173,6 +185,26 @@ async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script
     assert len(script.prompts("skills")) == 1
     review = steps[1].commit
     assert Repository(agent.path).diff(f"{review}^", review) == ""
+
+
+async def test_default_schedule_reviews_skills_daily_without_a_weekly_duplicate(agent, script):
+    evolver = Evolver(EvolutionConfig(self_trigger=SelfTrigger(enabled=False)))
+    script.skills = {
+        1: [{"change": "write", "title": "Dates", "summary": "Dates.", "text": "ISO."}],
+        7: [{"change": "write", "title": "Replies", "summary": "Replies.", "text": "Brief."}],
+    }
+
+    for day in (1, 7):
+        await evolver.evolve(agent, DAILY, _end(day))
+    assert await evolver.evolve(agent, WEEKLY, _end(7)) == []
+
+    steps = [version for version in History(agent.path).log()[::-1] if version.level]
+    assert [(v.level, v.trigger, day_of(v.time)) for v in steps] == [
+        (L0, DAILY, 1),
+        (L1, DAILY, 1),
+        (L0, DAILY, 7),
+        (L1, DAILY, 7),
+    ]
 
 
 async def test_with_every_level_disabled_only_experience_is_recorded(agent, script, observe):
@@ -207,7 +239,10 @@ def test_unimplemented_or_misplaced_levels_are_configuration_errors():
         ({"mode": "free", "levels": []}, "levels must be those"),
         ({"mode": "free", "levels": ["L0", "L1", "L2", "L3"]}, "levels must be those"),
         ({"mode": "free", "self_trigger": {"cooldown_days": 3}}, "self_trigger cannot be set"),
-        ({"mode": "free", "schedule": {"daily": ["L0", "L1"]}}, "schedule cannot be set"),
+        (
+            {"mode": "free", "schedule": {"daily": ["L0"], "monthly": ["L2"]}},
+            "schedule cannot be set",
+        ),
     ],
 )
 def test_the_free_mode_has_no_levels_or_cadences_to_choose(settings, refusal):
@@ -215,6 +250,14 @@ def test_the_free_mode_has_no_levels_or_cadences_to_choose(settings, refusal):
         EvolutionConfig.model_validate(settings)
     free = EvolutionConfig(mode=Mode.FREE, levels=(L2, L1, L0), retention_days=3)
     assert EvolutionConfig.model_validate(free.model_dump(mode="json")) == free
+    frozen_free = EvolutionConfig.model_validate(
+        {
+            "mode": "free",
+            "schedule": {"daily": ["L0"], "weekly": ["L1"], "monthly": ["L2"]},
+        }
+    )
+    assert frozen_free.schedule == {DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)}
+    assert EvolutionConfig.model_validate(frozen_free.model_dump(mode="json")) == frozen_free
     assert EvolutionConfig().mode is Mode.SCHEDULED
 
 
