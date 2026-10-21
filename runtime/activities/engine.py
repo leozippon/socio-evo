@@ -453,7 +453,7 @@ class ActivityEngine:
                     self.record_tool_completion(
                         who, pending, "wait", pending.action.arguments, active, {}
                     )
-                if isinstance(active, MoveActivity) or self.team_busy(who):
+                if isinstance(active, MoveActivity | ReflectActivity) or self.team_busy(who):
                     continue
                 here = self.env.world.locations[who] == team.place and who not in self.outside
                 if isinstance(active, RestActivity) and here:
@@ -1401,6 +1401,22 @@ class ActivityEngine:
             or (action.operation == "activity_tool" and action.tool == "leave")
         ):
             return False
+        return self.reflect_work_exit(
+            who,
+            "Paused or left voluntarily.",
+            action if action.operation == "select_rest" else None,
+        )
+
+    def reflect_work_exit(self, who, reason, deferred=None):
+        activity = self.activities.get(self.current.get(who))
+        if (
+            not isinstance(activity, WorkActivity)
+            or self.now >= self.end
+            or not hasattr(self.sim.agents[who], "reflect")
+            or who in self.pending
+            or who in getattr(self, "running", {})
+        ):
+            return False
         member = activity.members[who]
         self.begin_work_visit(who, activity)
         self.ingest_reflection_source(who)
@@ -1409,11 +1425,9 @@ class ActivityEngine:
         if notes is None or not notes.freeze_scopes(self.now // 60, activity.id, member.visit_id):
             return False
         ident, visit = activity.id, member.visit_id
-        self.leave(who, "Paused or left voluntarily.")
+        ActivityEngine.leave(self, who, reason, summarize=False)
         self.ingest_reflection_source(who)
-        self.start_reflect(
-            who, "summary", ident, visit, action if action.operation == "select_rest" else None
-        )
+        self.start_reflect(who, "summary", ident, visit, deferred)
         return True
 
     def start_reflect(self, who, purpose, source, visit, deferred=None):
@@ -1535,7 +1549,9 @@ class ActivityEngine:
             who, activity, self.visible_invitation_owners(who, activity), "joined"
         )
 
-    def leave(self, who, reason):
+    def leave(self, who, reason, *, summarize=True):
+        if summarize and self.reflect_work_exit(who, reason):
+            return
         previous = self.activities.get(self.current.get(who))
         observers = self.visible_invitation_owners(who, previous)
         ident = self.current.pop(who, None)
@@ -2716,7 +2732,7 @@ class ActivityEngine:
             if who in self.pending or who in getattr(self, "running", {}):
                 continue
             activity = self.activities.get(self.current.get(who))
-            if isinstance(activity, MoveActivity):
+            if isinstance(activity, MoveActivity | ReflectActivity):
                 continue
             if (
                 not hasattr(self, "running")
@@ -2735,6 +2751,11 @@ class ActivityEngine:
                         who, "You arrived for lunch. Rest while eating or converse freely."
                     )
                 else:
+                    move = Choice(operation="select_move", target=destination)
+                    if self.reflect_work_exit(
+                        who, "Time for the daily lunch; work progress is preserved.", move
+                    ):
+                        continue
                     self.leave(who, "Time for the daily lunch; work progress is preserved.")
                     if who in self.current:
                         continue
@@ -2777,6 +2798,10 @@ class ActivityEngine:
         self.admit_waiters()
         for who, place_id in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
+            if isinstance(activity, ReflectActivity) and self.now < self.end:
+                continue
+            if who in self.pending and self.now < self.end:
+                continue
             if isinstance(activity, MoveActivity) and self.now < self.end:
                 continue
             if who in self.outside and self.now < self.end:
@@ -2831,7 +2856,13 @@ class ActivityEngine:
                 and active.id == scheduled.data["activity"]
                 and active.members[who].end == scheduled.data["until"]
             ):
-                self.leave(who, "The activity time budget ended.")
+                pending = self.pending.get(who)
+                if pending and self.now < self.end:
+                    self.queue.add(
+                        max(self.now + 1, pending.end + 1), "member_end", **scheduled.data
+                    )
+                else:
+                    self.leave(who, "The activity time budget ended.")
         elif scheduled.kind == "arrival":
             who = scheduled.data["who"]
             active = self.activities.get(self.current.get(who))
@@ -2879,7 +2910,21 @@ class ActivityEngine:
             if isinstance(activity, ReflectActivity) and not activity.completed:
                 for who, member in activity.members.items():
                     if member.active and who not in self.current:
-                        activity.deferred_action = None
+                        deferred = activity.deferred_action or {}
+                        target = deferred.get("target")
+                        same_day = day_of(activity.start // 60) == day_of(start)
+                        valid_move = (
+                            deferred.get("operation") == "select_move"
+                            and target in self.env.world.places
+                            and self.venue_open(target)
+                            and same_day
+                            and (
+                                target != self.sim.config.lunch_place
+                                or self.now < at(day_of(start), "14:00")
+                            )
+                        )
+                        if not valid_move:
+                            activity.deferred_action = None
                         member.active = False
                         self.enter(activity, who, self.end)
                         self.launch_reflect(who, activity)

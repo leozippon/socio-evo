@@ -83,13 +83,19 @@ async def test_summary_yields_to_other_work_and_mandatory_departure(
     else:
         rt.now = at(1, "22:00")
         rt.boundary()
+    if boundary == "lunch":
+        # Mandatory lunch waits for this independent reflection, even across ticks.
+        rt.daily_choices()
+        assert not pending.task.done()
+        assert rt.current["Mei"] == pending.activity
+        release.set()
     await asyncio.gather(pending.task, return_exceptions=True)
     await rt.finish("Mei", pending)
     rt.flush_leaves()
     rt.daily_choices()
-    assert pending.task.cancelled()
-    assert resident.memory.work.pending_scopes(active.id)
-    assert not resident.memory.work.summaries("task-1")
+    assert pending.task.cancelled() == (boundary == "closing")
+    assert bool(resident.memory.work.pending_scopes(active.id)) == (boundary == "closing")
+    assert bool(resident.memory.work.summaries("task-1")) == (boundary == "lunch")
     assert rt.current.get("Mei") != pending.activity
     if boundary == "lunch":
         assert rt.activities[rt.current["Mei"]].kind == "move"
@@ -354,7 +360,12 @@ def test_own_visits_are_distinct_sources_and_reflect_is_not_a_source(rt):  # noq
     assert len(rt.reflection_sources("Mei")) == 2
 
 
-async def test_ordinary_environment_receipt_enters_real_reflect_summary(engine, tmp_path):  # noqa: F811
+@pytest.mark.parametrize("departure", ["voluntary", "12:00", "18:00"])
+async def test_ordinary_environment_receipt_enters_real_reflect_summary(
+    engine,
+    tmp_path,
+    departure,  # noqa: F811
+):
     from tests.runtime.activities.test_engine import claim, complete, perform
 
     resident = Agent.create(
@@ -368,12 +379,27 @@ async def test_ordinary_environment_receipt_enters_real_reflect_summary(engine, 
     active = work(engine)
     await claim(engine)
     await perform(engine, "Mei", "command", command="true")
-    engine.schedule("Mei", use("leave"))
+    if departure == "voluntary":
+        engine.schedule("Mei", use("leave"))
+    else:
+        engine.sim.config = engine.sim.config.model_copy(update={"lunch_place": "restaurant"})
+        engine.now = at(1, departure)
+        engine.queue = type(engine.queue)()
+        engine.daily_life["1"] = {
+            "lunched": ["Mei"] if departure == "18:00" else [],
+            "evening": [],
+            "reminded": [],
+        }
+        engine.daily_choices()
     reflection = engine.activities[engine.current["Mei"]]
     assert reflection.kind == "reflect" and active.status == "paused"
     await engine.reflections["Mei"]
     await complete(engine, engine.now + 1)
-    assert reflection.completed and "Mei" not in engine.current
+    assert reflection.completed
+    if departure == "12:00":
+        assert engine.activities[engine.current["Mei"]].kind == "move"
+    else:
+        assert "Mei" not in engine.current
     notes = resident.memory.work
     summaries = notes.summaries("task-1")
     command = next(e for e in notes.entries("task-1") if e.get("kind") == "command_executed")
@@ -462,3 +488,65 @@ async def test_checkpoint_reopens_unfinished_reflect_without_old_rest(engine, tm
     assert len(reopened.memory.work.summaries("task-1")) == 1
     assert not reopened.memory.work.pending_scopes(active.id)
     await resumed.close()
+
+
+@pytest.mark.parametrize("transition", ["12:00", "18:00"])
+async def test_forced_work_exit_saves_receipt_before_daily_transition(rt, tmp_path, transition):  # noqa: F811
+    started, release = asyncio.Event(), asyncio.Event()
+
+    class Client:
+        async def complete(self, request):
+            assert request.metadata["purpose"] == "work_summary"
+            started.set()
+            await release.wait()
+            return await ScriptedClient(lambda _: {"summary": "Command receipt saved."}).complete(
+                request
+            )
+
+    resident = Agent.create(
+        tmp_path / "resident",
+        SEED,
+        Client(),
+        CognitionConfig(work_notes=WorkNotesConfig(enabled=True)),
+        TOWN,
+    )
+    rt.sim.agents["Mei"] = resident
+    rt.sim.config = rt.sim.config.model_copy(update={"lunch_place": "restaurant"})
+    active = work(rt)
+    await take(rt)
+    rt.schedule("Mei", use("command", command="true"))
+    # A command already started at the boundary must deliver its receipt first.
+    rt.now = at(1, transition)
+    rt.clock.rebase(rt.now)
+    rt.daily_life["1"] = {
+        "lunched": ["Mei"] if transition == "18:00" else [],
+        "evening": [],
+        "reminded": [],
+    }
+    rt.daily_choices()
+    assert rt.current["Mei"] == active.id
+    await finish(rt, "Mei")
+    rt.now = at(1, transition)
+    rt.clock.rebase(rt.now)
+    rt.flush_leaves()
+    rt.daily_choices()
+    await asyncio.wait_for(started.wait(), 3)
+    reflection = rt.running["Mei"]
+    assert reflection.kind == "reflect"
+    assert active.visits["Mei"][-1].exit_seq is not None
+    rt.wall.value += 40
+    rt.now = rt.clock.now()
+    rt.boundary()
+    rt.daily_choices()
+    assert rt.running["Mei"] is reflection and not reflection.task.done()
+    assert rt.activities[rt.current["Mei"]].kind == "reflect"
+    release.set()
+    await finish(rt, "Mei")
+    rt.flush_leaves()
+    rt.daily_choices()
+    assert len(resident.memory.work.summaries("task-1")) == 1
+    assert not resident.memory.work.pending_scopes(active.id)
+    if transition == "12:00":
+        assert rt.activities[rt.current["Mei"]].kind == "move"
+    else:
+        assert "Mei" not in rt.current

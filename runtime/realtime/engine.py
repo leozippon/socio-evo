@@ -16,6 +16,7 @@ from runtime.activities.model import (
     Handoff,
     Message,
     MoveActivity,
+    ReflectActivity,
     WorkActivity,
     at,
     clock,
@@ -506,18 +507,6 @@ class RealtimeEngine(ActivityEngine):
         return False
 
     def daily_choices(self):
-        if self.sim.config.lunch_place:
-            state = self.daily_life.get(str(day_of(self.now // 60)), {})
-            for who in list(self.running):
-                if (
-                    self.now >= at(day_of(self.now // 60), "12:00")
-                    and who not in state.get("lunched", [])
-                ) or (
-                    self.now >= at(day_of(self.now // 60), "18:00")
-                    and who not in state.get("evening", [])
-                ):
-                    if self.cancel_work_summary(who):
-                        self.deferred[who] = "Work paused for the daily transition."
         self._lifecycle_transition = True
         try:
             super().daily_choices()
@@ -925,6 +914,8 @@ class RealtimeEngine(ActivityEngine):
         self.admit_waiters()
         for who, place in list(self.env.world.locations.items()):
             activity = self.activities.get(self.current.get(who))
+            if isinstance(activity, ReflectActivity) and self.now < self.end:
+                continue
             if isinstance(activity, MoveActivity) and self.now < self.end:
                 continue
             if who in self.outside and self.now < self.end:
@@ -944,7 +935,8 @@ class RealtimeEngine(ActivityEngine):
                 continue
             if who in self.running:
                 self.deferred[who] = "The place or day closed; finish the started operation."
-                self.cancel_work_summary(who)
+                if self.now >= self.end:
+                    self.cancel_work_summary(who)
                 continue
             if self.now >= self.end:
                 self.leave(who, "The day closed.")

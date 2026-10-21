@@ -34,7 +34,17 @@ async def test_same_work_activity_two_visits_are_independent(agent):
     agent.client = ScriptedClient(lambda r: requests.append(r) or {"summary": "Visit result."})
     for index, visit in enumerate(("first", "second")):
         notes.begin_activity("work", "task-1", 1 + index, visit_id=visit)
-        notes.record("task-1", 2 + index, "observation", visit, activity_id="work", visit_id=visit)
+        notes.observe(
+            Percept(
+                seq=index + 1,
+                time=2 + index,
+                kind=EventKind.COMMAND_EXECUTED,
+                task_id="task-1",
+                text=visit,
+                activity_id="work",
+                activity_visit_id=visit,
+            )
+        )
         await agent.reflect(20 + index, mode="summary", activity_id="work", visit_id=visit)
     assert len(requests) == 2
     assert "second" not in requests[0].messages[-1].content

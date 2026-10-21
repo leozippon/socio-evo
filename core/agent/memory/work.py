@@ -256,9 +256,6 @@ class WorkNotes:
         substantive = {
             EventKind.COMMAND_EXECUTED.value,
             EventKind.WORK_CHECKED.value,
-            EventKind.WORK_DELAYED.value,
-            EventKind.ACTIVITY_FEEDBACK.value,
-            EventKind.CODE_HANDOFF.value,
         }
         for task in self.tasks():
             records = self.entries(task)
@@ -290,11 +287,9 @@ class WorkNotes:
                     continue
                 groups.setdefault((activity, visit), []).append(e)
             for (activity, visit), entries in groups.items():
-                # Desk/exit announcements alone do not mean the resident researched a job.
+                # Only receipts emitted after executing a command or test establish actual work.
                 if not any(
-                    e["type"] == "observation"
-                    and (e.get("kind") in substantive or not e.get("kind"))
-                    for e in entries
+                    e["type"] == "observation" and e.get("kind") in substantive for e in entries
                 ):
                     continue
                 scope = {

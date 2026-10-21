@@ -187,13 +187,13 @@ async def summarize_work(agent, time, tasks=None, *, activity_id=None, visit_id=
 
     async def generate(task, records, *, merging=False, scope=None):
         instruction = (
-            f"Organize your earlier notes for {job_name(task)} into one overview. "
+            f"Briefly combine your earlier work notes for {job_name(task)}. "
             if merging
-            else f"Reflect on your work on {job_name(task)} in this visit. "
+            else f"Briefly summarize your work on {job_name(task)} during this visit. "
         ) + (
-            "Keep findings, actual changes, observed results, unresolved issues and next steps. "
-            "Separate intentions from outcomes. The complete original work record remains "
-            "available by entry number through read work record."
+            "Write a few short sentences for remembering your work in everyday life: "
+            "what you did, the result, and anything still unresolved. "
+            "Aim for 200–500 characters when the schema limit allows; use fewer if needed."
         )
         reply, mode = await _generate(
             agent,

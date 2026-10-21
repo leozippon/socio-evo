@@ -11,7 +11,7 @@ resident-authored interpretations. `state.json` is a derived view. Intentions ar
 executed actions, and a summary is not proof of success. Other residents' private
 records and hidden test results are never added. Old `note.md` files remain readable.
 
-On a voluntary Work exit, a visit that contains actual job research or operations schedules a separate Reflect Activity. Work ends first; one bounded overview per relevant job is saved before continuing the already chosen next action. A visit with no operational receipts needs no summary. Each return to a Work Activity has a new participation identity. Stored overviews carry the source visit, entry range and time span, so later participation and late feedback cannot silently change a completed scope. The prompt and JSON schema limit a work overview to 1600 characters or less under a smaller context budget.
+A Work visit that actually executes a job command or test schedules a separate summary Reflect when it ends. This includes successful and failed executions; merely claiming a job, reading its operating guide or receiving a closed-work notice does not qualify. Work ends first, then one brief overview per relevant job is saved before the next action. Each return to a Work Activity has a new participation identity. Stored overviews carry the source visit, entry range and time span, so later participation and late feedback cannot silently change a completed scope. The summary is a few short sentences for later everyday memory, normally 200–500 characters; the dynamic schema retains a maximum of 1600 characters or less under a smaller context budget.
 
 A long work session still uses one overview request per job, not a model call for every
 6000 characters. The fixed input snapshot contains the full range when it fits; otherwise
@@ -19,10 +19,7 @@ it contains an operation index and explicitly shortened excerpts. The saved inpu
 makes clear that an overview does not establish full-text reading. Original records are
 retained. New appends cannot be silently included in an older snapshot.
 
-Mandatory transitions cancel pending note generation without marking it complete.
-Unfinished ranges are handled at night; historical overview consolidation is also a
-separate nightly step. Neither historical merges nor a backlog from a previous activity
-runs in the voluntary exit path. Retries retain the existing finite bound.
+Daytime transitions also wait for the summary Reflect. At noon, the resident finishes any already-started job operation, ends Work, saves its brief overview, then travels to lunch. Repeated scheduler ticks do not cancel the summary or start the next activity early. Evening transitions follow the same work-exit rule. Day-end or session cancellation retains unfinished sources for nightly catch-up and discards expired continuation choices. Historical consolidation remains a separate nightly step; it does not run as part of a Work exit. Retries retain the existing finite bound.
 
 ## Context and explicit reading
 

@@ -27,6 +27,14 @@ def receipt(text, seq=1, task="task-1"):
     return Percept(seq=seq, time=10, kind=EventKind.COMMAND_EXECUTED, task_id=task, text=text)
 
 
+def record_operation(notes, task, time, text, *, activity_id=None, visit_id=None):
+    notes.observe(
+        receipt(text, len(notes.entries(task)) + 1, task).model_copy(
+            update={"time": time, "activity_id": activity_id, "activity_visit_id": visit_id}
+        )
+    )
+
+
 @pytest.mark.parametrize("budget", [False, True])
 async def test_current_work_feedback_persists_once_and_history_stays_private(
     agent, observe, script, budget
@@ -85,13 +93,17 @@ async def test_one_activity_overview_uses_whole_input_or_honest_excerpts(agent, 
     notes = agent.memory.work
     raw = "BEGIN " + "x" * length + " END"
     notes.begin_activity("visit", "task-1", 1)
-    notes.record("task-1", 1, "observation", raw, activity_id="visit")
+    record_operation(notes, "task-1", 1, raw, activity_id="visit")
     requests = []
 
     def answer(request):
         requests.append(request)
         assert request.structured_output == "json_schema"
-        assert 1 <= request.json_schema["properties"]["summary"]["maxLength"] <= 1600
+        bound = request.json_schema["properties"]["summary"]["maxLength"]
+        assert 1 <= bound <= 1600
+        assert f"reflection/summary limit: {bound} characters" in request.messages[-1].content
+        assert "200–500 characters" in request.messages[-1].content
+        assert "everyday life" in request.messages[-1].content
         assert Counter(agent.cognition.context_budget).request(request) <= input_limit(
             agent.cognition.context_budget, request
         )
@@ -102,7 +114,7 @@ async def test_one_activity_overview_uses_whole_input_or_honest_excerpts(agent, 
             assert raw in prompt
         else:
             assert "omitted text has NOT been read" in prompt and raw not in prompt
-        notes.record("task-1", 2, "observation", "ARRIVED_DURING_SUMMARY", activity_id="later")
+        record_operation(notes, "task-1", 2, "ARRIVED_DURING_SUMMARY", activity_id="later")
         return {"summary": "Bounded working overview."}
 
     agent.client = ScriptedClient(answer)
@@ -120,7 +132,7 @@ async def test_one_activity_overview_uses_whole_input_or_honest_excerpts(agent, 
 
 async def test_failed_summary_never_moves_coverage(agent):
     enable(agent)
-    agent.memory.work.record("task-1", 1, "observation", "UNSUMMARIZED")
+    record_operation(agent.memory.work, "task-1", 1, "UNSUMMARIZED")
     agent.client = ScriptedClient(lambda request: {"summary": ""})
     with pytest.raises(StructuredOutputError):
         await agent.summarize_work(20)
@@ -132,7 +144,7 @@ async def test_exit_commits_before_reflection_and_cancellation_keeps_scope(agent
     enable(agent)
     notes = agent.memory.work
     notes.begin_activity("visit", "task-1", 1, visit_id="first")
-    notes.record("task-1", 2, "observation", "READY_RESULT", activity_id="visit", visit_id="first")
+    record_operation(notes, "task-1", 2, "READY_RESULT", activity_id="visit", visit_id="first")
     started = asyncio.Event()
 
     class Client:
@@ -203,7 +215,7 @@ async def test_summary_recalled_once_and_disabled_recall_keeps_original_behavior
         update={"active_recall": ActiveRecallConfig(enabled=True)}
     )
     notes = agent.memory.work
-    notes.record("task-1", 1, "observation", "Raw terminal output")
+    record_operation(notes, "task-1", 1, "Raw terminal output")
     notes.save_summary("task-1", 2, "UNIQUE_SUMMARY_MARKER parser timezone", (0, 0), (1, 19))
     requests = []
 
@@ -231,7 +243,7 @@ async def test_nightly_history_is_one_bounded_batch_under_small_budget(agent):
     agent.cognition = agent.cognition.model_copy(update={"context_budget": budget})
     notes = agent.memory.work
     for index in range(4):
-        notes.record("task-1", index, "observation", f"result {index}")
+        record_operation(notes, "task-1", index, f"result {index}")
         entry = len(notes.entries("task-1"))
         notes.save_summary(
             "task-1", index, f"Summary {index}: " + "证据" * 790, (entry, 0), (entry, 8)
@@ -259,7 +271,7 @@ async def test_nightly_work_catchup_runs_with_evolution_disabled(agent):
     from runtime.simulation.simulation import Simulation
 
     enable(agent)
-    agent.memory.work.record("task-1", 1, "observation", "FINISHED_JOB_RESULT")
+    record_operation(agent.memory.work, "task-1", 1, "FINISHED_JOB_RESULT")
     agent.client = ScriptedClient(lambda _: {"summary": "Finished job result retained."})
     owner = SimpleNamespace(evolver=Evolver(EvolutionConfig(levels=())))
     assert await Simulation._evolve(owner, agent, (), 20) == []
@@ -279,7 +291,7 @@ async def test_exits_never_merge_and_night_compacts_once(agent):
     for index in range(6):
         activity = f"visit-{index}"
         notes.begin_activity(activity, "task-1", index)
-        notes.record("task-1", index, "observation", f"Operation {index}", activity_id=activity)
+        record_operation(notes, "task-1", index, f"Operation {index}", activity_id=activity)
         await agent.summarize_work(100 + index, activity_id=activity)
     assert len(requests) == 6
     assert all(r.metadata["purpose"] == "work_summary" for r in requests)
@@ -300,7 +312,7 @@ async def test_exits_never_merge_and_night_compacts_once(agent):
 async def test_activity_scope_follows_real_jobs_excludes_old_backlog_and_empty_visits(agent):
     enable(agent)
     notes = agent.memory.work
-    notes.record("task-1", 1, "observation", "LEGACY_BACKLOG")
+    record_operation(notes, "task-1", 1, "LEGACY_BACKLOG")
     notes.observe(receipt("OLD_DELAYED").model_copy(update={"activity_id": "old"}))
     notes.begin_activity("visit", "task-3", 2)
     notes.observe(
@@ -338,7 +350,7 @@ async def test_small_budget_retry_keeps_dynamic_limit_and_operation_index(agent)
     notes = agent.memory.work
     notes.begin_activity("visit", "task-1", 1)
     for index in range(4):
-        notes.record("task-1", index, "observation", "证据" * 4000, activity_id="visit")
+        record_operation(notes, "task-1", index, "证据" * 4000, activity_id="visit")
     requests = []
 
     def reply(request):
@@ -360,7 +372,7 @@ async def test_cancelled_scope_does_not_absorb_late_receipts_or_conversation(age
     enable(agent)
     notes = agent.memory.work
     notes.begin_activity("visit", "task-1", 1)
-    notes.record("task-1", 1, "observation", "FIRST", activity_id="visit")
+    record_operation(notes, "task-1", 1, "FIRST", activity_id="visit")
     entered = asyncio.Event()
 
     class CancelledClient:
@@ -376,7 +388,7 @@ async def test_cancelled_scope_does_not_absorb_late_receipts_or_conversation(age
         await task
     pending = notes.pending_scopes("visit")[0][1]
     assert pending["source_entries"] == [2]
-    notes.record("task-1", 11, "observation", "LATE", activity_id="visit")
+    record_operation(notes, "task-1", 11, "LATE", activity_id="visit")
     notes.observe(
         receipt("CONVERSATION", 44).model_copy(
             update={"activity_id": "chat", "kind": EventKind.ACTIVITY_FEEDBACK}
@@ -397,7 +409,7 @@ async def test_one_night_finishes_cancelled_snapshot_and_late_receipt(agent):
     enable(agent)
     notes = agent.memory.work
     notes.begin_activity("visit", "task-1", 1)
-    notes.record("task-1", 2, "observation", "EARLIER", activity_id="visit")
+    record_operation(notes, "task-1", 2, "EARLIER", activity_id="visit")
     entered = asyncio.Event()
 
     class Interrupted:
@@ -412,7 +424,7 @@ async def test_one_night_finishes_cancelled_snapshot_and_late_receipt(agent):
     with pytest.raises(asyncio.CancelledError):
         await running
     original = notes.pending_scopes("visit")[0][1]
-    notes.record("task-1", 11, "observation", "LATER", activity_id="visit")
+    record_operation(notes, "task-1", 11, "LATER", activity_id="visit")
     requests = []
     agent.client = ScriptedClient(lambda r: requests.append(r) or {"summary": "Observed work."})
     await agent.summarize_work(20)
@@ -423,3 +435,72 @@ async def test_one_night_finishes_cancelled_snapshot_and_late_receipt(agent):
     assert original["source_entries"] == [2] and not notes.pending_scopes()
     await agent.summarize_work(21)
     assert len(requests) == 2
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        EventKind.ACTIVITY_FEEDBACK,
+        EventKind.ACTIVITY_LEFT,
+        EventKind.DESK,
+        EventKind.CODE_HANDOFF,
+        EventKind.WORK_DELAYED,
+    ],
+)
+def test_guidance_closing_claim_and_handoff_do_not_establish_work(tmp_path, kind):
+    notes = WorkNotes(tmp_path / "work")
+    notes.begin_activity("visit", "task-1", 1)
+    notes.observe(
+        receipt("Repository guide, closing notice, or claim", 1).model_copy(
+            update={"activity_id": "visit", "kind": kind}
+        )
+    )
+    notes.record("task-1", 2, "intention", "I will run tests", activity_id="visit")
+    assert notes.freeze_scopes(3, "visit") == []
+    assert notes.freeze_scopes(4) == []
+    assert len(notes.entries("task-1")) == 3
+
+
+@pytest.mark.parametrize(
+    "kind,text",
+    [
+        (EventKind.COMMAND_EXECUTED, "Terminal returned exit code 0: inspected files"),
+        (EventKind.COMMAND_EXECUTED, "Terminal returned exit code 1: tests failed"),
+        (EventKind.WORK_CHECKED, "Executed local check: failed"),
+    ],
+)
+def test_executed_commands_and_checks_establish_work(tmp_path, kind, text):
+    notes = WorkNotes(tmp_path / "work")
+    notes.begin_activity("visit", "task-1", 1)
+    notes.observe(receipt(text).model_copy(update={"activity_id": "visit", "kind": kind}))
+    assert len(notes.freeze_scopes(3, "visit")) == 1
+
+
+def test_unknown_observation_does_not_create_scope_but_saved_scope_survives(tmp_path):
+    notes = WorkNotes(tmp_path / "work")
+    notes.record("task-1", 1, "observation", "Legacy feedback")
+    assert notes.freeze_scopes(2) == []
+    notes.append(
+        "task-1",
+        {
+            "id": "legacy-scope",
+            "type": "scope",
+            "time": 1,
+            "text": "",
+            "source_entries": [1],
+            "activity_id": None,
+            "visit_id": None,
+        },
+    )
+    assert notes.freeze_scopes(3)[0][1]["id"] == "legacy-scope"
+
+
+def test_rejected_command_does_not_establish_work(tmp_path):
+    notes = WorkNotes(tmp_path / "work")
+    notes.begin_activity("visit", "task-1", 1)
+    notes.observe(
+        receipt("Command rejected before execution").model_copy(
+            update={"activity_id": "visit", "kind": EventKind.ACTION_REJECTED}
+        )
+    )
+    assert notes.freeze_scopes(3, "visit") == []
