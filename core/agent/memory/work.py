@@ -68,6 +68,7 @@ def reference(record):
 class ReadWorkLog(StrictModel):
     thought: str = Field(max_length=1000)
     do: Literal["read work record"]
+    job: str
     start: int = Field(default=1, ge=1)
     offset: int = Field(default=0, ge=0)
 
@@ -205,12 +206,17 @@ class WorkNotes:
     def current(observation: Observation) -> set[str]:
         # Work-only allowances already identify the resident's own assigned job. No access
         # to the global board or another agent's assignment is needed.
-        return ({observation.own_task_id} if observation.own_task_id else set()) | {
-            task
-            for allowance in observation.allowed
-            if (reference := getattr(allowance, "task_id", None)) is not None
-            and (task := job_id(reference)) is not None
-        }
+        active = observation.activity_task_id if observation.work_activity else None
+        return (
+            ({active} if active else set())
+            | ({observation.own_task_id} if observation.own_task_id else set())
+            | {
+                task
+                for allowance in observation.allowed
+                if (reference := getattr(allowance, "task_id", None)) is not None
+                and (task := job_id(reference)) is not None
+            }
+        )
 
     def begin_activity(
         self, activity_id: str, task: str, time: int, *, visit_id: str | None = None
@@ -358,10 +364,10 @@ class WorkNotes:
         return max((tuple(e.get("through", (0, 0))) for e in summaries), default=(0, 0))
 
     def chunk(
-        self, task: str, start: tuple[int, int], upper: int, size: int
+        self, task: str, start: tuple[int, int], upper: int, size: int, *, now: int | None = None
     ) -> tuple[str, tuple[int, int]]:
         pieces, used, through = [], 0, start
-        for e in self.entries(task):
+        for e in self.entries(task, now):
             index = e["entry"]
             if index > upper or index < start[0] or e["type"] not in {"observation", "intention"}:
                 continue
@@ -419,11 +425,71 @@ class WorkNotes:
             },
         )
 
-    def read_range(self, task: str, start: int, offset: int, size: int = 6000) -> str:
-        text, through = self.chunk(task, (start, offset), len(self.entries(task)), size)
+    def previous(self, observation: Observation) -> list[str]:
+        """Only this resident's previously observed jobs, excluding current assignments."""
+        current = self.current(observation)
+        return [
+            task
+            for task in self.tasks()
+            if task not in current
+            and any(e["type"] == "observation" for e in self.entries(task, observation.time))
+        ]
+
+    def read_range(
+        self, task: str, start: int, offset: int, size: int = 6000, *, now: int | None = None
+    ) -> str:
+        records = self.entries(task, now)
+        upper = records[-1]["entry"] if records else 0
+        text, through = self.chunk(task, (start, offset), upper, size, now=now)
         return (text or "No work operations in that range.") + (
             f"\nContinue at entry {through[0]}, character {through[1]}." if text else ""
         )
+
+    def raw(self, task: str, now: int) -> list[Block]:
+        records = [e for e in self.entries(task, now) if e["type"] == "observation"]
+        if not records:
+            return []
+
+        def render(entry):
+            return (
+                f"Original feedback for {job_name(task)}, entry {entry['entry']} "
+                f"(source: {entry['source']}, day {day_of(entry['time'])} "
+                f"{clock_of(entry['time'])}):\n{entry['text']}"
+            )
+
+        latest = next(
+            (
+                i
+                for i in range(len(records) - 1, -1, -1)
+                if records[i].get("kind")
+                in {
+                    EventKind.COMMAND_EXECUTED.value,
+                    EventKind.WORK_CHECKED.value,
+                }
+            ),
+            len(records) - 1,
+        )
+        entry = records[latest]["entry"]
+        return [
+            *(
+                [
+                    Block(
+                        f"work-log:{task}:before-{entry}",
+                        "\n\n".join(render(e) for e in records[:latest]),
+                        95,
+                        tail=True,
+                    )
+                ]
+                if latest
+                else []
+            ),
+            Block(
+                f"work-log:{task}:{entry}",
+                "\n\n".join(render(e) for e in records[latest:]),
+                100,
+                required=True,
+            ),
+        ]
 
     def project(self, records):
         return [record for record in records if not operation(record)]
@@ -434,8 +500,6 @@ class WorkNotes:
         now: int,
         config: WorkNotesConfig,
         setting: Setting,
-        *,
-        recent: bool = False,
     ) -> str:
         lines = [
             f"Your work notes for {job_name(task)}:",
@@ -450,14 +514,6 @@ class WorkNotes:
             lines.append(f"{when(begin)} to {when(end)} — {record['text']}")
         if len(lines) == 2:
             lines.append("Operations are saved; no working summary has been written yet.")
-        if recent:
-            records = [e for e in self.entries(task, now) if e["type"] == "observation"]
-            for record in records[-config.recent_entries :]:
-                text = record["text"]
-                if len(text) > config.excerpt_chars:
-                    half = (config.excerpt_chars - 30) // 2
-                    text = text[:half] + "\n[excerpt shortened]\n" + text[-half:]
-                lines.append(f"Recent operation (source: {record['source']}):\n{text}")
         return "\n\n".join(lines)
 
     def select(
@@ -465,9 +521,13 @@ class WorkNotes:
         observation: Observation,
         config: WorkNotesConfig,
         setting: Setting,
-        *,
-        recent=True,
     ) -> list[Block]:
+        if observation.work_activity:
+            return [
+                block
+                for task in sorted(self.current(observation))
+                for block in self.raw(task, observation.time)
+            ]
         if observation.activity_kind is not None:
             task = observation.activity_task_id
             if task is None or observation.activity_kind not in {"work", "conversation"}:
@@ -482,7 +542,6 @@ class WorkNotes:
                         observation.time,
                         config,
                         setting,
-                        recent=recent and observation.work_activity,
                     ),
                     95,
                 )
@@ -516,7 +575,6 @@ class WorkNotes:
                     observation.time,
                     config,
                     setting,
-                    recent=recent and observation.work_activity and task in current,
                 ),
                 95 if task in current else 60,
             )

@@ -2,11 +2,11 @@
 
 from collections.abc import Iterable, Mapping
 from pathlib import Path
-from typing import TypeVar, Union, get_args
+from typing import Literal, TypeVar, Union, get_args
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, RootModel
+from pydantic import BaseModel, RootModel, create_model
 
 from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
@@ -31,6 +31,8 @@ from core.interaction import (
     Percept,
     Setting,
     form,
+    job_id,
+    job_name,
 )
 from core.interaction.card import correction
 from infrastructure.config import load_config
@@ -191,8 +193,8 @@ class Agent:
             }
         )
         if self.cognition.work_notes.enabled:
-            # Only the current Work feedback window is shown verbatim; every historical
-            # route uses notes. The environment's evidence is already in its task view.
+            # Job receipts have one source: original current-work logs, summaries elsewhere.
+            # The environment's evidence is already in its task view.
             observation = observation.model_copy(
                 update={
                     "percepts": tuple(p for p in new if not operation(p)),
@@ -290,7 +292,17 @@ class Agent:
         audit = []
         recall_limit = settings.max_queries if settings.enabled else 0
         notes = self.cognition.work_notes
-        can_read_work = notes.enabled and bool(self.memory.work.current(observation))
+        previous_jobs = self.memory.work.previous(observation) if notes.enabled else []
+        can_read_work = bool(previous_jobs)
+        read_model = (
+            create_model(
+                "ReadPreviousWorkLog",
+                __base__=ReadWorkLog,
+                job=(Literal[tuple(job_name(task) for task in previous_jobs)], ...),
+            )
+            if previous_jobs
+            else None
+        )
         phase = next((getattr(a, "menu", {}).get("reply_phase") for a in observation.allowed), None)
         skill_limit = 3 if observation.activity_kind is not None and phase != "body" else 0
         skill_calls = 0
@@ -299,7 +311,7 @@ class Agent:
             recall_limit, can_read_work = 0, False
         rounds = recall_limit + (3 if can_read_work else 0) + skill_limit
         reads = 0
-        work_read = None
+        work_reads: dict[tuple[str, int, int], str] = {}
         actions = (
             get_args(card.model.model_fields["root"].annotation)
             if issubclass(card.model, RootModel)
@@ -309,7 +321,7 @@ class Agent:
             can_recall = step < rounds and len(queries) < recall_limit
             can_read_record = step < rounds and can_read_work and reads < 3
             internal = ([Remember] if can_recall else []) + (
-                [ReadWorkLog] if can_read_record else []
+                [read_model] if can_read_record else []
             )
             if skill_calls < skill_limit:
                 internal += [UseSkill, ReviseSkill]
@@ -319,11 +331,19 @@ class Agent:
                 else card.model
             )
             work_blocks = (
-                self.memory.work.select(observation, notes, self.setting, recent=work_read is None)
-                if notes.enabled
-                else []
+                self.memory.work.select(observation, notes, self.setting) if notes.enabled else []
             )
-            selected_jobs = {block.source.removeprefix("work-note:") for block in work_blocks}
+            selected_jobs = {
+                block.source.removeprefix("work-note:")
+                for block in work_blocks
+                if block.source.startswith("work-note:")
+            }
+            if observation.work_activity:
+                selected_jobs.update(self.memory.work.current(observation))
+            read_blocks = [
+                Block(f"work-read:{task}:{start}:{offset}", text, 80)
+                for (task, start, offset), text in work_reads.items()
+            ]
             visible_hits = [
                 hit
                 for hit in hits
@@ -360,8 +380,9 @@ class Agent:
                 )
             if can_read_record:
                 instruction += (
-                    "\nYou may read a range of your current job's original work record. "
-                    "Give its entry number and character offset; begin at entry 1, offset 0."
+                    "\nYou may read a previous job's work record: "
+                    + ", ".join(job_name(task) for task in previous_jobs)
+                    + ". Give the job, entry number and character offset."
                 )
             if skill_calls < skill_limit:
                 instruction += (
@@ -397,8 +418,6 @@ class Agent:
             )
             if method_feedback and not budget.enabled:
                 instruction += "\n" + method_feedback
-            if work_read is not None:
-                instruction += "\n" + work_read
             if queries:
                 instruction += "\nAlready looked for: " + "; ".join(queries)
                 if audit[-1]["repeated"]:
@@ -419,6 +438,8 @@ class Agent:
                 prompt = prompts.decision_prompt(observation, recall, self.cognition, self.setting)
                 if work_blocks:
                     prompt += "\n\n" + "\n\n".join(block.text for block in work_blocks)
+                if read_blocks:
+                    prompt += "\n\n" + "\n\n".join(b.text for b in read_blocks)
                 if visible_hits:
                     prompt += "\n\nWhat you recalled:\n" + "\n\n".join(
                         h.render(self.setting) for h in visible_hits
@@ -433,7 +454,10 @@ class Agent:
                         "recall_round": step,
                         "active_recall": audit,
                         "work_notes": [block.source for block in work_blocks],
-                        "work_work_read": work_read,
+                        "work_record_reads": [
+                            {"job": task, "start": start, "offset": offset}
+                            for task, start, offset in work_reads
+                        ],
                         "activity_id": observation.activity_id,
                         "selected_skill": snapshot(self.personal_skills.selected),
                         "skill_operations": skill_calls,
@@ -448,6 +472,7 @@ class Agent:
                             observation, recall, skills, visible_hits, self.cognition, self.setting
                         ),
                         *work_blocks,
+                        *read_blocks,
                         *method_blocks,
                     ],
                     budget,
@@ -494,10 +519,13 @@ class Agent:
                 continue
             if isinstance(answer, ReadWorkLog):
                 reads += 1
-                tasks = self.memory.work.current(observation)
-                work_read = "\n\n".join(
-                    self.memory.work.read_range(task, answer.start, answer.offset)
-                    for task in sorted(tasks)
+                task = job_id(answer.job)
+                assert task in previous_jobs
+                work_reads[(task, answer.start, answer.offset)] = (
+                    f"Previous work record for {job_name(task)}:\n"
+                    + self.memory.work.read_range(
+                        task, answer.start, answer.offset, now=observation.time
+                    )
                 )
                 continue
             if not isinstance(answer, Remember):
@@ -514,6 +542,9 @@ class Agent:
                     settings,
                     summarized_work=notes.enabled,
                     skill_index_only=observation.activity_kind is not None,
+                    excluded_work_tasks=self.memory.work.current(observation)
+                    if observation.work_activity
+                    else (),
                 )
             )
             queries.append(answer.query)

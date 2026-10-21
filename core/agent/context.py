@@ -83,6 +83,25 @@ class Counter:
         head, tail = (low + 1) // 2, low // 2
         return text[:head] + marker + (text[-tail:] if tail else "")
 
+    def clip_tail(self, text: str, allowance: int) -> str:
+        """Retain a contiguous original suffix and explicitly identify the omitted prefix."""
+        if self.text(text) <= allowance:
+            return text
+        low, high = 0, len(text)
+        while low < high:
+            mid = (low + high) // 2
+            sample = omitted_prefix(mid) + text[mid:]
+            if self.text(sample) <= allowance:
+                high = mid
+            else:
+                low = mid + 1
+        result = omitted_prefix(low) + text[low:]
+        return result if self.text(result) <= allowance else ""
+
+
+def omitted_prefix(length: int) -> str:
+    return f"[Earlier original log omitted to fit this context: characters 0:{length}.]\n"
+
 
 def input_limit(config: ContextBudgetConfig, request: LLMRequest) -> int:
     output = request.sampling.max_tokens or config.output_tokens
@@ -94,6 +113,8 @@ class Block:
     source: str
     text: str
     priority: int
+    required: bool = False
+    tail: bool = False
 
 
 class BudgetPrompt(str):
@@ -137,7 +158,11 @@ def pack(request: LLMRequest, blocks: list[Block], config: ContextBudgetConfig) 
     limit = input_limit(config, request)
     if counter.request(request) > limit:
         raise ContextOverflow("Required task/identity/reply format exceeds input budget")
-    chosen: dict[int, str] = {}
+    chosen = {
+        i: block.text if block.required else omitted_prefix(len(block.text))
+        for i, block in enumerate(blocks)
+        if block.required or block.tail
+    }
 
     def assemble() -> LLMRequest:
         context = "\n\n".join(chosen[i] for i in sorted(chosen))
@@ -148,29 +173,44 @@ def pack(request: LLMRequest, blocks: list[Block], config: ContextBudgetConfig) 
             update={"messages": (*request.messages[:-1], Message(role="user", content=user))}
         )
 
-    ordered = sorted(range(len(blocks)), key=lambda i: (-blocks[i].priority, -i))
+    if counter.request(assemble()) > limit:
+        raise ContextOverflow("Required latest feedback and context do not fit the input budget")
+
+    def clip(block, allowance):
+        return (counter.clip_tail if block.tail else counter.clip)(block.text, allowance)
+
+    ordered = sorted(
+        (i for i, block in enumerate(blocks) if not block.required),
+        key=lambda i: (-blocks[i].priority, -i),
+    )
     critical = [i for i in ordered if blocks[i].priority >= 75]
     # Give current evidence and requested recollections a small shared foothold first.
     # Otherwise one verbose traceback could consume every byte and hide the answer to a
     # just-issued memory query. These are floors, not fixed category partitions.
     floor = min(192, max(0, (limit - counter.request(request)) // max(1, len(critical)) - 16))
     for i in critical:
-        text = counter.clip(blocks[i].text, floor)
+        if blocks[i].tail:
+            continue
+        text = clip(blocks[i], floor)
         if text:
             chosen[i] = text
             if counter.request(assemble()) > limit:
                 chosen.pop(i)
-    report = []
+    report = [
+        {"source": block.source, "priority": block.priority, "status": "kept"}
+        for block in blocks
+        if block.required
+    ]
     for i in ordered:
         block = blocks[i]
         previous = chosen.pop(i, None)
         remaining = limit - counter.request(assemble()) - 16
-        text = counter.clip(block.text, max(0, remaining))
+        text = clip(block, max(0, remaining))
         if text:
             chosen[i] = text
             # Full-message tokenization can differ at boundaries; verify the actual request.
             while counter.request(assemble()) > limit:
-                text = counter.clip(text, max(0, counter.text(text) - 32))
+                text = clip(block, max(0, counter.text(text) - 32))
                 if not text:
                     chosen.pop(i)
                     break

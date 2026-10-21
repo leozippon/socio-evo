@@ -57,6 +57,7 @@ def search(
     *,
     summarized_work=False,
     skill_index_only=False,
+    excluded_work_tasks=(),
 ) -> list[MemoryHit]:
     root = memory.episodic.path.parent
 
@@ -127,6 +128,8 @@ def search(
                     now,
                 )
     for task in memory.work.tasks():
+        if task in excluded_work_tasks:
+            continue
         entries = (
             memory.work.summaries(task, now) if summarized_work else memory.work.entries(task, now)
         )

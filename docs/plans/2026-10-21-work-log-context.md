@@ -1,5 +1,7 @@
 # Work log context
 
+Historical design. Current Work context routing is specified in [the architecture contract](../ARCHITECTURE.md#agent-coreagent); current jobs now use original logs and explicit reads select previous jobs.
+
 Work receipts remain in each resident’s existing `memory/work/task-N/events.jsonl`. Operational event kinds, not keywords or job references in conversation, identify receipts. Ordinary conversation memory stays unchanged. Default context uses bounded resident-written summaries; only a current Work activity receives the latest operational feedback directly. Up to three explicit range reads per decision can retrieve the current assigned job’s original entries, including early output. Each range result replaces the preceding range and the default recent feedback window.
 
 ## Persistence and coverage
