@@ -30,3 +30,9 @@ Clarified the shared writing guidance used by nightly L0/L1 reviews, free revisi
 ## Include everyday and interpersonal methods
 
 Expanded the shared notebook guidance to explicitly include relationships, communication, daily-life management, spending, rest and routines alongside technical work. Added a meeting-coordination example with reply checks, a waiting limit and adjustment conditions; the distinction from personal impressions and situational snapshots remains.
+
+## Focused Work verification and shared deployment
+
+Merged the already-deployed method-guidance commits 6124a74/ab4730c with the focused Work change; exact integrated code 2e5136874b1895d16164593f740ec55f7ebf70e7 passed 774 local tests in 51.97 seconds and the same 774 Linux tests in 39.55 seconds. Three baseline failures were explicitly deselected: two pre-existing board-text assertions and a trade test requiring unavailable bubblewrap; the three were reproduced on clean afc9b33. Ruff and diff checks passed. Tests exercise the actual Agent request path with optional methods, format repair, task specifications, current feedback and marked budgeted original logs; no live-model performance improvement is claimed.
+
+Activated /personal_fast_storage/code/socio-evo-2e51368-focused-work-20261022 as the shared future-default checkout. Both machines resolve its exact revision. Machine 1 experiment PID 1146295 retains frozen 68f8afa; machine 2 PID 94775 retains frozen 4465149. Start ticks, working directories and command hashes match before/after deployment; the machine 2 model/gateway identities also match. No experiment, model, viewer or monitoring service was restarted. Test logs and deployment/identity receipts: /private/tmp/socio-focused-work-20261022/ and /personal_fast_storage/qwen-serving/focused-work-context-20261022/. This final entry changes documentation only.
