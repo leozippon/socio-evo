@@ -139,7 +139,7 @@ def test_tokenizer_budget_counts_reasoning_once_even_when_template_omits_it(pres
     assert counter.request(request) == 23
 
 
-async def test_truncated_then_invalid_preserves_drafts_and_correction_once():
+async def test_truncated_then_invalid_keeps_only_invalid_draft_and_correction_once():
     from pydantic import BaseModel
 
     from infrastructure.llm.base import Sampling
@@ -171,7 +171,7 @@ async def test_truncated_then_invalid_preserves_drafts_and_correction_once():
     )
     assert result.answer == 7
     assert [r.sampling.max_tokens for r in requests] == [4096] * 3
-    assert [r.after_invalid for r in requests] == [False, False, True]
+    assert [r.after_invalid for r in requests] == [False, True, True]
     final = requests[-1].messages
     assert sum("unique scene" in m.content for m in final) == 1
     assert [m.content for m in final if m.role == "assistant"] == ['{"answer":"bad"}']
@@ -220,7 +220,8 @@ async def test_cancel_then_changed_observation_then_retry_shares_context():
     assert result.answer == 9
     final = requests[-1].messages
     assert sum("new scene" in m.content for m in final) == 1
-    assert [m.content for m in final if m.role == "assistant"] == ['{"answer":']
+    assert not any(m.role == "assistant" for m in final)
+    assert "cut off" in final[-1].content
     assert all(m.reasoning_content is None for m in final)
     assert not any("old scene" in m.content for m in final)
     with pytest.raises(RuntimeError, match="no completed decision"):
@@ -479,3 +480,67 @@ async def test_cancelled_draft_reserved_before_packing_changed_environment():
         "scene-old" not in m.content and "evidence-old" not in m.content for m in final.messages
     )
     assert sum("scene-new" in m.content for m in final.messages) == 1
+
+
+@pytest.mark.parametrize("resident", ["Kofi", "Mei"])
+@pytest.mark.parametrize("truncations", [2, 3])
+async def test_long_truncated_thought_retries_without_failed_draft(
+    monkeypatch, resident, truncations
+):
+    import json
+
+    from core.interaction import Card, MayPass
+    from infrastructure.llm import LLMConfig, OpenAICompatibleClient, StructuredOutputError
+    from infrastructure.llm.base import Sampling
+    from infrastructure.llm.structured import complete_structured
+
+    monkeypatch.setenv("SOCIO_EVO_TEST_RETRY_KEY", "test-key")
+    adapter = OpenAICompatibleClient(
+        LLMConfig(
+            base_url="http://llm.test/v1",
+            api_key_env="SOCIO_EVO_TEST_RETRY_KEY",
+            model="served",
+            structured_output="none",
+            structured_retry="json_schema",
+        )
+    )
+    card = Card([MayPass()])
+    requests, formats = [], []
+    draft = '{"thought":"' + (resident + " repeated explanation. ") * 600
+    continuation = DecisionContinuation()
+
+    class Replies:
+        async def complete(self, request):
+            requests.append(request)
+            formats.append(adapter._arguments(request).get("response_format"))
+            if len(requests) <= truncations:
+                return LLMResponse(text=draft, truncated=True, max_tokens=4096, latency=0)
+            return LLMResponse(
+                text=json.dumps({"thought": "x" * 800, "do": "carry on quietly"}), latency=0
+            )
+
+    request = LLMRequest(
+        messages=(Message(role="user", content="Choose the next work tool."),),
+        sampling=Sampling(max_tokens=4096),
+    )
+    client = ContinuationClient(Replies(), continuation)
+    if truncations == 3:
+        with pytest.raises(StructuredOutputError) as failure:
+            await complete_structured(client, request, card.model)
+        assert failure.value.failures == ("cut off by the token limit",) * 3
+        assert continuation.messages == ()
+    else:
+        reply = await complete_structured(client, request, card.model)
+        decision = card.decision(reply)
+        assert len(decision.thought) == 800
+        assert decision.action.kind == "pass"
+    assert len(requests) == 3
+    assert [r.sampling.max_tokens for r in requests] == [4096] * 3
+    assert [r.after_invalid for r in requests] == [False, True, True]
+    assert formats[0] is None
+    assert all(f["type"] == "json_schema" for f in formats[1:])
+    for asked in requests[1:]:
+        assert asked.messages[0] == request.messages[0]
+        assert not any(m.role == "assistant" or draft in m.content for m in asked.messages)
+        assert "cut off" in asked.messages[-1].content
+        assert "complete" in asked.messages[-1].content

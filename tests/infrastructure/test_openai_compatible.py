@@ -374,3 +374,42 @@ async def test_stream_failure_after_reasoning_does_not_retry_or_discard_partial(
         await client.complete_stream(_request(), partial)
     assert partial.reasoning == "received"
     assert len(calls) == len(closed) == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("default", ["none", "json_schema"])
+@pytest.mark.parametrize("after_invalid", [False, True])
+@pytest.mark.parametrize("mode", ["json_schema", "json_object", "none"])
+async def test_request_mode_overrides_default_and_retry(
+    monkeypatch, stream, default, after_invalid, mode
+):
+    from infrastructure.llm.base import LLMPartial
+
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        if stream:
+            return httpx2.Response(
+                200,
+                headers={"content-type": "text/event-stream"},
+                text="data: [DONE]\n\n",
+            )
+        return httpx2.Response(200, json=_completion("{}"))
+
+    client = _client(
+        monkeypatch, handler, structured_output=default, structured_retry="json_schema"
+    )
+    schema = {"type": "object", "properties": {"summary": {"type": "string", "maxLength": 1600}}}
+    request = _request(json_schema=schema, structured_output=mode, after_invalid=after_invalid)
+    if stream:
+        await client.complete_stream(request, LLMPartial())
+    else:
+        await client.complete(request)
+    actual = bodies[0].get("response_format")
+    if mode == "json_schema":
+        assert actual == {"type": mode, "json_schema": {"name": "response", "schema": schema}}
+    elif mode == "json_object":
+        assert actual == {"type": mode}
+    else:
+        assert actual is None

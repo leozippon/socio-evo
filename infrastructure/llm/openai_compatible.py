@@ -97,9 +97,11 @@ class OpenAICompatibleClient:
             **request.sampling.over(self._config.sampling).model_dump(exclude_none=True),
         }
         config = self._config
-        mode = config.structured_output
-        if request.after_invalid and config.structured_retry is not None:
-            mode = config.structured_retry
+        mode = request.structured_output
+        if mode is None:
+            mode = config.structured_output
+            if request.after_invalid and config.structured_retry is not None:
+                mode = config.structured_retry
         if request.json_schema is not None and mode == "json_schema":
             schema = {"name": "response", "schema": request.json_schema}
             arguments["response_format"] = {"type": "json_schema", "json_schema": schema}

@@ -298,6 +298,7 @@ def test_the_schema_suits_guided_decoding_and_hides_the_codes_names(allowed):
         assert node["required"] == list(node["properties"])
     forms = [node for node in _objects(schema) if "do" in node["properties"]]
     assert forms and all(list(node["properties"])[:2] == ["thought", "do"] for node in forms)
+    assert all(node["properties"]["thought"]["maxLength"] == 800 for node in forms)
     for name in ("claim_task", "task_id", "solution", "kind", "itinerary", "partner"):
         assert name not in text
 
@@ -482,3 +483,11 @@ def test_conversation_choice_preserves_explicit_thought(answer, tool):
         assert "text" not in node["properties"]
     with pytest.raises(ValidationError):
         card.model.model_validate(answer)
+
+
+def test_a_decision_thought_has_a_bounded_length():
+    card = Card([MayPass()])
+    answer = {"thought": "x" * 800, "do": "carry on quietly"}
+    assert len(card.decision(card.model.model_validate(answer)).thought) == 800
+    with pytest.raises(ValidationError, match="at most 800 characters"):
+        card.model.model_validate({**answer, "thought": "x" * 801})

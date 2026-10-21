@@ -5,10 +5,7 @@ from typing import Literal
 from pydantic import Field, JsonValue, NonNegativeInt, PositiveFloat, PositiveInt
 
 from infrastructure.config import StrictModel
-from infrastructure.llm.base import Sampling
-
-StructuredMode = Literal["json_schema", "json_object", "none"]
-"""How a request's JSON schema is enforced: guided decoding, JSON mode, or not at all."""
+from infrastructure.llm.base import Sampling, StructuredMode
 
 
 class LLMConfig(StrictModel):

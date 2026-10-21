@@ -7,6 +7,9 @@ from pydantic import Field, JsonValue, PositiveInt
 
 from infrastructure.config import StrictModel
 
+StructuredMode = Literal["json_schema", "json_object", "none"]
+"""How a request schema is enforced: guided decoding, JSON mode, or not at all."""
+
 
 class Message(StrictModel):
     role: Literal["system", "user", "assistant"]
@@ -53,6 +56,7 @@ class LLMRequest(StrictModel):
     for a reply matching that schema; how it is enforced depends on the client's
     structured-output mode, so the prompt should still describe the expected reply, and on
     `after_invalid`, which says that the reply is asked for again after an invalid one.
+    An explicit `structured_output` overrides both client modes; None inherits them.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
     `verdict` is how the caller will judge the reply, for a log of the calls to record with
     it: None if the reply serves, else how it fails; it is neither sent nor logged itself.
@@ -62,6 +66,7 @@ class LLMRequest(StrictModel):
     model: str | None = None
     sampling: Sampling = Sampling()
     json_schema: dict[str, JsonValue] | None = None
+    structured_output: StructuredMode | None = None
     after_invalid: bool = False
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     verdict: Callable[[LLMResponse], str | None] | None = Field(

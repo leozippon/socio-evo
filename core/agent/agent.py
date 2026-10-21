@@ -573,7 +573,9 @@ class Agent:
             reply_model = create_model(
                 "WorkSummary", summary=(str, Field(min_length=1, max_length=length))
             )
-            prompt = instruction + f" Write at most {length} characters.\n\n" + material
+            prompt = (
+                instruction + f" Keep the summary field within {length} characters.\n\n" + material
+            )
             request = request.model_copy(
                 update={
                     "messages": (
@@ -581,6 +583,7 @@ class Agent:
                         Message(role="user", content=prompt + "\n\n" + form(reply_model)),
                     ),
                     "json_schema": reply_model.model_json_schema(),
+                    "structured_output": "json_schema",
                 }
             )
             return request, reply_model

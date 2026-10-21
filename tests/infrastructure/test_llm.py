@@ -156,11 +156,16 @@ class Server:
 async def test_a_reply_cut_off_keeps_the_output_allowance():
     client = Server(None, None, '{"answer": 7}')
     assert await complete_structured(client, _request(), Verdict) == Verdict(answer=7)
-    assert [request.messages for request in client.requests] == [_request().messages] * 3
+    assert client.requests[0].messages == _request().messages
+    for request in client.requests[1:]:
+        assert request.messages[:-1] == _request().messages
+        assert request.messages[-1].role == "user"
+        assert "cut off" in request.messages[-1].content
+        assert "complete" in request.messages[-1].content
     assert [request.metadata["attempt"] for request in client.requests] == [1, 2, 3]
     limits = [request.sampling.max_tokens for request in client.requests]
     assert limits == [None, None, None]
-    assert not any(request.after_invalid for request in client.requests)
+    assert [request.after_invalid for request in client.requests] == [False, True, True]
     with pytest.raises(StructuredOutputError) as failure:
         await complete_structured(Server(None, None, None), _request(), Verdict)
     assert failure.value.failures == ("cut off by the token limit",) * 3

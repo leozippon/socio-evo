@@ -80,10 +80,10 @@ async def complete_structured(
 
     A reply is read as JSON in which a backslash stands for itself unless it begins a quote, a
     backslash, a slash, a newline, a tab or a unicode escape. A reply cut off by the token
-    limit, or not answered in time, is asked for again as it was; an invalid one is sent back
-    with `correction` of its validation error and the reply requested again, this and every
-    later request marked `after_invalid` (a client may then enforce the schema). Each call's
-    metadata gains its `attempt` number.
+    limit is discarded and a complete, concise reply requested; an invalid one is sent back
+    with `correction` of its validation error. Both mark this and every later retry
+    `after_invalid` (a client may then enforce the schema). A reply not answered in time is
+    asked for again as it was. Each call's metadata gains its `attempt` number.
     """
 
     def verdict(response: LLMResponse) -> str | None:
@@ -105,7 +105,20 @@ async def complete_structured(
         if not isinstance(reply, _Unread):
             return reply
         failures.append(reply.failure)
-        if reply.error is not None:
+        if response.truncated:
+            messages = (
+                *request.messages,
+                Message(
+                    role="user",
+                    content=(
+                        "Your reply was cut off before it was complete. "
+                        "Give a complete reply in the required format, "
+                        "keeping the explanation brief."
+                    ),
+                ),
+            )
+            request = request.model_copy(update={"after_invalid": True})
+        elif reply.error is not None:
             messages = (
                 *messages,
                 Message(role="assistant", content=text),

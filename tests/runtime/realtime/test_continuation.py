@@ -135,7 +135,10 @@ async def test_body_restart_retains_draft_latest_scene_and_commits_once(
             assert request.metadata["decision_id"] == logical_id
         if retry:
             assert len(body_calls) == 3
-            assert body_calls[-1].after_invalid is (retry != "truncated")
+            assert body_calls[-1].after_invalid is True
+            if retry == "truncated":
+                assert not any(m.role == "assistant" for m in body_calls[-1].messages)
+                assert "cut off" in body_calls[-1].messages[-1].content
         rows = [json.loads(line) for line in rt.env.log.path.read_text().splitlines()]
         cancelled_rows = [
             r for r in rows if r["kind"] == "tool_cancelled" and r["actor"] == "Tomas"

@@ -8,7 +8,12 @@ from core.agent.config import ContextBudgetConfig, WorkNotesConfig
 from core.agent.continuation import DecisionContinuation
 from core.agent.memory.work import WorkNotes
 from core.interaction import EventKind, MayActivity, Percept
-from infrastructure.llm import ScriptedClient, StructuredOutputError
+from infrastructure.llm import (
+    LLMConfig,
+    OpenAICompatibleClient,
+    ScriptedClient,
+    StructuredOutputError,
+)
 
 
 def enable(agent, budget=False):
@@ -74,15 +79,33 @@ async def test_job_tagged_chat_remains_verbatim_and_is_not_summarized(agent, obs
     assert agent.memory.episodic.read()[0].text == "CHAT_TERMINAL_WORDS"
 
 
-async def test_summary_pages_long_entries_merges_and_preserves_snapshot_boundary(agent):
+async def test_summary_pages_long_entries_merges_and_preserves_snapshot_boundary(
+    agent, monkeypatch
+):
     enable(agent, True)
     notes = agent.memory.work
+    monkeypatch.setenv("WORK_SUMMARY_TEST_KEY", "test")
+    backend = OpenAICompatibleClient(
+        LLMConfig(
+            base_url="http://llm.test/v1",
+            api_key_env="WORK_SUMMARY_TEST_KEY",
+            model="test",
+            structured_output="none",
+            structured_retry="json_schema",
+        )
+    )
     raw = "BEGIN " + "x" * 26000 + " END"
     notes.record("task-1", 1, "observation", raw)
     requests = []
 
     def answer(request):
         requests.append(request)
+        assert request.structured_output == "json_schema"
+        bound = request.json_schema["properties"]["summary"]["maxLength"]
+        assert 1 <= bound <= 1600
+        wire = backend._arguments(request)["response_format"]
+        assert wire["type"] == "json_schema"
+        assert wire["json_schema"]["schema"]["properties"]["summary"]["maxLength"] == bound
         assert all(message.role != "assistant" for message in request.messages)
         assert len(request.messages[-1].content) < 8000
         if len(requests) == 1:

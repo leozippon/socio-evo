@@ -114,13 +114,15 @@ class ContinuationClient:
         stream = getattr(self.client, "complete_stream", None)
         try:
             response = await (stream(request, partial) if stream else self.client.complete(request))
-            if response.text:
-                continuation.messages = (Message(role="assistant", content=response.text),)
             task = asyncio.current_task()
             if task is not None and task.cancelling():
                 partial.text = response.text
                 partial.reasoning = response.reasoning or ""
                 raise asyncio.CancelledError
+            if response.truncated:
+                continuation.messages = ()
+            elif response.text:
+                continuation.messages = (Message(role="assistant", content=response.text),)
             return response
         except asyncio.CancelledError:
             if partial.text:
