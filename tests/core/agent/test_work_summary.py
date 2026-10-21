@@ -128,27 +128,20 @@ async def test_failed_summary_never_moves_coverage(agent):
     assert agent.memory.work.entries("task-1")[0]["text"] == "UNSUMMARIZED"
 
 
-async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice(agent, observe):
+async def test_exit_commits_before_reflection_and_cancellation_keeps_scope(agent, observe):
     enable(agent)
-    agent.perceive([receipt("READY_RESULT").model_copy(update={"activity_id": "visit"})])
-    started, release = asyncio.Event(), asyncio.Event()
+    notes = agent.memory.work
+    notes.begin_activity("visit", "task-1", 1, visit_id="first")
+    notes.record("task-1", 2, "observation", "READY_RESULT", activity_id="visit", visit_id="first")
+    started = asyncio.Event()
 
     class Client:
         async def complete(self, request):
             if request.metadata["purpose"] == "work_summary":
                 started.set()
-                await release.wait()
-                return await ScriptedClient(lambda _: {"summary": "Result saved."}).complete(
-                    request
-                )
+                await asyncio.Event().wait()
             return await ScriptedClient(
-                lambda _: {
-                    "thought": "Rest now",
-                    "do": "rest",
-                    "day": "today",
-                    "until": "12:00",
-                    "wake for invitations": True,
-                }
+                lambda _: {"thought": "Leave now", "do": "leave this activity"}
             ).complete(request)
 
     agent.client = Client()
@@ -157,6 +150,7 @@ async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice
             "own_task_id": "task-1",
             "work_activity": True,
             "activity_id": "visit",
+            "activity_visit_id": "first",
             "activity_kind": "work",
             "allowed": (
                 MayActivity(
@@ -173,19 +167,22 @@ async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice
         }
     )
     continuation = DecisionContinuation()
-    pending = asyncio.create_task(agent.choose_tool(observation, continuation=continuation))
+    await agent.choose_tool(observation, continuation=continuation)
+    assert not started.is_set()
+    continuation.commit()
+    assert continuation.committed
+    pending = asyncio.create_task(
+        agent.reflect(10, mode="summary", activity_id="visit", visit_id="first")
+    )
     await started.wait()
-    assert continuation.summarizing_work and not pending.done()
     pending.cancel()
     with pytest.raises(asyncio.CancelledError):
         await pending
-    assert not continuation.summarizing_work and not continuation.committed
-    assert agent.memory.work.cursor("task-1") == (0, 0)
-    release.set()
-    await agent.choose_tool(observation, continuation=continuation)
-    continuation.commit()
-    assert agent.memory.work.pending_scopes("visit") == []
-    assert len(agent.memory.work.summaries("task-1")) == 1
+    assert notes.summaries("task-1") == []
+    assert len(notes.pending_scopes("visit", "first")) == 1
+    agent.client = ScriptedClient(lambda _: {"summary": "Result saved."})
+    await agent.reflect(11, mode="summary", activity_id="visit", visit_id="first")
+    assert len(notes.summaries("task-1")) == 1
 
 
 @pytest.mark.parametrize("budget", [False, True])

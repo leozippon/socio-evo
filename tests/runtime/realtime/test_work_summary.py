@@ -43,9 +43,11 @@ async def test_summary_yields_to_other_work_and_mandatory_departure(
         TOWN,
     )
     rt.sim.agents["Mei"] = resident
-    work(rt)
+    active = work(rt)
     await take(rt)
-    resident.memory.work.begin_activity(rt.current["Mei"], "task-1", rt.now // 60)
+    resident.memory.work.begin_activity(
+        rt.current["Mei"], "task-1", rt.now // 60, visit_id=active.members["Mei"].visit_id
+    )
     resident.perceive(
         [
             Percept(
@@ -54,14 +56,17 @@ async def test_summary_yields_to_other_work_and_mandatory_departure(
                 kind=EventKind.COMMAND_EXECUTED,
                 task_id="task-1",
                 activity_id=rt.current["Mei"],
+                activity_visit_id=active.members["Mei"].visit_id,
                 text="SAVED_RESULT",
             )
         ]
     )
     rt.start_decision("Mei")
+    await finish(rt, "Mei")
     await asyncio.wait_for(started.wait(), 3)
     pending = rt.running["Mei"]
-    assert pending.continuation.summarizing_work
+    assert pending.kind == "reflect"
+    assert rt.activities[rt.current["Mei"]].kind == "reflect"
     # A different resident's real repository operation can complete while notes wait.
     work(rt, "Tomas")
     await take(rt, "Tomas", "task-2")
@@ -79,12 +84,11 @@ async def test_summary_yields_to_other_work_and_mandatory_departure(
         rt.now = at(1, "22:00")
         rt.boundary()
     await asyncio.gather(pending.task, return_exceptions=True)
-    await rt.refresh_decisions()
+    await rt.finish("Mei", pending)
     rt.flush_leaves()
     rt.daily_choices()
     assert pending.task.cancelled()
-    assert not pending.continuation.committed
-    assert resident.memory.work.pending_scopes(pending.activity)
+    assert resident.memory.work.pending_scopes(active.id)
     assert not resident.memory.work.summaries("task-1")
     assert rt.current.get("Mei") != pending.activity
     if boundary == "lunch":
@@ -92,7 +96,7 @@ async def test_summary_yields_to_other_work_and_mandatory_departure(
     release.set()
     # Nightly catch-up can still cover the original receipt after forced departure.
     await resident.summarize_work(rt.now // 60)
-    assert not resident.memory.work.pending_scopes(pending.activity)
+    assert not resident.memory.work.pending_scopes(active.id)
     assert resident.memory.work.summaries("task-1")
 
 
@@ -137,7 +141,9 @@ async def test_long_work_exit_is_one_summary_before_original_transition(
     rt.sim.agents["Mei"] = resident
     active = work(rt)
     await take(rt)
-    resident.memory.work.begin_activity(active.id, "task-1", rt.now // 60)
+    resident.memory.work.begin_activity(
+        active.id, "task-1", rt.now // 60, visit_id=active.members["Mei"].visit_id
+    )
     for number in range(1, 81):
         resident.perceive(
             [
@@ -147,14 +153,16 @@ async def test_long_work_exit_is_one_summary_before_original_transition(
                     kind=EventKind.COMMAND_EXECUTED,
                     task_id="task-1",
                     activity_id=active.id,
+                    activity_visit_id=active.members["Mei"].visit_id,
                     text=f"operation {number}: " + "x" * 1500,
                 )
             ]
         )
     rt.start_decision("Mei")
+    await finish(rt, "Mei")
     await asyncio.wait_for(started.wait(), 3)
     pending = rt.running["Mei"]
-    assert rt.current["Mei"] == active.id and pending.continuation.summarizing_work
+    assert rt.current["Mei"] != active.id and pending.kind == "reflect"
     assert not resident.memory.work.summaries("task-1")
     resident.perceive(
         [
@@ -276,3 +284,181 @@ async def test_real_work_claim_and_command_are_scoped_before_agent_exit(
 
     assert receipt["payload"]["activity"] == active_id
     assert Event.model_validate(receipt).percept("Mei").activity_id == active_id
+
+
+async def test_reflection_failure_exits_and_discards_deferred_rest(rt, tmp_path):  # noqa: F811
+    resident = Agent.create(
+        tmp_path / "resident",
+        SEED,
+        ScriptedClient([]),
+        CognitionConfig(work_notes=WorkNotesConfig(enabled=True)),
+        TOWN,
+    )
+    rt.sim.agents["Mei"] = resident
+    active = work(rt)
+    rt.leave("Mei", "Completed visit.")
+
+    async def fail(*args, **kwargs):
+        raise ValueError("reflection unavailable")
+
+    resident.reflect = fail
+    from core.interaction.actions import Activity
+
+    rt.start_reflect(
+        "Mei",
+        "experience",
+        active.id,
+        active.members["Mei"].visit_id,
+        Activity(operation="select_rest", arguments={"until": "12:00"}),
+    )
+    reflection = rt.activities[rt.current["Mei"]]
+    job = rt.running["Mei"]
+    await asyncio.gather(job.task, return_exceptions=True)
+    with pytest.raises(ValueError, match="reflection unavailable"):
+        await rt.finish("Mei", job)
+    assert "Mei" not in rt.current and "Mei" not in rt.running
+    assert reflection.status == "ended" and not reflection.completed
+    assert reflection.deferred_action is None
+
+
+def test_own_visits_are_distinct_sources_and_reflect_is_not_a_source(rt):  # noqa: F811
+    active = work(rt)
+    first = active.members["Mei"].visit_id
+    rt.leave("Mei", "First visit done.")
+    rt.enter(active, "Mei", rt.end)
+    second = active.members["Mei"].visit_id
+    rt.leave("Mei", "Second visit done.")
+    assert first != second
+    assert set(rt.reflection_sources("Mei").values()) == {
+        (active.id, first),
+        (active.id, second),
+    }
+    assert not rt.reflection_sources("Tomas")
+    from runtime.activities.model import ACTIVITIES, ReflectActivity
+
+    reflection = ReflectActivity(
+        id="reflect-checkpoint",
+        place=active.place,
+        start=rt.now,
+        latest_end=rt.end,
+        purpose="experience",
+        source_activity_id=active.id,
+        source_visit_id=second,
+        source_seq_start=1,
+        source_seq_end=4,
+    )
+    rt.activities[reflection.id] = reflection
+    restored = ACTIVITIES["reflect"].model_validate(reflection.model_dump(mode="json"))
+    assert restored.source_visit_id == second
+    assert restored.source_seq_end == 4
+    assert len(rt.reflection_sources("Mei")) == 2
+
+
+async def test_ordinary_environment_receipt_enters_real_reflect_summary(engine, tmp_path):  # noqa: F811
+    from tests.runtime.activities.test_engine import claim, complete, perform
+
+    resident = Agent.create(
+        tmp_path / "resident",
+        SEED,
+        ScriptedClient(lambda _: {"summary": "The command returned repository evidence."}),
+        CognitionConfig(work_notes=WorkNotesConfig(enabled=True)),
+        TOWN,
+    )
+    engine.sim.agents["Mei"] = resident
+    active = work(engine)
+    await claim(engine)
+    await perform(engine, "Mei", "command", command="true")
+    engine.schedule("Mei", use("leave"))
+    reflection = engine.activities[engine.current["Mei"]]
+    assert reflection.kind == "reflect" and active.status == "paused"
+    await engine.reflections["Mei"]
+    await complete(engine, engine.now + 1)
+    assert reflection.completed and "Mei" not in engine.current
+    notes = resident.memory.work
+    summaries = notes.summaries("task-1")
+    command = next(e for e in notes.entries("task-1") if e.get("kind") == "command_executed")
+    assert command["activity_id"] == active.id
+    assert command["visit_id"] == active.members["Mei"].visit_id
+    assert command["entry"] in summaries[0]["source_entries"]
+
+
+async def test_two_visits_to_same_work_each_save_one_summary(engine, tmp_path):  # noqa: F811
+    from core.interaction.actions import Activity
+    from tests.runtime.activities.test_engine import claim, complete, perform
+
+    resident = Agent.create(
+        tmp_path / "resident",
+        SEED,
+        ScriptedClient(lambda _: {"summary": "Recorded this visit's command."}),
+        CognitionConfig(work_notes=WorkNotesConfig(enabled=True)),
+        TOWN,
+    )
+    engine.sim.agents["Mei"] = resident
+    active = work(engine)
+    await claim(engine)
+    visits = []
+    for number in range(2):
+        if number:
+            engine.select("Mei", Activity(operation="resume_work", target=active.id, seconds=3600))
+        visits.append(active.members["Mei"].visit_id)
+        await perform(engine, "Mei", "command", command="true")
+        engine.schedule("Mei", use("leave"))
+        await engine.reflections["Mei"]
+        await complete(engine, engine.now + 1)
+    summaries = resident.memory.work.summaries("task-1")
+    assert len(summaries) == 2
+    assert {s["visit_id"] for s in summaries} == set(visits)
+    assert not resident.memory.work.pending_scopes(active.id)
+
+
+async def test_checkpoint_reopens_unfinished_reflect_without_old_rest(engine, tmp_path):  # noqa: F811
+    from core.interaction.actions import Activity
+    from runtime.activities.engine import ActivityEngine
+    from tests.runtime.activities.test_engine import claim, complete, perform
+
+    started = asyncio.Event()
+    blocker = asyncio.Event()
+
+    class BlockedClient:
+        async def complete(self, request):
+            started.set()
+            await blocker.wait()
+            return await ScriptedClient(lambda _: {"summary": "Saved."}).complete(request)
+
+    cognition = CognitionConfig(work_notes=WorkNotesConfig(enabled=True))
+    path = tmp_path / "resident"
+    resident = Agent.create(path, SEED, BlockedClient(), cognition, TOWN)
+    engine.sim.agents["Mei"] = resident
+    active = work(engine)
+    await claim(engine)
+    await perform(engine, "Mei", "command", command="true")
+    engine.schedule("Mei", Activity(operation="select_rest", arguments={"until": "12:00"}))
+    await asyncio.wait_for(started.wait(), 3)
+    ident = engine.current["Mei"]
+    original = engine.activities[ident]
+    state = engine.state()
+    await engine.close()
+    assert not original.completed and not resident.memory.work.summaries("task-1")
+
+    reopened = Agent.load(
+        path,
+        ScriptedClient(lambda _: {"summary": "Recovered the original visit."}),
+        cognition,
+        TOWN,
+    )
+    engine.sim.agents["Mei"] = reopened
+    resumed = ActivityEngine(engine.sim, state)
+    resumed.prepare_day(at(2, "08:00") // 60)
+    assert resumed.current["Mei"] == ident
+    restored = resumed.activities[ident]
+    assert restored.source_visit_id == active.members["Mei"].visit_id
+    assert restored.source_seq_start == original.source_seq_start
+    assert restored.source_seq_end == original.source_seq_end
+    assert restored.deferred_action is None
+    await resumed.reflections["Mei"]
+    await complete(resumed, resumed.now)
+    await complete(resumed, resumed.now + 1)
+    assert restored.completed and "Mei" not in resumed.current
+    assert len(reopened.memory.work.summaries("task-1")) == 1
+    assert not reopened.memory.work.pending_scopes(active.id)
+    await resumed.close()

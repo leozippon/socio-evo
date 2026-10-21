@@ -80,11 +80,14 @@ class MemoryOperator:
     def file(self, agent: Agent, changes: Sequence[object], day: int) -> None:
         """Apply the changes to the agent's beliefs made at the end of `day`, then
         consolidate."""
-        memory = agent.memory
-        updated = _revise_insights(memory.insights.read(), changes, day)
+        self.write_insights(agent, changes, day)
+        agent.memory.episodic.drop_before((day - self.retention_days) * MINUTES_PER_DAY)
+
+    def write_insights(self, agent: Agent, changes: Sequence[object], day: int) -> None:
+        """Revise owned beliefs without pruning witnessed experience."""
+        updated = _revise_insights(agent.memory.insights.read(), changes, day)
         kept = sorted(updated, key=lambda insight: (insight.day, insight.id))[-self.max_insights :]
-        memory.insights.write(sorted(kept, key=lambda insight: insight.id))
-        memory.episodic.drop_before((day - self.retention_days) * MINUTES_PER_DAY)
+        agent.memory.insights.write(sorted(kept, key=lambda insight: insight.id))
 
 
 class SkillOperator:
@@ -218,14 +221,7 @@ class RevisionOperator:
 
 async def _write_diary(agent: Agent, time: int) -> None:
     """Write the agent's diary entry for the day of `time`, from that day's episodic records."""
-    day = day_of(time)
-    today = [record for record in agent.memory.episodic.read() if day_of(record.time) == day]
-    if agent.cognition.work_notes.enabled:
-        today = agent.memory.work.project(today)
-    diary = await agent.write(
-        "diary", time, prompts.diary_prompt(time, today, agent.cognition, agent.setting)
-    )
-    agent.memory.diary.write(day, diary)
+    await agent.reflect(time, mode="daily")
 
 
 def _revise_insights(

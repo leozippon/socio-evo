@@ -143,23 +143,33 @@ class WorkNotes:
                 "text": percept.text,
                 "actor": percept.actor,
                 "activity_id": percept.activity_id,
+                "visit_id": percept.activity_visit_id,
                 "source": f"percept:{percept.seq}",
             },
         )
 
     def record(
-        self, task: str, time: int, kind: str, text: str, *, activity_id: str | None = None
+        self,
+        task: str,
+        time: int,
+        kind: str,
+        text: str,
+        *,
+        activity_id: str | None = None,
+        visit_id: str | None = None,
     ) -> None:
         digest = hashlib.sha256(text.encode()).hexdigest()[:16]
         self.append(
             task,
             {
-                "id": f"{kind}:{time}:{digest}" + (f":{activity_id}" if activity_id else ""),
+                "id": f"{kind}:{time}:{digest}"
+                + (f":{activity_id}:{visit_id or 'legacy'}" if activity_id else ""),
                 "time": time,
                 "type": kind,
                 "text": text,
                 "source": f"own:{kind}:{time}",
                 "activity_id": activity_id,
+                "visit_id": visit_id,
             },
         )
 
@@ -202,20 +212,25 @@ class WorkNotes:
             and (task := job_id(reference)) is not None
         }
 
-    def begin_activity(self, activity_id: str, task: str, time: int) -> None:
+    def begin_activity(
+        self, activity_id: str, task: str, time: int, *, visit_id: str | None = None
+    ) -> None:
         """Persist a job membership boundary before its first observation is ingested."""
         self.append(
             task,
             {
-                "id": f"activity:{activity_id}",
+                "id": f"activity:{activity_id}:{visit_id or 'legacy'}",
                 "type": "activity",
                 "time": time,
                 "activity_id": activity_id,
+                "visit_id": visit_id,
                 "text": "",
             },
         )
 
-    def pending_scopes(self, activity_id: str | None = None) -> list[tuple[str, dict]]:
+    def pending_scopes(
+        self, activity_id: str | None = None, visit_id: str | None = None
+    ) -> list[tuple[str, dict]]:
         result = []
         for task in self.tasks():
             records = self.entries(task)
@@ -226,10 +241,13 @@ class WorkNotes:
                 if e["type"] == "scope"
                 and e["id"] not in completed
                 and (activity_id is None or e.get("activity_id") == activity_id)
+                and (visit_id is None or e.get("visit_id") == visit_id)
             )
         return result
 
-    def freeze_scopes(self, time: int, activity_id: str | None = None) -> list[tuple[str, dict]]:
+    def freeze_scopes(
+        self, time: int, activity_id: str | None = None, visit_id: str | None = None
+    ) -> list[tuple[str, dict]]:
         """Snapshot actual job operations, independently of current job ownership.
 
         An excerpted overview completes a range overview, never character-level reading.
@@ -246,25 +264,32 @@ class WorkNotes:
             records = self.entries(task)
             claimed = {n for e in records if e["type"] == "scope" for n in e["source_entries"]}
             groups = {}
-            work_activities = {e["activity_id"] for e in records if e["type"] == "activity"}
-            scoped_activities = {e.get("activity_id") for e in records if e["type"] == "scope"}
+            work_activities = {
+                (e["activity_id"], e.get("visit_id")) for e in records if e["type"] == "activity"
+            }
+            scoped_activities = {
+                (e.get("activity_id"), e.get("visit_id")) for e in records if e["type"] == "scope"
+            }
             legacy_cursor = self.cursor(task)
             for e in records:
                 if e["type"] not in {"observation", "intention"} or e["entry"] in claimed:
                     continue
                 activity = e.get("activity_id")
-                if activity is not None and activity not in work_activities:
+                visit = e.get("visit_id")
+                if activity is not None and (activity, visit) not in work_activities:
                     continue
                 # A cancelled exit retains its exact snapshot. Late receipts are left
                 # for nightly supplemental catch-up, never another exit-time call.
-                if activity_id is not None and activity in scoped_activities:
+                if activity_id is not None and (activity, visit) in scoped_activities:
                     continue
-                if activity_id is not None and activity != activity_id:
+                if activity_id is not None and (
+                    activity != activity_id or (visit_id is not None and visit != visit_id)
+                ):
                     continue
                 if activity is None and (e["entry"], len(e["text"])) <= legacy_cursor:
                     continue
-                groups.setdefault(activity, []).append(e)
-            for activity, entries in groups.items():
+                groups.setdefault((activity, visit), []).append(e)
+            for (activity, visit), entries in groups.items():
                 # Desk/exit announcements alone do not mean the resident researched a job.
                 if not any(
                     e["type"] == "observation"
@@ -274,17 +299,19 @@ class WorkNotes:
                     continue
                 scope = {
                     "id": (
-                        f"scope:{activity or 'legacy'}:{entries[0]['entry']}:{entries[-1]['entry']}"
+                        f"scope:{activity or 'legacy'}:{visit or 'legacy'}:"
+                        f"{entries[0]['entry']}:{entries[-1]['entry']}"
                     ),
                     "type": "scope",
                     "time": time,
                     "text": "",
                     "activity_id": activity,
+                    "visit_id": visit,
                     "legacy": activity is None,
                     "source_entries": [e["entry"] for e in entries],
                 }
                 self.append(task, scope)
-        return self.pending_scopes(activity_id)
+        return self.pending_scopes(activity_id, visit_id)
 
     def scope_records(self, task: str, scope: dict) -> list[dict]:
         wanted = set(scope["source_entries"])
@@ -306,6 +333,7 @@ class WorkNotes:
                 "source": "your activity overview",
                 "scope_id": scope["id"],
                 "activity_id": scope.get("activity_id"),
+                "visit_id": scope.get("visit_id"),
                 "legacy": scope.get("legacy", False),
                 "source_entries": scope["source_entries"],
                 "input_mode": input_mode,

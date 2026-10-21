@@ -29,13 +29,19 @@ class PersonalSkills:
     def __init__(self, memory):
         self.memory = memory
         self.activity = None
+        self.visit = None
         self.selected: Skill | None = None
 
     def enter(self, observation):
         # Selection decisions have no binding; a resumed Activity must select afresh.
-        if observation.activity_id is None or observation.activity_id != self.activity:
+        if (
+            observation.activity_id is None
+            or observation.activity_id != self.activity
+            or observation.activity_visit_id != self.visit
+        ):
             self.selected = None
         self.activity = observation.activity_id
+        self.visit = observation.activity_visit_id
 
     def use(self, name, observation):
         selected = None
@@ -52,7 +58,22 @@ class PersonalSkills:
             {"event": "selected", "skill": snapshot(selected)},
         )
 
-    def revise(self, change, *, time, place=None, activity_id=None, task_id=None, sources=()):
+    def revise(
+        self,
+        change,
+        *,
+        time,
+        place=None,
+        activity_id=None,
+        activity_visit_id=None,
+        task_id=None,
+        sources=(),
+        revision_id=None,
+    ):
+        if revision_id is not None and any(
+            r.skill_trace.get("revision_id") == revision_id for r in self.memory.episodic.read()
+        ):
+            return
         known = {r.seq for r in self.memory.episodic.read() if r.time <= time}
         if any(source not in known for source in sources):
             raise ValueError("A source must be an event you have witnessed.")
@@ -77,6 +98,7 @@ class PersonalSkills:
                     time=time,
                     place=place,
                     activity_id=activity_id,
+                    activity_visit_id=activity_visit_id,
                     task_id=task_id,
                     text=f"You {'revised' if after else 'retired'} your method {change.title!r}.",
                     skill_trace={
@@ -84,6 +106,7 @@ class PersonalSkills:
                         "before": snapshot(before),
                         "after": snapshot(after),
                         "sources": list(sources),
+                        "revision_id": revision_id,
                     },
                 )
             ]
@@ -97,6 +120,7 @@ class PersonalSkills:
                     place=observation.place,
                     text=text,
                     activity_id=observation.activity_id,
+                    activity_visit_id=observation.activity_visit_id,
                     task_id=observation.activity_task_id,
                     skill_trace=trace,
                 )

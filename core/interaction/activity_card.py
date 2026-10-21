@@ -133,6 +133,26 @@ def confirmed_wait_forms(menu):
     ]
 
 
+def reflection_forms(menu):
+    if not menu.get("reflect_sources"):
+        return []
+    return [
+        _Form(
+            "reflect",
+            {
+                "source": (_one_of(menu["reflect_sources"]), "Your recent activity visit."),
+                "purpose": (
+                    Literal["summary", "experience"],
+                    "Summarize this activity or learn from it.",
+                ),
+            },
+            lambda r: Activity(
+                operation="select_reflect", target=r["source"], arguments={"purpose": r["purpose"]}
+            ),
+        )
+    ]
+
+
 def activity_forms(layer, menu):
     if layer == "selection" and menu.get("realtime"):
         from core.interaction.realtime_card import realtime_forms
@@ -189,6 +209,7 @@ def activity_forms(layer, menu):
                     ),
                 )
             )
+        result.extend(reflection_forms(menu))
         result.extend(open_chat_forms(menu))
         if menu.get("people") and menu.get("places"):
             result.append(invitation_form("arrange a conversation", menu=menu))

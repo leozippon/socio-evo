@@ -31,6 +31,7 @@ from runtime.activities.model import (
     Member,
     Message,
     MoveActivity,
+    ReflectActivity,
     RestActivity,
     TeamWork,
     WorkActivity,
@@ -101,6 +102,7 @@ class ActivityEngine:
                 activity.outside = False
         self.teams = {k: TeamWork.model_validate(v) for k, v in state.get("teams", {}).items()}
         self.assessments = dict(state.get("assessments", {}))
+        self.reflections = {}
         self.futures = {}
         self.pending: dict[str, PendingTool] = {}
         self.current: dict[str, str] = {}
@@ -142,6 +144,16 @@ class ActivityEngine:
         return f"{prefix}-{self.serial}"
 
     def emit(self, kind, text, *, actor=None, audience=None, **payload):
+        active = self.activities.get(payload.get("activity") or self.current.get(actor))
+        if active and actor in active.members:
+            payload.setdefault("activity_visit_id", active.members[actor].visit_id)
+        if isinstance(active, ReflectActivity):
+            payload.update(
+                purpose=active.purpose,
+                source_activity_id=active.source_activity_id,
+                source_visit_id=active.source_visit_id,
+                completed=active.completed,
+            )
         return self.env.emit(
             kind,
             text,
@@ -932,6 +944,7 @@ class ActivityEngine:
             return {
                 **common,
                 "moves": moves,
+                "reflect_sources": list(self.reflection_sources(who)),
                 "work": [
                     a.id
                     for a in self.activities.values()
@@ -1235,6 +1248,7 @@ class ActivityEngine:
         return Observation(
             agent=who,
             activity_id=active.id if active else None,
+            activity_visit_id=active.members[who].visit_id if active else None,
             activity_kind=active.kind if active else "selection",
             activity_task_id=getattr(active, "task_id", None),
             own_task_id=(claim.task.id if (claim := self.env.board.claim_of(who)) else None),
@@ -1248,7 +1262,7 @@ class ActivityEngine:
             scene=f"day-{day_of(self.now // 60):04d}/activities",
             situation=situation,
             setting=self.town_setting(),
-            percepts=self.env.perceive(who),
+            percepts=self.perceive(who),
             evidence=self.env.work_evidence(who),
             allowed=(MayActivity(layer=layer, menu=menu),),
             places=situations.place_names(self.env, who),
@@ -1298,6 +1312,173 @@ class ActivityEngine:
             except (Rejected, ValueError, KeyError) as error:
                 self.reject(who, reply.action, str(error))
 
+    def begin_work_visit(self, who, activity):
+        if not isinstance(activity, WorkActivity):
+            return
+        claim = self.env.board.claim_of(who)
+        notes = getattr(getattr(self.sim.agents[who], "memory", None), "work", None)
+        if notes is not None and claim:
+            notes.begin_activity(
+                activity.id, claim.task.id, self.now // 60, visit_id=activity.members[who].visit_id
+            )
+
+    def reflection_sources(self, who):
+        sources = {}
+        for activity in list(self.activities.values())[-40:]:
+            if not isinstance(activity, WorkActivity | ConversationActivity):
+                continue
+            visits = activity.visits.get(who, [])
+            if not visits:
+                member = activity.members.get(who)
+                visits = [member] if member and not member.active else []
+            for member in visits[-5:]:
+                sources[f"{activity.id}/{member.visit_id or member.start}"] = (
+                    activity.id,
+                    member.visit_id,
+                )
+        return sources
+
+    def perceive(self, who):
+        """Route environment tool receipts to the membership that witnessed them."""
+        percepts = []
+        for percept in self.env.perceive(who):
+            if (
+                percept.actor == who
+                and percept.task_id
+                and percept.activity_visit_id is None
+                and percept.kind
+                in {
+                    EventKind.COMMAND_EXECUTED,
+                    EventKind.WORK_CHECKED,
+                    EventKind.WORK_DELAYED,
+                    EventKind.WORK_SUBMITTED,
+                    EventKind.SUBMISSION_PENDING,
+                    EventKind.CODE_HANDOFF,
+                }
+            ):
+                for activity in reversed(list(self.activities.values())):
+                    if (
+                        not isinstance(activity, WorkActivity)
+                        or activity.task_id != percept.task_id
+                    ):
+                        continue
+                    visits = activity.visits.get(who, [])
+                    current = activity.members.get(who)
+                    if current and current.active:
+                        visits = [*visits, current]
+                    member = next(
+                        (
+                            m
+                            for m in reversed(visits)
+                            if m.entry_seq is not None
+                            and m.entry_seq <= percept.seq
+                            and (m.exit_seq is None or percept.seq < m.exit_seq)
+                        ),
+                        None,
+                    )
+                    if member:
+                        percept = percept.model_copy(
+                            update={
+                                "activity_id": activity.id,
+                                "activity_visit_id": member.visit_id,
+                            }
+                        )
+                        break
+            percepts.append(percept)
+        return tuple(percepts)
+
+    def ingest_reflection_source(self, who):
+        agent = self.sim.agents[who]
+        if hasattr(agent, "perceive"):
+            agent.perceive(self.perceive(who))
+
+    def maybe_reflect_work(self, who, action):
+        activity = self.activities.get(self.current.get(who))
+        if not isinstance(activity, WorkActivity) or not hasattr(self.sim.agents[who], "reflect"):
+            return False
+        if not (
+            action.operation == "select_rest"
+            or (action.operation == "activity_tool" and action.tool == "leave")
+        ):
+            return False
+        member = activity.members[who]
+        self.begin_work_visit(who, activity)
+        self.ingest_reflection_source(who)
+        agent = self.sim.agents[who]
+        notes = getattr(getattr(agent, "memory", None), "work", None)
+        if notes is None or not notes.freeze_scopes(self.now // 60, activity.id, member.visit_id):
+            return False
+        ident, visit = activity.id, member.visit_id
+        self.leave(who, "Paused or left voluntarily.")
+        self.ingest_reflection_source(who)
+        self.start_reflect(
+            who, "summary", ident, visit, action if action.operation == "select_rest" else None
+        )
+        return True
+
+    def start_reflect(self, who, purpose, source, visit, deferred=None):
+        activity = ReflectActivity(
+            id=self.identifier("reflect"),
+            place=self.env.world.locations[who],
+            start=self.now,
+            latest_end=self.end,
+            purpose=purpose,
+            source_activity_id=source,
+            source_visit_id=visit,
+            deferred_action=deferred.model_dump(mode="json") if deferred else None,
+        )
+        source_activity = self.activities[source]
+        members = source_activity.visits.get(who, []) + list(source_activity.members.values())
+        member = next((m for m in members if m.visit_id == visit), None)
+        if member:
+            activity.source_seq_start = member.entry_seq
+            activity.source_seq_end = member.exit_seq
+            activity.source_start = member.start // 60
+            activity.source_end = member.end // 60
+        self.ingest_reflection_source(who)
+        self.enter(activity, who, self.end)
+        self.launch_reflect(who, activity)
+
+    def launch_reflect(self, who, activity):
+        async def run():
+            return await self.sim.agents[who].reflect(
+                self.now // 60,
+                mode=activity.purpose,
+                activity_id=activity.source_activity_id,
+                visit_id=activity.source_visit_id,
+                reflection_id=activity.id,
+                source_seq_start=activity.source_seq_start,
+                source_seq_end=activity.source_seq_end,
+                source_start=activity.source_start,
+                source_end=activity.source_end,
+            )
+
+        self.reflections[who] = asyncio.create_task(run())
+        self.queue.add(self.now + 1, "reflect", who=who, activity=activity.id)
+
+    def fail_reflect(self, who, activity, error):
+        activity.deferred_action = None
+        if isinstance(error, StructuredOutputError):
+            lapse(self.env, who, error, time=self.now // 60)
+        self.leave(who, "Reflection could not be saved; its source remains available.")
+
+    def finish_reflect(self, who, activity, result=None):
+        activity.completed = not isinstance(result, dict) or result.get(
+            "completed", result.get("status") != "left"
+        )
+        if activity.completed and isinstance(result, dict):
+            self.emit(
+                EventKind.ACTIVITY_FEEDBACK,
+                "Reflection saved.",
+                actor=who,
+                activity=activity.id,
+                saved_result=result,
+            )
+        deferred = activity.deferred_action
+        self.leave(who, "Reflection saved." if activity.completed else "Reflection left unsaved.")
+        if deferred and self.now < self.end:
+            self.select(who, Choice.model_validate(deferred))
+
     def reject(self, who, action, reason):
         if who not in self.current:
             self.selection_feedback[who] = str(reason)
@@ -1324,6 +1505,8 @@ class ActivityEngine:
         activity.members[who] = Member(
             start=self.now,
             end=until,
+            visit_id=self.identifier("visit"),
+            entry_seq=self.env.log.count,
             cursor=cursor,
             joined_cursor=cursor,
             event_cursor=self.env.log.count,
@@ -1335,6 +1518,7 @@ class ActivityEngine:
         activity.latest_end = max(activity.latest_end, until)
         self.activities[activity.id] = activity
         self.current[who] = activity.id
+        self.begin_work_visit(who, activity)
         self.queue.add(until, "member_end", priority=2, who=who, activity=activity.id, until=until)
         self.emit(
             EventKind.ACTIVITY_ENTERED,
@@ -1364,6 +1548,15 @@ class ActivityEngine:
             self.rest_intents.pop(who, None)
         member = activity.members[who]
         member.active = False
+        member.end = self.now
+        member.exit_seq = self.env.log.count
+        if isinstance(activity, WorkActivity | ConversationActivity):
+            activity.visits.setdefault(who, []).append(member.model_copy(deep=True))
+        if isinstance(activity, ReflectActivity):
+            activity.deferred_action = None if not activity.completed else activity.deferred_action
+            future = self.reflections.pop(who, None)
+            if future:
+                future.cancel()
         if pending := self.pending.pop(who, None):
             self.emit(
                 EventKind.TOOL_CANCELLED,
@@ -1461,6 +1654,8 @@ class ActivityEngine:
             raise Rejected("Your task partners are assembling or finishing their work discussion.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
+        if self.maybe_reflect_work(who, action):
+            return
         if who not in self.current or action.operation == "select_rest":
             return self.select(who, action)
         if action.operation != "activity_tool":
@@ -1500,6 +1695,15 @@ class ActivityEngine:
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
         place = self.env.world.locations[who]
+        if action.operation == "select_reflect":
+            source = action.target
+            if source not in self.reflection_sources(who):
+                raise Rejected("Choose one of your recent activity visits.")
+            ident, visit = self.reflection_sources(who)[source]
+            purpose = action.arguments.get("purpose", "experience")
+            if purpose not in ("summary", "experience"):
+                raise Rejected("Choose summary or experience.")
+            return self.start_reflect(who, purpose, ident, visit)
         if who in self.outside and action.operation in (
             "select_work",
             "resume_work",
@@ -2102,6 +2306,7 @@ class ActivityEngine:
                 current = self.env.board.claim_of(who)
                 if current:
                     activity.task_id = current.task.id
+                    self.begin_work_visit(who, activity)
             elif tool in ("propose_work_plan", "confirm_work_plan"):
                 self.work_plan_action(who, tool, args)
             elif tool == "read":
@@ -2587,7 +2792,27 @@ class ActivityEngine:
                 self.close_venue_for(who, place_id)
 
     async def process(self, scheduled):
-        if scheduled.kind == "tool":
+        if scheduled.kind == "reflect":
+            who = scheduled.data["who"]
+            activity = self.activities.get(self.current.get(who))
+            future = self.reflections.get(who)
+            if (
+                not isinstance(activity, ReflectActivity)
+                or activity.id != scheduled.data["activity"]
+                or future is None
+            ):
+                return
+            if future.done():
+                self.reflections.pop(who)
+                try:
+                    result = future.result()
+                except Exception as error:
+                    self.fail_reflect(who, activity, error)
+                    raise
+                self.finish_reflect(who, activity, result)
+            else:
+                self.queue.add(self.now + 1, "reflect", who=who, activity=activity.id)
+        elif scheduled.kind == "tool":
             who = scheduled.data["who"]
             pending = self.pending.get(who)
             if (
@@ -2650,6 +2875,14 @@ class ActivityEngine:
                 del self.rest_intents[who]
                 continue
             self.start_rest(who, intent["until"], wake=intent["wake"])
+        for activity in list(self.activities.values()):
+            if isinstance(activity, ReflectActivity) and not activity.completed:
+                for who, member in activity.members.items():
+                    if member.active and who not in self.current:
+                        activity.deferred_action = None
+                        member.active = False
+                        self.enter(activity, who, self.end)
+                        self.launch_reflect(who, activity)
         day = day_of(start)
         self.daily_life = (
             {str(day): self.daily_life[str(day)]} if str(day) in self.daily_life else {}
@@ -2784,6 +3017,10 @@ class ActivityEngine:
         self.sim.activity_state = self.state()
 
     async def close(self):
+        for future in self.reflections.values():
+            future.cancel()
+        await asyncio.gather(*self.reflections.values(), return_exceptions=True)
+        self.reflections.clear()
         for future in self.futures.values():
             future.cancel()
         await asyncio.gather(*self.futures.values(), return_exceptions=True)

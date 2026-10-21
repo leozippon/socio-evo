@@ -6,7 +6,7 @@ from typing import TypeVar, Union, get_args
 from uuid import uuid4
 
 import yaml
-from pydantic import BaseModel, Field, RootModel, create_model
+from pydantic import BaseModel, RootModel
 
 from core.agent import prompts
 from core.agent.config import AgentSeed, CognitionConfig, Profile
@@ -31,7 +31,6 @@ from core.interaction import (
     Percept,
     Setting,
     form,
-    job_name,
 )
 from core.interaction.card import correction
 from infrastructure.config import load_config
@@ -167,7 +166,12 @@ class Agent:
             and observation.activity_id
         ):
             for task in self.memory.work.current(observation):
-                self.memory.work.begin_activity(observation.activity_id, task, observation.time)
+                self.memory.work.begin_activity(
+                    observation.activity_id,
+                    task,
+                    observation.time,
+                    visit_id=observation.activity_visit_id,
+                )
         self.perceive(observation.percepts, observation.places)
         new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
         if scoped:
@@ -230,19 +234,6 @@ class Agent:
             )
         decision = card.decision(reply)
         action = decision.action
-        if (
-            self.cognition.work_notes.enabled
-            and observation.work_activity
-            and observation.activity_id is not None
-            and (
-                getattr(action, "operation", None) == "select_rest"
-                or (
-                    getattr(action, "operation", None) == "activity_tool" and action.tool == "leave"
-                )
-            )
-        ):
-            await self.summarize_work(observation.time, activity_id=observation.activity_id)
-
         selected = snapshot(self.personal_skills.selected)
         continuation = current.get()
         decision_id = (
@@ -257,6 +248,7 @@ class Agent:
                         place=observation.place,
                         where=observation.places.get(observation.place),
                         activity_id=observation.activity_id,
+                        activity_visit_id=observation.activity_visit_id,
                         task_id=observation.activity_task_id,
                         decision_id=decision_id if scoped else None,
                         action=action.model_dump(mode="json") if scoped else None,
@@ -489,6 +481,7 @@ class Agent:
                             time=observation.time,
                             place=observation.place,
                             activity_id=observation.activity_id,
+                            activity_visit_id=observation.activity_visit_id,
                             task_id=observation.activity_task_id,
                             sources=answer.sources,
                         )
@@ -543,142 +536,58 @@ class Agent:
         return text
 
     async def summarize_work(
-        self, time: int, tasks: set[str] | None = None, *, activity_id: str | None = None
+        self,
+        time: int,
+        tasks: set[str] | None = None,
+        *,
+        activity_id: str | None = None,
+        visit_id: str | None = None,
     ) -> None:
-        """One bounded overview per fixed Activity/job range; no exit-time merging.
+        from core.agent.reflection import summarize_work
 
-        Without an Activity this is nightly catch-up, including explicitly legacy ranges.
-        Source entries are retained; an excerpted overview is not full-text coverage.
-        """
-        if not self.cognition.work_notes.enabled:
-            return
-        import asyncio
+        await summarize_work(self, time, tasks, activity_id=activity_id, visit_id=visit_id)
 
-        from core.agent.config import ContextBudgetConfig
-        from core.agent.context import ContextOverflow, Counter, input_limit
+    async def reflect(
+        self,
+        time: int,
+        *,
+        mode: str,
+        activity_id: str | None = None,
+        visit_id: str | None = None,
+        reflection_id: str | None = None,
+        source_since: int | None = None,
+        source_through: int | None = None,
+        source_start: int | None = None,
+        source_end: int | None = None,
+        source_seq_start: int | None = None,
+        source_seq_end: int | None = None,
+        continuation: DecisionContinuation | None = None,
+    ) -> dict:
+        from core.agent.reflection import reflect
 
-        notes = self.memory.work
-        budget = self.cognition.context_budget
-        counting = budget if budget.enabled else ContextBudgetConfig(enabled=True)
-        counter = Counter(counting)
-        parent = current.get()
-
-        async def generate(task, records, *, merging=False, scope=None):
-            instruction = (
-                f"Before leaving your work on {job_name(task)}, write one overview of this visit. "
-                if not merging
-                else f"Organize your earlier notes for {job_name(task)} into one overview. "
-            )
-            instruction += (
-                "Keep findings, actual changes, observed results, unresolved issues "
-                "and next steps. "
-                "Separate intentions from outcomes. "
-                "The complete original work record remains available by entry number "
-                "through read work record."
-            )
-            base = self._request(
-                "work_summary_merge" if merging else "work_summary",
-                time,
-                "You are writing your private working notes.",
-                instruction,
-            )
-            room = input_limit(counting, base) - counter.request(base) - 600
-            length = min(1600, max(1, room // 12))
-            instruction += f" Keep the summary field within {length} characters."
-            model = create_model(
-                "WorkSummary", summary=(str, Field(min_length=1, max_length=length))
-            )
-            # Retain room for a bounded failed reply and the concise correction.
-            target_limit = input_limit(counting, base) - length * 4 - 600
-            index = "Operation index (entry, time, kind, original characters):\n" + "\n".join(
-                f"{e['entry']} {e['time']} {e.get('kind', e['type'])} {len(e['text'])}"
-                for e in records
-            )
-
-            def request_for(material, mode):
-                return base.model_copy(
-                    update={
-                        "messages": (
-                            *base.messages[:-1],
-                            Message(
-                                role="user",
-                                content=(instruction + "\n\n" + material + "\n\n" + form(model)),
-                            ),
-                        ),
-                        "json_schema": model.model_json_schema(),
-                        "structured_output": "json_schema",
-                        "metadata": {
-                            **base.metadata,
-                            "work_scope_id": scope["id"] if scope else None,
-                            "work_input_mode": mode,
-                        },
-                    }
-                )
-
-            full = (
-                index + "\n\n" + "\n\n".join(f"Entry {e['entry']}:\n{e['text']}" for e in records)
-            )
-            request = request_for(full, "full")
-            mode = "full"
-            if counter.request(request) > target_limit:
-                mode = "excerpted"
-                notice = (
-                    "Only excerpts follow; omitted text has NOT been read. "
-                    "This is a range overview, "
-                    "not a claim to have checked every character. "
-                    "Use the original entries for details.\n"
-                )
-                allowance = max(
-                    0, target_limit - counter.request(request_for(index + notice, mode)) - 128
-                )
-                # Keep every operation in the index and distribute head/tail excerpts
-                # across the range; no extra model call is made.
-                while True:
-                    per_entry = allowance // max(1, len(records))
-                    excerpts = []
-                    for e in records:
-                        excerpt = counter.clip(e["text"], per_entry)
-                        if excerpt:
-                            excerpts.append(f"Entry {e['entry']}:\n{excerpt}")
-                    request = request_for(index + "\n\n" + notice + "\n\n".join(excerpts), mode)
-                    if counter.request(request) <= target_limit:
-                        break
-                    if allowance == 0:
-                        raise ContextOverflow("Work operation index cannot fit the input budget")
-                    allowance //= 2
-            isolated = DecisionContinuation()
-            if parent is not None:
-                isolated.metadata = dict(parent.metadata)
-            client = ContinuationClient(self.client, isolated, budget=counting)
-            reply = await complete_structured(client, request, model)
-            running = asyncio.current_task()
-            if running is not None and running.cancelling():
-                raise asyncio.CancelledError
-            return reply.summary, mode
-
-        if parent is not None:
-            parent.summarizing_work = True
+        token = current.set(continuation)
         try:
-            scopes = notes.freeze_scopes(time, activity_id)
-            for task, scope in scopes:
-                # Exit ranges follow actual recorded ownership, not the current assignment.
-                if activity_id is None and tasks is not None and task not in tasks:
-                    continue
-                records = notes.scope_records(task, scope)
-                summary, mode = await generate(task, records, scope=scope)
-                notes.save_overview(task, scope, time, summary, mode)
-            if activity_id is None:
-                # Nightly history compaction is one independent bounded request per job.
-                for task in sorted(tasks if tasks is not None else notes.tasks()):
-                    summaries = notes.summaries(task)
-                    if len(summaries) > 3:
-                        summary, mode = await generate(task, summaries, merging=True)
-                        notes.save_summary(
-                            task, time, summary, (0, 0), (0, 0), [e["id"] for e in summaries]
-                        )
+            return await reflect(
+                self,
+                time,
+                mode=mode,
+                activity_id=activity_id,
+                visit_id=visit_id,
+                reflection_id=reflection_id,
+                source_since=source_since,
+                source_through=source_through,
+                source_start=source_start,
+                source_end=source_end,
+                source_seq_start=source_seq_start,
+                source_seq_end=source_seq_end,
+            )
         finally:
-            if parent is not None:
-                parent.summarizing_work = False
+            current.reset(token)
+
+    def reflection_sources(self, reflection_id: str, start: int = 0, size: int = 6000) -> str:
+        from core.agent.reflection import reflection_sources
+
+        return reflection_sources(self, reflection_id, start, size)
 
     def _completion_client(self):
         budget = self.cognition.context_budget
@@ -691,6 +600,21 @@ class Agent:
         return BudgetClient(client, budget) if budget.enabled and continuation is None else client
 
     def _work_prompt(self, purpose: str, time: int, prompt: str) -> str:
+        if purpose in {"diary", "reflect", "skills", "revise"}:
+            from core.agent.reflection import recent_reflections
+
+            reflected = recent_reflections(self, time)
+            if reflected:
+                material = (
+                    "Reflections already completed today (changes already applied):\n"
+                    + "\n".join(e["reflection"] for e in reflected)
+                )
+                if isinstance(prompt, BudgetPrompt):
+                    prompt = BudgetPrompt(
+                        str(prompt), [*prompt.blocks, Block("reflections", material, 75)]
+                    )
+                else:
+                    prompt = str(prompt) + "\n\n" + material
         if purpose in {"skills", "revise"}:
             material = feedback_context(self.memory, time)
             if material:

@@ -8,6 +8,7 @@ from core.interaction.activity_card import (
     confirmed_wait_forms,
     invitation_responses,
     open_chat_forms,
+    reflection_forms,
     rest_form,
     tool,
 )
@@ -51,6 +52,7 @@ def realtime_forms(layer, menu):
                 lambda r: Activity(operation="select_conversation", target=r["conversation"]),
             )
         )
+    result.extend(reflection_forms(menu))
     result.extend(open_chat_forms(menu))
     if menu.get("people") and menu.get("places"):
         result.append(realtime_invitation(menu, "arrange a conversation"))

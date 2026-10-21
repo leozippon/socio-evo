@@ -25,6 +25,7 @@ class Record(StrictModel):
     text: str
     task_id: str | None = None
     activity_id: str | None = None
+    activity_visit_id: str | None = None
     decision_id: str | None = None
     action: dict[str, JsonValue] | None = None
     skill_trace: dict[str, JsonValue] = Field(default_factory=dict)
@@ -45,6 +46,7 @@ class Record(StrictModel):
             text=percept.text,
             task_id=percept.task_id,
             activity_id=percept.activity_id,
+            activity_visit_id=percept.activity_visit_id,
         )
 
 

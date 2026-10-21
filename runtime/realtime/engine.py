@@ -408,6 +408,8 @@ class RealtimeEngine(ActivityEngine):
             raise Rejected("Your task partners are assembling or finishing their work discussion.")
         if action.operation == "activity_tool" and action.tool == "help":
             return self.show_help(who)
+        if self.maybe_reflect_work(who, action):
+            return
         if who not in self.current or action.operation == "select_rest":
             return self.select(who, action)
         if self.now >= self.end or self.current[who] in self.closing or who in self.deferred:
@@ -470,13 +472,33 @@ class RealtimeEngine(ActivityEngine):
             timing="wall",
         )
 
+    def launch_reflect(self, who, activity):
+        self.end_selection_rest(who, "Reflection started.")
+
+        async def run():
+            return await self.sim.agents[who].reflect(
+                self.now // 60,
+                mode=activity.purpose,
+                activity_id=activity.source_activity_id,
+                visit_id=activity.source_visit_id,
+                reflection_id=activity.id,
+                source_seq_start=activity.source_seq_start,
+                source_seq_end=activity.source_seq_end,
+                source_start=activity.source_start,
+                source_end=activity.source_end,
+            )
+
+        self.running[who] = Running(self.timed_task(run), "reflect", activity.id, self.now)
+
     def cancel_work_summary(self, who):
         job = self.running.get(who)
-        if (
-            job is not None
-            and job.kind == "decision"
-            and job.continuation is not None
-            and job.continuation.summarizing_work
+        if job is not None and (
+            job.kind == "reflect"
+            or (
+                job.kind == "decision"
+                and job.continuation is not None
+                and job.continuation.summarizing_work
+            )
         ):
             job.invalidated = True
             job.task.cancel()
@@ -541,7 +563,7 @@ class RealtimeEngine(ActivityEngine):
             return
         agent = self.sim.agents.get(who)
         if hasattr(agent, "perceive"):
-            agent.perceive(self.env.perceive(who))
+            agent.perceive(self.perceive(who))
 
     def repeated_reply(self, who, action, activity):
         if not activity.messages or activity.messages[-1].author != who:
@@ -746,6 +768,20 @@ class RealtimeEngine(ActivityEngine):
             )
 
     async def finish(self, who, job):
+        if job.kind == "reflect":
+            del self.running[who]
+            activity = self.activities[job.activity]
+            if job.task.cancelled() or who in self.deferred or self.now >= self.end:
+                activity.deferred_action = None
+                self.leave(who, "Reflection interrupted by the daily transition.")
+            else:
+                try:
+                    finished = job.task.result()
+                except Exception as error:
+                    self.fail_reflect(who, activity, error)
+                    raise
+                self.finish_reflect(who, activity, finished.value)
+            return
         if job.kind == "decision" and job.invalidated:
             await self.restart_decision(who, job)
             return

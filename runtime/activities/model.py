@@ -63,6 +63,9 @@ class MutableState(StrictModel):
 class Member(MutableState):
     start: int
     end: int
+    visit_id: str | None = None
+    entry_seq: int | None = None
+    exit_seq: int | None = None
     cursor: int = 0
     joined_cursor: int = 0
     event_cursor: int = 0
@@ -80,6 +83,7 @@ class Activity(MutableState):
     tools: tuple[str, ...] = ()
     feedback: dict[str, list[str]] = Field(default_factory=dict)
     result: dict[str, str] = Field(default_factory=dict)
+    visits: dict[str, list[Member]] = Field(default_factory=dict)
 
     def interrupts_reply(self, event, targets, who=None):
         return False
@@ -143,6 +147,19 @@ class WorkActivity(Activity):
     mode: Literal["parallel", "relay"] = "parallel"
     relay_owner: str | None = None
     history: list[dict] = Field(default_factory=list)
+
+
+class ReflectActivity(Activity):
+    kind: Literal["reflect"] = "reflect"
+    purpose: Literal["summary", "experience"]
+    source_activity_id: str
+    source_visit_id: str | None = None
+    source_seq_start: int | None = None
+    source_seq_end: int | None = None
+    source_start: int | None = None
+    source_end: int | None = None
+    deferred_action: dict | None = None
+    completed: bool = False
 
 
 class Message(StrictModel):
@@ -241,6 +258,7 @@ class EventQueue:
 
 
 ACTIVITIES = {
+    "reflect": ReflectActivity,
     "rest": RestActivity,
     "move": MoveActivity,
     "work": WorkActivity,

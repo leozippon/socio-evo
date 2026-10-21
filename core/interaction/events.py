@@ -121,6 +121,7 @@ class Percept(StrictModel):
     text: str
     task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
     activity_id: str | None = None
+    activity_visit_id: str | None = None
 
 
 class Event(StrictModel):
@@ -144,6 +145,7 @@ class Event(StrictModel):
     text: str
     task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
     activity_id: str | None = None
+    activity_visit_id: str | None = None
     personal: dict[str, str] = Field(default_factory=dict)
     payload: dict[str, JsonValue] = Field(default_factory=dict)
 
@@ -154,6 +156,10 @@ class Event(StrictModel):
         activity = self.activity_id or self.payload.get("activity")
         seen["activity_id"] = (
             activity if witness in self.audience and isinstance(activity, str) else None
+        )
+        visit = self.activity_visit_id or self.payload.get("activity_visit_id")
+        seen["activity_visit_id"] = (
+            visit if witness in self.audience and isinstance(visit, str) else None
         )
         # Only a public routing identifier, never evaluation results or hidden tests.
         work_kinds = {

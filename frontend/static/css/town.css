@@ -668,6 +668,7 @@ body[data-view="town"] { overflow: hidden; }
 .activity-move { background: #d2ac6a; }
 .activity-work { background: #7fa393; }
 .activity-conversation { background: #a391b4; }
+.activity-reflect { background: #c28ca3; }
 .activity-lanes { margin-bottom: 24px; }
 .activity-axis, .activity-lane { display: grid; grid-template-columns: 138px minmax(90px, 1fr); gap: 10px; align-items: center; }
 .activity-axis { color: var(--muted); font-size: 10px; padding-bottom: 7px; }

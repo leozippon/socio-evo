@@ -4,7 +4,7 @@ import { shortName } from "../world.js";
 
 // Activity intervals are membership intervals, not tool durations. Planned end times are
 // deadlines only; only activity_left closes an interval. A resumed activity gets a new row.
-export const ACTIVITY_LABELS = { rest: "Rest", planning: "Planning", move: "Move", work: "Work", conversation: "Conversation" };
+export const ACTIVITY_LABELS = { rest: "Rest", planning: "Planning", move: "Move", work: "Work", conversation: "Conversation", reflect: "Reflect" };
 export const activityType = (row) => row.type === "rest" && row.phase === "choosing_next_activity" ? "planning" : row.type;
 export const activityLabel = (row) => ACTIVITY_LABELS[activityType(row)] ?? row.type;
 
@@ -21,7 +21,8 @@ export function activityIntervals(events, through, reader = null) {
       const interval = {
         id: `${event.seq}:${event.actor}`, startSeq: event.seq, endSeq: null, participants: [...(p.participants ?? [event.actor])], activity: p.activity, actor: event.actor,
         type: p.activity_type, phase: p.phase ?? null, start: event.time, end: null, place: event.place,
-        reason: null, tool: null, outside: Boolean(p.outside),
+        reason: null, tool: null, outside: Boolean(p.outside), purpose: p.purpose ?? null,
+        sourceActivityId: p.source_activity_id ?? null, sourceVisitId: p.source_visit_id ?? null, completed: null,
       };
       for (const peer of active.values()) if (peer.activity === p.activity && !peer.participants.includes(event.actor)) peer.participants.push(event.actor);
       intervals.push(interval);
@@ -32,6 +33,7 @@ export function activityIntervals(events, through, reader = null) {
         interval.end = event.time;
         interval.endSeq = event.seq;
         interval.reason = p.reason ?? "Activity ended";
+        interval.completed = typeof p.completed === "boolean" ? p.completed : null;
         interval.tool = null;
         active.delete(event.actor);
       }

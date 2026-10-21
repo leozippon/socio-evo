@@ -8,8 +8,22 @@ import { shortName } from "../world.js";
 
 const clock = (time) => hhmmss(minuteOf(time));
 const label = activityLabel;
+const reflectPurpose = (purpose) => ({ summary: "Summary", experience: "Experience" })[purpose] ?? purpose;
 const pretty = (key) => key.replaceAll("_", " ");
 const OUTCOMES = new Set(["work_submitted", "work_assessed", "payment", "work_checked", "task_expired"]);
+
+function savedReflection(event) {
+  if (event.kind !== "activity_feedback") return [];
+  const result = event.payload?.saved_result;
+  if (!result || !(result.completed === true || result.status === "completed")) return [];
+  const lines = [];
+  if (typeof result.summary === "string" && result.summary.trim()) lines.push({ label: "Activity summary", text: result.summary });
+  if (typeof result.reflection === "string" && result.reflection.trim()) lines.push({ label: "Experience", text: result.reflection });
+  for (const summary of result.summaries ?? []) {
+    if (typeof summary?.text === "string" && summary.text.trim()) lines.push({ label: summary.task_id ? `Work summary · ${summary.task_id}` : "Work summary", text: summary.text });
+  }
+  return lines;
+}
 
 /** A resident's day and one membership's transcript, both bounded by the shared replay cutoff. */
 export async function personActivities({ source, world, cast, places, route, go }) {
@@ -40,7 +54,7 @@ export async function personActivities({ source, world, cast, places, route, go 
       h("td", {}, h("span", { class: "activity-type-label" }, h("i", { class: `activity-${activityType(row)}` }), label(row))),
       h("td", {}, place(row)),
       h("td", {}, activityDuration(((row.end ?? cutoff) - row.start) * 60)),
-      h("td", {}, row.end == null ? "In progress" : "Ended"),
+      h("td", {}, row.end == null ? "In progress" : activityType(row) === "reflect" && row.completed != null ? row.completed ? "Completed" : "Cancelled" : "Ended"),
       h("td", {}, h("a", { href: rowLink(row), onclick: (event) => reveal(row, event), "aria-current": row.id === selected?.id ? "true" : null, "aria-label": `Open ${route.agent}'s ${label(row)} at ${clock(row.start)}` }, row.id === selected?.id ? "Show details ↓" : "Details ↓")),
     ))),
   )) : h("div", { class: "card" }, emptyState("No recorded activities on this day.", "Older runs may contain actions without activity membership records."));
@@ -48,6 +62,8 @@ export async function personActivities({ source, world, cast, places, route, go 
   if (selected) {
     const transcript = activityTranscript(events, selected, cutoff);
     const nextActivity = planningOutcomeSummary(events, selected, cutoff, places);
+    const source = selected.sourceActivityId ? events.find((event) => event.kind === "activity_entered" && event.payload.activity === selected.sourceActivityId) : null;
+    const sourceTask = source?.payload.task_id ?? events.find((event) => event.payload?.activity === selected.sourceActivityId && event.payload?.task_id)?.payload.task_id;
     const tasks = new Map(events.filter((event) => event.kind === "task_posted").map((event) => [event.payload.task.id, event]));
     const m = { cast, places, lookups: { tasks, places }, truth: true, reader: null, bystanders: bystanders(transcript), select: () => {} };
     const received = transcript.filter((event) => ["speech", "conversation_message"].includes(event.kind));
@@ -56,6 +72,11 @@ export async function personActivities({ source, world, cast, places, route, go 
     const later = task && selected.endSeq != null ? events.filter((event) => event.seq > selected.endSeq && OUTCOMES.has(event.kind) && event.payload.task_id === task && (event.actor === route.agent || event.payload.agent === route.agent || (event.audience ?? []).includes(route.agent))) : [];
     const renderEvent = (event) => {
       if (event.kind === "decision") return h("li", {}, decisionCard(event, transcript.filter((row) => row.time === event.time && !(row.kind === "activity_left" && row.seq === selected.endSeq)), m));
+      const saved = savedReflection(event);
+      if (saved.length) return h("li", { class: "activity-log-event" },
+        h("header", {}, h("time", {}, `${clock(event.time)} · Reflection`)),
+        saved.map(({ label, text }) => h("section", { class: "saved-reflection" }, h("h4", {}, label), h("p", {}, text))),
+      );
       if (nextActivity && event.kind === "activity_left" && event.seq === selected.endSeq) {
         event = { ...event, text: `${selected.actor} stopped choosing the next activity: ${nextActivity}. Next activity started.` };
       }
@@ -73,7 +94,10 @@ export async function personActivities({ source, world, cast, places, route, go 
       h("dl", { class: "activity-facts" },
         h("dt", {}, "Place"), h("dd", {}, selected.type === "move" ? `From ${place(selected)}` : place(selected)),
         h("dt", {}, "Participants"), h("dd", {}, [...participants].join(", ")),
-        h("dt", {}, "Status"), h("dd", {}, selected.end == null ? `In progress as of ${formatTime(cutoff)}` : activityType(selected) === "planning" ? "Ended" : selected.reason),
+        h("dt", {}, "Status"), h("dd", {}, selected.end == null ? `In progress as of ${formatTime(cutoff)}` : activityType(selected) === "reflect" && selected.completed != null ? selected.completed ? "Completed" : "Cancelled" : activityType(selected) === "planning" ? "Ended" : selected.reason),
+        selected.purpose ? [h("dt", {}, "Purpose"), h("dd", {}, reflectPurpose(selected.purpose))] : null,
+        selected.sourceActivityId ? [h("dt", {}, "Source activity"), h("dd", {}, `${source?.payload.activity_type ? activityLabel({ type: source.payload.activity_type }) : "Activity"} `, h("code", {}, selected.sourceActivityId))] : null,
+        sourceTask ? [h("dt", {}, "Source job"), h("dd", {}, h("code", {}, sourceTask))] : null,
         nextActivity ? [h("dt", {}, "Next activity"), h("dd", {}, nextActivity)] : null,
         h("dt", {}, "Activity ID"), h("dd", {}, h("code", {}, selected.activity)),
         task ? [h("dt", {}, "Task"), h("dd", {}, task)] : null),

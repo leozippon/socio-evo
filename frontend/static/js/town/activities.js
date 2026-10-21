@@ -24,6 +24,8 @@ export class ActivitiesPanel {
     const current = new Map(rows.filter((row) => row.end == null).map((row) => [row.actor, row]));
     const place = (row) => `${row.outside ? "Outside · " : ""}${m.places.has(row.place) ? shortName(m.places.get(row.place)) : row.place || "Not recorded"}`;
     const link = (name, row = null) => activityLink(m.route, name, now, row, day);
+    const purposeLabel = (purpose) => ({ summary: "Work summary", experience: "Experience" })[purpose] ?? purpose;
+    const sourceTask = (row) => m.activityEvents.find((event) => event.payload?.activity === row.sourceActivityId && event.payload?.task_id)?.payload.task_id;
     const tooltip = h("div", { class: "activity-tooltip", role: "tooltip", id: "activity-hover", hidden: true });
     const hide = () => { tooltip.hidden = true; };
     const show = (row, event) => {
@@ -32,7 +34,10 @@ export class ActivitiesPanel {
       fill(tooltip, h("b", {}, `${row.actor} · ${label(row)}`),
         h("span", {}, `${clock(row.start)}–${row.end == null ? "ongoing" : clock(row.end)}`),
         h("span", {}, `${activityDuration(((row.end ?? now) - row.start) * 60)} · ${place(row)}`),
-        h("span", {}, row.end == null ? `In progress${row.tool ? ` · ${row.tool}` : ""}` : row.reason),
+        row.purpose ? h("span", {}, `Purpose: ${purposeLabel(row.purpose)}`) : null,
+        row.sourceActivityId ? h("span", {}, `Source activity: ${row.sourceActivityId}`) : null,
+        sourceTask(row) ? h("span", {}, `Source job: ${sourceTask(row)}`) : null,
+        h("span", {}, row.end == null ? `In progress${row.tool ? ` · ${row.tool}` : ""}` : activityType(row) === "reflect" && row.completed != null ? row.completed ? "Completed" : "Cancelled" : row.reason),
         h("small", {}, "Open resident activity details →"));
       tooltip.hidden = false;
       tooltip.style.left = `${Math.max(8, Math.min(window.innerWidth - 270, x - 80))}px`;
@@ -40,7 +45,7 @@ export class ActivitiesPanel {
     };
     const lanes = m.world.agents.map(({ name }) => {
       const active = current.get(name), known = m.truth || name === reader;
-      const status = active ? `${active.outside && active.type === "rest" ? "Waiting outside" : label(active)}${active.tool ? ` · ${active.tool}` : ""}` : known ? "Between activities" : "Not observed";
+      const status = active ? `${active.outside && active.type === "rest" ? "Waiting outside" : label(active)}${active.purpose ? ` · ${purposeLabel(active.purpose)}` : ""}${active.tool ? ` · ${active.tool}` : ""}` : known ? "Between activities" : "Not observed";
       return h("div", { class: "activity-lane" },
         h("a", { class: "linkish activity-person", href: link(name), "aria-label": `${name}'s daily activities` },
           m.cast.badge(name, 18), h("span", {}, h("b", {}, name), h("small", {}, status))),

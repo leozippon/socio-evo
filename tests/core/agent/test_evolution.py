@@ -105,6 +105,7 @@ async def test_days_weeks_and_a_month_become_one_commit_per_step(agent, script, 
     assert _changed(repository, versions[2].commit) == {
         "memory/diary/day-0001.md",
         "memory/insights.jsonl",
+        "memory/reflections.jsonl",
     }
     assert _changed(repository, versions[8].commit) == {"parameters/policy.md"}
 
@@ -165,9 +166,7 @@ async def test_reflection_may_request_a_deeper_step_subject_to_the_cooldown(agen
 
 
 async def test_a_step_that_changes_nothing_still_counts_as_applied(agent, script):
-    evolver = Evolver(
-        EvolutionConfig(schedule={DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)})
-    )
+    evolver = Evolver(EvolutionConfig(schedule={DAILY: (L0,), WEEKLY: (L1,), MONTHLY: (L2,)}))
     script.request = {"what": "notebook", "why": "I want to look at my notes."}
     returned = await evolver.evolve(agent, DAILY, _end(1))
     assert await evolver.evolve(agent, WEEKLY, _end(1)) == []
@@ -306,12 +305,12 @@ async def test_in_free_mode_every_night_files_one_reply_level_by_level(
     ]
     repository = Repository(agent.path)
     assert [_changed(repository, version.commit) for version in steps] == [
-        {"memory/diary/day-0001.md", "memory/insights.jsonl"},
+        {"memory/diary/day-0001.md", "memory/insights.jsonl", "memory/reflections.jsonl"},
         {"parameters/self.md"},
-        {"memory/diary/day-0002.md", "memory/insights.jsonl"},
+        {"memory/diary/day-0002.md", "memory/insights.jsonl", "memory/reflections.jsonl"},
         {"memory/skills/dates.md", "memory/episodic.jsonl"},
         {"parameters/policy.md", "parameters/self.md"},
-        {"memory/diary/day-0003.md"},
+        {"memory/diary/day-0003.md", "memory/reflections.jsonl"},
     ]
     assert (agent.parameters.read_account(), agent.parameters.read_policy()) == (
         later,

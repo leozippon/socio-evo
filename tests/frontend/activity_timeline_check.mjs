@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { formatTime, hhmm, hhmmss, parseStamp, stamp } from "../../frontend/static/js/clock.js";
 import { toolCompletionText } from "../../frontend/static/js/town/events.js";
 import { Replay } from "../../frontend/static/js/replay.js";
-import { activityIntervals } from "../../frontend/static/js/town/activity-model.js";
+import { ACTIVITY_LABELS, activityIntervals, activityLabel } from "../../frontend/static/js/town/activity-model.js";
 
 assert.equal(hhmm(480.1234567), "08:00");
 assert.equal(hhmmss(480 + 13 / 60), "08:00:13");
@@ -35,6 +35,18 @@ intervals = activityIntervals(replay.eventsOf(1), 481);
 assert.equal(intervals.length, 3);
 assert.equal(intervals[0].end, 480.5);
 assert.equal(intervals[2].end, null, "resume is a new interval even with the same activity id");
+const reflectEvents = [
+  event("activity_entered", 28850, "Mei", { activity: "r1", activity_type: "reflect", purpose: "summary", source_activity_id: "w1", source_visit_id: "visit-1" }),
+  event("activity_left", 28860, "Mei", { activity: "r1", completed: false, reason: "cancelled" }),
+];
+const reflect = activityIntervals(reflectEvents, 481)[0];
+assert.equal(reflect.purpose, "summary");
+assert.equal(reflect.sourceActivityId, "w1");
+assert.equal(reflect.sourceVisitId, "visit-1");
+assert.equal(reflect.completed, false, "a cancelled reflection is distinct from a completed one");
+assert.equal(activityLabel(reflect), "Reflect");
+assert.equal(ACTIVITY_LABELS.planning, "Planning", "Reflect does not change Planning's existing label or color class");
+assert.equal(activityIntervals([event("activity_entered", 28850, "Mei", { activity: "r2", activity_type: "reflect", purpose: "experience" })], 481)[0].purpose, "experience");
 assert.equal(activityIntervals(replay.eventsOf(1), 481, "Aisha").length, 1, "private view never leaks another resident's activity");
 assert.equal(replay.seek(480 + 12 / 60).seq, -1, "rewind also respects second precision");
 // Minute-only environment events after a precise event must not move time backwards.
@@ -216,6 +228,17 @@ const toolDecision = { ...detailEvents[1], payload: { thought: "Check the board.
 const feedback = { ...detailEvents[2], kind: "activity_feedback", text: "The board has two open jobs.", payload: { activity: "work-1" } };
 await renderPlanning([workEntry, toolDecision, feedback]);
 assert(detailNodes.map((node) => node.findClass("decision")).find(Boolean).textContent.includes(feedback.text), "ordinary tool feedback remains visible in its decision card");
+
+const reflectionEvents = [
+  { seq: 0, time: 480, kind: "activity_entered", actor: "Mei", audience: ["Mei"], place: "workshop", payload: { activity: "reflect-1", activity_type: "reflect", purpose: "experience", source_activity_id: "work-1" } },
+  { seq: 1, time: 481, kind: "activity_feedback", actor: "Mei", audience: ["Mei"], place: "workshop", text: "Reflection saved.", payload: { activity: "reflect-1", saved_result: { mode: "experience", status: "completed", completed: true, reflection: "I learned to ask before assuming." } } },
+  { seq: 2, time: 482, kind: "activity_left", actor: "Mei", audience: ["Mei"], place: "workshop", payload: { activity: "reflect-1", completed: true, reason: "Reflection saved." } },
+];
+const reflectionText = await renderPlanning(reflectionEvents, 483, "0:Mei");
+assert(reflectionText.includes("Experience") && reflectionText.includes("I learned to ask before assuming."), "the saved experience result is shown as a Reflection entry");
+assert(detailNodes.map((node) => node.findClass("saved-reflection")).find(Boolean).textContent.includes("I learned to ask before assuming."), "the result is rendered in a Reflection section, not a thought card");
+const unsaved = reflectionEvents.map((event) => event.kind === "activity_feedback" ? { ...event, payload: { activity: "reflect-1" } } : event);
+assert(!(await renderPlanning(unsaved, 483, "0:Mei")).includes("I learned to ask before assuming."), "unsaved reflection content is not invented or displayed");
 
 
 // Sanitized metadata from the reported day-2 membership (no recorded thoughts/content).

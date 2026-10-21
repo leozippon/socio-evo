@@ -11,12 +11,7 @@ resident-authored interpretations. `state.json` is a derived view. Intentions ar
 executed actions, and a summary is not proof of success. Other residents' private
 records and hidden test results are never added. Old `note.md` files remain readable.
 
-Before voluntarily leaving a Work activity or switching directly to Rest, the resident
-receives a concise instruction to summarize that visit's findings, operations, observed
-results, unresolved issues and next steps. A job with no research or operational receipts
-needs no summary. Each activity/job overview is saved with its activity, source entries
-and time range; only then does the original exit proceed. The prompt and JSON schema
-limit the overview to 1600 characters or less under a smaller context budget.
+On a voluntary Work exit, a visit that contains actual job research or operations schedules a separate Reflect Activity. Work ends first; one bounded overview per relevant job is saved before continuing the already chosen next action. A visit with no operational receipts needs no summary. Each return to a Work Activity has a new participation identity. Stored overviews carry the source visit, entry range and time span, so later participation and late feedback cannot silently change a completed scope. The prompt and JSON schema limit a work overview to 1600 characters or less under a smaller context budget.
 
 A long work session still uses one overview request per job, not a model call for every
 6000 characters. The fixed input snapshot contains the full range when it fits; otherwise
@@ -45,7 +40,7 @@ is not replaced by job summaries. Shared context budgeting applies to all inject
 
 Core checks cover activity/job isolation, persisted scope completion, cancellation,
 late receipts and failure recovery. Realtime checks exercise delayed summary generation
-at a 15x clock, persistence before exit, other residents' progress and forced transitions.
+at a 15x clock, summary persistence before the deferred next action, repeated Work visits, other residents' progress and forced transitions.
 A separate real-model probe validates the resident's bounded overview and job-specific
 storage without mutating an active experiment.
 

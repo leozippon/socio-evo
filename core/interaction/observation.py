@@ -27,7 +27,10 @@ class Observation(StrictModel):
     """
 
     activity_id: str | None = None
-    activity_kind: Literal["selection", "work", "conversation", "rest", "move"] | None = None
+    activity_visit_id: str | None = None
+    activity_kind: (
+        Literal["selection", "work", "conversation", "rest", "move", "reflect"] | None
+    ) = None
     activity_task_id: str | None = Field(default=None, pattern=r"^task-\d+$")
 
     own_task_id: str | None = Field(default=None, pattern=r"^task-\d+$")

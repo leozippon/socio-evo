@@ -199,6 +199,7 @@ class Activity(StrictModel):
         "select_rest",
         "select_move",
         "select_work",
+        "select_reflect",
         "select_conversation",
         "start_chat",
         "resume_work",
