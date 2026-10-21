@@ -9,8 +9,6 @@ from core.agent.continuation import DecisionContinuation
 from core.agent.memory.work import WorkNotes
 from core.interaction import EventKind, MayActivity, Percept
 from infrastructure.llm import (
-    LLMConfig,
-    OpenAICompatibleClient,
     ScriptedClient,
     StructuredOutputError,
 )
@@ -79,52 +77,45 @@ async def test_job_tagged_chat_remains_verbatim_and_is_not_summarized(agent, obs
     assert agent.memory.episodic.read()[0].text == "CHAT_TERMINAL_WORDS"
 
 
-async def test_summary_pages_long_entries_merges_and_preserves_snapshot_boundary(
-    agent, monkeypatch
-):
+@pytest.mark.parametrize("length,mode", [(10000, "full"), (26000, "excerpted")])
+async def test_one_activity_overview_uses_whole_input_or_honest_excerpts(agent, length, mode):
+    from core.agent.context import Counter, input_limit
+
     enable(agent, True)
     notes = agent.memory.work
-    monkeypatch.setenv("WORK_SUMMARY_TEST_KEY", "test")
-    backend = OpenAICompatibleClient(
-        LLMConfig(
-            base_url="http://llm.test/v1",
-            api_key_env="WORK_SUMMARY_TEST_KEY",
-            model="test",
-            structured_output="none",
-            structured_retry="json_schema",
-        )
-    )
-    raw = "BEGIN " + "x" * 26000 + " END"
-    notes.record("task-1", 1, "observation", raw)
+    raw = "BEGIN " + "x" * length + " END"
+    notes.begin_activity("visit", "task-1", 1)
+    notes.record("task-1", 1, "observation", raw, activity_id="visit")
     requests = []
 
     def answer(request):
         requests.append(request)
         assert request.structured_output == "json_schema"
-        bound = request.json_schema["properties"]["summary"]["maxLength"]
-        assert 1 <= bound <= 1600
-        wire = backend._arguments(request)["response_format"]
-        assert wire["type"] == "json_schema"
-        assert wire["json_schema"]["schema"]["properties"]["summary"]["maxLength"] == bound
-        assert all(message.role != "assistant" for message in request.messages)
-        assert len(request.messages[-1].content) < 8000
-        if len(requests) == 1:
-            notes.record("task-1", 1, "observation", "ARRIVED_DURING_SUMMARY")
-        return {"summary": "Bounded working summary."}
+        assert 1 <= request.json_schema["properties"]["summary"]["maxLength"] <= 1600
+        assert Counter(agent.cognition.context_budget).request(request) <= input_limit(
+            agent.cognition.context_budget, request
+        )
+        assert request.metadata["work_input_mode"] == mode
+        prompt = request.messages[-1].content
+        assert "BEGIN" in prompt and " END" in prompt
+        if mode == "full":
+            assert raw in prompt
+        else:
+            assert "omitted text has NOT been read" in prompt and raw not in prompt
+        notes.record("task-1", 2, "observation", "ARRIVED_DURING_SUMMARY", activity_id="later")
+        return {"summary": "Bounded working overview."}
 
     agent.client = ScriptedClient(answer)
-    await agent.summarize_work(20)
-    assert notes.cursor("task-1") == (1, len(raw))
-    assert len(notes.summaries("task-1")) < 4
-    assert any(r.metadata["purpose"] == "work_summary_merge" for r in requests)
-    assert not any("ARRIVED_DURING_SUMMARY" in r.messages[-1].content for r in requests)
+    await agent.summarize_work(20, activity_id="visit")
+    await agent.summarize_work(21, activity_id="visit")
+    assert len(requests) == 1
+    overview = notes.summaries("task-1")[0]
+    assert overview["input_mode"] == mode and overview["source_entries"] == [2]
+    assert notes.cursor("task-1") == (0, 0)  # A range overview is not a full-character receipt.
     reopened = WorkNotes(notes.root)
-    assert reopened.cursor("task-1") == notes.cursor("task-1")
-    await agent.summarize_work(21)
-    assert reopened.cursor("task-1") == (2, len("ARRIVED_DURING_SUMMARY"))
-    assert "BEGIN" in reopened.read_range("task-1", 1, 0)
-    assert " END" in reopened.read_range("task-1", 1, 25000)
-    assert len(reopened.render("task-1", 30, agent.cognition.work_notes, agent.setting)) < 7000
+    assert reopened.pending_scopes("visit") == []
+    assert "BEGIN" in reopened.read_range("task-1", 2, 0)
+    assert " END" in reopened.read_range("task-1", 2, length - 100)
 
 
 async def test_failed_summary_never_moves_coverage(agent):
@@ -139,7 +130,7 @@ async def test_failed_summary_never_moves_coverage(agent):
 
 async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice(agent, observe):
     enable(agent)
-    agent.perceive([receipt("READY_RESULT")])
+    agent.perceive([receipt("READY_RESULT").model_copy(update={"activity_id": "visit"})])
     started, release = asyncio.Event(), asyncio.Event()
 
     class Client:
@@ -165,6 +156,8 @@ async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice
         update={
             "own_task_id": "task-1",
             "work_activity": True,
+            "activity_id": "visit",
+            "activity_kind": "work",
             "allowed": (
                 MayActivity(
                     layer="tool",
@@ -191,7 +184,8 @@ async def test_rest_exit_waits_for_summary_and_cancel_does_not_commit_old_choice
     release.set()
     await agent.choose_tool(observation, continuation=continuation)
     continuation.commit()
-    assert agent.memory.work.cursor("task-1") == (1, len("READY_RESULT"))
+    assert agent.memory.work.pending_scopes("visit") == []
+    assert len(agent.memory.work.summaries("task-1")) == 1
 
 
 @pytest.mark.parametrize("budget", [False, True])
@@ -232,7 +226,7 @@ async def test_summary_recalled_once_and_disabled_recall_keeps_original_behavior
     assert requests[-1].messages[-1].content.count("UNIQUE_SUMMARY_MARKER") == 1
 
 
-async def test_small_budget_merges_multibyte_summaries_without_stalling(agent):
+async def test_nightly_history_is_one_bounded_batch_under_small_budget(agent):
     from core.agent.context import Counter, input_limit
 
     enable(agent, True)
@@ -255,12 +249,10 @@ async def test_small_budget_merges_multibyte_summaries_without_stalling(agent):
 
     agent.client = ScriptedClient(respond)
     await agent.summarize_work(30)
-    assert len(notes.summaries("task-1")) == 3
+    assert len(notes.summaries("task-1")) == 1
     assert notes.cursor("task-1") == before
-    assert len(requests) > 1
-    # Only the two oldest records were replaced; later summaries remain intact.
-    remaining = " ".join(entry["text"] for entry in notes.summaries("task-1"))
-    assert "Summary 2:" in remaining and "Summary 3:" in remaining
+    assert len(requests) == 1
+    assert requests[0].metadata["work_input_mode"] == "excerpted"
 
 
 async def test_nightly_work_catchup_runs_with_evolution_disabled(agent):
@@ -274,19 +266,163 @@ async def test_nightly_work_catchup_runs_with_evolution_disabled(agent):
     agent.client = ScriptedClient(lambda _: {"summary": "Finished job result retained."})
     owner = SimpleNamespace(evolver=Evolver(EvolutionConfig(levels=())))
     assert await Simulation._evolve(owner, agent, (), 20) == []
-    assert agent.memory.work.cursor("task-1") == (1, len("FINISHED_JOB_RESULT"))
+    overview = agent.memory.work.summaries("task-1")[0]
+    assert overview["legacy"] and overview["input_mode"] == "full"
+    assert agent.memory.work.cursor("task-1") == (0, 0)
+    assert not agent.memory.work.pending_scopes()
 
 
-async def test_repeated_merges_keep_summary_ranges_contiguous_and_ordered(agent):
+async def test_exits_never_merge_and_night_compacts_once(agent):
     enable(agent)
     notes = agent.memory.work
-    agent.client = ScriptedClient(lambda _: {"summary": "Earlier operations preserved."})
-    for index in range(12):
-        notes.record("task-1", index, "observation", f"Operation {index}")
-        await agent.summarize_work(100 + index)
-        summaries = notes.summaries("task-1")
-        assert len(summaries) < 4
-        ranges = [(tuple(e["from"]), tuple(e["through"])) for e in summaries]
-        assert ranges == sorted(ranges)
-        assert all(left[1] == right[0] for left, right in zip(ranges, ranges[1:], strict=False))
-    assert notes.cursor("task-1") == ranges[-1][1]
+    requests = []
+    agent.client = ScriptedClient(
+        lambda r: requests.append(r) or {"summary": "Observed result retained."}
+    )
+    for index in range(6):
+        activity = f"visit-{index}"
+        notes.begin_activity(activity, "task-1", index)
+        notes.record("task-1", index, "observation", f"Operation {index}", activity_id=activity)
+        await agent.summarize_work(100 + index, activity_id=activity)
+    assert len(requests) == 6
+    assert all(r.metadata["purpose"] == "work_summary" for r in requests)
+    assert len(notes.summaries("task-1")) == 6
+    await agent.summarize_work(200)
+    assert len(requests) == 7 and requests[-1].metadata["purpose"] == "work_summary_merge"
+    assert len(notes.summaries("task-1")) == 1
+    history = notes.summaries("task-1")[0]
+    assert history["period"] == [0, 5]
+    assert len(history["replaces"]) == 6
+    assert [e["period"] for e in notes.entries("task-1") if e["id"] in history["replaces"]] == [
+        [i, i] for i in range(6)
+    ]
+    await agent.summarize_work(201)
+    assert len(requests) == 7
+
+
+async def test_activity_scope_follows_real_jobs_excludes_old_backlog_and_empty_visits(agent):
+    enable(agent)
+    notes = agent.memory.work
+    notes.record("task-1", 1, "observation", "LEGACY_BACKLOG")
+    notes.observe(receipt("OLD_DELAYED").model_copy(update={"activity_id": "old"}))
+    notes.begin_activity("visit", "task-3", 2)
+    notes.observe(
+        receipt("CLAIM_ONLY", 2, "task-3").model_copy(
+            update={"activity_id": "visit", "kind": EventKind.DESK}
+        )
+    )
+    for seq, task in [(3, "task-1"), (4, "task-2")]:
+        notes.begin_activity("visit", task, 2)
+        notes.observe(
+            receipt("ACTUAL_RESULT", seq, task).model_copy(update={"activity_id": "visit"})
+        )
+    requests = []
+    agent.client = ScriptedClient(
+        lambda r: requests.append(r) or {"summary": "Current visit result."}
+    )
+    await agent.summarize_work(20, {"task-2"}, activity_id="visit")
+    assert len(requests) == 2  # A completed former job is not filtered by current ownership.
+    assert all(
+        "LEGACY_BACKLOG" not in r.messages[-1].content
+        and "OLD_DELAYED" not in r.messages[-1].content
+        for r in requests
+    )
+    assert notes.summaries("task-3") == []
+    await agent.summarize_work(21, activity_id="empty")
+    assert len(requests) == 2
+
+
+async def test_small_budget_retry_keeps_dynamic_limit_and_operation_index(agent):
+    from core.agent.context import Counter, input_limit
+
+    enable(agent, True)
+    budget = agent.cognition.context_budget.model_copy(update={"input_tokens": 4000})
+    agent.cognition = agent.cognition.model_copy(update={"context_budget": budget})
+    notes = agent.memory.work
+    notes.begin_activity("visit", "task-1", 1)
+    for index in range(4):
+        notes.record("task-1", index, "observation", "证据" * 4000, activity_id="visit")
+    requests = []
+
+    def reply(request):
+        requests.append(request)
+        assert Counter(budget).request(request) <= input_limit(budget, request)
+        bound = request.json_schema["properties"]["summary"]["maxLength"]
+        assert bound < 1600
+        if len(requests) == 1:
+            return {"summary": "证" * (bound + 1)}
+        assert request.after_invalid
+        return {"summary": "Observed results retained; details remain in the original entries."}
+
+    agent.client = ScriptedClient(reply)
+    await agent.summarize_work(20, activity_id="visit")
+    assert len(requests) == 2 and not notes.pending_scopes("visit")
+
+
+async def test_cancelled_scope_does_not_absorb_late_receipts_or_conversation(agent):
+    enable(agent)
+    notes = agent.memory.work
+    notes.begin_activity("visit", "task-1", 1)
+    notes.record("task-1", 1, "observation", "FIRST", activity_id="visit")
+    entered = asyncio.Event()
+
+    class CancelledClient:
+        async def complete(self, request):
+            entered.set()
+            await asyncio.Event().wait()
+
+    agent.client = CancelledClient()
+    task = asyncio.create_task(agent.summarize_work(10, activity_id="visit"))
+    await entered.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    pending = notes.pending_scopes("visit")[0][1]
+    assert pending["source_entries"] == [2]
+    notes.record("task-1", 11, "observation", "LATE", activity_id="visit")
+    notes.observe(
+        receipt("CONVERSATION", 44).model_copy(
+            update={"activity_id": "chat", "kind": EventKind.ACTIVITY_FEEDBACK}
+        )
+    )
+    requests = []
+    agent.client = ScriptedClient(lambda r: requests.append(r) or {"summary": "Visit overview."})
+    await agent.summarize_work(12, activity_id="visit")
+    assert len(requests) == 1 and "LATE" not in requests[0].messages[-1].content
+    await agent.summarize_work(13, activity_id="visit")
+    assert len(requests) == 1
+    await agent.summarize_work(20)
+    assert len(requests) == 2 and "LATE" in requests[-1].messages[-1].content
+    assert all("CONVERSATION" not in r.messages[-1].content for r in requests)
+
+
+async def test_one_night_finishes_cancelled_snapshot_and_late_receipt(agent):
+    enable(agent)
+    notes = agent.memory.work
+    notes.begin_activity("visit", "task-1", 1)
+    notes.record("task-1", 2, "observation", "EARLIER", activity_id="visit")
+    entered = asyncio.Event()
+
+    class Interrupted:
+        async def complete(self, request):
+            entered.set()
+            await asyncio.Event().wait()
+
+    agent.client = Interrupted()
+    running = asyncio.create_task(agent.summarize_work(10, activity_id="visit"))
+    await entered.wait()
+    running.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await running
+    original = notes.pending_scopes("visit")[0][1]
+    notes.record("task-1", 11, "observation", "LATER", activity_id="visit")
+    requests = []
+    agent.client = ScriptedClient(lambda r: requests.append(r) or {"summary": "Observed work."})
+    await agent.summarize_work(20)
+    assert len(requests) == 2
+    assert "EARLIER" in requests[0].messages[-1].content
+    assert "LATER" not in requests[0].messages[-1].content
+    assert "LATER" in requests[1].messages[-1].content
+    assert original["source_entries"] == [2] and not notes.pending_scopes()
+    await agent.summarize_work(21)
+    assert len(requests) == 2

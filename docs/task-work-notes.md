@@ -1,102 +1,53 @@
 # Task work notes
 
-Each resident can keep an independent journal for each job they encounter. This is an
-opt-in cognition feature, separate from the general episodic stream, diaries, and skills.
-Existing configurations retain their behavior. Automatic factual logging requires no model call. With `work_notes.editable: true`,
-a resident may additionally write one bounded working summary before each external decision.
+Each resident has private, append-only operational journals per job when
+`cognition.work_notes.enabled` is true. Actual conversation remains ordinary memory,
+including conversations about work.
 
-## Files and contents
+## Raw records and overviews
 
-Inside each resident's directory:
+`memory/work/task-N/events.jsonl` preserves the original operations, feedback and
+resident-authored interpretations. `state.json` is a derived view. Intentions are not
+executed actions, and a summary is not proof of success. Other residents' private
+records and hidden test results are never added. Old `note.md` files remain readable.
 
-```
-memory/work/task-1/events.jsonl
-memory/work/task-1/state.json
-memory/work/task-1/note.md
-```
+Before voluntarily leaving a Work activity or switching directly to Rest, the resident
+receives a concise instruction to summarize that visit's findings, operations, observed
+results, unresolved issues and next steps. A job with no research or operational receipts
+needs no summary. Each activity/job overview is saved with its activity, source entries
+and time range; only then does the original exit proceed. The prompt and JSON schema
+limit the overview to 1600 characters or less under a smaller context budget.
 
-`events.jsonl` is an append-only journal. Each entry has an ID, simulation time, source,
-text, and type. Witnessed task events (claims, commands, checks, submissions, rejections,
-payments, and end-of-day desk reports) are observations. An action chosen by the resident
-is an **intention**, not proof that it ran or succeeded. Work views retain the task
-situation the resident was shown. Unwitnessed tests and private environment truth are
-never copied into the journal.
+A long work session still uses one overview request per job, not a model call for every
+6000 characters. The fixed input snapshot contains the full range when it fits; otherwise
+it contains an operation index and explicitly shortened excerpts. The saved input mode
+makes clear that an overview does not establish full-text reading. Original records are
+retained. New appends cannot be silently included in an older snapshot.
 
-`state.json` is a readable materialized view containing the latest observation, intention,
-and work view. It is not an LLM-generated summary or a verified completion status.
-Reads derive state from the journal, so an interrupted state-file write cannot change
-what the agent remembers. Replayed event IDs are deduplicated. Reopening the same resident
-files preserves notes; no automatic backfill from older experiment logs is performed.
+Mandatory transitions cancel pending note generation without marking it complete.
+Unfinished ranges are handled at night; historical overview consolidation is also a
+separate nightly step. Neither historical merges nor a backlog from a previous activity
+runs in the voluntary exit path. Retries retain the existing finite bound.
 
-Only tasks encountered by a resident get files, rather than creating empty files for the
-entire task bank. Different residents' notes about the same job remain independent.
-A proposal or public result can be recorded by its witnesses, but does not expose another
-resident's private notebook. Symlinked notebook paths are rejected.
+## Context and explicit reading
 
-## Context injection
+Current Work receives its job overview plus recent operations and feedback directly.
+Fresh test failures and code-search results never wait for a summary before becoming
+readable. Older raw detail is available through `read work record`, up to three reads
+per decision, each bounded to 6000 characters with an entry/character continuation.
+This page size does not determine the number of summary calls.
 
-- **While working:** the task-specific action allowances identify the current job; its
-  recent notes are automatically included with priority 95.
-- **Other decisions:** an explicit job reference or overlap of at least two meaningful
-  keywords selects related notes (priority 60). At most `related_notes` are selected.
-  Unrelated conversation receives no work notes. This is lexical matching, not embeddings.
-- **Diary and evolution:** journals touched that day contribute compact views to diary,
-  reflection, skill, policy, and revision prompts (priority 75).
-- **Active recall:** the existing bounded memory query can retrieve older journal entries,
-  with timestamps and source references. It searches only that resident's persistent notes
-  and excludes entries later than the current simulation time.
+Task-bound conversations receive the job overview; unrelated activities do not receive
+raw work logs. Active recall and nightly reflection use summaries by default. Real speech
+is not replaced by job summaries. Shared context budgeting applies to all injected notes.
 
-Automatic views include the latest `recent_entries` non-work-view entries, falling back
-to the latest work view if none exist. Each text is clipped to `excerpt_chars`; full logs
-remain on disk. Timestamp, source, and the intention/observation distinction accompany
-injected excerpts. Task state in the current observation remains authoritative.
+## Validation
 
-When shared context budgeting is enabled, these blocks share its input limit with other
-memory and evidence. They do not get a separate unlimited budget, and may be shortened or
-omitted if mandatory request content leaves insufficient space. Without shared budgeting,
-entry counts and excerpt limits still apply, but there is no whole-request token guarantee.
-
-The journal records externally visible work and the resident's chosen-action thought;
-it does not invent a root cause, next-step plan, test success, or a skill improvement.
-Generalizable lessons can still be produced by the existing nightly evolution process.
-
-## Enable in a new run
-
-```yaml
-cognition:
-  work_notes:
-    enabled: true
-    related_notes: 2
-    recent_entries: 4
-    excerpt_chars: 1600
-  active_recall:
-    enabled: true
-  context_budget:
-    enabled: true
-```
-
-`experiments/configs/context/swebench-work-notes.yaml` is a three-day pilot enabling all
-three features. It retains the existing local inference endpoint and remote dataset path;
-check deployment paths before running it. This implementation does not deploy or launch
-that experiment automatically.
-
-Validation covers task routing, hidden-payload exclusion, private files, symlink refusal,
-idempotent replay, reopening, time filtering, context selection, active recall, nightly
-injection, the disabled baseline, and a three-day simulation using mocked inference.
-
-## Resident-managed summaries
-
-`editable` defaults to false for old experiments and is enabled in the community profiles.
-The internal `update work notes` action replaces `note.md` and appends a versioned `note`
-entry to the journal. It does not advance simulated time or change the environment. A
-resident can only update a notebook they have already encountered. Each decision permits
-at most one update, alongside the separate bounded active-recall loop.
-
-The summary can record the problem, evidence, edits, tests, uncertainties, and next steps.
-It is explicitly attributed to the resident and is not treated as a verified observation.
-The latest summary as of the decision time is injected together with separately labelled
-factual excerpts under the shared token budget. Historical entries remain available for
-active recall. `state.json` includes the latest summary but remains a derived view.
+Core checks cover activity/job isolation, persisted scope completion, cancellation,
+late receipts and failure recovery. Realtime checks exercise delayed summary generation
+at a 15x clock, persistence before exit, other residents' progress and forced transitions.
+A separate real-model probe validates the resident's bounded overview and job-specific
+storage without mutating an active experiment.
 
 ## Peer review: own receipts versus witnessed work
 

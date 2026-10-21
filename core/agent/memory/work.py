@@ -142,20 +142,24 @@ class WorkNotes:
                 "kind": percept.kind.value,
                 "text": percept.text,
                 "actor": percept.actor,
+                "activity_id": percept.activity_id,
                 "source": f"percept:{percept.seq}",
             },
         )
 
-    def record(self, task: str, time: int, kind: str, text: str) -> None:
+    def record(
+        self, task: str, time: int, kind: str, text: str, *, activity_id: str | None = None
+    ) -> None:
         digest = hashlib.sha256(text.encode()).hexdigest()[:16]
         self.append(
             task,
             {
-                "id": f"{kind}:{time}:{digest}",
+                "id": f"{kind}:{time}:{digest}" + (f":{activity_id}" if activity_id else ""),
                 "time": time,
                 "type": kind,
                 "text": text,
                 "source": f"own:{kind}:{time}",
+                "activity_id": activity_id,
             },
         )
 
@@ -198,6 +202,120 @@ class WorkNotes:
             and (task := job_id(reference)) is not None
         }
 
+    def begin_activity(self, activity_id: str, task: str, time: int) -> None:
+        """Persist a job membership boundary before its first observation is ingested."""
+        self.append(
+            task,
+            {
+                "id": f"activity:{activity_id}",
+                "type": "activity",
+                "time": time,
+                "activity_id": activity_id,
+                "text": "",
+            },
+        )
+
+    def pending_scopes(self, activity_id: str | None = None) -> list[tuple[str, dict]]:
+        result = []
+        for task in self.tasks():
+            records = self.entries(task)
+            completed = {e.get("scope_id") for e in records if e["type"] == "summary"}
+            result.extend(
+                (task, e)
+                for e in records
+                if e["type"] == "scope"
+                and e["id"] not in completed
+                and (activity_id is None or e.get("activity_id") == activity_id)
+            )
+        return result
+
+    def freeze_scopes(self, time: int, activity_id: str | None = None) -> list[tuple[str, dict]]:
+        """Snapshot actual job operations, independently of current job ownership.
+
+        An excerpted overview completes a range overview, never character-level reading.
+        Untagged legacy records are handled only by nightly catch-up.
+        """
+        substantive = {
+            EventKind.COMMAND_EXECUTED.value,
+            EventKind.WORK_CHECKED.value,
+            EventKind.WORK_DELAYED.value,
+            EventKind.ACTIVITY_FEEDBACK.value,
+            EventKind.CODE_HANDOFF.value,
+        }
+        for task in self.tasks():
+            records = self.entries(task)
+            claimed = {n for e in records if e["type"] == "scope" for n in e["source_entries"]}
+            groups = {}
+            work_activities = {e["activity_id"] for e in records if e["type"] == "activity"}
+            scoped_activities = {e.get("activity_id") for e in records if e["type"] == "scope"}
+            legacy_cursor = self.cursor(task)
+            for e in records:
+                if e["type"] not in {"observation", "intention"} or e["entry"] in claimed:
+                    continue
+                activity = e.get("activity_id")
+                if activity is not None and activity not in work_activities:
+                    continue
+                # A cancelled exit retains its exact snapshot. Late receipts are left
+                # for nightly supplemental catch-up, never another exit-time call.
+                if activity_id is not None and activity in scoped_activities:
+                    continue
+                if activity_id is not None and activity != activity_id:
+                    continue
+                if activity is None and (e["entry"], len(e["text"])) <= legacy_cursor:
+                    continue
+                groups.setdefault(activity, []).append(e)
+            for activity, entries in groups.items():
+                # Desk/exit announcements alone do not mean the resident researched a job.
+                if not any(
+                    e["type"] == "observation"
+                    and (e.get("kind") in substantive or not e.get("kind"))
+                    for e in entries
+                ):
+                    continue
+                scope = {
+                    "id": (
+                        f"scope:{activity or 'legacy'}:{entries[0]['entry']}:{entries[-1]['entry']}"
+                    ),
+                    "type": "scope",
+                    "time": time,
+                    "text": "",
+                    "activity_id": activity,
+                    "legacy": activity is None,
+                    "source_entries": [e["entry"] for e in entries],
+                }
+                self.append(task, scope)
+        return self.pending_scopes(activity_id)
+
+    def scope_records(self, task: str, scope: dict) -> list[dict]:
+        wanted = set(scope["source_entries"])
+        return [e for e in self.entries(task) if e["entry"] in wanted]
+
+    def save_overview(self, task: str, scope: dict, time: int, text: str, input_mode: str) -> None:
+        if any(
+            e.get("scope_id") == scope["id"] for e in self.entries(task) if e["type"] == "summary"
+        ):
+            return
+        records = self.scope_records(task, scope)
+        self.append(
+            task,
+            {
+                "id": f"overview:{scope['id']}",
+                "type": "summary",
+                "time": time,
+                "text": text,
+                "source": "your activity overview",
+                "scope_id": scope["id"],
+                "activity_id": scope.get("activity_id"),
+                "legacy": scope.get("legacy", False),
+                "source_entries": scope["source_entries"],
+                "input_mode": input_mode,
+                "period": [min(e["time"] for e in records), max(e["time"] for e in records)],
+                "from": [records[0]["entry"], 0],
+                "through": [0, 0],
+                "replaces": [],
+            },
+        )
+
     def summaries(self, task: str, now: int | None = None) -> list[dict]:
         records = self.entries(task, now)
         replaced = {identity for e in records for identity in e.get("replaces", [])}
@@ -213,7 +331,7 @@ class WorkNotes:
         )
 
     def cursor(self, task: str) -> tuple[int, int]:
-        summaries = self.summaries(task)
+        summaries = [e for e in self.entries(task) if e["type"] == "summary"]
         return max((tuple(e.get("through", (0, 0))) for e in summaries), default=(0, 0))
 
     def chunk(
@@ -257,6 +375,9 @@ class WorkNotes:
             and e["type"] in {"observation", "intention"}
             and not (e["entry"] == start[0] and start[1] >= len(e["text"]))
         ]
+        sources = [e for e in records if e["id"] in (replaces or [])]
+        periods = [e.get("period", [e["time"], e["time"]]) for e in sources]
+        periods.extend([e["time"], e["time"]] for e in covered)
         self.append(
             task,
             {
@@ -268,8 +389,8 @@ class WorkNotes:
                 "from": list(start),
                 "through": list(through),
                 "period": [
-                    min((e["time"] for e in covered), default=time),
-                    max((e["time"] for e in covered), default=time),
+                    min((period[0] for period in periods), default=time),
+                    max((period[1] for period in periods), default=time),
                 ],
                 "replaces": replaces or [],
             },
@@ -297,7 +418,7 @@ class WorkNotes:
             f"Your work notes for {job_name(task)}:",
             "Your own working summaries are interpretations, not verified results.",
         ]
-        for record in self.summaries(task, now):
+        for record in self.summaries(task, now)[-3:]:
             begin, end = record.get("period", [record["time"], record["time"]])
 
             def when(time):

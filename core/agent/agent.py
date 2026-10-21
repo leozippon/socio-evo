@@ -161,6 +161,13 @@ class Agent:
         if self.cognition.work_notes.enabled:
             earlier = [record for record in earlier if not operation(record)]
         earlier = activity_records(earlier, observation, self.setting)
+        if (
+            self.cognition.work_notes.enabled
+            and observation.work_activity
+            and observation.activity_id
+        ):
+            for task in self.memory.work.current(observation):
+                self.memory.work.begin_activity(observation.activity_id, task, observation.time)
         self.perceive(observation.percepts, observation.places)
         new = tuple(percept for percept in observation.percepts if percept.kind not in shown)
         if scoped:
@@ -226,6 +233,7 @@ class Agent:
         if (
             self.cognition.work_notes.enabled
             and observation.work_activity
+            and observation.activity_id is not None
             and (
                 getattr(action, "operation", None) == "select_rest"
                 or (
@@ -233,7 +241,7 @@ class Agent:
                 )
             )
         ):
-            await self.summarize_work(observation.time, self.memory.work.current(observation))
+            await self.summarize_work(observation.time, activity_id=observation.activity_id)
 
         selected = snapshot(self.personal_skills.selected)
         continuation = current.get()
@@ -534,128 +542,140 @@ class Agent:
             text = text.replace(item, "")
         return text
 
-    async def summarize_work(self, time: int, tasks: set[str] | None = None) -> None:
-        """Summarize a fixed receipt snapshot in the interruptible exit decision task."""
+    async def summarize_work(
+        self, time: int, tasks: set[str] | None = None, *, activity_id: str | None = None
+    ) -> None:
+        """One bounded overview per fixed Activity/job range; no exit-time merging.
+
+        Without an Activity this is nightly catch-up, including explicitly legacy ranges.
+        Source entries are retained; an excerpted overview is not full-text coverage.
+        """
         if not self.cognition.work_notes.enabled:
             return
         import asyncio
 
-        from core.agent.context import Counter, input_limit
+        from core.agent.config import ContextBudgetConfig
+        from core.agent.context import ContextOverflow, Counter, input_limit
 
-        notes, budget = self.memory.work, self.cognition.context_budget
+        notes = self.memory.work
+        budget = self.cognition.context_budget
+        counting = budget if budget.enabled else ContextBudgetConfig(enabled=True)
+        counter = Counter(counting)
         parent = current.get()
-        counter = Counter(budget) if budget.enabled else None
 
-        def request_for(task, material, merging, previous=""):
-            purpose = "work_summary_merge" if merging else "work_summary"
+        async def generate(task, records, *, merging=False, scope=None):
             instruction = (
-                f"Before putting aside your work on {job_name(task)}, "
-                + (
-                    "combine your earlier working summaries. "
-                    if merging
-                    else "summarize this part of your work record. "
-                )
-                + "Keep concrete changes, commands, observed results, "
-                "failures and unfinished work. "
-                "Separate intentions from observed outcomes. This may be part of a longer record; "
-                "do not invent missing results."
+                f"Before leaving your work on {job_name(task)}, write one overview of this visit. "
+                if not merging
+                else f"Organize your earlier notes for {job_name(task)} into one overview. "
             )
-            if previous:
-                instruction += "\nYour partial combined summary:\n" + previous
-            request = self._request(
-                purpose, time, "You are writing your private working notes.", instruction
+            instruction += (
+                "Keep findings, actual changes, observed results, unresolved issues "
+                "and next steps. "
+                "Separate intentions from outcomes. "
+                "The complete original work record remains available by entry number "
+                "through read work record."
             )
-            # Leave room for two future summaries (including multi-byte text) in a merge.
-            length = 1600
-            if counter is not None:
-                room = input_limit(budget, request) - counter.request(request) - 600
-                length = min(length, max(1, room // 12))
-            reply_model = create_model(
+            base = self._request(
+                "work_summary_merge" if merging else "work_summary",
+                time,
+                "You are writing your private working notes.",
+                instruction,
+            )
+            room = input_limit(counting, base) - counter.request(base) - 600
+            length = min(1600, max(1, room // 12))
+            instruction += f" Keep the summary field within {length} characters."
+            model = create_model(
                 "WorkSummary", summary=(str, Field(min_length=1, max_length=length))
             )
-            prompt = (
-                instruction + f" Keep the summary field within {length} characters.\n\n" + material
+            # Retain room for a bounded failed reply and the concise correction.
+            target_limit = input_limit(counting, base) - length * 4 - 600
+            index = "Operation index (entry, time, kind, original characters):\n" + "\n".join(
+                f"{e['entry']} {e['time']} {e.get('kind', e['type'])} {len(e['text'])}"
+                for e in records
             )
-            request = request.model_copy(
-                update={
-                    "messages": (
-                        *request.messages[:-1],
-                        Message(role="user", content=prompt + "\n\n" + form(reply_model)),
-                    ),
-                    "json_schema": reply_model.model_json_schema(),
-                    "structured_output": "json_schema",
-                }
-            )
-            return request, reply_model
 
-        async def generate(request, model):
-            # Separate drafts for every segment, retaining the exit decision's trace IDs.
+            def request_for(material, mode):
+                return base.model_copy(
+                    update={
+                        "messages": (
+                            *base.messages[:-1],
+                            Message(
+                                role="user",
+                                content=(instruction + "\n\n" + material + "\n\n" + form(model)),
+                            ),
+                        ),
+                        "json_schema": model.model_json_schema(),
+                        "structured_output": "json_schema",
+                        "metadata": {
+                            **base.metadata,
+                            "work_scope_id": scope["id"] if scope else None,
+                            "work_input_mode": mode,
+                        },
+                    }
+                )
+
+            full = (
+                index + "\n\n" + "\n\n".join(f"Entry {e['entry']}:\n{e['text']}" for e in records)
+            )
+            request = request_for(full, "full")
+            mode = "full"
+            if counter.request(request) > target_limit:
+                mode = "excerpted"
+                notice = (
+                    "Only excerpts follow; omitted text has NOT been read. "
+                    "This is a range overview, "
+                    "not a claim to have checked every character. "
+                    "Use the original entries for details.\n"
+                )
+                allowance = max(
+                    0, target_limit - counter.request(request_for(index + notice, mode)) - 128
+                )
+                # Keep every operation in the index and distribute head/tail excerpts
+                # across the range; no extra model call is made.
+                while True:
+                    per_entry = allowance // max(1, len(records))
+                    excerpts = []
+                    for e in records:
+                        excerpt = counter.clip(e["text"], per_entry)
+                        if excerpt:
+                            excerpts.append(f"Entry {e['entry']}:\n{excerpt}")
+                    request = request_for(index + "\n\n" + notice + "\n\n".join(excerpts), mode)
+                    if counter.request(request) <= target_limit:
+                        break
+                    if allowance == 0:
+                        raise ContextOverflow("Work operation index cannot fit the input budget")
+                    allowance //= 2
             isolated = DecisionContinuation()
             if parent is not None:
                 isolated.metadata = dict(parent.metadata)
-            client = ContinuationClient(
-                self.client, isolated, budget=budget if budget.enabled else None
-            )
+            client = ContinuationClient(self.client, isolated, budget=counting)
             reply = await complete_structured(client, request, model)
             running = asyncio.current_task()
             if running is not None and running.cancelling():
                 raise asyncio.CancelledError
-            return reply.summary
+            return reply.summary, mode
 
         if parent is not None:
             parent.summarizing_work = True
         try:
-            for task in sorted(tasks if tasks is not None else notes.tasks()):
-                snapshot = len(notes.entries(task))
-                while True:
+            scopes = notes.freeze_scopes(time, activity_id)
+            for task, scope in scopes:
+                # Exit ranges follow actual recorded ownership, not the current assignment.
+                if activity_id is None and tasks is not None and task not in tasks:
+                    continue
+                records = notes.scope_records(task, scope)
+                summary, mode = await generate(task, records, scope=scope)
+                notes.save_overview(task, scope, time, summary, mode)
+            if activity_id is None:
+                # Nightly history compaction is one independent bounded request per job.
+                for task in sorted(tasks if tasks is not None else notes.tasks()):
                     summaries = notes.summaries(task)
-                    if len(summaries) >= 4:
-                        # Merge only the two oldest summaries. If their text cannot fit,
-                        # fold bounded pieces locally; replace them only after all were read.
-                        oldest = summaries[:2]
-                        material = "\n\n".join(entry["text"] for entry in oldest)
-                        combined, offset = "", 0
-                        while offset < len(material):
-                            size = min(6000, len(material) - offset)
-                            while True:
-                                request, model = request_for(
-                                    task, material[offset : offset + size], True, combined
-                                )
-                                if (
-                                    counter is None
-                                    or counter.request(request) <= input_limit(budget, request)
-                                    or size <= 1
-                                ):
-                                    break
-                                size = max(1, size // 2)
-                            combined = await generate(request, model)
-                            offset += size
+                    if len(summaries) > 3:
+                        summary, mode = await generate(task, summaries, merging=True)
                         notes.save_summary(
-                            task,
-                            time,
-                            combined,
-                            min(tuple(e.get("from", (0, 0))) for e in oldest),
-                            max(tuple(e.get("through", (0, 0))) for e in oldest),
-                            [e["id"] for e in oldest],
+                            task, time, summary, (0, 0), (0, 0), [e["id"] for e in summaries]
                         )
-                        continue
-                    start, size = notes.cursor(task), 6000
-                    while True:
-                        text, through = notes.chunk(task, start, snapshot, size)
-                        if not text:
-                            break
-                        request, model = request_for(task, text, False)
-                        if (
-                            counter is None
-                            or counter.request(request) <= input_limit(budget, request)
-                            or size <= 128
-                        ):
-                            break
-                        size //= 2
-                    if not text:
-                        break
-                    summary = await generate(request, model)
-                    notes.save_summary(task, time, summary, start, through)
         finally:
             if parent is not None:
                 parent.summarizing_work = False
