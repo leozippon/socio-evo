@@ -58,7 +58,7 @@ allow for decision latency.
 
 ## Work lifecycle
 
-- Initially six solo issues and one joint issue are posted. With `posting_mode: replenish`
+- Initially eight solo issues and no joint issues are posted, preserving the previous eight resident work slots. With `posting_mode: replenish`
   and `replacement_timing: immediate`, successful final acceptance archives the completed
   job through its retained delivery/evaluation records and immediately posts one new job
   with the same worker count (and trade/job sheet). New jobs use the existing public
@@ -70,11 +70,11 @@ allow for decision latency.
   Expired claims return the same issue to the board unpaid, without adding another job.
   A claim initially allows two days, including the claiming day; solo and joint limits
   are independently configurable.
-- One claim per person. Existing random claim conflict resolution remains. Joint jobs
-  require an invitation and confirmation and have two workers but **one SWE-bench issue**.
-- Partners share one checkout. Sequential terminal commands preserve attribution. They
-  choose their own division of labour, relay, or review. Either may submit one integrated
-  patch (`WORKTREE` collects it). This does not require two separate deliveries.
+- One claim per person. Each new community job has one owner, one private repository,
+  one verdict and one recipient of its payment. Residents may still discuss work, ask
+  for help and share experience voluntarily; these conversations do not create a
+  joint claim or compulsory work-plan discussion. Existing joint-job support remains
+  available to historical runs and explicitly configured scenarios.
 - Local tests run through the terminal. Final acceptance uses the official SWE-bench
   evaluator in a separate checkout. Only a passed result pays. Failed attempts can be
   revised before the deadline without posting another job; an incomplete declaration
@@ -82,8 +82,7 @@ allow for decision latency.
   its workers' one-job slots. Prompts explicitly allow leaving Work to socialize or rest,
   explain the expected feedback time (and possible delay), and prohibit resubmission.
   Successful acceptance releases the slots; residents can then compete for new jobs.
-- A solo issue pays 60. With the configured 1.5 joint premium a joint issue pays 90 total,
-  split equally (45 each). Statements in submitted reports are retained as written even
+- A solo issue pays 60. Statements in submitted reports are retained as written even
   when the resident's declaration differs from the verified result.
 - Evaluator infrastructure failures emit a retryable `work_delayed` event, not zero skill
   or a failed repair. The deadline receives at most one extra day per affected simulated
@@ -135,7 +134,7 @@ The fetch command resolves a dataset revision and writes `test.json` and `manife
 (dataset, revision, SHA-256, instance list). It refuses to overwrite an existing directory.
 Gold patches and hidden test patches remain evaluator-side and are excluded from public
 issue descriptions. For a controlled task subset, set `tasks.instances`; the initial pool
-must contain at least seven distinct issues.
+must contain at least eight distinct issues.
 
 Community runs support `--resume`: completed-day checkpoints include repository patches
 and command logs, and recovery rolls back partial-day workspace changes along with the

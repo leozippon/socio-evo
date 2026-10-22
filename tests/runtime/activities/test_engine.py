@@ -65,7 +65,15 @@ class PrivateRepositories(RepositoryProvider):
 def engine(tmp_path):
     config = load_config(Path("experiments/configs/community/activities.yaml"), ExperimentConfig)
     config = config.model_copy(
-        update={"simulation": config.simulation.model_copy(update={"lunch_place": None})}
+        update={
+            "simulation": config.simulation.model_copy(update={"lunch_place": None}),
+            # Keep explicit joint scenarios covered independently of community defaults.
+            "environment": config.environment.model_copy(update={
+                "conditions": config.environment.conditions.model_copy(
+                    update={"one_part_tasks": 6, "two_part_tasks": 1}
+                )
+            }),
+        }
     )
     provider = PrivateRepositories()
     env = Environment.create(

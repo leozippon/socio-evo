@@ -126,8 +126,8 @@ environment:
   task_shelf_life_days: null
   conditions:
     living_cost: 20
-    one_part_tasks: 6
-    two_part_tasks: 1
+    one_part_tasks: 8
+    two_part_tasks: 0
     trusting_client_prob: 0.0
     reward_multiplier: 1.0
     two_part_premium: 1.5

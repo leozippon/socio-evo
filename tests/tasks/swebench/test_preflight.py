@@ -198,8 +198,8 @@ def test_cli_preflights_first_draw_without_model_or_experiment(tmp_path, monkeyp
     )
     monkeypatch.setattr(sys, "argv", ["preflight", str(config), "--seed", "0", "--out", str(out)])
     preflight.main()
-    assert len(seen) == len(set(seen)) == 7
-    assert "Preflight passed for 7" in capsys.readouterr().out
+    assert len(seen) == len(set(seen)) == 8
+    assert "Preflight passed for 8" in capsys.readouterr().out
     assert not (out / "manifest.json").exists()
     assert not (out / "agents").exists()
 
