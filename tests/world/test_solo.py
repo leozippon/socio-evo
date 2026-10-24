@@ -1,6 +1,6 @@
 """The work-only world of the capability evaluation: a resident's runtime on a scripted model
-working one task on the fake backend, the work tools answering as the town's do, the endings and
-budgets, and the guard over every text the resident reads."""
+working one task on the fake backend with the town's workspace tools, the endings and budgets,
+and the guard over every text the resident reads."""
 
 from __future__ import annotations
 
@@ -13,12 +13,10 @@ from agent.runtime import Runtime
 from agent.testing import ScriptedModel, reply, running, tool_call
 from agent.wording import offences
 from infrastructure.storage import read_jsonl
-from tests.world.conftest import awake_at
 from world import solo as texts
 from world.solo import SoloConfig, SoloPort
 from world.testing import FakeBackend
 
-WORK = ("shell", "read_repo_file", "write_repo_file")
 FAILED = (
     "2 of the 3 checks your change should make pass did not pass and 1 of the 10 checks that "
     "passed before failed"
@@ -46,23 +44,25 @@ async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
     port, backend = solo()
     model = ScriptedModel(
         reply("", tool_call("shell", command="ls")),
-        reply("", tool_call("write_repo_file", path="fix.py", content="FIX\n")),
+        reply("", tool_call("write_repo_file", path="fix.py", content="BUG\n")),
+        reply("", tool_call("edit_repo_file", path="fix.py", old_text="BUG", new_text="FIX")),
         reply("", tool_call("submit"), tool_call("shell", command="pwd")),
     )
     results = await work(port, model, tmp_path)
 
-    assert port.ending == "accepted" and len(model.requests) == 3
+    assert port.ending == "accepted" and len(model.requests) == 4
     system, opening = model.requests[0].messages
     assert "How this work goes.\n\nYou have one task" in system.content
     assert "You can submit at most 2 times. You have 30 minutes and 60 turns" in system.content
     assert opening.content == (
         "Your work on the task begins.\n\nYou are at work on a task in org/repo1. You have 30 "
         "minutes and 60 turns left. Now you can use: shell, read_repo_file, write_repo_file, "
-        "submit, give_up.\n\nThe problem:\n\nProblem 1 goes wrong.\nDetails of 1."
+        "edit_repo_file, submit, give_up.\n\nThe problem:\n\nProblem 1 goes wrong.\nDetails of 1."
     )
     assert results == [
         "ran ls\nExit code 0.",
         "You wrote fix.py (4 characters).",
+        "You changed fix.py.",
         "Accepted. Your work on the task is done.",
         "Your work on the task is over.",
     ]
@@ -129,34 +129,6 @@ async def test_the_last_turn_is_carried_out_and_then_the_budget_ends_the_task():
     await asyncio.sleep(0.06)
     assert await timed.call("shell", {"command": "ls"}) == ToolResult(texts.TIME_UP, ends_turn=True)
     assert timed.ending == "time" and backend.opened == []
-
-
-async def test_the_work_tools_are_declared_and_answer_as_the_towns(make_town):
-    town = make_town()
-    await awake_at(town)
-    await town.call("Mei", "go", place="workshop")
-    await town.until("09:00")
-    await town.call("Mei", "start_work")
-    await town.call("Mei", "claim_task", task=1)
-    port, _ = solo(shell_timeout_s=town.world.config.work.shell_timeout_s)
-
-    declared = {spec.name: spec for spec in town.world.tool_specs}
-    assert [spec for spec in port.tool_specs() if spec.name in WORK] == [
-        declared[name] for name in WORK
-    ]
-    calls = [
-        ("shell", {"command": "ls"}),
-        ("shell", {"command": "false"}),
-        ("shell", {"command": "sleep forever"}),
-        ("shell", {"command": "ls", "cwd": "/"}),
-        ("read_repo_file", {"path": "README"}),
-        ("read_repo_file", {"path": "missing.py"}),
-        ("write_repo_file", {"path": "a.py", "content": "x\n"}),
-        ("write_repo_file", {"path": "a.py"}),
-        ("read_repo_file", {"path": "a.py"}),
-    ]
-    for name, args in calls:
-        assert (await port.call(name, args)).text == (await town.call("Mei", name, **args)).text
 
 
 async def test_nothing_the_resident_reads_offends():

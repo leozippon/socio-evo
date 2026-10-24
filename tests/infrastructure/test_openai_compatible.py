@@ -392,3 +392,34 @@ async def test_a_stream_that_breaks_off_is_retried_from_its_start(monkeypatch):
     response = await _client(monkeypatch, lambda request: responses.pop(0)).stream(_request())
     assert not responses
     assert response.text == "Writing now." and response.reasoning == "I should write it."
+
+
+@pytest.mark.parametrize("streamed", [False, True], ids=["complete", "stream"])
+async def test_a_reply_the_server_aborted_is_retried_like_a_dropped_connection(
+    monkeypatch, streamed
+):
+    async def wait(seconds: float) -> None:
+        pass
+
+    def answer(finish_reason: str) -> httpx2.Response:
+        if streamed:
+            return _sse([_chunk({"content": "Writing "}), _chunk({}, finish_reason=finish_reason)])
+        return httpx2.Response(200, json=_completion("", finish_reason=finish_reason))
+
+    monkeypatch.setattr(asyncio, "sleep", wait)
+    received: list[httpx2.Request] = []
+    finishes = ["abort", "abort", "stop"]
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        received.append(request)
+        return answer(finishes.pop(0) if finishes else "abort")
+
+    client = _client(monkeypatch, handler)
+    call = client.stream if streamed else client.complete
+    response = await call(_request())
+    assert response.finish_reason == "stop" and len(received) == 3
+
+    received.clear()
+    with pytest.raises(LLMCallError, match="aborted"):
+        await call(_request())
+    assert len(received) == 3

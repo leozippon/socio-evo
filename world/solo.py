@@ -1,10 +1,11 @@
 """The world of the capability evaluation: one resident, one task, one Work event and no town.
 
 `SoloPort` is the `agent.port.WorldPort` of a resident working alone on one task with the
-town's work tools: `shell`, `read_repo_file` and `write_repo_file` act in a workspace of the
-task, opened on first use through the same `Backend` as the town's and answering as the town's
-do; `submit` runs the official acceptance in a fresh container, at most `max_submissions` times;
-`give_up` ends the work. There is no clock, place, purse or other resident. The resident is
+town's work tools: the town's workspace tools (`world.tools.WORKSPACE_SPECS`: `shell` and the
+reading, writing and editing of repository files) act in a workspace of the task, opened on
+first use through the same `Backend` as the town's, and answer as the town's do, being the same
+code; `submit` runs the official acceptance in a fresh container, at most `max_submissions`
+times; `give_up` ends the work. There is no clock, place, purse or other resident. The resident is
 told how the work goes in place of the town's rules, and the situation tells the task's
 problem and repository, the minutes and turns left and the verdict of the last submission.
 
@@ -32,10 +33,18 @@ from pydantic import PositiveFloat, PositiveInt
 
 from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.config import StrictModel
-from world.backend import Backend, ExecResult, Task, Verdict, Workspace
+from world.backend import Backend, Task, Verdict, Workspace
 from world.board import failure
 from world.telling import counted
-from world.tools import check
+from world.tools import (
+    WORKSPACE_SPECS,
+    check,
+    edit_repo,
+    read_repo,
+    spec,
+    told_command,
+    write_repo,
+)
 
 Ending = Literal["accepted", "rejected", "gave_up", "time", "requests", "usage", "error"]
 """How a task ended: accepted; the last submission allowed not accepted; given up; the budget
@@ -108,6 +117,7 @@ class SoloPort:
             "shell": self._shell,
             "read_repo_file": self._read_repo_file,
             "write_repo_file": self._write_repo_file,
+            "edit_repo_file": self._edit_repo_file,
             "submit": self._submit,
             "give_up": self._give_up,
         }
@@ -243,23 +253,16 @@ class SoloPort:
     async def _shell(self, args: dict[str, Any]) -> ToolResult:
         workspace = await self._open()
         timeout = self.config.shell_timeout_s
-        return ToolResult(_command_told(await workspace.exec(args["command"], timeout), timeout))
+        return ToolResult(told_command(await workspace.exec(args["command"], timeout), timeout))
 
     async def _read_repo_file(self, args: dict[str, Any]) -> ToolResult:
-        workspace, path = await self._open(), args["path"]
-        try:
-            content = await workspace.read_file(path)
-        except OSError as error:
-            return ToolResult(f"You could not read {path}: {error}")
-        return ToolResult(content or f"{path} is empty.")
+        return ToolResult((await read_repo(await self._open(), args))[0])
 
     async def _write_repo_file(self, args: dict[str, Any]) -> ToolResult:
-        workspace, path, content = await self._open(), args["path"], args["content"]
-        try:
-            await workspace.write_file(path, content)
-        except OSError as error:
-            return ToolResult(f"You could not write {path}: {error}")
-        return ToolResult(f"You wrote {path} ({counted(len(content), 'character')}).")
+        return ToolResult((await write_repo(await self._open(), args))[0])
+
+    async def _edit_repo_file(self, args: dict[str, Any]) -> ToolResult:
+        return ToolResult((await edit_repo(await self._open(), args))[0])
 
     async def _submit(self, args: dict[str, Any]) -> ToolResult:
         workspace = await self._open()
@@ -290,25 +293,10 @@ class SoloPort:
 
 
 def _specs(config: SoloConfig) -> dict[str, ToolSpec]:
-    """The work tools by name, in their declared order. The first three are the town's word
-    for word (`world.tools.specs`); submitting and giving up are told as they go here."""
-
-    def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
-        schema = {"type": "object", "properties": properties, "required": list(required)}
-        return ToolSpec(name, description, schema)
-
-    def text(description: str) -> dict[str, Any]:
-        return {"type": "string", "description": description}
-
+    """The work tools by name, in their declared order: the town's workspace tools, then
+    submitting and giving up as they go here."""
     tools = [
-        spec("shell", "Run a shell command in your workspace, in the repository's folder, "
-             "without internet. You get its whole output and its exit code.", ("command",),
-             command=text("the command line")),
-        spec("read_repo_file", "Read a file of your workspace.", ("path",),
-             path=text("the file's path, from the repository's folder")),
-        spec("write_repo_file", "Write a whole file in your workspace, creating it if needed.",
-             ("path", "content"), path=text("the file's path, from the repository's folder"),
-             content=text("the file's full new text")),
+        *WORKSPACE_SPECS,
         spec("submit", "Hand in your changes to the repository for checking. You are told "
              "whether they were accepted, and if not, what kind of failure it was and how many "
              "checks failed. The task can be handed in at most "
@@ -317,15 +305,3 @@ def _specs(config: SoloConfig) -> dict[str, ToolSpec]:
              "is checked."),
     ]  # fmt: skip
     return {tool.name: tool for tool in tools}
-
-
-def _command_told(result: ExecResult, timeout: int) -> str:
-    """A command's outcome as the town's `shell` tells it."""
-    parts = [result.stdout.rstrip("\n")] if result.stdout else []
-    if result.stderr:
-        parts.append("stderr:\n" + result.stderr.rstrip("\n"))
-    if result.timed_out:
-        parts.append(f"The command was stopped after {timeout} seconds.")
-    else:
-        parts.append(f"Exit code {result.exit_code}.")
-    return "\n".join(parts)

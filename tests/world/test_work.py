@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import FakeBackend, FakeVerdict, awake_at, town_config
+from tests.world.conftest import awake_at, town_config
+from world.testing import FakeBackend, FakeVerdict
 
 
 async def at_work(town, *names: str) -> None:
@@ -143,6 +144,45 @@ async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):
         ("false", 1),
         ("sleep forever", 124),
     ]
+
+
+async def test_repository_files_are_read_in_part_and_changed_in_place(make_town):
+    town = make_town()
+    await at_work(town, "Mei")
+    await town.call("Mei", "claim_task", task=1)
+    await town.call("Mei", "write_repo_file", path="a.py", content="one\ntwo\nthree\ntwo\n")
+
+    async def read(**args) -> str:
+        return (await town.call("Mei", "read_repo_file", path="a.py", **args)).text
+
+    async def edit(old: str, new: str, path: str = "a.py") -> str:
+        args = {"path": path, "old_text": old, "new_text": new}
+        return (await town.call("Mei", "edit_repo_file", **args)).text
+
+    assert await read(offset=2, limit=2) == "Lines 2 to 3 of 4 in a.py:\n\ntwo\nthree\n"
+    assert await read(offset=4, limit=10) == "Lines 4 to 4 of 4 in a.py:\n\ntwo\n"
+    assert await read(limit=1) == "Lines 1 to 1 of 4 in a.py:\n\none\n"
+    assert await read(offset=5) == "a.py has 4 lines; there is no line 5."
+    assert await read(offset=0) == "offset must be a whole number of at least 1."
+    assert await edit("two", "2") == (
+        "The passage to replace appears 2 times in a.py; include more of the text around it so "
+        "that it appears once."
+    )
+    missing = "The passage to replace does not appear in a.py."
+    assert await edit("four", "4") == await edit("", "4") == missing
+    assert await edit("x", "y", path="nope.py") == (
+        "You could not change nope.py: cannot read nope.py: No such file or directory"
+    )
+    assert await read() == "one\ntwo\nthree\ntwo\n"
+    assert await edit("three\ntwo", "3\n2") == "You changed a.py."
+    assert await read() == "one\ntwo\n3\n2\n"
+    writes = [e for e in town.world.log.entries() if e["kind"] == "file_write"]
+    assert [(e["payload"].get("edit", False), e["payload"]["ok"]) for e in writes] == [
+        (False, True),
+        *[(True, False)] * 4,
+        (True, True),
+    ]
+    assert writes[-1]["text"] == "Mei changed a.py for task 1."
 
 
 async def test_giving_up_a_task_throws_its_changes_away(make_town):

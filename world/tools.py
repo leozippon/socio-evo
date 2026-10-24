@@ -4,7 +4,13 @@
 every step. `World.call` refuses a tool the resident's event does not offer and arguments that
 do not fit the spec; the handlers here check the remaining conditions, each refusal one line
 naming the condition, and act. Outputs of shell commands and repository files are passed
-through whole; the runtime truncates what enters its context.
+through whole (a file in part when the resident asks for some of its lines); the runtime
+truncates what enters its context.
+
+The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared and answered here
+for the town and for the work-only port of `world.solo` alike: what they do in a workspace and
+tell of it is `told_command`, `read_repo`, `write_repo` and `edit_repo`, and the town's handlers
+add the claim they need and the log entry.
 """
 
 from __future__ import annotations
@@ -15,7 +21,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
-from world.backend import Workspace
+from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
 from world.clock import DAY, clock_time, parse_hour
 from world.config import TownConfig
@@ -30,18 +36,41 @@ MAX_WAIT_MINUTES = 600
 _SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
+def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
+    """Tool `name`, whose arguments are `properties`, of which `required` must be given."""
+    schema = {"type": "object", "properties": properties, "required": list(required)}
+    return ToolSpec(name, description, schema)
+
+
+def _text(description: str) -> dict[str, Any]:
+    return {"type": "string", "description": description}
+
+
+def _number(description: str, minimum: int, maximum: int | None = None) -> dict[str, Any]:
+    bounds = {"minimum": minimum} | ({"maximum": maximum} if maximum is not None else {})
+    return {"type": "integer", "description": description} | bounds
+
+
+_REPO_PATH = "the file's path, from the repository's folder"
+WORKSPACE_SPECS = (
+    spec("shell", "Run a shell command in your workspace, in the repository's folder, without "
+         "internet. You get its whole output and its exit code.", ("command",),
+         command=_text("the command line")),
+    spec("read_repo_file", "Read a file of your workspace. For a long file, give offset and "
+         "limit to read some of its lines.", ("path",), path=_text(_REPO_PATH),
+         offset=_number("the first line to read, counting from 1", 1),
+         limit=_number("how many lines to read", 1)),
+    spec("write_repo_file", "Write a whole file in your workspace, creating it if needed.",
+         ("path", "content"), path=_text(_REPO_PATH), content=_text("the file's full new text")),
+    spec("edit_repo_file", "Replace a passage of a file in your workspace with new text. The "
+         "passage must appear exactly once in the file.", ("path", "old_text", "new_text"),
+         path=_text(_REPO_PATH), old_text=_text("the passage as it stands"),
+         new_text=_text("what replaces it")),
+)  # fmt: skip
+"""The tools that act in a task's workspace, in their declared order."""
+
+
 def specs(config: TownConfig) -> list[ToolSpec]:
-    def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
-        schema = {"type": "object", "properties": properties, "required": list(required)}
-        return ToolSpec(name, description, schema)
-
-    def text(description: str) -> dict[str, Any]:
-        return {"type": "string", "description": description}
-
-    def number(description: str, minimum: int, maximum: int | None = None) -> dict[str, Any]:
-        bounds = {"minimum": minimum} | ({"maximum": maximum} if maximum is not None else {})
-        return {"type": "integer", "description": description} | bounds
-
     workplace = config.workplace.name
     return [
         spec("help", f"Read the town's rules on one topic: {listed(list(TOPICS))}.",
@@ -53,13 +82,13 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                     "description": "the place's name as the rules give it in brackets"}),
         spec("wait", "Let time pass where you are. You are told when something happens, or "
              "when the minutes are up.", ("minutes",),
-             minutes=number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
+             minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
         spec("sleep", "Go to bed at home, ending your day. You can then look over your day, "
              "rate people and see to your files before you fall asleep.", ("until", "journal"),
-             until=text(f"the hour to wake, HH:MM, no earlier than {config.day.wake_earliest}"),
-             journal=text("your account of the day in your own words: what work you did and "
-                          "with what result, what methods you used and where they came from, "
-                          "what you concluded, and what remains open")),
+             until=_text(f"the hour to wake, HH:MM, no earlier than {config.day.wake_earliest}"),
+             journal=_text("your account of the day in your own words: what work you did and "
+                           "with what result, what methods you used and where they came from, "
+                           "what you concluded, and what remains open")),
         spec("start_work", f"Start work at {workplace} while it is open. If you hold a task, "
              "its workspace is set up again as you left it."),
         spec("view_board", "Read the board: each task's number, repository, first line and "
@@ -67,15 +96,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "whole problem is shown too."),
         spec("claim_task", "Claim a task from the board. You get a workspace with the task's "
              "repository and are shown its whole problem.", ("task",),
-             task=number("the task's number on the board", 1)),
-        spec("shell", "Run a shell command in your workspace, in the repository's folder, "
-             "without internet. You get its whole output and its exit code.", ("command",),
-             command=text("the command line")),
-        spec("read_repo_file", "Read a file of your workspace.", ("path",),
-             path=text("the file's path, from the repository's folder")),
-        spec("write_repo_file", "Write a whole file in your workspace, creating it if needed.",
-             ("path", "content"), path=text("the file's path, from the repository's folder"),
-             content=text("the file's full new text")),
+             task=_number("the task's number on the board", 1)),
+        *WORKSPACE_SPECS,
         spec("submit", "Hand in your changes to the repository for checking. You are told "
              "whether they were accepted, and if so you are paid at once; if not, what kind of "
              "failure it was and how many checks failed. Each task can be handed in only a few "
@@ -86,22 +108,22 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "its changes."),
         spec("say", "Speak where you are. Without `to`, everyone awake here hears you; with "
              "`to`, only the people you name, and the others notice only that you said "
-             "something to them.", ("text",), text=text("what you say"),
+             "something to them.", ("text",), text=_text("what you say"),
              to={"type": "array", "items": {"type": "string"},
                  "description": "the names of the people you speak to"}),
         spec("give_money", "Hand some of your money to someone you are talking with.",
-             ("to", "amount"), to=text("their name"), amount=number("how much", 1)),
+             ("to", "amount"), to=_text("their name"), amount=_number("how much", 1)),
         spec("share_skill", "Pass one of your skills to someone you are talking with: they "
-             "receive the text of its file.", ("to", "skill"), to=text("their name"),
-             skill=text("the skill's file name in your skills folder")),
+             "receive the text of its file.", ("to", "skill"), to=_text("their name"),
+             skill=_text("the skill's file name in your skills folder")),
         spec("leave_conversation", "Step out of the conversation and go back to what you "
              "were doing."),
         spec("review_day", "Read the town's record of your day: where you went, what you did, "
              "what was said to you and by you, and the money you received and paid."),
         spec("rate", "Rate someone you spent time with today, from 1 to 5, with your reason. "
              "They read it the next night, without your name.", ("resident", "score", "reason"),
-             resident=text("their name"), score=number("from 1 to 5", 1, 5),
-             reason=text("why")),
+             resident=_text("their name"), score=_number("from 1 to 5", 1, 5),
+             reason=_text("why")),
     ]  # fmt: skip
 
 
@@ -135,6 +157,73 @@ def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
         if "enum" in properties[key] and value not in properties[key]["enum"]:
             return f"{key} must be one of: {', '.join(properties[key]['enum'])}."
     return None
+
+
+def told_command(result: ExecResult, timeout: int) -> str:
+    """What `shell` tells of a command's outcome: its outputs whole, then its exit code, or that
+    it was stopped after `timeout` seconds."""
+    parts = [result.stdout.rstrip("\n")] if result.stdout else []
+    if result.stderr:
+        parts.append("stderr:\n" + result.stderr.rstrip("\n"))
+    if result.timed_out:
+        parts.append(f"The command was stopped after {timeout} seconds.")
+    else:
+        parts.append(f"Exit code {result.exit_code}.")
+    return "\n".join(parts)
+
+
+async def read_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
+    """What `read_repo_file` with `args` tells in `workspace`, and whether the file was read:
+    the whole file, or, given `offset` (the first line, from 1) or `limit` (how many lines),
+    those lines as the resident's own `read_file` gives them."""
+    path = args["path"]
+    try:
+        content = await workspace.read_file(path)
+    except OSError as error:
+        return f"You could not read {path}: {error}", False
+    offset, limit = args.get("offset"), args.get("limit")
+    if offset is None and limit is None:
+        return content or f"{path} is empty.", True
+    lines = content.splitlines(keepends=True)
+    first = offset or 1
+    if first > len(lines):
+        return f"{path} has {counted(len(lines), 'line')}; there is no line {first}.", True
+    chosen = lines[first - 1 : None if limit is None else first - 1 + limit]
+    last = first + len(chosen) - 1
+    return f"Lines {first} to {last} of {len(lines)} in {path}:\n\n{''.join(chosen)}", True
+
+
+async def write_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
+    """What `write_repo_file` with `args` tells in `workspace`, and whether the file was
+    written."""
+    path, content = args["path"], args["content"]
+    try:
+        await workspace.write_file(path, content)
+    except OSError as error:
+        return f"You could not write {path}: {error}", False
+    return f"You wrote {path} ({counted(len(content), 'character')}).", True
+
+
+async def edit_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
+    """What `edit_repo_file` with `args` tells in `workspace`, and whether the file was
+    changed: the passage `old_text`, which must appear exactly once, replaced by `new_text`,
+    as the resident's own `edit_file` does."""
+    path, old, new = args["path"], args["old_text"], args["new_text"]
+    try:
+        content = await workspace.read_file(path)
+        count = content.count(old) if old else 0
+        if count == 0:
+            return f"The passage to replace does not appear in {path}.", False
+        if count > 1:
+            return (
+                f"The passage to replace appears {count} times in {path}; include more of the "
+                "text around it so that it appears once.",
+                False,
+            )
+        await workspace.write_file(path, content.replace(old, new, 1))
+    except OSError as error:
+        return f"You could not change {path}: {error}", False
+    return f"You changed {path}.", True
 
 
 Handler = Callable[["World", "Resident", dict[str, Any]], Awaitable[ToolResult]]
@@ -265,14 +354,7 @@ async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             "output_tail": (result.stdout + result.stderr)[-1000:],
         },
     )
-    parts = [result.stdout.rstrip("\n")] if result.stdout else []
-    if result.stderr:
-        parts.append("stderr:\n" + result.stderr.rstrip("\n"))
-    if result.timed_out:
-        parts.append(f"The command was stopped after {timeout} seconds.")
-    else:
-        parts.append(f"Exit code {result.exit_code}.")
-    return ToolResult("\n".join(parts))
+    return ToolResult(told_command(result, timeout))
 
 
 async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -281,19 +363,14 @@ async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> To
         return held
     claim, workspace = held
     number, path = claim.task, args["path"]
-    try:
-        content = await workspace.read_file(path)
-    except OSError as error:
-        content, problem = None, str(error)
+    told, ok = await read_repo(workspace, args)
     world.record(
         "file_read",
         lambda w: f"{cap(you(r.name, w))} read {path} for task {number}.",
         actor=r,
-        payload={"task": number, "path": path, "ok": content is not None},
+        payload={"task": number, "path": path, "ok": ok},
     )
-    if content is None:
-        return ToolResult(f"You could not read {path}: {problem}")
-    return ToolResult(content or f"{path} is empty.")
+    return ToolResult(told)
 
 
 async def _write_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -301,21 +378,31 @@ async def _write_repo_file(world: World, r: Resident, args: dict[str, Any]) -> T
     if isinstance(held, ToolResult):
         return held
     claim, workspace = held
-    number, path, content = claim.task, args["path"], args["content"]
-    try:
-        await workspace.write_file(path, content)
-        problem = None
-    except OSError as error:
-        problem = str(error)
+    number, path = claim.task, args["path"]
+    told, ok = await write_repo(workspace, args)
     world.record(
         "file_write",
         lambda w: f"{cap(you(r.name, w))} wrote {path} for task {number}.",
         actor=r,
-        payload={"task": number, "path": path, "characters": len(content), "ok": not problem},
+        payload={"task": number, "path": path, "characters": len(args["content"]), "ok": ok},
     )
-    if problem:
-        return ToolResult(f"You could not write {path}: {problem}")
-    return ToolResult(f"You wrote {path} ({counted(len(content), 'character')}).")
+    return ToolResult(told)
+
+
+async def _edit_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    held = await _workspace(world, r)
+    if isinstance(held, ToolResult):
+        return held
+    claim, workspace = held
+    number, path = claim.task, args["path"]
+    told, ok = await edit_repo(workspace, args)
+    world.record(
+        "file_write",
+        lambda w: f"{cap(you(r.name, w))} changed {path} for task {number}.",
+        actor=r,
+        payload={"task": number, "path": path, "edit": True, "ok": ok},
+    )
+    return ToolResult(told)
 
 
 async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -559,6 +646,7 @@ HANDLERS: dict[str, Handler] = {
     "shell": _shell,
     "read_repo_file": _read_repo_file,
     "write_repo_file": _write_repo_file,
+    "edit_repo_file": _edit_repo_file,
     "submit": _submit,
     "abandon_task": _abandon_task,
     "leave_work": _leave_work,
