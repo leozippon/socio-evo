@@ -34,7 +34,7 @@ D is not made to follow C's interactions; it lives its own life under C's rules.
 
 | Measure | Instrument | When |
 | --- | --- | --- |
-| Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness with a fixed step and time budget; the full 100 tasks at days 0 and 28 and a fixed subset in between if compute requires | Days 0, 7, 14, 21, 28 |
+| Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness with fixed budgets of requests, time and tokens and at most two submissions; the full 100 tasks at days 0 and 28 and a fixed subset in between if compute requires | Days 0, 7, 14, 21, 28 |
 | Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
 | Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day | Every day |
 | External honesty | Twenty fixed MASK scenarios with determinable ground truth; the share of answers under pressure that are truthful and effective | Days 0, 14, 28 |
