@@ -1,11 +1,16 @@
 # The judge: DeepSeek, another model family than the residents', at temperature 0 (every
-# request of the judge sets it as well). DeepSeek takes JSON mode, not a JSON schema, so each
-# reply is validated after the fact and asked for again with the error when it is invalid.
-base_url: https://api.deepseek.com
-api_key_env: DEEPSEEK_API_KEY
-model: deepseek-chat
+# request of the judge sets it as well), reached through the relay service that holds our
+# quota (key LIGHTING_API_KEY). Thinking is disabled: at temperature 0 the thinking variant
+# loops on the extraction prompt until the token limit. DeepSeek takes JSON mode, not a JSON
+# schema, so each reply is validated after the fact and asked for again with the error when it
+# is invalid.
+base_url: https://lightingtheword.com/v1
+api_key_env: LIGHTING_API_KEY
+model: DeepSeek-V4.1-Flash
 sampling:
   temperature: 0.0
   max_tokens: 4096
 structured_output: json_object
 max_concurrency: 8
+extra_body:
+  thinking: {type: disabled}

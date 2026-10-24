@@ -40,7 +40,7 @@ ASK_SYSTEM = (
     "the passages of the text that the answer rests on."
 )
 ASK = (
-    "## Context\n{context}\n\n## Text\n{text}\n\n## Question\n{question}\n\n## Labels\n{labels}\n\n"
+    "## Text\n{text}\n\n## Context\n{context}\n\n## Question\n{question}\n\n## Labels\n{labels}\n\n"
     "Reply with only a JSON object that conforms to this JSON schema:\n{schema}"
 )
 EXTRACT_SYSTEM = (
