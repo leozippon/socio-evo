@@ -1,0 +1,83 @@
+# The town every group lives in: eight residents in five homes, the Workshop, Café Linde, the
+# Anchor and the river walk, for 28 days. Not a complete configuration by itself: each file of
+# groups/ overlays it with the group's name and social rules (see experiments/config.py for how
+# an overlay merges).
+#
+# The world gives opening hours to the workplace alone; the café (meant 07:00-23:00) and the
+# Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
+
+llm:
+  base_url: ${VLLM_BASE_URL}
+  api_key_env: VLLM_API_KEY
+  model: qwen3.8-27b-fp8
+  max_concurrency: 8 # one request in flight per resident
+
+runtime:
+  reasoning_effort: low
+
+days: 28
+skills_writable: true
+
+residents:
+  - {name: Mei, background: experiments/residents/mei.md}
+  - {name: Tomas, background: experiments/residents/tomas.md}
+  - {name: Aisha, background: experiments/residents/aisha.md}
+  - {name: Jonas, background: experiments/residents/jonas.md}
+  - {name: Lucia, background: experiments/residents/lucia.md}
+  - {name: Ravi, background: experiments/residents/ravi.md}
+  - {name: Olga, background: experiments/residents/olga.md}
+  - {name: Kofi, background: experiments/residents/kofi.md}
+
+town:
+  currency: $
+  start_date: 2026-03-02 # a Monday
+  seed: 20260302
+  places:
+    - {id: mill-street-house, name: the shared house on Mill Street, kind: home}
+    - {id: college-flat, name: the flat by the college gates, kind: home}
+    - {id: market-flat, name: the flat on the market square, kind: home}
+    - {id: river-cottage, name: the cottage by the river, kind: home}
+    - {id: hill-road-house, name: the house on Hill Road, kind: home}
+    - {id: workshop, name: the Workshop, kind: workplace, opens: "09:00", closes: "18:00"}
+    - {id: cafe, name: Café Linde, kind: social}
+    - {id: anchor, name: the Anchor, kind: social}
+    - {id: river-walk, name: the river walk, kind: social}
+  # Fifteen minutes from or to a home; ten between the Workshop, the café, the Anchor and the walk.
+  travel_minutes: 15
+  routes:
+    - {between: [workshop, cafe], minutes: 10}
+    - {between: [workshop, anchor], minutes: 10}
+    - {between: [workshop, river-walk], minutes: 10}
+    - {between: [cafe, anchor], minutes: 10}
+    - {between: [cafe, river-walk], minutes: 10}
+    - {between: [anchor, river-walk], minutes: 10}
+  # Starting purses as the backgrounds suggest: Aisha's savings are nearly gone, Lucia saved
+  # for a year.
+  residents:
+    - {name: Mei, home: mill-street-house, purse: 200}
+    - {name: Tomas, home: college-flat, purse: 240}
+    - {name: Aisha, home: mill-street-house, purse: 120}
+    - {name: Jonas, home: market-flat, purse: 150}
+    - {name: Lucia, home: river-cottage, purse: 300}
+    - {name: Ravi, home: market-flat, purse: 140}
+    - {name: Olga, home: hill-road-house, purse: 180}
+    - {name: Kofi, home: hill-road-house, purse: 130}
+  work:
+    split: train
+    payment: 60
+    living_cost: 40
+    acceptance_runs: 2
+    claim_expiry_days: 1 # a claim runs out at the next day's closing
+    shell_timeout_s: 600
+    acceptance_timeout_s: 1800
+  social:
+    silence_minutes: 10
+    skills_shareable: true
+  clock:
+    speed_active: 4
+    speed_idle: 60
+    idle_minutes: 30
+  day:
+    wake_earliest: "06:00"
+    forced_sleep: "02:00"
+    checkpoint: "02:30"

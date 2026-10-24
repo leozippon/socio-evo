@@ -1,4 +1,14 @@
-"""The on-disk layout of a run; the single source of every path inside it."""
+"""The on-disk layout of a run; the single source of every path inside it.
+
+runs/<experiment>/
+├── manifest.json               status, code revision, start and end
+├── config.yaml                 the frozen configuration
+├── world.jsonl                 the world log
+├── checkpoints/day-NN.json     the world at each daily checkpoint; day-00 before day 1
+├── agents/<name>/              agent directories, git repositories tagged day-NN
+├── evaluation/                 results of evaluations on exports
+└── run.log                     the process log
+"""
 
 import os
 from datetime import UTC, datetime
@@ -21,17 +31,23 @@ class RunStatus(StrEnum):
 
 
 class Manifest(StrictModel):
-    """Run bookkeeping; times are wall-clock UTC."""
+    """Run bookkeeping; times are wall-clock UTC; `code_revision` is the code the run was
+    created with."""
 
-    seed: int
     status: RunStatus
     code_revision: str
     started_at: AwareDatetime
     ended_at: AwareDatetime | None = None
 
 
+def day_tag(day: int) -> str:
+    """The name of day `day` in a run: its checkpoint file's stem and its agent directories'
+    git tag (`day-00` is the state before the first day)."""
+    return f"day-{day:02d}"
+
+
 class RunDirectory:
-    """Paths and manifest of one run at `runs/<experiment>/seed-<NNNN>/`.
+    """Paths and manifest of the run at `root`, `runs/<experiment>/`.
 
     Obtain one through `create` (a new run) or `open` (an existing run); resuming is explicit.
     """
@@ -41,19 +57,13 @@ class RunDirectory:
 
     @classmethod
     def create(
-        cls,
-        runs_root: Path,
-        experiment: str,
-        seed: int,
-        *,
-        config: BaseModel,
-        code_revision: str,
+        cls, runs_root: Path, experiment: str, *, config: BaseModel, code_revision: str
     ) -> "RunDirectory":
         """Create the run directory, freeze `config` into it and start a running manifest.
 
         Raises FileExistsError if the run directory already exists.
         """
-        run = cls(cls.root_of(runs_root, experiment, seed))
+        run = cls(runs_root / experiment)
         run.root.mkdir(parents=True)
         for directory in (run.checkpoints_dir, run.agents_dir, run.evaluation_dir):
             directory.mkdir()
@@ -63,18 +73,12 @@ class RunDirectory:
         )
         run._write_manifest(
             Manifest(
-                seed=seed,
                 status=RunStatus.RUNNING,
                 code_revision=code_revision,
                 started_at=datetime.now(UTC),
             )
         )
         return run
-
-    @staticmethod
-    def root_of(runs_root: Path, experiment: str, seed: int) -> Path:
-        """Where the run of `experiment` with `seed` lives under `runs_root`."""
-        return runs_root / experiment / f"seed-{seed:04d}"
 
     @classmethod
     def open(cls, root: Path) -> "RunDirectory":
@@ -92,12 +96,12 @@ class RunDirectory:
         return self.root / "config.yaml"
 
     @property
-    def events_path(self) -> Path:
-        return self.root / "events.jsonl"
+    def world_log_path(self) -> Path:
+        return self.root / "world.jsonl"
 
     @property
-    def llm_calls_path(self) -> Path:
-        return self.root / "llm_calls.jsonl"
+    def run_log_path(self) -> Path:
+        return self.root / "run.log"
 
     @property
     def checkpoints_dir(self) -> Path:
@@ -111,27 +115,21 @@ class RunDirectory:
     def evaluation_dir(self) -> Path:
         return self.root / "evaluation"
 
-    @property
-    def evaluation_calls_path(self) -> Path:
-        """Every model call made by evaluations of the run, apart from the run's own."""
-        return self.evaluation_dir / "llm_calls.jsonl"
-
     def checkpoint_path(self, day: int) -> Path:
-        return self.checkpoints_dir / f"day-{day:04d}.json"
+        return self.checkpoints_dir / f"{day_tag(day)}.json"
 
-    def latest_checkpoint(self) -> Path | None:
-        """The checkpoint with the highest day number, or None if there is none."""
+    def latest_checkpoint(self) -> int | None:
+        """The highest day with a checkpoint, or None if there is none."""
         return max(
-            self.checkpoints_dir.glob("day-*.json"),
-            key=lambda path: int(path.stem.removeprefix("day-")),
+            (
+                int(path.stem.removeprefix("day-"))
+                for path in self.checkpoints_dir.glob("day-*.json")
+            ),
             default=None,
         )
 
-    def agent_dir(self, agent_id: str) -> Path:
-        return self.agents_dir / agent_id
-
-    def evaluation_path(self, label: str, agent_id: str) -> Path:
-        return self.evaluation_dir / label / f"{agent_id}.json"
+    def agent_dir(self, name: str) -> Path:
+        return self.agents_dir / name
 
     def read_manifest(self) -> Manifest:
         return Manifest.model_validate_json(self.manifest_path.read_text(encoding="utf-8"))

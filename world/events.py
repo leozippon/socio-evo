@@ -25,6 +25,7 @@ WORK_TOOLS = frozenset(
         "shell",
         "read_repo_file",
         "write_repo_file",
+        "edit_repo_file",
         "submit",
         "abandon_task",
         "say",

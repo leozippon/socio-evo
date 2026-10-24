@@ -1,0 +1,5 @@
+# Group A, independent learning: each resident lives in a town of its own and meets nobody.
+base: ../town.yaml
+name: a
+town:
+  social: {mode: isolated}

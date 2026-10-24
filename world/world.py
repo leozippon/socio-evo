@@ -42,6 +42,7 @@ from types import EllipsisType
 from typing import Any
 
 from agent.port import Percept, ToolResult, ToolSpec
+from infrastructure.storage import RunDirectory
 from world import tools
 from world.backend import Backend
 from world.board import Board, Claim
@@ -115,7 +116,8 @@ class World:
         if not tasks:
             raise ValueError(f"the split {config.work.split!r} has no tasks")
         backend.require_images(tasks)
-        directories = {r.name: r.agent_dir or run_dir / "agents" / r.name for r in config.residents}
+        run = RunDirectory(run_dir)
+        directories = {r.name: r.agent_dir or run.agent_dir(r.name) for r in config.residents}
         missing = [str(path) for path in directories.values() if not path.is_dir()]
         if missing:
             raise FileNotFoundError(f"missing agent directories: {', '.join(missing)}")
@@ -130,7 +132,7 @@ class World:
         start = self._checkpoint_hour
         self.clock = clock or Clock(start, config.clock.speed_active, config.clock.speed_idle)
         self.clock.set(start)
-        self.log = WorldLog(run_dir / "world.jsonl")
+        self.log = WorldLog(run.world_log_path)
         names = [r.name for r in config.residents]
         self.economy = Economy(config.currency, {r.name: r.purse for r in config.residents})
         self.board = Board(

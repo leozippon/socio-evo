@@ -1,0 +1,8 @@
+# Group B, technical experience sharing: as A, but every evening at 19:00 the residents awake
+# are paired by lot at the café to talk about their work, eight messages each.
+base: ../town.yaml
+name: b
+town:
+  social:
+    mode: isolated
+    exchange: {at: "19:00", place: cafe, messages: 8}

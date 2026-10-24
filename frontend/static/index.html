@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Run timeline</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Run timeline</h1>
+  <label>Run <select id="run" aria-label="Run"></select></label>
+  <span id="status" class="muted"></span>
+  <nav aria-label="View">
+    <button id="all" type="button" title="Show the whole run">Whole run</button>
+    <button id="day" type="button" title="Show the calendar day in the middle of the view">Day</button>
+    <button id="earlier" type="button" title="Earlier" aria-label="Earlier">&#9664;</button>
+    <button id="later" type="button" title="Later" aria-label="Later">&#9654;</button>
+    <button id="out" type="button" title="Zoom out" aria-label="Zoom out">&minus;</button>
+    <button id="in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
+  </nav>
+</header>
+<div id="legend"></div>
+<main>
+  <section id="plot">
+    <canvas id="canvas" aria-label="Every resident's events over simulated time"></canvas>
+    <div id="tip" role="tooltip" hidden></div>
+    <p id="message" hidden></p>
+  </section>
+  <aside id="panel">
+    <h2 id="who">No resident selected</h2>
+    <p id="window" class="muted">Click a lane to list what that resident did and heard in the visible window.</p>
+    <ol id="entries"></ol>
+  </aside>
+</main>
+<script src="app.js"></script>
+</body>
+</html>

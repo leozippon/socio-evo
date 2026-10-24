@@ -4,7 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from infrastructure.config import StrictModel, load_config
-from infrastructure.storage import RunDirectory, RunStatus, append_jsonl, read_jsonl
+from infrastructure.storage import RunDirectory, RunStatus, append_jsonl, day_tag, read_jsonl
 
 
 class Settings(StrictModel):
@@ -16,7 +16,6 @@ def _create(tmp_path) -> RunDirectory:
     return RunDirectory.create(
         tmp_path / "runs",
         "baseline",
-        7,
         config=Settings(agents=3, note="première"),
         code_revision="abc123",
     )
@@ -24,18 +23,18 @@ def _create(tmp_path) -> RunDirectory:
 
 def test_create_lays_out_a_run(tmp_path):
     run = _create(tmp_path)
-    root = tmp_path / "runs" / "baseline" / "seed-0007"
+    root = tmp_path / "runs" / "baseline"
     assert run.root == root
     assert all(path.is_dir() for path in (run.checkpoints_dir, run.agents_dir, run.evaluation_dir))
     assert load_config(run.config_path, Settings) == Settings(agents=3, note="première")
-    assert run.events_path == root / "events.jsonl"
-    assert run.llm_calls_path == root / "llm_calls.jsonl"
-    assert run.checkpoint_path(3) == root / "checkpoints" / "day-0003.json"
-    assert run.agent_dir("ana") == root / "agents" / "ana"
-    assert run.evaluation_path("day-30", "ana") == root / "evaluation" / "day-30" / "ana.json"
+    assert run.world_log_path == root / "world.jsonl"
+    assert run.run_log_path == root / "run.log"
+    assert run.checkpoint_path(3) == root / "checkpoints" / "day-03.json"
+    assert day_tag(3) == "day-03" and day_tag(28) == "day-28"
+    assert run.agent_dir("Ana") == root / "agents" / "Ana"
 
     manifest = run.read_manifest()
-    assert (manifest.seed, manifest.status, manifest.code_revision) == (7, "running", "abc123")
+    assert (manifest.status, manifest.code_revision) == ("running", "abc123")
     assert manifest.started_at.tzinfo is not None and manifest.ended_at is None
 
 
@@ -45,7 +44,7 @@ def test_runs_are_never_created_twice_and_opened_only_if_present(tmp_path):
         _create(tmp_path)
     assert RunDirectory.open(run.root).read_manifest() == run.read_manifest()
     with pytest.raises(FileNotFoundError):
-        RunDirectory.open(tmp_path / "runs" / "baseline" / "seed-0008")
+        RunDirectory.open(tmp_path / "runs" / "other")
 
 
 def test_manifest_updates_are_validated_and_persisted(tmp_path):
@@ -62,9 +61,9 @@ def test_manifest_updates_are_validated_and_persisted(tmp_path):
 def test_latest_checkpoint_is_the_highest_day(tmp_path):
     run = _create(tmp_path)
     assert run.latest_checkpoint() is None
-    for day in (2, 10, 9):
+    for day in (0, 2, 10, 9):
         run.checkpoint_path(day).write_text("{}")
-    assert run.latest_checkpoint() == run.checkpoint_path(10)
+    assert run.latest_checkpoint() == 10
 
 
 def test_jsonl_round_trip(tmp_path):
