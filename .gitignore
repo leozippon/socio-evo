@@ -25,3 +25,7 @@ runs/
 
 # Reference checkouts; the README there is tracked
 external_references/*/
+
+# Evaluation exports and results are local data
+exports/
+results/

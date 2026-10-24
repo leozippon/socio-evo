@@ -22,3 +22,13 @@ Work in flight, delegated in parallel with disjoint scopes: the model service (`
 ## First real work
 
 A fresh resident (Mei's background, reasoning effort low) resolved two of three held-out tasks in the capability harness: django-14373 in 14–17 requests and 2–5 minutes, sympy-13372 in 17 requests and 7 minutes; the third was lost to the service being restarted for tuning. Per request the prompt was 6–16k tokens with 60–80% served from the prefix cache; replies took 60–120 s under three-way concurrency. The model reached for `read_repo_file` with an offset and for editing repository files with its own-file `edit_file`; both are being added as work tools. Replies with `finish_reason: abort` from a server shutting down passed through as ordinary turns; the client is being made to retry them.
+
+## The service and the launch
+
+The service builder's measurements on the L20s: two-card tensor-parallel replicas are the sweet spot (a four-card replica fell to 151 output tokens/s at 32 requests against 574 for two two-card replicas; one replica pipelined over eight cards reached 451–479 against about 700 for four replicas). With the reference deployment's adaptations (Triton FP8 kernel with five L20-tuned configs, FP8 KV cache under FlashInfer, 8k prefill chunks, NUMA binding) eight GPUs give 695–768 output tokens/s at 32 requests in flight and 1,039–1,146 at 64, with a mean first token of about 7 and 11 s; four GPUs give 574 and 761. The FP8 KV cache holds 1.54 M tokens per replica. `reasoning_effort` reaches the template but barely changes the reasoning length on this model.
+
+vLLM's data-parallel router sends each request to the least-loaded replica, which defeats the prefix cache between a resident's consecutive requests (45% hits against 63% when pinned). The experiments therefore run one independent two-card server per group, ports 8011–8014, and each group's run is given its server through `VLLM_BASE_URL`; when the machine drops to four GPUs, two groups will share each of two servers.
+
+Groups A, B, C and D were started at 12:44 (machine time) from commit d471ad6, each with eight residents on its own server, for 28 days. The day-0 exports are identical across groups (same backgrounds, empty memory), so the day-0 baselines run once, on group A's exports: MASK (20 scenarios) and then capability (100 held-out tasks, two in flight) for each of the eight residents, spread over the four servers. The viewer runs at http://127.0.0.1:8765/.
+
+The runtime's integration test still fails its cached-token assertion against a single replica: this model's prefix cache works in 784-token blocks and the test's prompts are shorter than that; the real smoke run reported 62–79% of prompt tokens cached. The test is to be given a longer prompt.
