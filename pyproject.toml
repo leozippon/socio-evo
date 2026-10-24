@@ -28,16 +28,15 @@ package-dir = { "" = "." }
 [tool.setuptools.packages.find]
 where = ["."]
 include = [
-    "core", "core.*",
     "agent", "agent.*",
-    "runtime", "runtime.*",
+    "world", "world.*",
+    "simulation", "simulation.*",
     "tasks", "tasks.*",
     "evaluation", "evaluation.*",
     "infrastructure", "infrastructure.*",
     "experiments", "experiments.*",
     "analysis", "analysis.*",
     "frontend", "frontend.*",
-    "world", "world.*",
 ]
 
 [tool.pytest.ini_options]
