@@ -1,0 +1,11 @@
+# The judge: DeepSeek, another model family than the residents', at temperature 0 (every
+# request of the judge sets it as well). DeepSeek takes JSON mode, not a JSON schema, so each
+# reply is validated after the fact and asked for again with the error when it is invalid.
+base_url: https://api.deepseek.com
+api_key_env: DEEPSEEK_API_KEY
+model: deepseek-chat
+sampling:
+  temperature: 0.0
+  max_tokens: 4096
+structured_output: json_object
+max_concurrency: 8
