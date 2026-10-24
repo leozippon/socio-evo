@@ -86,7 +86,8 @@ class WorldPort(Protocol):
 
     async def wait(self) -> list[Percept]:
         """Block until at least one percept is pending, then return and clear them as `pending`
-        does. The world guarantees a percept within its idle interval of simulated time."""
+        does. While the resident is awake, the world guarantees a percept within its idle
+        interval of simulated time; a sleeping resident hears nothing until it wakes."""
         ...
 
     @property

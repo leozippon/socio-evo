@@ -1,0 +1,1018 @@
+"""The world of one town: its state, its schedule, and one port per resident.
+
+`World` is created from a configuration, a run directory and a work backend; creating it loads
+the task split, checks that every task's image is present and that every agent directory exists,
+and writes nothing. A new world stands at the checkpoint hour of day 1 with every resident asleep
+at home, to wake at the earliest waking hour; `restore` puts it instead in the state of a saved
+checkpoint. `run` then drives the town until a given day's checkpoint.
+
+Everything that happens at a moment of simulated time is a timer in one queue, run by `run` in
+the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
+tells a waiting resident the time, and the day's schedule. For day N (whose daytime is calendar
+day N): the workplace opens and posts its board, closes (sending those at work outside and
+letting expired claims run out), group B's pairing, the midnight settlement, the forced sleep
+and the checkpoint. At the checkpoint the world waits until every resident is asleep and its
+runtime waits on its port, holds the clock, closes every workspace keeping its changes, takes
+the snapshot and awaits `on_checkpoint(day, snapshot)`, through which the composition layer
+writes the checkpoint and commits the agent directories. A lived day N runs from the checkpoint
+on calendar day N to the one on calendar day N + 1; the journal, the ratings, the acceptance
+runs and the record `review_day` tells belong to it.
+
+The world delivers each percept to the ports of those who perceive it. Speech reaches the
+residents it is addressed to, at their place and awake, with `interrupt`; everything else waits
+for the resident's next step. A resident in transit is at no place and perceives nothing there;
+an asleep resident cannot be addressed, and what is told to it while suspended is held until it
+wakes. In the isolated mode a resident perceives nobody, except its partner in group B's
+evening exchange from the pairing until their conversation ends.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import copy
+import heapq
+import inspect
+import itertools
+import random
+from collections.abc import Awaitable, Callable
+from dataclasses import asdict, dataclass, field
+from functools import partial
+from pathlib import Path
+from types import EllipsisType
+from typing import Any
+
+from agent.port import Percept, ToolResult, ToolSpec
+from world import tools
+from world.backend import Backend
+from world.board import Board, Claim
+from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
+from world.config import TownConfig
+from world.economy import Economy
+from world.events import Base, Conversation, Idle, Movement, Sleep, Work, refusal
+from world.log import Entry, WorldLog
+from world.ratings import Ratings, tell_ratings
+from world.rules import Rules
+from world.telling import cap, counted, listed, you
+
+Tell = Callable[[str | None], str]
+"""A text as told to a witness (None: to nobody in particular)."""
+OnCheckpoint = Callable[[int, dict[str, Any]], Awaitable[None]]
+
+
+@dataclass(order=True)
+class _Timer:
+    t: int
+    order: int
+    fn: Callable[[], Any] = field(compare=False)
+    cancelled: bool = field(default=False, compare=False)
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+@dataclass(eq=False)
+class Resident:
+    """A resident's state in the world. `timer` is its arrival or its wake-up; `tick` the
+    percept that will tell it the time while its runtime waits; `day` the record of its lived
+    day: (simulated time, kind, its wording, payload) of every entry that concerns it."""
+
+    name: str
+    home: str
+    agent_dir: Path
+    place: str | None
+    base: Base
+    conversation: Conversation | None = None
+    partner: str | None = None
+    wait_minutes: int | None = None
+    timer: _Timer | None = None
+    tick: _Timer | None = None
+    day: list[tuple[int, str, str, dict[str, Any]]] = field(default_factory=list)
+    port: ResidentPort = field(init=False)
+
+    @property
+    def event(self) -> Base | Conversation:
+        return self.conversation or self.base
+
+    @property
+    def awake(self) -> bool:
+        return not isinstance(self.base, Sleep)
+
+    @property
+    def suspended(self) -> bool:
+        return isinstance(self.base, Sleep) and self.base.suspended
+
+
+class World:
+    def __init__(
+        self,
+        config: TownConfig,
+        run_dir: Path,
+        backend: Backend,
+        *,
+        clock: Clock | ManualClock | None = None,
+    ) -> None:
+        tasks = list(backend.load_split(config.work.split))
+        if not tasks:
+            raise ValueError(f"the split {config.work.split!r} has no tasks")
+        backend.require_images(tasks)
+        directories = {r.name: r.agent_dir or run_dir / "agents" / r.name for r in config.residents}
+        missing = [str(path) for path in directories.values() if not path.is_dir()]
+        if missing:
+            raise FileNotFoundError(f"missing agent directories: {', '.join(missing)}")
+
+        self.config = config
+        workplace = config.workplace
+        self._opens = parse_hour(workplace.opens or "")
+        self._closes = parse_hour(workplace.closes or "")
+        self._wake = parse_hour(config.day.wake_earliest)
+        self._forced = parse_hour(config.day.forced_sleep)
+        self._checkpoint_hour = parse_hour(config.day.checkpoint)
+        start = self._checkpoint_hour
+        self.clock = clock or Clock(start, config.clock.speed_active, config.clock.speed_idle)
+        self.clock.set(start)
+        self.log = WorldLog(run_dir / "world.jsonl")
+        names = [r.name for r in config.residents]
+        self.economy = Economy(config.currency, {r.name: r.purse for r in config.residents})
+        self.board = Board(
+            tasks,
+            backend,
+            config.work,
+            shared=config.social.mode == "town",
+            names=names,
+            money=self.economy.money,
+        )
+        self.ratings = Ratings(names)
+        self.rules = Rules(config)
+        self.tool_specs: list[ToolSpec] = tools.specs(config)
+        self._specs = {spec.name: spec for spec in self.tool_specs}
+        self.social_contact = config.social.mode == "town" or config.social.exchange is not None
+        self.workplace_open = False
+        self._timers: list[_Timer] = []
+        self._order = itertools.count()
+        self._pushed = asyncio.Event()
+        self._rest = asyncio.Event()
+        self._rooms: dict[str, Conversation] = {}
+        self._started = False
+        self._stopped = False
+        self._until = 0
+        self._on_checkpoint: OnCheckpoint | None = None
+        self.residents: dict[str, Resident] = {}
+        for rc in config.residents:
+            r = Resident(rc.name, rc.home, directories[rc.name], rc.home, Sleep(0, True))
+            r.port = ResidentPort(self, r)
+            self.residents[rc.name] = r
+            self._put_to_sleep(r, self._wake, suspended=True)
+
+    @property
+    def ports(self) -> dict[str, ResidentPort]:
+        return {name: r.port for name, r in self.residents.items()}
+
+    def lived_day(self) -> int:
+        """The day being lived: from one checkpoint to the next."""
+        return (self.clock.now() - self._checkpoint_hour) // DAY + 1
+
+    # The schedule ---------------------------------------------------------------------------
+
+    async def run(self, until_day: int, on_checkpoint: OnCheckpoint) -> None:
+        """Run the town until the checkpoint of `until_day` has been handed to
+        `on_checkpoint`."""
+        if until_day < self.lived_day():
+            raise ValueError(f"day {until_day} is already over")
+        self._started = True
+        self._until, self._on_checkpoint, self._stopped = until_day, on_checkpoint, False
+        self._schedule_day(self.lived_day())
+        while not self._stopped:
+            while self._timers[0].cancelled:
+                heapq.heappop(self._timers)
+            timer = self._timers[0]
+            if timer.t > self.clock.now():
+                await self._sleep_until(timer.t)
+                continue
+            heapq.heappop(self._timers)
+            result = timer.fn()
+            if inspect.isawaitable(result):
+                await result
+
+    def _at(self, t: int, fn: Callable[[], Any]) -> _Timer:
+        timer = _Timer(t, next(self._order), fn)
+        heapq.heappush(self._timers, timer)
+        self._pushed.set()
+        return timer
+
+    async def _sleep_until(self, t: int) -> None:
+        """Sleep until `t` or until a timer is added, whichever comes first."""
+        self._pushed.clear()
+        sleeper = asyncio.ensure_future(self.clock.sleep_until(t))
+        pushed = asyncio.ensure_future(self._pushed.wait())
+        try:
+            await asyncio.wait({sleeper, pushed}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            sleeper.cancel()
+            pushed.cancel()
+
+    def _schedule_day(self, day: int) -> None:
+        morning = (day - 1) * DAY
+        self._at(morning + self._opens, self._open)
+        self._at(morning + self._closes, partial(self._close, day))
+        exchange = self.config.social.exchange
+        if exchange is not None:
+            self._at(morning + parse_hour(exchange.at), partial(self._pair, day))
+        self._at(day * DAY, partial(self._settle, day))
+        self._at(day * DAY + self._forced, partial(self._force_sleep, day))
+        self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
+
+    def _open(self) -> None:
+        self.workplace_open = True
+        workplace = self.config.workplace
+        here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
+        hour = clock_time(self.clock.now())
+        self.record(
+            "board_posted",
+            lambda w: f"It is {hour}: {workplace.name} opened and the day's board is posted.",
+            place=workplace.id,
+            audience=here,
+            payload={"tasks": len(self.board.tasks)},
+        )
+
+    def _close(self, day: int) -> None:
+        self.workplace_open = False
+        workplace = self.config.workplace
+        workers = [r for r in self.residents.values() if isinstance(r.base, Work)]
+        for r in workers:
+            r.base = Idle()
+        hour = clock_time(self.clock.now())
+        self.record(
+            "closing",
+            lambda w: (
+                f"It is {hour}: {workplace.name} closed, and "
+                + ("you stopped work and stepped outside." if w else "work stopped for the day.")
+            ),
+            place=workplace.id,
+            audience=workers,
+            payload={"sent_out": [r.name for r in workers]},
+        )
+        for name in self.board.expired(day):
+            claim = self.board.claims[name]
+            workspace = self.board.drop(name)
+            if workspace is not None:
+                self.board.orphans.append(workspace)
+            r = self.residents[name]
+            self.record(
+                "expiry",
+                lambda w, r=r, claim=claim: (
+                    f"{cap(you(r.name, w))} lost task {claim.task}: "
+                    "the claim ran out unpaid at the closing."
+                ),
+                actor=r,
+                place=None,
+                audience=[r],
+                payload={"task": claim.task},
+            )
+
+    def _pair(self, day: int) -> None:
+        exchange = self.config.social.exchange
+        assert exchange is not None
+        awake = [r for r in self.residents.values() if r.awake]
+        random.Random(f"{self.config.seed}:{day}").shuffle(awake)
+        pairs = list(zip(awake[::2], awake[1::2], strict=False))
+        hour = clock_time(self.clock.now())
+        place = self.config.place(exchange.place).name
+        for a, b in pairs:
+            a.partner, b.partner = b.name, a.name
+
+            def tell(w: str | None, a: Resident = a, b: Resident = b) -> str:
+                if w is None:
+                    return f"It is {hour}: {a.name} and {b.name} are to meet at {place}."
+                other = b.name if w == a.name else a.name
+                return (
+                    f"It is {hour}: by lot, you are to meet {other} at {place} and talk about "
+                    "your work."
+                )
+
+            self.record(
+                "exchange_pairing", tell, audience=[a, b], payload={"pair": [a.name, b.name]}
+            )
+        if len(awake) % 2:
+            last = awake[-1]
+            self.record(
+                "exchange_pairing",
+                lambda w: f"It is {hour}: nobody is free to meet {you(last.name, w)} this evening.",
+                audience=[last],
+                payload={"pair": [last.name]},
+            )
+        for a, b in pairs:
+            for r in (a, b):
+                self._send(r, exchange.place)
+            if a.place == b.place == exchange.place:
+                self._meet(a, b)
+
+    def _send(self, r: Resident, place: str) -> None:
+        """Send `r` to `place`, turning it there if it is on its way elsewhere."""
+        if r.place == place:
+            return
+        if isinstance(r.base, Movement):
+            assert r.timer is not None
+            r.timer.cancel()
+            arrival = r.base.arrival + self.config.travel(r.base.destination, place) * 60
+            r.base = Movement(place, arrival)
+            r.timer = self._at(arrival, partial(self._arrive, r))
+            name = self.config.place(place).name
+            self.record(
+                "depart",
+                lambda w: f"{cap(you(r.name, w))} turned towards {name}.",
+                actor=r,
+                place=None,
+                payload={"from": None, "to": place, "arrival": arrival},
+            )
+        else:
+            self.depart(r, place)
+
+    def _meet(self, a: Resident, b: Resident) -> None:
+        exchange = self.config.social.exchange
+        assert exchange is not None and a.place is not None
+        room = self._room(a)
+        conversation = Conversation(
+            room,
+            a.place,
+            {a.name, b.name},
+            self.clock.now(),
+            budget={a.name: exchange.messages, b.name: exchange.messages},
+            pair=(a.name, b.name),
+        )
+        self._rooms[room] = a.conversation = b.conversation = conversation
+        self.ratings.meet(a.name, b.name)
+        self._arm_silence(conversation)
+        place = self.config.place(a.place).name
+        n = exchange.messages
+
+        def tell(w: str | None) -> str:
+            if w is None:
+                return f"{a.name} and {b.name} met at {place} to talk about their work."
+            other = b.name if w == a.name else a.name
+            return (
+                f"You met {other} at {place}. You have {counted(n, 'message')} each; speak of "
+                "your work alone."
+            )
+
+        self.record(
+            "meeting", tell, place=a.place, audience=[a, b], payload={"pair": [a.name, b.name]}
+        )
+
+    def _settle(self, day: int) -> None:
+        cost = self.config.work.living_cost
+        date = tell_date(day, self.config.start_date)
+        for r in self.residents.values():
+            statement = self.economy.settle(r.name, cost, date)
+            self.record(
+                "settlement",
+                lambda w, r=r, statement=statement: (
+                    statement if w == r.name else f"{r.name} was charged the living cost."
+                ),
+                actor=r,
+                place=None,
+                audience=[r],
+                payload={"living_cost": cost, "purse": self.economy.purses[r.name]},
+            )
+
+    def _force_sleep(self, day: int) -> None:
+        wake = day * DAY + self._wake
+        hour = clock_time(self.clock.now())
+        for r in self.residents.values():
+            if isinstance(r.base, Sleep):
+                if not r.base.suspended:
+                    self._fall_asleep(r, f"It is {hour}: you fell asleep.")
+                continue
+            if r.conversation is not None:
+                self.leave_conversation(r)
+            if r.timer is not None:
+                r.timer.cancel()
+            r.partner = None
+            self.record(
+                "forced_sleep",
+                lambda w, r=r: (
+                    f"It is {hour}: {you(r.name, w)} fell asleep without writing a "
+                    f"journal entry, and will wake at home at {clock_time(wake)}."
+                ),
+                actor=r,
+                audience=[r],
+                payload={"wake": wake},
+            )
+            r.place = r.home
+            self._put_to_sleep(r, wake)
+            self._fall_asleep(r, None)
+
+    async def _checkpoint(self, day: int) -> None:
+        while not self._all_resting():
+            await self._rest.wait()
+        assert self._on_checkpoint is not None
+        with self.clock.hold():
+            for name, claim in await self.board.close_all():
+                self.record(
+                    "workspace_closed",
+                    lambda w, name=name, claim=claim: (
+                        f"The workspace of task {claim.task} "
+                        f"closed for the night, its changes kept for {you(name, w)}."
+                    ),
+                    actor=self.residents[name],
+                    place=None,
+                    payload={"task": claim.task, "diff": claim.diff},
+                )
+            self.ratings.end_day()
+            for name in self.board.runs:
+                self.board.runs[name] = {}
+            for r in self.residents.values():
+                r.day.clear()
+            state = self.snapshot()
+            self.record(
+                "checkpoint", lambda w: f"The state of day {day} was saved.", payload={"day": day}
+            )
+            await self._on_checkpoint(day, state)
+        if day >= self._until:
+            self._stopped = True
+        else:
+            self._schedule_day(day + 1)
+
+    def _all_resting(self) -> bool:
+        return all(r.suspended and r.port.waiting for r in self.residents.values())
+
+    def rest_changed(self) -> None:
+        if self._all_resting():
+            self._rest.set()
+        else:
+            self._rest.clear()
+
+    # Checkpoints ----------------------------------------------------------------------------
+
+    def snapshot(self) -> dict[str, Any]:
+        """The world's whole state at a checkpoint: every resident asleep, nothing open."""
+        unsettled = [
+            r.name
+            for r in self.residents.values()
+            if not r.suspended or r.conversation or r.partner or r.port.has_pending
+        ]
+        if (
+            unsettled
+            or self.board.workspaces
+            or self.board.orphans
+            or self._rooms
+            or any(self.ratings.tonight.values())
+            or any(self.ratings.met.values())
+            or any(self.board.runs.values())
+        ):
+            raise RuntimeError(f"no checkpoint state: unsettled {unsettled or 'world state'}")
+        residents = {}
+        for name, r in self.residents.items():
+            assert isinstance(r.base, Sleep)
+            claim = self.board.claims.get(name)
+            residents[name] = {
+                "place": r.place,
+                "wake": r.base.wake,
+                "purse": self.economy.purses[name],
+                "ledger": copy.deepcopy(self.economy.ledger[name]),
+                "claim": asdict(claim) if claim else None,
+                "done": sorted(self.board.done[name]),
+                "unread_ratings": copy.deepcopy(self.ratings.unread[name]),
+                "held": [asdict(percept) for percept in r.port.held],
+            }
+        return {"time": self.clock.now(), "residents": residents}
+
+    def restore(self, state: dict[str, Any]) -> None:
+        """Put a new world in the state `snapshot` returned, and log the resumption."""
+        if self._started:
+            raise RuntimeError("a world is restored before it runs")
+        if set(state["residents"]) != set(self.residents):
+            raise ValueError("the checkpoint's residents are not the configuration's")
+        self.clock.set(state["time"])
+        for name, saved in state["residents"].items():
+            r = self.residents[name]
+            assert r.timer is not None
+            r.timer.cancel()
+            r.place = saved["place"]
+            self._put_to_sleep(r, saved["wake"], suspended=True)
+            self.economy.purses[name] = saved["purse"]
+            self.economy.ledger[name] = copy.deepcopy(saved["ledger"])
+            if saved["claim"] is not None:
+                self.board.claims[name] = Claim(**saved["claim"])
+            self.board.done[name] = set(saved["done"])
+            self.ratings.unread[name] = copy.deepcopy(saved["unread_ratings"])
+            r.port.held = [Percept(**percept) for percept in saved["held"]]
+        moment = tell_moment(state["time"], self.config.start_date)
+        self.record(
+            "resume",
+            lambda w: f"The town went back to {moment}.",
+            payload={"day": self.lived_day() - 1, "time": state["time"]},
+        )
+
+    # Recording and delivering ---------------------------------------------------------------
+
+    def record(
+        self,
+        kind: str,
+        tell: Tell,
+        *,
+        actor: Resident | None = None,
+        place: str | None | EllipsisType = ...,
+        audience: list[Resident] | tuple[Resident, ...] = (),
+        interrupt: list[Resident] | tuple[Resident, ...] = (),
+        payload: dict[str, Any] | None = None,
+    ) -> Entry:
+        """Log an event, add it to the day of each resident it concerns (the actor and the
+        audience) in that resident's wording, and deliver it as a percept to the audience,
+        interrupting those in `interrupt`. `place` defaults to the actor's."""
+        if place is ...:
+            place = actor.place if actor else None
+        concerned = ([actor] if actor else []) + [r for r in audience if r is not actor]
+        text = tell(None)
+        personal = {r.name: told for r in concerned if (told := tell(r.name)) != text}
+        entry = self.log.append(
+            kind,
+            self.clock.now(),
+            text,
+            actor=actor.name if actor else None,
+            place=place,
+            audience=[r.name for r in audience],
+            personal=personal,
+            payload=payload,
+        )
+        for r in concerned:
+            r.day.append((entry.sim_time, kind, personal.get(r.name, text), dict(entry.payload)))
+        loud = {r.name for r in interrupt}
+        for r in audience:
+            told = personal.get(r.name, text)
+            percept = Percept(told, kind, entry.seq, entry.sim_time, entry.real_time)
+            r.port.deliver(percept, r.name in loud)
+        return entry
+
+    # Places and people ----------------------------------------------------------------------
+
+    def visible(self, a: Resident, b: Resident) -> bool:
+        """Whether `a` perceives `b`: both at the same place, in the same town."""
+        return (
+            a is not b
+            and a.place is not None
+            and a.place == b.place
+            and (self.config.social.mode == "town" or a.partner == b.name)
+        )
+
+    def company(self, r: Resident) -> list[Resident]:
+        return [other for other in self.residents.values() if self.visible(r, other)]
+
+    def addressable(self, r: Resident) -> list[Resident]:
+        return [other for other in self.company(r) if other.awake]
+
+    def people_here(self, r: Resident) -> str:
+        def state(other: Resident) -> str:
+            if not other.awake:
+                return f"{other.name} (asleep)"
+            if other.conversation is not None:
+                return f"{other.name} (in a conversation)"
+            if isinstance(other.base, Work):
+                return f"{other.name} (working)"
+            return other.name
+
+        people = self.company(r)
+        if not people:
+            return "Nobody else is here."
+        return f"Also here: {listed([state(other) for other in people])}."
+
+    def look(self, r: Resident) -> str:
+        assert r.place is not None
+        place = self.config.place(r.place)
+        text = f"You are at {place.name}."
+        if place.kind == "workplace":
+            text += (
+                f" It is open until {place.closes}."
+                if self.workplace_open
+                else f" It is closed; it opens at {place.opens}."
+            )
+        elif place.kind == "home":
+            homes = [rc.name for rc in self.config.residents if rc.home == place.id]
+            if self.config.social.mode == "isolated":
+                homes = [name for name in homes if name == r.name]
+            others = [name for name in homes if name != r.name]
+            if r.name in homes:
+                text += " It is your home" + (
+                    f", which you share with {listed(others)}." if others else "."
+                )
+            elif homes:
+                text += f" It is the home of {listed(homes)}."
+        return f"{text} {self.people_here(r)}"
+
+    def depart(self, r: Resident, place: str) -> int:
+        """Set `r` off from where it is to `place`; returns the time of arrival."""
+        assert r.place is not None
+        origin = r.place
+        arrival = self.clock.now() + self.config.travel(origin, place) * 60
+        witnesses = self.addressable(r)
+        r.base, r.place = Movement(place, arrival), None
+        origin_name, place_name = self.config.place(origin).name, self.config.place(place).name
+        self.record(
+            "depart",
+            lambda w: f"{cap(you(r.name, w))} left {origin_name} for {place_name}.",
+            actor=r,
+            place=origin,
+            audience=witnesses,
+            payload={"from": origin, "to": place, "arrival": arrival},
+        )
+        r.timer = self._at(arrival, partial(self._arrive, r))
+        return arrival
+
+    def _arrive(self, r: Resident) -> None:
+        assert isinstance(r.base, Movement)
+        r.timer = None
+        place = r.base.destination
+        r.place, r.base = place, Idle()
+        others = self.addressable(r)
+        for other in others:
+            self.ratings.meet(r.name, other.name)
+        name = self.config.place(place).name
+        here = self.people_here(r)
+        self.record(
+            "arrive",
+            lambda w: (
+                f"You arrived at {name}. {here}" if w == r.name else f"{r.name} arrived at {name}."
+            ),
+            actor=r,
+            audience=[r, *others],
+            payload={"place": place},
+        )
+        partner = self.residents.get(r.partner) if r.partner else None
+        if partner is not None and partner.place == place and r.conversation is None:
+            self._meet(r, partner)
+
+    # Conversations --------------------------------------------------------------------------
+
+    def _room(self, r: Resident) -> str:
+        """Where a conversation of `r` is held: its place, and in the isolated mode, its
+        town (its own, or the one it shares with its partner)."""
+        if self.config.social.mode == "town":
+            return str(r.place)
+        return f"{r.place}:{'+'.join(sorted({r.name, r.partner or r.name}))}"
+
+    def converse(self, speaker: Resident, recipients: list[Resident]) -> Conversation:
+        """The conversation `speaker` speaks in, with it and `recipients` in it."""
+        assert speaker.place is not None
+        room = self._room(speaker)
+        conversation = self._rooms.get(room)
+        if conversation is None:
+            conversation = Conversation(room, speaker.place, set(), self.clock.now())
+            self._rooms[room] = conversation
+        for r in (speaker, *recipients):
+            if r.conversation is not conversation:
+                r.conversation = conversation
+                conversation.members.add(r.name)
+        conversation.last_speech = self.clock.now()
+        self._arm_silence(conversation)
+        return conversation
+
+    def _arm_silence(self, conversation: Conversation) -> None:
+        if conversation.silence is not None:
+            conversation.silence.cancel()
+        minutes = self.config.social.silence_minutes
+        conversation.silence = self._at(
+            conversation.last_speech + minutes * 60,
+            partial(
+                self._end,
+                conversation,
+                f"Nobody has spoken for {minutes} minutes; the conversation is over.",
+            ),
+        )
+
+    def leave_conversation(self, r: Resident) -> None:
+        conversation = r.conversation
+        assert conversation is not None
+        conversation.members.discard(r.name)
+        r.conversation = None
+        rest = [self.residents[name] for name in sorted(conversation.members)]
+        self.record(
+            "leave_conversation",
+            lambda w: f"{cap(you(r.name, w))} left the conversation.",
+            actor=r,
+            audience=rest,
+        )
+        if len(conversation.members) < 2:
+            self._end(conversation, "The conversation is over.")
+
+    def _end(self, conversation: Conversation, text: str) -> None:
+        members = [self.residents[name] for name in sorted(conversation.members)]
+        for r in members:
+            r.conversation = None
+        conversation.members.clear()
+        if conversation.silence is not None:
+            conversation.silence.cancel()
+        del self._rooms[conversation.room]
+        for name in conversation.pair or ():
+            self.residents[name].partner = None
+        if members:
+            self.record(
+                "conversation_end",
+                lambda w: text,
+                place=conversation.place,
+                audience=members,
+                payload={"room": conversation.room},
+            )
+
+    # Sleep, waking and waiting --------------------------------------------------------------
+
+    def _put_to_sleep(self, r: Resident, wake: int, suspended: bool = False) -> None:
+        r.base = Sleep(wake, suspended)
+        r.timer = self._at(wake, partial(self._wake_up, r))
+
+    def go_to_bed(self, r: Resident, wake: int, journal: str, day: int) -> None:
+        """`r` goes to bed with its journal entry written; it hears what it may still do."""
+        self._put_to_sleep(r, wake)
+        parts = [
+            f"You are in bed and will wake at {clock_time(wake)}; your journal entry for "
+            "today is kept."
+        ]
+        ratings: list[list[int | str]] = []
+        if self.social_contact:
+            ratings = self.ratings.take_unread(r.name)
+            met = sorted(self.ratings.met[r.name])
+            parts.append(tell_ratings(ratings))
+            parts.append(
+                "Before you fall asleep you can look over your day, "
+                + (f"rate the people you spent time with today ({listed(met)}), " if met else "")
+                + "and see to your files; you fall asleep once you have nothing more to do."
+            )
+        else:
+            parts.append(
+                "Before you fall asleep you can look over your day and see to your files; you "
+                "fall asleep once you have nothing more to do."
+            )
+        told = " ".join(parts)
+        self.record(
+            "sleep",
+            lambda w: told if w == r.name else f"{r.name} went to bed and wrote the day's journal.",
+            actor=r,
+            audience=[r],
+            payload={"journal": journal, "day": day, "wake": wake, "ratings_read": ratings},
+        )
+
+    def fall_asleep(self, r: Resident) -> None:
+        """`r`, in bed, has nothing more to do: it falls asleep until its wake-up."""
+        self._fall_asleep(r, None)
+        self.record(
+            "fell_asleep",
+            lambda w: f"{cap(you(r.name, w))} fell asleep.",
+            actor=r,
+            payload={"forced": False},
+        )
+
+    def _fall_asleep(self, r: Resident, told: str | None) -> None:
+        if told is not None:  # told before the resident is suspended, so that it hears it
+            self.record(
+                "fell_asleep",
+                lambda w: told if w == r.name else f"{r.name} fell asleep.",
+                actor=r,
+                audience=[r],
+                payload={"forced": True},
+            )
+        assert isinstance(r.base, Sleep)
+        r.base.suspended = True
+        r.wait_minutes = None
+        self.disarm_tick(r)
+        self.rest_changed()
+
+    def _wake_up(self, r: Resident) -> None:
+        r.timer = None
+        r.base, r.place = Idle(), r.home
+        r.port.release()
+        others = self.addressable(r)
+        for other in others:
+            self.ratings.meet(r.name, other.name)
+        moment = tell_moment(self.clock.now(), self.config.start_date)
+        self.record(
+            "wake",
+            lambda w: f"{cap(you(r.name, w))} woke up at home. It is {moment}.",
+            actor=r,
+            audience=[r],
+        )
+        self.rest_changed()
+
+    def arm_tick(self, r: Resident) -> None:
+        """Make sure `r` hears something within its idle interval, or within the minutes it
+        asked to wait."""
+        asked = r.wait_minutes
+        minutes = asked or self.config.clock.idle_minutes
+        r.wait_minutes = None
+        r.tick = self._at(self.clock.now() + minutes * 60, partial(self._tick, r, asked))
+
+    def disarm_tick(self, r: Resident) -> None:
+        if r.tick is not None:
+            r.tick.cancel()
+            r.tick = None
+
+    def _tick(self, r: Resident, asked: int | None) -> None:
+        r.tick = None
+        hour = clock_time(self.clock.now())
+        text = (
+            f"You waited {counted(asked, 'minute')}; it is now {hour}."
+            if asked
+            else f"It is now {hour}."
+        )
+        self.record(
+            "time", lambda w: text, actor=r, audience=[r], payload={"waited_minutes": asked}
+        )
+
+    # What a resident reads ------------------------------------------------------------------
+
+    def situation(self, r: Resident) -> str:
+        now = self.clock.now()
+        parts = [f"{tell_moment(now, self.config.start_date)}."]
+        event = r.event
+        if isinstance(r.base, Sleep):
+            parts.append(
+                "You are asleep."
+                if r.base.suspended
+                else f"You are in bed at home and will wake at {clock_time(r.base.wake)}."
+            )
+        elif isinstance(r.base, Movement):
+            parts.append(
+                f"You are on your way to {self.config.place(r.base.destination).name} and will "
+                f"arrive at {clock_time(r.base.arrival)}."
+            )
+        else:
+            assert r.place is not None
+            place = self.config.place(r.place).name
+            if r.conversation is not None:
+                others = sorted(r.conversation.members - {r.name})
+                parts.append(f"You are at {place}, in a conversation with {listed(others)}.")
+                if r.conversation.budget is not None:
+                    left = r.conversation.budget[r.name]
+                    parts.append(
+                        f"You have {counted(left, 'message')} left; speak of your work alone."
+                    )
+            elif isinstance(r.base, Work):
+                parts.append(f"You are at work at {place}.")
+            else:
+                parts.append(f"You are at {place}.")
+            parts.append(self.people_here(r))
+        parts.append(self.economy.purse(r.name))
+        claim = self.board.claims.get(r.name)
+        if claim is not None:
+            parts.append(f"You hold task {claim.task} ({self.board.task(claim.task).repo}).")
+        if r.suspended:
+            pass
+        elif isinstance(r.base, Movement):
+            parts.append("There is nothing to do until you arrive.")
+        else:
+            usable = [spec.name for spec in self.tool_specs if spec.name in event.tools]
+            files = " and your own files" if isinstance(event, Sleep) else ""
+            parts.append(f"Now you can use: {', '.join(usable)}{files}.")
+        return " ".join(parts)
+
+    def review(self, r: Resident) -> str:
+        """The town's record of `r`'s day, in its words; the work in a workspace is told as
+        one line per stretch of commands and file reads and writes."""
+        lines: list[str] = []
+        stretch: dict[str, Any] | None = None
+
+        def close_stretch() -> None:
+            if stretch is None:
+                return
+            done = []
+            if stretch["commands"]:
+                failed = stretch["failed"]
+                done.append(
+                    f"ran {counted(stretch['commands'], 'command')}"
+                    + (f" ({failed} failed)" if failed else "")
+                )
+            if stretch["reads"]:
+                done.append(f"read {counted(stretch['reads'], 'file')}")
+            if stretch["writes"]:
+                done.append(f"wrote {counted(stretch['writes'], 'file')}")
+            lines.append(
+                f"{clock_time(stretch['start'])}-{clock_time(stretch['end'])} For task "
+                f"{stretch['task']} you {listed(done)}."
+            )
+
+        for t, kind, text, payload in r.day:
+            if kind == "time":
+                continue
+            if kind in ("command", "file_read", "file_write"):
+                if stretch is None or stretch["task"] != payload["task"]:
+                    close_stretch()
+                    stretch = {
+                        "task": payload["task"],
+                        "start": t,
+                        "commands": 0,
+                        "failed": 0,
+                        "reads": 0,
+                        "writes": 0,
+                    }
+                stretch["end"] = t
+                if kind == "command":
+                    stretch["commands"] += 1
+                    stretch["failed"] += payload["exit_code"] != 0
+                else:
+                    stretch["reads" if kind == "file_read" else "writes"] += 1
+                continue
+            close_stretch()
+            stretch = None
+            lines.append(f"{clock_time(t)} {text}")
+        close_stretch()
+        if not lines:
+            return "The town has nothing on record for you today."
+        return "The town's record of your day:\n" + "\n".join(lines)
+
+    async def call(self, r: Resident, name: str, args: dict[str, Any]) -> ToolResult:
+        handler = tools.HANDLERS[name]
+        if r.suspended:
+            return ToolResult("You are asleep.", ends_turn=True)
+        event = r.event
+        if name not in event.tools:
+            destination = (
+                self.config.place(event.destination).name if isinstance(event, Movement) else ""
+            )
+            text = refusal(
+                event, name, workplace=self.config.workplace.name, destination=destination
+            )
+            return ToolResult(text, ends_turn=isinstance(event, Movement))
+        problem = tools.check(self._specs[name], args)
+        if problem:
+            return ToolResult(problem)
+        return await handler(self, r, args)
+
+
+class ResidentPort:
+    """One resident's reach into the world: `agent.port.WorldPort`, and the owner of its inbox.
+
+    `wait` returns as soon as a percept is pending. While the resident is awake it is told
+    something within the idle interval of simulated time (or within the minutes it asked to
+    wait); while it sleeps nothing reaches it until it wakes, and what was told to it meanwhile
+    is held and delivered with the wake-up. A resident in bed whose runtime waits with nothing
+    pending falls asleep."""
+
+    def __init__(self, world: World, resident: Resident) -> None:
+        self._world = world
+        self._resident = resident
+        self._inbox: list[Percept] = []
+        self.held: list[Percept] = []
+        self._arrived = asyncio.Event()
+        self._interrupt = asyncio.Event()
+        self.waiting = False
+
+    def rules(self) -> str:
+        return self._world.rules.text(self._resident.name)
+
+    def tool_specs(self) -> list[ToolSpec]:
+        return list(self._world.tool_specs)
+
+    def situation(self) -> str:
+        return self._world.situation(self._resident)
+
+    def sim_time(self) -> int:
+        return self._world.clock.now()
+
+    def set_busy(self, busy: bool) -> None:
+        self._world.clock.set_busy(self._resident.name, busy)
+
+    async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
+        return await self._world.call(self._resident, name, args)
+
+    def pending(self) -> list[Percept]:
+        taken, self._inbox = self._inbox, []
+        self._arrived.clear()
+        self._interrupt.clear()
+        return taken
+
+    async def wait(self) -> list[Percept]:
+        world, r = self._world, self._resident
+        self.waiting = True
+        try:
+            if not self._inbox:
+                if isinstance(r.base, Sleep) and not r.base.suspended:
+                    world.fall_asleep(r)
+                if not r.suspended:
+                    world.arm_tick(r)
+            world.rest_changed()
+            await self._arrived.wait()
+            return self.pending()
+        finally:
+            self.waiting = False
+            world.disarm_tick(r)
+            world.rest_changed()
+
+    @property
+    def interrupt(self) -> asyncio.Event:
+        return self._interrupt
+
+    @property
+    def has_pending(self) -> bool:
+        return bool(self._inbox)
+
+    def deliver(self, percept: Percept, interrupt: bool) -> None:
+        if self._resident.suspended:
+            self.held.append(percept)
+            return
+        self._inbox.append(percept)
+        self._arrived.set()
+        if interrupt:
+            self._interrupt.set()
+
+    def release(self) -> None:
+        """Deliver what was held while the resident slept."""
+        held, self.held = self.held, []
+        for percept in held:
+            self.deliver(percept, False)
