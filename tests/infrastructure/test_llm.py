@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 import pytest
@@ -14,6 +15,7 @@ from infrastructure.llm import (
     RecordingClient,
     ScriptedClient,
     StructuredOutputError,
+    ToolCall,
     complete_structured,
     complete_text,
     create_client,
@@ -236,3 +238,42 @@ def test_factory_requires_a_responder_exactly_for_the_scripted_backend():
         create_client(scripted)
     with pytest.raises(LLMConfigError):
         create_client(scripted.model_copy(update={"backend": "openai_compatible"}), lambda r: "ok")
+
+
+def test_messages_fit_their_roles_and_plain_ones_serialize_as_before():
+    call = ToolCall(id="c1", name="look", arguments={})
+    assert Message(role="user", content="Hi.").model_dump() == {"role": "user", "content": "Hi."}
+    assert Message(role="assistant", content="", tool_calls=(call,)).model_dump()["tool_calls"]
+    for wrong in (
+        {"role": "user", "content": "", "tool_calls": (call,)},
+        {"role": "tool", "content": "Done."},
+        {"role": "user", "content": "", "tool_call_id": "c1"},
+    ):
+        with pytest.raises(ValueError):
+            Message(**wrong)
+    assert ToolCall.read("c2", "look", "").arguments == {}
+    assert ToolCall.read("c3", "look", "[1, 2]").unreadable == "[1, 2]"
+
+
+async def test_scripted_stream_delivers_tool_calls_and_can_be_aborted(tmp_path):
+    call = ToolCall(id="c1", name="look", arguments={"far": True})
+    whole = LLMResponse(
+        text="one two three four five six", reasoning="hm", tool_calls=(call,), latency=0
+    )
+    client = ScriptedClient(lambda request: whole, delay=0.01)
+    streamed = await client.stream(_request())
+    assert streamed.text == whole.text and streamed.tool_calls == (call,) and not streamed.aborted
+
+    abort = asyncio.Event()
+    task = asyncio.create_task(client.stream(_request(), abort=abort))
+    await asyncio.sleep(0.035)
+    abort.set()
+    cut = await asyncio.wait_for(task, 1)
+    assert cut.aborted and cut.tool_calls == () and cut.reasoning == "hm"
+    assert whole.text.startswith(cut.text) and len(cut.text) < len(whole.text)
+
+    path = tmp_path / "llm_calls.jsonl"
+    recorded = await RecordingClient(client, path).stream(_request())
+    (record,) = read_jsonl(path)
+    assert recorded.tool_calls == (call,)
+    assert record["response"]["tool_calls"] == [call.model_dump(mode="json")]

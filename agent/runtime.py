@@ -1,0 +1,383 @@
+"""The runtime: one resident's inference loop over its session, its files and the world's port.
+
+    loop:
+        situation + pending percepts  -> user message
+        stream the reply (abortable)  -> assistant message
+        no tool calls                 -> wait for the world (port.wait) -> loop
+        tool calls, in order          -> file tools here, the rest through port.call
+                                         -> tool messages -> loop
+        a result that ends the turn   -> wait for the world -> loop
+
+An interrupting percept aborts a reply in flight: the partial reply is traced as aborted and
+dropped, the percept is told with the situation, and the request is made again. A tool that is
+running is never aborted; calls after it in the same reply are answered as not carried out and
+the percept is told at once. A reply cut off at the token limit is asked for again once at a
+lower reasoning effort; cut off again, it is kept as it stands, without its tool calls, with a
+note. A model error is retried; when the attempts run out the step is a lapse and the runtime
+waits for the next percept. Nothing that goes wrong in a step ends the loop; only cancellation
+does, or a failure of the port itself.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import traceback
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
+from typing import Literal
+
+from pydantic import PositiveFloat, PositiveInt
+
+from agent import files, texts
+from agent.compaction import INSTRUCTION, kept
+from agent.directory import AgentDirectory
+from agent.port import Percept, ToolResult, ToolSpec, WorldPort
+from agent.session import Session
+from agent.trace import Trace
+from infrastructure.config import StrictModel
+from infrastructure.llm import (
+    LLMError,
+    LLMRequest,
+    LLMResponse,
+    Message,
+    Sampling,
+    StreamingClient,
+    ToolCall,
+)
+
+Effort = Literal["low", "medium", "xhigh"]
+"""The reasoning efforts the served model takes."""
+LOWER: dict[Effort, Effort] = {"xhigh": "medium", "medium": "low", "low": "low"}
+"""The effort a cut-off reply is asked for again at."""
+
+COMPACT = ToolSpec(
+    name="compact",
+    description=(
+        "Condense your conversation so far into a summary in your own words, keeping your last "
+        "few exchanges as they were. Useful when you turn to something new."
+    ),
+    parameters={"type": "object", "properties": {}},
+)
+
+
+class RuntimeConfig(StrictModel):
+    """The numbers of the loop, with defaults for a context of 128k tokens.
+
+    The context is compacted when it exceeds `compaction_threshold` tokens, keeping the last
+    `kept_exchanges` exchanges whole; a reply may run to `reply_max_tokens` (reasoning
+    included) and a summary to `summary_max_tokens`, which with the threshold stays within the
+    context. A tool result enters the context cut to `tool_result_chars` characters (its middle
+    left out). A request is made at `reasoning_effort`; a model error, after the client's own
+    retries, is retried until `model_attempts` attempts were made, waiting `retry_wait` seconds
+    and then twice as long each time.
+    """
+
+    compaction_threshold: PositiveInt = 90_000
+    kept_exchanges: PositiveInt = 6
+    tool_result_chars: PositiveInt = 16_000
+    reply_max_tokens: PositiveInt = 16_384
+    summary_max_tokens: PositiveInt = 8_192
+    reasoning_effort: Effort = "medium"
+    model_attempts: PositiveInt = 3
+    retry_wait: PositiveFloat = 10.0
+
+
+class Runtime:
+    """The runtime of the resident whose directory is `directory`, meeting the world through
+    `port` and the model through `client`. The session and the trace live in the directory;
+    a session already there is continued."""
+
+    def __init__(
+        self,
+        directory: AgentDirectory,
+        port: WorldPort,
+        client: StreamingClient,
+        config: RuntimeConfig | None = None,
+    ) -> None:
+        world = port.tool_specs()
+        specs = [*files.SPECS, COMPACT, *world]
+        names = [spec.name for spec in specs]
+        if len(set(names)) < len(names):
+            raise ValueError(f"tool names declared twice: {sorted(_twice(names))}")
+        self._directory = directory
+        self._port = port
+        self._client = client
+        self._config = config or RuntimeConfig()
+        self._files = files.FileTools(directory)
+        self._world = {spec.name for spec in world}
+        self._names = names
+        self._tools = tuple(
+            {
+                "type": "function",
+                "function": {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": spec.parameters,
+                },
+            }
+            for spec in specs
+        )
+        self._tools_text = json.dumps(self._tools, ensure_ascii=False)
+        self._session = Session(directory.session_path)
+        self._trace = Trace(directory.trace_path, port.sim_time)
+        self._prompt = ""
+        self._index: str | None = None
+
+    async def run(self) -> None:
+        """Live until cancelled: wait for the world, take steps until the resident is done for
+        now, and wait again. A step that raises is traced as a lapse and the runtime waits; an
+        error of the port's own `wait`, `pending` or `situation` propagates."""
+        done = True
+        try:
+            while True:
+                if done:
+                    self._tell(await self._port.wait())
+                try:
+                    done = await self._step()
+                except Exception as error:
+                    self._trace.write(
+                        "lapse",
+                        purpose="step",
+                        errors=[_describe(error)],
+                        traceback="".join(traceback.format_exception(error)),
+                    )
+                    done = True
+        finally:
+            self._port.set_busy(False)
+
+    async def _step(self) -> bool:
+        """One model request and the tool calls of its reply; whether the resident is done for
+        now."""
+        if self._session.size(self._system_prompt() + self._tools_text) > (
+            self._config.compaction_threshold
+        ):
+            await self._compact()
+        reply = await self._reply()
+        if reply is None:
+            return True
+        calls = () if reply.truncated else reply.tool_calls
+        self._session.append(
+            Message(role="assistant", content=reply.text, tool_calls=calls),
+            prompt_tokens=None if reply.usage is None else reply.usage.prompt_tokens,
+        )
+        if reply.truncated:
+            self._session.append(Message(role="user", content=texts.CUT_OFF))
+            return True
+        if not calls:
+            return True
+        ends, condense = await self._carry_out_all(calls)
+        if condense:
+            await self._compact()
+        if ends:
+            return True
+        self._tell(self._port.pending())
+        return False
+
+    async def _reply(self) -> LLMResponse | None:
+        """The reply to the context as it stands, after any interruptions and at most one
+        cut-off; None after a lapse."""
+        effort = self._config.reasoning_effort
+        retried = False
+        while True:
+            messages, ids = self._context()
+            request = self._request(messages, effort, self._config.reply_max_tokens)
+            reply = await self._ask(request, ids, purpose="step", abort=self._port.interrupt)
+            if reply is None:
+                return None
+            if reply.aborted:
+                percepts = self._port.pending()
+                self._trace.write("interruption", events=[p.event_id for p in percepts])
+                self._tell(percepts)
+                continue
+            if reply.truncated and not retried:
+                retried, effort = True, LOWER[effort]
+                continue
+            return reply
+
+    async def _compact(self) -> None:
+        """Replace the context by a summary and the last exchanges; on failure, traced as a
+        lapse, the context stays as it is."""
+        messages, ids = self._context()
+        effort = self._config.reasoning_effort
+        for _ in range(2):
+            request = self._request(
+                (*messages, INSTRUCTION),
+                effort,
+                self._config.summary_max_tokens,
+                tool_choice="none",
+            )
+            reply = await self._ask(request, ids, purpose="compaction")
+            if reply is None:
+                return
+            if not reply.truncated:
+                break
+            effort = LOWER[effort]
+        summary = reply.text.strip()
+        if reply.truncated or not summary:
+            failure = "cut off twice" if reply.truncated else "empty summary"
+            self._trace.write("lapse", purpose="compaction", errors=[failure])
+            return
+        keep = kept(self._session.context(), self._config.kept_exchanges)
+        record = self._session.compact(summary, keep)
+        self._trace.write(
+            "compaction", id=record.id, replaced=list(record.replaced), kept=keep, summary=summary
+        )
+
+    async def _ask(
+        self,
+        request: LLMRequest,
+        ids: list[int],
+        *,
+        purpose: str,
+        abort: asyncio.Event | None = None,
+    ) -> LLMResponse | None:
+        """The model's reply to `request`, traced with it, or None, traced as a lapse, when
+        every attempt failed."""
+        errors = []
+        for attempt in range(1, self._config.model_attempts + 1):
+            if attempt > 1:
+                await asyncio.sleep(self._config.retry_wait * 2 ** (attempt - 2))
+            self._trace.write(
+                "request",
+                purpose=purpose,
+                messages=ids,
+                tools=self._names,
+                reasoning_effort=request.reasoning_effort,
+                max_tokens=request.sampling.max_tokens,
+                attempt=attempt,
+            )
+            try:
+                with self._busy():
+                    reply = await self._client.stream(request, abort=abort)
+            except LLMError as error:
+                errors.append(_describe(error))
+                continue
+            self._trace.write("reply", purpose=purpose, **reply.model_dump(mode="json"))
+            return reply
+        self._trace.write("lapse", purpose=purpose, errors=errors)
+        return None
+
+    async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[bool, bool]:
+        """Carry out `calls` in order and answer each in the context; whether one ended the
+        turn, and whether the resident asked to compact. Once an interrupting percept is
+        pending, the remaining calls are answered as not carried out."""
+        ends = condense = interrupted = False
+        for call in calls:
+            unreadable = {} if call.unreadable is None else {"unreadable": call.unreadable}
+            self._trace.write(
+                "tool_call", id=call.id, name=call.name, arguments=call.arguments, **unreadable
+            )
+            error: dict[str, str] = {}
+            if interrupted:
+                result = ToolResult(texts.NOT_CARRIED_OUT)
+            else:
+                result, error = await self._carry_out(call)
+                ends = ends or result.ends_turn
+                condense = condense or (call.name == COMPACT.name and not unreadable)
+                interrupted = self._port.interrupt.is_set()
+            self._trace.write(
+                "tool_result",
+                id=call.id,
+                name=call.name,
+                text=result.text,
+                ends_turn=result.ends_turn,
+                **error,
+            )
+            content = shorten(result.text, self._config.tool_result_chars)
+            self._session.append(Message(role="tool", content=content, tool_call_id=call.id))
+        return ends, condense
+
+    async def _carry_out(self, call: ToolCall) -> tuple[ToolResult, dict[str, str]]:
+        """The result of `call`, and the error raised in carrying it out, if one was."""
+        if call.unreadable is not None:
+            return ToolResult(texts.UNREADABLE), {}
+        if call.name == COMPACT.name:
+            return ToolResult(texts.CONDENSING), {}
+        if call.name not in files.NAMES and call.name not in self._world:
+            return ToolResult(texts.UNKNOWN_TOOL.format(name=call.name)), {}
+        try:
+            with self._busy():
+                if call.name in files.NAMES:
+                    return self._files.call(call.name, call.arguments), {}
+                return await self._port.call(call.name, call.arguments), {}
+        except Exception as error:
+            return ToolResult(texts.FAILED), {"error": _describe(error)}
+
+    def _tell(self, percepts: Sequence[Percept]) -> None:
+        """Trace `percepts` and append them, with the situation, as a user message; nothing
+        when there are none."""
+        if not percepts:
+            return
+        for percept in percepts:
+            self._trace.write(
+                "percept",
+                text=percept.text,
+                percept_kind=percept.kind,
+                event_id=percept.event_id,
+                percept_sim_time=percept.sim_time,
+                percept_real_time=percept.real_time,
+            )
+        text = "\n\n".join([*(percept.text for percept in percepts), self._port.situation()])
+        self._session.append(Message(role="user", content=text))
+
+    def _context(self) -> tuple[tuple[Message, ...], list[int]]:
+        """The messages of the next request, and the session ids of all but the first."""
+        entries = self._session.context()
+        system = Message(role="system", content=self._system_prompt())
+        return (system, *(entry.message for entry in entries)), [entry.id for entry in entries]
+
+    def _system_prompt(self) -> str:
+        """The system prompt, assembled anew (and traced) when the index of files has changed
+        since it was last assembled: a file created or deleted, or a skill's description
+        changed. The journal entry the world writes each night changes it at least daily, which
+        is when an edited background takes effect."""
+        index = self._directory.index()
+        if index != self._index:
+            prompt = self._directory.system_prompt(self._port.rules())
+            if prompt != self._prompt:
+                self._trace.write("prompt", text=prompt)
+            self._prompt, self._index = prompt, index
+        return self._prompt
+
+    def _request(
+        self,
+        messages: tuple[Message, ...],
+        effort: Effort,
+        max_tokens: int,
+        *,
+        tool_choice: str | None = None,
+    ) -> LLMRequest:
+        return LLMRequest(
+            messages=messages,
+            tools=self._tools,
+            tool_choice=tool_choice,
+            reasoning_effort=effort,
+            sampling=Sampling(max_tokens=max_tokens),
+        )
+
+    @contextmanager
+    def _busy(self) -> Iterator[None]:
+        self._port.set_busy(True)
+        try:
+            yield
+        finally:
+            self._port.set_busy(False)
+
+
+def shorten(text: str, limit: int) -> str:
+    """`text` cut to about `limit` characters by leaving out its middle, with a note of how
+    much was left out."""
+    if len(text) <= limit:
+        return text
+    half = limit // 2
+    omitted = texts.SHORTENED.format(count=len(text) - 2 * half)
+    return f"{text[:half]}\n\n{omitted}\n\n{text[len(text) - half :]}"
+
+
+def _describe(error: BaseException) -> str:
+    return f"{type(error).__name__}: {error}"
+
+
+def _twice(names: list[str]) -> set[str]:
+    return {name for name in names if names.count(name) > 1}

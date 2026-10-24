@@ -1,5 +1,6 @@
 """Client wrapper that logs every call as one JSON line."""
 
+import asyncio
 from pathlib import Path
 
 from infrastructure.llm.base import LLMClient, LLMRequest, LLMResponse
@@ -10,10 +11,11 @@ class RecordingClient:
     """Delegates to `inner` and appends one record per call to `path`, failed calls included.
 
     Record fields: `metadata`; `request` (without metadata); `response` (text, whether it was
-    cut off by the token limit, the limit it was given, reasoning, usage, latency) or null;
-    `failure`, the request's verdict on the reply: how it fails, or null if it serves, there
-    is no reply or the request carries no verdict; `error` (`type`, `message`) or null. A
-    failure of the call is re-raised after it is recorded.
+    cut off by the token limit, the limit it was given, reasoning, tool calls, finish reason,
+    whether it was aborted, usage, latency) or null; `failure`, the request's verdict on the
+    reply: how it fails, or null if it serves, there is no reply or the request carries no
+    verdict; `error` (`type`, `message`) or null. A failure of the call is re-raised after it
+    is recorded. `stream` needs an `inner` client that streams.
     """
 
     def __init__(self, inner: LLMClient, path: Path) -> None:
@@ -23,6 +25,17 @@ class RecordingClient:
     async def complete(self, request: LLMRequest) -> LLMResponse:
         try:
             response = await self._inner.complete(request)
+        except Exception as exc:
+            self._record(request, None, exc)
+            raise
+        self._record(request, response, None)
+        return response
+
+    async def stream(
+        self, request: LLMRequest, *, abort: asyncio.Event | None = None
+    ) -> LLMResponse:
+        try:
+            response = await self._inner.stream(request, abort=abort)  # type: ignore[attr-defined]
         except Exception as exc:
             self._record(request, None, exc)
             raise

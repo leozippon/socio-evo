@@ -10,7 +10,9 @@ from infrastructure.llm.base import (
     LLMResponse,
     Message,
     Sampling,
+    StreamingClient,
     StructuredOutputError,
+    ToolCall,
     Usage,
 )
 from infrastructure.llm.config import LLMConfig
@@ -35,7 +37,9 @@ __all__ = [
     "Responder",
     "Sampling",
     "ScriptedClient",
+    "StreamingClient",
     "StructuredOutputError",
+    "ToolCall",
     "Usage",
     "complete_structured",
     "complete_text",

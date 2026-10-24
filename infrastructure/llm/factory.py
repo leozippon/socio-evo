@@ -1,12 +1,12 @@
 """Build the client an LLMConfig asks for."""
 
-from infrastructure.llm.base import LLMClient, LLMConfigError
+from infrastructure.llm.base import LLMConfigError, StreamingClient
 from infrastructure.llm.config import LLMConfig
 from infrastructure.llm.openai_compatible import OpenAICompatibleClient
 from infrastructure.llm.scripted import Responder, ScriptedClient
 
 
-def create_client(config: LLMConfig, responder: Responder | None = None) -> LLMClient:
+def create_client(config: LLMConfig, responder: Responder | None = None) -> StreamingClient:
     """The configured backend. `responder` is required by, and only allowed for, `scripted`."""
     if config.backend == "scripted":
         if responder is None:

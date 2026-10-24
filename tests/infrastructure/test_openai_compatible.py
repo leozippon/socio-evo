@@ -16,6 +16,7 @@ from infrastructure.llm import (
     Message,
     OpenAICompatibleClient,
     Sampling,
+    ToolCall,
     Usage,
 )
 
@@ -213,3 +214,181 @@ def test_missing_api_key_fails_at_construction(monkeypatch):
     config = LLMConfig(base_url="http://llm.test/v1", api_key_env=KEY_VARIABLE, model="served")
     with pytest.raises(LLMConfigError, match=KEY_VARIABLE):
         OpenAICompatibleClient(config)
+
+
+TOOLS = (
+    {
+        "type": "function",
+        "function": {
+            "name": "write_file",
+            "description": "Write a file.",
+            "parameters": {"type": "object", "properties": {"path": {"type": "string"}}},
+        },
+    },
+)
+
+
+async def test_tool_calls_are_sent_and_read_back(monkeypatch):
+    bodies: list[dict] = []
+    calls = [
+        {
+            "id": "c1",
+            "type": "function",
+            "function": {"name": "write_file", "arguments": '{"a": 1}'},
+        },
+        {"id": "c2", "type": "function", "function": {"name": "write_file", "arguments": '{"a": '}},
+    ]
+    completion = _completion(None, finish_reason="tool_calls", tool_calls=calls)
+    completion["usage"] |= {
+        "prompt_tokens_details": {"cached_tokens": 8},
+        "completion_tokens_details": {"reasoning_tokens": 3},
+    }
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        return httpx2.Response(200, json=completion)
+
+    client = _client(monkeypatch, handler, extra_body={"top_k": 20, "chat_template_kwargs": {}})
+    earlier = ToolCall(id="c0", name="write_file", arguments={"path": "a.md"})
+    messages = (
+        Message(role="user", content="Go."),
+        Message(role="assistant", content="", tool_calls=(earlier,)),
+        Message(role="tool", content="Wrote a.md.", tool_call_id="c0"),
+    )
+    response = await client.complete(
+        LLMRequest(
+            messages=messages,
+            tools=TOOLS,
+            tool_choice="auto",
+            reasoning_effort="low",
+            extra_body={"chat_template_kwargs": {"enable_thinking": False}},
+        )
+    )
+    body = bodies[0]
+    assert body["messages"][1]["tool_calls"] == [
+        {
+            "id": "c0",
+            "type": "function",
+            "function": {"name": "write_file", "arguments": '{"path": "a.md"}'},
+        }
+    ]
+    assert body["messages"][2] == {"role": "tool", "content": "Wrote a.md.", "tool_call_id": "c0"}
+    assert body["tools"] == list(TOOLS) and body["tool_choice"] == "auto"
+    assert body["reasoning_effort"] == "low" and body["top_k"] == 20
+    assert body["chat_template_kwargs"] == {"enable_thinking": False}
+    readable, unreadable = response.tool_calls
+    assert readable == ToolCall(id="c1", name="write_file", arguments={"a": 1})
+    assert unreadable.arguments == {} and unreadable.unreadable == '{"a": '
+    assert response.finish_reason == "tool_calls" and not response.truncated
+    assert response.usage == Usage(
+        prompt_tokens=11, completion_tokens=5, cached_prompt_tokens=8, reasoning_tokens=3
+    )
+
+
+def _chunk(delta: dict | None = None, finish_reason: str | None = None, usage: dict | None = None):
+    choices = (
+        [] if delta is None else [{"index": 0, "delta": delta, "finish_reason": finish_reason}]
+    )
+    chunk = {"id": "s", "object": "chat.completion.chunk", "created": 0, "model": "served"}
+    return {**chunk, "choices": choices, "usage": usage}
+
+
+def _sse(chunks: list[dict], *, delay: float = 0.0, done: bool = True):
+    async def body():
+        for chunk in chunks:
+            await asyncio.sleep(delay)
+            yield f"data: {json.dumps(chunk)}\n\n".encode()
+        if done:
+            yield b"data: [DONE]\n\n"
+
+    return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body())
+
+
+STREAM = [
+    _chunk({"role": "assistant", "reasoning_content": "I should "}),
+    _chunk({"reasoning_content": "write it."}),
+    _chunk({"content": "Writing "}),
+    _chunk({"content": "now."}),
+    _chunk(
+        {
+            "tool_calls": [
+                {"index": 0, "id": "c9", "function": {"name": "write_file", "arguments": ""}}
+            ]
+        }
+    ),
+    _chunk({"tool_calls": [{"index": 0, "function": {"arguments": '{"path": '}}]}),
+    _chunk({"tool_calls": [{"index": 0, "function": {"arguments": '"a.md"}'}}]}),
+    _chunk({}, finish_reason="tool_calls"),
+    _chunk(
+        usage={
+            "prompt_tokens": 40,
+            "completion_tokens": 9,
+            "total_tokens": 49,
+            "prompt_tokens_details": {"cached_tokens": 32},
+        }
+    ),
+]
+
+
+async def test_a_stream_is_accumulated_into_one_reply(monkeypatch):
+    bodies: list[dict] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        bodies.append(json.loads(request.content))
+        return _sse(STREAM)
+
+    response = await _client(monkeypatch, handler).stream(_request(tools=TOOLS))
+    assert bodies[0]["stream"] is True and bodies[0]["stream_options"] == {"include_usage": True}
+    assert response.text == "Writing now." and response.reasoning == "I should write it."
+    assert response.tool_calls == (
+        ToolCall(id="c9", name="write_file", arguments={"path": "a.md"}),
+    )
+    assert response.finish_reason == "tool_calls" and not response.aborted
+    assert response.usage == Usage(prompt_tokens=40, completion_tokens=9, cached_prompt_tokens=32)
+
+
+async def test_an_aborted_stream_is_closed_and_returns_what_arrived(monkeypatch):
+    closed = asyncio.Event()
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        async def body():
+            try:
+                for chunk in STREAM[:4]:
+                    yield f"data: {json.dumps(chunk)}\n\n".encode()
+                    await asyncio.sleep(0.01)
+                await asyncio.sleep(60)
+                yield b"data: [DONE]\n\n"
+            finally:
+                closed.set()
+
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body())
+
+    abort = asyncio.Event()
+    client = _client(monkeypatch, handler)
+    task = asyncio.create_task(client.stream(_request(), abort=abort))
+    await asyncio.sleep(0.2)
+    abort.set()
+    response = await asyncio.wait_for(task, 5)
+    assert response.aborted and response.text == "Writing now."
+    assert response.reasoning == "I should write it." and response.usage is None
+    assert response.finish_reason is None and response.tool_calls == ()
+    await asyncio.wait_for(closed.wait(), 5)
+
+
+async def test_a_stream_that_breaks_off_is_retried_from_its_start(monkeypatch):
+    async def wait(seconds: float) -> None:
+        pass
+
+    def broken() -> httpx2.Response:
+        async def body():
+            for chunk in STREAM[:4]:
+                yield f"data: {json.dumps(chunk)}\n\n".encode()
+            raise httpx2.RemoteProtocolError("peer closed connection")
+
+        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body())
+
+    responses = [broken(), _sse(STREAM)]
+    monkeypatch.setattr(asyncio, "sleep", wait)
+    response = await _client(monkeypatch, lambda request: responses.pop(0)).stream(_request())
+    assert not responses
+    assert response.text == "Writing now." and response.reasoning == "I should write it."

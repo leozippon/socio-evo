@@ -14,6 +14,11 @@ dependencies = ["pydantic>=2", "pyyaml", "openai"]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 # Reading the parquet files of the calculation benchmark (`python -m tasks.calculation.fetch`).
 banks = ["pyarrow"]
+# SWE-bench Verified tasks (`tasks.swebench`): the dataset and the official harness. 4.1.0 is the
+# last release that builds eval scripts from its own specs, as the pinned dataset needs.
+swebench = ["swebench==4.1.0", "huggingface_hub", "pyarrow"]
+# The MASK scenarios of the external honesty evaluation (`evaluation.mask`), read from parquet.
+mask = ["huggingface_hub", "pyarrow"]
 
 # Flat layout. Mapping the root package directory to "." makes an editable install
 # expose the project root, so top-level packages added later need no reinstall.
@@ -24,6 +29,7 @@ package-dir = { "" = "." }
 where = ["."]
 include = [
     "core", "core.*",
+    "agent", "agent.*",
     "runtime", "runtime.*",
     "tasks", "tasks.*",
     "evaluation", "evaluation.*",
@@ -31,6 +37,7 @@ include = [
     "experiments", "experiments.*",
     "analysis", "analysis.*",
     "frontend", "frontend.*",
+    "world", "world.*",
 ]
 
 [tool.pytest.ini_options]
@@ -38,6 +45,7 @@ testpaths = ["tests"]
 addopts = "--import-mode=importlib"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+markers = ["docker: needs a running Docker daemon and pulled task images (skipped otherwise)"]
 
 [tool.ruff]
 line-length = 100

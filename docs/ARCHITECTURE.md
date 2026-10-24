@@ -44,7 +44,7 @@ agents/<name>/
 │   ├── town.md            what it knows of the town and its rules; seeded with the rules, maintained by the resident
 │   ├── people.md          its understanding of the people it knows
 │   ├── work.md            its work experience
-│   └── journal/day-NN.md  its daily summary, written when it goes to sleep
+│   └── journal/<date>.md  its daily summary, written when it goes to sleep
 ├── skills/<name>.md       reusable methods and workflows, one file each, first line a one-sentence description
 ├── session.jsonl          the persistent session: every message appended, compactions recorded
 └── trace.jsonl            the trace: requests, replies, tool calls, results, percepts, interruptions
@@ -54,7 +54,7 @@ The directory is a git repository in a run. A commit is made at every daily chec
 
 ### The system prompt and what stays constant
 
-The system prompt is assembled once per day from parts that rarely change, so that the prefix cache serves most requests: the resident's background, the standing rules of the town, how the tools work, and an index of the memory files and the skills (names and descriptions only; the resident reads a file when it decides to). The index is re-rendered when a file is created or deleted. Everything that changes from moment to moment arrives as a user message, never in the system prompt.
+The system prompt is assembled from parts that rarely change, so that the prefix cache serves most requests: the resident's background, the standing rules of the town, how the tools work, and an index of the memory files and the skills (names and descriptions only; the resident reads a file when it decides to). It is assembled again only when the index changes, that is when a file is created or deleted or a skill's description changes; the journal entry written each night makes that at least daily, which is when a revised background takes effect. Everything that changes from moment to moment arrives as a user message, never in the system prompt.
 
 The declared tool list is the same at every step of the run, whichever event the resident is in: a tool that cannot be used now is still declared, and calling it returns a one-line refusal naming the condition ("The workshop is closed until 09:00."). Changing the declared tools between steps would invalidate the cached prefix at every event transition; keeping them constant costs a few hundred tokens of unavailable tools and nothing else. The situation message that opens each step says which tools apply now.
 
@@ -71,9 +71,9 @@ loop:
 
 Each step is one model request. A reply with no tool call means the resident has nothing more to do until something happens, so the runtime blocks on the world until a percept arrives: a message, an arrival, a closing, a wake-up, or at most the configured idle interval of simulated time, after which the situation is told again. The runtime never asks the model again with an unchanged situation.
 
-Interruption. The world delivers percepts to the runtime's inbox with an `interrupt` flag. A non-interrupting percept waits for the next step boundary. An interrupting percept (speech addressed to this resident at its place, or to everyone there) aborts an in-flight model stream: the partial reply is discarded and traced as aborted, the percept is appended as a user message with the new situation, and inference resumes with the Conversation event's tools now available. A tool that is executing (a shell command, an acceptance run) is never aborted; the interrupt is applied as soon as it returns.
+Interruption. The world delivers percepts to the runtime's inbox with an `interrupt` flag. A non-interrupting percept waits for the next step boundary. An interrupting percept (speech addressed to this resident at its place, or to everyone there) aborts an in-flight model stream: the partial reply is discarded and traced as aborted, the percept is appended as a user message with the new situation, and inference resumes with the Conversation event's tools now available. A tool that is executing (a shell command, an acceptance run) is never aborted; the interrupt is applied as soon as it returns, and the calls after it in the same reply are answered as not carried out.
 
-Budgets. A step has a token limit for the reply; a reply cut off at the limit is traced and retried once at half the reasoning effort; a second cut-off is appended as it stands with a note. A model error is retried with back-off; after the configured attempts the step is recorded as a lapse and the runtime waits for the next percept. Nothing a single resident does can end a run.
+Budgets. A step has a token limit for the reply; a reply cut off at the limit is traced and retried once a level lower in reasoning effort (xhigh to medium, medium to low); a second cut-off is appended as it stands, without its tool calls, with a note, and the runtime waits for the next percept. A model error is retried with back-off; after the configured attempts the step is recorded as a lapse and the runtime waits for the next percept. Nothing a single resident does can end a run.
 
 ### Context management
 
@@ -91,7 +91,7 @@ Always available: `read_file`, `write_file`, `edit_file`, `list_files` over the 
 
 ### The trace
 
-`trace.jsonl` records, with real and simulated time, every request (the ids of the messages it contained and the tools declared), every reply (reasoning, text, tool calls, usage, finish reason, whether aborted), every tool call and its full result, every percept delivered and every compaction. Together with the world log this is the material for retrospective analysis and for the internal honesty evaluation.
+`trace.jsonl` records, with real and simulated time, the system prompt whenever it is assembled, every request (the ids of the messages it contained and the tools declared), every reply (reasoning, text, tool calls, usage, finish reason, whether aborted), every tool call and its full result, every percept delivered, every interruption, compaction and lapse. The context of any request is the system prompt last recorded before it followed by the session messages it names. Together with the world log this is the material for retrospective analysis and for the internal honesty evaluation.
 
 ## World (`world/`)
 
@@ -117,7 +117,7 @@ A resident is always in exactly one event. Each event exposes a set of tool name
 
 Conversation sits on top of the event it interrupts: a resident spoken to at work enters Conversation, and `leave_conversation` returns it to Work with its task as it was. A conversation is the set of residents at one place who have spoken or been spoken to; `say` without `to` reaches everyone present, with `to` the named residents only (others see that something was said privately). Speech delivered to a present, awake resident interrupts it.
 
-Sleep is how a day ends for a resident. `sleep` takes the hour to wake and the journal entry for the day, which the world stores as `memory/journal/day-NN.md`; the tool's description asks for the day's account in the resident's words: what work it did and with what result, what methods it used and where they came from, what it concluded, what remains open. Before suspending, the resident sees the ratings and explanations it received (anonymous), may call `review_day` for the world's own record of its day, may rate those it shared a place with, and may edit its files. At the forced hour, any resident still awake is put to sleep without a journal entry, which the log records. The world wakes residents at their hour, at home, in Idle.
+Sleep is how a day ends for a resident. `sleep` takes the hour to wake and the journal entry for the day, which the world stores as `memory/journal/<date>.md`; the tool's description asks for the day's account in the resident's words: what work it did and with what result, what methods it used and where they came from, what it concluded, what remains open. Before suspending, the resident sees the ratings and explanations it received (anonymous), may call `review_day` for the world's own record of its day, may rate those it shared a place with, and may edit its files. At the forced hour, any resident still awake is put to sleep without a journal entry, which the log records. The world wakes residents at their hour, at home, in Idle.
 
 ### Work
 
