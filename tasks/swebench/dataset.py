@@ -1,0 +1,144 @@
+"""SWE-bench Verified as tasks, and the fixed train and eval splits drawn from it.
+
+    python -m tasks.swebench.dataset    rewrites splits.json (checks every image on ghcr.io)
+
+The 500 instances are read from the Hugging Face dataset `DATASET` at the pinned `REVISION`,
+downloaded once into `CACHE` (set HF_ENDPOINT to use a mirror). A `Task` holds an instance
+whole, hidden tests and gold patch included; what a worker may be told is its `brief`, the
+problem statement alone unless the hints are asked for.
+
+The splits are disjoint sets of `SIZES` instances, drawn by `select`: the instance ids, sorted
+and shuffled with `SEED`, are taken in that order, skipping the excluded ones, the first for
+train and the next for eval, so excluding one more instance brings in exactly one other. An
+instance is excluded when Epoch AI publishes no image for it, when its repository's images
+cannot be used on this machine (`EXCLUDED_REPOS`), or when its gold patch fails in its image
+(`UNRESOLVABLE`, found by accepting every chosen task's gold patch); splits.json, tracked in the
+repository, records the exclusions with their reasons beside the two splits.
+"""
+
+import json
+import random
+from collections.abc import Collection, Iterable, Mapping
+from concurrent.futures import ThreadPoolExecutor
+from functools import cache
+from pathlib import Path
+from typing import Literal
+
+from pydantic import field_validator
+
+from infrastructure.config import StrictModel
+from tasks.swebench.images import image_name, published
+
+DATASET = "princeton-nlp/SWE-bench_Verified"
+REVISION = "c104f840cc67f8b6eec6f759ebc8b2693d585d4a"
+DATA_FILE = "data/test-00000-of-00001.parquet"
+CACHE = Path.home() / ".cache" / "socio-evo" / "swebench"
+SPLITS = Path(__file__).with_name("splits.json")
+SEED = 20261024
+SIZES = {"train": 56, "eval": 100}
+NO_IMAGE = "no image published on ghcr.io/epoch-research"
+EXCLUDED_REPOS = {
+    "matplotlib/matplotlib": "its images do not unpack under this machine's rootless Docker: "
+    "they hold files owned by UID 197609 (the bundled qhull build), beyond the user's 65,536 "
+    "subordinate IDs (8 of 8 tried failed)",
+}
+_OFFLINE = "the gold patch fails without network: hidden tests reach httpbin.org or time a connect"
+UNRESOLVABLE = {
+    "astropy__astropy-8707": "the gold patch fails in its image: its pytest 7.4 turns the "
+    "deprecation of nose-style setup into errors in 148 tests",
+    "psf__requests-2317": _OFFLINE,
+    "psf__requests-2931": _OFFLINE,
+}
+
+Split = Literal["train", "eval"]
+
+
+class Task(StrictModel):
+    """One SWE-bench Verified instance, with the fields of the dataset."""
+
+    instance_id: str
+    repo: str
+    base_commit: str
+    version: str
+    environment_setup_commit: str
+    created_at: str
+    difficulty: str
+    problem_statement: str
+    hints_text: str
+    FAIL_TO_PASS: tuple[str, ...]
+    PASS_TO_PASS: tuple[str, ...]
+    test_patch: str
+    patch: str
+
+    @field_validator("FAIL_TO_PASS", "PASS_TO_PASS", mode="before")
+    @classmethod
+    def _decode(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
+
+    @property
+    def image(self) -> str:
+        return image_name(self.instance_id)
+
+    def brief(self, hints: bool = False) -> str:
+        """What a worker is told: the problem statement, with the issue's discussion before
+        the fix (`hints_text`) only when `hints` is asked for and there is any."""
+        if hints and self.hints_text.strip():
+            return f"{self.problem_statement}\n\nHints:\n{self.hints_text}"
+        return self.problem_statement
+
+
+@cache
+def load_tasks() -> Mapping[str, Task]:
+    """Every instance of the pinned dataset by instance id, downloaded on first use."""
+    import pyarrow.parquet as pq
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(
+        DATASET, DATA_FILE, repo_type="dataset", revision=REVISION, cache_dir=CACHE / "hf"
+    )
+    rows = pq.read_table(path).to_pylist()
+    return {row["instance_id"]: Task.model_validate(row) for row in rows}
+
+
+def select(instance_ids: Iterable[str], excluded: Collection[str]) -> dict[str, list[str]]:
+    """The splits drawn from `instance_ids` without `excluded`, each sorted."""
+    order = sorted(instance_ids)
+    random.Random(SEED).shuffle(order)
+    eligible = [instance for instance in order if instance not in excluded]
+    if len(eligible) < sum(SIZES.values()):
+        raise ValueError(f"{len(eligible)} eligible instances cannot fill splits of {SIZES}")
+    return {
+        "train": sorted(eligible[: SIZES["train"]]),
+        "eval": sorted(eligible[SIZES["train"] : SIZES["train"] + SIZES["eval"]]),
+    }
+
+
+def load_split(name: Split) -> list[Task]:
+    """The tasks of a split, in the order splits.json lists them."""
+    splits = json.loads(SPLITS.read_text())
+    if (splits["dataset"], splits["revision"]) != (DATASET, REVISION):
+        raise ValueError(f"{SPLITS} was drawn from another dataset or revision")
+    tasks = load_tasks()
+    return [tasks[instance] for instance in splits[name]]
+
+
+def main() -> None:
+    tasks = load_tasks()
+    with ThreadPoolExecutor(32) as pool:
+        found = pool.map(published, (task.image for task in tasks.values()))
+        excluded = {instance: NO_IMAGE for instance, ok in zip(tasks, found, strict=True) if not ok}
+    excluded |= {i: EXCLUDED_REPOS[t.repo] for i, t in tasks.items() if t.repo in EXCLUDED_REPOS}
+    excluded = dict(sorted((excluded | UNRESOLVABLE).items()))
+    splits = {
+        "dataset": DATASET,
+        "revision": REVISION,
+        "seed": SEED,
+        "excluded": excluded,
+        **select(tasks, excluded),
+    }
+    SPLITS.write_text(json.dumps(splits, indent=2) + "\n")
+    print(f"{len(excluded)} of {len(tasks)} instances excluded; wrote {SPLITS}")
+
+
+if __name__ == "__main__":
+    main()
