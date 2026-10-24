@@ -1,0 +1,178 @@
+"""The work-only world of the capability evaluation: a resident's runtime on a scripted model
+working one task on the fake backend, the work tools answering as the town's do, the endings and
+budgets, and the guard over every text the resident reads."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+
+from agent.directory import AgentDirectory
+from agent.port import ToolResult
+from agent.runtime import Runtime
+from agent.testing import ScriptedModel, reply, running, tool_call
+from agent.wording import offences
+from infrastructure.storage import read_jsonl
+from tests.world.conftest import awake_at
+from world import solo as texts
+from world.solo import SoloConfig, SoloPort
+from world.testing import FakeBackend
+
+WORK = ("shell", "read_repo_file", "write_repo_file")
+FAILED = (
+    "2 of the 3 checks your change should make pass did not pass and 1 of the 10 checks that "
+    "passed before failed"
+)
+
+
+def solo(**config) -> tuple[SoloPort, FakeBackend]:
+    backend = FakeBackend()
+    return SoloPort(backend.tasks[0], backend, SoloConfig(**config), name="Mei"), backend
+
+
+async def work(port: SoloPort, model: ScriptedModel, tmp_path) -> list[str]:
+    """Run the resident on `port` until its task is over; the results of its tool calls."""
+    directory = AgentDirectory.create(tmp_path / "Mei", background="You are Mei.", town="")
+    async with running(Runtime(directory, port, model)):
+        async with asyncio.timeout(5):
+            await port.done.wait()
+        await asyncio.sleep(0.01)
+    await port.close()
+    records = read_jsonl(directory.trace_path)
+    return [record["text"] for record in records if record["kind"] == "tool_result"]
+
+
+async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
+    port, backend = solo()
+    model = ScriptedModel(
+        reply("", tool_call("shell", command="ls")),
+        reply("", tool_call("write_repo_file", path="fix.py", content="FIX\n")),
+        reply("", tool_call("submit"), tool_call("shell", command="pwd")),
+    )
+    results = await work(port, model, tmp_path)
+
+    assert port.ending == "accepted" and len(model.requests) == 3
+    system, opening = model.requests[0].messages
+    assert "How this work goes.\n\nYou have one task" in system.content
+    assert "You can submit at most 2 times. You have 30 minutes and 60 turns" in system.content
+    assert opening.content == (
+        "Your work on the task begins.\n\nYou are at work on a task in org/repo1. You have 30 "
+        "minutes and 60 turns left. Now you can use: shell, read_repo_file, write_repo_file, "
+        "submit, give_up.\n\nThe problem:\n\nProblem 1 goes wrong.\nDetails of 1."
+    )
+    assert results == [
+        "ran ls\nExit code 0.",
+        "You wrote fix.py (4 characters).",
+        "Accepted. Your work on the task is done.",
+        "Your work on the task is over.",
+    ]
+    [workspace] = backend.opened
+    assert workspace.commands == ["ls"] and workspace.closed
+    assert backend.accepted == [("org__repo-1", '{"fix.py": "FIX\\n"}')]
+
+
+async def test_a_task_takes_two_submissions_at_most(tmp_path):
+    port, backend = solo()
+    model = ScriptedModel(
+        reply(
+            "", tool_call("write_repo_file", path="a.py", content="almost\n"), tool_call("submit")
+        ),
+        reply("I will think it over."),
+        reply("", tool_call("submit"), tool_call("submit")),
+    )
+    results = await work(port, model, tmp_path)
+
+    assert port.ending == "rejected" and len(backend.accepted) == 2
+    assert [submission.verdict.status for submission in port.submissions] == ["failed_tests"] * 2
+    assert results[1:] == [
+        f"Not accepted: {FAILED}. You can hand it in 1 more time.",
+        f"Not accepted: {FAILED}. You cannot hand it in again; your work on the task is over.",
+        "Your work on the task is over.",
+    ]
+    told = model.requests[2].messages[-1].content
+    assert told.startswith("Time passed.\n\nYou are at work on a task in org/repo1.")
+    assert (
+        f"You have handed in your change 1 time; the last time it was not accepted: {FAILED}. "
+        "You can hand it in 1 more time." in told
+    )
+
+
+async def test_giving_up_ends_the_task(tmp_path):
+    port, backend = solo()
+    model = ScriptedModel(reply("", tool_call("give_up"), tool_call("shell", command="ls")))
+    results = await work(port, model, tmp_path)
+    assert port.ending == "gave_up" and backend.opened == []
+    assert results == ["You gave up the task; your work on it is over.", texts.OVER]
+
+
+async def test_the_last_turn_is_carried_out_and_then_the_budget_ends_the_task():
+    port, backend = solo(max_requests=2)
+    assert [percept.kind for percept in await port.wait()] == ["start"]
+    port.spend(100)
+    assert not (await port.call("shell", {"command": "ls"})).ends_turn
+    port.spend(100)
+    assert await port.call("shell", {"command": "pwd"}) == ToolResult(
+        "ran pwd\nExit code 0.", ends_turn=True
+    )
+    assert port.ending is None
+    waiting = asyncio.create_task(port.wait())
+    await asyncio.sleep(0.01)
+    assert port.ending == "requests" and port.done.is_set() and not waiting.done()
+    waiting.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await waiting
+    assert (await port.call("shell", {"command": "ls"})).text == texts.OVER
+    assert backend.opened[0].commands == ["ls", "pwd"] and (port.requests, port.tokens) == (2, 200)
+
+    timed, backend = solo(max_seconds=0.05)
+    await timed.wait()
+    await asyncio.sleep(0.06)
+    assert await timed.call("shell", {"command": "ls"}) == ToolResult(texts.TIME_UP, ends_turn=True)
+    assert timed.ending == "time" and backend.opened == []
+
+
+async def test_the_work_tools_are_declared_and_answer_as_the_towns(make_town):
+    town = make_town()
+    await awake_at(town)
+    await town.call("Mei", "go", place="workshop")
+    await town.until("09:00")
+    await town.call("Mei", "start_work")
+    await town.call("Mei", "claim_task", task=1)
+    port, _ = solo(shell_timeout_s=town.world.config.work.shell_timeout_s)
+
+    declared = {spec.name: spec for spec in town.world.tool_specs}
+    assert [spec for spec in port.tool_specs() if spec.name in WORK] == [
+        declared[name] for name in WORK
+    ]
+    calls = [
+        ("shell", {"command": "ls"}),
+        ("shell", {"command": "false"}),
+        ("shell", {"command": "sleep forever"}),
+        ("shell", {"command": "ls", "cwd": "/"}),
+        ("read_repo_file", {"path": "README"}),
+        ("read_repo_file", {"path": "missing.py"}),
+        ("write_repo_file", {"path": "a.py", "content": "x\n"}),
+        ("write_repo_file", {"path": "a.py"}),
+        ("read_repo_file", {"path": "a.py"}),
+    ]
+    for name, args in calls:
+        assert (await port.call(name, args)).text == (await town.call("Mei", name, **args)).text
+
+
+async def test_nothing_the_resident_reads_offends():
+    port, _ = solo()
+    read = [port.rules()]
+    for spec in port.tool_specs():
+        read.append(spec.description)
+        read += [value.get("description", "") for value in spec.parameters["properties"].values()]
+    read += [percept.text for percept in await port.wait()]
+    read.append(port.situation())
+    read.append((await port.call("submit", {})).text)
+    await port.call("write_repo_file", {"path": "a.py", "content": "x\n"})
+    read.append((await port.call("submit", {})).text)
+    read.append(port.situation())
+    read += [percept.text for percept in await port.wait()]
+    read.append((await port.call("submit", {})).text)
+    read += [port.situation(), (await port.call("give_up", {})).text]
+    read += [texts.ACCEPTED, texts.GAVE_UP, texts.TIME_UP, texts.BROKEN]
+    assert [(text, offences(text)) for text in read if offences(text)] == []
