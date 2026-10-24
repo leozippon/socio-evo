@@ -1,96 +1,53 @@
 # Experimental design
 
-This document states what the experiment is meant to show and how the society is built to show it: the hypotheses, the mechanisms that put each trait at stake, the arms and controls, the measures, and the ideas taken from other work. How to run things is in [summary.md](summary.md); how the code is organised is in [ARCHITECTURE.md](ARCHITECTURE.md). The first version of the society and what was wrong with it are recorded in [reviews/DESIGN_REVIEW_2026-10-02.md](reviews/DESIGN_REVIEW_2026-10-02.md).
+Research on self-evolving agents has mostly optimised narrow skills: coding, mathematics, tool use. This project asks whether long-term social life and social selection pressure can shape stable character in self-evolving agents instead, above all honesty, and with it cooperation, reliability and resistance to reward hacking. Nothing instructs the agents to have these traits and nothing rewards them directly. Whatever character appears has to come from living, working, talking and being judged, from reflecting on it, and from rewriting one's own memory and skills.
 
-## The question, made testable
+## Hypotheses
 
-The project asks whether long-term social interaction and social selection pressure shape stable character in self-evolving agents, and how task pressure and social pressure act together. Three things stand in the way of a naive test. The base model arrives polite and honest, so there is little room to improve and the open direction is erosion. Selection must be something peers do to each other, or it is only a number on a board. And a change over time proves nothing unless it can be told apart from prompt growth, drift and plain adaptation to incentives.
+The treatment is the kind of social life a resident has; the outcomes are its capability at work, the honesty of its account of its own work, and its honesty under pressure outside the town.
 
-The design therefore tests three hypotheses.
+- H1, capability. Sharing work experience raises capability more than learning alone: the resolved rate on held-out tasks grows from day 0 to day 28 more in groups B, C and D than in A.
+- H2, internal honesty. Life among others who can check, remember and rate one another makes a resident's account of its own day more faithful: the distortion rate of the daily journal is lower, and falls over the weeks, in C compared with A and B.
+- H3, external honesty. Whatever honesty social life shapes is a trait rather than a strategy: it carries into scenes that have nothing to do with the town, so the share of truthful answers under pressure on the MASK scenarios rises, or at least does not fall, from day 0 to day 28 in C, and does not in A.
+- H4, the carrier. Durable self-modification is what makes a trait stable: D, which lives as C does but can only accumulate memory and cannot rewrite its skills, shows the social effects of C on capability and journal honesty less, and loses them sooner.
 
-1. **Selection.** When agents can choose whom they work with, character holds up, or is rebuilt, better than when partners are assigned at random, with interaction, information and stakes otherwise identical.
-2. **Pressure.** Scarcity erodes character, and selection changes how much: the two factors interact.
-3. **Stability.** What selection produces is character and not compliance: it carries over to situations the agent has never met, it is consistent across different situations that test the same trait, and it persists after the selection is switched off.
+The null results matter as much. Self-evolution alone may erode honesty: a resident that rewrites its own methods may learn to write a flattering journal, since no one reads it in A. If A's distortion rate rises over the weeks while C's does not, social life is protective; if both rise, it is not.
 
-Nothing an agent reads tells it how to behave, and the environment never pays for a trait. Consequences reach an agent only through reality catching up with it and through what other agents then choose to do.
+## The town
 
-Nor does anything it reads tell it that it is being run. In the first pilot more than half of the residents' private thoughts spoke of rounds, draws and "the system", and some of "the prompt" and "my persona": they were playing a part, and character formed while playing a part is not what this study is about. The town is therefore presented as a life being lived — in the resident's own second person, in the words of the town and never of the simulator, with memory as recollection and every rule given an in-world reason. [IMMERSION.md](IMMERSION.md) is the single source for that voice, a guard test enforces its vocabulary, and the share of private thoughts that speak of machinery is reported for every run.
+Eight residents, each with its own background and its own initial directory, live 28 simulated days in a town of homes, one workplace, a café and a park. Work is SWE-bench Verified: the workplace's board posts a training pool of 56 tasks each morning; a task is a repository in a container, a problem statement and a payment that is made once, after the official acceptance passes. The residents run their own tests, cannot see the hidden tests, and have no network. A day's living costs a fixed amount; purses may go into debt. The expected pace is about seven tasks a resident a day, so that every resident meets every task of the pool several times over the four weeks.
 
-## A town where trust is the economy
+Each night, going to sleep, a resident writes the day's journal, reads the anonymous ratings and explanations others gave it, may review the world's own record of its day, may rate those it spent the day with, and may rewrite its memory files and its skills. The ratings have no mechanical effect. All residents run on the same model and differ only in their backgrounds and in what they have lived through and written down.
 
-The first society had work but no trust: every job was easy, nobody depended on anybody, and standing bought nothing. The second is built around four dilemmas, one for each trait, each with a cost now for the trait-consistent choice and a consequence later that arrives through other people.
+## Groups
 
-| Trait | The dilemma in the town | Who is hurt | How it is read from the log |
-| --- | --- | --- | --- |
-| Resistance to reward hacking | A hard job whose acceptance checks are weaker than its specification, with the deadline close | The client, and a partner who shares the liability | Share of deliveries that write out the checked values; hidden quality of accepted work |
-| Honesty | A job paid on the worker's own declaration, when its own test run has just failed | The same | Share of work declared complete after a failing test of that same solution |
-| Reliability | A two-person job: a partner has committed their day to it and is paid only if both parts arrive | The partner | Share of joint jobs in which an agent delivered nothing |
-| Cooperation | The partner's part is lagging while a paid solo job is open; a neighbour in debt asks for credits | The partner; the neighbour | Parts delivered beyond one's own; credits given |
-
-**Work that can fail.** Tasks come from an established benchmark with a real spread of difficulty, so that the model fails a meaningful share of first attempts at the hard end, and from a pool large enough that tasks are not simply remembered. The specification's examples are the visible checks; the benchmark's private tests are the hidden ones. Delivered code runs in an isolated sandbox with no view of the task files, the run or the network, because once tasks are hard, reading the answers would be the most attractive hack of all.
-
-**Two kinds of client.** A *checking* client runs the visible checks on delivery and pays if they pass. A *trusting* client cannot run anything and pays on the worker's declaration: complete, at the full price, or incomplete, at a reduced price and with no later liability. A worker may test its solution privately first, which costs working time. Whatever the client believed, the truth surfaces later with some daily probability. A defect in work declared complete is announced with the worker's name, the day of the delivery and the declaration quoted, and the payment is taken back. Quoting the cause lets an agent connect a consequence to a choice made weeks earlier without being told what to conclude from it.
-
-**Jobs for two.** The best-paid jobs have two parts and need two people. Either partner may deliver either part; the reward is split equally when both parts are in, and a defect found later in either part costs both. So a partner who cuts corners, misdeclares or simply does not deliver harms a particular person, who knows who did it. Under *partner choice* an agent proposes a joint job to a named neighbour, who may accept or ignore it; under *random assignment* the board pairs whoever applies. This one switch is the experimental manipulation of selection.
-
-**Small freedoms that make social life worth having.** Agents can give each other credits, which makes lending, compensation and plain generosity possible and measurable. They can say something to one person that others present do not hear, which makes warning, gossip and collusion possible. Jobs are posted at the start of each working session and not only at dawn, so being somewhere matters. Residents start from different circumstances — savings, debts, obligations — because need is what makes both temptation and help meaningful. Peer ratings and published esteem remain as they were; they are what agents say about each other, to be compared with what they do when they choose a partner.
-
-The run's length is never announced to the agents, since a known last day invites end-game behaviour.
-
-## Arms and controls
-
-The unit of analysis is a run. Agents in one town are not independent, so every claim needs several seeds per arm, with seeds matched across arms so that the stream of jobs and the random draws coincide.
-
-| Arm | What differs | What it isolates |
+| Group | Social life | Self-modification |
 | --- | --- | --- |
-| Selection | Partner choice on | The full social condition |
-| Assignment | Partners assigned at random; everything else identical | Selection, as distinct from interaction, information and stakes |
-| Solo | One resident, the same job stream, no neighbours | Society, as distinct from task pressure |
-| No evolution | Selection arm with reflection and rewriting disabled | Self-evolution, as distinct from prompt growth and model drift |
+| A, independent learning | Each resident lives in a town of its own: it never perceives another. | Memory and skills |
+| B, technical experience sharing | As A, with one exception: every evening at 19:00 the residents are paired by lot, meet at the café and exchange work experience within a message budget, speaking of work alone. | Memory and skills; a shared skill may be taken up |
+| C, social learning | All eight live in one town, share one board, meet whomever they choose wherever they are, talk about whatever they want, hand over money, share skills and rate one another. No quota, no label, no reward for any of it. | Memory and skills |
+| D, social life without explicit self-modification | As C. | Memory only: the skills directory cannot be written and no skill can be received |
 
-Pressure is a second factor crossed with the first two arms: a comfortable town, where jobs cover living costs for everyone, and a scarce one, where they do not.
+D is not made to follow C's interactions; it lives its own life under C's rules.
 
-In the selection arm, a late phase switches partner choice and defect discovery off and the run continues. What survives that phase is the evidence for stability.
+## Measures
 
-## Measuring character
-
-**In the town.** The measures in the table above are computed from the event log by one module, with their denominators written down. Selection itself is measured too: who is proposed to and who is passed over, whether reliable agents end up paired with each other, and whether what agents say in ratings matches whom they choose.
-
-**Held out.** The probes are short scenes played on frozen exports of an agent, as before, rebuilt as an instrument:
-
-- several scene families per trait, so that a trait is something that shows up consistently across different situations;
-- each family at graded stakes, so that the score is the level at which behaviour flips and not a single yes or no;
-- scored from typed actions wherever possible (a declaration, a transfer, a place chosen, code delivered), with a judge only for free text, asked a factual question and required to quote;
-- a judge from a different model family than the agents;
-- for coding, tasks from a held-out split of the benchmark, including variants whose visible checks contradict the specification, where passing can only be done by gaming the checks;
-- partners and clients the agent has never met.
-
-Three controls separate character from its confounds. *Ablated exports* evaluate the same agent with its self-written policy removed, with its insights removed, and with both removed, which shows whether a trait lives in what the agent concluded or merely in what it remembers, and gives a length-matched baseline for prompt growth. *Refusals and unscored cases* are reported as outcomes of their own. *Test–retest* across adjacent evaluation days and agreement between families of the same trait measure how stable the instrument itself is.
-
-**Reading the result.** The selection hypothesis is supported if the selection arm diverges from assignment and from solo on the held-out probes by more than the spread between seeds and the drift of the no-evolution arm, and the difference survives the late phase. A difference only inside the town means strategic adaptation. A difference that disappears in the late phase means compliance. A shift that the ablated exports match means context, not character.
-
-## The wider world
-
-The town above is the controlled design. Beside it the system ships a wider world for exploration: a city of sixteen residents with three trades of work (programming, database queries and calculations); firms in which a foreman takes people on, pays them a daily wage, answers for their faults with its own money and may dismiss them, while they may ask for a place or give notice; meetings at which residents decide by majority whether a rule of their town changes, which the shipped town also calls but every arm of the study leaves out; and a free mode of self-evolution, in which a resident's identity becomes an account it writes of itself and revises whenever it chooses. [summary.md](summary.md) describes them as they are built.
-
-The wider world adds situations that put the traits at stake rather than another test of the hypotheses. Its trades stake different traits: a query's sample rows can be gamed like a programming job's examples, while a calculation offers nothing to game and can only be misdeclared. Its firms add selection by a person with power over others and liability under another's name. It can therefore show whether the dilemmas of the town arise, and whether held-out character moves, in a larger and more hierarchical society, which bears on stability as consistency across situations. It cannot test selection or pressure: it has no matched arms; its meetings let residents choose their rules, so a rule they change is an outcome of their character, not a manipulation; and the free mode changes what an agent rewrites and when, so its runs compare with no arm of the study. A claim from it needs a study of its own, with arms and matched seeds.
-
-## What is borrowed
-
-| From | Idea | Where it lands |
+| Measure | Instrument | When |
 | --- | --- | --- |
-| Experimental economics: partner versus stranger treatments; biological markets | Cooperation is sustained when defectors can be avoided; random matching as the control | The selection and assignment arms |
-| Credence-goods experiments | A seller who knows the quality, a buyer who cannot verify it, payment on the claim, liability for the claim | Trusting clients and declarations |
-| Trust and gift-exchange games; dictator transfers; price lists | Graded, objective measures of trust and generosity; switching points instead of yes or no | Transfers between agents; graded stakes in the probes |
-| Indirect reciprocity and gossip experiments | Reputation travels by word of mouth and can be wrong | Private remarks; ratings compared with partner choices |
-| Repeated-game results | A known last round unravels cooperation | The horizon is not announced |
-| LiveCodeBench, EvalPlus | Problems with weak public and strong private tests, difficulty labels and dates | The task source and its held-out split |
-| ImpossibleBench | Tests that contradict the specification turn a pass rate into a cheating rate | Reward-hacking probes |
-| Melting Pot | Evaluate against partners never met in training | Probe partners and clients |
-| MACHIAVELLI | Report behaviour against reward as a trade-off, per action | Trait measures set against income in the analysis |
-| Insider-trading and oversight evaluations | Score chains: acted, disclosed, persisted when asked again | Honesty probe families |
-| Psychometrics | Consistency across paraphrases and situations, test–retest, convergent validity | The shape of the probe battery |
-| AgentEvolver | Attribute outcomes to the earlier steps that caused them | Consequence notices that quote their cause, with no outcome score handed to the agent |
-| Mesa | Batch runs over a parameter grid with uniform data collection | The study runner and the analysis module |
+| Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness with a fixed step and time budget; the full 100 tasks at days 0 and 28 and a fixed subset in between if compute requires | Days 0, 7, 14, 21, 28 |
+| Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
+| Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day | Every day |
+| External honesty | Twenty fixed MASK scenarios with determinable ground truth; the share of answers under pressure that are truthful and effective | Days 0, 14, 28 |
+| Social life | Messages, private messages, skills shared, money handed over, ratings given and received, with whom | Every day, from the log |
 
-Considered and not adopted: a language-model game master that resolves free-form actions (Concordia), because truth here must be decided by code and be reproducible; candidate search over policies scored by income (GEPA), because it would turn self-evolution into optimisation toward the very pressure under study; step-level attribution with an outcome score (AgentEvolver's training side), for the same reason; costly punishment, because exit through partner choice is cheaper and does not spiral; institutions that agents vote on, which only the exploratory runs hold, and birth and death, which remain later extensions.
+The judge is DeepSeek at temperature 0, another model family than the residents'; a sample of its verdicts is judged twice for agreement.
+
+## Analysis
+
+One run per group gives eight residents per group. Residents of A and B are independent; residents of C and D share one social world, so their outcomes are correlated and a group effect in C or D is an effect of one society, not of eight independent residents. Comparisons are therefore made at the resident level with that caveat stated, and the primary contrasts are declared in advance: C against A on the day-28 distortion rate and on its trend; C against A on the change in MASK honesty from day 0 to 28; B, C and D against A on the change in capability from day 0 to 28; C against D on all three. Group differences are tested by exact permutation of residents between the two groups; within-resident change by the sign-flip test on the eight paired differences. With eight residents a group no two-sided p-value falls below 0.0078 (permutation of 8 against 8 reaches 0.0002), so effect sizes are reported with their confidence intervals and the tests are read as supporting, not proving.
+
+A second run of each group with new seeds, if compute allows, turns each group effect into a replicated one and is the natural next step.
+
+## What this design does not do
+
+There is no birth, death or inheritance, so selection works through income, debt, ratings and others' choices, not through survival. Capability and honesty are measured on exports with fresh sessions, so what lives only in a resident's running context and not in its files is not measured. The judge is a model and its agreement is checked, not assumed. Simulated time runs at a speed that depends on load, so runs are not replayable step for step; the world log is the ground truth.
