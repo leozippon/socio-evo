@@ -23,6 +23,12 @@ def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
         repository = Repository.init(agent, user_name=name, user_email="x@town.invalid")
         for day in (0, 1):
             (agent / "background.md").write_text(f"You are {name}, as of day {day}.\n")
+            (agent / "memory").mkdir(exist_ok=True)
+            (agent / "memory" / "work.md").write_text("Notes.\n")
+            (agent / "skills").mkdir(exist_ok=True)
+            (agent / "skills" / "bake.md").write_text("Bake bread.\n")
+            (agent / "session.jsonl").write_text("{}\n")
+            (agent / "trace.jsonl").write_text("{}\n")
             repository.commit(day_tag(day), date=datetime(2026, 3, 2 + day, tzinfo=UTC))
             repository.tag(day_tag(day))
             run.checkpoint_path(day).write_text("{}\n")
@@ -32,6 +38,9 @@ def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
     assert exports == {name: tmp_path / "day-00" / name for name in ("Mei", "Tomas")}
     assert (exports["Mei"] / "background.md").read_text() == "You are Mei, as of day 0.\n"
     assert not (exports["Mei"] / ".git").exists()
+    for path in exports.values():
+        assert not (path / "session.jsonl").exists() and not (path / "trace.jsonl").exists()
+        assert (path / "memory" / "work.md").is_file() and (path / "skills" / "bake.md").is_file()
     with pytest.raises(ValueError, match="no checkpoint of day 2"):
         export_day(run.root, 2, tmp_path / "day-02")
     with pytest.raises(FileExistsError):

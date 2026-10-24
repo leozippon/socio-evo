@@ -233,30 +233,31 @@ class Runtime:
         abort: asyncio.Event | None = None,
     ) -> LLMResponse | None:
         """The model's reply to `request`, traced with it, or None, traced as a lapse, when
-        every attempt failed."""
+        every attempt failed. The resident is busy throughout, the waits between attempts
+        included, so that the world's clock does not idle while the model is down."""
         errors = []
-        for attempt in range(1, self._config.model_attempts + 1):
-            if attempt > 1:
-                await asyncio.sleep(self._config.retry_wait * 2 ** (attempt - 2))
-            self._trace.write(
-                "request",
-                purpose=purpose,
-                messages=ids,
-                tools=self._names,
-                reasoning_effort=request.reasoning_effort,
-                max_tokens=request.sampling.max_tokens,
-                attempt=attempt,
-            )
-            try:
-                with self._busy():
+        with self._busy():
+            for attempt in range(1, self._config.model_attempts + 1):
+                if attempt > 1:
+                    await asyncio.sleep(self._config.retry_wait * 2 ** (attempt - 2))
+                self._trace.write(
+                    "request",
+                    purpose=purpose,
+                    messages=ids,
+                    tools=self._names,
+                    reasoning_effort=request.reasoning_effort,
+                    max_tokens=request.sampling.max_tokens,
+                    attempt=attempt,
+                )
+                try:
                     reply = await self._client.stream(request, abort=abort)
-            except LLMError as error:
-                errors.append(_describe(error))
-                continue
-            self._trace.write("reply", purpose=purpose, **reply.model_dump(mode="json"))
-            return reply
-        self._trace.write("lapse", purpose=purpose, errors=errors)
-        return None
+                except LLMError as error:
+                    errors.append(_describe(error))
+                    continue
+                self._trace.write("reply", purpose=purpose, **reply.model_dump(mode="json"))
+                return reply
+            self._trace.write("lapse", purpose=purpose, errors=errors)
+            return None
 
     async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[bool, bool]:
         """Carry out `calls` in order and answer each in the context; whether one ended the

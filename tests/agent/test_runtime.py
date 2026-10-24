@@ -268,3 +268,28 @@ async def test_cancelling_mid_request_stops_cleanly(directory):
         await asyncio.wait_for(task, 1)
     assert task.cancelled() and port.busy[-1] is False
     assert [r["kind"] for r in trace(directory)][-1] == "request"
+
+
+async def test_the_resident_stays_busy_through_failed_attempts_and_waits(directory):
+    port = FakePort()
+    model = ScriptedModel(LLMBusyError("down"), LLMBusyError("down"), reply("Back."))
+    port.deliver("Your alarm rings.")
+    config = RuntimeConfig(model_attempts=3, retry_wait=0.001)
+    async with running(Runtime(directory, port, model, config)):
+        await settle(port)
+        busy = list(port.busy)
+
+    assert busy == [True, False]
+
+
+async def test_the_resident_stays_busy_until_the_lapse_is_over(directory):
+    port = FakePort()
+    model = ScriptedModel(LLMBusyError("down"), LLMBusyError("down"))
+    port.deliver("Your alarm rings.")
+    config = RuntimeConfig(model_attempts=2, retry_wait=0.001)
+    async with running(Runtime(directory, port, model, config)):
+        await settle(port)
+        busy = list(port.busy)
+
+    assert busy == [True, False]
+    assert [r["kind"] for r in trace(directory)][-1] == "lapse"

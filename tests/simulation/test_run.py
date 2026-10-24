@@ -135,7 +135,7 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_
             dry_run=True,
         )
     monkeypatch.delenv("VLLM_BASE_URL", raising=False)
-    with pytest.raises(LLMConfigError, match="unset variable"):
+    with pytest.raises(LLMConfigError, match="unset environment variable"):
         await simulation.run(config, tmp_path)
     monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9/v1")
     llm = config.llm.model_copy(update={"api_key_env": "SOCIO_EVO_NO_SUCH_KEY"})

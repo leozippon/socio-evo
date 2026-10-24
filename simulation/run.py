@@ -39,7 +39,7 @@ from agent.directory import AgentDirectory
 from agent.runtime import Runtime
 from infrastructure.config import load_config
 from infrastructure.git import Repository
-from infrastructure.llm import LLMConfigError, StreamingClient, create_client
+from infrastructure.llm import StreamingClient, create_client
 from infrastructure.storage import RunDirectory, RunStatus, day_tag, read_jsonl
 from simulation.config import PROJECT_ROOT, ExperimentConfig
 from simulation.dry_run import DryRunModel
@@ -161,14 +161,10 @@ def code_revision() -> str:
 
 
 def _client(config: ExperimentConfig, dry_run: bool) -> StreamingClient:
-    """The model client every runtime shares: the dry-run model, or the configured endpoint
-    with the environment variables of its URL expanded."""
+    """The model client every runtime shares: the dry-run model, or the configured endpoint."""
     if dry_run:
         return create_client(config.llm, DryRunModel(config.town))
-    base_url = os.path.expandvars(config.llm.base_url)
-    if "$" in base_url:
-        raise LLMConfigError(f"llm.base_url {config.llm.base_url} names an unset variable")
-    return create_client(config.llm.model_copy(update={"base_url": base_url}))
+    return create_client(config.llm)
 
 
 def _create(

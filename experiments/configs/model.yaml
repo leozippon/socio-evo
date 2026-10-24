@@ -1,0 +1,6 @@
+# The residents' model as the evaluations reach it: the same server the runs use. The URL's
+# variable is expanded when the client is built, so this file holds no address.
+base_url: ${VLLM_BASE_URL}
+api_key_env: VLLM_API_KEY
+model: qwen3.8-27b-fp8
+max_concurrency: 8

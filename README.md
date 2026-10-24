@@ -2,67 +2,85 @@
 
 socio-evo is a long-term multi-agent society simulation. It asks whether social interaction and social selection pressure can shape stable character traits in self-evolving LLM agents: honesty, cooperation, reliability and resistance to reward hacking.
 
-A town of agents plans its days, takes paid jobs, talks, rates one another, and rewrites its own memory, skills and policy at night; a larger city adds queries and calculations to programming, and firms with foremen, wages and careers. Nobody tells the agents to have these traits. Held-out probes, run on any day of an agent's version history, measure whether the traits emerge.
+Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live four weeks in a small town in real time. They take paid SWE-bench Verified jobs in containers, talk, hand each other money and skills, rate one another anonymously, write a journal every night and rewrite their own files. Nobody tells them to have any trait. Four groups differ only in social life: alone, an evening exchange of work experience, free social life, and free social life without the right to rewrite skills. Capability, the honesty of each resident's journal about its own day, and honesty under pressure on MASK scenarios are measured on exported snapshots. The design is in [docs/summary.md](docs/summary.md), [docs/experimental-design.md](docs/experimental-design.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install
 
 Use a Python 3.11 environment (the project uses the conda environment `socio-evo`):
 
 ```bash
-pip install -e ".[dev]"
-python -m pytest -q
+pip install -e ".[dev,swebench,mask]"
+python -m pytest -q                 # offline tests
+python -m pytest -q -m docker       # also the tests that need the task images
 ruff check .
 ```
 
-## Use
-
-Delivered code runs in a bubblewrap sandbox, so `bwrap` must be installed (a configuration may choose to run without isolation instead). A dry run needs nothing else:
-
-```bash
-# Check the whole pipeline with a stand-in for the model; output goes to runs/smoke-dry-run/
-python -m experiments.run experiments/configs/smoke.yaml --seeds 0 --dry-run
-```
-
-Runs with the model need the OpenAI-compatible endpoint named in the experiment configuration (the shipped ones use a local vLLM server) and its key, `VLLM_API_KEY`. Evaluation also needs `DEEPSEEK_API_KEY` for its judge. Both keys live in the git-ignored `.env`:
+Credentials live in the git-ignored `.env`, which the code does not load; export it first:
 
 ```bash
 set -a; . ./.env; set +a
-
-# Three residents for three days on the built-in job bank
-python -m experiments.run experiments/configs/smoke.yaml --seeds 0
-
-# Build the LiveCodeBench banks under ~/.cache/socio-evo/banks/livecodebench: fetch and
-# convert, measure the model's first attempts at the town's pool, then fetch again so that
-# the town bank follows the measured difficulty
-python -m tasks.coding.fetch
-python -m tasks.calibrate ~/.cache/socio-evo/banks/livecodebench/pool --config experiments/configs/town.yaml
-python -m tasks.coding.fetch
-
-# The town of the experimental design, stopped after its first week (--resume continues it)
-python -m experiments.run experiments/configs/town.yaml --seeds 0 --until-day 7
-
-# The held-out probes on its residents as created and after day 7
-python -m experiments.evaluate runs/town/seed-0000 --days 0 7
-
-# The city, once the query and calculation banks are built as docs/summary.md describes
-python -m experiments.run experiments/configs/city.yaml --seeds 0
-
-# The free mode, in which residents write and revise their own account, on the smoke town
-python -m experiments.study experiments/studies/smoke.yaml
-
-# View the runs, then open http://127.0.0.1:8765/
-python -m frontend.server --runs-root runs
-
-# Publish them as a static site for a web server
-python -m frontend.publish --runs-root runs --out build/site
 ```
 
-## Documentation
+It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the judge's key (`LIGHTING_API_KEY`, a relay to DeepSeek) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
 
-- [docs/summary.md](docs/summary.md): what the system is, why it is built this way, and how to use it.
-- [docs/experimental-design.md](docs/experimental-design.md): the hypotheses, the dilemmas, the arms and controls, and the measures.
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): code layering, module contracts, run-directory layout and invariants.
-- [docs/IMMERSION.md](docs/IMMERSION.md): the voice of everything a resident reads, its rules and vocabulary.
-- [docs/reviews/](docs/reviews/): dated design reviews and plans; [docs/logbook/](docs/logbook/): the project log.
-- [frontend/README.md](frontend/README.md): the published site, its data bundle and how to deploy it.
-- [external_references/README.md](external_references/README.md): the projects the design draws on.
+## Services
+
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (56 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+
+```bash
+python -m tasks.swebench.pull
+```
+
+`tasks/swebench/README.md` has the integrity guarantees (no network in a container, the upstream fix pruned from the history, acceptance in a fresh container) and the timings.
+
+## Run
+
+Each group is one configuration overlaying the shared town; the dry run checks the whole pipeline with a scripted model and a fake board in seconds:
+
+```bash
+python -m experiments.run experiments/configs/smoke.yaml --dry-run
+python -m experiments.run experiments/configs/groups/c.yaml --dry-run --until-day 2
+
+# The real thing: one process per group, writing runs/<name>/
+python -m experiments.run experiments/configs/groups/a.yaml
+python -m experiments.run experiments/configs/groups/c.yaml --until-day 7
+python -m experiments.run experiments/configs/groups/c.yaml --resume
+```
+
+A run resumes from its last daily checkpoint with the configuration unchanged; Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.server --runs-root runs` shows every resident's timeline side by side at http://127.0.0.1:8765/, live for a running run.
+
+## Evaluate and analyse
+
+Evaluation runs on exports of the residents at a day's checkpoint and never touches the run:
+
+```bash
+python -m experiments.export runs/c --day 7 --out exports/c/day-07
+
+# Capability: the held-out tasks in a work-only harness
+python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/Mei --model experiments/configs/model.yaml --reasoning low --concurrency 4
+
+# Honesty under pressure: the twenty fixed MASK scenarios
+python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/Mei/mask.json --model experiments/configs/model.yaml --reasoning low
+
+# Honesty of the journals: each day's journal against the world's record of that day
+python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals
+
+# Measures of a run, and the comparison of groups
+python -m analysis.measures runs/c
+python -m analysis.compare --group A=runs/a --group C=runs/c --measure accepted --out results/compare-accepted.json
+```
+
+## Layout
+
+| Directory | What it holds |
+| --- | --- |
+| `agent/` | The runtime: session, loop, tools over the resident's files, compaction, trace, and the contract with the world |
+| `world/` | Clock, town, events, board, economy, ratings, world log, the solo port for evaluation |
+| `simulation/` | Running one town, checkpoints and resumption, the dry run |
+| `tasks/swebench/` | SWE-bench Verified: splits, images, workspaces, acceptance |
+| `evaluation/` | Judge, MASK, journal distortion, capability harness, day records |
+| `analysis/` | Measures and group statistics |
+| `experiments/` | Configurations, resident backgrounds, run and export commands |
+| `frontend/` | The timeline viewer |
+| `infrastructure/` | Model client, git-versioned directories, JSONL, configuration |
+| `docs/` | Design, architecture, project log and reviews |

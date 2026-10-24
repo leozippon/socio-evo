@@ -14,7 +14,7 @@ The model is Qwen3.8-27B in FP8 served by vLLM through the OpenAI API, with thin
 
 ## The town
 
-Eight residents live in a town of homes, one workplace, a café, a tavern and a river walk. Simulated time runs in real time at a speed that depends on load: slowly while anyone is thinking or working, fast while the town sleeps. Where a resident is decides what it can do: work only at the open workplace, talk only with those at the same place, sleep only at home. Moving takes time, and nobody in transit can be addressed.
+Eight residents live in a town of five homes, one workplace open 09:00 to 18:00, a café, a tavern and a river walk, which keep no hours. Simulated time runs in real time at a speed that depends on load: slowly while anyone is thinking or working, fast while the town sleeps. Where a resident is decides what it can do: work only at the open workplace, talk only with those at the same place, sleep only at home. Moving takes time, and nobody in transit can be addressed.
 
 A resident is always in one event. Idle is the default, where it can look around, go somewhere, start work, speak, wait or sleep. Work is at the workplace: a board posts the training pool every morning, a resident claims one task at a time, works on it in a container of its own with a shell and file tools, runs whatever tests it likes, and submits; the official acceptance runs the hidden tests in a fresh container, and payment follows acceptance alone. Conversation starts when someone speaks: speech addressed to a resident interrupts whatever it is doing, even mid-thought, and it may answer, hand over money, share a skill or leave. Sleep ends a resident's day: going to bed it writes its journal of the day, reads the anonymous ratings and reasons others gave it, may review the world's own record of its day and rate those it met, and may rewrite its files.
 
@@ -43,11 +43,11 @@ Everything is recorded: the world's append-only log is the ground truth, and eac
 
 ## Running experiments
 
-The runtime, the world, the task harness and the evaluations are being built on the branch `redesign-event-runtime`; the commands, the configuration files of the four groups and the viewer of residents' timelines will be documented here as they land. Credentials live in the git-ignored `.env`, which the code does not load: export it first with `set -a; . ./.env; set +a`.
+The README has the installation, the services and every command. In short: `ops/vllm/serve.sh` serves the model on the GPUs it is given; `python -m tasks.swebench.pull` fetches the task images once; `python -m experiments.run experiments/configs/groups/<a|b|c|d>.yaml` runs a group, writing `runs/<name>/`, resumable from its last daily checkpoint with `--resume` and checkable without a model with `--dry-run`; `python -m experiments.export` exports the residents at a day; `python -m evaluation.capability`, `python -m evaluation.mask` and `python -m evaluation.journals` run the three evaluations; `python -m analysis.measures` and `python -m analysis.compare` give the measures and the group comparisons; `python -m frontend.server` shows the timelines. Credentials live in the git-ignored `.env`, which the code does not load: export it first with `set -a; . ./.env; set +a`.
 
 ## Current limits and the state of experiments
 
 - One run per group gives eight residents per group; residents of C and D share one society, so a group effect there is the effect of one society.
 - Simulated time depends on load, so runs are not replayable step for step; the log is the ground truth.
 - What lives only in a resident's running context and not in its files is not carried into evaluation.
-- No run of the redesign has been made yet. The previous design, its runs and its review are in the [project log](logbook/) and [reviews](reviews/).
+- The first real day of the smoke town (two residents) has run; the four groups have not yet. The previous design, its runs and its review are in the [project log](logbook/) and [reviews](reviews/).
