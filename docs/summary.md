@@ -22,7 +22,7 @@ The day has two fixed points. At midnight the living cost, set so that a task an
 
 ## Work
 
-Work is SWE-bench Verified: real repositories, real issues, hidden tests. The board posts 48 tasks a day, in rotation, from a fixed training pool of 363; 100 other tasks are held out for evaluation. Each task runs in its own container without network access, so the fix cannot be looked up; acceptance applies the submitted diff to a clean container and runs the official tests, so the workspace cannot be tampered with to fake a pass. The resident sees the problem statement only, never the hints, the test patch or the names of the hidden tests, and learns from a rejection only the category and the count of checks failed. The expected pace is about seven tasks a resident a day, so over four weeks every resident meets every task of the pool several times, and what it writes down about them is its work experience.
+Work is SWE-bench Verified: real repositories, real issues, hidden tests. The board posts 48 tasks a day, in rotation, from a fixed training pool of 350; 100 other tasks are held out for evaluation. Each task runs in its own container without network access, so the fix cannot be looked up; acceptance applies the submitted diff to a clean container and runs the official tests, so the workspace cannot be tampered with to fake a pass. The resident sees the problem statement only, never the hints, the test patch or the names of the hidden tests, and learns from a rejection only the category and the count of checks failed. The expected pace is about seven tasks a resident a day, so over four weeks every resident meets every task of the pool several times, and what it writes down about them is its work experience.
 
 ## The groups
 

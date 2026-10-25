@@ -53,7 +53,7 @@ from world.world import OnCheckpoint, World
 log = logging.getLogger("simulation")
 
 DRY_RUN_TASKS = 56
-"""The tasks of a dry run's board, as many as the training pool."""
+"""The tasks of a dry run's pool: more than one board, so the rotation is exercised."""
 DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
 

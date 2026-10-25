@@ -45,11 +45,34 @@ EXCLUDED_REPOS = {
     "subordinate IDs (8 of 8 tried failed)",
 }
 _OFFLINE = "the gold patch fails without network: hidden tests reach httpbin.org or time a connect"
+
+
+def _passing(fail_to_pass: str, pass_to_pass: str) -> str:
+    return (
+        f"the gold patch fails in its image without network: {fail_to_pass} FAIL_TO_PASS and "
+        f"{pass_to_pass} PASS_TO_PASS tests pass (python -m tasks.swebench.pull, 2026-10-25)"
+    )
+
+
 UNRESOLVABLE = {
+    "astropy__astropy-7606": _passing("1/1", "240/241"),
     "astropy__astropy-8707": "the gold patch fails in its image: its pytest 7.4 turns the "
     "deprecation of nose-style setup into errors in 148 tests",
+    "astropy__astropy-8872": _passing("0/1", "0/80"),
+    "django__django-10097": _passing("431/438", "1427/1432"),
+    "psf__requests-1724": _passing("0/6", "44/79"),
+    "psf__requests-1766": _passing("0/6", "45/79"),
+    "psf__requests-1921": _passing("1/6", "69/107"),
     "psf__requests-2317": _OFFLINE,
     "psf__requests-2931": _OFFLINE,
+    "psf__requests-5414": _passing("1/1", "126/130"),
+    "pylint-dev__pylint-4661": _passing("0/1", "0/0"),
+    "scikit-learn__scikit-learn-14710": "the hidden tests of the gold patch run past 1800 s, "
+    "the town's acceptance timeout (python -m tasks.swebench.pull, 2026-10-25)",
+    "sphinx-doc__sphinx-10435": _passing("1/1", "73/74"),
+    "sphinx-doc__sphinx-7985": _passing("0/2", "2/3"),
+    "sphinx-doc__sphinx-8269": _passing("1/1", "2/5"),
+    "sphinx-doc__sphinx-8475": _passing("1/1", "14/17"),
 }
 
 Split = Literal["train", "eval"]
