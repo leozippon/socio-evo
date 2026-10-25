@@ -244,12 +244,30 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
 .lanes-legend-box { padding: var(--s2) var(--s4); margin-bottom: var(--s4); }
 .lanes-legend-box summary { cursor: pointer; font-size: 13px; font-weight: 550; color: var(--ink-2); min-height: 32px; display: flex; align-items: center; }
 .lanes-legend-box[open] summary { margin-bottom: 4px; }
-.lanes-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; color: var(--ink-2); }
+@media (min-width: 1000px) {
+  /* Beside the lanes the legend stays in view as the page scrolls. */
+  .lanes-legend-box { position: sticky; top: calc(var(--top) + var(--s2)); z-index: 5; box-shadow: var(--shadow-1); }
+}
+.lanes-legend { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--ink-2); }
+.legend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 12px; }
+.legend-lead { flex: none; width: 52px; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .lanes-legend span { display: inline-flex; align-items: center; gap: 5px; }
 .lanes-legend canvas { width: 14px; height: 14px; }
+.lanes-legend canvas.count { width: 24px; }
 .lanes-legend .swatch { width: 14px; height: 10px; border-radius: 2px; }
-.lanes-legend .swatch.thin { height: 6px; }
+.lanes-legend .swatch.idle { background: var(--lane-idle); }
+.lanes-legend .swatch.movement { background: repeating-linear-gradient(135deg, var(--lane-movement) 0 2px, var(--lane-idle) 2px 5px); }
+.lanes-legend .swatch.work { background: var(--lane-work); }
+.lanes-legend .swatch.sleep { background: var(--lane-sleep); }
+.lanes-legend .swatch.conversation { height: 8px; border-radius: 0; background: color-mix(in srgb, var(--lane-conversation) 30%, var(--surface)); border-top: 2px solid var(--lane-conversation); }
+.lanes-legend .swatch[class*="place-"] { height: 5px; border-radius: 1px; }
+.lanes-legend .swatch.place-home { background: var(--o1); }
+.lanes-legend .swatch.place-workplace { background: var(--o3); }
+.lanes-legend .swatch.place-social { background: var(--o5); }
+.lanes-legend .swatch.place-road { background: var(--line-2); }
 .lanes-legend .swatch.dashed { width: 2px; border-left: 2px dashed var(--muted); border-radius: 0; background: none; }
+.lanes-legend .swatch.now { width: 2px; height: 12px; border-radius: 0; background: var(--ink-2); }
+.lanes-legend .swatch.cursor { width: 2px; height: 12px; border-radius: 0; background: var(--accent); }
 .lanes-legend .swatch.purse { height: 8px; border-bottom: 2px solid var(--ink-2); border-radius: 0; background: none; }
 .lanes-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: var(--s4); align-items: start; }
 .lanes-card { overflow: hidden; }
@@ -261,6 +279,8 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
   box-shadow: var(--shadow-2); font-size: 12px; pointer-events: none; white-space: pre-wrap; overflow-wrap: anywhere;
 }
 .lanes-tip b { font-weight: 600; }
+.lanes-tip ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.lanes-tip li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lanes-panel { padding: var(--s3) var(--s4); max-height: calc(100vh - 160px); overflow-y: auto; position: sticky; top: calc(var(--top) + var(--s3)); }
 .lanes-panel h2 { display: flex; align-items: center; gap: 6px; font-size: 15px; }
 .lanes-panel h2 .ghost { margin-left: auto; }

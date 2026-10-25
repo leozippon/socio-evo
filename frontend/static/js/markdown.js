@@ -4,18 +4,6 @@
 
 import { h } from "./dom.js";
 
-/** Split YAML front matter (`---` fenced, simple `key: value` lines) from the body. */
-export function frontMatter(text) {
-  const match = /^---\n([\s\S]*?)\n---\n?/.exec(text ?? "");
-  if (!match) return { meta: {}, body: text ?? "" };
-  const meta = {};
-  for (const line of match[1].split("\n")) {
-    const pair = /^([\w-]+):\s*(.*)$/.exec(line);
-    if (pair) meta[pair[1]] = pair[2].replace(/^["']|["']$/g, "");
-  }
-  return { meta, body: text.slice(match[0].length) };
-}
-
 /** Inline marks: strong, emphasis and code. An underscore inside a word (`max_iter`) is no mark. */
 function inline(text) {
   const out = [];

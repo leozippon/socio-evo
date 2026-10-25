@@ -7,8 +7,9 @@
 //
 // The site is served from a local port. The routes are the home page, every comparison, and
 // for one run (the first, or NAME) the dashboard with each of its sections, the town with each
-// panel, the timeline, one resident with each tab, and the evaluation; `--route` keeps one of
-// them, by the name the summary gives it. `--shots` writes a full-page screenshot of every route
+// panel, the timeline over the whole run and zoomed in to one hour with a moment shown, one
+// resident with each tab, and the evaluation; `--route` keeps one of them, by the name the
+// summary gives it. `--shots` writes a full-page screenshot of every route
 // and width into DIR; `--dark` renders in the dark colour scheme. Chromium is found through
 // SOCIO_EVO_CHROME, else in Playwright's cache, else on PATH. Prints a JSON summary, an overflow
 // naming the widest elements outside any sideways-scrolling box; exits 1 on failures and 2 when
@@ -19,7 +20,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { readFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { homedir, tmpdir } from "node:os";
-import { extname, join, resolve } from "node:path";
+import { dirname, extname, join, resolve } from "node:path";
 
 const WIDTHS = [
   { width: 1440, height: 900, mobile: false },
@@ -194,7 +195,9 @@ function routes() {
   const entry = runName ? index.runs.find((run) => run.name === runName) : index.runs[0];
   if (runName && !entry) throw new Error(`no run ${runName} in the index`);
   if (!entry) return found;
-  const run = JSON.parse(readFileSync(join(site, "data", entry.url.split("?")[0]), "utf8"));
+  const runFile = join(site, "data", entry.url.split("?")[0]);
+  const run = JSON.parse(readFileSync(runFile, "utf8"));
+  const timeline = JSON.parse(readFileSync(join(dirname(runFile), run.timeline.split("?")[0]), "utf8"));
   const base = `#/run/${encodeURIComponent(entry.name)}`;
   found.push(["run", base]);
   for (const section of ["money", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
@@ -203,6 +206,11 @@ function routes() {
   if (agent) {
     for (const panel of ["people", "feed", "work", "ties", "day"]) found.push([`town-${panel}`, `${base}/town?panel=${panel}&agent=${encodeURIComponent(agent)}`]);
     found.push(["timeline", `${base}/timeline?agent=${encodeURIComponent(agent)}`]);
+    // One hour of the first day, five hours in, with the moment shown in its middle.
+    const from = timeline.start + 5 * 3600;
+    const moment = from + 1800;
+    const stamp = `${Math.floor(moment / 86400) + 1}-${String(Math.floor((moment % 86400) / 3600)).padStart(2, "0")}:${String(Math.floor((moment % 3600) / 60)).padStart(2, "0")}`;
+    found.push(["timeline-hour", `${base}/timeline?agent=${encodeURIComponent(agent)}&t=${stamp}&from=${from}&to=${from + 3600}`]);
     found.push(["person", `${base}/people/${encodeURIComponent(agent)}`]);
     for (const tab of ["day", "journal", "ratings", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}`]);
   } else found.push(["timeline", `${base}/timeline`]);

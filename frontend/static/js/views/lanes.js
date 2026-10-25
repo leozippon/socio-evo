@@ -13,7 +13,7 @@ import { Lanes, legend, readColours } from "../town/lanes.js";
 const PANEL_LIMIT = 400;
 
 export function mountLanes(root, ctx) {
-  const { source, cast } = ctx;
+  const { source, cast, world } = ctx;
   let route = ctx.route;
   const page = h("div", { class: "page lanes-page" });
   root.append(page);
@@ -27,7 +27,7 @@ export function mountLanes(root, ctx) {
   const window_ = h("p", { class: "note" }, "Pick a lane to list what that resident did and heard in the visible window.");
   const entries = h("ol", { class: "lane-entries" });
   const panel = h("aside", { class: "card lanes-panel" }, who, window_, entries);
-  // The legend is long; on a phone it starts folded, under a heading that opens it.
+  // The legend stays in view beside the lanes; on a phone it starts folded, under a heading that opens it.
   const legendBox = h("details", { class: "card fold lanes-legend-box", open: matchMedia("(min-width: 700px)").matches }, h("summary", {}, "What the lanes show"));
 
   const moment = (t) => `Day ${livedDay(data.days, t).day}, ${dateOf(data.start_date, t)} ${hhmm(secondOfDay(t))}`;
@@ -88,16 +88,40 @@ export function mountLanes(root, ctx) {
     }, 120);
   }
 
+  function select(name) {
+    selected = name;
+    lanes.setSelected(name);
+    schedule();
+  }
+
+  function onKey(event) {
+    if (!lanes) return;
+    const target = event.target instanceof Element ? event.target : document.body;
+    if (target.closest("input, select, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
+    const keys = {
+      ArrowLeft: () => lanes.pan(event.shiftKey ? -1 : -0.25),
+      ArrowRight: () => lanes.pan(event.shiftKey ? 1 : 0.25),
+      Home: () => lanes.toStart(),
+      End: () => lanes.toNow(),
+      "+": () => lanes.zoom(0.5),
+      "=": () => lanes.zoom(0.5),
+      "-": () => lanes.zoom(2),
+      0: () => lanes.wholeRun(),
+      Escape: () => select(null),
+    };
+    const action = keys[event.key];
+    if (!action) return;
+    event.preventDefault();
+    action();
+  }
+
   function build() {
     lanes?.destroy();
     lanes = new Lanes({
       timeline: data,
+      world,
       cast,
-      onSelect: (name) => {
-        selected = name;
-        lanes.setSelected(name);
-        schedule();
-      },
+      onSelect: select,
       onMoment: (t) => {
         cursor = t;
         lanes.setCursor(t);
@@ -113,17 +137,22 @@ export function mountLanes(root, ctx) {
       { class: "lanes-controls" },
       h("button", { type: "button", class: "ghost small", onclick: () => lanes.wholeRun() }, "Whole run"),
       h("button", { type: "button", class: "ghost small", onclick: () => lanes.oneDay() }, "Day"),
-      control("chevronLeft", "Earlier", () => lanes.pan(-0.5)),
-      control("chevron", "Later", () => lanes.pan(0.5)),
-      control("minus", "Zoom out", () => lanes.zoom(2)),
-      control("plus", "Zoom in", () => lanes.zoom(0.5)),
+      control("chevronLeft", "Earlier (←)", () => lanes.pan(-0.5)),
+      control("chevron", "Later (→)", () => lanes.pan(0.5)),
+      control("minus", "Zoom out (−)", () => lanes.zoom(2)),
+      control("plus", "Zoom in (+)", () => lanes.zoom(0.5)),
       cursor !== null ? h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: stamp(Math.floor(cursor)) } }, "town", { query: { agent: selected } })) }, icon("map", 15), "Watch in town") : null,
     );
     legendBox.querySelector(".lanes-legend")?.remove();
     legendBox.append(legend(readColours()));
     fill(
       page,
-      h("header", { class: "page-head spread" }, h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Every resident's events side by side over the run: idle, movement, work with the task held, sleep, and conversation layered over them; above, what each did; below, its purse. Pinch or scroll to zoom, drag to pan, pick a lane for its entries.")), controls),
+      h(
+        "header",
+        { class: "page-head spread" },
+        h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Every resident's events side by side over the run: what it did in three rows of marks, whom it talked with, what it was doing and where as a band, and its purse. Scroll or pinch to zoom, drag to pan, use the strip at the top to move across the run, pick a lane for its entries.")),
+        controls,
+      ),
       legendBox,
       h("div", { class: "lanes-grid" }, h("div", { class: "card lanes-card" }, lanes.el), panel),
     );
@@ -151,6 +180,7 @@ export function mountLanes(root, ctx) {
     }
   }
 
+  document.addEventListener("keydown", onKey);
   load();
   return {
     update(next) {
@@ -181,8 +211,8 @@ export function mountLanes(root, ctx) {
     },
     destroy() {
       clearTimeout(timer);
+      document.removeEventListener("keydown", onKey);
       lanes?.destroy();
     },
   };
 }
-

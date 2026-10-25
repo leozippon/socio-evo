@@ -1,11 +1,11 @@
 // Chart primitives over simulated days, drawn as SVG at the width of their container.
 //
-// One x axis for every chart: the days of the run, with any marked days on it. Lines are 2px,
-// columns at most 24px wide with a 2px surface gap between stacked segments, gridlines are
-// hairlines, and text wears text colours, never series colours. Every chart has a crosshair
-// tooltip that lists every series at the day under the pointer and a table twin that shows the
-// same numbers without hovering. With many agent lines, one can be emphasised and the rest
-// recede; small multiples give each agent its own panel.
+// One x axis for every chart: the days of the run. Lines are 2px, columns at most 24px wide
+// with a 2px surface gap between stacked segments, gridlines are hairlines, and text wears text
+// colours, never series colours. Every chart has a crosshair tooltip that lists every series at
+// the day under the pointer and a table twin that shows the same numbers without hovering. With
+// many agent lines, one can be emphasised and the rest recede; small multiples give each agent
+// its own panel.
 
 import { fmt, h, onWidth, s } from "./dom.js";
 import { icon } from "./icons.js";
@@ -69,7 +69,6 @@ function tooltip(host) {
  *   lines: [{key, label, color, points: [[day, value|null]], glyph?: (r) => SVG, faint?,
  *            notes?: Map(day -> what the value counts, such as "2 of 7")}]
  *   stacks: [{key, label, color, values: Map(day -> value)}]  stacked columns, bottom first
- *   markers: [{day, label, announced}]  days to mark, such as evaluated ones
  *   cursor: day (fractional) of the moment shown, or null
  *   endLabels: label line ends with their glyph and name
  *   height: plot height in pixels
@@ -77,7 +76,7 @@ function tooltip(host) {
  */
 export class DayChart {
   constructor(spec) {
-    this.spec = { height: 170, lines: [], stacks: [], markers: [], ...spec };
+    this.spec = { height: 170, lines: [], stacks: [], ...spec };
     this.el = h("div", { class: "chart" });
     this.svg = s("svg", { class: "chart-svg", role: "img" });
     this.el.append(this.svg);
@@ -127,7 +126,7 @@ export class DayChart {
 
   render() {
     if (!this.width) return;
-    const { days, height, lines, stacks, markers, cursor, y = {}, highlight } = this.spec;
+    const { days, height, lines, stacks, cursor, y = {}, highlight } = this.spec;
     const sc = (this.sc = this.scales());
     const total = PAD.top + height + PAD.bottom;
     this.svg.setAttribute("viewBox", `0 0 ${this.width} ${total}`);
@@ -143,19 +142,6 @@ export class DayChart {
     const every = [1, 2, 3, 5, 7, 14, 28, 56].find((k) => sc.band * k >= 24) ?? 100;
     for (let d = days[0]; d <= days[1]; d += every) parts.push(s("text", { class: "tick", x: sc.x(d), y: PAD.top + height + 16, "text-anchor": "middle" }, String(d)));
     parts.push(s("line", { class: "axis", x1: sc.x0, x2: sc.x1, y1: PAD.top + height, y2: PAD.top + height }));
-    // Interventions, before the data so the data stays on top.
-    for (const marker of markers) {
-      const mx = sc.x(marker.day) - sc.band / 2;
-      parts.push(
-        s(
-          "g",
-          { class: `marker${marker.announced ? " announced" : ""}` },
-          s("title", {}, marker.label),
-          s("line", { x1: mx, x2: mx, y1: PAD.top - 6, y2: PAD.top + height }),
-          s("path", { d: `M${mx},${PAD.top - 12}h7l-2,3l2,3h-7z` }),
-        ),
-      );
-    }
     // Stacked columns.
     if (stacks.length) {
       const width = Math.min(24, Math.max(2, sc.band - 4));
@@ -252,8 +238,7 @@ export class DayChart {
     this.crosshair.setAttribute("x1", sc.x(day));
     this.crosshair.setAttribute("x2", sc.x(day));
     this.crosshair.setAttribute("visibility", "visible");
-    const markers = this.spec.markers.filter((m) => m.day === day).map((m) => ({ value: "", label: m.label, color: null }));
-    this.tip.show(sc.x(day), event.clientY - box.top, `Day ${day}`, [...rows, ...markers], event.pointerType !== "mouse");
+    this.tip.show(sc.x(day), event.clientY - box.top, `Day ${day}`, rows, event.pointerType !== "mouse");
   }
 
   rowsAt(day) {
