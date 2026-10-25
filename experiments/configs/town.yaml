@@ -5,7 +5,7 @@
 #
 # The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
 # 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
-# The only fixed hours are the night's below.
+# The only fixed hours are the night's below, together with the longest one sleep may last.
 
 llm:
   base_url: ${VLLM_BASE_URL}
@@ -82,3 +82,4 @@ town:
     forced_sleep: "02:00"
     checkpoint: "02:30"
     forced_wake: "07:00"
+    sleep_at_most: "12:00" # hours and minutes, not an hour of the day

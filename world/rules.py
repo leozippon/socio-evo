@@ -8,8 +8,9 @@ not the machinery, not how anyone ought to behave.
 
 from __future__ import annotations
 
-from world.config import TownConfig
-from world.telling import cap, listed
+from world.clock import parse_hour
+from world.config import DayHours, TownConfig
+from world.telling import cap, counted, listed
 
 TOPICS = ("places", "day", "work", "money", "people", "sleep")
 _HEADINGS = {
@@ -20,6 +21,13 @@ _HEADINGS = {
     "people": "People",
     "sleep": "Sleep",
 }
+
+
+def longest_sleep(day: DayHours) -> str:
+    """The rule on how long one sleep may last, without its full stop; `sleep` refuses with it."""
+    hours, minutes = divmod(parse_hour(day.sleep_at_most) // 60, 60)
+    span = listed([counted(n, unit) for n, unit in ((hours, "hour"), (minutes, "minute")) if n])
+    return f"Nobody sleeps longer than {span} at a stretch"
 
 
 class Rules:
@@ -147,7 +155,8 @@ class Rules:
         sleep = (
             "Go to bed at home at any hour with sleep, giving the hour you want to wake and "
             "your journal entry for the day, which is kept in your journal folder; if you go to "
-            "bed more than once in a day, each entry is added to that day's journal."
+            "bed more than once in a day, each entry is added to that day's journal. "
+            f"{longest_sleep(c.day)}."
         )
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "

@@ -100,11 +100,14 @@ class ClockSettings(StrictModel):
 class DayHours(StrictModel):
     """The only fixed hours of a day, all after midnight: at `forced_sleep` whoever is still up
     falls asleep, to wake at `forced_wake`; at `checkpoint`, between the two, the day's state is
-    saved. A lived day runs from one checkpoint to the next."""
+    saved. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour but
+    the longest one sleep may last, written the same way and so less than a day; it is at least
+    the forced sleep's span."""
 
     forced_sleep: Hour
     checkpoint: Hour
     forced_wake: Hour
+    sleep_at_most: Hour
 
     def of_day(self, hour: str) -> int:
         """`hour` in seconds from the midnight that begins the lived day; an hour earlier than
@@ -144,11 +147,13 @@ class TownConfig(StrictModel):
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
         day = self.day
-        forced, checkpoint, wake = map(
-            parse_hour, (day.forced_sleep, day.checkpoint, day.forced_wake)
+        forced, checkpoint, wake, longest = map(
+            parse_hour, (day.forced_sleep, day.checkpoint, day.forced_wake, day.sleep_at_most)
         )
         if not forced < checkpoint < wake:
             raise ValueError("the hours must run forced_sleep < checkpoint < forced_wake")
+        if longest < wake - forced:
+            raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         exchange = self.social.exchange
         if exchange is not None:
             if self.social.mode != "isolated":

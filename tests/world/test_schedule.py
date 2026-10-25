@@ -99,7 +99,7 @@ async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
     await town.call("Kofi", "start_work")
     await town.until("18:00")
     for name in ("Jonas", "Lucia"):
-        await town.call(name, "sleep", until="07:00", journal="An early night.")
+        await town.call(name, "sleep", until="06:00", journal="An early night.")
     town.rest("Jonas")  # Jonas falls asleep; Lucia is still in bed
     await settle()
     assert world.residents["Jonas"].suspended and not world.residents["Lucia"].suspended
@@ -181,7 +181,7 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
 async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     town = make_town()
     await awake_at(town)
-    await town.until("20:00")
+    await town.until("21:00")
     await town.call("Mei", "sleep", until="09:00", journal="Early.")
     town.take("Mei")
     waiting = asyncio.create_task(town.world.ports["Mei"].wait())
@@ -224,7 +224,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.call("Mei", "leave_work")
-    await town.until("20:00")
+    await town.until("22:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy morning.")
     await town.call("Aisha", "rate", resident="Mei", score=3, reason="Busy all day.")
     town.rest()
@@ -264,7 +264,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
-    await town.until("20:00")
+    await town.until("22:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy.")
     town.rest()
     await town.until("03:00", day=2)

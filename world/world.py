@@ -13,7 +13,8 @@ tells a waiting resident the time, and the day's schedule, which is all the fixe
 has. For day N (whose daytime is calendar day N): group B's pairing, which wakes whoever sleeps;
 midnight, when the living cost is settled, expired claims run out and the next day's board is
 posted; the forced sleep; and the checkpoint. The workplace never closes, and residents go to bed
-and wake when they choose, except that nobody wakes between the forced sleep and the checkpoint.
+and wake when they choose, except that one sleep lasts at most a configured span and that
+nobody wakes between the forced sleep and the checkpoint.
 At the checkpoint the world waits until every resident is asleep and its runtime waits on its
 port, holds the clock, closes every workspace keeping its changes, takes the snapshot and awaits
 `on_checkpoint(day, snapshot)`, through which the composition layer writes the checkpoint and

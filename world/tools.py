@@ -23,10 +23,10 @@ from typing import TYPE_CHECKING, Any
 from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
-from world.clock import calendar_day, clock_time, parse_hour
+from world.clock import DAY, calendar_day, clock_time, parse_hour
 from world.config import TownConfig
 from world.events import Work
-from world.rules import TOPICS
+from world.rules import TOPICS, longest_sleep
 from world.telling import cap, counted, listed, you
 
 if TYPE_CHECKING:
@@ -260,6 +260,12 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
+    now, longest = world.clock.now(), parse_hour(world.config.day.sleep_at_most)
+    if ((hour - now) % DAY or DAY) > longest:  # an hour at or before now means tomorrow
+        latest = clock_time(now + longest)
+        return ToolResult(
+            f"{longest_sleep(world.config.day)}: give an hour no later than {latest}."
+        )
     journal = args["journal"].strip()
     if not journal:
         return ToolResult("Write your journal entry for the day before you go to bed.")

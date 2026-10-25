@@ -68,7 +68,12 @@ def town_config(
                 "exchange": exchange,
             },
             "clock": {"speed_active": 10, "speed_idle": 100, "idle_minutes": 30},
-            "day": {"forced_sleep": "02:00", "checkpoint": "02:30", "forced_wake": "07:00"},
+            "day": {
+                "forced_sleep": "02:00",
+                "checkpoint": "02:30",
+                "forced_wake": "07:00",
+                "sleep_at_most": "12:00",
+            },
         }
     )
 

@@ -180,8 +180,8 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     assert isinstance(mei.base, Idle)
     assert town.heard["Mei"][-1].text == "You woke up at home. It is Monday 1 January, 15:00."
     await town.until("23:00")
-    await town.call("Mei", "sleep", until="15:00", journal="A short afternoon after the nap.")
-    assert mei.base.wake == at("15:00", day=2)  # an hour already past: tomorrow
+    await town.call("Mei", "sleep", until="09:00", journal="A short afternoon after the nap.")
+    assert mei.base.wake == at("09:00", day=2)  # an hour already past: tomorrow
     told = [p.text for p in town.heard["Mei"] if p.kind == "sleep"][-1]
     assert "rated you" not in told  # its ratings were read at the first bedtime of the day
     journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
@@ -190,6 +190,30 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     )  # one file for the day, an entry per bedtime
     sleeps = [e for e in town.world.log.entries() if e["kind"] == "sleep"]
     assert [e["payload"]["day"] for e in sleeps] == [1, 1]
+
+
+async def test_one_sleep_lasts_at_most_twelve_hours_and_the_forced_sleep_is_unchanged(make_town):
+    town = make_town()
+    await awake_at(town)
+    mei, tomas = town.world.residents["Mei"], town.world.residents["Tomas"]
+    await town.until("08:23")
+    refused = await town.call("Mei", "sleep", until="07:00", journal="Tired already.")
+    assert refused.text == (
+        "Nobody sleeps longer than 12 hours at a stretch: give an hour no later than 20:23."
+    )
+    assert not refused.ends_turn and isinstance(mei.base, Idle) and "sleep" not in town.kinds()
+    assert (await town.call("Mei", "sleep", until="20:00", journal="Tired already.")).ends_turn
+    assert mei.base.wake == at("20:00")
+    await town.until("23:00")
+    await town.call("Tomas", "sleep", until="07:00", journal="A long day.")
+    assert tomas.base.wake == at("07:00", day=2)
+    town.rest()
+    await town.until("02:00", day=2)  # Mei, up again, and Aisha, never in bed
+    forced = [e for e in town.world.log.entries() if e["kind"] == "forced_sleep"]
+    assert sorted(e["actor"] for e in forced) == ["Aisha", "Mei"]
+    assert {e["payload"]["wake"] for e in forced} == {at("07:00", day=2)}
+    await town.until("07:00", day=2)
+    assert all(isinstance(r.base, Idle) for r in town.world.residents.values())
 
 
 async def test_bed_stays_open_after_midnight_and_nobody_wakes_before_the_checkpoint(make_town):
@@ -233,12 +257,12 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     await town.until("20:20")
     town.take("Mei")
 
-    await town.call("Mei", "sleep", until="08:30", journal="I walked to the park and back.")
+    await town.call("Mei", "sleep", until="08:00", journal="I walked to the park and back.")
     journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
     assert journal.read_text() == "I walked to the park and back.\n"
     assert isinstance(mei.base, Sleep) and not mei.base.suspended
     in_bed = town.take("Mei")
-    assert len(in_bed) == 1 and in_bed[0].startswith("You are in bed and will wake at 08:30")
+    assert len(in_bed) == 1 and in_bed[0].startswith("You are in bed and will wake at 08:00")
     assert "Aisha" in in_bed[0]  # whom it may rate
     in_bed_refusals = await _refusals(town, "Mei")
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
@@ -255,11 +279,11 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert mei.suspended and not waiting.done()
     assert (await town.call("Mei", "look_around")).text == "You are asleep."
     town.rest("Tomas", "Aisha")  # the checkpoint waits for every runtime to rest
-    await town.until("08:30", day=2)
+    await town.until("08:00", day=2)
     assert [day for day, _ in town.checkpoints] == [1]
     woke = waiting.result()
     assert [p.kind for p in woke][-1] == "wake"
-    assert woke[-1].text == "You woke up at home. It is Tuesday 2 January, 08:30."
+    assert woke[-1].text == "You woke up at home. It is Tuesday 2 January, 08:00."
     assert isinstance(mei.base, Idle) and mei.place == "mill-street-house"
 
 
@@ -267,7 +291,7 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     town = make_town()
     await awake_at(town)
     await town.call("Tomas", "go", place="park")
-    await town.until("20:00")
+    await town.until("21:00")
     await town.call("Mei", "sleep", until="09:00", journal="Early night.")
     await town.until("01:59", day=2)
     town.take("Tomas")
