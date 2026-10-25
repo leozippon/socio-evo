@@ -60,7 +60,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     ]
     assert spans(data, "Tomas")[3:7] == [
         ("work", at("10:00"), at("18:00"), "workshop", 2),
-        ("idle", at("18:00"), at("22:00"), "workshop", None),  # sent out at the closing
+        ("idle", at("18:00"), at("22:00"), "workshop", None),  # after leaving work
         ("movement", at("22:00"), at("22:10"), flat, None),
         ("idle", at("22:10"), at("23:00"), flat, None),
     ]
@@ -97,7 +97,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert tomas["submission"]["resolved"] is False
     assert tomas["submission"]["status"] == "failed_tests"
     assert tomas["submission"]["fail_to_pass"] == [1, 3]
-    assert tomas["expiry"]["t"] == at("18:00", day=2) and tomas["expiry"]["task"] == 2
+    assert tomas["expiry"]["t"] == DAY and tomas["expiry"]["task"] == 2  # the first midnight
     assert markers("Aisha") == [("forced_sleep", at("02:00", day=2))]
 
     assert lane(data, "Mei")["purse"] == [
@@ -109,7 +109,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 155]]
     assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 0]]
     entries = list(town.world.log.entries())
-    first = entries[0]["real_time"]
+    first = next(e for e in entries if e["kind"] in module._FOLDED)["real_time"]  # the viewer's
     (closed,) = [e["real_time"] for e in entries if e["kind"] == "checkpoint"]
     assert data["days"] == [
         {
@@ -203,7 +203,7 @@ async def test_the_entries_of_a_lost_day_are_set_aside_on_resumption(tmp_path):
             "day": 1,
             "start": at("02:30"),
             "end": at("02:30", day=2),
-            "real_start": entries[0]["real_time"],
+            "real_start": next(e for e in entries if e["kind"] in module._FOLDED)["real_time"],
             "real_end": real["checkpoint"],
         },
         {

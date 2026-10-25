@@ -1,22 +1,22 @@
-"""Serve the timeline viewer of the runs under a directory.
+"""Serve the published site locally, publishing it again as the runs change.
 
-    python -m frontend.server --runs-root runs [--host 127.0.0.1] [--port 8765]
+    python -m frontend.server --runs-root runs [--results-root results] [--host 127.0.0.1]
+                              [--port 8765] [--site DIR] [--interval SECONDS]
 
-    GET /                        the page and its static files
-    GET /api/runs                [{"name": "smoke", "status": "running", "days": 2}, ...]
-    GET /api/timeline?run=NAME   the timeline of that run (`frontend.timeline`)
-    GET /api/progress            every run's entry of /api/runs with its progress
-                                 (`frontend.progress`)
-
-A run is a directory directly under the root that holds a manifest; its status is the
-manifest's and its days the last day checkpointed (0 before the first). An unknown run is a
-404. Every response is sent with `Cache-Control: no-store`. The server only reads.
+The server publishes the runs with `frontend.publish`, exactly as for a deployment, and
+serves the site directory as static files, so a browser gets the published documents at the
+same relative URLs. The site lives in a temporary directory unless `--site` names one to keep.
+Every `--interval` seconds (5 by default) the runs are published again; a failure is printed
+and the last complete site stays served. The server only reads the runs.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import sys
+import tempfile
+import threading
+import traceback
 from functools import partial
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -24,103 +24,77 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-from frontend.progress import progress
-from frontend.timeline import timeline
-from infrastructure.storage import RunDirectory
-
-STATIC = Path(__file__).parent / "static"
+from frontend.publish import Publisher, report
 
 
-def runs(root: Path) -> dict[str, RunDirectory]:
-    """The runs under `root`, by name."""
-    return {
-        path.parent.name: RunDirectory(path.parent) for path in sorted(root.glob("*/manifest.json"))
-    }
-
-
-def summary(name: str, run: RunDirectory) -> dict[str, Any]:
-    return {
-        "name": name,
-        "status": run.read_manifest().status.value,
-        "days": run.latest_checkpoint() or 0,
-    }
-
-
-class Server(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], runs_root: Path) -> None:
-        super().__init__(address, partial(Handler, directory=str(STATIC)))
-        self.runs_root = runs_root
-
-
-class Handler(SimpleHTTPRequestHandler):
-    server: Server
-
-    def do_GET(self) -> None:
-        url = urlsplit(self.path)
-        if not url.path.startswith("/api/"):
-            super().do_GET()
-            return
-        found = runs(self.server.runs_root)
-        try:
-            if url.path == "/api/runs":
-                self._json([summary(name, run) for name, run in found.items()])
-                return
-            if url.path == "/api/timeline":
-                name = parse_qs(url.query).get("run", [""])[0]
-                if name in found:
-                    self._json(timeline(found[name].root))
-                    return
-                self._json({"error": f"no run named {name!r}"}, HTTPStatus.NOT_FOUND)
-                return
-            if url.path == "/api/progress":
-                self._json(
-                    [
-                        summary(name, run) | progress(timeline(run.root))
-                        for name, run in found.items()
-                    ]
-                )
-                return
-        except (OSError, ValueError) as error:
-            self._json(
-                {"error": f"{type(error).__name__}: {error}"}, HTTPStatus.INTERNAL_SERVER_ERROR
-            )
-            return
-        self._json({"error": f"no such endpoint {url.path}"}, HTTPStatus.NOT_FOUND)
+class _Handler(SimpleHTTPRequestHandler):
+    """Static files of the site with the caching of the deployment: a URL with `?v=` names
+    content that never changes; anything else is fetched afresh. No directory listings."""
 
     def list_directory(self, path: str | Path) -> None:
         self.send_error(HTTPStatus.NOT_FOUND)
 
     def end_headers(self) -> None:
-        self.send_header("Cache-Control", "no-store")
+        settled = "v" in parse_qs(urlsplit(self.path).query)
+        self.send_header(
+            "Cache-Control", "public, max-age=31536000, immutable" if settled else "no-store"
+        )
         super().end_headers()
 
-    def _json(self, data: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
-        body = json.dumps(data, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+    def log_message(self, format: str, *args: Any) -> None:
+        print(f"{self.address_string()} {format % args}", file=sys.stderr)
+
+
+class DevServer(ThreadingHTTPServer):
+    """Serves the site `publisher` writes, publishing it again every `interval` seconds while
+    it serves."""
+
+    def __init__(self, address: tuple[str, int], publisher: Publisher, interval: float) -> None:
+        print(report(publisher.out, publisher.publish()), flush=True)
+        super().__init__(address, partial(_Handler, directory=str(publisher.out)))
+        self.publisher = publisher
+        self.interval = interval
+        self._stop = threading.Event()
+
+    def serve_forever(self, poll_interval: float = 0.5) -> None:
+        threading.Thread(target=self._refresh, daemon=True).start()
+        super().serve_forever(poll_interval)
+
+    def shutdown(self) -> None:
+        self._stop.set()
+        super().shutdown()
+
+    def _refresh(self) -> None:
+        while not self._stop.wait(self.interval):
+            try:
+                site = self.publisher.publish()
+                if site.written or site.removed:
+                    print(report(self.publisher.out, site), flush=True)
+            except Exception:
+                traceback.print_exc()
 
 
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        prog="python -m frontend.server", description="Serve the timeline viewer of the runs."
+        prog="python -m frontend.server", description="Serve the published runs locally."
     )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
+    parser.add_argument("--results-root", type=Path, default=Path("results"))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
+    parser.add_argument("--site", type=Path, help="keep the published site in this directory")
+    parser.add_argument("--interval", type=float, default=5.0, metavar="SECONDS")
     args = parser.parse_args(argv)
-    if not args.runs_root.is_dir():
-        parser.error(f"{args.runs_root} is not a directory")
-    server = Server((args.host, args.port), args.runs_root)
-    print(f"Serving the runs under {args.runs_root} at http://{args.host}:{server.server_port}/")
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        server.server_close()
+    with tempfile.TemporaryDirectory(prefix="socio-evo-site-") as scratch:
+        publisher = Publisher(args.runs_root, args.site or Path(scratch), args.results_root)
+        server = DevServer((args.host, args.port), publisher, args.interval)
+        print(f"Serving {args.runs_root} at http://{args.host}:{server.server_address[1]}/")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            pass
+        finally:
+            server.server_close()
 
 
 if __name__ == "__main__":

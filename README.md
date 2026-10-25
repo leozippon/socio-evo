@@ -47,7 +47,7 @@ python -m experiments.run experiments/configs/groups/c.yaml --until-day 7
 python -m experiments.run experiments/configs/groups/c.yaml --resume
 ```
 
-A run resumes from its last daily checkpoint with the configuration unchanged; Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.server --runs-root runs` shows every resident's timeline side by side at http://127.0.0.1:8765/, live for a running run.
+A run resumes from its last daily checkpoint with the configuration unchanged; Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.publish --runs-root runs --out build/site` publishes every run as a static site (the town, every resident's timeline side by side, each resident's files and trace, the measures and the evaluation), `python -m frontend.server --runs-root runs` serves it at http://127.0.0.1:8765/ live for a running run, and `frontend/deploy/push.sh cornerhead build/site` pushes it to the private web server.
 
 ## Evaluate and analyse
 
@@ -82,6 +82,6 @@ python -m analysis.compare --group A=runs/a --group C=runs/c --measure accepted 
 | `evaluation/` | Judge, MASK, journal distortion, capability harness, day records |
 | `analysis/` | Measures and group statistics |
 | `experiments/` | Configurations, resident backgrounds, run and export commands |
-| `frontend/` | The timeline viewer |
+| `frontend/` | The published site: the viewer and its data bundle |
 | `infrastructure/` | Model client, git-versioned directories, JSONL, configuration |
 | `docs/` | Design, architecture, project log and reviews |

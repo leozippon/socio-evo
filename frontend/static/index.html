@@ -2,38 +2,34 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Run timeline</title>
-<link rel="stylesheet" href="style.css">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f4efe4" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#14120e" media="(prefers-color-scheme: dark)">
+<title>socio-evo</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f4efe4'/%3E%3Cg fill='none' stroke='%231f1b14' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 15 16 5l12 10'/%3E%3Cpath d='M8 13v13h16V13'/%3E%3C/g%3E%3Ccircle cx='12.75' cy='20' r='2.6' fill='%238c6a3b'/%3E%3Ccircle cx='19.25' cy='20' r='2.6' fill='%238c6a3b'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="css/base.css">
+<link rel="stylesheet" href="css/views.css">
+<link rel="stylesheet" href="css/town.css">
 </head>
 <body>
-<header>
-  <h1>Run timeline</h1>
-  <label>Run <select id="run" aria-label="Run"></select></label>
-  <span id="status" class="muted"></span>
-  <nav aria-label="View">
-    <button id="all" type="button" title="Show the whole run">Whole run</button>
-    <button id="day" type="button" title="Show the calendar day in the middle of the view">Day</button>
-    <button id="earlier" type="button" title="Earlier" aria-label="Earlier">&#9664;</button>
-    <button id="later" type="button" title="Later" aria-label="Later">&#9654;</button>
-    <button id="out" type="button" title="Zoom out" aria-label="Zoom out">&minus;</button>
-    <button id="in" type="button" title="Zoom in" aria-label="Zoom in">+</button>
-  </nav>
+<a class="skip" href="#main">Skip to content</a>
+<header class="topbar">
+  <a class="brand" href="#/" aria-label="socio-evo: all runs">
+    <svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">
+      <path d="M4 15 16 5l12 10" />
+      <path d="M8 13v13h16V13" />
+      <circle cx="12.75" cy="20" r="2.6" />
+      <circle cx="19.25" cy="20" r="2.6" />
+    </svg>
+    <span>socio-evo</span>
+  </a>
+  <nav id="crumbs" class="crumbs" aria-label="Location"></nav>
+  <nav id="tabs" class="tabs" aria-label="Views of this run"></nav>
+  <div id="status" class="status" aria-live="polite"></div>
 </header>
-<div id="legend"></div>
-<main>
-  <section id="plot">
-    <canvas id="canvas" aria-label="Every resident's events over simulated time"></canvas>
-    <div id="tip" role="tooltip" hidden></div>
-    <p id="message" hidden></p>
-  </section>
-  <aside id="panel">
-    <h2 id="who">No resident selected</h2>
-    <p id="window" class="muted">Click a lane to list what that resident did and heard in the visible window.</p>
-    <ol id="entries"></ol>
-  </aside>
-</main>
-<section id="progress" aria-label="How far every run has come, day by day"></section>
-<script src="app.js"></script>
+<div id="alert" class="alert" role="alert" hidden></div>
+<main id="main" tabindex="-1"></main>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ This directory is the canonical host deployment for CornerHead and socio-evo on 
 | Service | Browser address | Static site | Backend |
 | --- | --- | --- | --- |
 | CornerHead | `https://8.133.175.124:20817/` | `/opt/cornerhead/site` | nginx → `127.0.0.1:38889` → existing reverse SSH tunnel → MacroQuant's private Unix socket |
-| socio-evo | `https://8.133.175.124:20131/` | `/opt/socio-evo/site` | Published JSON bundle; no live research API |
+| socio-evo | `https://8.133.175.124:20131/` | `/opt/socio-evo/site` | Static viewer and JSON bundle published by `frontend.publish` and pushed by `frontend/deploy/push.sh`; no live research API |
 
 The public endpoints require a valid login, including static assets and API requests. Anonymous browser navigation goes to the login form; API and file requests receive 401, not a successful HTML response. An unavailable authentication process fails closed. CornerHead's SSE proxy remains unbuffered. The compute-host API must remain UDS-only in its 0700 runtime directory; do not add a debugging TCP bridge.
 
@@ -23,7 +23,7 @@ ops/webui/provision.sh cornerhead
 
 `/var/backups/webui/pre-migration.tar.gz` is one protected compact backup of the initial sites and relevant configuration. It is retained rather than recopied on each provision. The short-lived activation snapshot is deleted after confirmation. Nothing under `/opt/hangzhou-compute`, unrelated SSH access, cloud agents or experiments is cleaned up.
 
-Push a stable, already published socio-evo bundle:
+Push a stable socio-evo site already published by `python -m frontend.publish` (never one the publisher is still writing); `frontend/deploy/follow.sh` publishes and pushes in turn to follow live runs:
 
 ```bash
 frontend/deploy/push.sh cornerhead build/site
@@ -80,21 +80,6 @@ ssh cornerhead 'systemctl status webui-firewall webui-auth@cornerhead webui-auth
 
 Scripted checks set Origin explicitly and cannot establish that a browser generates it. The gateway and nginx both use `Referrer-Policy: same-origin` so native login/logout form POSTs retain the exact HTTPS Origin, while cross-origin referrers remain suppressed. Missing, `null` and wrong-port Origins are still rejected.
 
-An opt-in regression uses an existing Chromium executable, Node.js, OpenSSL and the test Python environment; it installs nothing:
-
-```bash
-CHROMIUM=/absolute/path/to/chrome python -m pytest tests/frontend/test_native_forms.py -q
-```
-
-It serves an isolated TLS fixture with test-only credentials and the actual gateway plus nginx's referrer policy, then checks native dummy login (401, not 403), authenticated login, logout confirmation and replay rejection. Browser submissions use the page's real form and cookie jar without overriding Origin. The fixture scopes a temporary certificate exception to its generated certificate's public key; it does not test CA trust or Safari.
-
-The same bounded browser probe can check the deployed services. Run it separately from rapid scripted probes, allowing at least one minute after other login diagnostics; nginx's existing login rate limit also covers form-page GETs:
-
-```bash
-CHROMIUM=/absolute/path/to/chrome node tests/frontend/native_form_check.mjs \
-  cornerhead=https://8.133.175.124:20817 socio-evo=https://8.133.175.124:20131 </dev/null
-```
-
-Optional private JSON on stdin (`{"SERVICE":{"username":"...","password":"..."}}`) enables authenticated login/logout checks; never put credentials in command arguments or tracked files. `WEBUI_BROWSER_PROXY` optionally sets a browser proxy. Use the browser/OS CA trust store for normal TLS; `WEBUI_BROWSER_SPKI` is only a narrowly scoped certificate-public-key exception for diagnostics and is not evidence of CA validation. Pair such a diagnostic with the CA-validated HTTP verifier above. The probe uses inherited private pipes for Chromium's DevTools protocol, with no DevTools TCP port. It reports only statuses and Origins and removes its temporary profile. Actual Safari must be checked separately on an available Apple client.
+The browser-based regression of the native login and logout forms that once lived under `tests/frontend` was retired with the previous frontend; the CA-validated verifier above and `verify.py --local` on the host are the checks that remain. Actual Safari must be checked separately on an available Apple client.
 
 For ordinary source-host diagnostics, MacroQuant's `webui_stack.sh status` checks its UDS, loaded-code fingerprint and authenticated frontend API path. Restart only the relevant UI/tunnel; never restart experiments to fix dashboard access. Check source-host listeners with `ss -lntp '( sport = :38888 or sport = :8765 )'`, identify the process and checkout before removing any legacy listener, and do not terminate an unrelated project's service blindly.

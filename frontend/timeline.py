@@ -14,8 +14,8 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           the lived days, from one checkpoint to the next; the day in progress ends at null.
           "real_start" and "real_end" are the real (Unix) times at which the day was begun and
           checkpointed: it was begun at the checkpoint before it, at the resumption that went
-          back to that checkpoint, or, for day 1, at the first entry of the log (the few
-          minutes before it, everyone asleep, are not counted); null with no entries at all
+          back to that checkpoint, or, for day 1, at the first entry of the log, the board
+          posted as the world began; null with no entries at all
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
@@ -77,9 +77,9 @@ _FOLDED = frozenset(
         "wake",
         "depart",
         "arrive",
+        "board_posted",
         "start_work",
         "leave_work",
-        "closing",
         "sleep",
         "forced_sleep",
         "claim",
@@ -101,8 +101,9 @@ _FOLDED = frozenset(
     }
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
-the time told, the board posted) add nothing to it. A `resume` is kept after it has set the lost
-day aside, for the real time at which the day was begun again."""
+the time told) add nothing to it. The board posted as the run starts is its first entry, kept
+for the real time at which day 1 was begun; a `resume` is kept after it has set the lost day
+aside, for the real time at which the day was begun again."""
 
 
 @dataclass
@@ -282,9 +283,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.enter(t, "movement", payload["to"])
         elif kind == "arrive":
             lane.enter(t, "idle", payload["place"])
-        elif kind == "closing":
-            for name in payload["sent_out"]:
-                lanes[name].enter(t, "idle", place)
         elif kind == "sleep":
             lane.enter(t, "sleep", place)
             lane.mark(

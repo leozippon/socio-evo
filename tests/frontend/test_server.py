@@ -1,70 +1,46 @@
-"""The viewer's server: the list of runs, a run's timeline, the progress of every run, a missing
-run, the page, and no caching anywhere."""
+"""The development server: it serves exactly the published site, settled files as immutable
+and everything else uncached, with no directory listings and nothing outside the site."""
 
 from __future__ import annotations
 
 import json
 import threading
 from urllib.error import HTTPError
+from urllib.parse import quote, urljoin
 from urllib.request import urlopen
 
-from frontend.progress import progress
-from frontend.server import Server
-from frontend.timeline import timeline
-from tests.frontend.conftest import live_a_day, new_town
+from frontend.publish import Publisher
+from frontend.server import DevServer
+from tests.frontend.test_publish import RUN, files, make_run
 
 
-def get(url: str) -> tuple[int, str, str, bytes]:
-    try:
-        with urlopen(url) as response:
-            return (
-                response.status,
-                response.headers["Cache-Control"],
-                response.headers["Content-Type"],
-                response.read(),
-            )
-    except HTTPError as error:
-        return (
-            error.code,
-            error.headers["Cache-Control"],
-            error.headers["Content-Type"],
-            (error.read()),
-        )
-
-
-async def test_the_endpoints_serve_runs_and_timelines_and_a_missing_run_is_404(tmp_path):
-    run, town = new_town(tmp_path)
-    await live_a_day(town)
-    await town.close()
-    run.checkpoint_path(1).write_text(json.dumps(town.checkpoints[0][1]))
-    (tmp_path / "not-a-run").mkdir()
-    server = Server(("127.0.0.1", 0), tmp_path)
+async def test_the_dev_server_serves_exactly_the_published_site(tmp_path, capsys):
+    runs = tmp_path / "runs"
+    await make_run(runs)
+    Publisher(runs, tmp_path / "site").publish()
+    published = files(tmp_path / "site")
+    server = DevServer(("127.0.0.1", 0), Publisher(runs, tmp_path / "served"), 0.1)
     threading.Thread(target=server.serve_forever, daemon=True).start()
-    base = f"http://127.0.0.1:{server.server_port}"
+    base = f"http://127.0.0.1:{server.server_address[1]}/"
+
+    def get(path: str) -> tuple[int, bytes, str | None]:
+        try:
+            with urlopen(urljoin(base, path)) as response:
+                return response.status, response.read(), response.headers["Cache-Control"]
+        except HTTPError as error:
+            return error.code, b"", None
+
     try:
-        status, cache, kind, body = get(f"{base}/api/runs")
-        assert (status, cache, kind) == (200, "no-store", "application/json; charset=utf-8")
-        assert json.loads(body) == [{"name": "town", "status": "running", "days": 1}]
-
-        status, cache, _, body = get(f"{base}/api/timeline?run=town")
-        assert (status, cache) == (200, "no-store")
-        assert json.loads(body) == json.loads(json.dumps(timeline(run.root)))
-
-        status, cache, _, body = get(f"{base}/api/progress")
-        assert (status, cache) == (200, "no-store")
-        expected = {"name": "town", "status": "running", "days": 1} | progress(timeline(run.root))
-        assert json.loads(body) == [json.loads(json.dumps(expected))]
-
-        for missing in ("nope", "not-a-run", "town/..", ""):
-            status, cache, _, body = get(f"{base}/api/timeline?run={missing}")
-            assert (status, cache) == (404, "no-store") and "error" in json.loads(body)
-        assert get(f"{base}/api/elsewhere")[0] == 404
-
-        status, cache, kind, body = get(f"{base}/")
-        assert (status, cache, kind) == (200, "no-store", "text/html")
-        assert b"<title>Run timeline</title>" in body
-        assert get(f"{base}/app.js")[:2] == (200, "no-store")
-        assert get(f"{base}/missing.js")[0] == 404
+        for name, data in published.items():
+            assert get(quote(name))[:2] == (200, data)
+        assert get("")[1] == published["index.html"]
+        run = json.loads(published[f"{RUN}/run.json"])
+        assert get(f"{RUN}/{run['world']}")[2] == "public, max-age=31536000, immutable"
+        assert get(f"{RUN}/{run['timeline']}")[2] == "no-store"
+        assert get("data/index.json")[2] == "no-store"
+        for missing in ("data/", "data/runs/", "%2e%2e/%2e%2e/etc/passwd", "data/nothing.json"):
+            assert get(missing)[0] == 404
     finally:
         server.shutdown()
         server.server_close()
+    assert capsys.readouterr().out.startswith(f"{tmp_path / 'served'}: ")
