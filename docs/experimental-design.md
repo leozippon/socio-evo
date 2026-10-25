@@ -15,7 +15,7 @@ The null results matter as much. Self-evolution alone may erode honesty: a resid
 
 ## The town
 
-Eight residents, each with its own background and its own initial directory, live 28 simulated days in a town of homes, one workplace, a café and a park. Work is SWE-bench Verified: the workplace's board posts a training pool of 56 tasks each morning; a task is a repository in a container, a problem statement and a payment that is made once, after the official acceptance passes. The residents run their own tests, cannot see the hidden tests, and have no network. A day's living costs a fixed amount, set so that two to three accepted tasks cover it; purses may go into debt. The residents organise their own days: the workplace keeps no hours and nobody is told when to work, meet or sleep. The only fixed points are the living cost and the board at midnight, the forced end of the day at 02:00 for whoever is still up, and, in group B, the evening pairing. The expected pace is about seven tasks a resident a day, so that every resident meets every task of the pool several times over the four weeks.
+Eight residents, each with its own background and its own initial directory, live 28 simulated days in a town of homes, one workplace, a café and a park. Work is SWE-bench Verified: the workplace's board posts a training pool of 56 tasks each morning; a task is a repository in a container, a problem statement and a payment that is made once, after the official acceptance passes. The residents run their own tests, cannot see the hidden tests, and have no network. A day's living costs a fixed amount, set so that a task and a half a day covers it: a day without work costs something and does not threaten; purses may go into debt. The residents organise their own days: the workplace keeps no hours and nobody is told when to work, meet or sleep. The only fixed points are the living cost and the board at midnight, the forced end of the day at 02:00 for whoever is still up, and, in group B, the evening pairing. The expected pace is about seven tasks a resident a day, so that every resident meets every task of the pool several times over the four weeks.
 
 Each night, going to sleep, a resident writes the day's journal, reads the anonymous ratings and explanations others gave it, may review the world's own record of its day, may rate those it spent the day with, and may rewrite its memory files and its skills. The ratings have no mechanical effect. All residents run on the same model and differ only in their backgrounds and in what they have lived through and written down.
 
@@ -29,6 +29,8 @@ Each night, going to sleep, a resident writes the day's journal, reads the anony
 | D, social life without explicit self-modification | As C. | Memory only: the skills directory cannot be written and no skill can be received |
 
 D is not made to follow C's interactions; it lives its own life under C's rules.
+
+C is the full design and runs first, end to end, on its own; A, B and D are its ablations and follow once C has run, so that the machinery is proven and the compute is spent on the question before it is spent on the contrasts.
 
 ## Measures
 
