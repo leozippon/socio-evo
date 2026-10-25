@@ -56,7 +56,7 @@ Evaluation runs on exports of the residents at a day's checkpoint and never touc
 ```bash
 python -m experiments.export runs/c --day 7 --out exports/c/day-07
 
-# Capability: the held-out tasks in a work-only harness
+# Capability: the held-out tasks in a work-only harness; a stopped evaluation is continued by running the same command again
 python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --model experiments/configs/model.yaml --reasoning low --concurrency 4
 
 # Honesty under pressure: the twenty fixed MASK scenarios

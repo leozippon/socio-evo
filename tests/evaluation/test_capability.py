@@ -1,7 +1,9 @@
 """The capability harness on the fake backend with a scripted model: the rows, the resolved rate
-and its interval, the turn budget, the export left untouched, and failures of the machinery kept
-apart from the resident's."""
+and its interval, the turn budget, the export left untouched, failures of the machinery kept
+apart from the resident's, and a stopped evaluation continued from the command line while
+another or a finished one is refused."""
 
+import json
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ import pytest
 from agent.directory import AgentDirectory
 from agent.runtime import RuntimeConfig
 from agent.testing import reply, tool_call
+from evaluation import capability
 from evaluation.capability import evaluate_capability, main
 from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient
 from world.solo import SoloConfig
@@ -24,9 +27,11 @@ SCRIPTS = {
         )
     ],
     "org/repo2": [
-        reply("", tool_call("shell", command="ls"), prompt_tokens=1000) for _ in range(3)
+        *(reply("", tool_call("shell", command="ls"), prompt_tokens=1000) for _ in range(3)),
+        reply("", tool_call("give_up"), prompt_tokens=1000),
     ],
 }
+"""The second task gives up at its fourth step, beyond a budget of three requests."""
 
 
 def scripted(request: LLMRequest):
@@ -146,9 +151,132 @@ async def test_failures_of_the_machinery_are_errors_and_not_the_residents(tmp_pa
     )
 
 
-def test_the_command_line_refuses_to_overwrite_results(tmp_path, capsys):
-    out = tmp_path / "out"
-    out.mkdir()
+async def test_error_rows_are_worked_again_when_the_evaluation_is_continued(tmp_path):
+    async def failing_pass() -> int:
+        backend = Unstartable(2)
+        result = await evaluate_capability(
+            exported(tmp_path),
+            backend.tasks,
+            ScriptedClient(failing),
+            RuntimeConfig(model_attempts=2, retry_wait=0.01),
+            SoloConfig(),
+            concurrency=2,
+            out_dir=tmp_path / "out",
+            backend=backend,
+        )
+        assert result.errors == 2
+        return result.resumed
+
+    assert await failing_pass() == 0
+    assert await failing_pass() == 0  # the error rows were not kept, both tasks ran again
+
+
+def command(monkeypatch, export, out, *options, model=scripted):
+    """`evaluation.capability` from the command line on the fake backend's two tasks of the
+    train split, one at a time, with the scripted `model`; the backend it worked through."""
+    backend = FakeBackend(2)
+    monkeypatch.setattr(capability, "SwebenchBackend", lambda: backend)
+    monkeypatch.setattr(capability, "create_client", lambda config: ScriptedClient(model))
+    config = out.with_name("model.yaml")
+    config.write_text("base_url: http://127.0.0.1:9\napi_key_env: NO_KEY\nmodel: resident\n")
+    main(
+        [str(export), "--split", "train", "--out", str(out), "--model", str(config)]
+        + ["--concurrency", "1", *options]
+    )
+    return backend
+
+
+def stopping(request: LLMRequest):
+    """The scripted model, stopped as a process is at the third step of the second task."""
+    steps = sum(message.role == "assistant" for message in request.messages)
+    if "a task in org/repo2." in request.messages[1].content and steps == 2:
+        raise KeyboardInterrupt
+    return scripted(request)
+
+
+def stopped(monkeypatch, export, out):
+    """`out` as an evaluation stopped while the second task was worked leaves it."""
+    with pytest.raises(KeyboardInterrupt):
+        command(monkeypatch, export, out, model=stopping)
+
+
+def report(out: Path) -> dict:
+    """The results.json of `out` without the times taken."""
+    doc = json.loads((out / "results.json").read_text())
+    del doc["seconds"]
+    for row in doc["tasks"]:
+        del row["seconds"]
+    return doc
+
+
+def test_a_stopped_evaluation_is_continued_by_the_same_command(tmp_path, monkeypatch):
+    export, out = exported(tmp_path), tmp_path / "out"
+    stopped(monkeypatch, export, out)
+    first, cut_off = out / "org__repo-1", out / "org__repo-2"
+    assert (first / "result.json").is_file() and not (cut_off / "result.json").exists()
+    assert (cut_off / "agent" / "trace.jsonl").is_file() and not (out / "results.json").exists()
+
+    backend = command(monkeypatch, export, out)
+    assert [workspace.task.instance_id for workspace in backend.opened] == ["org__repo-2"]
+    command(monkeypatch, export, tmp_path / "whole")
+    resumed, whole = report(out), report(tmp_path / "whole")
+    assert (resumed.pop("resumed"), whole.pop("resumed")) == (1, 0)
+    assert resumed == whole
+    assert [(row["status"], row["steps"]) for row in resumed["tasks"]] == [
+        ("accepted", 1),
+        ("gave_up", 4),
+    ]
+    for row in json.loads((out / "results.json").read_text())["tasks"]:
+        assert json.loads((out / row["instance_id"] / "result.json").read_text()) == row
+    assert json.loads((out / "evaluation.json").read_text()) == {
+        "export": str(export.resolve()),
+        "split": "train",
+        "model": "resident",
+        "reasoning_effort": "medium",
+    }
+
+
+def test_the_command_line_refuses_a_directory_of_another_evaluation(tmp_path, monkeypatch, capsys):
+    export, out = exported(tmp_path), tmp_path / "out"
+    stopped(monkeypatch, export, out)
+    before = files(out)
+    other = tmp_path / "export" / "Tomas"
     with pytest.raises(SystemExit):
-        main([str(exported(tmp_path)), "--split", "eval", "--out", str(out), "--model", "m.yaml"])
-    assert f"would overwrite {out}" in capsys.readouterr().err
+        command(monkeypatch, other, out, "--reasoning", "low")
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: it was begun with export {export.resolve()}, not "
+        f"{other.resolve()}; reasoning_effort medium, not low\n"
+    )
+    record = json.loads((out / "evaluation.json").read_text())
+    (out / "evaluation.json").write_text(json.dumps({**record, "split": "eval"}))
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, out)
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: it was begun with split eval, not train\n"
+    )
+    (out / "evaluation.json").unlink()
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, out)
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: it holds no evaluation.json to say what it evaluates\n"
+    )
+    del before[Path("evaluation.json")]
+    assert files(out) == before
+
+
+def test_the_command_line_refuses_a_finished_evaluation(tmp_path, monkeypatch, capsys):
+    export, out = exported(tmp_path), tmp_path / "out"
+    command(monkeypatch, export, out, "--limit", "1")
+    before = files(out)
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, out, "--limit", "1")
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: its evaluation is finished\n"
+    )
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, out)
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: its evaluation is finished, without 1 of the tasks "
+        "chosen; a finished evaluation is not extended\n"
+    )
+    assert files(out) == before

@@ -18,8 +18,18 @@ and their verdicts, the model requests (steps) and their tokens, the real second
 lapses. An infrastructure failure (a workspace or an acceptance that fails, a model that fails
 every attempt at a reply, an error of the harness) makes the row an `error`, left out of the
 resolved rate rather than counted against the resident. The resolved rate is resolved over
-evaluated tasks, with a Wilson 95% interval. OUT_DIR must not exist; it receives the copies and
-results.json: the configurations, the time taken, the summary and the rows.
+evaluated tasks, with a Wilson 95% interval.
+
+OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export, the
+split, the model and the reasoning effort); then each task's folder, with the task's row as
+result.json once the task is over; and, when every task is over, results.json: the
+configurations, the time taken, the summary, the rows and how many of them were resumed. Each
+file is written whole or not at all. A stopped evaluation is continued by running the same
+command again: the tasks whose row was written are kept, except error rows, and every other
+task folder, an attempt cut off, is removed and its task worked again; the configurations and
+the time taken
+in results.json are then those of the last invocation. An OUT_DIR that holds anything else, an
+evaluation of something else or a finished one, is refused.
 """
 
 from __future__ import annotations
@@ -52,6 +62,11 @@ from world.solo import Ending, SoloConfig, SoloPort
 Z = 1.959964
 """The standard normal quantile of a two-sided 95% interval."""
 
+RECORD = "evaluation.json"
+RESULT = "result.json"
+RESULTS = "results.json"
+"""What OUT_DIR evaluates, a task's row in its folder, and the report (see the module docstring)."""
+
 
 class TaskResult(StrictModel):
     """One task's row. `steps` are the model requests answered; `error` says what failed when
@@ -73,7 +88,8 @@ class TaskResult(StrictModel):
 
 class CapabilityResult(StrictModel):
     """The rows, and the resolved rate over the tasks evaluated (all but the errors) with its
-    Wilson 95% interval; both None when every task was an error."""
+    Wilson 95% interval, both None when every task was an error; `resumed` rows were kept
+    from an earlier invocation."""
 
     tasks: tuple[TaskResult, ...]
     evaluated: int
@@ -81,9 +97,10 @@ class CapabilityResult(StrictModel):
     errors: int
     resolved_rate: float | None
     interval: tuple[float, float] | None
+    resumed: int
 
     @classmethod
-    def of(cls, rows: Sequence[TaskResult]) -> CapabilityResult:
+    def of(cls, rows: Sequence[TaskResult], resumed: int = 0) -> CapabilityResult:
         evaluated = [row for row in rows if row.status != "error"]
         resolved = sum(row.resolved for row in evaluated)
         n = len(evaluated)
@@ -94,6 +111,7 @@ class CapabilityResult(StrictModel):
             errors=len(rows) - n,
             resolved_rate=resolved / n if n else None,
             interval=wilson(resolved, n) if n else None,
+            resumed=resumed,
         )
 
 
@@ -118,30 +136,42 @@ async def evaluate_capability(
     backend: Backend,
 ) -> CapabilityResult:
     """The resident exported at `export_dir` on each of `tasks`, worked through `backend` with
-    the model `client`, `concurrency` tasks at a time; its copies and traces go under
-    `out_dir`, which must not exist."""
+    the model `client`, `concurrency` tasks at a time; its copies, traces and rows go under
+    `out_dir`, a task's row as its folder's result.json once the task is over. A task whose
+    row is there already, written by an earlier invocation, is kept unless that row is an
+    error, which is the machinery's and not the resident's; any other folder of a task is an
+    attempt cut off, removed before the task is worked again."""
     names = [task.instance_id for task in tasks]
     if not names:
         raise ValueError("no tasks to evaluate")
     if len(set(names)) < len(names):
         raise ValueError("a task is given more than once")
     AgentDirectory(export_dir)
-    out_dir.mkdir(parents=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    kept: dict[str, TaskResult] = {}
+    for name in names:
+        if (row := out_dir / name / RESULT).is_file():
+            found = TaskResult.model_validate_json(row.read_text(encoding="utf-8"))
+            if found.status != "error":
+                kept[name] = found
+                continue
+        if (out_dir / name).exists():
+            shutil.rmtree(out_dir / name)
     gate = asyncio.Semaphore(concurrency)
 
     async def attempt(task: Task) -> TaskResult:
+        if task.instance_id in kept:
+            return kept[task.instance_id]
+        task_dir = out_dir / task.instance_id
         async with gate:
-            return await _attempt(
-                task,
-                export_dir,
-                out_dir / task.instance_id,
-                client,
-                runtime_config,
-                solo_config,
-                backend,
+            row = await _attempt(
+                task, export_dir, task_dir, client, runtime_config, solo_config, backend
             )
+        _write(task_dir / RESULT, row.model_dump_json(indent=2) + "\n")
+        return row
 
-    return CapabilityResult.of(await asyncio.gather(*map(attempt, tasks)))
+    rows = await asyncio.gather(*map(attempt, tasks))
+    return CapabilityResult.of(rows, resumed=len(kept))
 
 
 async def _attempt(
@@ -205,6 +235,43 @@ def _copy(export: Path, destination: Path) -> AgentDirectory:
     return AgentDirectory(destination, skills_writable=False)
 
 
+def _claim(out_dir: Path, record: dict[str, str], names: Sequence[str]) -> None:
+    """Take `out_dir` for the evaluation `record` of the tasks `names`: create it with the
+    record, or continue it when an earlier invocation of the same evaluation left it
+    unfinished. Raise ValueError when it holds anything else or a finished evaluation."""
+    if (results := out_dir / RESULTS).is_file():
+        report = json.loads(results.read_text(encoding="utf-8"))
+        done = {row["instance_id"] for row in report["tasks"]}
+        if missing := [name for name in names if name not in done]:
+            raise ValueError(
+                f"would overwrite {out_dir}: its evaluation is finished, without {len(missing)} "
+                "of the tasks chosen; a finished evaluation is not extended"
+            )
+        raise ValueError(f"would overwrite {out_dir}: its evaluation is finished")
+    if not out_dir.exists():
+        out_dir.mkdir(parents=True)
+        _write(out_dir / RECORD, json.dumps(record, ensure_ascii=False, indent=2) + "\n")
+        return
+    if not (out_dir / RECORD).is_file():
+        raise ValueError(
+            f"would overwrite {out_dir}: it holds no {RECORD} to say what it evaluates"
+        )
+    begun = json.loads((out_dir / RECORD).read_text(encoding="utf-8"))
+    if changed := [key for key, value in record.items() if begun.get(key) != value]:
+        raise ValueError(
+            f"would overwrite {out_dir}: it was begun with "
+            + "; ".join(f"{key} {begun.get(key)}, not {record[key]}" for key in changed)
+        )
+
+
+def _write(path: Path, text: str) -> None:
+    """`text` as the content of `path`, written whole or not at all: to a temporary file beside
+    it, then renamed."""
+    temporary = path.with_name(f"{path.name}.tmp")
+    temporary.write_text(text, encoding="utf-8")
+    temporary.replace(path)
+
+
 async def _live(runtime: Runtime, port: SoloPort) -> None:
     """Run `runtime` until its task is over, then cancel it; an error that stopped it first is
     raised."""
@@ -265,15 +332,15 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--split", required=True, choices=("train", "eval"))
     parser.add_argument("--limit", type=int, help="only the first N of the tasks chosen")
     parser.add_argument("--tasks", nargs="+", default=[], metavar="ID", help="only these tasks")
-    parser.add_argument("--out", type=Path, required=True, help="directory to create")
+    parser.add_argument(
+        "--out", type=Path, required=True, help="directory to create, or to continue"
+    )
     parser.add_argument("--model", type=Path, required=True, help="resident model LLMConfig YAML")
     parser.add_argument("--runtime", type=Path, help="RuntimeConfig YAML; defaults otherwise")
     parser.add_argument("--concurrency", type=int, default=4, help="tasks at a time")
     parser.add_argument("--reasoning", choices=("low", "medium", "xhigh"), help="over --runtime")
     args = parser.parse_args(argv)
 
-    if args.out.exists():
-        parser.error(f"would overwrite {args.out}")
     if args.concurrency < 1 or (args.limit is not None and args.limit < 1):
         parser.error("--concurrency and --limit must be at least 1")
     backend = SwebenchBackend()
@@ -284,11 +351,21 @@ def main(argv: Sequence[str] | None = None) -> None:
             parser.error(f"not in the {args.split} split: {', '.join(unknown)}")
         tasks = [known[name] for name in dict.fromkeys(args.tasks)]
     tasks = tasks[: args.limit]
-    backend.require_images(tasks)
     model = load_config(args.model, LLMConfig)
     runtime = load_config(args.runtime, RuntimeConfig) if args.runtime else RuntimeConfig()
     if args.reasoning:
         runtime = runtime.model_copy(update={"reasoning_effort": args.reasoning})
+    record = {
+        "export": str(args.export.resolve()),
+        "split": args.split,
+        "model": model.model,
+        "reasoning_effort": runtime.reasoning_effort,
+    }
+    try:
+        _claim(args.out, record, [task.instance_id for task in tasks])
+    except ValueError as error:
+        parser.error(str(error))
+    backend.require_images(tasks)
     solo = SoloConfig()
 
     started = time.perf_counter()
@@ -314,8 +391,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "seconds": round(time.perf_counter() - started, 1),
         **result.model_dump(mode="json"),
     }
-    results = args.out / "results.json"
-    results.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    results = args.out / RESULTS
+    _write(results, json.dumps(report, ensure_ascii=False, indent=2) + "\n")
     rate = (
         "no task evaluated"
         if result.resolved_rate is None or result.interval is None
