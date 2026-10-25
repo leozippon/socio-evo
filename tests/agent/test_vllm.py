@@ -1,8 +1,13 @@
 """One real session against the local vLLM server, as the environment names it
-(VLLM_BASE_URL, VLLM_API_KEY); skipped when the server cannot be reached."""
+(VLLM_BASE_URL, VLLM_API_KEY); skipped when the server cannot be reached. The resident is Mei
+with the real town's rules. The server counts cached prompt tokens in units of well over a
+thousand tokens (a repeated 5,233-token prompt reports 4,704 cached, a 1,219-token one none), so
+a session this short cannot show a cache hit; the test checks that the count is reported, and
+the service's probe (`ops/vllm/verify.py`) checks hits on a long repeated prefix."""
 
 import asyncio
 import os
+from pathlib import Path
 
 import httpx2
 import pytest
@@ -10,8 +15,12 @@ import pytest
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
 from agent.testing import FakePort, running
+from experiments.config import load_experiment
 from infrastructure.llm import LLMConfig, OpenAICompatibleClient
 from infrastructure.storage import read_jsonl
+from world.rules import Rules
+
+REPO = Path(__file__).resolve().parents[2]
 
 
 def _served() -> LLMConfig:
@@ -31,10 +40,11 @@ def _served() -> LLMConfig:
 
 async def test_a_real_session_writes_a_file_then_replies(tmp_path):
     config = _served()
+    town = load_experiment(REPO / "experiments" / "configs" / "groups" / "a.yaml").town
     directory = AgentDirectory.create(
-        tmp_path / "ana",
-        background="# Ana Reyes\n\nYou are Ana Reyes, a programmer who lives in a small town.",
-        town="The workshop opens at 09:00 and closes at 18:00.",
+        tmp_path / "mei",
+        background=(REPO / "experiments" / "residents" / "mei.md").read_text(encoding="utf-8"),
+        town=Rules(town).text("Mei"),
     )
     port = FakePort(
         situation="It is 18:30 on Monday. You are at home. Only your files are at hand."
@@ -61,4 +71,4 @@ async def test_a_real_session_writes_a_file_then_replies(tmp_path):
     assert writes and all(r["arguments"]["path"] == "memory/work.md" for r in writes)
     assert "3" in (directory.root / "memory" / "work.md").read_text()
     assert replies[-1]["tool_calls"] == [] and replies[-1]["finish_reason"] == "stop"
-    assert len(replies) >= 2 and replies[1]["usage"]["cached_prompt_tokens"] > 0
+    assert len(replies) >= 2 and all(r["usage"]["cached_prompt_tokens"] is not None for r in replies)
