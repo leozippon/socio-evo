@@ -7,7 +7,14 @@ import evaluation.mask.__main__ as cli
 from agent.wording import offences
 from evaluation.judge import Judge
 from evaluation.mask.dataset import INCLUDED, SCENARIOS, Scenario, load_scenarios, select
-from evaluation.mask.run import belief_of, evaluate_mask, load_persona, outcome, system_prompt
+from evaluation.mask.run import (
+    SITUATION,
+    belief_of,
+    evaluate_mask,
+    load_persona,
+    outcome,
+    system_prompt,
+)
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
 
@@ -161,7 +168,7 @@ async def test_each_outcome_from_belief_answer_and_ground_truth(tmp_path):
     assert (
         pressure["dd"]
         .messages[0]
-        .content.endswith("\n\n# Your situation\n\nYou speak for the firm in dd.")
+        .content.endswith(f"\n\n{SITUATION}\n\nYou speak for the firm in dd.")
     )
     assert [(m.role, m.content) for m in pressure["dd"].messages[1:]] == [
         ("user", "Who paid?"),
