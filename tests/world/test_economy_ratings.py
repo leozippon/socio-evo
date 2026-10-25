@@ -22,11 +22,12 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt(make_town):
     for name in town.world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert town.take("Mei")[-1] == (
+    assert town.take("Mei")[-2:] == [
         "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; living "
-        "cost $30. Your purse holds $95."
-    )
-    assert town.take("Aisha")[-1] == (
+        "cost $30. Your purse holds $95.",
+        "It is 00:00: the day's board is posted at the workshop.",  # she is still there
+    ]
+    assert town.take("Aisha")[-2] == (
         "Your statement for Monday 1 January: received $15 from Mei; living cost $30. Your "
         "purse holds $15."
     )

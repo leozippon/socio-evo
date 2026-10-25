@@ -26,8 +26,8 @@ def test_a_town_validates():
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
     data = config.model_dump(mode="json")
-    data["day"]["earliest_sleep"] = "01:00"  # after midnight, before the forced sleep
-    assert type(config).model_validate(data).day.earliest_sleep == "01:00"
+    data["social"]["exchange"]["at"] = "01:00"  # after midnight, before the forced sleep
+    assert type(config).model_validate(data).social.exchange.at == "01:00"
 
 
 @pytest.mark.parametrize(
@@ -38,13 +38,8 @@ def test_a_town_validates():
             {},
             "exactly one workplace",
         ),
-        (lambda d: d["places"][2].update(opens="18:00", closes="09:00"), {}, "open before"),
-        (
-            lambda d: d["places"][3].update(opens="08:00", closes="20:00"),
-            {},
-            "only the workplace has opening hours",
-        ),
-        (lambda d: d["places"][2].update(opens="9am"), {}, "HH:MM"),
+        (lambda d: d["places"][2].update(opens="09:00"), {}, "Extra inputs are not permitted"),
+        (lambda d: d["day"].update(forced_wake="7am"), {}, "HH:MM"),
         (lambda d: d["residents"][0].update(home="cafe"), {}, "is not a home"),
         (lambda d: d["residents"][1].update(name="Mei"), {}, "duplicate resident name"),
         (lambda d: d["residents"][1].update(name="you"), {}, "pattern"),
@@ -54,23 +49,13 @@ def test_a_town_validates():
             "two different known places",
         ),
         (lambda d: d["day"].update(checkpoint="01:00"), {}, "forced_sleep < checkpoint"),
-        (lambda d: d["day"].update(wake_earliest="09:30"), {}, "workplace opens"),
-        (
-            lambda d: d["day"].update(earliest_sleep="17:00"),
-            {},
-            "earliest bedtime must come after the workplace closes",
-        ),
-        (lambda d: d["day"].update(earliest_sleep="03:00"), {}, "before the forced sleep"),
-        (
-            lambda d: d["day"].update(earliest_sleep="18:30"),
-            {"mode": "isolated", "exchange": B_EXCHANGE},
-            "earliest bedtime must come after the evening exchange",
-        ),
+        (lambda d: d["day"].update(forced_wake="02:15"), {}, "checkpoint < forced_wake"),
+        (lambda d: d["day"].pop("forced_wake"), {}, "Field required"),
         (lambda d: d["social"].update(exchange=B_EXCHANGE), {}, "isolated mode"),
         (
-            lambda d: d["social"]["exchange"].update(place="park", at="17:00"),
+            lambda d: d["social"]["exchange"].update(at="02:15"),
             {"mode": "isolated", "exchange": B_EXCHANGE},
-            "after the workplace closes",
+            "must come before the forced sleep",
         ),
         (
             lambda d: d["social"]["exchange"].update(place="workshop"),

@@ -1,5 +1,5 @@
-"""The daily schedule: group B's evening, waiting, the checkpoint hand-off, snapshot and
-restore, and the completeness of the world log."""
+"""The daily schedule: group B's evening, which wakes whoever sleeps, waiting, the checkpoint
+hand-off, snapshot and restore, and the completeness of the world log."""
 
 from __future__ import annotations
 
@@ -19,20 +19,21 @@ from tests.world.conftest import (
     town_config,
 )
 from world.clock import ManualClock, settle
-from world.events import Movement
+from world.events import Movement, Sleep
 from world.log import KINDS
 from world.world import World
 
 FOUR = RESIDENTS + ({"name": "Jonas", "home": "college-flat", "purse": 60},)
+EIGHT = FOUR + tuple(
+    {"name": name, "home": "college-flat", "purse": 60}
+    for name in ("Lucia", "Ravi", "Olga", "Kofi")
+)
 
 
 async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_town):
     town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FOUR))
     await awake_at(town)
     world = town.world
-    await town.until("18:30")
-    refused = await town.call("Jonas", "sleep", until="07:00", journal="Tired.")
-    assert refused.text == "Not yet: nobody goes to bed before 20:00."
     await town.until("18:55")
     await town.call("Tomas", "go", place="park")
     for name in world.residents:
@@ -87,6 +88,59 @@ async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_tow
     assert f"spent time with today ({b})" in town.take(a)[-1]
     refused = await town.call(a, "rate", resident=c, score=3, reason="x")
     assert refused.text == f"You did not spend time with {c} today."
+
+
+async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
+    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=EIGHT))
+    await awake_at(town)
+    world = town.world
+    await town.call("Kofi", "go", place="workshop")
+    await town.until("07:10")
+    await town.call("Kofi", "start_work")
+    await town.until("18:00")
+    for name in ("Jonas", "Lucia"):
+        await town.call(name, "sleep", until="07:00", journal="An early night.")
+    town.rest("Jonas")  # Jonas falls asleep; Lucia is still in bed
+    await settle()
+    assert world.residents["Jonas"].suspended and not world.residents["Lucia"].suspended
+    for name in world.residents:
+        town.take(name)
+    await town.until("19:00")
+
+    pairs = [
+        tuple(e["payload"]["pair"]) for e in world.log.entries() if e["kind"] == "exchange_pairing"
+    ]
+    assert sorted(len(pair) for pair in pairs) == [2, 2, 2, 2]
+    assert sorted(sum(pairs, ())) == sorted(world.residents)
+    partner = {a: b for pair in pairs for a, b in (pair, pair[::-1])}
+    woken = [
+        e["actor"]
+        for e in world.log.entries()
+        if e["kind"] == "wake" and e["sim_time"] == at("19:00")
+    ]
+    assert sorted(woken) == ["Jonas", "Lucia"]
+
+    def woken_and_paired(name: str) -> list[str]:
+        return [
+            "It is 19:00: you were woken at home for the evening meeting.",
+            f"It is 19:00: by lot, you are to meet {partner[name]} at the café on the square "
+            "and talk about your work.",
+        ]
+
+    assert town.take("Lucia") == woken_and_paired("Lucia")  # from bed, before falling asleep
+    heard = [p.text for p in town.heard["Jonas"] if p.kind in ("wake", "exchange_pairing")]
+    assert heard == woken_and_paired("Jonas")  # from sleep
+    kofi = [e["kind"] for e in world.log.entries() if e["actor"] == "Kofi"]
+    assert kofi[-2:] == ["leave_work", "depart"]  # taken from work to the café
+
+    await town.until("19:10")
+    assert all(not isinstance(r.base, (Sleep, Movement)) for r in world.residents.values())
+    for a, b in pairs:
+        conversation = world.residents[a].conversation
+        assert conversation is not None and conversation is world.residents[b].conversation
+        assert conversation.place == "cafe" and conversation.budget == {a: 3, b: 3}
+    meetings = [e for e in world.log.entries() if e["kind"] == "meeting"]
+    assert sorted(sorted(e["payload"]["pair"]) for e in meetings) == sorted(map(sorted, pairs))
 
 
 async def test_an_odd_one_out_is_told_nobody_is_free(make_town):
@@ -280,7 +334,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     await town.call("Mei", "rate", resident="Tomas", score=4, reason="Good company.")
     town.rest()
-    await town.until("18:00", day=2)  # Tomas's claim runs out
+    await town.until("00:00", day=3)  # Tomas's claim runs out
 
     b_town = make_town(
         town_config("isolated", exchange=B_EXCHANGE, residents=RESIDENTS[:2]), root=tmp_path / "b"

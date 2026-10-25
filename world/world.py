@@ -3,20 +3,23 @@
 `World` is created from a configuration, a run directory and a work backend; creating it loads
 the task split, checks that every task's image is present and that every agent directory exists,
 and writes nothing. A new world stands at the checkpoint hour of day 1 with every resident asleep
-at home, to wake at the earliest waking hour; `restore` puts it instead in the state of a saved
-checkpoint. `run` then drives the town until a given day's checkpoint.
+at home, to wake at the forced waking hour, and posts day 1's board as it starts; `restore` puts
+it instead in the state of a saved checkpoint. `run` then drives the town until a given day's
+checkpoint.
 
 Everything that happens at a moment of simulated time is a timer in one queue, run by `run` in
 the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
-tells a waiting resident the time, and the day's schedule. For day N (whose daytime is calendar
-day N): the workplace opens and posts its board, closes (sending those at work outside and
-letting expired claims run out), group B's pairing, the midnight settlement, the forced sleep
-and the checkpoint. At the checkpoint the world waits until every resident is asleep and its
-runtime waits on its port, holds the clock, closes every workspace keeping its changes, takes
-the snapshot and awaits `on_checkpoint(day, snapshot)`, through which the composition layer
-writes the checkpoint and commits the agent directories. A lived day N runs from the checkpoint
-on calendar day N to the one on calendar day N + 1; the journal, the ratings, the acceptance
-runs and the record `review_day` tells belong to it.
+tells a waiting resident the time, and the day's schedule, which is all the fixed structure a day
+has. For day N (whose daytime is calendar day N): group B's pairing, which wakes whoever sleeps;
+midnight, when the living cost is settled, expired claims run out and the next day's board is
+posted; the forced sleep; and the checkpoint. The workplace never closes, and residents go to bed
+and wake when they choose, except that nobody wakes between the forced sleep and the checkpoint.
+At the checkpoint the world waits until every resident is asleep and its runtime waits on its
+port, holds the clock, closes every workspace keeping its changes, takes the snapshot and awaits
+`on_checkpoint(day, snapshot)`, through which the composition layer writes the checkpoint and
+commits the agent directories. A lived day N runs from the checkpoint on calendar day N to the
+one on calendar day N + 1; the journal, the ratings, the acceptance runs and the record
+`review_day` tells belong to it.
 
 The world delivers each percept to the ports of those who perceive it. Speech reaches the
 residents it is addressed to, at their place and awake, with `interrupt`; everything else waits
@@ -123,11 +126,8 @@ class World:
             raise FileNotFoundError(f"missing agent directories: {', '.join(missing)}")
 
         self.config = config
-        workplace = config.workplace
-        self._opens = parse_hour(workplace.opens or "")
-        self._closes = parse_hour(workplace.closes or "")
-        self._wake = parse_hour(config.day.wake_earliest)
         self._forced = parse_hour(config.day.forced_sleep)
+        self._forced_wake = parse_hour(config.day.forced_wake)
         self._checkpoint_hour = parse_hour(config.day.checkpoint)
         start = self._checkpoint_hour
         self.clock = clock or Clock(start, config.clock.speed_active, config.clock.speed_idle)
@@ -148,7 +148,6 @@ class World:
         self.tool_specs: list[ToolSpec] = tools.specs(config)
         self._specs = {spec.name: spec for spec in self.tool_specs}
         self.social_contact = config.social.mode == "town" or config.social.exchange is not None
-        self.workplace_open = False
         self._timers: list[_Timer] = []
         self._order = itertools.count()
         self._pushed = asyncio.Event()
@@ -163,7 +162,7 @@ class World:
             r = Resident(rc.name, rc.home, directories[rc.name], rc.home, Sleep(0, True))
             r.port = ResidentPort(self, r)
             self.residents[rc.name] = r
-            self._put_to_sleep(r, self._wake, suspended=True)
+            self._put_to_sleep(r, self._forced_wake, suspended=True)
 
     @property
     def ports(self) -> dict[str, ResidentPort]:
@@ -213,46 +212,36 @@ class World:
             pushed.cancel()
 
     def _schedule_day(self, day: int) -> None:
-        morning = (day - 1) * DAY
-        self._at(morning + self._opens, self._open)
-        self._at(morning + self._closes, partial(self._close, day))
+        if day == 1:  # only a new world lives day 1: its board is posted as it starts
+            self._at(self.clock.now(), self._post_board)
         exchange = self.config.social.exchange
         if exchange is not None:
-            self._at(morning + parse_hour(exchange.at), partial(self._pair, day))
-        self._at(day * DAY, partial(self._settle, day))
+            evening = (day - 1) * DAY + self.config.day.of_day(exchange.at)
+            self._at(evening, partial(self._pair, day))
+        self._at(day * DAY, partial(self._midnight, day))
         self._at(day * DAY + self._forced, partial(self._force_sleep, day))
         self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
 
-    def _open(self) -> None:
-        self.workplace_open = True
+    def _post_board(self) -> None:
         workplace = self.config.workplace
         here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
         hour = clock_time(self.clock.now())
         self.record(
             "board_posted",
-            lambda w: f"It is {hour}: {workplace.name} opened and the day's board is posted.",
+            lambda w: f"It is {hour}: the day's board is posted at {workplace.name}.",
             place=workplace.id,
             audience=here,
             payload={"tasks": len(self.board.tasks)},
         )
 
-    def _close(self, day: int) -> None:
-        self.workplace_open = False
-        workplace = self.config.workplace
-        workers = [r for r in self.residents.values() if isinstance(r.base, Work)]
-        for r in workers:
-            r.base = Idle()
-        hour = clock_time(self.clock.now())
-        self.record(
-            "closing",
-            lambda w: (
-                f"It is {hour}: {workplace.name} closed, and "
-                + ("you stopped work and stepped outside." if w else "work stopped for the day.")
-            ),
-            place=workplace.id,
-            audience=workers,
-            payload={"sent_out": [r.name for r in workers]},
-        )
+    def _midnight(self, day: int) -> None:
+        """The end of calendar day `day`: its living cost, the claims that run out with it, and
+        the next day's board."""
+        self._settle(day)
+        self._expire(day)
+        self._post_board()
+
+    def _expire(self, day: int) -> None:
         for name in self.board.expired(day):
             claim = self.board.claims[name]
             workspace = self.board.drop(name)
@@ -263,7 +252,7 @@ class World:
                 "expiry",
                 lambda w, r=r, claim=claim: (
                     f"{cap(you(r.name, w))} lost task {claim.task}: "
-                    "the claim ran out unpaid at the closing."
+                    "the claim ran out unpaid at midnight."
                 ),
                 actor=r,
                 place=None,
@@ -274,12 +263,24 @@ class World:
     def _pair(self, day: int) -> None:
         exchange = self.config.social.exchange
         assert exchange is not None
-        awake = [r for r in self.residents.values() if r.awake]
-        random.Random(f"{self.config.seed}:{day}").shuffle(awake)
-        pairs = list(zip(awake[::2], awake[1::2], strict=False))
+        everyone = list(self.residents.values())
+        random.Random(f"{self.config.seed}:{day}").shuffle(everyone)
+        pairs = list(zip(everyone[::2], everyone[1::2], strict=False))
         hour = clock_time(self.clock.now())
         place = self.config.place(exchange.place).name
         for a, b in pairs:
+            for r in (a, b):
+                if not r.awake:
+                    assert r.timer is not None
+                    r.timer.cancel()
+                    self._wake_up(
+                        r,
+                        lambda w, r=r: (
+                            f"It is {hour}: you were woken at home for the evening meeting."
+                            if w == r.name
+                            else f"It is {hour}: {r.name} was woken for the evening meeting."
+                        ),
+                    )
             a.partner, b.partner = b.name, a.name
 
             def tell(w: str | None, a: Resident = a, b: Resident = b) -> str:
@@ -294,8 +295,8 @@ class World:
             self.record(
                 "exchange_pairing", tell, audience=[a, b], payload={"pair": [a.name, b.name]}
             )
-        if len(awake) % 2:
-            last = awake[-1]
+        if len(everyone) % 2:
+            last = everyone[-1]
             self.record(
                 "exchange_pairing",
                 lambda w: f"It is {hour}: nobody is free to meet {you(last.name, w)} this evening.",
@@ -309,9 +310,12 @@ class World:
                 self._meet(a, b)
 
     def _send(self, r: Resident, place: str) -> None:
-        """Send `r` to `place`, turning it there if it is on its way elsewhere."""
+        """Send `r` to `place`, from its work if it is working, turning it there if it is on its
+        way elsewhere."""
         if r.place == place:
             return
+        if isinstance(r.base, Work):
+            self.stop_work(r)
         if isinstance(r.base, Movement):
             assert r.timer is not None
             r.timer.cancel()
@@ -377,7 +381,7 @@ class World:
             )
 
     def _force_sleep(self, day: int) -> None:
-        wake = day * DAY + self._wake
+        wake = day * DAY + self._forced_wake
         hour = clock_time(self.clock.now())
         for r in self.residents.values():
             if isinstance(r.base, Sleep):
@@ -386,6 +390,8 @@ class World:
                 continue
             if r.conversation is not None:
                 self.leave_conversation(r)
+            if isinstance(r.base, Work):
+                self.stop_work(r)
             if r.timer is not None:
                 r.timer.cancel()
             r.partner = None
@@ -581,13 +587,7 @@ class World:
         assert r.place is not None
         place = self.config.place(r.place)
         text = f"You are at {place.name}."
-        if place.kind == "workplace":
-            text += (
-                f" It is open until {place.closes}."
-                if self.workplace_open
-                else f" It is closed; it opens at {place.opens}."
-            )
-        elif place.kind == "home":
+        if place.kind == "home":
             homes = [rc.name for rc in self.config.residents if rc.home == place.id]
             if self.config.social.mode == "isolated":
                 homes = [name for name in homes if name == r.name]
@@ -599,6 +599,12 @@ class World:
             elif homes:
                 text += f" It is the home of {listed(homes)}."
         return f"{text} {self.people_here(r)}"
+
+    def stop_work(self, r: Resident) -> None:
+        """`r` stops work: by its own `leave_work`, or because the town takes it elsewhere (the
+        evening exchange, the forced sleep), so that every stretch of work in the log ends."""
+        r.base = Idle()
+        self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
 
     def depart(self, r: Resident, place: str) -> int:
         """Set `r` off from where it is to `place`; returns the time of arrival."""
@@ -720,8 +726,24 @@ class World:
         r.base = Sleep(wake, suspended)
         r.timer = self._at(wake, partial(self._wake_up, r))
 
+    def wake_time(self, hour: int) -> int:
+        """When a resident who goes to bed now, asking to wake at `hour` (seconds after
+        midnight), wakes: at the next time the clock shows that hour, an hour at or before the
+        present one meaning tomorrow. Everyone must be asleep from the forced sleep to the
+        checkpoint, so an hour in between becomes the checkpoint's."""
+        now = self.clock.now()
+        wake = now - now % DAY + hour
+        if wake <= now:
+            wake += DAY
+        night = self.lived_day() * DAY
+        if night + self._forced <= wake < night + self._checkpoint_hour:
+            wake = night + self._checkpoint_hour
+        return wake
+
     def go_to_bed(self, r: Resident, wake: int, journal: str, day: int) -> None:
-        """`r` goes to bed with its journal entry written; it hears what it may still do."""
+        """`r` goes to bed with its journal entry written; it hears what it may still do. Going
+        to bed again the same day, it hears of ratings only if new ones came."""
+        again = any(kind == "sleep" for _, kind, _, _ in r.day)
         self._put_to_sleep(r, wake)
         parts = [
             f"You are in bed and will wake at {clock_time(wake)}; your journal entry for "
@@ -731,7 +753,8 @@ class World:
         if self.social_contact:
             ratings = self.ratings.take_unread(r.name)
             met = sorted(self.ratings.met[r.name])
-            parts.append(tell_ratings(ratings))
+            if ratings or not again:
+                parts.append(tell_ratings(ratings))
             parts.append(
                 "Before you fall asleep you can look over your day, "
                 + (f"rate the people you spent time with today ({listed(met)}), " if met else "")
@@ -776,7 +799,8 @@ class World:
         self.disarm_tick(r)
         self.rest_changed()
 
-    def _wake_up(self, r: Resident) -> None:
+    def _wake_up(self, r: Resident, tell: Tell | None = None) -> None:
+        """`r` wakes at home, at its hour or, told `tell`, woken by the town."""
         r.timer = None
         r.base, r.place = Idle(), r.home
         r.port.release()
@@ -786,7 +810,7 @@ class World:
         moment = tell_moment(self.clock.now(), self.config.start_date)
         self.record(
             "wake",
-            lambda w: f"{cap(you(r.name, w))} woke up at home. It is {moment}.",
+            tell or (lambda w: f"{cap(you(r.name, w))} woke up at home. It is {moment}."),
             actor=r,
             audience=[r],
         )

@@ -1,10 +1,11 @@
 """A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing a
 plausible day from what each request shows, so that the whole pipeline runs without a model.
 
-The day it plays: go to the workplace and wait for it to open; start work, read the board, claim
-a free task, run a command, read a file, write a fix, submit and leave; go to a social place and,
-if anyone is there, say something once; at 20:00 go home and go to bed with a journal entry; in
-bed, review the day, rate whoever it may rate, note the day in memory/work.md and fall asleep.
+The day it plays: go to the workplace, start work, read the board, claim a free task, run a
+command, read a file, write a fix, submit and leave; go to a social place and, if anyone is there,
+say something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's
+forced waking hour; in bed, review the day, rate whoever it may rate, note the day in
+memory/work.md and fall asleep.
 Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
 resident's name comes from the system prompt, and the day so far from the messages since the
 last wake-up, so it continues a resumed run as it would have continued the run.
@@ -24,7 +25,6 @@ from world.config import TownConfig
 EVENING = parse_hour("20:00")
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* Pays \S+\.(.*)$", re.MULTILINE)
-_OPENS = re.compile(r"open from (\d\d:\d\d)")
 _RATE = re.compile(r"rate the people you spent time with today \(([^)]*)\)")
 
 
@@ -100,7 +100,7 @@ class _Day:
         place = self._place()
         town = self.model._town
         if place == self.home:
-            if not self._did("go") and self.hour < parse_hour(town.workplace.closes or ""):
+            if not self._did("go"):
                 return reply("", tool_call("go", place=town.workplace.id))
             return reply("", self._sleep())
         if place == town.workplace.id:
@@ -118,10 +118,6 @@ class _Day:
     def _after(self, batch: list[_Call]) -> LLMResponse:
         """The reply once the calls of `batch` have been answered and nothing new was told."""
         names = [call.name for call in batch]
-        start = next((call for call in batch if call.name == "start_work"), None)
-        if start is not None and (opens := _OPENS.search(start.result)):
-            minutes = min(600, max(1, (parse_hour(opens[1]) - self.hour) // 60))
-            return reply("", tool_call("wait", minutes=minutes))
         if "view_board" in names:
             return self._work(batch[names.index("view_board")].result)
         if "review_day" in names:
@@ -180,7 +176,7 @@ class _Day:
         )
 
     def _sleep(self) -> ToolCall:
-        return tool_call("sleep", until=self.model._town.day.wake_earliest, journal=self._account())
+        return tool_call("sleep", until=self.model._town.day.forced_wake, journal=self._account())
 
     def _account(self) -> str:
         """The day in a few sentences, from what its calls returned."""

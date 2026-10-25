@@ -14,8 +14,8 @@ told as the world told it to the resident ("you"); a happening of several lines 
 indented lines. It holds:
 
 - from the world log, every entry the resident is the actor of or in the audience of, which is
-  every kind the log has about it: waking; setting off and arriving; the board posted and the
-  closing where it was at the workplace; starting and stopping work; claims; shell commands with
+  every kind the log has about it: waking; setting off and arriving; the board posted; starting
+  and stopping work, or being taken from it; claims; shell commands with
   their exit code and the tail of their output; workspace files read and written, and whether that
   failed; submissions and verdicts; payments; giving a task up and claims running out; workspaces
   closed at night; speech it said or was told, with who said what to whom (what others said
@@ -165,13 +165,12 @@ def journal(run_dir: Path, resident: str, day: int) -> str | None:
 
 
 def journal_of(entries: Iterable[Entry], resident: str) -> str | None:
-    """The journal entry of `resident` among a day's `entries`, None if there is none."""
+    """The journal of `resident` for a day of `entries`: the entry of each bedtime, joined with a
+    blank line as the journal file joins them; None if it did not go to bed."""
     found = [
         e["payload"]["journal"] for e in entries if e["kind"] == "sleep" and e["actor"] == resident
     ]
-    if len(found) > 1:
-        raise ValueError(f"{resident} went to bed {len(found)} times in one day")
-    return found[0] if found else None
+    return "\n\n".join(found) if found else None
 
 
 def record(entries: Sequence[Entry], trace: Sequence[Entry], resident: str) -> str:

@@ -3,8 +3,9 @@
 # groups/ overlays it with the group's name and social rules (see experiments/config.py for how
 # an overlay merges).
 #
-# The world gives opening hours to the workplace alone; the café (meant 07:00-23:00) and the
-# Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
+# The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
+# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
+# The only fixed hours are the night's below.
 
 llm:
   base_url: ${VLLM_BASE_URL}
@@ -38,7 +39,7 @@ town:
     - {id: market-flat, name: the flat on the market square, kind: home}
     - {id: river-cottage, name: the cottage by the river, kind: home}
     - {id: hill-road-house, name: the house on Hill Road, kind: home}
-    - {id: workshop, name: the Workshop, kind: workplace, opens: "09:00", closes: "18:00"}
+    - {id: workshop, name: the Workshop, kind: workplace}
     - {id: cafe, name: Café Linde, kind: social}
     - {id: anchor, name: the Anchor, kind: social}
     - {id: river-walk, name: the river walk, kind: social}
@@ -67,7 +68,7 @@ town:
     payment: 60
     living_cost: 150
     acceptance_runs: 2
-    claim_expiry_days: 1 # a claim runs out at the next day's closing
+    claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   social:
@@ -78,7 +79,6 @@ town:
     speed_idle: 60
     idle_minutes: 30
   day:
-    wake_earliest: "06:00"
-    earliest_sleep: "20:00"
     forced_sleep: "02:00"
     checkpoint: "02:30"
+    forced_wake: "07:00"

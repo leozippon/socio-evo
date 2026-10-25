@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 
-from tests.world.conftest import B_EXCHANGE, at, awake_at, town_config
+from tests.world.conftest import at, awake_at
 from world.events import (
     CONVERSATION_TOOLS,
     IDLE_TOOLS,
@@ -83,10 +83,6 @@ async def test_each_event_refuses_what_it_does_not_offer_naming_the_condition(ma
 
     await town.until("07:10")
     assert isinstance(mei.base, Idle) and mei.place == "workshop"
-    closed = await town.call("Mei", "start_work")
-    assert closed.text == "The workshop is closed; it is open from 09:00 to 18:00."
-    await town.until("09:00")
-    assert town.take("Mei")[-1] == "It is 09:00: the workshop opened and the day's board is posted."
     started = await town.call("Mei", "start_work")
     assert started.text.startswith("You started work.") and isinstance(mei.base, Work)
     working = await _refusals(town, "Mei")
@@ -168,37 +164,45 @@ async def test_speech_interrupts_only_those_it_reaches(make_town):
     assert "Tomas" not in town.world.residents["Mei"].conversation.members
 
 
-@pytest.mark.parametrize(
-    "config",
-    [
-        town_config("isolated"),
-        town_config("isolated", exchange=B_EXCHANGE),
-        town_config("town"),
-        town_config("town", shareable=False),
-    ],
-    ids=["A", "B", "C", "D"],
-)
-async def test_nobody_goes_to_bed_before_the_earliest_bedtime(make_town, config):
-    town = make_town(config)
+async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_town, tmp_path):
+    town = make_town()
     await awake_at(town)
-    await town.until("18:30")
-    refused = await town.call("Mei", "sleep", until="07:00", journal="Tired.")
-    assert refused.text == "Not yet: nobody goes to bed before 20:00."
-    assert isinstance(town.world.residents["Mei"].event, Idle) and "sleep" not in town.kinds()
-    await town.until("20:00")
-    home = next(
-        r for r in town.world.residents.values() if r.place == r.home and isinstance(r.event, Idle)
-    )  # in B, the one left over by the pairing; the others are at the café
-    went = await town.call(home.name, "sleep", until="07:00", journal="A long day.")
-    assert went.text == "You went to bed."
+    mei = town.world.residents["Mei"]
+    await town.until("10:00")
+    await town.call("Mei", "sleep", until="15:00", journal="Up all night with the bug.")
+    assert town.take("Mei")[0].startswith(
+        "You are in bed and will wake at 15:00; your journal entry for today is kept. Nobody "
+        "rated you last night."
+    )
+    assert mei.base.wake == at("15:00")  # the same day
+    town.rest("Mei")
+    await town.until("15:00")
+    assert isinstance(mei.base, Idle)
+    assert town.heard["Mei"][-1].text == "You woke up at home. It is Monday 1 January, 15:00."
+    await town.until("23:00")
+    await town.call("Mei", "sleep", until="15:00", journal="A short afternoon after the nap.")
+    assert mei.base.wake == at("15:00", day=2)  # an hour already past: tomorrow
+    told = [p.text for p in town.heard["Mei"] if p.kind == "sleep"][-1]
+    assert "rated you" not in told  # its ratings were read at the first bedtime of the day
+    journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
+    assert journal.read_text() == (
+        "Up all night with the bug.\n\nA short afternoon after the nap.\n"
+    )  # one file for the day, an entry per bedtime
+    sleeps = [e for e in town.world.log.entries() if e["kind"] == "sleep"]
+    assert [e["payload"]["day"] for e in sleeps] == [1, 1]
 
 
-async def test_bed_stays_open_after_midnight(make_town):
+async def test_bed_stays_open_after_midnight_and_nobody_wakes_before_the_checkpoint(make_town):
     town = make_town()
     await awake_at(town)
     await town.until("01:00", day=2)
-    went = await town.call("Mei", "sleep", until="07:00", journal="A late night.")
+    went = await town.call("Mei", "sleep", until="02:15", journal="A late night.")
     assert went.text == "You went to bed."
+    assert town.take("Mei")[-1].startswith("You are in bed and will wake at 02:30;")
+    town.rest()
+    await town.until("02:30", day=2)
+    assert [day for day, _ in town.checkpoints] == [1]
+    assert isinstance(town.world.residents["Mei"].base, Idle)  # woken after the checkpoint
 
 
 async def test_nobody_can_address_a_resident_in_bed_or_asleep(make_town):
@@ -218,9 +222,6 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     await awake_at(town)
     port, mei = town.world.ports["Mei"], town.world.residents["Mei"]
     await town.until("20:00")
-    assert (await town.call("Mei", "sleep", until="06:00", journal="x")).text == (
-        "You can sleep until 07:00 at the earliest."
-    )
     assert (await town.call("Mei", "sleep", until="7am", journal="x")).text.startswith("Give")
     assert (await town.call("Mei", "sleep", until="08:00", journal=" ")).text.startswith("Write")
     await town.call("Mei", "go", place="park")
@@ -293,7 +294,7 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     assert isinstance(mei.base, Idle)
 
 
-async def test_the_workplace_closing_sends_workers_outside(make_town):
+async def test_the_workplace_never_closes_and_a_route_shortens_the_walk(make_town):
     town = make_town()
     await awake_at(town)
     await town.call("Mei", "go", place="workshop")
@@ -303,12 +304,12 @@ async def test_the_workplace_closing_sends_workers_outside(make_town):
     town.take("Mei")
     await town.until("18:00")
     mei = town.world.residents["Mei"]
-    assert isinstance(mei.base, Idle) and mei.place == "workshop"
-    assert town.take("Mei") == [
-        "It is 18:00: the workshop closed, and you stopped work and stepped outside."
-    ]
+    assert isinstance(mei.base, Work) and town.take("Mei") == []
+    await town.call("Mei", "leave_work")
+    assert (await town.call("Mei", "look_around")).text == (
+        "You are at the workshop. Nobody else is here."
+    )
     assert town.world.board.claims["Mei"].task == 2
-    assert "It is closed; it opens at 09:00." in (await town.call("Mei", "look_around")).text
     went = await town.call("Mei", "go", place="cafe")  # a route shorter than the default walk
     assert went.text == "You set off for the café on the square and will arrive at 18:05."
     await town.until("18:04")

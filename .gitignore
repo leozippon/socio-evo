@@ -29,3 +29,5 @@ external_references/*/
 # Evaluation exports and results are local data
 exports/
 results/
+# Local state of the coding assistant.
+.claude/

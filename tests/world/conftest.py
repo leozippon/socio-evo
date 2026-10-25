@@ -44,13 +44,7 @@ def town_config(
                     "kind": "home",
                 },
                 {"id": "college-flat", "name": "the flat by the college gates", "kind": "home"},
-                {
-                    "id": "workshop",
-                    "name": "the workshop",
-                    "kind": "workplace",
-                    "opens": "09:00",
-                    "closes": "18:00",
-                },
+                {"id": "workshop", "name": "the workshop", "kind": "workplace"},
                 {"id": "cafe", "name": "the café on the square", "kind": "social"},
                 {"id": "park", "name": "the park", "kind": "social"},
             ],
@@ -74,12 +68,7 @@ def town_config(
                 "exchange": exchange,
             },
             "clock": {"speed_active": 10, "speed_idle": 100, "idle_minutes": 30},
-            "day": {
-                "wake_earliest": "07:00",
-                "earliest_sleep": "20:00",
-                "forced_sleep": "02:00",
-                "checkpoint": "02:30",
-            },
+            "day": {"forced_sleep": "02:00", "checkpoint": "02:30", "forced_wake": "07:00"},
         }
     )
 

@@ -1,11 +1,11 @@
 """The workplace's board, the claims on its tasks and their workspaces, and acceptance.
 
-Every morning at opening the board posts the whole pool. In the town mode one board is shared,
+At every midnight the board posts the whole pool again. In the town mode one board is shared,
 and a task someone holds is shown as held and cannot be claimed by another; in the isolated mode
 every resident has a board of its own, which here means that no claim of another counts. A
 resident holds at most one task, keeps it when it leaves the workplace, and loses it unpaid at
-the workplace's closing `claim_expiry_days` days after the day of the claim. A task a resident
-has been paid for is done for that resident and cannot be claimed by it again.
+the midnight that ends the calendar day `claim_expiry_days` days after the day of the claim. A
+task a resident has been paid for is done for that resident and cannot be claimed by it again.
 
 A claim opens a workspace. When a claim ends by acceptance or abandonment its workspace is
 closed at once; when it runs out, its workspace may be in use by a command still running, so it
@@ -29,6 +29,8 @@ KEPT_CHANGES = "/tmp/kept-changes.patch"
 
 @dataclass
 class Claim:
+    """`day` is the calendar day the claim was made."""
+
     task: int
     day: int
     diff: str = ""
@@ -154,7 +156,7 @@ class Board:
         return self.workspaces.pop(name, None)
 
     def expired(self, day: int) -> list[str]:
-        """Who holds a claim that runs out at the closing of `day`."""
+        """Who holds a claim that runs out at the midnight that ends calendar day `day`."""
         return [
             name
             for name, claim in self.claims.items()

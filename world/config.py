@@ -1,5 +1,5 @@
 """The configuration of a town: its places, its residents, its work, its social life, its clock
-and the fixed hours of its day.
+and the few fixed hours of its night.
 
 The four groups of the design differ only here: `social.mode` is `isolated` in A and B (each
 resident lives in a town of its own and has a board of its own) and `town` in C and D (one town,
@@ -34,25 +34,11 @@ Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 
 class Place(StrictModel):
     """A place of the town. `name` is how a sentence names it ("the café on the square").
-    Only the workplace has opening hours: they decide when work can be done and when the board
-    is posted. Homes and social places can be visited at any hour."""
+    Every place, the workplace included, can be visited and used at any hour."""
 
     id: Id
     name: str = Field(min_length=1)
     kind: Literal["home", "workplace", "social"]
-    opens: Hour | None = None
-    closes: Hour | None = None
-
-    @model_validator(mode="after")
-    def _hours(self) -> Place:
-        if self.kind == "workplace":
-            if self.opens is None or self.closes is None:
-                raise ValueError(f"the workplace {self.id} needs opens and closes")
-            if parse_hour(self.opens) >= parse_hour(self.closes):
-                raise ValueError(f"the workplace {self.id} must open before it closes")
-        elif self.opens is not None or self.closes is not None:
-            raise ValueError(f"only the workplace has opening hours, not {self.id}")
-        return self
 
 
 class Route(StrictModel):
@@ -73,8 +59,9 @@ class Resident(StrictModel):
 
 
 class Work(StrictModel):
-    """The work at the workplace. `split` names the task pool posted every morning; a claim
-    runs out at the workplace's closing `claim_expiry_days` days after the day it was made."""
+    """The work at the workplace. `split` names the task pool posted at every midnight; a claim
+    made on a calendar day runs out at the midnight that ends the day `claim_expiry_days` days
+    later."""
 
     split: str = Field(min_length=1)
     payment: int = Field(ge=1)
@@ -86,8 +73,8 @@ class Work(StrictModel):
 
 
 class Exchange(StrictModel):
-    """Group B's evening: at `at` the residents awake are paired by lot, walk to `place` and
-    talk about their work, `messages` messages each."""
+    """Group B's evening: at `at` every resident is paired by lot (whoever is asleep is woken
+    for it), walks to `place` and talks about its work, `messages` messages each."""
 
     at: Hour
     place: Id
@@ -111,20 +98,19 @@ class ClockSettings(StrictModel):
 
 
 class DayHours(StrictModel):
-    """The fixed hours of a day: nobody wakes before `wake_earliest` nor goes to bed before
-    `earliest_sleep`; at `forced_sleep`, after midnight, whoever is still up falls asleep; at
-    `checkpoint` the day's state is saved."""
+    """The only fixed hours of a day, all after midnight: at `forced_sleep` whoever is still up
+    falls asleep, to wake at `forced_wake`; at `checkpoint`, between the two, the day's state is
+    saved. A lived day runs from one checkpoint to the next."""
 
-    wake_earliest: Hour
-    earliest_sleep: Hour
     forced_sleep: Hour
     checkpoint: Hour
+    forced_wake: Hour
 
     def of_day(self, hour: str) -> int:
-        """`hour` in seconds from the midnight that begins the day; an hour earlier than
-        `wake_earliest` falls after the next midnight."""
+        """`hour` in seconds from the midnight that begins the lived day; an hour earlier than
+        the checkpoint falls after the next midnight."""
         t = parse_hour(hour)
-        return t + DAY if t < parse_hour(self.wake_earliest) else t
+        return t + DAY if t < parse_hour(self.checkpoint) else t
 
 
 class TownConfig(StrictModel):
@@ -157,29 +143,20 @@ class TownConfig(StrictModel):
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
-        workplace = workplaces[0]
-        wake = parse_hour(self.day.wake_earliest)
-        if not parse_hour(self.day.forced_sleep) < parse_hour(self.day.checkpoint) < wake:
-            raise ValueError("the hours must run forced_sleep < checkpoint < wake_earliest")
-        if wake > parse_hour(workplace.opens or ""):
-            raise ValueError("nobody could be up when the workplace opens")
-        closes = parse_hour(workplace.closes or "")
-        bedtime = self.day.of_day(self.day.earliest_sleep)
-        if not closes < bedtime < self.day.of_day(self.day.forced_sleep):
-            raise ValueError(
-                "the earliest bedtime must come after the workplace closes and before the "
-                "forced sleep"
-            )
+        day = self.day
+        forced, checkpoint, wake = map(
+            parse_hour, (day.forced_sleep, day.checkpoint, day.forced_wake)
+        )
+        if not forced < checkpoint < wake:
+            raise ValueError("the hours must run forced_sleep < checkpoint < forced_wake")
         exchange = self.social.exchange
         if exchange is not None:
             if self.social.mode != "isolated":
                 raise ValueError("the evening exchange belongs to the isolated mode")
             if places.get(exchange.place, None) is None or places[exchange.place].kind != "social":
                 raise ValueError(f"the exchange place {exchange.place} is not a social place")
-            if parse_hour(exchange.at) < closes:
-                raise ValueError("the evening exchange must come after the workplace closes")
-            if parse_hour(exchange.at) >= bedtime:
-                raise ValueError("the earliest bedtime must come after the evening exchange")
+            if day.of_day(exchange.at) >= day.of_day(day.forced_sleep):
+                raise ValueError("the evening exchange must come before the forced sleep")
         return self
 
     @property

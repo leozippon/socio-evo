@@ -69,4 +69,4 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
     assert "For task 1 you wrote 1 file." in seen  # what review_day told
     assert "You are in bed and will wake at 07:00" in seen
     trace = directory.trace_path.read_text()
-    assert '"percept_kind": "board_posted"' in trace and '"percept_kind": "sleep"' in trace
+    assert '"percept_kind": "time"' in trace and '"percept_kind": "sleep"' in trace

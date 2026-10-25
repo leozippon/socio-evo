@@ -23,9 +23,9 @@ from typing import TYPE_CHECKING, Any
 from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
-from world.clock import DAY, clock_time, parse_hour
+from world.clock import calendar_day, clock_time, parse_hour
 from world.config import TownConfig
-from world.events import Idle, Work
+from world.events import Work
 from world.rules import TOPICS
 from world.telling import cap, counted, listed, you
 
@@ -83,14 +83,15 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("wait", "Let time pass where you are. You are told when something happens, or "
              "when the minutes are up.", ("minutes",),
              minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
-        spec("sleep", "Go to bed at home, ending your day. You can then look over your day, "
-             "rate people and see to your files before you fall asleep.", ("until", "journal"),
-             until=_text(f"the hour to wake, HH:MM, no earlier than {config.day.wake_earliest}"),
+        spec("sleep", "Go to bed at home, at any hour, until the hour you give. You can then "
+             "look over your day, rate people and see to your files before you fall asleep.",
+             ("until", "journal"),
+             until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("your account of the day in your own words: what work you did and "
                            "with what result, what methods you used and where they came from, "
                            "what you concluded, and what remains open")),
-        spec("start_work", f"Start work at {workplace} while it is open. If you hold a task, "
-             "its workspace is set up again as you left it."),
+        spec("start_work", f"Start work at {workplace}. If you hold a task, its workspace is "
+             "set up again as you left it."),
         spec("view_board", "Read the board: each task's number, repository, first line and "
              "pay, and whether it is held or already paid to you. If you hold a task, its "
              "whole problem is shown too."),
@@ -253,26 +254,23 @@ async def _wait(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 
 async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    hours, day = world.config.day, world.lived_day()
-    if world.clock.now() - (day - 1) * DAY < hours.of_day(hours.earliest_sleep):
-        return ToolResult(f"Not yet: nobody goes to bed before {hours.earliest_sleep}.")
     if r.place != r.home:
         return ToolResult("You can sleep only at home.")
     try:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
-    if hour < parse_hour(hours.wake_earliest):
-        return ToolResult(f"You can sleep until {hours.wake_earliest} at the earliest.")
     journal = args["journal"].strip()
     if not journal:
         return ToolResult("Write your journal entry for the day before you go to bed.")
+    day = world.lived_day()
     date = world.config.start_date + timedelta(days=day - 1)
     path = r.agent_dir / "memory" / "journal" / f"{date.isoformat()}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(journal + "\n", encoding="utf-8")
-    wake = day * DAY + hour
-    world.go_to_bed(r, wake, journal, day)
+    entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
+    with path.open("a", encoding="utf-8") as file:
+        file.write(entry)
+    world.go_to_bed(r, world.wake_time(hour), journal, day)
     return ToolResult("You went to bed.", ends_turn=True)
 
 
@@ -280,11 +278,6 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     workplace = world.config.workplace
     if r.place != workplace.id:
         return ToolResult(f"You are not at {workplace.name}.")
-    if not world.workplace_open:
-        return ToolResult(
-            f"{cap(workplace.name)} is closed; it is open from {workplace.opens} to "
-            f"{workplace.closes}."
-        )
     r.base = Work()
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} started work.", actor=r)
     claim = world.board.claims.get(r.name)
@@ -308,7 +301,7 @@ async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     refusal = world.board.claim_refusal(r.name, number)
     if refusal:
         return ToolResult(refusal)
-    await world.board.claim(r.name, number, world.lived_day())
+    await world.board.claim(r.name, number, calendar_day(world.clock.now()))
     task = world.board.task(number)
     world.record(
         "claim",
@@ -489,8 +482,7 @@ async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> Tool
 
 
 async def _leave_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    r.base = Idle()
-    world.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
+    world.stop_work(r)
     claim = world.board.claims.get(r.name)
     held = f" You still hold task {claim.task}." if claim else ""
     return ToolResult(f"You stopped work and stepped out of {world.config.workplace.name}.{held}")

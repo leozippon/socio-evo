@@ -34,7 +34,7 @@ MEASURES = {
     "earned": "money paid for accepted tasks",
     "purse": "the purse after the living cost at midnight",
     "in_debt": "1 if that purse is below zero",
-    "work_hours": "simulated hours at work, from starting work to stopping it or the closing",
+    "work_hours": "simulated hours at work, from starting work to stopping it or being taken away",
     "said_public": "things said to everyone present",
     "said_private": "things said to named residents",
     "heard_public": "things said by others to everyone present, heard",
@@ -124,22 +124,19 @@ def world_measures(day: Day, name: str) -> Row:
         "rating_given_mean": _mean(e["payload"]["score"] for e in given),
         "ratings_received": len(received),
         "rating_received_mean": _mean(e["payload"]["score"] for e in received),
-        "journal": len(mine("sleep")),
+        "journal": int(bool(mine("sleep"))),
         "forced_sleep": len(mine("forced_sleep")),
     }
 
 
 def _work_seconds(day: Day, name: str) -> int:
     """Simulated seconds `name` spent in Work on `day`: from each start of work to its leaving
-    work or being sent out at the closing."""
+    work, by its own choice or the world's."""
     seconds, started = 0, None
     for e in day.entries:
         if e["kind"] == "start_work" and e["actor"] == name:
             started = e["sim_time"]
-        elif started is not None and (
-            (e["kind"] == "leave_work" and e["actor"] == name)
-            or (e["kind"] == "closing" and name in e["payload"]["sent_out"])
-        ):
+        elif started is not None and e["kind"] == "leave_work" and e["actor"] == name:
             seconds += e["sim_time"] - started
             started = None
     if started is not None:

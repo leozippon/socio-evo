@@ -1,5 +1,6 @@
-# Group B, technical experience sharing: as A, but every evening at 19:00 the residents awake
-# are paired by lot at the café to talk about their work, eight messages each.
+# Group B, technical experience sharing: as A, but every evening at 19:00 all residents are
+# paired by lot (whoever is asleep is woken) at the café to talk about their work, eight messages
+# each.
 base: ../town.yaml
 name: b
 town:

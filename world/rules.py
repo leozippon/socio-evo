@@ -69,24 +69,27 @@ class Rules:
         )
 
         day = (
-            f"Nobody gets up before {c.day.wake_earliest}. {cap(workplace.name)} opens at "
-            f"{workplace.opens}, when the day's board is posted, and closes at "
-            f"{workplace.closes}; whoever is still working then stops and steps outside. At "
-            "midnight the day's living cost is taken from every purse. You end your day by "
-            f"going to bed at home. At {c.day.forced_sleep} anyone still up falls asleep and "
-            f"wakes at home at {c.day.wake_earliest}, with no journal entry for that day."
+            f"{cap(workplace.name)} is open at all hours. At midnight the day's living cost is "
+            "taken from every purse and the board for the new day is posted. You end your day "
+            "by going to bed at home whenever you choose, giving the hour you want to wake. At "
+            f"{c.day.forced_sleep} anyone still up falls asleep and wakes at home at "
+            f"{c.day.forced_wake}, with no journal entry for that day."
         )
         if exchange is not None:
             day += (
                 f" Every evening at {exchange.at} you are paired by lot with another worker of "
-                f"the town; you both walk to {c.place(exchange.place).name} and talk about "
-                f"your work, {exchange.messages} messages each."
+                "the town, and woken for it if you are asleep; you both walk to "
+                f"{c.place(exchange.place).name} and talk about your work, "
+                f"{exchange.messages} messages each."
             )
 
         expiry = {
-            0: "of the day you claimed it",
-            1: "of the day after you claimed it",
-        }.get(c.work.claim_expiry_days, f"{c.work.claim_expiry_days} days after you claimed it")
+            0: "at the first midnight after you claimed it",
+            1: "at the second midnight after you claimed it",
+        }.get(
+            c.work.claim_expiry_days,
+            f"when {c.work.claim_expiry_days + 1} midnights have passed since you claimed it",
+        )
         work = (
             f"Work comes from the board at {workplace.name}. Each task is a code repository "
             f"with a problem to fix, and pays {money(c.work.payment)}. Claim a task to get a "
@@ -96,8 +99,8 @@ class Rules:
             "passes you are paid at once. You can submit each task at most "
             f"{c.work.acceptance_runs} times a day. You hold at most one task at a time. You "
             f"keep it when you leave {workplace.name}, and your changes are kept overnight, "
-            f"but a claim runs out unpaid at the closing {expiry}. You cannot claim again a "
-            "task you have been paid for."
+            f"but a claim runs out unpaid {expiry}. You cannot claim again a task you have "
+            "been paid for."
         )
         work += (
             " Everyone works from the same board; a task someone holds is shown as held, and "
@@ -142,9 +145,9 @@ class Rules:
             )
 
         sleep = (
-            f"Go to bed at home from {c.day.earliest_sleep} on, with sleep, giving the hour you "
-            f"want to wake, no earlier than {c.day.wake_earliest}, and your journal entry for "
-            "the day, which is kept in your journal folder."
+            "Go to bed at home at any hour with sleep, giving the hour you want to wake and "
+            "your journal entry for the day, which is kept in your journal folder; if you go to "
+            "bed more than once in a day, each entry is added to that day's journal."
         )
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "

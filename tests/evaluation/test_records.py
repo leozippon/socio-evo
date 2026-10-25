@@ -10,7 +10,7 @@ import time
 
 import pytest
 
-from evaluation.records import INDENT, OUTPUT, day_record, journal, lived_days
+from evaluation.records import INDENT, OUTPUT, day_record, journal, journal_of, lived_days
 from tests.analysis.lived import MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
 from world.clock import clock_time
 
@@ -31,7 +31,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     entries = lived_days(run_dir)[1].entries
     mine = [e for e in entries if e["actor"] == "Mei" or "Mei" in e["audience"]]
     assert {e["kind"] for e in mine} == {
-        "wake", "depart", "arrive", "time", "board_posted", "start_work", "claim", "command",
+        "wake", "depart", "arrive", "time", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
         "leave_conversation", "leave_work", "sleep", "rating", "fell_asleep", "settlement",
     }  # fmt: skip
@@ -160,3 +160,13 @@ def test_the_journal_is_the_entry_written_going_to_bed(run_dir, tmp_path):
     copy = shutil.copytree(run_dir, tmp_path / "run")
     (copy / entry.relative_to(run_dir)).write_text("Rewritten days later.\n")
     assert journal(copy, "Mei", 1) == MEI_JOURNAL
+
+
+def test_two_bedtimes_in_a_day_make_one_journal_joined_by_a_blank_line():
+    def bed(actor, text):
+        return {"kind": "sleep", "actor": actor, "audience": [actor], "payload": {"journal": text}}
+
+    entries = [bed("Mei", "Slept after lunch."), bed("Tomas", "His day."), bed("Mei", "Evening.")]
+    assert journal_of(entries, "Mei") == "Slept after lunch.\n\nEvening."
+    assert journal_of(entries, "Tomas") == "His day."
+    assert journal_of(entries, "Kofi") is None

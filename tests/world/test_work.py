@@ -1,10 +1,12 @@
-"""The board, claims and their expiry, workspaces across the night, and acceptance."""
+"""The board, posted at midnight, claims and their expiry, work at any hour, workspaces across the
+night, and acceptance."""
 
 from __future__ import annotations
 
 import json
 
-from tests.world.conftest import awake_at, town_config
+from tests.world.conftest import at, awake_at, town_config
+from world.events import Sleep
 from world.testing import FakeBackend, FakeVerdict
 
 
@@ -39,6 +41,48 @@ async def test_a_shared_board_lets_one_resident_hold_a_task(make_town):
     assert mine.endswith(
         "The problem of task 1, which you hold:\n\nProblem 1 goes wrong.\nDetails of 1."
     )
+
+
+async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
+    town = make_town()
+    await awake_at(town)
+    world = town.world
+    await town.until("22:00")
+    await town.call("Mei", "sleep", until="04:30", journal="To bed early, to work early.")
+    await town.call("Tomas", "go", place="workshop")
+    await town.until("23:00")
+    assert (await town.call("Tomas", "start_work")).text.startswith("You started work.")
+    assert (await town.call("Tomas", "claim_task", task=1)).text.startswith("You claimed task 1")
+    town.take("Tomas")
+    town.rest("Mei", "Aisha")
+    await town.until("00:00", day=2)
+    assert town.take("Tomas")[-1] == "It is 00:00: the day's board is posted at the workshop."
+    assert world.board.claims["Tomas"].day == 1  # the calendar day it was claimed
+    town.rest("Tomas")
+    await town.until("02:00", day=2)  # still at work: the forced sleep stops it
+    kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Tomas"]
+    assert kinds[-2:] == ["leave_work", "forced_sleep"]
+    assert isinstance(world.residents["Tomas"].base, Sleep)
+
+    await town.until("04:30", day=2)
+    await town.call("Mei", "go", place="workshop")
+    await town.until("05:00", day=2)
+    assert (await town.call("Mei", "start_work")).text.startswith("You started work.")
+    assert (await town.call("Mei", "claim_task", task=1)).text == "Task 1 is held by someone else."
+    assert (await town.call("Mei", "claim_task", task=2)).text.startswith("You claimed task 2")
+    assert world.board.claims["Mei"].day == 2
+    await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
+    assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
+
+
+async def test_the_board_is_posted_as_the_world_starts_and_at_every_midnight(make_town):
+    town = make_town()
+    await awake_at(town)
+    town.rest()
+    await town.until("00:00", day=3)
+    posted = [e for e in town.world.log.entries() if e["kind"] == "board_posted"]
+    assert [e["sim_time"] for e in posted] == [at("02:30"), at("00:00", day=2), at("00:00", day=3)]
+    assert posted[0]["payload"] == {"tasks": 3} and posted[0]["audience"] == []
 
 
 async def test_isolated_boards_are_each_residents_own(make_town):
@@ -200,7 +244,9 @@ async def test_giving_up_a_task_throws_its_changes_away(make_town):
     assert backend.opened[1].changed == {}
 
 
-async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_next_closing(make_town):
+async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_second_midnight(
+    make_town,
+):
     backend = FakeBackend()
     town = make_town(backend=backend)
     await at_work(town, "Mei")
@@ -231,13 +277,13 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_next_
         "changes."
     )
     assert (await town.call("Mei", "read_repo_file", path="a.py")).text == "half done\n"
-    await town.until("17:59", day=2)
+    await town.until("23:59", day=2)
     assert "Mei" in town.world.board.claims
-    await town.until("18:00", day=2)
+    await town.until("00:00", day=3)
     assert "Mei" not in town.world.board.claims
-    assert town.heard["Mei"][-1].text == (
-        "You lost task 2: the claim ran out unpaid at the closing."
-    )
+    assert [p.text for p in town.heard["Mei"] if p.kind == "expiry"] == [
+        "You lost task 2: the claim ran out unpaid at midnight."
+    ]
     assert not backend.opened[1].closed  # set aside: a command might still be running in it
     await town.until("02:30", day=3)
     assert backend.opened[1].closed

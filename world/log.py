@@ -22,14 +22,13 @@ from typing import Any
 from infrastructure.storage import append_jsonl, read_jsonl
 
 KINDS = {
-    "wake": "a resident woke up at home",
+    "wake": "a resident woke up at home, at its hour or woken for the evening exchange",
     "depart": "a resident set off for another place",
     "arrive": "a resident arrived somewhere",
     "time": "a resident waiting idle was told the time",
-    "board_posted": "the workplace opened and posted its board",
-    "closing": "the workplace closed and sent those at work outside",
+    "board_posted": "the day's board posted, at midnight and as a new world starts",
     "start_work": "a resident started work",
-    "leave_work": "a resident stopped work",
+    "leave_work": "a resident stopped work, or the exchange or the forced sleep stopped it",
     "claim": "a resident claimed a task and got a workspace",
     "command": "a shell command run in a workspace, with its exit code and output tail",
     "file_read": "a file read in a workspace",
@@ -38,7 +37,7 @@ KINDS = {
     "verdict": "the acceptance verdict on a submission",
     "payment": "a resident was paid for an accepted task",
     "abandon": "a resident gave up its task",
-    "expiry": "a claim ran out unpaid",
+    "expiry": "a claim ran out unpaid at midnight",
     "workspace_closed": "a workspace closed at the checkpoint, its changes kept",
     "speech": "something said, with its text and recipients",
     "leave_conversation": "a resident left a conversation",

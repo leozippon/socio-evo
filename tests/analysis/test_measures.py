@@ -36,7 +36,7 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert (mei["purse"], tomas["purse"], aisha["purse"]) == (105, 135, -10)
     assert (mei["in_debt"], tomas["in_debt"], aisha["in_debt"]) == (0, 0, 1)
     assert rows["Aisha", 2]["purse"] == -50 and rows["Mei", 2]["purse"] == 65
-    # Mei worked from 09:00 to 09:20, Tomas from 09:00 to the closing at 18:00.
+    # Mei worked from 09:00 to 09:20, Tomas from 09:00 until he left at 18:00.
     assert mei["work_hours"] == pytest.approx(1 / 3) and tomas["work_hours"] == 9.0
     assert aisha["work_hours"] == 0
     talk = ("said_public", "said_private", "heard_public", "heard_private", "interlocutors")
