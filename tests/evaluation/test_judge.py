@@ -47,6 +47,15 @@ async def test_verdict_must_quote_the_text_and_is_asked_at_temperature_zero(tmp_
     assert log[0]["metadata"] == {"purpose": "judge", "question": "test/outcome", "attempt": 1}
 
 
+async def test_a_misquote_is_answered_with_the_nearest_passage(tmp_path):
+    judge, requests = scripted(
+        [verdict("no", "5 failed, 12 passed"), verdict("no", "3 failed, 12 passed")], tmp_path
+    )
+    assert (await judge.ask(QUESTION)).verdict.evidence == ("3 failed, 12 passed",)
+    correction = requests[1].messages[-1].content
+    assert "nearest passages read" in correction and "3 failed, 12 passed" in correction
+
+
 async def test_a_quote_from_the_context_is_named_as_such(tmp_path):
     question = QUESTION.model_copy(
         update={"context": "Earlier the person said: all 15 passed, nothing failed"}

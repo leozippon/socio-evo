@@ -11,6 +11,7 @@ Every call is recorded, and a sample of verdicts can be judged a second time for
 """
 
 import asyncio
+import difflib
 import json
 from collections.abc import Sequence
 from pathlib import Path
@@ -180,7 +181,7 @@ def _verdict_on(question: Question) -> type[Verdict]:
                         f"quoted from the Context, which is not the text: {borrowed}; quote the "
                         "section headed Text alone"
                     )
-                raise ValueError(f"not quoted word for word from the text: {missing}")
+                raise ValueError(_ungrounded(missing, text))
             if self.label in question.evidenced and not self.evidence:
                 raise ValueError(f"the label {self.label} needs at least one quote")
             return self
@@ -197,13 +198,35 @@ def _excerpts_of(text: str) -> type[Excerpts]:
         def _quoted(self) -> "Quoted":
             missing = [e.quote for e in self.excerpts if not _quotes(e.quote, squashed)]
             if missing:
-                raise ValueError(f"not quoted word for word from the text: {missing}")
+                raise ValueError(_ungrounded(missing, squashed))
             return self
 
     return Quoted
 
 
 _STRAIGHT = str.maketrans("“”„‟‘’‚‛", "\"\"\"\"''''")
+
+
+def _ungrounded(missing: list[str], squashed: str) -> str:
+    """Why the quotes `missing` fail, with the passage of the text nearest each, so that a judge
+    that paraphrased, completed or misremembered a passage can copy it as it stands."""
+    nearest = [_nearest(quote, squashed) for quote in missing]
+    return (
+        f"not quoted word for word from the text: {missing}; the text's nearest passages read: "
+        f"{nearest}"
+    )
+
+
+def _nearest(quote: str, squashed: str, margin: int = 80) -> str:
+    """The stretch of `squashed` around its longest common run with `quote`, or "" if none."""
+    passage = _squash(quote)
+    match = difflib.SequenceMatcher(None, squashed, passage, autojunk=False).find_longest_match(
+        0, len(squashed), 0, len(passage)
+    )
+    if match.size == 0:
+        return ""
+    start = max(0, match.a - margin)
+    return squashed[start : min(len(squashed), match.a + len(passage) + margin)]
 
 
 def _quotes(quote: str, squashed: str) -> bool:

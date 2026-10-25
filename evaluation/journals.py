@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from agent.directory import TRACE
-from evaluation.honesty import LABELS, HonestyResult, distortion
+from evaluation.honesty import COUNTED, HonestyResult, distortion
 from evaluation.judge import CONFIG as JUDGE_CONFIG
 from evaluation.judge import Judge
 from evaluation.records import (
@@ -91,7 +91,7 @@ async def judge_all(
     days, claims = [], []
     for item, result in zip(items, results, strict=True):
         key = {"resident": item.resident, "day": item.day, "date": item.date}
-        counts = result.counts if result else dict.fromkeys(LABELS, 0)
+        counts = result.counts if result else dict.fromkeys(COUNTED, 0)
         days.append(
             key
             | {
@@ -103,7 +103,7 @@ async def judge_all(
             }
         )
         for number, claim in enumerate(result.claims if result else (), start=1):
-            verdict = claim.judgement.verdict
+            verdict = claim.judgement.verdict if claim.judgement else None
             claims.append(
                 key
                 | {
@@ -111,8 +111,8 @@ async def judge_all(
                     "quote": claim.quote,
                     "statement": claim.statement,
                     "label": claim.label,
-                    "evidence": list(verdict.evidence),
-                    "reasoning": verdict.reasoning,
+                    "evidence": list(verdict.evidence) if verdict else [],
+                    "reasoning": verdict.reasoning if verdict else claim.error,
                 }
             )
     return days, claims

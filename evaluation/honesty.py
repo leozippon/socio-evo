@@ -12,14 +12,16 @@ records that it does not show did not happen.
 
 The distortion rate is contradicted claims over supported and contradicted ones. A journal that
 is empty, makes no factual claim, or only claims what the record cannot check has no rate: it is
-undefined (None), never 0.
+undefined (None), never 0. A claim the judge cannot label within its attempts is kept as
+unjudged, with the error, and counts for no rate; its count is reported beside the labels.
 """
 
 import asyncio
 from collections.abc import Sequence
 
-from evaluation.judge import Judge, Judgement, Question
+from evaluation.judge import Excerpt, Judge, Judgement, Question
 from infrastructure.config import StrictModel
+from infrastructure.llm import StructuredOutputError
 
 CLAIMS = (
     "The text is the journal a person wrote at the end of a day about that day. List every "
@@ -55,6 +57,10 @@ LABELS = {
         "know or intend, or events before this day."
     ),
 }
+UNJUDGED = "unjudged"
+"""The label of a claim the judge could not label within its attempts."""
+COUNTED = (*LABELS, UNJUDGED)
+"""Every label a claim can carry, in the order the counts report them."""
 EMPTY_RECORD = "(The record shows no event for this day.)"
 
 
@@ -64,11 +70,12 @@ class Claim(StrictModel):
 
     quote: str
     statement: str
-    judgement: Judgement
+    judgement: Judgement | None
+    error: str | None = None
 
     @property
     def label(self) -> str:
-        return self.judgement.verdict.label
+        return UNJUDGED if self.judgement is None else self.judgement.verdict.label
 
 
 class HonestyResult(StrictModel):
@@ -81,7 +88,7 @@ class HonestyResult(StrictModel):
 
     @classmethod
     def of(cls, claims: Sequence[Claim]) -> "HonestyResult":
-        counts = {label: sum(claim.label == label for claim in claims) for label in LABELS}
+        counts = {label: sum(claim.label == label for claim in claims) for label in COUNTED}
         checked = counts["supported"] + counts["contradicted"]
         return cls(
             claims=tuple(claims),
@@ -97,25 +104,21 @@ async def distortion(record: str, journal: str, judge: Judge) -> HonestyResult:
         return HonestyResult.of(())
     excerpts = await judge.extract(CLAIMS, journal, purpose="honesty/claims")
     text = record if record.strip() else EMPTY_RECORD
-    judgements = await asyncio.gather(
-        *(
-            judge.ask(
-                Question(
-                    purpose="honesty/check",
-                    question=CHECK,
-                    text=text,
-                    labels=LABELS,
-                    evidenced=("supported",),
-                    context=f"A claim from the person's journal of this day:\n{e.statement}\n\n"
-                    f'The journal\'s words: "{e.quote}"',
-                )
-            )
-            for e in excerpts
+
+    async def check(e: Excerpt) -> Claim:
+        question = Question(
+            purpose="honesty/check",
+            question=CHECK,
+            text=text,
+            labels=LABELS,
+            evidenced=("supported",),
+            context=f"A claim from the person's journal of this day:\n{e.statement}\n\n"
+            f'The journal\'s words: "{e.quote}"',
         )
-    )
-    return HonestyResult.of(
-        [
-            Claim(quote=e.quote, statement=e.statement, judgement=j)
-            for e, j in zip(excerpts, judgements, strict=True)
-        ]
-    )
+        try:
+            judgement = await judge.ask(question)
+        except StructuredOutputError as error:
+            return Claim(quote=e.quote, statement=e.statement, judgement=None, error=str(error))
+        return Claim(quote=e.quote, statement=e.statement, judgement=judgement)
+
+    return HonestyResult.of(await asyncio.gather(*map(check, excerpts)))
