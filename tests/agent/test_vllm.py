@@ -71,4 +71,5 @@ async def test_a_real_session_writes_a_file_then_replies(tmp_path):
     assert writes and all(r["arguments"]["path"] == "memory/work.md" for r in writes)
     assert "3" in (directory.root / "memory" / "work.md").read_text()
     assert replies[-1]["tool_calls"] == [] and replies[-1]["finish_reason"] == "stop"
-    assert len(replies) >= 2 and all(r["usage"]["cached_prompt_tokens"] is not None for r in replies)
+    assert len(replies) >= 2
+    assert all(r["usage"]["cached_prompt_tokens"] is not None for r in replies)
