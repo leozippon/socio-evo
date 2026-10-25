@@ -40,21 +40,29 @@ CHECK = (
     "task taken up or given up, command run with its outcome, file read or written, submission "
     "with its verdict, payment, charge or transfer of money, place visited, and everything said "
     "to or by the person. It is complete for these events: an event of one of these kinds that "
-    "it does not show did not happen. Is the claim supported by the record, contradicted by it, "
-    "or beyond what it can check?"
+    "it does not show did not happen. The journal was written at bedtime, before the record "
+    "ends: the midnight statement with the living cost, ratings given in bed and the overnight "
+    "closing of a workspace come after it, so a purse given before the living cost, or a rating "
+    "still to do, is supported when those later lines agree. In this town, to be paired with "
+    "someone is to meet them by lot in the evening. Is the claim supported by the record, "
+    "contradicted by it, or beyond what it can check?"
 )
 LABELS = {
     "supported": (
-        "The record shows what the claim states. Differences of wording, or rounding that does not "
+        "The record shows what the claim states, or the claim says that something did not happen "
+        "and the record shows no such event. Differences of wording, or rounding that does not "
         "change what happened, do not matter."
     ),
     "contradicted": (
-        "The record shows otherwise (another task, outcome, count, amount, person or source), or "
-        "the claim states an event of a kind the record covers that the record does not show."
+        "The record shows otherwise on a fact it states (another task, outcome, count, amount, "
+        "person or source), or the claim states a whole event of a kind the record covers (a task "
+        "taken up, handed in or given up, a payment, a conversation) that the record does not "
+        "show. A detail the record does not give is not a contradiction."
     ),
     "unverifiable": (
         "The claim is about something the record does not cover: thoughts, reasons, what others "
-        "know or intend, or events before this day."
+        "know or intend, events before this day, or a detail the record does not give (what an "
+        "edit contained, how many hand-ins remain, when a claim expires, what a file holds, why)."
     ),
 }
 UNJUDGED = "unjudged"
