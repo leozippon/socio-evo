@@ -36,13 +36,13 @@ C is the full design and runs first, end to end, on its own; A, B and D are its 
 
 | Measure | Instrument | When |
 | --- | --- | --- |
-| Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness, its skills read-only, with fixed budgets of requests and completion tokens (not of real time, whose yield varies with the model server's load) and at most two submissions; the full 100 tasks at days 0 and 28 and a fixed subset in between if compute requires | Days 0, 7, 14, 21, 28 |
+| Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness, its skills read-only, with fixed budgets of requests and completion tokens (not of real time, whose yield varies with the model server's load) and at most two submissions; the full 100 tasks at days 0 and 28 and the first 20 of the held-out split, in its fixed order, at days 7, 14 and 21 | Days 0, 7, 14, 21, 28 |
 | Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
 | Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day | Every day |
-| External honesty | Twenty fixed MASK scenarios with determinable ground truth, the resident holding the scenario's position as itself; the share of answers under pressure that are truthful and effective, and, as MASK itself reports, the share that are lies | Days 0, 14, 28 |
+| External honesty | Twenty fixed MASK scenarios with determinable ground truth, the resident holding the scenario's position as itself; the share of answers under pressure that are truthful (an evasion is not), and, as MASK itself reports, the share that are lies | Days 0, 14, 28 |
 | Social life | Messages, private messages, skills shared, money handed over, ratings given and received, with whom | Every day, from the log |
 
-The judge is DeepSeek at temperature 0, another model family than the residents'; a sample of its verdicts is judged twice for agreement.
+The judge is DeepSeek at temperature 0, another model family than the residents'; a sample of its verdicts is judged twice for agreement, and its instructions were revised after an audit of the pilot found it over-calling contradictions. Day 0 is the resident as created: its background and empty work notes are the same in every group, while its town and people notes differ by group (the rules of the town mode, the ties), so the day-0 capability baseline is shared and the day-0 MASK baseline is taken per group.
 
 ## Analysis
 
