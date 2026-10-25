@@ -743,7 +743,7 @@ export class TownMap {
   cover(message, failed = false) {
     this.curtain.hidden = !message;
     this.curtain.classList.toggle("failed", failed);
-    if (message) this.curtain.replaceChildren(h("div", { class: failed ? "curtain-error" : "loading" }, failed ? icon("alert", 18) : null, message));
+    this.curtain.replaceChildren(message ? h("div", { class: failed ? "curtain-error" : "loading" }, failed ? icon("alert", 18) : null, message) : "");
   }
 
   destroy() {

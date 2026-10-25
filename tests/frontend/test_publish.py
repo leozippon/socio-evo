@@ -23,7 +23,15 @@ import yaml
 
 from analysis.measures import MEASURES
 from frontend import bundle
-from frontend.publish import FORMAT, KINDS, MANIFEST, Publisher, encode
+from frontend.publish import (
+    FORMAT,
+    KINDS,
+    MANIFEST,
+    PUBLISHING_FAILED,
+    UNREADABLE_CONFIG,
+    Publisher,
+    encode,
+)
 from frontend.publish import main as publish
 from infrastructure.storage import RunDirectory
 from ops.webui.verify import BUNDLE_FORMAT
@@ -546,11 +554,17 @@ async def test_a_run_whose_configuration_cannot_be_read_is_skipped_and_said_so(t
     config = yaml.safe_load((runs / "older" / "config.yaml").read_text())
     config["town"]["day"]["closing"] = "18:00"  # a field the current schema does not know
     (runs / "older" / "config.yaml").write_text(yaml.safe_dump(config))
+    (runs / "bare").mkdir()  # a run directory without its configuration
+    shutil.copy(run.root / "manifest.json", runs / "bare")
     publish(["--runs-root", str(runs), "--out", str(tmp_path / "site")])
     index = read(tmp_path / "site", "data/index.json")
     assert [r["name"] for r in index["runs"]] == ["town"]
-    [skipped] = index["skipped"]
-    assert skipped["name"] == "older" and "town.day.closing" in skipped["reason"]
+    bare, older = index["skipped"]
+    assert older["name"] == "older" and older["reason"] == UNREADABLE_CONFIG
+    assert "town.day.closing" in older["detail"] and "older/config.yaml" in older["detail"]
+    assert str(runs) not in older["detail"]
+    assert bare["name"] == "bare" and bare["reason"] == UNREADABLE_CONFIG
+    assert bare["detail"].startswith("FileNotFoundError: ")
     assert not (tmp_path / "site" / "data" / "runs" / "older").exists()
     assert "skipped older: " in capsys.readouterr().out
 
@@ -574,8 +588,9 @@ async def test_publishing_refuses_unsafe_targets_and_malformed_runs(tmp_path):
     run.world_log_path.write_bytes(b"\n".join(lines))
     site = Publisher(runs, tmp_path / "site").publish()
     [skipped] = site.skipped
-    assert skipped["name"] == "town" and skipped["reason"].startswith("ValueError: ")
-    assert "world.jsonl" in skipped["reason"] and "malformed" in skipped["reason"]
+    assert skipped["name"] == "town" and skipped["reason"] == PUBLISHING_FAILED
+    assert skipped["detail"].startswith("ValueError: ") and str(runs) not in skipped["detail"]
+    assert "town/world.jsonl" in skipped["detail"] and "malformed" in skipped["detail"]
     assert not (tmp_path / "site" / "data" / "runs").exists()
     assert read(tmp_path / "site", "data/index.json")["runs"] == []
 

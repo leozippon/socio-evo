@@ -69,7 +69,7 @@ export class NowPanel {
             ),
             moving.length ? h("li", {}, h("span", { class: "scene-name" }, h("b", {}, "On the way")), h("span", { class: "present" }, moving.map((name) => m.cast.badge(name, 16)))) : null,
           )
-        : emptyState("Nobody is anywhere yet."),
+        : emptyState("Nobody is anywhere yet.", "The residents appear as the run records its first entries."),
       h(
         "ul",
         { class: "doings" },
@@ -166,7 +166,7 @@ export class FeedPanel {
       }
       rows.push(this.item(item, m));
     }
-    this.list.replaceChildren(...(rows.length ? rows : [h("li", {}, emptyState("Nothing yet today."))]));
+    this.list.replaceChildren(...(rows.length ? rows : [h("li", {}, emptyState("Nothing has happened yet today.", m.selected && m.follow ? `Entries that concern ${m.selected} appear here as the day goes on.` : "Entries appear here as the day goes on."))]));
     // Keep the newest line in view, unless the reader has scrolled up; after layout, since
     // the panel may only now be shown.
     if (this.pinned) requestAnimationFrame(() => (this.list.scrollTop = this.list.scrollHeight));
@@ -290,7 +290,7 @@ export class ChroniclePanel {
             { class: "chronicle-list" },
             notes.map((e) => h("li", { class: classOf(e) }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.sim_time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, glyph(e), " ", line(e, m))))),
           )
-        : emptyState("Nothing notable yet today."),
+        : emptyState("Nothing notable yet today.", "Wakings, claims, verdicts, payments, gifts, ratings and bedtimes appear here as they happen."),
       broke.length ? h("p", { class: "note" }, "In debt: ", broke.map(([name, found], i) => [i ? ", " : "", m.cast.mention(name), ` ${fmt.money(found.purse)}`])) : null,
     );
   }

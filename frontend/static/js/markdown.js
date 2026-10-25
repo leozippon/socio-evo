@@ -16,9 +16,10 @@ export function frontMatter(text) {
   return { meta, body: text.slice(match[0].length) };
 }
 
+/** Inline marks: strong, emphasis and code. An underscore inside a word (`max_iter`) is no mark. */
 function inline(text) {
   const out = [];
-  const pattern = /(\*\*[^*]+\*\*|__[^_]+__|`[^`]+`|\*[^*\s][^*]*\*|_[^_\s][^_]*_)/g;
+  const pattern = /(\*\*[^*]+\*\*|(?<!\w)__[^_]+__(?!\w)|`[^`]+`|\*[^*\s][^*]*\*|(?<!\w)_[^_\s][^_]*_(?!\w))/g;
   let at = 0;
   for (const match of text.matchAll(pattern)) {
     out.push(text.slice(at, match.index));

@@ -9,7 +9,8 @@ import { lowerBound, purseAt } from "../replay.js";
 import { EVENTS, MARKERS } from "../world.js";
 import { describeMarker } from "./events.js";
 
-const LABEL_W = 136;
+const LABEL_WIDE = 136; // the label column: the name, what the resident is in, its purse
+const LABEL_NARROW = 84; // on a phone, the name and the purse
 const AXIS_H = 40;
 export const LANE_H = 74;
 const MARK_Y = 10;
@@ -161,6 +162,7 @@ export class Lanes {
     this.tip = h("div", { class: "lanes-tip", role: "tooltip", hidden: true });
     this.el = h("div", { class: "lanes" }, this.canvas, this.tip);
     this.C = readColours();
+    this.labelW = LABEL_WIDE;
     this.t0 = 0;
     this.t1 = DAY;
     this.cursor = null;
@@ -201,15 +203,15 @@ export class Lanes {
   }
 
   plotW() {
-    return Math.max(this.canvas.clientWidth - LABEL_W, 1);
+    return Math.max(this.canvas.clientWidth - this.labelW, 1);
   }
 
   x(t) {
-    return LABEL_W + ((t - this.t0) / (this.t1 - this.t0)) * this.plotW();
+    return this.labelW + ((t - this.t0) / (this.t1 - this.t0)) * this.plotW();
   }
 
   tAt(px) {
-    return this.t0 + ((px - LABEL_W) / this.plotW()) * (this.t1 - this.t0);
+    return this.t0 + ((px - this.labelW) / this.plotW()) * (this.t1 - this.t0);
   }
 
   setView(t0, t1, quiet = false) {
@@ -294,7 +296,7 @@ export class Lanes {
         ctx.lineTo(px, height);
         ctx.stroke();
       }
-      const left = Math.max(this.x(day.start), LABEL_W) + 5;
+      const left = Math.max(this.x(day.start), this.labelW) + 5;
       const room = Math.min(this.x(day.start + DAY), right) - left - 6;
       const date = dateOf(this.data.start_date, day.start + 4 * 3600);
       const label = [`Day ${day.day} · ${date}`, `Day ${day.day}`, `${day.day}`].find((text) => ctx.measureText(text).width <= room);
@@ -316,7 +318,7 @@ export class Lanes {
     ctx.fillRect(0, top + LANE_H - 1, width, 1);
     ctx.save();
     ctx.beginPath();
-    ctx.rect(LABEL_W, top, this.plotW(), LANE_H);
+    ctx.rect(this.labelW, top, this.plotW(), LANE_H);
     ctx.clip();
     ctx.font = "11px system-ui, sans-serif";
     ctx.textBaseline = "middle";
@@ -330,7 +332,7 @@ export class Lanes {
       ctx.fillRect(x0 + gap, top + BAR_Y, Math.max(w - 2 * gap, 0.6), BAR_H);
       if (seg.kind === "work" && seg.task != null && w > 52) {
         ctx.fillStyle = C.surface;
-        ctx.fillText(`task ${seg.task}`, Math.max(x0, LABEL_W) + 5, top + BAR_Y + BAR_H / 2);
+        ctx.fillText(`task ${seg.task}`, Math.max(x0, this.labelW) + 5, top + BAR_Y + BAR_H / 2);
       }
     }
     for (let i = lowerBound(r.conversations, t0, (c) => c.end); i < r.conversations.length && r.conversations[i].start < t1; i++) {
@@ -346,7 +348,7 @@ export class Lanes {
     const py = (v) => top + PURSE_Y + PURSE_H - ((v - scale.min) / (scale.max - scale.min || 1)) * PURSE_H;
     if (scale.min < 0) {
       ctx.fillStyle = C.line;
-      ctx.fillRect(LABEL_W, Math.round(py(0)), this.plotW(), 1);
+      ctx.fillRect(this.labelW, Math.round(py(0)), this.plotW(), 1);
     }
     ctx.strokeStyle = C["ink-2"];
     ctx.lineWidth = 1.5;
@@ -361,7 +363,7 @@ export class Lanes {
     ctx.lineTo(this.x(this.data.now), py(points[points.length - 1][1]));
     ctx.stroke();
     // Markers of the same second are set side by side; where each was drawn is kept for hovering.
-    const from = lowerBound(r.markers, this.tAt(LABEL_W - 6), (m) => m.t);
+    const from = lowerBound(r.markers, this.tAt(this.labelW - 6), (m) => m.t);
     const to = lowerBound(r.markers, this.tAt(width + 6), (m) => m.t);
     const drawn = (this.drawn[r.name] = []);
     for (let i = from, same = 0; i < to; i++) {
@@ -372,18 +374,20 @@ export class Lanes {
       drawn.push([px, m]);
     }
     ctx.restore();
-    // The label: the resident's colour and name, what it is in at the end of the log, its purse then.
+    // The label: the resident's colour and name, what it is in at the end of the log (where
+    // there is room), its purse then.
     const last = r.segments[r.segments.length - 1];
     ctx.textAlign = "left";
-    ctx.fillStyle = C[`lane-${last.kind}`];
     ctx.fillStyle = this.colour(r.name);
     ctx.fillRect(12, top + 8, 4, 12);
     ctx.fillStyle = C.ink;
     ctx.font = "600 13px system-ui, sans-serif";
-    ctx.fillText(r.name, 22, top + 14);
+    ctx.fillText(this.fit(r.name, this.labelW - 30), 22, top + 14);
     ctx.font = "11px system-ui, sans-serif";
-    ctx.fillStyle = C.muted;
-    ctx.fillText(this.fit(`${EVENTS[last.kind].toLowerCase()} · ${this.placeName(last.place)}`, LABEL_W - 30), 22, top + 31);
+    if (this.labelW === LABEL_WIDE) {
+      ctx.fillStyle = C.muted;
+      ctx.fillText(this.fit(`${EVENTS[last.kind].toLowerCase()} · ${this.placeName(last.place)}`, this.labelW - 30), 22, top + 31);
+    }
     ctx.fillStyle = C["ink-2"];
     ctx.fillText(fmt.money(points[points.length - 1][1]), 22, top + PURSE_Y + PURSE_H / 2);
   }
@@ -411,6 +415,7 @@ export class Lanes {
     const height = AXIS_H + residents.length * LANE_H;
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.clientWidth;
+    this.labelW = width < 560 ? LABEL_NARROW : LABEL_WIDE;
     this.canvas.style.height = `${height}px`;
     this.canvas.width = Math.round(width * dpr);
     this.canvas.height = Math.round(height * dpr);
@@ -420,19 +425,19 @@ export class Lanes {
     const after = this.x(this.data.now);
     if (after < width) {
       ctx.fillStyle = C.page;
-      ctx.fillRect(Math.max(after, LABEL_W), AXIS_H, width, height);
+      ctx.fillRect(Math.max(after, this.labelW), AXIS_H, width, height);
     }
     this.drawAxis(height);
     const values = residents.flatMap((r) => r.purse.map((p) => p[1]));
     const scale = { min: Math.min(0, ...values), max: Math.max(0, ...values) };
     residents.forEach((r, i) => this.drawLane(r, AXIS_H + i * LANE_H, scale));
-    if (after >= LABEL_W && after <= width) {
+    if (after >= this.labelW && after <= width) {
       ctx.fillStyle = C["ink-2"];
       ctx.fillRect(Math.round(after), AXIS_H - 4, 1.5, height);
     }
     if (this.cursor !== null) {
       const cx = this.x(this.cursor);
-      if (cx >= LABEL_W && cx <= width) {
+      if (cx >= this.labelW && cx <= width) {
         ctx.fillStyle = C.accent;
         ctx.fillRect(Math.round(cx) - 0.5, AXIS_H - 8, 2, height);
         ctx.beginPath();
@@ -443,7 +448,7 @@ export class Lanes {
       }
     }
     ctx.fillStyle = C["line-2"];
-    ctx.fillRect(LABEL_W - 1, AXIS_H - 4, 1, height);
+    ctx.fillRect(this.labelW - 1, AXIS_H - 4, 1, height);
   }
 
   // Hover and selection ------------------------------------------------------------------------
@@ -455,7 +460,7 @@ export class Lanes {
     const r = residents[i];
     const y = py - AXIS_H - i * LANE_H;
     const t = this.tAt(px);
-    if (px < LABEL_W) return { r, t: null };
+    if (px < this.labelW) return { r, t: null };
     if (y < BAR_Y - 1) {
       let best = null;
       for (const [mx, m] of this.drawn[r.name] || []) if (Math.abs(mx - px) <= 6 && (!best || Math.abs(mx - px) < Math.abs(best[0] - px))) best = [mx, m];

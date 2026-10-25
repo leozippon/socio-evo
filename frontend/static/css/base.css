@@ -208,10 +208,12 @@ code, pre { font-family: var(--mono); font-size: 12.5px; }
   .tabs .icon { width: 22px; height: 22px; }
 }
 @media (max-width: 699px) {
+  /* A phone's top bar: the brand mark leads home, the run's name leads to its dashboard. */
   .topbar { gap: var(--s3); }
   .brand span { display: none; }
   .crumbs { font-size: 13px; }
-  .crumbs .exp-sep { display: none; }
+  .crumbs .exp-sep, .crumbs .exp-crumb, .crumbs .sep { display: none; }
+  .crumbs .run-crumb { font-size: 14px; font-weight: 600; }
   .status .day { display: none; }
 }
 
@@ -244,6 +246,11 @@ code, pre { font-family: var(--mono); font-size: 12.5px; }
 .empty p { margin: 0 auto 4px; max-width: 52ch; }
 .empty-title { font-weight: 600; color: var(--ink); }
 .empty code { background: var(--surface-3); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+/* A folded box whose heading is laid out as a row keeps a disclosure mark of its own. */
+.fold > summary { list-style: none; }
+.fold > summary::-webkit-details-marker { display: none; }
+.fold > summary::before { content: ""; flex: none; width: 7px; height: 7px; margin-right: 8px; border: solid currentColor; border-width: 0 1.5px 1.5px 0; transform: translateY(-2px) rotate(45deg); transition: transform 0.15s; }
+.fold[open] > summary::before { transform: translateY(1px) rotate(-135deg); }
 .loading { color: var(--muted); padding: var(--s4); display: flex; align-items: center; gap: 10px; font-size: 13.5px; }
 .loading::before { content: ""; flex: none; width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--ink-2); animation: spin 0.9s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -290,7 +297,14 @@ code, pre { font-family: var(--mono); font-size: 12.5px; }
 }
 .subnav a:hover, .subnav button:hover { color: var(--ink); }
 .subnav [aria-selected="true"] { color: var(--ink); border-bottom-color: var(--ink); }
-@media (max-width: 699px) { .subnav { gap: var(--s4); margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter); } }
+@media (max-width: 699px) {
+  /* On a phone the sub-navigation scrolls sideways; a shadow at the right edge says so until the end is reached. */
+  .subnav {
+    gap: var(--s4); margin: 0 calc(-1 * var(--gutter)); padding: 0 var(--gutter);
+    background: linear-gradient(to left, var(--page) 40%, transparent) right, linear-gradient(to left, color-mix(in srgb, var(--ink) 12%, transparent), transparent) right;
+    background-repeat: no-repeat; background-size: 40px 100%, 16px 100%; background-attachment: local, scroll;
+  }
+}
 
 /* Pages, cards and sections ----------------------------------------------------------------- */
 .page {
@@ -299,7 +313,8 @@ code, pre { font-family: var(--mono); font-size: 12.5px; }
 }
 .page-head { margin: var(--s2) 0 var(--s5); }
 .page-head h1 { margin-bottom: 6px; }
-.page-head .lede { color: var(--ink-2); max-width: 70ch; margin: 0; }
+/* The line under a page's title that says what the page shows. */
+.lede { color: var(--ink-2); max-width: 70ch; margin: 0; }
 @media (max-width: 699px) {
   h1 { font-size: var(--fs-xl); }
   .page { padding-top: var(--s4); }
@@ -388,8 +403,19 @@ button.legend-item:hover { background: var(--surface-3); color: var(--ink); }
 .multiples { display: grid; grid-template-columns: repeat(auto-fill, minmax(max(160px, 22%), 1fr)); gap: var(--s1) var(--s4); }
 .multiple-title { display: flex; gap: 6px; align-items: center; font-size: 12px; font-weight: 600; color: var(--ink-2); margin-top: var(--s1); }
 
-/* Tables: scroll inside themselves, never the page; the first column stays put. -------------- */
-.table-wrap { overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch; }
+/* Tables: scroll inside themselves, never the page; the first column stays put. A shadow at
+   either edge says there is more to the side, and goes as the edge is reached. ---------------- */
+.table-wrap {
+  overflow-x: auto; max-width: 100%; -webkit-overflow-scrolling: touch;
+  background:
+    linear-gradient(to right, var(--surface) 40%, transparent) left,
+    linear-gradient(to left, var(--surface) 40%, transparent) right,
+    linear-gradient(to right, color-mix(in srgb, var(--ink) 12%, transparent), transparent) left,
+    linear-gradient(to left, color-mix(in srgb, var(--ink) 12%, transparent), transparent) right;
+  background-repeat: no-repeat;
+  background-size: 48px 100%, 48px 100%, 16px 100%, 16px 100%;
+  background-attachment: local, local, scroll, scroll;
+}
 table.data { border-collapse: collapse; width: 100%; font-size: 12.5px; font-variant-numeric: tabular-nums; }
 table.data th, table.data td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
 table.data th:first-child, table.data td:first-child { text-align: left; padding-left: 0; }
@@ -398,7 +424,8 @@ table.data tbody tr:last-child td, table.data tbody tr:last-child th { border-bo
 table.data.text th, table.data.text td { text-align: left; white-space: normal; }
 .sticky-col { position: sticky; left: 0; background: var(--surface); z-index: 1; }
 
-/* Markdown written by agents --------------------------------------------------------------- */
+/* Markdown written by agents: long identifiers and paths wrap anywhere rather than widen the page. */
+.md { min-width: 0; overflow-wrap: anywhere; }
 .md p, .md li { max-width: 72ch; }
 .md ul, .md ol { padding-left: 1.3em; margin: 0 0 0.6em; }
 .md li { margin: 3px 0; }

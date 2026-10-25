@@ -4,12 +4,13 @@
 // evaluation of their exports, and model usage.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
+import { duration, parseHHMM } from "../clock.js";
 import { emptyState, fill, fmt, h, s } from "../dom.js";
 import { icon } from "../icons.js";
 import { href, sibling } from "../router.js";
 import { groupLabel } from "../world.js";
 import { evaluationFigures } from "./evaluation.js";
-import { groupPill, progress, progressTable } from "./landing.js";
+import { groupPill, progress, progressTable, reached } from "./landing.js";
 
 const SECTIONS = [
   ["work", "Work"],
@@ -51,6 +52,7 @@ export function mountOverview(root, ctx) {
   let charts = [];
 
   const section = () => (SECTIONS.some(([key]) => key === route.query.section) ? route.query.section : "work");
+  const running = () => source.doc.status === "running";
   const emphasis = () => view.highlight ?? view.pinned;
   function pick(name, pin) {
     if (pin) view.pinned = name;
@@ -120,17 +122,22 @@ export function mountOverview(root, ctx) {
         { class: "run-title" },
         h("p", { class: "eyebrow" }, "Run"),
         h("h1", {}, doc.name, groupPill(doc.group)),
+        h("p", { class: "lede" }, "How the run has gone: its key figures, each lived day, the rules it ran under, and its measures section by section."),
         h("p", { class: "run-meta" }, `${groupLabel(doc.group) ?? "No group of the design"} · ${fmt.plural(world.residents.length, "resident")} · ${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
         h(
           "p",
           { class: "run-meta quiet-meta" },
-          `started ${fmt.wall(doc.started_at)}${doc.ended_at ? `, stopped ${fmt.wall(doc.ended_at)}` : ""} · ${fmt.int(doc.entries)} log entries · code `,
+          `${reached(entry)} · started ${fmt.wall(doc.started_at)}${doc.ended_at ? `, stopped ${fmt.wall(doc.ended_at)}` : ""} · ${fmt.int(doc.entries)} log entries · code `,
           h("span", { class: "mono", title: doc.code_revision.endsWith("-dirty") ? "The code had uncommitted changes" : "The code revision" }, doc.code_revision.slice(0, 10)),
         ),
       ),
       h("div", { class: "run-side" }, progress(entry), h("a", { class: "btn", href: href(sibling(route, "town")) }, icon("map", 16), "Watch the town")),
     );
   }
+
+  /** The fixed hours of the day as a reader says them; `sleep_at_most` is a length, not an hour. */
+  const DAY_HOURS = { forced_sleep: "forced asleep at", checkpoint: "checkpoint at", forced_wake: "forced awake at", sleep_at_most: "a sleep lasts at most" };
+  const dayHour = (name, clock) => (name === "sleep_at_most" ? duration(parseHHMM(clock)) : clock);
 
   function rules() {
     const first = world.residents[0];
@@ -150,7 +157,7 @@ export function mountOverview(root, ctx) {
           h("li", {}, h("span", { class: "muted" }, "living cost"), " ", h("b", {}, `${fmt.money(world.work.living_cost)} a day`)),
           h("li", {}, h("span", { class: "muted" }, "acceptance runs"), " ", h("b", {}, `${world.work.acceptance_runs} per task a day`)),
           h("li", {}, h("span", { class: "muted" }, "a claim runs out"), " ", h("b", {}, `after ${world.work.claim_expiry_days + 1} ${world.work.claim_expiry_days ? "midnights" : "midnight"}`)),
-          Object.entries(world.day).map(([name, clock]) => h("li", {}, h("span", { class: "muted" }, name.replaceAll("_", " ")), " ", h("b", {}, clock))),
+          Object.entries(world.day).map(([name, clock]) => h("li", {}, h("span", { class: "muted" }, DAY_HOURS[name] ?? name.replaceAll("_", " ")), " ", h("b", {}, dayHour(name, clock)))),
         ),
       ),
       first ? h("div", { class: "cond-changes" }, h("p", { class: "eyebrow" }, "As a resident reads them"), h("details", { class: "rules-text" }, h("summary", {}, `The rules ${first.name} was told`), h("pre", {}, first.rules))) : null,
@@ -168,7 +175,7 @@ export function mountOverview(root, ctx) {
       stat("Paid", fmt.money(total("paid")), `${fmt.int(total("payments"))} payments`),
       stat("Median purse", last ? fmt.money(last.purse.median) : "–", last ? `${fmt.money(last.purse.min)} to ${fmt.money(last.purse.max)}` : null),
       stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} skills passed on`),
-      stat("Nights", fmt.int(total("journals")), `journals written · ${fmt.int(total("forced_sleeps"))} forced sleeps · ${fmt.int(total("ratings"))} ratings`),
+      stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps · ${fmt.int(total("ratings"))} ratings given`),
     );
   }
 
@@ -349,7 +356,9 @@ export function mountOverview(root, ctx) {
       const notable = steps.filter((v) => [...areasOf(v)].some((area) => area !== "journal")).length;
       return [
         h("p", { class: "note section-note" }, `Residents rewrite their own files whenever they decide to, with their file tools; the checkpoint of each day commits what changed. ${fmt.plural(steps.length, "night")} committed so far, ${fmt.int(notable)} of them with a change beyond the journal. ${world.skills_writable ? "Skills may be written." : "Skills cannot be written in this group."}`),
-        h("div", { class: "figures" }, evolutionGrid()),
+        steps.length
+          ? h("div", { class: "figures" }, evolutionGrid())
+          : h("div", { class: "card" }, emptyState("No night has been committed yet.", running() ? `The checkpoint at ${world.day.checkpoint} commits what each resident changed in its files during the day; the first marks appear after it.` : "The run stopped before its first checkpoint, so no night's changes were committed.")),
       ];
     },
     evaluation() {
@@ -384,10 +393,13 @@ export function mountOverview(root, ctx) {
     charts = [];
     agentFigures = [];
     const key = section();
-    legendHolder.hidden = !BY_RESIDENT.has(key);
-    fill(legendHolder, h("span", { class: "muted legend-lead" }, "Emphasise"), agentLegend(cast, cast.names, { selected: view.pinned, onPick: pick }));
     const closed = measures.rows.length > 0 || key === "evaluation" || key === "evolution";
-    fill(sectionBody, closed ? SECTION_CONTENT[key]() : h("div", { class: "card" }, emptyState("No day has closed yet.", "The measures are computed over lived days a checkpoint closed; the progress table above counts the day in progress.")));
+    legendHolder.hidden = !BY_RESIDENT.has(key) || !closed;
+    fill(legendHolder, h("span", { class: "muted legend-lead" }, "Emphasise"), agentLegend(cast, cast.names, { selected: view.pinned, onPick: pick }));
+    const empty = running()
+      ? emptyState("No day has closed yet.", `The measures are computed over lived days a checkpoint closed, the first at ${world.day.checkpoint}; the table above counts the day in progress.`)
+      : emptyState("The run stopped before a checkpoint closed a day.", "The measures are computed over closed days only; the table above counts what happened in the day it stopped in.");
+    fill(sectionBody, closed ? SECTION_CONTENT[key]() : h("div", { class: "card" }, empty));
     for (const tab of page.querySelectorAll(".run-sections [data-section]")) tab.setAttribute("aria-selected", String(tab.dataset.section === key));
   }
 
@@ -417,8 +429,10 @@ export function mountOverview(root, ctx) {
       page,
       head(),
       keyFigures(),
-      partial ? h("p", { class: "note partial-note" }, `Day ${progressDoc.day} is in progress (${progressDoc.clock}): its numbers count only what has happened so far.`) : null,
-      h("figure", { class: "figure wide progress-figure" }, h("figcaption", {}, h("h3", {}, "Day by day"), h("p", { class: "note" }, "Each lived day, from one checkpoint to the next, and what it counted.")), progressDoc.daily.length ? progressTable(progressDoc) : emptyState("No day has begun yet.")),
+      partial
+        ? h("p", { class: "note partial-note" }, running() ? `Day ${progressDoc.day} is in progress (${progressDoc.clock}): its numbers count only what has happened so far.` : `The run stopped on day ${progressDoc.day} at ${progressDoc.clock}, before a checkpoint closed the day: that day's numbers count what happened until then.`)
+        : null,
+      h("figure", { class: "figure wide progress-figure" }, h("figcaption", {}, h("h3", {}, "Day by day"), h("p", { class: "note" }, "Each lived day, from one checkpoint to the next, and what it counted.")), progressDoc.daily.length ? progressTable(progressDoc, source.doc.status) : emptyState("No day has begun yet.", "The table of lived days fills in as the run records its first entries.")),
       rules(),
       h("div", { class: "section-bar" }, tabs, legendHolder),
       sectionBody,

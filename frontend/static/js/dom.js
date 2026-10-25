@@ -58,7 +58,8 @@ export const fmt = {
   signed: (n) => (n > 0 ? `+${integer.format(n)}` : n < 0 ? `−${integer.format(-n)}` : "±0"),
   money: (n) => money(n, currency),
   plural: (n, one, many = `${one}s`) => `${integer.format(n)} ${n === 1 ? one : many}`,
-  wall: (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" }) : "–"),
+  /** A wall-clock time in the reader's zone, the zone named so it is not read as the town's. */
+  wall: (iso) => (iso ? new Date(iso).toLocaleString("en-GB", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", timeZoneName: "short" }) : "–"),
 };
 
 /** A quiet message for a view or panel with nothing to show yet, and why. */

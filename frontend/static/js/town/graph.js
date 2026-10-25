@@ -67,7 +67,7 @@ export class TiesPanel {
       );
     fill(this.controls, seg(MEASURES, this.measure, (k) => (this.measure = k)), seg(WINDOWS, this.window, (k) => (this.window = k)));
     if (through < 1) {
-      fill(this.svgWrap, emptyState("No day has begun yet."));
+      fill(this.svgWrap, emptyState("No day has begun yet.", "Who spoke, rated, paid and taught whom is drawn here once the first day is under way."));
       fill(this.caption);
       return;
     }
@@ -181,7 +181,7 @@ export class TiesPanel {
     fill(
       this.caption,
       h("p", { class: "note" }, `${measure.note} Days ${from === through ? from : `${from}–${through}`}, the day shown as far as it has gone.`),
-      strongest.length ? h("ul", { class: "ties-list" }, strongest.map(([who, what]) => h("li", {}, this.cast.mention(who), h("span", { class: "muted" }, ` · ${what}`)))) : h("p", { class: "muted" }, "Nothing to count in this window."),
+      strongest.length ? h("ul", { class: "ties-list" }, strongest.map(([who, what]) => h("li", {}, this.cast.mention(who), h("span", { class: "muted" }, ` · ${what}`)))) : h("p", { class: "muted" }, `Nothing of this kind between any two residents in these days${selected ? ` with ${selected}` : ""}.`),
     );
   }
 

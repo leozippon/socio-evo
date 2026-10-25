@@ -599,6 +599,9 @@ export function mountTown(root, ctx) {
     await seek(view.time);
     ready = true;
     sync();
+    // A shared address that names a panel or a resident is read for them: on a phone the
+    // sheet opens to show the panel, as it does when the reader asks for one.
+    if (!WIDE.matches && (view.panel !== "now" || view.selected)) setSheet("half");
     source.measures().then((found) => {
       measures = found;
       if (view.panel === "ties") refreshPanel(true);

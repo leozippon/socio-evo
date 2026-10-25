@@ -24,10 +24,11 @@ export function mountLanes(root, ctx) {
   let timer = null;
 
   const who = h("h2", {}, "No resident selected");
-  const window_ = h("p", { class: "note" }, "Click a lane to list what that resident did and heard in the visible window.");
+  const window_ = h("p", { class: "note" }, "Pick a lane to list what that resident did and heard in the visible window.");
   const entries = h("ol", { class: "lane-entries" });
   const panel = h("aside", { class: "card lanes-panel" }, who, window_, entries);
-  const legendBox = h("div", { class: "card lanes-legend-box" });
+  // The legend is long; on a phone it starts folded, under a heading that opens it.
+  const legendBox = h("details", { class: "card fold lanes-legend-box", open: matchMedia("(min-width: 700px)").matches }, h("summary", {}, "What the lanes show"));
 
   const moment = (t) => `Day ${livedDay(data.days, t).day}, ${dateOf(data.start_date, t)} ${hhmm(secondOfDay(t))}`;
   const between = (a, b) => (Math.floor(a / DAY) === Math.floor(b / DAY) ? `${moment(a)}–${hhmm(secondOfDay(b))}` : `${moment(a)} – ${moment(b)}`);
@@ -42,7 +43,7 @@ export function mountLanes(root, ctx) {
     const lane = data.residents.find((r) => r.name === selected);
     if (!lane) {
       who.textContent = "No resident selected";
-      window_.textContent = "Click a lane to list what that resident did and heard in the visible window.";
+      window_.textContent = "Pick a lane to list what that resident did and heard in the visible window.";
       entries.replaceChildren();
       return;
     }
@@ -118,10 +119,11 @@ export function mountLanes(root, ctx) {
       control("plus", "Zoom in", () => lanes.zoom(0.5)),
       cursor !== null ? h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: stamp(Math.floor(cursor)) } }, "town", { query: { agent: selected } })) }, icon("map", 15), "Watch in town") : null,
     );
-    fill(legendBox, legend(readColours()));
+    legendBox.querySelector(".lanes-legend")?.remove();
+    legendBox.append(legend(readColours()));
     fill(
       page,
-      h("header", { class: "page-head spread" }, h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Every resident's events side by side: idle, movement, work with the task held, sleep, and conversation layered over them; above, what each did; below, its purse. Scroll to zoom, drag to pan, click a lane for its entries.")), controls),
+      h("header", { class: "page-head spread" }, h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Every resident's events side by side over the run: idle, movement, work with the task held, sleep, and conversation layered over them; above, what each did; below, its purse. Pinch or scroll to zoom, drag to pan, pick a lane for its entries.")), controls),
       legendBox,
       h("div", { class: "lanes-grid" }, h("div", { class: "card lanes-card" }, lanes.el), panel),
     );

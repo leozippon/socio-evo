@@ -85,7 +85,7 @@ export function mountEvaluation(root, ctx) {
               ? h("section", { class: "section" }, h("h2", {}, "Journal distortion"), table(evaluation.journals, [["distortion", (row) => (row.journal ? `${percent(row.distortion)} (${row.contradicted}/${row.claims - row.unverifiable})` : "no journal")]], "Contradicted claims over checkable claims (supported and contradicted), per resident and lived day; a day without a journal entry has no rate."))
               : null,
           ]
-        : h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "Results appear here when they are written under the results root (capability and MASK by day, journals by run) and the runs are published again.")),
+        : h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "The evaluation runs on exports of the residents at the end of a day, outside the town. Its results appear here once they are written under the results root and the runs are published again.")),
     );
   }
 

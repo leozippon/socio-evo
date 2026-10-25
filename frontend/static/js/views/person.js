@@ -3,9 +3,9 @@
 // holds them: every version, with what changed, and the memory and skills they then had.
 
 import { DayChart, figure } from "../charts.js";
-import { dateOf, formatTime, hhmm, livedDay, parseStamp, secondOfDay, stamp } from "../clock.js";
+import { dateOf, hhmm, livedDay, parseStamp, secondOfDay, stamp } from "../clock.js";
 import { parseDiff, renderFile } from "../diff.js";
-import { emptyState, fill, fmt, h } from "../dom.js";
+import { append, emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { markdown } from "../markdown.js";
 import { markersBetween, purseAt } from "../replay.js";
@@ -87,7 +87,7 @@ export function mountPerson(root, ctx) {
           "div",
           { class: "as-of-step" },
           h("button", { type: "button", class: "icon-btn", "aria-label": "One day earlier", disabled: index <= 0, onclick: () => dayLink(index - 1) }, icon("chevronLeft", 18)),
-          h("b", {}, moment.latest ? `Day ${moment.day.day}, ${hhmm(secondOfDay(moment.time))}` : moment.day.end !== null && moment.time === moment.day.end ? `End of day ${moment.day.day}` : formatTime(moment.time, data.days)),
+          h("b", {}, `${moment.day.end !== null && moment.time === moment.day.end ? `End of day ${moment.day.day}` : `Day ${moment.day.day}`} · ${dateOf(data.start_date, moment.time)}, ${hhmm(secondOfDay(moment.time))}`),
           h("button", { type: "button", class: "icon-btn", "aria-label": "One day later", disabled: index >= data.days.length - 1, onclick: () => dayLink(index + 1) }, icon("chevron", 18)),
         ),
         moment.latest ? h("span", { class: "muted small-text" }, "the newest moment") : h("button", { type: "button", class: "quiet small", onclick: () => go({ t: null }) }, "Newest"),
@@ -149,6 +149,7 @@ export function mountPerson(root, ctx) {
     const mean = ([n, total]) => (n ? `${fmt.num(total / n, 1)} (${n})` : "–");
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     return [
+      h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, and with whom. The other tabs hold the day as the world told it, every journal entry, the ratings given and received, the files at every version, and the raw trace of the runtime.`),
       h(
         "div",
         { class: "stats" },
@@ -157,7 +158,7 @@ export function mountPerson(root, ctx) {
         stat("Things said", fmt.int(count("speech")), `${fmt.int(count("gift"))} gifts given`),
         stat("Skills", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "passed on / received"),
         stat("Rating received", received.length ? fmt.num(received.reduce((a, m) => a + m.score, 0) / received.length, 2) : "–", `${fmt.plural(received.length, "rating")} received · ${fmt.int(count("rating"))} given`),
-        stat("Nights", fmt.int(count("journal")), `journals written · ${fmt.int(count("forced_sleep"))} forced sleeps`),
+        stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
       ),
       h(
         "div",
@@ -192,7 +193,7 @@ export function mountPerson(root, ctx) {
                   ),
                 ),
               )
-            : emptyState("No one yet.", measures.rows.length ? null : "Ties are counted over lived days a checkpoint closed."),
+            : emptyState("No one yet.", measures.rows.length ? `${agentName()} has had nothing to do with anyone so far.` : "Who spoke, rated, paid and taught whom is counted over lived days a checkpoint closed, so it appears after the first checkpoint."),
         ),
         h(
           "section",
@@ -220,7 +221,7 @@ export function mountPerson(root, ctx) {
                   ),
                 ),
               )
-            : emptyState("Not evaluated yet."),
+            : emptyState("Not evaluated yet.", "Capability, honesty under pressure and journal distortion appear once this resident's exports are evaluated and the run is published again."),
         ),
       ),
       h("details", { class: "card pad rules-text" }, h("summary", {}, `The rules ${agentName()} was told`), h("pre", {}, cast.agent(agentName()).rules)),
@@ -241,7 +242,7 @@ export function mountPerson(root, ctx) {
       h("button", { type: "button", class: "icon-btn", disabled: index <= 0, "aria-label": "Previous day", onclick: () => go({ day: String(data.days[index - 1].day) }) }, icon("chevronLeft", 18)),
       h("b", {}, `Day ${day.day} · ${dateOf(data.start_date, day.start + 3600 * 4)}`),
       h("button", { type: "button", class: "icon-btn", disabled: index >= data.days.length - 1, "aria-label": "Next day", onclick: () => go({ day: String(data.days[index + 1].day) }) }, icon("chevron", 18)),
-      h("span", { class: "muted" }, `${fmt.plural(mine.length, "entry", "entries")}${day.end === null ? ", the day in progress" : ""}`),
+      h("span", { class: "muted" }, `${fmt.plural(mine.length, "entry", "entries")}${day.end === null ? (source.doc.status === "running" ? ", the day in progress" : ", the day the run stopped in") : ""}`),
     );
     return [
       h("div", { class: "spread" }, h("p", { class: "note" }, `Everything ${agentName()} was told or did on the day, in its own wording as the world told it, spells of work in the workspace folded into one line each.`), picker),
@@ -261,7 +262,7 @@ export function mountPerson(root, ctx) {
               );
             }),
           )
-        : h("div", { class: "card" }, emptyState(`Nothing recorded of ${agentName()} on day ${day.day}.`)),
+        : h("div", { class: "card" }, emptyState(`Nothing recorded of ${agentName()} on day ${day.day}.`, day.end === null ? "Entries appear here as the day goes on." : "The world told this resident nothing that day, and it did nothing the log records.")),
     ];
   }
 
@@ -284,7 +285,7 @@ export function mountPerson(root, ctx) {
               ),
             ),
           )
-        : h("div", { class: "card" }, emptyState("No journal entry yet.")),
+        : h("div", { class: "card" }, emptyState("No journal entry yet.", `${agentName()} writes one on going to bed; a night passed at the forced hour leaves none.`)),
     ];
   }
 
@@ -304,7 +305,7 @@ export function mountPerson(root, ctx) {
               h("tbody", {}, rows.map((m) => h("tr", {}, h("td", {}, String(livedDay(data.days, m.t).day)), h("td", {}, cast.chip(who(m), href({ ...route, agent: who(m) }))), h("td", {}, `${m.score} of 5`), h("td", {}, m.reason)))),
             ),
           )
-        : h("div", { class: "card" }, emptyState("None yet."));
+        : h("div", { class: "card" }, emptyState("None yet.", "A rating is given in bed, to someone one shared a place with that day; it appears here the night it is given."));
     return [
       h("p", { class: "note" }, "Ratings are given in bed, 1 to 5 with a reason, to those one shared a place with that day; the rated reads the score and the reason the next night, without the name. They have no mechanical effect."),
       h("section", { class: "section" }, h("h2", {}, `Received · ${received.length}`), table(received, "From", (m) => m.from)),
@@ -356,7 +357,7 @@ export function mountPerson(root, ctx) {
         },
         (error) => fill(detailBox, emptyState("This version could not be loaded.", error.message)),
       );
-    } else fill(detailBox, emptyState("No version yet.", "The first checkpoint commits the resident as created."));
+    } else fill(detailBox, emptyState("No version yet.", "The resident as created is committed when the run begins, and each checkpoint commits what the day changed."));
     return [
       h("p", { class: "note" }, `Every commit of ${agentName()}'s repository up to the moment shown, newest first: the checkpoint of each day commits what the resident wrote into its background, its memory and its skills. The session and the trace are left out.`),
       h("div", { class: "history-grid" }, h("div", { class: "card commit-scroll" }, list), detailBox),
@@ -388,54 +389,130 @@ export function mountPerson(root, ctx) {
     return h("div", { class: `trace-message role-${msg.role}` }, h("span", { class: "trace-role" }, role), parts);
   }
 
-  /** One record of the trace, as the runtime wrote it. */
-  function traceRecord(record, number) {
-    const when = h("span", { class: "trace-when" }, hhmm(secondOfDay(record.sim_time)), h("small", {}, ` #${number}`));
-    const kind = h("span", { class: `trace-kind kind-${record.kind}` }, record.kind.replaceAll("_", " "));
-    const rest = (keys) => Object.fromEntries(Object.entries(record).filter(([key]) => !["kind", "sim_time", "real_time", ...keys].includes(key)));
-    let body;
+  /** A line that says what a record is, for the folded list: prose clipped, code as code. */
+  function traceSummary(record) {
+    const clip = (text, n = 110) => {
+      const flat = String(text ?? "").replace(/\s+/g, " ").trim();
+      return flat.length > n ? `${flat.slice(0, n)}…` : flat;
+    };
     switch (record.kind) {
       case "prompt":
-        body = [h("span", { class: "muted" }, "The system prompt, assembled anew."), traceText(record.text)];
-        break;
+        return `The system prompt, assembled anew · ${fmt.plural(record.text.length, "character")}`;
       case "percept":
-        body = [h("span", { class: "muted" }, `${record.percept_kind} · world entry ${record.event_id} · at ${hhmm(secondOfDay(record.percept_sim_time))}`), traceText(record.text, { mono: false, open: true })];
-        break;
+        return `${String(record.percept_kind).replaceAll("_", " ")} · ${clip(record.text)}`;
+      case "request":
+        return `${record.purpose} · ${fmt.plural(record.messages.length, "message")} in the context${record.new_messages?.length ? `, ${fmt.int(record.new_messages.length)} new` : ""}${record.attempt > 1 ? ` · attempt ${record.attempt}` : ""}`;
+      case "reply": {
+        const calls = (record.tool_calls ?? []).map((call) => call.name);
+        return [calls.length ? `calls ${calls.join(", ")}` : null, clip(record.text || record.reasoning, 90) || null, record.truncated ? "cut off" : null, record.aborted ? "aborted" : null, record.latency === undefined ? null : `${fmt.num(record.latency, 1)} s`].filter(Boolean).join(" · ");
+      }
+      case "tool_call":
+        return `${record.name} ${clip(JSON.stringify(record.arguments), 100)}`;
+      case "tool_result":
+        return `${record.name} → ${record.error ? `error: ${clip(record.error, 90)}` : clip(record.text, 100) || "(nothing)"}`;
+      case "compaction":
+        return `${fmt.plural(record.replaced.length, "message")} replaced by a summary, ${fmt.int(record.kept.length)} kept`;
+      case "interruption":
+        return `the reply in flight was aborted by percepts ${record.events.join(", ")}`;
+      case "lapse":
+        return `${record.purpose}: no usable reply`;
+      default:
+        return "";
+    }
+  }
+
+  /** Everything a record holds, as the runtime wrote it; built when the record is opened. */
+  function traceBody(record) {
+    const rest = (keys) => Object.fromEntries(Object.entries(record).filter(([key]) => !["kind", "sim_time", "real_time", ...keys].includes(key)));
+    switch (record.kind) {
+      case "prompt":
+        return [h("span", { class: "muted" }, "The system prompt, assembled anew."), traceText(record.text)];
+      case "percept":
+        return [h("span", { class: "muted" }, `${record.percept_kind} · world entry ${record.event_id} · at ${hhmm(secondOfDay(record.percept_sim_time))}`), traceText(record.text, { mono: false, open: true })];
       case "request": {
         const meta = `${record.purpose} · attempt ${record.attempt} · effort ${record.reasoning_effort} · ${fmt.int(record.messages.length)} messages in the context · ${fmt.int(record.max_tokens)} tokens at most`;
-        body = [h("span", { class: "muted" }, meta), record.new_messages?.length ? h("div", { class: "trace-messages" }, h("span", { class: "trace-role lead" }, "new in the context since the last request"), record.new_messages.map(message)) : h("span", { class: "muted small-text" }, "Nothing new in the context."), h("details", { class: "trace-more" }, h("summary", {}, "Tools declared and message ids"), h("span", { class: "mono small-text" }, (record.tools ?? []).join(", ")), h("div", { class: "mono small-text muted" }, `messages ${record.messages.join(" ")}`))];
-        break;
+        return [h("span", { class: "muted" }, meta), record.new_messages?.length ? h("div", { class: "trace-messages" }, h("span", { class: "trace-role lead" }, "new in the context since the last request"), record.new_messages.map(message)) : h("span", { class: "muted small-text" }, "Nothing new in the context."), h("details", { class: "trace-more" }, h("summary", {}, "Tools declared and message ids"), h("span", { class: "mono small-text" }, (record.tools ?? []).join(", ")), h("div", { class: "mono small-text muted" }, `messages ${record.messages.join(" ")}`))];
       }
       case "reply": {
         const usage = record.usage ? `${fmt.int(record.usage.prompt_tokens)} prompt tokens (${fmt.int(record.usage.cached_prompt_tokens ?? 0)} cached), ${fmt.int(record.usage.completion_tokens)} completion` : "no usage reported";
         const flags = [record.finish_reason, record.truncated ? "cut off" : null, record.aborted ? "aborted" : null].filter(Boolean).join(" · ");
-        body = [
+        return [
           h("span", { class: "muted" }, `${record.purpose} · ${flags} · ${usage} · ${fmt.num(record.latency, 1)} s`),
           record.reasoning ? h("div", { class: "trace-reasoning" }, h("span", { class: "trace-role" }, "reasoning"), traceText(record.reasoning, { mono: false })) : null,
           record.text ? h("div", { class: "trace-said" }, h("span", { class: "trace-role" }, "text"), traceText(record.text, { mono: false })) : null,
           record.tool_calls?.length ? h("ul", { class: "trace-calls" }, record.tool_calls.map((call) => h("li", {}, h("code", {}, call.name), " ", h("span", { class: "mono small-text" }, JSON.stringify(call.arguments)), call.unreadable ? h("span", { class: "critical-text" }, ` unreadable: ${call.unreadable}`) : null))) : null,
         ];
-        break;
       }
       case "tool_call":
-        body = [h("code", {}, record.name), json(record.arguments), record.unreadable ? h("span", { class: "critical-text" }, `unreadable: ${record.unreadable}`) : null];
-        break;
+        return [h("code", {}, record.name), json(record.arguments), record.unreadable ? h("span", { class: "critical-text" }, `unreadable: ${record.unreadable}`) : null];
       case "tool_result":
-        body = [h("span", { class: "muted" }, [h("code", {}, record.name), record.ends_turn ? " · ends the turn" : "", record.error ? ` · error: ${record.error}` : ""]), traceText(record.text ?? "")];
-        break;
+        return [h("span", { class: "muted" }, [h("code", {}, record.name), record.ends_turn ? " · ends the turn" : "", record.error ? ` · error: ${record.error}` : ""]), traceText(record.text ?? "")];
       case "compaction":
-        body = [h("span", { class: "muted" }, `${fmt.plural(record.replaced.length, "message")} replaced, ${fmt.int(record.kept.length)} kept`), traceText(record.summary, { mono: false })];
-        break;
+        return [h("span", { class: "muted" }, `${fmt.plural(record.replaced.length, "message")} replaced, ${fmt.int(record.kept.length)} kept`), traceText(record.summary, { mono: false })];
       case "interruption":
-        body = [h("span", { class: "muted" }, `The reply in flight was aborted by percepts ${record.events.join(", ")}.`)];
-        break;
+        return [h("span", { class: "muted" }, `The reply in flight was aborted by percepts ${record.events.join(", ")}.`)];
       case "lapse":
-        body = [h("span", { class: "muted" }, `${record.purpose}: no usable reply`), json(record.errors)];
-        break;
+        return [h("span", { class: "muted" }, `${record.purpose}: no usable reply`), json(record.errors)];
       default:
-        body = [json(rest([]))];
+        return [json(rest([]))];
     }
-    return h("li", { class: `trace-record kind-${record.kind}` }, h("div", { class: "trace-head" }, when, kind), h("div", { class: "trace-body" }, body));
+  }
+
+  /** One record of the trace: a folded line with its time, kind and gist, opened by a tap. */
+  function traceRecord(record, number) {
+    const row = h("li", { class: `trace-record kind-${record.kind}`, dataset: { kind: record.kind } });
+    const body = h("div", { class: "trace-body", hidden: true });
+    let built = false;
+    const toggle = h(
+      "button",
+      {
+        type: "button",
+        class: "trace-row",
+        "aria-expanded": "false",
+        onclick: () => {
+          if (!built) {
+            append(body, traceBody(record));
+            built = true;
+          }
+          const open = body.hidden;
+          body.hidden = !open;
+          toggle.setAttribute("aria-expanded", String(open));
+          row.classList.toggle("open", open);
+        },
+      },
+      h("span", { class: "trace-when" }, hhmm(secondOfDay(record.sim_time)), h("small", {}, ` #${number}`)),
+      h("span", { class: `trace-kind kind-${record.kind}` }, record.kind.replaceAll("_", " ")),
+      h("span", { class: `trace-summary${record.kind === "tool_call" || record.kind === "tool_result" ? " mono" : ""}` }, traceSummary(record)),
+      icon("down", 14),
+    );
+    row.append(toggle, body);
+    return row;
+  }
+
+  /** The kinds of record on the day as toggles that show or hide every record of a kind. */
+  function traceKinds(records, list) {
+    const counts = new Map();
+    for (const record of records) counts.set(record.kind, (counts.get(record.kind) ?? 0) + 1);
+    const hidden = new Set();
+    const chip = (kind, count) =>
+      h(
+        "button",
+        {
+          type: "button",
+          class: "legend-item on",
+          "aria-pressed": "true",
+          onclick: (event) => {
+            const show = hidden.has(kind);
+            if (show) hidden.delete(kind);
+            else hidden.add(kind);
+            event.currentTarget.classList.toggle("on", show);
+            event.currentTarget.setAttribute("aria-pressed", String(show));
+            for (const row of list.children) row.hidden = hidden.has(row.dataset.kind);
+          },
+        },
+        `${kind.replaceAll("_", " ")} ${fmt.int(count)}`,
+      );
+    return h("div", { class: "row trace-kinds" }, h("span", { class: "muted legend-lead" }, "Show"), h("div", { class: "legend", role: "group", "aria-label": "Kinds of record shown" }, [...counts].map(([kind, count]) => chip(kind, count))));
   }
 
   async function traceTab(moment) {
@@ -454,16 +531,16 @@ export function mountPerson(root, ctx) {
       h("a", { class: "quiet small", href: href({ ...route, query: { ...route.query, tab: "day", day: String(lived.day) } }) }, "The day's events"),
       h("a", { class: "quiet small", href: href({ ...route, query: { ...route.query, tab: "journal", day: null } }) }, "Journal"),
     );
-    const kinds = doc ? [...new Set(doc.records.map((r) => r.kind))] : [];
+    const list = doc ? h("ol", { class: "card trace-list" }, doc.records.map((record, i) => traceRecord(record, i + 1))) : null;
     return [
-      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, interruptions, compactions and lapses. Nothing here comes from outside the resident's directory.`), picker),
+      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, interruptions, compactions and lapses. Each record is folded to a line; tap one to read it whole. Nothing here comes from outside the resident's directory.`), picker),
       doc
         ? [
-            doc.prompt ? h("details", { class: "card pad trace-prompt" }, h("summary", {}, h("b", {}, "The system prompt as the day began"), h("span", { class: "muted" }, ` · ${fmt.plural(doc.prompt.length, "character")}`)), h("pre", { class: "trace-text" }, doc.prompt)) : h("p", { class: "note" }, "No system prompt had been assembled before this day's first record; the first one appears below."),
-            h("p", { class: "note" }, `Kinds on the day: ${kinds.map((k) => `${k.replaceAll("_", " ")} ${doc.records.filter((r) => r.kind === k).length}`).join(" · ")}.`),
-            h("ol", { class: "trace-list" }, doc.records.map((record, i) => traceRecord(record, i + 1))),
+            doc.prompt ? h("details", { class: "card pad fold trace-prompt" }, h("summary", {}, h("b", {}, "The system prompt as the day began"), h("span", { class: "muted" }, ` · ${fmt.plural(doc.prompt.length, "character")}`)), h("pre", { class: "trace-text" }, doc.prompt)) : h("p", { class: "note" }, "No system prompt had been assembled before this day's first record; the first one appears below."),
+            traceKinds(doc.records, list),
+            list,
           ]
-        : h("div", { class: "card" }, emptyState(`${agentName()}'s runtime wrote no trace on day ${lived.day}.`)),
+        : h("div", { class: "card" }, emptyState(`${agentName()}'s runtime wrote no trace on day ${lived.day}.`, "A resident's runtime writes a trace only on the days it runs; pick another day above.")),
     ];
   }
 

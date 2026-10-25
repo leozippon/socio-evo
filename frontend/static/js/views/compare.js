@@ -101,7 +101,7 @@ export function mountCompare(root, ctx) {
         { class: "page-head" },
         h("p", { class: "eyebrow" }, "Comparison"),
         h("h1", {}, doc.name),
-        h("p", { class: "lede" }, "One run stands for each group; the residents are the units, with the caveat that the residents of C and of D share one town each. Statistics follow the experimental design: a change from the first to the last day for capability and honesty under pressure, the last value and the trend for journal distortion, the mean for everything else."),
+        h("p", { class: "lede" }, "The groups of this set of runs compared on the outcomes the design declares and on the town's measures. One run stands for each group; the residents are the units, with the caveat that the residents of C and of D share one town each. Statistics follow the design: a change from the first to the last day for capability and honesty under pressure, the last value and the trend for journal distortion, the mean for everything else."),
       ),
       h(
         "div",
@@ -109,8 +109,8 @@ export function mountCompare(root, ctx) {
         h("ul", { class: "group-list" }, Object.entries(doc.groups).map(([group, run]) => h("li", {}, h("span", { class: "swatch", style: { background: COLOURS[group] ?? "var(--ink-2)" } }), h("a", { href: href({ view: "overview", run, query: {} }) }, h("b", {}, `Group ${group}`), ` ${run}`), h("span", { class: "muted" }, ` · ${groupLabel(group)?.split(" · ")[1] ?? ""}`)))),
         doc.problems.length ? h("ul", { class: "problems" }, doc.problems.map((problem) => h("li", { class: "note" }, problem))) : null,
       ),
-      doc.measures.length ? null : h("div", { class: "card" }, emptyState("Nothing to compare yet.", "The runs have no closed day with measures and no evaluation results.")),
-      declared.length ? h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "measure-cards" }, declared.map(measureCard))) : h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "card" }, emptyState("No evaluation results yet.", "Capability, honesty under pressure and journal distortion appear once the exports are evaluated."))),
+      doc.measures.length ? null : h("div", { class: "card" }, emptyState("Nothing to compare yet.", "The declared outcomes appear once the residents' exports are evaluated, and the town's measures once a checkpoint has closed a day in each run.")),
+      declared.length ? h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "measure-cards" }, declared.map(measureCard))) : doc.measures.length ? h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "card" }, emptyState("No evaluation results yet.", "Capability, honesty under pressure and journal distortion appear once the exports are evaluated."))) : null,
       explored.length ? h("section", { class: "section" }, h("h2", {}, "The town's measures, as exploration"), h("div", { class: "measure-cards" }, explored.map(measureCard))) : null,
     );
   }

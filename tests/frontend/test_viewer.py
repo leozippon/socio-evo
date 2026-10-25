@@ -1,5 +1,7 @@
-"""The viewer's pure modules under node: the replay looks the town up in the published timeline
-as the progress document counts it, and the town plan holds for published and made-up worlds."""
+"""The viewer under node and headless Chromium: the replay looks the town up in the published
+timeline as the progress document counts it, the town plan holds for published and made-up
+worlds, and every route renders at a desktop and a phone width without an error in the console
+or horizontal overflow."""
 
 from __future__ import annotations
 
@@ -10,22 +12,33 @@ from pathlib import Path
 
 import pytest
 import pytest_asyncio
+import yaml
 
 from frontend.publish import Publisher
+from tests.frontend.conftest import write_results
 from tests.frontend.test_publish import RUN, make_run
 
 NODE = shutil.which("node")
 REPLAY_CHECK = Path(__file__).with_name("replay_check.mjs")
 PLAN_CHECK = Path(__file__).with_name("plan_check.mjs")
+RENDER_CHECK = Path(__file__).with_name("render_check.mjs")
 
 pytestmark = pytest.mark.skipif(NODE is None, reason="node is not installed")
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")
 async def site(tmp_path_factory) -> Path:
+    """The town's run published with its evaluation results, beside a copy of it whose frozen
+    configuration the publisher cannot read, so the home page has a run to list as not published."""
     root = tmp_path_factory.mktemp("viewer")
-    await make_run(root / "runs")
-    Publisher(root / "runs", root / "site").publish()
+    run = await make_run(root / "runs")
+    write_results(root / "results", "town")
+    older = root / "runs" / "older"
+    shutil.copytree(run.root, older)
+    config = yaml.safe_load((older / "config.yaml").read_text())
+    config["town"]["day"]["closing"] = "18:00"
+    (older / "config.yaml").write_text(yaml.safe_dump(config))
+    Publisher(root / "runs", root / "site", root / "results").publish()
     return root / "site"
 
 
@@ -62,3 +75,15 @@ def test_the_town_plan_holds_for_published_and_made_up_worlds(site):
     summary = json.loads(result.stdout)
     assert result.returncode == 0, summary["failures"]
     assert len(summary["worlds"]) > 5 and summary["checks"] > 100
+
+
+def test_every_route_renders_without_errors_or_overflow_at_both_widths(site):
+    result = subprocess.run(
+        [NODE, str(RENDER_CHECK), str(site)], capture_output=True, text=True, timeout=900
+    )
+    assert result.stdout, result.stderr
+    summary = json.loads(result.stdout)
+    if result.returncode == 2:
+        pytest.skip(summary["skipped"])
+    assert result.returncode == 0, summary["failures"]
+    assert summary["widths"] == 2 and summary["routes"] >= 20

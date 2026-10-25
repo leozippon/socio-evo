@@ -13,9 +13,10 @@ atomically. Every document is written before the documents that refer to it, and
 carries the hash of the content it refers to, so a reader never meets a torn file or a
 reference to a file not yet written. Files no longer referred to are removed last. Publishing
 reads run directories and the results root and never writes into either. A run whose frozen
-configuration the current code cannot read, or whose publishing fails, is skipped and named in
-the index with the reason, so the other runs are published all the same. `--watch`
-publishes again every SECONDS, skipping runs whose files have not changed, until interrupted.
+configuration is missing or cannot be read by the current code, or whose publishing fails, is
+skipped and named in the index with the reason in plain words and the error itself, so the
+other runs are published all the same. `--watch` publishes again every SECONDS, skipping runs
+whose files have not changed, until interrupted.
 """
 
 from __future__ import annotations
@@ -97,7 +98,7 @@ class Site:
         self.written: list[str] = []
         self.removed: list[str] = []
         self.skipped: list[dict[str, str]] = []
-        """The runs this publish left out, each with the reason."""
+        """The runs this publish left out, each with the reason in plain words and the error."""
 
     def put(self, path: str, document: Any) -> str:
         """Write `document` as JSON to `path`, relative to the site; returns its hash."""
@@ -197,12 +198,12 @@ class Publisher:
 
     def _run(self, site: Site, name: str, root: Path) -> _Published | None:
         """Publish one run, or skip it, saying why in `site.skipped`: its frozen configuration
-        cannot be read by the current code, or publishing it failed, in which case the files
-        written for it so far are left for `prune` and the error is printed."""
+        is missing or cannot be read by the current code, or publishing it failed, in which case
+        the files written for it so far are left for `prune` and the error is printed."""
         try:
             config = load_config(root / "config.yaml", ExperimentConfig)
-        except ConfigError as error:
-            site.skipped.append({"name": name, "reason": str(error)})
+        except (ConfigError, OSError) as error:
+            site.skipped.append(_skipped(name, root, UNREADABLE_CONFIG, error))
             return None
         fingerprint = _fingerprint(RunDirectory(root), self.results_root, name)
         last = self._published.get(name)
@@ -221,7 +222,7 @@ class Publisher:
             traceback.print_exc()
             site.kept = before
             self._published.pop(name, None)
-            site.skipped.append({"name": name, "reason": f"{type(error).__name__}: {error}"})
+            site.skipped.append(_skipped(name, root, PUBLISHING_FAILED, error))
             return None
         published = _Published(fingerprint, entry, frozenset(site.kept - before), analysed)
         self._published[name] = published
@@ -380,6 +381,21 @@ def publish_run(
     return entry, bundle.Analysed(name, world["group"], rows, evaluation)
 
 
+UNREADABLE_CONFIG = (
+    "Its frozen configuration cannot be read by the version of the code that publishes, so the "
+    "run is left out until the two agree; nothing of it is lost."
+)
+PUBLISHING_FAILED = "Publishing its files failed, so the run is left out until that is repaired."
+
+
+def _skipped(name: str, root: Path, reason: str, error: BaseException) -> dict[str, str]:
+    """A skipped run's entry in the index: the reason in plain words, and the error as the code
+    reported it, with the run's directory named by the run so the bundle stays the same bytes
+    wherever it is published."""
+    detail = f"{type(error).__name__}: {error}".replace(str(root), name)
+    return {"name": name, "reason": reason, "detail": detail}
+
+
 def _runs(runs_root: Path) -> dict[str, Path]:
     """Every run under `runs_root`, by its path relative to the root: a directory holding a
     manifest, directly under the root or one level further down."""
@@ -433,9 +449,9 @@ def _locked(directory: Path) -> Iterator[None]:
 
 
 def report(out: Path, site: Site) -> str:
-    """One line on what a publish did, and one per run it skipped."""
+    """One line on what a publish did, and one per run it skipped, with the error."""
     lines = [f"{out}: {len(site.written)} written, {len(site.removed)} removed"]
-    lines += [f"skipped {found['name']}: {found['reason']}" for found in site.skipped]
+    lines += [f"skipped {found['name']}: {found['detail']}" for found in site.skipped]
     return "\n".join(lines)
 
 
