@@ -152,10 +152,12 @@ async def test_failures_of_the_machinery_are_errors_and_not_the_residents(tmp_pa
 
 
 async def test_error_rows_are_worked_again_when_the_evaluation_is_continued(tmp_path):
+    export = exported(tmp_path)
+
     async def failing_pass() -> int:
         backend = Unstartable(2)
         result = await evaluate_capability(
-            exported(tmp_path),
+            export,
             backend.tasks,
             ScriptedClient(failing),
             RuntimeConfig(model_attempts=2, retry_wait=0.01),
