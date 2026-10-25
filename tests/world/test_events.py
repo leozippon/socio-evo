@@ -155,6 +155,20 @@ async def test_conversations_end_on_silence(make_town):
     assert town.take("Mei")[-1] == "Nobody spoke for 10 minutes; at 07:19 the conversation ended."
 
 
+async def test_silence_is_not_counted_while_someone_is_still_thinking(make_town):
+    town = make_town()
+    await awake_at(town)
+    await town.call("Mei", "say", text="Good morning.")
+    aisha = town.world.residents["Aisha"]
+    town.world.clock.set_busy("Aisha", True)  # composing her answer
+    await town.until("07:25")
+    assert aisha.conversation is not None
+    town.world.clock.set_busy("Aisha", False)
+    await town.until("07:27")
+    assert aisha.conversation is None
+    assert town.take("Mei")[-1].startswith("Nobody spoke for 10 minutes; at 07:2")
+
+
 async def test_speech_interrupts_only_those_it_reaches(make_town):
     town = make_town()
     await awake_at(town)

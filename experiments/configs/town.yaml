@@ -147,7 +147,7 @@ town:
           talking.
   work:
     split: train
-    board_size: 48 # six a resident a day; the pool comes round in turn
+    board_size: 56 # seven a resident a day; the pool comes round in turn
     payment: 60
     living_cost: 90 # a task and a half
     acceptance_runs: 2
@@ -155,13 +155,13 @@ town:
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   social:
-    silence_minutes: 10
+    silence_minutes: 15 # counted while nobody in the conversation is still thinking
     skills_shareable: true
   clock:
     speed_idle: 240 # a sleeping town passes 8 hours in 2 minutes
     speed_busy_one: 32 # one thinker's minute is half a simulated hour
     speed_busy_all: 8 # a saturated town's minute is eight
-    idle_minutes: 30
+    idle_minutes: 60
   day:
     forced_sleep: "02:00"
     checkpoint: "02:30"

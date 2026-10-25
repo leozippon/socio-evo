@@ -722,6 +722,12 @@ class World:
     def _end(self, conversation: Conversation, silent: int | None = None) -> None:
         """End `conversation`, after `silent` minutes in which nobody spoke, or because too few
         are left in it, telling those left when."""
+        if silent is not None and any(self.clock.is_busy(n) for n in conversation.members):
+            # Someone is still composing an answer: that is not silence. Look again shortly.
+            conversation.silence = self._at(
+                self.clock.now() + 60, partial(self._end, conversation, silent)
+            )
+            return
         ended = f"at {clock_time(self.clock.now())} the conversation ended."
         if silent is not None:
             ended = f"Nobody spoke for {counted(silent, 'minute')}; {ended}"

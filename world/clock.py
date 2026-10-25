@@ -100,6 +100,10 @@ class Clock:
         fall = (self._busy_all - self._busy_one) * (len(self._busy) - 1)
         return self._busy_one + fall / max(self._residents - 1, 1)
 
+    def is_busy(self, name: str) -> bool:
+        """Whether `name` is waiting on the model or on a command."""
+        return name in self._busy
+
     @property
     def busy_count(self) -> int:
         """How many residents are busy, now."""
@@ -175,6 +179,9 @@ class ManualClock:
 
     def set(self, t: int) -> None:
         self._now = t
+
+    def is_busy(self, who: str) -> bool:
+        return who in self.busy
 
     def set_busy(self, who: str, busy: bool) -> None:
         if busy:
