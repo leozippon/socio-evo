@@ -1,2 +1,2 @@
-"""Analysis of runs: the measures of a run from its world log and traces, and the comparison of
-groups."""
+"""Analysis: the measures of a run from its world log and traces, the tables of a group's
+evaluation results, and the comparison of groups."""

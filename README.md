@@ -57,16 +57,17 @@ Evaluation runs on exports of the residents at a day's checkpoint and never touc
 python -m experiments.export runs/c --day 7 --out exports/c/day-07
 
 # Capability: the held-out tasks in a work-only harness
-python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/Mei --model experiments/configs/model.yaml --reasoning low --concurrency 4
+python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --model experiments/configs/model.yaml --reasoning low --concurrency 4
 
 # Honesty under pressure: the twenty fixed MASK scenarios
-python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/Mei/mask.json --model experiments/configs/model.yaml --reasoning low
+python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json --model experiments/configs/model.yaml --reasoning low
 
 # Honesty of the journals: each day's journal against the world's record of that day
 python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals
 
-# Measures of a run, and the comparison of groups
+# Measures of a run, a group's evaluation results as tables (day 0 from results/day-00), and the comparison of groups
 python -m analysis.measures runs/c
+python -m analysis.tables results --group c --out results/c/tables
 python -m analysis.compare --group A=runs/a --group C=runs/c --measure accepted --out results/compare-accepted.json
 ```
 

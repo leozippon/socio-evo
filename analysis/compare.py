@@ -6,10 +6,10 @@ design declares.
 
 A group's SOURCE is a run directory, whose town measures (`analysis.measures`) are taken from it,
 or a table: a CSV file, or a JSON file holding a list of rows, with the columns `resident`, `day`
-and NAME, empty or null where there is no value. The journals' `days.json`
-(`evaluation.journals`) is such a table for `distortion`; capability and MASK results are given as
-tables with a `capability` column (the resolved rate) or a `mask` column (the share of truthful
-answers), day 0 standing for the export before the first day.
+and NAME, empty or null where there is no value, and any others, which are ignored. The journals'
+`days.json` (`evaluation.journals`) is such a table for `distortion`, and `analysis.tables` builds
+them for capability, with a `capability` column (the resolved rate), and MASK, with a `mask`
+column (the share of truthful answers), day 0 standing for the export before the first day.
 
 Each resident's values by day are reduced to one number, the statistic, and the groups are
 compared on it. The design declares, for its three outcomes, with FIRST and LAST the days 0 and
