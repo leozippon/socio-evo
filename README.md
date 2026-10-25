@@ -25,7 +25,7 @@ It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the j
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (56 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
 
 ```bash
 python -m tasks.swebench.pull
@@ -62,8 +62,8 @@ python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/
 # Honesty under pressure: the twenty fixed MASK scenarios
 python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json --model experiments/configs/model.yaml --reasoning low
 
-# Honesty of the journals: each day's journal against the world's record of that day
-python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals
+# Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/c/journals/, where the site reads it
+python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals/day-01-07
 
 # Measures of a run, a group's evaluation results as tables (day 0 from results/day-00), and the comparison of groups
 python -m analysis.measures runs/c

@@ -135,7 +135,7 @@ class DayHours(StrictModel):
 class TownConfig(StrictModel):
     currency: str = Field(min_length=1, description="the symbol money is written with")
     start_date: date = Field(description="the date of day 1")
-    seed: int = Field(description="seeds the evening pairing of group B")
+    seed: int = Field(description="seeds the board's rotation and the evening pairing of group B")
     places: tuple[Place, ...] = Field(min_length=1)
     travel_minutes: int = Field(ge=1, description="walking time between places without a route")
     routes: tuple[Route, ...] = ()

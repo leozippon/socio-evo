@@ -12,8 +12,6 @@ dependencies = ["pydantic>=2", "pyyaml", "openai"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
-# Reading the parquet files of the calculation benchmark (`python -m tasks.calculation.fetch`).
-banks = ["pyarrow"]
 # SWE-bench Verified tasks (`tasks.swebench`): the dataset and the official harness. 4.1.0 is the
 # last release that builds eval scripts from its own specs, as the pinned dataset needs.
 swebench = ["swebench==4.1.0", "huggingface_hub", "pyarrow"]

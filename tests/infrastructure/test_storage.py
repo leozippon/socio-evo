@@ -25,7 +25,7 @@ def test_create_lays_out_a_run(tmp_path):
     run = _create(tmp_path)
     root = tmp_path / "runs" / "baseline"
     assert run.root == root
-    assert all(path.is_dir() for path in (run.checkpoints_dir, run.agents_dir, run.evaluation_dir))
+    assert all(path.is_dir() for path in (run.checkpoints_dir, run.agents_dir))
     assert load_config(run.config_path, Settings) == Settings(agents=3, note="première")
     assert run.world_log_path == root / "world.jsonl"
     assert run.run_log_path == root / "run.log"

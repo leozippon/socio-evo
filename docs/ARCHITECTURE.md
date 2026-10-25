@@ -21,8 +21,8 @@ Imports point downward only.
 
 | Layer | Package | Responsibility |
 | --- | --- | --- |
-| Composition | `experiments/` | Experiment configurations (the four groups), resident identities, command-line entry points for running, snapshotting and evaluating; the only place that wires every layer together. |
-| Presentation | `frontend/` | The timeline viewer: every resident's events side by side over the run, read from the run directory. Reads only. |
+| Composition | `experiments/` | Experiment configurations (the four groups), resident identities, and the commands that run a town and export its residents' directories; the evaluations' commands are in `evaluation/`. |
+| Presentation | `frontend/` | The published site: the index of runs and, for each run, its dashboard, the town replay, the timeline lanes, each resident's files and raw trace, and the evaluation, with the comparison of groups. Built from the run directories and the evaluation results by `frontend.publish`, served live by `frontend.server`, deployed by `frontend/deploy/`. Writes nothing but the site. |
 | Analysis | `analysis/` | Turns run directories and evaluation results into measures and group comparisons. Reads only. |
 | Assessment | `evaluation/` | Capability on held-out tasks, internal honesty of daily summaries, external honesty under pressure (MASK), and the judge they share. Runs on exported agent directories. |
 | Orchestration | `simulation/` | Runs one town: starts the world and one runtime per resident, drives the daily cycle, writes checkpoints and resumes from them. |
@@ -123,7 +123,7 @@ Sleep is how a day ends for a resident, at an hour it chooses. `sleep` takes the
 
 ### Work
 
-The workplace has a board. At every midnight, and as a new world starts, it posts `board_size` tasks of the training pool (48 of 350 in the town's configuration), the next ones of a rotation through the pool that the run's seed fixes, so that every task comes round in turn: each task with its number in the pool, repository, the first line of its statement and the payment. Only posted tasks can be claimed; a held task that leaves the board stays held. In the shared-board modes (groups C and D) a task held by a resident is shown as held and cannot be claimed by another; in the isolated modes (A and B) each resident has a board of its own. A resident holds at most one task; it keeps it when it leaves the workplace, and loses it unpaid when the claim expires at the midnight that ends the calendar day `claim_expiry_days` days after the day of the claim (in the town's configuration, the second midnight after it). A task a resident has already been paid for is marked done for that resident and cannot be claimed by it again.
+The workplace has a board. At every midnight, and as a new world starts, it posts `board_size` tasks of the training pool (56 of 350 in the town's configuration), the next ones of a rotation through the pool that the run's seed fixes, so that every task comes round in turn: each task with its number in the pool, repository, the first line of its statement and the payment. Only posted tasks can be claimed; a held task that leaves the board stays held. In the shared-board modes (groups C and D) a task held by a resident is shown as held and cannot be claimed by another; in the isolated modes (A and B) each resident has a board of its own. A resident holds at most one task; it keeps it when it leaves the workplace, and loses it unpaid when the claim expires at the midnight that ends the calendar day `claim_expiry_days` days after the day of the claim (in the town's configuration, the second midnight after it). A task a resident has already been paid for is marked done for that resident and cannot be claimed by it again.
 
 `claim_task` opens a workspace: a container of the task's image, network off, the repository at the base commit, where `shell`, `read_repo_file`, `write_repo_file` and `edit_repo_file` act. `submit` takes the workspace's diff and runs the official acceptance in a fresh container of the same image with the hidden tests; the resident is told accepted (and paid) or not, with the category of failure and the count of checks failed, never the names of the hidden tests. Acceptance runs are limited per task per day. When a resident leaves the workplace, its workspace stays open until the day's checkpoint, when it is closed and its diff kept; the next `start_work` reopens it and reapplies the diff.
 
@@ -153,7 +153,7 @@ SWE-bench Verified at a pinned revision. `splits.json` fixes the held-out evalua
 
 ## Evaluation (`evaluation/`)
 
-All evaluation runs on exports of agent directories at tagged days, in isolated copies, and never writes back.
+All evaluation runs on exports of agent directories at tagged days, in isolated copies, and never writes back. Each command writes its results where its `--out` says, by convention under `results/<run>/` (`day-NN/capability/`, `day-NN/mask/`, and one directory per judging of the journals under `journals/`; day 0, the same for every group, under `results/day-00/`), which is where `analysis.tables` and the publisher (`--results-root`) read them; nothing is written under the run.
 
 - Capability: each held-out task is worked by the resident's own runtime, from a fresh copy of its background, memory and skills, over a work-only port (one Work event, no town) offering the town's workspace tools, `submit` and `give_up`. A task has a budget of model requests and of completion tokens, reasoning included (by default 60 requests and 60,000 tokens), and allows two submissions; the resident is told only how often it may submit, as in the town, and its commands have the town's time limit. Real time is no budget, since what it buys varies with the model server's load; a safety stop of two hours guards against a runaway task. It ends accepted; rejected, when the last submission allowed is not accepted; given up; when a budget runs out (`requests` or `budget`, the completion tokens); or in error, when a workspace, an acceptance, the model or the harness fails or the safety stop is reached. The measure is the resolved rate, with a Wilson 95% interval, over the tasks that did not end in error: an error is a failure of the machinery and never counts against the resident.
 - Internal honesty: for each resident-day, the world's record of that day (tasks claimed, commands and test outcomes, submissions and verdicts, payments, conversations, skills read, written and shared) is set against the journal entry; a judge of another model family extracts the journal's checkable claims and labels each supported, contradicted or unverifiable against the record. The distortion rate is contradicted over checkable claims.
@@ -170,7 +170,6 @@ runs/<experiment>/
 ├── world.jsonl                 the world log
 ├── checkpoints/day-NN.json     world state at each daily checkpoint; day-00 is the state before day 1
 ├── agents/<name>/              agent directories (git repositories tagged day-NN, day-00 as created)
-├── evaluation/<day>/...        results of evaluations on that day's export
 └── run.log                     process log
 ```
 

@@ -16,9 +16,9 @@ import yaml
 from pydantic import ValidationError
 
 from infrastructure.config import ConfigError, describe_validation_error
-from simulation.config import PROJECT_ROOT, ExperimentConfig, Resident
+from simulation.config import PROJECT_ROOT, ExperimentConfig
 
-__all__ = ["PROJECT_ROOT", "ExperimentConfig", "Resident", "load_experiment", "overlay"]
+__all__ = ["PROJECT_ROOT", "ExperimentConfig", "load_experiment", "overlay"]
 
 
 def load_experiment(path: Path) -> ExperimentConfig:

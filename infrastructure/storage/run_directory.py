@@ -6,7 +6,6 @@ runs/<experiment>/
 ├── world.jsonl                 the world log
 ├── checkpoints/day-NN.json     the world at each daily checkpoint; day-00 before day 1
 ├── agents/<name>/              agent directories, git repositories tagged day-NN
-├── evaluation/                 results of evaluations on exports
 └── run.log                     the process log
 """
 
@@ -65,7 +64,7 @@ class RunDirectory:
         """
         run = cls(runs_root / experiment)
         run.root.mkdir(parents=True)
-        for directory in (run.checkpoints_dir, run.agents_dir, run.evaluation_dir):
+        for directory in (run.checkpoints_dir, run.agents_dir):
             directory.mkdir()
         run.config_path.write_text(
             yaml.safe_dump(config.model_dump(mode="json"), sort_keys=False, allow_unicode=True),
@@ -110,10 +109,6 @@ class RunDirectory:
     @property
     def agents_dir(self) -> Path:
         return self.root / "agents"
-
-    @property
-    def evaluation_dir(self) -> Path:
-        return self.root / "evaluation"
 
     def checkpoint_path(self, day: int) -> Path:
         return self.checkpoints_dir / f"{day_tag(day)}.json"

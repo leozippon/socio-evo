@@ -61,7 +61,6 @@ MEASURES = {
 """Every measure of a resident-day and what it counts."""
 LEVELS = frozenset({"purse", "rating_given_mean", "rating_received_mean", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
-KEYS = ("resident", "day", "date")
 
 Row = dict[str, Any]
 
