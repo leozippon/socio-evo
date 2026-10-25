@@ -8,7 +8,7 @@ The experiment's claim is that character emerges from social life. That claim fa
 
 ## Rules
 
-1. Second person, present tense, plain words. The resident is "you"; everyone else is named by name. "The workshop is closed until 09:00", never "the Work event is unavailable".
+1. Second person, present tense, plain words. The resident is "you"; everyone else is named by name. "You can sleep only at home", never "the Sleep event is unavailable".
 2. The town's words, not the code's. A task is a task on the board with a number, a repository and a payment; a container is "your workspace"; acceptance is "the client's check"; the living cost is "your rent and board"; the files a resident keeps are "your notes", "your journal", "your skills". Tool names are what they are, since the resident calls them by name, but their descriptions follow this rule.
 3. No trait or moral vocabulary anywhere a resident reads: not in rules, tool descriptions, situations, percepts, help topics, refusals or compaction instructions. Not "be honest with the client"; the client's check and the rating others give are the facts, and the resident draws its own conclusions.
 4. No machinery. Nothing says simulation, experiment, research, benchmark, model, prompt, token, schema, evaluation, hidden tests or test patch. Time is told by the clock and the date, never as a day number. The run's length is never announced.
