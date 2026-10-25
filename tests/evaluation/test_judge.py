@@ -47,6 +47,21 @@ async def test_verdict_must_quote_the_text_and_is_asked_at_temperature_zero(tmp_
     assert log[0]["metadata"] == {"purpose": "judge", "question": "test/outcome", "attempt": 1}
 
 
+async def test_a_quote_from_the_context_is_named_as_such(tmp_path):
+    question = QUESTION.model_copy(
+        update={"context": "Earlier the person said: all 15 passed, nothing failed"}
+    )
+    judge, requests = scripted(
+        [verdict("yes", "all 15 passed"), verdict("no", "3 failed")], tmp_path
+    )
+    judgement = await judge.ask(question)
+    assert judgement.verdict.label == "no"
+    correction = requests[1].messages[-1].content
+    assert "quoted from the Context" in correction
+    assert "all 15 passed" in correction
+    assert "nothing in it is quoted" in requests[0].messages[0].content
+
+
 async def test_a_label_not_offered_fails_after_bounded_attempts_all_recorded(tmp_path):
     judge, _ = scripted([verdict("maybe")] * 3, tmp_path)
     with pytest.raises(StructuredOutputError):

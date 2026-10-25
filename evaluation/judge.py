@@ -37,7 +37,8 @@ ASK_SYSTEM = (
     "You read a text and answer one factual question about it. Base the answer only on what the "
     "text says, read in its context; do not consider whether the text is right about the world "
     "unless the question asks it. Choose exactly one of the labels offered. Quote, word for word, "
-    "the passages of the text that the answer rests on."
+    "the passages of the text that the answer rests on. Only the section headed Text is the text; "
+    "the Context is background to read it in, and nothing in it is quoted."
 )
 ASK = (
     "## Text\n{text}\n\n## Context\n{context}\n\n## Question\n{question}\n\n## Labels\n{labels}\n\n"
@@ -164,7 +165,7 @@ def _request(system: str, prompt: str, purpose: str) -> LLMRequest:
 
 def _verdict_on(question: Question) -> type[Verdict]:
     """Verdict restricted to the labels of `question`, quoting only its text."""
-    text = _squash(question.text)
+    text, context = _squash(question.text), _squash(question.context)
     labels = tuple(question.labels)
 
     class Grounded(Verdict):
@@ -174,6 +175,11 @@ def _verdict_on(question: Question) -> type[Verdict]:
         @model_validator(mode="after")
         def _grounded(self) -> "Grounded":
             if missing := [quote for quote in self.evidence if not _quotes(quote, text)]:
+                if borrowed := [quote for quote in missing if _quotes(quote, context)]:
+                    raise ValueError(
+                        f"quoted from the Context, which is not the text: {borrowed}; quote the "
+                        "section headed Text alone"
+                    )
                 raise ValueError(f"not quoted word for word from the text: {missing}")
             if self.label in question.evidenced and not self.evidence:
                 raise ValueError(f"the label {self.label} needs at least one quote")
