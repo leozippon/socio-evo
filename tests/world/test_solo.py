@@ -1,6 +1,6 @@
 """The work-only world of the capability evaluation: a resident's runtime on a scripted model
-working one task on the fake backend with the town's workspace tools, the endings and budgets,
-and the guard over every text the resident reads."""
+working one task on the fake backend with the town's workspace tools and time limits, the
+endings, budgets and safety stop, and the guard over every text the resident reads."""
 
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ from agent.port import ToolResult
 from agent.runtime import Runtime
 from agent.testing import ScriptedModel, reply, running, tool_call
 from agent.wording import offences
+from experiments.config import PROJECT_ROOT, load_experiment
 from infrastructure.storage import read_jsonl
 from world import solo as texts
 from world.solo import SoloConfig, SoloPort
@@ -53,11 +54,11 @@ async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
     assert port.ending == "accepted" and len(model.requests) == 4
     system, opening = model.requests[0].messages
     assert "How this work goes.\n\nYou have one task" in system.content
-    assert "You can submit at most 2 times. You have 30 minutes and 60 turns" in system.content
+    assert "You can submit at most 2 times. Your work on the task ends when" in system.content
     assert opening.content == (
-        "Your work on the task begins.\n\nYou are at work on a task in org/repo1. You have 30 "
-        "minutes and 60 turns left. Now you can use: shell, read_repo_file, write_repo_file, "
-        "edit_repo_file, submit, give_up.\n\nThe problem:\n\nProblem 1 goes wrong.\nDetails of 1."
+        "Your work on the task begins.\n\nYou are at work on a task in org/repo1. Now you can "
+        "use: shell, read_repo_file, write_repo_file, edit_repo_file, submit, give_up.\n\nThe "
+        "problem:\n\nProblem 1 goes wrong.\nDetails of 1."
     )
     assert results == [
         "ran ls\nExit code 0.",
@@ -122,13 +123,29 @@ async def test_the_last_turn_is_carried_out_and_then_the_budget_ends_the_task():
     with contextlib.suppress(asyncio.CancelledError):
         await waiting
     assert (await port.call("shell", {"command": "ls"})).text == texts.OVER
-    assert backend.opened[0].commands == ["ls", "pwd"] and (port.requests, port.tokens) == (2, 200)
+    assert backend.opened[0].commands == ["ls", "pwd"]
+    assert (port.requests, port.completion_tokens) == (2, 200)
 
-    timed, backend = solo(max_seconds=0.05)
-    await timed.wait()
+
+async def test_the_safety_stop_of_real_time_ends_the_task_as_an_error():
+    port, backend = solo(max_seconds=0.05)
+    await port.wait()
     await asyncio.sleep(0.06)
-    assert await timed.call("shell", {"command": "ls"}) == ToolResult(texts.TIME_UP, ends_turn=True)
-    assert timed.ending == "time" and backend.opened == []
+    assert await port.call("shell", {"command": "ls"}) == ToolResult(texts.OVER, ends_turn=True)
+    assert port.ending == "error" and backend.opened == []
+    assert port.error == "the safety stop of 0.05 seconds of real time was reached"
+
+
+async def test_commands_and_acceptances_have_the_towns_time_limits():
+    work = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "groups" / "c.yaml").town.work
+    config = SoloConfig()
+    assert (config.shell_timeout_s, config.acceptance_timeout_s) == (
+        work.shell_timeout_s,
+        work.acceptance_timeout_s,
+    )
+    port, _ = solo()
+    told = (await port.call("shell", {"command": "sleep forever"})).text
+    assert told == f"The command was stopped after {work.shell_timeout_s} seconds."
 
 
 async def test_nothing_the_resident_reads_offends():
@@ -146,5 +163,5 @@ async def test_nothing_the_resident_reads_offends():
     read += [percept.text for percept in await port.wait()]
     read.append((await port.call("submit", {})).text)
     read += [port.situation(), (await port.call("give_up", {})).text]
-    read += [texts.ACCEPTED, texts.GAVE_UP, texts.TIME_UP, texts.BROKEN]
+    read += [texts.ACCEPTED, texts.GAVE_UP, texts.BROKEN]
     assert [(text, offences(text)) for text in read if offences(text)] == []

@@ -7,23 +7,25 @@ first use through the same `Backend` as the town's, and answer as the town's do,
 code; `submit` runs the official acceptance in a fresh container, at most `max_submissions`
 times; `give_up` ends the work. There is no clock, place, purse or other resident. The resident is
 told how the work goes in place of the town's rules, and the situation tells the task's
-problem and repository, the minutes and turns left and the verdict of the last submission.
+problem and repository and the verdict of the last submission.
 
 The task ends when a submission is accepted, when the last submission allowed is not, when the
-resident gives up, when a budget is spent, or when the workspace or the acceptance fails: an
-`error`, a failure of the machinery and never of the resident. The budgets are model requests
-(the resident's turns), real time and tokens. The time is checked before every tool call and
-every request; the calls of the reply that spends the last turn or the last tokens are still
-carried out. Whoever meets the model for the resident awaits `turn` before each request, which
-never returns once the task is over, and calls `spend` with the tokens of each reply. When the
-task is over `done` is set and `wait` never returns: the runtime has nothing more to do, and
-the caller cancels it and closes the port.
+resident gives up, when a budget is spent, or when the machinery fails: an `error`, never the
+resident's doing. The budgets are model requests (the resident's turns) and completion tokens,
+reasoning included, as the server reports them; the resident is told of neither, only of how
+often it may submit, as the town tells it. Real time is no budget, since what it buys depends
+on the load of the model's server; a task that runs on to the safety stop of `max_seconds`
+ends as an `error`. The budgets and the safety stop are checked before every request, the
+safety stop before every tool call too; the calls of the reply that spends the last turn or the
+last tokens are still carried out. Whoever meets the model for the resident awaits `turn`
+before each request, which never returns once the task is over, and calls `spend` with the
+completion tokens of each reply. When the task is over `done` is set and `wait` never returns:
+the runtime has nothing more to do, and the caller cancels it and closes the port.
 """
 
 from __future__ import annotations
 
 import asyncio
-import math
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -46,26 +48,25 @@ from world.tools import (
     write_repo,
 )
 
-Ending = Literal["accepted", "rejected", "gave_up", "time", "requests", "usage", "error"]
+Ending = Literal["accepted", "rejected", "gave_up", "requests", "budget", "error"]
 """How a task ended: accepted; the last submission allowed not accepted; given up; the budget
-of time, of requests or of usage (`SoloConfig.max_tokens`) spent; or a failure of the
-workspace or the acceptance."""
+of requests or of reply length spent; or a failure of the machinery, the safety stop of real
+time included."""
 
 RULES = (
     "How this work goes.\n\n"
     "You have one task: a code repository with a problem to fix. Your workspace holds the "
     "repository; there you can run commands and read and write files, and it has no internet. "
     "When your change is ready, submit it: it is checked in a clean copy of the repository by "
-    "checks you cannot see, and you are told whether it was accepted, and if not, what kind of "
-    "failure it was and how many checks failed. You can submit at most {submissions}. You have "
-    "{minutes} and {turns} for the task; each reply you make is one turn. Your work on the task "
-    "ends when your change is accepted, when you have submitted as often as you can, when you "
-    "give up, or when the time or the turns run out."
+    "the client's checks, which you do not see, and you are told whether it was accepted, and if "
+    "not, what kind of failure it was and how many checks failed. You can submit at most "
+    "{submissions}. Your work "
+    "on the task ends when your change is accepted, when you have submitted as often as you "
+    "can, when you give up, or when it has gone on too long."
 )
 BEGUN = "Your work on the task begins."
 TIME_PASSED = "Time passed."
 OVER = "Your work on the task is over."
-TIME_UP = "Your time for the task is up; your work on it is over."
 BROKEN = "Your workspace stopped working; your work on the task is over."
 GAVE_UP = "You gave up the task; your work on it is over."
 ACCEPTED = "Accepted. Your work on the task is done."
@@ -73,16 +74,17 @@ NO_CHANGES = "Your workspace has no changes to hand in."
 
 
 class SoloConfig(StrictModel):
-    """The budgets of one task, the submissions it allows and the time limits of a command and
-    of an acceptance, which should be the town's. A task may take `max_requests` model
-    requests, `max_seconds` of real time and `max_tokens` tokens (prompt and completion of
-    every request, as the server reports them: the budget of usage)."""
+    """The budgets of one task, its safety stop, the submissions it allows and the time limits
+    of a command and of an acceptance, which are the town's as its configuration sets them. A
+    task may take `max_requests` model requests and `max_completion_tokens` completion tokens
+    (reasoning included, as the server reports them); `max_seconds` of real time is the safety
+    stop, not a budget."""
 
     max_requests: PositiveInt = 60
-    max_seconds: PositiveFloat = 1800.0
-    max_tokens: PositiveInt = 4_000_000
+    max_completion_tokens: PositiveInt = 60_000
+    max_seconds: PositiveFloat = 7200.0
     max_submissions: PositiveInt = 2
-    shell_timeout_s: PositiveInt = 300
+    shell_timeout_s: PositiveInt = 600
     acceptance_timeout_s: PositiveInt = 1800
 
 
@@ -101,7 +103,7 @@ class SoloPort:
         self.task = task
         self.config = config
         self.requests = 0
-        self.tokens = 0
+        self.completion_tokens = 0
         self.submissions: list[Submission] = []
         self.ending: Ending | None = None
         self.error: str | None = None
@@ -125,12 +127,7 @@ class SoloPort:
     # The port -------------------------------------------------------------------------------
 
     def rules(self) -> str:
-        c = self.config
-        return RULES.format(
-            submissions=counted(c.max_submissions, "time"),
-            minutes=counted(round(c.max_seconds / 60), "minute"),
-            turns=counted(c.max_requests, "turn"),
-        )
+        return RULES.format(submissions=counted(self.config.max_submissions, "time"))
 
     def tool_specs(self) -> list[ToolSpec]:
         return list(self._specs.values())
@@ -138,21 +135,15 @@ class SoloPort:
     def situation(self) -> str:
         if self.ending is not None:
             return OVER
-        c = self.config
-        minutes = max(0, math.ceil((c.max_seconds - self.elapsed()) / 60))
-        turns = max(0, c.max_requests - self.requests)
-        parts = [
-            f"You are at work on a task in {self.task.repo}.",
-            f"You have {counted(minutes, 'minute')} and {counted(turns, 'turn')} left.",
-        ]
+        parts = [f"You are at work on a task in {self.task.repo}."]
         if self.submissions:
-            left = c.max_submissions - len(self.submissions)
+            left = self.config.max_submissions - len(self.submissions)
             parts.append(
                 f"You have handed in your change {counted(len(self.submissions), 'time')}; the "
                 f"last time it was not accepted: {failure(self.submissions[-1].verdict)}. You "
                 f"can hand it in {counted(left, 'more time')}."
             )
-        parts.append(f"Now you can use: {', '.join(self._specs)}.")
+        parts.append(f"What you can do now: {', '.join(self._specs)}.")
         return " ".join(parts) + f"\n\nThe problem:\n\n{self.task.problem_statement}"
 
     def sim_time(self) -> int:
@@ -164,11 +155,9 @@ class SoloPort:
 
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
         spec = self._specs[name]
+        self._stop()
         if self.ending is not None:
             return ToolResult(OVER, ends_turn=True)
-        if self.elapsed() >= self.config.max_seconds:
-            self.end("time")
-            return ToolResult(TIME_UP, ends_turn=True)
         problem = check(spec, args)
         if problem:
             return ToolResult(problem)
@@ -200,18 +189,18 @@ class SoloPort:
     # The budget and the end -----------------------------------------------------------------
 
     async def turn(self) -> None:
-        """Return while the task goes on; end it if a budget is spent, and once it is over
-        never return."""
-        spent = self._spent()
-        if self.ending is None and spent is not None:
+        """Return while the task goes on; end it at the safety stop or when a budget is spent,
+        and once it is over never return."""
+        self._stop()
+        if (spent := self._spent()) is not None:
             self.end(spent)
         if self.ending is not None:
             await asyncio.Event().wait()
 
-    def spend(self, tokens: int) -> None:
-        """Count one model request answered, which used `tokens` tokens."""
+    def spend(self, completion_tokens: int) -> None:
+        """Count one model request answered, whose reply took `completion_tokens`."""
         self.requests += 1
-        self.tokens += tokens
+        self.completion_tokens += completion_tokens
 
     def end(self, ending: Ending, error: str | None = None) -> None:
         """End the task, unless it is over already; `error` says what failed."""
@@ -229,14 +218,21 @@ class SoloPort:
             workspace, self._workspace = self._workspace, None
             await workspace.close()
 
+    def _stop(self) -> None:
+        """End the task as an error once it has run on to the safety stop."""
+        if self.elapsed() >= self.config.max_seconds:
+            self.end(
+                "error",
+                f"the safety stop of {self.config.max_seconds:g} seconds of real time was reached",
+            )
+
     def _spent(self) -> Ending | None:
+        """The budget spent, if one is."""
         c = self.config
-        if self.elapsed() >= c.max_seconds:
-            return "time"
         if self.requests >= c.max_requests:
             return "requests"
-        if self.tokens >= c.max_tokens:
-            return "usage"
+        if self.completion_tokens >= c.max_completion_tokens:
+            return "budget"
         return None
 
     def _percept(self, text: str, kind: str) -> Percept:

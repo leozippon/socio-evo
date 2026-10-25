@@ -15,21 +15,23 @@ could be read back anyway. Tasks run concurrently, `concurrency` at a time.
 
 A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions
 and their verdicts, the model requests (steps) and their tokens, the real seconds and the
-lapses. An infrastructure failure (a workspace or an acceptance that fails, a model that fails
-every attempt at a reply, an error of the harness) makes the row an `error`, left out of the
-resolved rate rather than counted against the resident. The resolved rate is resolved over
-evaluated tasks, with a Wilson 95% interval.
+lapses. A task is bounded by requests and completion tokens, never by real time, whose yield
+depends on the load of the model's server. An infrastructure failure (a workspace or an
+acceptance that fails, a model that fails every attempt at a reply, a task run on to the safety
+stop of real time, an error of the harness) makes the row an `error`, left out of the resolved
+rate rather than counted against the resident. The resolved rate is resolved over evaluated
+tasks, with a Wilson 95% interval.
 
 OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export, the
 split, the model and the reasoning effort); then each task's folder, with the task's row as
 result.json once the task is over; and, when every task is over, results.json: the
-configurations, the time taken, the summary, the rows and how many of them were resumed. Each
-file is written whole or not at all. A stopped evaluation is continued by running the same
-command again: the tasks whose row was written are kept, except error rows, and every other
-task folder, an attempt cut off, is removed and its task worked again; the configurations and
-the time taken
-in results.json are then those of the last invocation. An OUT_DIR that holds anything else, an
-evaluation of something else or a finished one, is refused.
+configurations, the time taken, the summary (with the count of rows of each ending), the rows
+and how many of them were resumed. Each file is written whole or not at all. A stopped
+evaluation is continued by running the same command again: the tasks whose row was written are
+kept, except error rows, and every other task folder, an attempt cut off, is removed and its
+task worked again; the configurations and the time taken in results.json are then those of the
+last invocation. An OUT_DIR that holds anything else, an evaluation of something else or a
+finished one, is refused.
 """
 
 from __future__ import annotations
@@ -43,6 +45,7 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import get_args
 
 from agent.directory import AREAS, BACKGROUND, AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
@@ -87,14 +90,15 @@ class TaskResult(StrictModel):
 
 
 class CapabilityResult(StrictModel):
-    """The rows, and the resolved rate over the tasks evaluated (all but the errors) with its
-    Wilson 95% interval, both None when every task was an error; `resumed` rows were kept
-    from an earlier invocation."""
+    """The rows, how many ended each way, and the resolved rate over the tasks evaluated (all
+    but the errors) with its Wilson 95% interval, both None when every task was an error;
+    `resumed` rows were kept from an earlier invocation."""
 
     tasks: tuple[TaskResult, ...]
     evaluated: int
     resolved: int
     errors: int
+    endings: dict[Ending, int]
     resolved_rate: float | None
     interval: tuple[float, float] | None
     resumed: int
@@ -109,6 +113,9 @@ class CapabilityResult(StrictModel):
             evaluated=n,
             resolved=resolved,
             errors=len(rows) - n,
+            endings={
+                ending: sum(row.status == ending for row in rows) for ending in get_args(Ending)
+            },
             resolved_rate=resolved / n if n else None,
             interval=wilson(resolved, n) if n else None,
             resumed=resumed,
@@ -289,10 +296,11 @@ async def _live(runtime: Runtime, port: SoloPort) -> None:
 
 class _Metered:
     """`client` as the resident on `port` meets it. A request waits for the port's leave, which
-    never comes once the task is over; every reply is charged to the task's budget; a model
-    that fails `attempts` times in a row, after which the runtime gives up the step as a lapse,
-    ends the task as an error, and so does a reply without token usage. It serves `stream`
-    alone, the one call the runtime makes."""
+    never comes once the task is over; every reply's completion tokens are charged to the
+    task's budget, its prompt tokens only reported in the row; a model that fails `attempts`
+    times in a row, after which the runtime gives up the step as a lapse, ends the task as an
+    error, and so does a reply without token usage. It serves `stream` alone, the one call the
+    runtime makes."""
 
     def __init__(self, client: StreamingClient, port: SoloPort, attempts: int) -> None:
         self._client = client
@@ -320,7 +328,7 @@ class _Metered:
             self._port.end("error", "the model reported no token usage")
             await self._port.turn()
             raise AssertionError("unreachable: the task is over")
-        self._port.spend(reply.usage.prompt_tokens + reply.usage.completion_tokens)
+        self._port.spend(reply.usage.completion_tokens)
         return reply
 
 

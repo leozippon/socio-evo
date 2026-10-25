@@ -1,7 +1,7 @@
-"""The capability harness on the fake backend with a scripted model: the rows, the resolved rate
-and its interval, the turn budget, the export left untouched, failures of the machinery kept
-apart from the resident's, and a stopped evaluation continued from the command line while
-another or a finished one is refused."""
+"""The capability harness on the fake backend with a scripted model: the rows, the endings
+counted, the resolved rate and its interval, the budgets of turns and of completion tokens, the
+export left untouched, failures of the machinery kept apart from the resident's, and a stopped
+evaluation continued from the command line while another or a finished one is refused."""
 
 import json
 from pathlib import Path
@@ -13,7 +13,7 @@ from agent.runtime import RuntimeConfig
 from agent.testing import reply, tool_call
 from evaluation import capability
 from evaluation.capability import evaluate_capability, main
-from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient
+from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient, Usage
 from world.solo import SoloConfig
 from world.testing import FakeBackend
 
@@ -97,6 +97,7 @@ async def test_two_tasks_make_rows_and_a_rate_with_its_interval(tmp_path):
         },
     ]
     assert (result.evaluated, result.resolved, result.errors) == (2, 1, 0)
+    assert result.endings == ENDINGS | {"accepted": 1, "requests": 1}
     assert result.resolved_rate == 0.5
     assert result.interval == pytest.approx((0.0945, 0.9055), abs=1e-4)
     assert files(root) == before
@@ -105,6 +106,38 @@ async def test_two_tasks_make_rows_and_a_rate_with_its_interval(tmp_path):
     assert "stale" not in (copy / "session.jsonl").read_text() + (copy / "trace.jsonl").read_text()
     assert (out / "org__repo-1" / "submission-1.patch").read_text() == '{"fix.py": "FIX\\n"}'
     assert len(backend.opened) == 2 and all(workspace.closed for workspace in backend.opened)
+
+
+ENDINGS = {"accepted": 0, "rejected": 0, "gave_up": 0, "requests": 0, "budget": 0, "error": 0}
+
+
+def thinking(request: LLMRequest):
+    """A model that reasons at length before every command: 15,000 completion tokens a reply
+    on a prompt of 10,000."""
+    return reply("", tool_call("shell", command="ls")).model_copy(
+        update={"usage": Usage(prompt_tokens=10_000, completion_tokens=15_000)}
+    )
+
+
+async def test_completion_tokens_end_a_task_and_prompt_tokens_do_not(tmp_path):
+    backend = FakeBackend(1)
+    result = await evaluate_capability(
+        exported(tmp_path),
+        backend.tasks,
+        ScriptedClient(thinking),
+        RuntimeConfig(),
+        SoloConfig(),
+        concurrency=1,
+        out_dir=tmp_path / "out",
+        backend=backend,
+    )
+
+    [row] = result.tasks
+    assert (row.status, row.resolved, row.steps, row.error) == ("budget", False, 4, None)
+    assert (row.prompt_tokens, row.completion_tokens) == (40_000, 60_000)
+    assert backend.opened[0].commands == ["ls"] * 4
+    assert result.endings == ENDINGS | {"budget": 1}
+    assert (result.evaluated, result.resolved_rate) == (1, 0.0)
 
 
 class Unstartable(FakeBackend):
@@ -149,6 +182,7 @@ async def test_failures_of_the_machinery_are_errors_and_not_the_residents(tmp_pa
         None,
         None,
     )
+    assert result.endings == ENDINGS | {"error": 2}
 
 
 async def test_error_rows_are_worked_again_when_the_evaluation_is_continued(tmp_path):
