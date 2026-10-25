@@ -56,8 +56,8 @@ async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
     assert "How this work goes.\n\nYou have one task" in system.content
     assert "You can submit at most 2 times. Your work on the task ends when" in system.content
     assert opening.content == (
-        "Your work on the task begins.\n\nYou are at work on a task in org/repo1. Now you can "
-        "use: shell, read_repo_file, write_repo_file, edit_repo_file, submit, give_up.\n\nThe "
+        "Your work on the task begins.\n\nYou are at work on a task in org/repo1. What you can "
+        "do now: shell, read_repo_file, write_repo_file, edit_repo_file, submit, give_up.\n\nThe "
         "problem:\n\nProblem 1 goes wrong.\nDetails of 1."
     )
     assert results == [
