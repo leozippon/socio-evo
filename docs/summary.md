@@ -50,4 +50,4 @@ The README has the installation, the services and every command. In short: `ops/
 - One run per group gives eight residents per group; residents of C and D share one society, so a group effect there is the effect of one society.
 - Simulated time depends on load, so runs are not replayable step for step; the log is the ground truth.
 - What lives only in a resident's running context and not in its files is not carried into evaluation.
-- The first real day of the smoke town (two residents) has run; the four groups have not yet. The previous design, its runs and its review are in the [project log](logbook/) and [reviews](reviews/).
+- The four groups started on 24 October 2026 and run at about 2.7 real hours per simulated day; their progress, the defects found and fixed along the way, and the results are in the [project log](logbook/). The previous design and its review are in [reviews](reviews/).
