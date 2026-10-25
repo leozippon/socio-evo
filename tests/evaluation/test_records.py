@@ -116,10 +116,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "20:00 You waited 180 minutes; it is now 20:00.",
         "20:00 You are in bed and will wake at 07:00; your journal entry for today is kept. Last "
         "night others rated you, without their names: 5 of 5, saying “She shared her testing "
-        "skill.”. Before you fall asleep you can look back over your day, rate the people you "
-        "spent "
-        "time with today (Aisha), and see to your files; you fall asleep once you have nothing "
-        "more to do.",
+        "skill.”. Before you fall asleep you can look back over your day and see to your "
+        "files; you fall asleep once you have nothing more to do.",  # she spoke with nobody
         "20:00 You fell asleep.",
         "00:00 Your statement for Tuesday 2 January: living cost $40. Your purse holds $65. "
         "Before the living cost it held $105.",

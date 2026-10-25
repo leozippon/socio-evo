@@ -90,18 +90,23 @@ async def test_skills_cannot_be_passed_on_when_they_are_not_shareable(make_town,
     assert "skill" not in town.world.rules.text("Mei").lower().replace("skills folder", "")
 
 
-async def test_ratings_go_to_those_one_was_with_and_arrive_anonymously_the_next_night(make_town):
+async def test_ratings_go_to_those_one_spoke_with_and_arrive_anonymously_the_next_night(make_town):
     town = make_town()
     await awake_at(town)
     await town.call("Tomas", "go", place="mill-street-house")
     await town.until("07:10")
+    await town.call("Tomas", "say", text="Morning, Mei.", to=["Mei"])  # Aisha hears only that
+    await town.call("Mei", "say", text="Morning, both of you.")  # Aisha is drawn in
     await town.call("Tomas", "go", place="college-flat")
     await town.until("20:00")
     for name in town.world.residents:
         await town.call(name, "sleep", until="07:00", journal=f"{name}'s first day.")
     in_bed = town.take("Mei")[-1]
     assert "Nobody rated you last night." in in_bed
-    assert "rate the people you spent time with today (Aisha and Tomas)" in in_bed
+    assert "rate the people you spoke with today (Aisha and Tomas)" in in_bed
+    assert "rate the people you spoke with today (Mei)" in town.take("Aisha")[-1]
+    refused = await town.call("Tomas", "rate", resident="Aisha", score=3, reason="Quiet.")
+    assert refused.text == "You did not speak with Aisha today."  # though they shared a room
 
     assert (
         await town.call("Tomas", "rate", resident="Mei", score=4, reason="Kind words.")
@@ -127,7 +132,7 @@ async def test_ratings_go_to_those_one_was_with_and_arrive_anonymously_the_next_
     )
     ratings = told.split("Last night")[1].split("Before you")[0]
     assert "Tomas" not in ratings and "Aisha" not in ratings
-    assert "spent time with today (Aisha)" in told  # they woke in the same house
+    assert "rate the people" not in told  # waking in the same house is no conversation
     read = [e for e in town.world.log.entries() if e["kind"] == "sleep"][-1]
     assert read["payload"]["ratings_read"] == [[2, "Too loud."], [4, "Kind words."]]
 
@@ -138,9 +143,9 @@ async def test_nobody_can_be_rated_without_having_been_met(make_town):
     await town.until("20:00")
     await town.call("Tomas", "sleep", until="07:00", journal="Alone.")
     refused = await town.call("Tomas", "rate", resident="Mei", score=3, reason="Never saw her.")
-    assert refused.text == "You did not spend time with Mei today."
+    assert refused.text == "You did not speak with Mei today."
     assert (await town.call("Tomas", "rate", resident="Tomas", score=5, reason="Me.")).text == (
-        "You did not spend time with Tomas today."
+        "You did not speak with Tomas today."
     )
 
 
@@ -157,4 +162,4 @@ async def test_an_isolated_resident_meets_nobody_and_hears_of_no_ratings(make_to
     in_bed = town.take("Mei")[-1]
     assert "rated" not in in_bed and "rate" not in in_bed
     refused = await town.call("Mei", "rate", resident="Aisha", score=3, reason="x")
-    assert refused.text == "You did not spend time with Aisha today."
+    assert refused.text == "You did not speak with Aisha today."

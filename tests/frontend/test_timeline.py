@@ -71,7 +71,9 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("idle", at("07:00", day=2), now, home, None),
     ]
 
-    talk = {"start": at("09:30"), "end": at("09:35"), "place": "workshop"}
+    # Tomas's remark at 09:30 drew nobody in (Mei was at work); the conversation begins with
+    # her answer at 09:32, for both of them.
+    talk = {"start": at("09:32"), "end": at("09:35"), "place": "workshop"}
     assert lane(data, "Mei")["conversations"] == [talk | {"over": "work", "with": ["Tomas"]}]
     assert lane(data, "Tomas")["conversations"] == [talk | {"over": "idle", "with": ["Mei"]}]
     assert lane(data, "Aisha")["conversations"] == []

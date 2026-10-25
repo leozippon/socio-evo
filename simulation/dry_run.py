@@ -25,7 +25,7 @@ from world.config import TownConfig
 EVENING = parse_hour("20:00")
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* Pays \S+\.(.*)$", re.MULTILINE)
-_RATE = re.compile(r"rate the people you spent time with today \(([^)]*)\)")
+_RATE = re.compile(r"rate the people you spoke with today \(([^)]*)\)")
 
 
 @dataclass(frozen=True)
@@ -182,11 +182,11 @@ class _Day:
         """The day in a few sentences, from what its calls returned."""
         parts = []
         claim = next((c for c in self.calls if c.name == "claim_task"), None)
-        if claim is not None and claim.result.startswith("You claimed"):
+        if claim is not None and "You claimed" in claim.result:
             parts.append(f"I claimed task {claim.arguments['task']} at the Workshop.")
         submit = next((c for c in self.calls if c.name == "submit"), None)
         if submit is not None:
-            accepted = submit.result.startswith("Accepted")
+            accepted = "Accepted." in submit.result
             parts.append("My fix was accepted." if accepted else "My fix was not accepted.")
         if self._said():
             parts.append("I talked with people in the evening.")
@@ -196,8 +196,9 @@ class _Day:
         return f"Hello, I am {self.name}. I spent the day on a task at the Workshop."
 
     def _did(self, name: str, result: str = "") -> bool:
-        """Whether `name` was called today, with a result beginning with `result`."""
-        return any(call.name == name and call.result.startswith(result) for call in self.calls)
+        """Whether `name` was called today, with a result that tells `result` (what happened
+        meanwhile may be told ahead of it)."""
+        return any(call.name == name and result in call.result for call in self.calls)
 
     def _said(self) -> bool:
         return self._did("say", "You said")

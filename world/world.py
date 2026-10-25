@@ -23,11 +23,14 @@ one on calendar day N + 1; the journal, the ratings, the acceptance runs and the
 `review_day` tells belong to it.
 
 The world delivers each percept to the ports of those who perceive it. Speech reaches the
-residents it is addressed to, at their place and awake, with `interrupt`; everything else waits
-for the resident's next step. A resident in transit is at no place and perceives nothing there;
-an asleep resident cannot be addressed, and what is told to it while suspended is held until it
-wakes. In the isolated mode a resident perceives nobody, except its partner in group B's
-evening exchange from the pairing until their conversation ends.
+residents it is addressed to, at their place and awake; it draws into the conversation, with
+`interrupt`, those it names and, when it is said to everyone, those not working outside the
+conversation. A resident at work outside it hears a remark to everyone without being drawn in or
+interrupted, and reads it, like everything else, with its runtime's next tool result or when it
+next waits. A resident in transit is at no place and perceives nothing there; an asleep resident
+cannot be addressed, and what is told to it while suspended is held until it wakes. In the
+isolated mode a resident perceives nobody, except its partner in group B's evening exchange
+from the pairing until their conversation ends.
 """
 
 from __future__ import annotations
@@ -320,12 +323,11 @@ class World:
                 self._meet(a, b)
 
     def _send(self, r: Resident, place: str) -> None:
-        """Send `r` to `place`, from its work if it is working, turning it there if it is on its
-        way elsewhere."""
+        """Send `r` to `place`, from its conversation and its work if it is in them, turning it
+        there if it is on its way elsewhere."""
         if r.place == place:
             return
-        if isinstance(r.base, Work):
-            self.stop_work(r)
+        self.break_off(r)
         if isinstance(r.base, Movement):
             assert r.timer is not None
             r.timer.cancel()
@@ -356,7 +358,6 @@ class World:
             pair=(a.name, b.name),
         )
         self._rooms[room] = a.conversation = b.conversation = conversation
-        self.ratings.meet(a.name, b.name)
         self._arm_silence(conversation)
         place = self.config.place(a.place).name
         n = exchange.messages
@@ -398,10 +399,7 @@ class World:
                 if not r.base.suspended:
                     self._fall_asleep(r, f"It is {hour}: you fell asleep.")
                 continue
-            if r.conversation is not None:
-                self.leave_conversation(r)
-            if isinstance(r.base, Work):
-                self.stop_work(r)
+            self.break_off(r)
             if r.timer is not None:
                 r.timer.cancel()
             r.partner = None
@@ -612,10 +610,23 @@ class World:
         return f"{text} {self.people_here(r)}"
 
     def stop_work(self, r: Resident) -> None:
-        """`r` stops work: by its own `leave_work`, or because the town takes it elsewhere (the
-        evening exchange, the forced sleep), so that every stretch of work in the log ends."""
+        """`r` stops work: by its own `leave_work`, by going elsewhere or to bed, or because the
+        town takes it elsewhere (the evening exchange, the forced sleep), so that every stretch of
+        work in the log ends."""
         r.base = Idle()
         self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
+
+    def break_off(self, r: Resident) -> str:
+        """`r` leaves its conversation and stops work, if it is in them, as going elsewhere or
+        to bed does on its own; what it is told of it, a sentence or nothing."""
+        left = []
+        if r.conversation is not None:
+            self.leave_conversation(r)
+            left.append("left the conversation")
+        if isinstance(r.base, Work):
+            self.stop_work(r)
+            left.append("stopped work")
+        return f"You {' and '.join(left)}. " if left else ""
 
     def depart(self, r: Resident, place: str) -> int:
         """Set `r` off from where it is to `place`; returns the time of arrival."""
@@ -642,8 +653,6 @@ class World:
         place = r.base.destination
         r.place, r.base = place, Idle()
         others = self.addressable(r)
-        for other in others:
-            self.ratings.meet(r.name, other.name)
         name = self.config.place(place).name
         here = self.people_here(r)
         self.record(
@@ -689,30 +698,34 @@ class World:
             conversation.silence.cancel()
         minutes = self.config.social.silence_minutes
         conversation.silence = self._at(
-            conversation.last_speech + minutes * 60,
-            partial(
-                self._end,
-                conversation,
-                f"Nobody has spoken for {minutes} minutes; the conversation is over.",
-            ),
+            conversation.last_speech + minutes * 60, partial(self._end, conversation, minutes)
         )
 
     def leave_conversation(self, r: Resident) -> None:
+        """`r` leaves its conversation; the others are told at what time, since they may read it
+        some time later."""
         conversation = r.conversation
         assert conversation is not None
         conversation.members.discard(r.name)
         r.conversation = None
         rest = [self.residents[name] for name in sorted(conversation.members)]
+        hour = clock_time(self.clock.now())
         self.record(
             "leave_conversation",
-            lambda w: f"{cap(you(r.name, w))} left the conversation.",
+            lambda w: f"At {hour} {you(r.name, w)} left the conversation.",
             actor=r,
             audience=rest,
         )
         if len(conversation.members) < 2:
-            self._end(conversation, "The conversation is over.")
+            self._end(conversation)
 
-    def _end(self, conversation: Conversation, text: str) -> None:
+    def _end(self, conversation: Conversation, silent: int | None = None) -> None:
+        """End `conversation`, after `silent` minutes in which nobody spoke, or because too few
+        are left in it, telling those left when."""
+        ended = f"at {clock_time(self.clock.now())} the conversation ended."
+        if silent is not None:
+            ended = f"Nobody spoke for {counted(silent, 'minute')}; {ended}"
+        text = cap(ended)
         members = [self.residents[name] for name in sorted(conversation.members)]
         for r in members:
             r.conversation = None
@@ -767,9 +780,9 @@ class World:
             if ratings or not again:
                 parts.append(tell_ratings(ratings))
             parts.append(
-                "Before you fall asleep you can look back over your day, "
-                + (f"rate the people you spent time with today ({listed(met)}), " if met else "")
-                + "and see to your files; you fall asleep once you have nothing more to do."
+                "Before you fall asleep you can look back over your day"
+                + (f", rate the people you spoke with today ({listed(met)})," if met else "")
+                + " and see to your files; you fall asleep once you have nothing more to do."
             )
         else:
             parts.append(
@@ -815,9 +828,6 @@ class World:
         r.timer = None
         r.base, r.place = Idle(), r.home
         r.port.release()
-        others = self.addressable(r)
-        for other in others:
-            self.ratings.meet(r.name, other.name)
         moment = tell_moment(self.clock.now(), self.config.start_date)
         self.record(
             "wake",

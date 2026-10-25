@@ -1,9 +1,10 @@
 """Ratings at night: who may rate whom, and the anonymous delivery the night after.
 
-A resident may rate, once a night, each resident it was with that day: both awake at the same
-place at some moment (`meet`). The ratings given in the night of a day become readable at the
-day's checkpoint, and the rated resident reads them, without names and in an order that says
-nothing of who gave them, when it next goes to bed.
+A resident may rate, once a night, each resident it spoke with that day: one spoke to the other
+by name, or in a conversation both were part of (`meet`, as the speech is said). The ratings
+given in the night of a day become readable at the day's checkpoint, and the rated resident
+reads them, without names and in an order that says nothing of who gave them, when it next goes
+to bed.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ class Ratings:
 
     def refusal(self, rater: str, rated: str) -> str | None:
         if rated not in self.met[rater]:
-            return f"You did not spend time with {rated} today."
+            return f"You did not speak with {rated} today."
         if rated in self.tonight[rater]:
             return f"You have already rated {rated} tonight."
         return None

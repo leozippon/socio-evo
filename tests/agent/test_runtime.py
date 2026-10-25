@@ -145,6 +145,34 @@ async def test_a_running_tool_finishes_and_the_calls_after_it_are_not_carried_ou
     assert after[5].content == "Ben says: got a minute?\n\n" + port.situation_text
 
 
+async def test_percepts_that_come_meanwhile_are_told_ahead_of_the_next_result(directory):
+    def look(args):
+        port.deliver("Ben arrived.", kind="arrive")
+        return ToolResult("You see the street.")
+
+    def wave_meanwhile(request):
+        port.deliver("Ana waved.", kind="wave")
+        return reply("", tool_call("look_around"), tool_call("say", text="hi"))
+
+    port = FakePort(tools=[LOOK, SAY], results={"look_around": look, "say": ToolResult("Said.")})
+    model = ScriptedModel(wave_meanwhile, reply("Done."))
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+
+    after = model.requests[1].messages
+    assert [m.role for m in after] == ["system", "user", "assistant", "tool", "tool"]
+    assert [after[3].content, after[4].content] == [
+        "Ana waved.\n\nYou see the street.",
+        "Ben arrived.\n\nSaid.",
+    ]
+    kinds = [r["kind"] for r in trace(directory)]
+    calls = kinds.index("tool_call")
+    assert kinds[calls : calls + 6] == ["tool_call", "percept", "tool_result"] * 2
+    (shown,) = [r for r in trace(directory) if r["kind"] == "tool_result" and r["name"] == "say"]
+    assert shown["text"] == "Said."  # the trace keeps the result itself
+
+
 async def test_a_long_result_is_shortened_in_the_context_and_kept_whole_in_the_trace(directory):
     output = "x" * 30_000 + "THE END"
     port = FakePort(tools=[SHELL], results={"shell": ToolResult(output)})

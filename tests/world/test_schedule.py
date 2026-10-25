@@ -85,9 +85,9 @@ async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_tow
     await town.call(a, "go", place=world.residents[a].home)
     await town.until("21:00")
     await town.call(a, "sleep", until="07:00", journal="Met someone.")
-    assert f"spent time with today ({b})" in town.take(a)[-1]
+    assert f"spoke with today ({b})" in town.take(a)[-1]
     refused = await town.call(a, "rate", resident=c, score=3, reason="x")
-    assert refused.text == f"You did not spend time with {c} today."
+    assert refused.text == f"You did not speak with {c} today."
 
 
 async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
@@ -215,6 +215,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     backend = FakeBackend()
     town = make_town(backend=backend)
     await awake_at(town)
+    await town.call("Aisha", "say", text="Busy day?", to=["Mei"])
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
     await town.call("Mei", "start_work")
@@ -323,7 +324,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "abandon_task")
     await town.call("Tomas", "claim_task", task=3)
-    await town.call("Tomas", "say", text="Lunch?")
+    await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give_money", to="Tomas", amount=5)
     await town.call("Mei", "share_skill", to="Tomas", skill="triage")
     await town.call("Mei", "leave_conversation")
@@ -365,6 +366,10 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
         }
     speech = next(e for e in entries if e["kind"] == "speech")
     assert speech["payload"]["text"] == "Lunch?" and speech["audience"] == ["Mei"]
-    assert speech["personal"] == {"Tomas": "You said: “Lunch?”"}
+    assert speech["personal"] == {
+        "Tomas": "You said to Mei: “Lunch?”",
+        "Mei": "Tomas said to you: “Lunch?”",
+    }
+    assert speech["payload"]["members"] == ["Mei", "Tomas"]
     journal = next(e for e in entries if e["kind"] == "sleep")
     assert journal["payload"]["journal"] == "A full day."

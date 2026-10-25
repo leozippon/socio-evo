@@ -5,17 +5,21 @@
         stream the reply (abortable)  -> assistant message
         no tool calls                 -> wait for the world (port.wait) -> loop
         tool calls, in order          -> file tools here, the rest through port.call
-                                         -> tool messages -> loop
+                                         -> tool messages, each led by the percepts pending
+                                            when its call was carried out -> loop
         a result that ends the turn   -> wait for the world -> loop
 
-An interrupting percept aborts a reply in flight: the partial reply is traced as aborted and
-dropped, the percept is told with the situation, and the request is made again. A tool that is
-running is never aborted; calls after it in the same reply are answered as not carried out and
-the percept is told at once. A reply cut off at the token limit is asked for again once at a
-lower reasoning effort; cut off again, it is kept as it stands, without its tool calls, with a
-note. A model error is retried; when the attempts run out the step is a lapse and the runtime
-waits for the next percept. Nothing that goes wrong in a step ends the loop; only cancellation
-does, or a failure of the port itself.
+A percept that does not interrupt is told ahead of the result of the next call carried out, so
+that what happened before a call is read before what the call did; with no call to carry, it is
+told with the situation. An interrupting percept aborts a reply in flight: the partial reply is
+traced as aborted and dropped, the percept is told with the situation, and the request is made
+again. A tool that is running is never aborted; once an interrupting percept is pending, the
+calls still to carry out in the same reply are answered as not carried out and the percept is
+told at once. A reply cut off at the token limit is asked for again once at a lower reasoning
+effort; cut off again, it is kept as it stands, without its tool calls, with a note. A model
+error is retried; when the attempts run out the step is a lapse and the runtime waits for the
+next percept. Nothing that goes wrong in a step ends the loop; only cancellation does, or a
+failure of the port itself.
 """
 
 from __future__ import annotations
@@ -261,9 +265,10 @@ class Runtime:
             return None
 
     async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[bool, bool]:
-        """Carry out `calls` in order and answer each in the context; whether one ended the
-        turn, and whether the resident asked to compact. Once an interrupting percept is
-        pending, the remaining calls are answered as not carried out."""
+        """Carry out `calls` in order and answer each in the context, led by the percepts
+        pending when it was carried out; whether one ended the turn, and whether the resident
+        asked to compact. Once an interrupting percept is pending, the remaining calls are
+        answered as not carried out."""
         ends = condense = interrupted = False
         for call in calls:
             unreadable = {} if call.unreadable is None else {"unreadable": call.unreadable}
@@ -271,13 +276,15 @@ class Runtime:
                 "tool_call", id=call.id, name=call.name, arguments=call.arguments, **unreadable
             )
             error: dict[str, str] = {}
+            before = ""
+            interrupted = interrupted or self._port.interrupt.is_set()
             if interrupted:
                 result = ToolResult(texts.NOT_CARRIED_OUT)
             else:
+                before = self._traced(self._port.pending())
                 result, error = await self._carry_out(call)
                 ends = ends or result.ends_turn
                 condense = condense or (call.name == COMPACT.name and not unreadable)
-                interrupted = self._port.interrupt.is_set()
             self._trace.write(
                 "tool_result",
                 id=call.id,
@@ -287,6 +294,8 @@ class Runtime:
                 **error,
             )
             content = shorten(result.text, self._config.tool_result_chars)
+            if before:
+                content = f"{before}\n\n{content}"
             self._session.append(Message(role="tool", content=content, tool_call_id=call.id))
         return ends, condense
 
@@ -309,8 +318,12 @@ class Runtime:
     def _tell(self, percepts: Sequence[Percept]) -> None:
         """Trace `percepts` and append them, with the situation, as a user message; nothing
         when there are none."""
-        if not percepts:
-            return
+        if percepts:
+            text = f"{self._traced(percepts)}\n\n{self._port.situation()}"
+            self._session.append(Message(role="user", content=text))
+
+    def _traced(self, percepts: Sequence[Percept]) -> str:
+        """Trace `percepts`; their texts, a paragraph each."""
         for percept in percepts:
             self._trace.write(
                 "percept",
@@ -320,8 +333,7 @@ class Runtime:
                 percept_sim_time=percept.sim_time,
                 percept_real_time=percept.real_time,
             )
-        text = "\n\n".join([*(percept.text for percept in percepts), self._port.situation()])
-        self._session.append(Message(role="user", content=text))
+        return "\n\n".join(percept.text for percept in percepts)
 
     def _context(self) -> tuple[tuple[Message, ...], list[int]]:
         """The messages of the next request, and the session ids of all but the first."""

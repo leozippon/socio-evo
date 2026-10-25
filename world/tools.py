@@ -121,7 +121,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
              "did, what was said to you and by you, and the money you received and paid."),
-        spec("rate", "Rate someone you spent time with today, from 1 to 5, with your reason. "
+        spec("rate", "Rate someone you spoke with today, from 1 to 5, with your reason. "
              "They read it the next night, without your name.", ("resident", "score", "reason"),
              resident=_text("their name"), score=_number("from 1 to 5", 1, 5),
              reason=_text("why")),
@@ -247,9 +247,11 @@ async def _go(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     place = world.config.place(args["place"])
     if place.id == r.place:
         return ToolResult(f"You are already at {place.name}.")
+    told = world.break_off(r)
     arrival = world.depart(r, place.id)
     return ToolResult(
-        f"You set off for {place.name} and will arrive at {clock_time(arrival)}.", ends_turn=True
+        f"{told}You set off for {place.name} and will arrive at {clock_time(arrival)}.",
+        ends_turn=True,
     )
 
 
@@ -281,28 +283,36 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
     with path.open("a", encoding="utf-8") as file:
         file.write(entry)
+    told = world.break_off(r)
     world.go_to_bed(r, world.wake_time(hour), journal, day)
-    return ToolResult("You went to bed.", ends_turn=True)
+    return ToolResult(f"{told}You went to bed.", ends_turn=True)
 
 
 async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     workplace = world.config.workplace
     if r.place != workplace.id:
         return ToolResult(f"You are not at {workplace.name}.")
+    told = ""
+    if r.conversation is not None:
+        world.leave_conversation(r)
+        told = "You left the conversation. "
+    claim = world.board.claims.get(r.name)
+    if isinstance(r.base, Work):  # the conversation was held at work, which goes on
+        held = f" You hold task {claim.task}." if claim else ""
+        return ToolResult(f"{told}You are back at work.{held} {_now(world)}")
     r.base = Work()
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} started work.", actor=r)
-    claim = world.board.claims.get(r.name)
     if claim is None:
-        return ToolResult(
-            f"You started work. You hold no task; the board shows what there is. {_now(world)}"
-        )
-    if r.name not in world.board.workspaces:
+        started = "You started work. You hold no task; the board shows what there is."
+    elif r.name not in world.board.workspaces:
         await world.board.reopen(r.name)
-        return ToolResult(
+        started = (
             f"You started work. The workspace of task {claim.task}, which you hold, is set up "
-            f"again with your changes. {_now(world)}"
+            "again with your changes."
         )
-    return ToolResult(f"You started work. You hold task {claim.task}. {_now(world)}")
+    else:
+        started = f"You started work. You hold task {claim.task}."
+    return ToolResult(f"{told}{started} {_now(world)}")
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -532,9 +542,19 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     bystanders = [other for other in present if other not in recipients]
     heard = [other.name for other in recipients]
     unheard = {other.name for other in bystanders}
-    conversation = world.converse(r, recipients)
-    if conversation.budget is not None:
+    # Speech by name draws its hearers into the conversation; a remark to everyone draws in
+    # those not at work outside it, and the others hear it without stopping their work. Whoever
+    # is drawn in has been spoken to, and may rate the speaker.
+    drawn = [
+        other
+        for other in recipients
+        if private or other.conversation is not None or not isinstance(other.base, Work)
+    ]
+    conversation = world.converse(r, drawn) if drawn or r.conversation else None
+    if conversation is not None and conversation.budget is not None:
         conversation.budget[r.name] -= 1
+    for other in drawn:
+        world.ratings.meet(r.name, other.name)
 
     def tell(w: str | None) -> str:
         speaker = cap(you(r.name, w))
@@ -549,16 +569,18 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         tell,
         actor=r,
         audience=[*recipients, *bystanders],
-        interrupt=recipients,
+        interrupt=drawn,
         payload={
             "text": text,
             "to": heard,
             "private": private,
             "bystanders": sorted(unheard),
-            "conversation": conversation.room,
+            "conversation": conversation.room if conversation else None,
+            "members": sorted(conversation.members) if conversation else [],
         },
     )
-    left = conversation.budget[r.name] if conversation.budget is not None else None
+    budget = conversation.budget if conversation else None
+    left = budget[r.name] if budget is not None else None
     tail = "" if left is None else f" You have {counted(left, 'turn')} left to speak."
     return ToolResult(tell(r.name) + tail)
 

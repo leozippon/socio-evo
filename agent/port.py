@@ -1,13 +1,16 @@
 """The contract between the agent runtime and the world.
 
 The world implements `WorldPort` once per resident. The runtime declares the port's tool specs
-(constant for the whole run, so that the prefix cache survives event transitions), opens every
-step with the port's situation and pending percepts, forwards every tool call the model makes
+(constant for the whole run, so that the prefix cache survives event transitions), opens a step
+with the port's situation and the percepts pending, forwards every tool call the model makes
 that is not one of its own file tools, and blocks on `wait` when the resident has nothing more
 to do. The port owns the resident's inbox: the world delivers percepts into it, and sets
 `interrupt` when a delivered percept must reach the resident at once, which makes the runtime
-abort an in-flight model stream. A work-only port for evaluation implements the same protocol
-with a single Work event and no town.
+abort an in-flight model stream and leave the rest of a reply's calls undone. Which percepts
+interrupt is the world's to decide; one that does not waits in the inbox, and the runtime takes
+it before it carries out its next call and tells it ahead of that call's result, or takes it
+with `wait`. A work-only port for evaluation implements the same protocol with a single Work
+event and no town.
 """
 
 from __future__ import annotations

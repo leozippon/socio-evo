@@ -183,7 +183,7 @@ class Rules:
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "
             "before, without their names; you can look back over your day; you can rate each "
-            "person you spent time with that day from 1 to 5, with a reason, which they read "
+            "person you spoke with that day from 1 to 5, with a reason, which they read "
             "the next night without your name; and you can see to your files."
             if contact
             else " In bed, before you fall asleep, you can look back over your day and see to "

@@ -320,7 +320,9 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.mark(entry, kind, task=payload["task"])
         elif kind == "speech":
             heard = payload["to"]
-            people = [lane.name, *heard]
+            # Those in the conversation: the log says who since a remark stopped drawing in
+            # everyone who heard it; older logs leave it to the audience.
+            people = payload["members"] if "members" in payload else [lane.name, *heard]
             for name in people:
                 lanes[name].join(t, place, [other for other in people if other != name])
             lane.mark(entry, "speech", text=payload["text"], to=heard, private=payload["private"])
