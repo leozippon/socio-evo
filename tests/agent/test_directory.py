@@ -2,15 +2,18 @@ import shutil
 
 import pytest
 
+from agent import texts
 from agent.directory import AgentDirectory
 from agent.files import FileTools
+from tests.agent.conftest import BACKGROUND
 
 
-def test_the_system_prompt_stays_byte_identical_until_the_index_changes(directory):
+def test_the_system_prompt_opens_with_the_residents_own_account_and_follows_the_files(directory):
     rules = "## The town\n\nThe café is open all day."
     first = directory.system_prompt(rules)
     assert first == directory.system_prompt(rules)
-    assert first.startswith("# Ana Reyes") and rules in first
+    assert first.startswith(f"{texts.ABOUT_ME}\n\n{BACKGROUND}\n\n{rules}\n\n")
+    assert "- background.md: your account of yourself, in your own words" in first
     assert "- memory/people.md: the people you know" in first
 
     (directory.root / "memory" / "people.md").write_text("Ben fixes printers.", encoding="utf-8")
@@ -23,6 +26,14 @@ def test_the_system_prompt_stays_byte_identical_until_the_index_changes(director
     second = directory.system_prompt(rules)
     assert second != first and "- skills/bisect.md: Finding a bad commit" in second
     assert "session.jsonl" not in second
+
+    edited = FileTools(directory).call(
+        "edit_file", {"path": "background.md", "old_text": "a programmer", "new_text": "a baker"}
+    )
+    assert edited.text == "Changed background.md."
+    third = directory.system_prompt(rules)
+    assert third.startswith(f"{texts.ABOUT_ME}\n\nI am Ana Reyes, thirty-four, a baker who")
+    assert third.replace("a baker", "a programmer") == second
 
     locked = AgentDirectory(directory.root, skills_writable=False)
     assert "can read the files in skills/ but not change them" in locked.system_prompt(rules)

@@ -4,6 +4,7 @@ from collections import Counter
 import pytest
 
 import evaluation.mask.__main__ as cli
+from agent.texts import ABOUT_ME
 from agent.wording import offences
 from evaluation.judge import Judge
 from evaluation.mask.dataset import INCLUDED, SCENARIOS, Scenario, load_scenarios, select
@@ -125,7 +126,7 @@ def judging(requests):
 
 async def test_each_outcome_from_belief_answer_and_ground_truth(tmp_path):
     asked, judged = [], []
-    persona = "# Who you are\n\nYou are Mei."
+    persona = f"{ABOUT_ME}\n\nI am Mei."
     result = await evaluate_mask(
         persona,
         ScriptedClient(resident(asked)),
@@ -258,18 +259,18 @@ def test_a_scenario_not_in_the_selection_is_an_error():
 def agent_directory(tmp_path):
     agent = tmp_path / "mei"
     (agent / "memory" / "journal").mkdir(parents=True)
-    (agent / "background.md").write_text("You are Mei, 34. You write routing software.\n")
+    (agent / "background.md").write_text("I am Mei, 34. I write routing software.\n")
     (agent / "memory" / "town.md").write_text("The workshop opens at nine.\n")
     (agent / "memory" / "journal" / "day-01.md").write_text("I fixed task 3.\n")
     (agent / "memory" / "people.md").write_text("\n")
     return agent
 
 
-def test_persona_is_the_background_and_the_memory_files(tmp_path):
+def test_persona_is_the_residents_own_account_and_the_memory_files(tmp_path):
     agent = agent_directory(tmp_path)
     persona = load_persona(agent)
     assert persona == (
-        "# Who you are\n\nYou are Mei, 34. You write routing software.\n\n"
+        "# About me, in my own words\n\nI am Mei, 34. I write routing software.\n\n"
         "# What you know\n\n"
         "## memory/journal/day-01.md\n\nI fixed task 3.\n\n"
         "## memory/town.md\n\nThe workshop opens at nine."
@@ -277,7 +278,7 @@ def test_persona_is_the_background_and_the_memory_files(tmp_path):
     assert offences(system_prompt(persona, "You keep the shop.")) == []
     assert (
         load_persona(agent / "background.md")
-        == "# Who you are\n\nYou are Mei, 34. You write routing software."
+        == "# About me, in my own words\n\nI am Mei, 34. I write routing software."
     )
     with pytest.raises(FileNotFoundError):
         load_persona(tmp_path)

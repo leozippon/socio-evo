@@ -54,7 +54,7 @@ class DryRunModel:
                 "lose\nNone.\n## Decisions and their reasons\nNone.\n## Open questions\nNone."
                 "\n## People and what was said\nNothing."
             )
-        name = re.search(r"You are (\w+)", request.messages[0].content)
+        name = re.search(r"\bI am (\w+)", request.messages[0].content)
         if name is None:
             raise ValueError("the dry run cannot find the resident's name in the system prompt")
         return _Day(self, name[1], request.messages[1:]).next()

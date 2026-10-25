@@ -19,7 +19,8 @@ AREAS = (MEMORY, SKILLS)
 class AgentDirectory:
     """The directory of one resident:
 
-    background.md, who the resident is; memory/ (town.md, people.md, work.md and journal/),
+    background.md, the resident's account of itself in the first person, given at the start and
+    rewritten by the resident as it likes; memory/ (town.md, people.md, work.md and journal/),
     what it keeps; skills/, one file per method, whose first line describes it; session.jsonl
     and trace.jsonl, which the runtime writes. The resident reaches background.md, memory/ and
     skills/ only, and skills/ only for reading when `skills_writable` is False (group D).
@@ -97,13 +98,15 @@ class AgentDirectory:
         return "\n".join(lines)
 
     def system_prompt(self, rules: str) -> str:
-        """The resident's background, the standing `rules`, how tools work and the index of
-        its files; the same text, byte for byte, while those are unchanged."""
+        """The resident's account of itself as it stands, headed as its own words; then the
+        standing `rules`, how tools work and the index of its files. The same text, byte for
+        byte, while those are unchanged."""
         files = texts.FILES
         if not self.skills_writable:
             files += " " + texts.SKILLS_READ_ONLY
         background = (self.root / BACKGROUND).read_text(encoding="utf-8").strip()
-        parts = (background, rules.strip(), texts.GUIDE, files, self.index())
+        about_me = f"{texts.ABOUT_ME}\n\n{background}"
+        parts = (about_me, rules.strip(), texts.GUIDE, files, self.index())
         return "\n\n".join(part for part in parts if part) + "\n"
 
 

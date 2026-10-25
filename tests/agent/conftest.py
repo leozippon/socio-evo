@@ -2,7 +2,7 @@ import pytest
 
 from agent.directory import AgentDirectory
 
-BACKGROUND = "# Ana Reyes\n\nYou are Ana Reyes, thirty-four, a programmer who moved here in spring."
+BACKGROUND = "I am Ana Reyes, thirty-four, a programmer who moved here in spring."
 TOWN = "The workshop opens at 09:00. Rent and board are 40 coins a day."
 
 

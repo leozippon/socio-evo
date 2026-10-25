@@ -127,7 +127,6 @@ class Runtime:
         self._session = Session(directory.session_path)
         self._trace = Trace(directory.trace_path, port.sim_time)
         self._prompt = ""
-        self._index: str | None = None
 
     async def run(self) -> None:
         """Live until cancelled: wait for the world, take steps until the resident is done for
@@ -342,16 +341,14 @@ class Runtime:
         return (system, *(entry.message for entry in entries)), [entry.id for entry in entries]
 
     def _system_prompt(self) -> str:
-        """The system prompt, assembled anew (and traced) when the index of files has changed
-        since it was last assembled: a file created or deleted, or a skill's description
-        changed. The journal entry the world writes each night changes it at least daily, which
-        is when an edited background takes effect."""
-        index = self._directory.index()
-        if index != self._index:
-            prompt = self._directory.system_prompt(self._port.rules())
-            if prompt != self._prompt:
-                self._trace.write("prompt", text=prompt)
-            self._prompt, self._index = prompt, index
+        """The system prompt, composed from the directory as it stands and traced when it
+        differs from the last one: the resident rewrote its account of itself, a file was
+        created or deleted, or a skill's description changed. Otherwise it is the same text,
+        byte for byte, and the prefix cache serves it."""
+        prompt = self._directory.system_prompt(self._port.rules())
+        if prompt != self._prompt:
+            self._trace.write("prompt", text=prompt)
+            self._prompt = prompt
         return self._prompt
 
     def _request(

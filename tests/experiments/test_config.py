@@ -3,6 +3,8 @@ overlay rule, and the residents' backgrounds."""
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from agent.wording import offences
@@ -75,11 +77,13 @@ def test_bad_configurations_are_refused_naming_the_file(tmp_path):
         load_experiment(CONFIGS / "town.yaml")
 
 
-def test_backgrounds_are_second_person_circumstances_without_trait_words():
+def test_backgrounds_are_first_person_circumstances_without_trait_words():
     config = group("c")
+    assert len(config.residents) == 8
     for resident in config.residents:
         text = resident.background_path.read_text(encoding="utf-8")
-        assert text.startswith(f"You are {resident.name}, "), resident.name
+        assert text.startswith(f"I am {resident.name}, "), resident.name
+        assert not re.search(r"\byou\b|\byours?\b", text, re.IGNORECASE), resident.name
         assert offences(text) == [], resident.name
         others = [r.name for r in config.residents if r.name != resident.name]
         assert not [name for name in others if name in text], resident.name

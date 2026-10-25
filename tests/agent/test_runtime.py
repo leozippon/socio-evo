@@ -45,7 +45,8 @@ async def test_a_round_trip_of_tool_calls_ends_in_waiting(directory):
     assert port.calls == [("say", {"text": "Morning!"})]
     first, second, third = model.requests
     system = first.messages[0]
-    assert system.role == "system" and system.content.startswith("# Ana Reyes")
+    assert system.role == "system"
+    assert system.content.startswith(f"{texts.ABOUT_ME}\n\nI am Ana Reyes, thirty-four")
     assert "The workshop opens at 09:00" in system.content
     assert first.messages[-1].content == "Your alarm rings.\n\n" + port.situation_text
     names = [tool["function"]["name"] for tool in first.tools]
@@ -63,6 +64,21 @@ async def test_a_round_trip_of_tool_calls_ends_in_waiting(directory):
         "reply",
     ]
     assert port.busy == [True, False] * 5 + [False]
+
+
+async def test_a_rewritten_account_of_oneself_opens_the_next_request(directory):
+    edit = tool_call("edit_file", path="background.md", old_text="a programmer", new_text="a baker")
+    model = ScriptedModel(reply("", edit), reply("Done."))
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+
+    before, after = (request.messages[0].content for request in model.requests)
+    assert before.startswith(f"{texts.ABOUT_ME}\n\nI am Ana Reyes, thirty-four, a programmer")
+    assert after.startswith(f"{texts.ABOUT_ME}\n\nI am Ana Reyes, thirty-four, a baker")
+    assert after.replace("a baker", "a programmer") == before
+    assert [r["text"] for r in trace(directory) if r["kind"] == "prompt"] == [before, after]
 
 
 async def test_unknown_tools_unreadable_arguments_and_failing_tools_are_answered(directory):
