@@ -2,7 +2,7 @@
 
 This package turns SWE-bench Verified into paid work: a fixed set of tasks, an isolated container in which a resident works on one, and an official acceptance that decides whether the work counts.
 
-- **Tasks and splits.** The 500 instances of SWE-bench Verified, read from `princeton-nlp/SWE-bench_Verified` at a pinned revision, load as `Task` records. `splits.json` fixes a train split of 56 tasks and a disjoint eval split of 100, drawn with seed 20261024, and records the 37 instances left out with the reason: the 34 of matplotlib, whose images cannot be unpacked on this machine, and three whose gold patch cannot pass here (astropy-8707 in its image, requests-2317 and -2931 without network). Every instance has an image. A resident is told only the problem statement (`Task.brief()`); the hints, hidden tests and gold patch stay with the task.
+- **Tasks and splits.** The 500 instances of SWE-bench Verified, read from `princeton-nlp/SWE-bench_Verified` at a pinned revision, load as `Task` records. `splits.json` fixes an eval split of 100 tasks, drawn with seed 20261024, and a disjoint train split of every other usable instance, 363 tasks (it held 56 until it was widened, which left the eval split as first drawn), and records the 37 instances left out with the reason: the 34 of matplotlib, whose images cannot be unpacked on this machine, and three whose gold patch cannot pass here (astropy-8707 in its image, requests-2317 and -2931 without network). Every instance has an image. A resident is told only the problem statement (`Task.brief()`); the hints, hidden tests and gold patch stay with the task.
 - **Images.** Each task runs in Epoch AI's prebuilt evaluation image on ghcr.io, the same image SWE-bench publishes on Docker Hub (unreachable here) under another name: `swebench/sweb.eval.x86_64.<id, "__" written "_1776_">` is `ghcr.io/epoch-research/swe-bench.eval.x86_64.<id>:latest`. An image holds the repository at the base commit with its environment installed.
 - **Workspaces.** `await Workspace.open(task, name)` starts a container with no network, 4 CPUs, 16 GB of memory and at most 4096 processes. The resident runs shell commands in it (`exec`, with a timeout and clipped output), reads and writes files, and hands in `diff()`, a patch of everything it changed in the repository.
 - **Acceptance.** `await accept(task, patch)` grades a patch as the SWE-bench harness does and returns a verdict: `resolved`, `failed_tests`, `patch_apply_failed`, `timeout` or `error`, with the hidden tests passed out of those run.
@@ -11,13 +11,13 @@ This package turns SWE-bench Verified into paid work: a fixed set of tasks, an i
 
 ```
 pip install -e ".[swebench]"
-python -m tasks.swebench.pull                  # pull the 156 images; rerun to resume
+python -m tasks.swebench.pull                  # pull the images and accept every gold patch; rerun to resume
 python -m tasks.swebench.accept <instance_id> <patch_file>
 python -m tasks.swebench.cleanup               # remove containers a killed process left
 python -m pytest tests/tasks/swebench          # Docker tests skip unless images are pulled
 ```
 
-The dataset downloads on first use into `~/.cache/socio-evo/swebench`; set `HF_ENDPOINT` to use a mirror. `python -m tasks.swebench.dataset` redraws `splits.json` after checking every image on ghcr.io.
+The dataset downloads on first use into `~/.cache/socio-evo/swebench`; set `HF_ENDPOINT` to use a mirror. `python -m tasks.swebench.dataset` redraws `splits.json` after checking every image on ghcr.io. The pull ends by listing any image it could not pull and any task whose gold patch was not resolved; such a task goes into `UNRESOLVABLE` in `dataset.py`, and a redraw then drops it from train without changing eval.
 
 ## Integrity
 

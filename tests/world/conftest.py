@@ -53,6 +53,7 @@ def town_config(
             "residents": list(residents),
             "work": {
                 "split": "train",
+                "board_size": 3,
                 "payment": 20,
                 "living_cost": 30,
                 "acceptance_runs": 2,
@@ -67,7 +68,12 @@ def town_config(
                 "skills_shareable": shareable,
                 "exchange": exchange,
             },
-            "clock": {"speed_active": 10, "speed_idle": 100, "idle_minutes": 30},
+            "clock": {
+                "speed_idle": 100,
+                "speed_busy_one": 20,
+                "speed_busy_all": 10,
+                "idle_minutes": 30,
+            },
             "day": {
                 "forced_sleep": "02:00",
                 "checkpoint": "02:30",

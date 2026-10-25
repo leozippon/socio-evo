@@ -54,8 +54,9 @@ LOWER: dict[Effort, Effort] = {"xhigh": "medium", "medium": "low", "low": "low"}
 COMPACT = ToolSpec(
     name="compact",
     description=(
-        "Condense your conversation so far into a summary in your own words, keeping your last "
-        "few exchanges as they were. Useful when you turn to something new."
+        "Stop and write down for yourself what you will want to remember of all that has happened "
+        "so far; you then keep those notes and the last few things that happened, and let the "
+        "rest go. Useful when you turn to something new."
     ),
     parameters={"type": "object", "properties": {}},
 )

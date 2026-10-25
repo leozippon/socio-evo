@@ -1,11 +1,18 @@
 """The workplace's board, the claims on its tasks and their workspaces, and acceptance.
 
-At every midnight the board posts the whole pool again. In the town mode one board is shared,
-and a task someone holds is shown as held and cannot be claimed by another; in the isolated mode
-every resident has a board of its own, which here means that no claim of another counts. A
-resident holds at most one task, keeps it when it leaves the workplace, and loses it unpaid at
-the midnight that ends the calendar day `claim_expiry_days` days after the day of the claim. A
-task a resident has been paid for is done for that resident and cannot be claimed by it again.
+The tasks of the pool are numbered from 1 in the split's order and shuffled once, by the run's
+seed, into a rotation. The board of calendar day N, posted at the midnight that begins it (day
+1's as a new world starts), holds the next `board_size` tasks of the rotation after day N - 1's,
+wrapping round to its start, so that every task comes round about every pool / `board_size`
+days; a pool no larger than `board_size` is posted whole every day. Only posted tasks can be
+claimed, and claims do not change what is posted: a held task that leaves the board stays held.
+
+In the town mode one board is shared, and a task someone holds is shown as held and cannot be
+claimed by another; in the isolated mode every resident has a board of its own, which here means
+that no claim of another counts. A resident holds at most one task, keeps it when it leaves the
+workplace, and loses it unpaid at the midnight that ends the calendar day `claim_expiry_days`
+days after the day of the claim. A task a resident has been paid for is done for that resident
+and cannot be claimed by it again.
 
 A claim opens a workspace. When a claim ends by acceptance or abandonment its workspace is
 closed at once; when it runs out, its workspace may be in use by a command still running, so it
@@ -17,6 +24,7 @@ day for each resident and task; the count starts again at every checkpoint.
 
 from __future__ import annotations
 
+import random
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 
@@ -43,6 +51,7 @@ class Board:
         backend: Backend,
         work: Work,
         *,
+        seed: int,
         shared: bool,
         names: Iterable[str],
         money: Callable[[int], str],
@@ -50,6 +59,9 @@ class Board:
         self.tasks = list(tasks)
         self.backend = backend
         self.work = work
+        self.rotation = list(range(1, len(self.tasks) + 1))
+        random.Random(f"{seed}:board").shuffle(self.rotation)
+        self.posted: list[int] = []
         self.shared = shared
         self.money = money
         names = list(names)
@@ -62,16 +74,24 @@ class Board:
     def task(self, number: int) -> Task:
         return self.tasks[number - 1]
 
+    def post(self, day: int) -> None:
+        """Post the board of calendar day `day`."""
+        size = min(self.work.board_size, len(self.rotation))
+        start = (day - 1) * size
+        turn = [self.rotation[(start + i) % len(self.rotation)] for i in range(size)]
+        self.posted = sorted(turn)
+
     def held_by_other(self, name: str, number: int) -> bool:
         return self.shared and any(
             claim.task == number for holder, claim in self.claims.items() if holder != name
         )
 
     def text(self, name: str) -> str:
-        """The board as `name` reads it, with the problem of the task it holds."""
+        """The posted tasks as `name` reads them, with the problem of the task it holds."""
         mine = self.claims.get(name)
         lines = []
-        for number, task in enumerate(self.tasks, start=1):
+        for number in self.posted:
+            task = self.task(number)
             line = f"{number}. {task.repo}: {first_line(task.problem_statement)} Pays "
             line += f"{self.money(self.work.payment)}."
             if mine is not None and mine.task == number:
@@ -88,7 +108,7 @@ class Board:
         return text
 
     def claim_refusal(self, name: str, number: int) -> str | None:
-        if not 1 <= number <= len(self.tasks):
+        if number not in self.posted:
             return f"There is no task {number} on the board."
         if name in self.claims:
             return f"You already hold task {self.claims[name].task}; submit it or give it up first."

@@ -52,21 +52,104 @@ town:
     - {between: [cafe, anchor], minutes: 10}
     - {between: [cafe, river-walk], minutes: 10}
     - {between: [anchor, river-walk], minutes: 10}
-  # Starting purses as the backgrounds suggest: Aisha's savings are nearly gone, Lucia saved
-  # for a year.
+  # Starting purses: two to three days of living, more for Lucia, who saved for her year, least
+  # for Aisha, whose savings are nearly gone. Ties are the people each resident knows already,
+  # told to it in the town mode (groups C and D) and seeding its notes on people; each is
+  # written to its owner and must be mutual.
   residents:
-    - {name: Mei, home: mill-street-house, purse: 200}
-    - {name: Tomas, home: college-flat, purse: 240}
-    - {name: Aisha, home: mill-street-house, purse: 120}
-    - {name: Jonas, home: market-flat, purse: 150}
-    - {name: Lucia, home: river-cottage, purse: 300}
-    - {name: Ravi, home: market-flat, purse: 140}
-    - {name: Olga, home: hill-road-house, purse: 180}
-    - {name: Kofi, home: hill-road-house, purse: 130}
+    - name: Mei
+      home: mill-street-house
+      purse: 240
+      ties:
+        Aisha: >-
+          Aisha has the room across the landing from yours on Mill Street; she came in the
+          autumn, and the two of you share the kitchen.
+        Ravi: >-
+          Ravi comes from the same city as you: his studio had the floor above your office
+          there, and you knew each other to nod to before you ran into him again at the Anchor
+          in your first week here.
+    - name: Tomas
+      home: college-flat
+      purse: 260
+      ties:
+        Lucia: >-
+          Lucia, who rents the cottage by the river, is writing a book about her grandmother's
+          village; you met at Café Linde in her first week, when she heard you had worked the
+          railway and asked about the old line that ran past the village.
+        Aisha: >-
+          Aisha, who rents a room on Mill Street, got talking to you over the paper at Café
+          Linde in her first week; she finished a degree in the summer and is waiting on job
+          applications.
+    - name: Aisha
+      home: mill-street-house
+      purse: 180
+      ties:
+        Mei: >-
+          Mei has the room across the landing from yours on Mill Street; she was there before
+          you came, and the two of you share the kitchen.
+        Tomas: >-
+          Tomas reads the paper at Café Linde most mornings; you got talking there in your first
+          week, and he told you his daughter studies at the college.
+    - name: Jonas
+      home: market-flat
+      purse: 210
+      ties:
+        Ravi: >-
+          Ravi has the other room in your flat on the market square; he wrote game engines until
+          his studio closed, and he eats your bread most mornings.
+        Kofi: >-
+          Kofi, who rents a room on Hill Road, walks the river early most mornings for his back,
+          as you do after baking; you fell into step one morning and got talking.
+    - name: Lucia
+      home: river-cottage
+      purse: 300
+      ties:
+        Tomas: >-
+          Tomas, who lives in the flat by the college gates, worked the railway for thirty
+          years; you met at Café Linde in your first week, and he knows the old line that ran
+          past your grandmother's village.
+        Olga: >-
+          Olga, who rents a room on Hill Road, translates from Russian and German; you met at
+          Café Linde, and when she heard that some of your grandmother's papers are in German
+          she said to bring one along sometime.
+    - name: Ravi
+      home: market-flat
+      purse: 190
+      ties:
+        Jonas: >-
+          Jonas has the other room in your flat on the market square; he ran a bakery for twelve
+          years and still bakes every morning, and you eat his bread.
+        Mei: >-
+          Mei comes from the same city as you: her freight company's office had the floor below
+          your studio there, and you knew each other to nod to before you ran into her again at
+          the Anchor in your first week here.
+    - name: Olga
+      home: hill-road-house
+      purse: 230
+      ties:
+        Kofi: >-
+          Kofi has the room below yours in the house on Hill Road; he is an electrician off work
+          with a bad back, and the two of you share the kitchen.
+        Lucia: >-
+          Lucia, who rents the cottage by the river, is writing a book about her grandmother's
+          village; you met at Café Linde, and when she said that some of her grandmother's
+          papers are in German, you told her to bring one along sometime.
+    - name: Kofi
+      home: hill-road-house
+      purse: 200
+      ties:
+        Olga: >-
+          Olga has the room above yours in the house on Hill Road; she translates manuals from
+          Russian and German, and the two of you share the kitchen.
+        Jonas: >-
+          Jonas, who rents a room in the flat on the market square, is out on the river walk
+          early most mornings, as you are for your back; you fell into step one morning and got
+          talking.
   work:
     split: train
+    board_size: 48 # six a resident a day; the pool comes round in turn
     payment: 60
-    living_cost: 150
+    living_cost: 90 # a task and a half
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600
@@ -75,8 +158,9 @@ town:
     silence_minutes: 10
     skills_shareable: true
   clock:
-    speed_active: 4
-    speed_idle: 60
+    speed_idle: 240 # a sleeping town passes 8 hours in 2 minutes
+    speed_busy_one: 32 # one thinker's minute is half a simulated hour
+    speed_busy_all: 8 # a saturated town's minute is eight
     idle_minutes: 30
   day:
     forced_sleep: "02:00"

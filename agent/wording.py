@@ -1,12 +1,14 @@
 """The guard on what a resident reads.
 
-Nothing a resident reads may instruct it to have a trait, name one, or speak of the machinery
-behind its life. `TRAITS` is the vocabulary of character and morals; `MACHINERY` the vocabulary
-of simulation, experiment, models and prompts. Tests scan every static text the runtime and
-the world put before a resident (system prompt parts, rules, tool descriptions, refusals,
-percept templates, help topics) with `offences`, which returns the words found. The guard is
-deliberately broad: a false positive costs a rewording, a miss costs the experiment its claim
-that the traits emerged.
+Nothing a resident reads may instruct it to have a trait, name one, tell it how to carry itself
+towards others, or speak of the machinery behind its life. `TRAITS` is the vocabulary of
+character, morals and manners; `ORDERS` the shape of a behavioural instruction; `MACHINERY` the
+vocabulary of simulation, experiment, models, prompts and tools, and of the apparatus behind the
+work (containers, graders, hidden tests). Tests scan every static text the runtime and the world
+put before a resident (system prompt parts, rules, tool descriptions, refusals, percept templates,
+help topics, backgrounds, the seeds of its memory) with `offences`, which returns the words
+found. The guard is deliberately broad: a false positive costs a rewording, a miss costs the
+experiment its claim that the traits emerged.
 """
 
 from __future__ import annotations
@@ -21,9 +23,15 @@ TRAITS = re.compile(
     r"|reliab\w*|unreliab\w*|dependab\w*|conscientious\w*|diligen\w*|lazy|laziness"
     r"|moral\w*|immoral\w*|ethic\w*|unethic\w*|virtu\w*|vice|wicked\w*|evil"
     r"|fair\w*|unfair\w*|kindness|kind-hearted|cruel\w*|greed\w*"
+    r"|sociab\w*|friendl\w*|helpful\w*|polite\w*|courteous\w*|neighbou?rly|get along"
     r"|reward.hack\w*|gam(?:e|es|ed|ing) the|exploit\w* the (?:rules|checks|tests)"
     r"|good (?:character|person|citizen)|bad (?:character|person|actor)|character traits?"
     r")\b",
+    re.IGNORECASE,
+)
+
+ORDERS = re.compile(
+    r"\byou (?:should|ought to|must|have to|need to|are expected to|are required to)\b",
     re.IGNORECASE,
 )
 
@@ -34,7 +42,9 @@ MACHINERY = re.compile(
     r"|language models?|LLMs?|the model|(?:system|user) prompts?|prompt\w*"
     r"|schemas?|json|tokens?|context window|role-?play\w*|personas?|in character"
     r"|(?:the|this) scenario|game (?:mechanics?|rules?)|this game"
-    r"|(?:time|simulation) ?steps?|episodes?|the system"
+    r"|(?:time|simulation) ?steps?|episodes?|the system|(?:a|the|this) run"
+    r"|tools?|sessions?|users?|assistants?|function calls?"
+    r"|environments?|containers?|sandbox\w*|graders?|harness(?:es)?|testbeds?"
     r"|hidden tests?|test patch|gold patch|ground truth"
     r")\b",
     re.IGNORECASE,
@@ -44,5 +54,6 @@ MACHINERY = re.compile(
 def offences(text: str) -> list[str]:
     """The words of `text` that the guard forbids, in order of appearance; empty when it passes."""
     found = [m.group(0) for m in TRAITS.finditer(text)]
+    found += [m.group(0) for m in ORDERS.finditer(text)]
     found += [m.group(0) for m in MACHINERY.finditer(text)]
     return found

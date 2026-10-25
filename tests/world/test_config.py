@@ -70,6 +70,21 @@ def test_a_town_validates():
             {"mode": "isolated", "exchange": B_EXCHANGE},
             "not a social place",
         ),
+        (
+            lambda d: d["residents"][0].update(ties={"Tomas": "Tomas lives up the hill."}),
+            {},
+            "Mei's tie to Tomas is not mutual",
+        ),
+        (lambda d: d["residents"][0].update(ties={"Zoe": "Zoe."}), {}, "no other resident"),
+        (lambda d: d["residents"][0].update(ties={"Mei": "Me."}), {}, "no other resident"),
+        (
+            lambda d: [
+                d["residents"][0].update(ties={"Tomas": " "}),
+                d["residents"][1].update(ties={"Mei": "Mei."}),
+            ],
+            {},
+            "Mei's tie to Tomas says nothing",
+        ),
         (lambda d: d["work"].update(payment=0), {}, "greater than or equal to 1"),
         (lambda d: d.update(colour="red"), {}, "Extra inputs are not permitted"),
     ],

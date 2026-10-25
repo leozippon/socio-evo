@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import at, awake_at, town_config
+from tests.world.conftest import at, awake_at, make_agent_dirs, town_config
+from world.clock import ManualClock
 from world.events import Sleep
 from world.testing import FakeBackend, FakeVerdict
+from world.world import World
 
 
 async def at_work(town, *names: str) -> None:
@@ -75,14 +77,28 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
 
 
-async def test_the_board_is_posted_as_the_world_starts_and_at_every_midnight(make_town):
-    town = make_town()
-    await awake_at(town)
+async def test_the_board_is_posted_as_the_world_starts_and_at_every_midnight(make_town, tmp_path):
+    town = make_town(town_config(board_size=4), FakeBackend(10))
+    board = town.world.board
+    await at_work(town, "Tomas")
+    first = board.posted
+    listed = (await town.call("Tomas", "view_board")).text.splitlines()[1:]
+    assert [int(line.split(".")[0]) for line in listed] == first and len(first) == 4
+    await town.call("Tomas", "claim_task", task=first[0])
     town.rest()
+    await town.until("00:00", day=2)
+    second = board.posted
+    assert not set(first) & set(second) and board.claims["Tomas"].task == first[0]
     await town.until("00:00", day=3)
     posted = [e for e in town.world.log.entries() if e["kind"] == "board_posted"]
     assert [e["sim_time"] for e in posted] == [at("02:30"), at("00:00", day=2), at("00:00", day=3)]
-    assert posted[0]["payload"] == {"tasks": 3} and posted[0]["audience"] == []
+    assert posted[0]["payload"] == {"tasks": 4} and posted[0]["audience"] == []
+
+    config, root = town.world.config, tmp_path / "restored"
+    make_agent_dirs(root, config)
+    restored = World(config, root, FakeBackend(10), clock=ManualClock())
+    restored.restore(town.checkpoints[0][1])  # the checkpoint of day 1, on calendar day 2
+    assert restored.board.posted == second
 
 
 async def test_isolated_boards_are_each_residents_own(make_town):
@@ -104,14 +120,15 @@ async def test_acceptance_is_limited_per_task_per_day_and_never_names_the_checks
     first = await town.call("Mei", "submit")
     assert first.text == (
         "Not accepted: 2 of the 3 checks your change should make pass did not pass and 1 of "
-        "the 10 checks that passed before failed. You can hand in task 1 1 more time today."
+        "the 10 checks that passed before failed. You can hand in task 1 1 more time today. It is "
+        "09:00."
     )
     assert "test_" not in first.text and "secret" not in first.text
     backend.verdicts.append(FakeVerdict("patch_apply_failed", (0, 3), (0, 10)))
     second = await town.call("Mei", "submit")
     assert second.text == (
         "Not accepted: your changes could not be applied to a clean copy of the repository. "
-        "You cannot hand in task 1 again today."
+        "You cannot hand in task 1 again today. It is 09:00."
     )
     third = await town.call("Mei", "submit")
     assert third.text == (
@@ -148,7 +165,7 @@ async def test_an_accepted_task_is_paid_once_and_done_for_that_resident(make_tow
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     accepted = await town.call("Mei", "submit")
-    assert accepted.text == "Accepted. You were paid $20. Your purse holds $140."
+    assert accepted.text == "Accepted. You were paid $20. Your purse holds $140. It is 09:00."
     assert "Mei" not in town.world.board.claims and backend.opened[0].closed
     assert (
         "1. org/repo1: Problem 1 goes wrong. Pays $20. You have been paid for it."
@@ -238,7 +255,7 @@ async def test_giving_up_a_task_throws_its_changes_away(make_town):
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
     assert (
         await town.call("Mei", "abandon_task")
-    ).text == "You gave up task 3; its changes are gone."
+    ).text == "You gave up task 3; its changes are gone. It is 09:00."
     assert backend.opened[0].closed and "Mei" not in town.world.board.claims
     assert (await town.call("Mei", "claim_task", task=3)).text.startswith("You claimed task 3")
     assert backend.opened[1].changed == {}
@@ -274,7 +291,7 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
     started = await town.call("Mei", "start_work")
     assert started.text == (
         "You started work. The workspace of task 2, which you hold, is set up again with your "
-        "changes."
+        "changes. It is 09:20."
     )
     assert (await town.call("Mei", "read_repo_file", path="a.py")).text == "half done\n"
     await town.until("23:59", day=2)

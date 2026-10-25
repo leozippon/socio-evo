@@ -96,8 +96,8 @@ def refusal(event: Event, tool: str, *, workplace: str, destination: str) -> str
             "You are asleep."
             if event.suspended
             else (
-                "You have gone to bed; before you fall asleep you can only review your day, rate "
-                "people and see to your own files."
+                "You have gone to bed; before you fall asleep you can only look back over your "
+                "day, rate people and see to your own files."
             )
         )
     if isinstance(event, Conversation):

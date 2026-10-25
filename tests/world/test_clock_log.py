@@ -3,13 +3,29 @@
 from __future__ import annotations
 
 import asyncio
-import time
 from datetime import date
+from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 
+import world.clock
 from world.clock import Clock, ManualClock, parse_hour, tell_moment
+from world.config import ClockSettings
 from world.log import WorldLog
+
+EIGHT = "ABCDEFGH"
+
+
+def eight_residents() -> Clock:
+    """A clock of eight residents whose busy speed falls by 4 with every resident busy."""
+    return Clock(1000, len(EIGHT), speed_idle=100, speed_busy_one=36, speed_busy_all=8)
+
+
+def make_busy(clock: Clock, names: str) -> None:
+    """Tell `clock` that exactly the residents `names` are busy."""
+    for name in EIGHT:
+        clock.set_busy(name, name in names)
 
 
 def test_a_moment_is_told_by_weekday_date_and_hour():
@@ -20,26 +36,59 @@ def test_a_moment_is_told_by_weekday_date_and_hour():
         parse_hour("24:00")
 
 
-async def test_the_clock_runs_fast_while_idle_and_slow_while_someone_is_busy():
-    clock = Clock(1000, speed_active=10, speed_idle=1000)
-    began = time.monotonic()
-    await asyncio.sleep(0.05)
-    idle = clock.now() - 1000
-    assert 40 <= idle <= 1000 * (time.monotonic() - began) + 1
-    clock.set_busy("Mei", True)
-    mark, began = clock.now(), time.monotonic()
-    await asyncio.sleep(0.05)
-    busy = clock.now() - mark
-    assert busy <= 10 * (time.monotonic() - began) + 1 and busy < idle
-    clock.set_busy("Mei", False)
+def test_the_speed_falls_linearly_from_one_busy_resident_to_all():
+    clock = eight_residents()
+    speeds = []
+    for k in range(len(EIGHT) + 1):
+        make_busy(clock, EIGHT[:k])
+        assert clock.busy_count == k
+        speeds.append(clock.speed)
+    assert speeds == [100, 36, 32, 28, 24, 20, 16, 12, 8]
     with clock.hold():
-        held = clock.now()
-        await asyncio.sleep(0.02)
-        assert clock.now() == held
+        assert clock.speed == 0
+    alone = Clock(0, 1, speed_idle=100, speed_busy_one=36, speed_busy_all=8)
+    alone.set_busy("Mei", True)
+    assert alone.speed == 36
+
+
+def test_simulated_time_is_exact_across_every_change_of_speed(monkeypatch):
+    real = 0.0
+    monkeypatch.setattr(world.clock, "time", SimpleNamespace(monotonic=lambda: real))
+    clock = eight_residents()
+    expected = 1000.0
+    for busy, speed, seconds in [
+        ("", 100, 10),
+        ("A", 36, 5),
+        ("ABCD", 24, 2.5),
+        ("ABCDEFGH", 8, 1),
+        ("H", 36, 3),
+        ("", 100, 4),
+    ]:
+        make_busy(clock, busy)
+        assert clock.speed == speed
+        real += seconds
+        expected += speed * seconds
+        assert clock.now() == expected
+    make_busy(clock, "AB")
+    with clock.hold():
+        real += 50
+        assert clock.now() == expected
+    real += 2
+    assert clock.speed == 32 and clock.now() == expected + 64
+
+
+def test_telling_the_clock_twice_changes_nothing():
+    clock = eight_residents()
+    clock.set_busy("A", True)
+    clock.set_busy("A", True)
+    clock.set_busy("B", False)
+    assert clock.busy_count == 1 and clock.speed == 36
+    clock.set_busy("A", False)
+    assert clock.busy_count == 0 and clock.speed == 100
 
 
 async def test_a_sleeper_reconsiders_its_wait_when_the_speed_changes():
-    clock = Clock(0, speed_active=1, speed_idle=1000)
+    clock = Clock(0, 2, speed_idle=1000, speed_busy_one=1, speed_busy_all=1)
     clock.set_busy("Mei", True)  # at speed 1, 50 seconds away
     sleeper = asyncio.create_task(clock.sleep_until(50))
     await asyncio.sleep(0.01)
@@ -47,6 +96,18 @@ async def test_a_sleeper_reconsiders_its_wait_when_the_speed_changes():
     clock.set_busy("Mei", False)  # at speed 1000, 0.05 s away
     await asyncio.wait_for(sleeper, 1)
     assert clock.now() >= 50
+
+
+def test_the_clock_speeds_may_not_rise_with_load_nor_fall_below_real_time():
+    def settings(idle: float, one: float, all_: float) -> ClockSettings:
+        return ClockSettings(
+            speed_idle=idle, speed_busy_one=one, speed_busy_all=all_, idle_minutes=30
+        )
+
+    assert settings(1, 1, 1).speed_busy_all == 1  # equal speeds, and real time, are allowed
+    for speeds in [(30, 32, 8), (240, 8, 32), (240, 32, 0.5)]:
+        with pytest.raises(ValidationError, match="speed_idle >= speed_busy_one >= speed_busy_all"):
+            settings(*speeds)
 
 
 async def test_a_manual_clock_wakes_its_sleepers_in_order():

@@ -7,12 +7,14 @@ downloaded once into `CACHE` (set HF_ENDPOINT to use a mirror). A `Task` holds a
 whole, hidden tests and gold patch included; what a worker may be told is its `brief`, the
 problem statement alone unless the hints are asked for.
 
-The splits are disjoint sets of `SIZES` instances, drawn by `select`: the instance ids, sorted
-and shuffled with `SEED`, are taken in that order, skipping the excluded ones, the first for
-train and the next for eval, so excluding one more instance brings in exactly one other. An
-instance is excluded when Epoch AI publishes no image for it, when its repository's images
-cannot be used on this machine (`EXCLUDED_REPOS`), or when its gold patch fails in its image
-(`UNRESOLVABLE`, found by accepting every chosen task's gold patch); splits.json, tracked in the
+The splits are disjoint and drawn by `select`: the instance ids, sorted and shuffled with
+`SEED`, are taken in that order, skipping the excluded ones; eval is the `EVAL_SIZE` instances
+after the first `EVAL_START`, and train is every other one. Train was once those first 56 alone;
+eval keeps its place after them so that it stays as first drawn, and excluding an instance that
+comes after it changes nothing but train. An instance is excluded when Epoch AI publishes no
+image for it, when its repository's images cannot be used on this machine (`EXCLUDED_REPOS`),
+or when its gold patch fails in its image (`UNRESOLVABLE`, found by `python -m
+tasks.swebench.pull`, which accepts every task's gold patch); splits.json, tracked in the
 repository, records the exclusions with their reasons beside the two splits.
 """
 
@@ -35,7 +37,7 @@ DATA_FILE = "data/test-00000-of-00001.parquet"
 CACHE = Path.home() / ".cache" / "socio-evo" / "swebench"
 SPLITS = Path(__file__).with_name("splits.json")
 SEED = 20261024
-SIZES = {"train": 56, "eval": 100}
+EVAL_START, EVAL_SIZE = 56, 100
 NO_IMAGE = "no image published on ghcr.io/epoch-research"
 EXCLUDED_REPOS = {
     "matplotlib/matplotlib": "its images do not unpack under this machine's rootless Docker: "
@@ -105,11 +107,15 @@ def select(instance_ids: Iterable[str], excluded: Collection[str]) -> dict[str, 
     order = sorted(instance_ids)
     random.Random(SEED).shuffle(order)
     eligible = [instance for instance in order if instance not in excluded]
-    if len(eligible) < sum(SIZES.values()):
-        raise ValueError(f"{len(eligible)} eligible instances cannot fill splits of {SIZES}")
+    end = EVAL_START + EVAL_SIZE
+    if len(eligible) < end:
+        raise ValueError(
+            f"{len(eligible)} eligible instances cannot place {EVAL_SIZE} eval "
+            f"instances after the first {EVAL_START}"
+        )
     return {
-        "train": sorted(eligible[: SIZES["train"]]),
-        "eval": sorted(eligible[SIZES["train"] : SIZES["train"] + SIZES["eval"]]),
+        "train": sorted(eligible[:EVAL_START] + eligible[end:]),
+        "eval": sorted(eligible[EVAL_START:end]),
     }
 
 

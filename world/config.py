@@ -49,21 +49,26 @@ class Route(StrictModel):
 
 
 class Resident(StrictModel):
-    """A resident: its name, its home, the money it starts with, and its agent directory, which
-    the composition layer sets; without one it is `agents/<name>` in the run directory."""
+    """A resident: its name, its home, the money it starts with, the people it knows already
+    (`ties`: for each, a sentence or two in the second person on how, which the rules tell it in
+    the town mode and which seed its notes on people; every tie is mutual), and its agent
+    directory, which the composition layer sets; without one it is `agents/<name>` in the run
+    directory."""
 
     name: Name
     home: Id
     purse: int
+    ties: dict[Name, str] = Field(default_factory=dict)
     agent_dir: Path | None = None
 
 
 class Work(StrictModel):
-    """The work at the workplace. `split` names the task pool posted at every midnight; a claim
-    made on a calendar day runs out at the midnight that ends the day `claim_expiry_days` days
-    later."""
+    """The work at the workplace. `split` names the task pool, of which the board posts
+    `board_size` tasks at every midnight, in a rotation through the whole pool; a claim made on
+    a calendar day runs out at the midnight that ends the day `claim_expiry_days` days later."""
 
     split: str = Field(min_length=1)
+    board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
     payment: int = Field(ge=1)
     living_cost: int = Field(ge=0)
     acceptance_runs: int = Field(ge=1, description="acceptance runs per task per resident per day")
@@ -89,12 +94,23 @@ class Social(StrictModel):
 
 
 class ClockSettings(StrictModel):
-    """Simulated seconds per real second while some resident is busy and while none is, and
-    the longest a resident waits without being told anything, in simulated minutes."""
+    """The clock's speeds in simulated seconds per real second, and the longest a resident waits
+    without being told anything, in simulated minutes. The speed is `speed_idle` while no resident
+    is busy (in a model request or a tool execution); while some are, it falls linearly with
+    their number from `speed_busy_one`, with one, to `speed_busy_all`, with every resident."""
 
-    speed_active: float = Field(gt=0)
-    speed_idle: float = Field(gt=0)
+    speed_idle: float
+    speed_busy_one: float
+    speed_busy_all: float
     idle_minutes: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _ordered(self) -> ClockSettings:
+        if not self.speed_idle >= self.speed_busy_one >= self.speed_busy_all >= 1:
+            raise ValueError(
+                "the speeds must run speed_idle >= speed_busy_one >= speed_busy_all >= 1"
+            )
+        return self
 
 
 class DayHours(StrictModel):
@@ -143,9 +159,19 @@ class TownConfig(StrictModel):
         workplaces = [place for place in self.places if place.kind == "workplace"]
         if len(workplaces) != 1:
             raise ValueError(f"a town has exactly one workplace, not {len(workplaces)}")
+        residents = {resident.name: resident for resident in self.residents}
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
+            for other, how in resident.ties.items():
+                if other == resident.name or other not in residents:
+                    raise ValueError(
+                        f"{resident.name}'s tie to {other}: no other resident is so named"
+                    )
+                if resident.name not in residents[other].ties:
+                    raise ValueError(f"{resident.name}'s tie to {other} is not mutual")
+                if not how.strip():
+                    raise ValueError(f"{resident.name}'s tie to {other} says nothing")
         day = self.day
         forced, checkpoint, wake, longest = map(
             parse_hour, (day.forced_sleep, day.checkpoint, day.forced_wake, day.sleep_at_most)

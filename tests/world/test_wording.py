@@ -61,6 +61,7 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
     town = make_town(GROUPS[group], root=tmp_path / group)
     world_ = town.world
     texts = [world_.rules.text(name) for name in world_.residents]
+    texts += [world_.rules.people_notes(name) for name in world_.residents]
     texts += [world_.rules.help("Mei", topic) for topic in (*TOPICS, "anything")]
     for spec in world_.tool_specs:
         texts.append(spec.description)

@@ -8,6 +8,7 @@ import pytest
 from agent.wording import offences
 from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
+from world.rules import Rules
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
 
@@ -43,9 +44,8 @@ def test_the_smoke_town_is_two_residents_of_group_c_for_a_day():
     smoke, c = load_experiment(CONFIGS / "smoke.yaml"), group("c")
     assert [r.name for r in smoke.residents] == [r.name for r in smoke.town.residents]
     assert [r.name for r in smoke.residents] == ["Mei", "Tomas"]
-    assert smoke.days == 1 and smoke.town.clock.speed_active == 8
+    assert smoke.days == 1 and smoke.town.clock == c.town.clock
     assert smoke.town.social == c.town.social and smoke.skills_writable
-    assert smoke.town.clock.speed_idle == c.town.clock.speed_idle
 
 
 def test_an_overlay_merges_mappings_and_replaces_everything_else():
@@ -83,3 +83,37 @@ def test_backgrounds_are_second_person_circumstances_without_trait_words():
         assert offences(text) == [], resident.name
         others = [r.name for r in config.residents if r.name != resident.name]
         assert not [name for name in others if name in text], resident.name
+
+
+def test_ties_are_mutual_pass_the_guard_and_reach_only_the_town_groups():
+    c, a = group("c"), group("a")
+    residents = {r.name: r for r in c.town.residents}
+    for resident in residents.values():
+        assert 1 <= len(resident.ties) <= 2, resident.name
+        for other, how in resident.ties.items():
+            assert how.startswith(other), (resident.name, other)
+            assert resident.name in residents[other].ties  # mutual, as the configuration demands
+    known = {name: set(resident.ties) for name, resident in residents.items()}
+    reached, frontier = set(), {"Mei"}
+    while frontier:
+        reached |= frontier
+        frontier = {other for name in frontier for other in known[name]} - reached
+    assert reached == set(residents)  # everyone is reachable through someone they know
+    for g in (a, group("b"), c, group("d")):
+        rules = Rules(g.town)
+        for name in residents:
+            for text in (rules.text(name), rules.people_notes(name)):
+                assert offences(text) == [], (g.name, name, offences(text))
+    for name, resident in residents.items():
+        for how in resident.ties.values():
+            assert how in Rules(c.town).text(name) and how in Rules(c.town).people_notes(name)
+            assert how not in Rules(a.town).text(name)
+        assert Rules(a.town).people_notes(name) == "# People\n"
+
+
+def test_a_day_without_work_costs_something_but_does_not_threaten():
+    c = group("c")
+    work = c.town.work
+    assert work.living_cost == work.payment * 3 // 2  # a task and a half a day
+    for resident in c.town.residents:
+        assert 2 * work.living_cost <= resident.purse <= 4 * work.living_cost, resident.name

@@ -1,3 +1,4 @@
+import hashlib
 import json
 
 import pytest
@@ -7,10 +8,11 @@ from tasks.swebench.dataset import (
     CACHE,
     DATA_FILE,
     DATASET,
+    EVAL_SIZE,
+    EVAL_START,
     EXCLUDED_REPOS,
     REVISION,
     SEED,
-    SIZES,
     SPLITS,
     load_tasks,
     select,
@@ -18,28 +20,33 @@ from tasks.swebench.dataset import (
 from tests.tasks.swebench.conftest import make_task
 
 IDS = [f"owner__repo-{number}" for number in range(500)]
+EVAL_SHA256 = "b616bc4c8f5e40e4988fc66d108d1730a03f59140b64b394f68d94d165758ae0"
+"""Of the eval split drawn on 2026-10-24, its ids joined by newlines: it must never change."""
 
 
-def test_splits_are_deterministic_disjoint_and_sized():
-    splits = select(IDS, excluded=())
-    assert splits == select(reversed(IDS), excluded=())
-    assert {name: len(ids) for name, ids in splits.items()} == SIZES
-    assert not set(splits["train"]) & set(splits["eval"])
+def test_the_eval_split_is_the_one_first_drawn():
+    splits = json.loads(SPLITS.read_text())
+    assert hashlib.sha256("\n".join(splits["eval"]).encode()).hexdigest() == EVAL_SHA256
 
 
-def test_excluding_an_instance_brings_in_exactly_one_other():
+def test_eval_is_drawn_by_seed_and_train_is_every_other_eligible_instance():
+    excluded = set(IDS[::7])
+    splits = select(IDS, excluded)
+    assert splits == select(reversed(IDS), excluded)
+    assert len(splits["eval"]) == EVAL_SIZE and not set(splits["train"]) & set(splits["eval"])
+    assert set(splits["train"]) | set(splits["eval"]) == set(IDS) - excluded
+
+
+def test_excluding_a_training_instance_drawn_after_eval_changes_nothing_else():
     before = select(IDS, excluded=())
-    dropped = before["train"][0]
-    after = select(IDS, excluded={dropped})
-    chosen_before = set(before["train"] + before["eval"])
-    chosen_after = set(after["train"] + after["eval"])
-    assert dropped not in chosen_after
-    assert len(chosen_after - chosen_before) == 1
-    assert chosen_before - chosen_after == {dropped}
+    late = [i for i in before["train"] if select(IDS, {i})["eval"] == before["eval"]]
+    assert len(late) == len(IDS) - EVAL_START - EVAL_SIZE
+    after = select(IDS, excluded={late[0]})
+    assert after == {"train": [i for i in before["train"] if i != late[0]], "eval": before["eval"]}
 
 
 def test_too_few_eligible_instances_raise():
-    with pytest.raises(ValueError, match="cannot fill"):
+    with pytest.raises(ValueError, match="cannot place"):
         select(IDS[:200], excluded=IDS[:50])
 
 
@@ -60,6 +67,7 @@ def test_tracked_splits_are_drawn_from_the_pinned_dataset():
     assert set(splits["excluded"]) <= set(tasks)
     drawn = select(tasks, splits["excluded"])
     assert (splits["train"], splits["eval"]) == (drawn["train"], drawn["eval"])
+    assert set(splits["train"]) | set(splits["eval"]) | set(splits["excluded"]) == set(tasks)
     left_out = {instance for instance, task in tasks.items() if task.repo in EXCLUDED_REPOS}
     assert left_out and left_out <= set(splits["excluded"])
 

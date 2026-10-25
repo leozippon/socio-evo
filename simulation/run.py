@@ -5,8 +5,8 @@ Everything that can be checked is checked before anything is written: the backgr
 model client and its key, the task split and its images, and on resumption the configuration
 frozen in the run. A new run then freezes the configuration, creates each resident's directory
 from its background (memory/town.md seeded with the town's rules as the world tells them to that
-resident, people.md and work.md with a heading), makes it a git repository, and saves the
-world's starting state as day 0.
+resident, memory/people.md with the people it knows already, work.md with a heading), makes it a
+git repository, and saves the world's starting state as day 0.
 
 Saving day N commits every agent directory at the simulated moment and tags it `day-NN`, then
 writes the world's state to `checkpoints/day-NN.json`, so that a checkpoint always has its tags.
@@ -54,7 +54,7 @@ log = logging.getLogger("simulation")
 
 DRY_RUN_TASKS = 56
 """The tasks of a dry run's board, as many as the training pool."""
-DRY_RUN_SPEEDS = {"speed_active": 600.0, "speed_idle": 10_000.0}
+DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
 
 
@@ -178,7 +178,7 @@ def _create(
             path,
             background=background,
             town=rules.text(name) + "\n",
-            people="# People\n",
+            people=rules.people_notes(name),
             work="# Work\n",
             skills_writable=config.skills_writable,
         )

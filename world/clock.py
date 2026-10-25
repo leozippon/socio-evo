@@ -1,10 +1,10 @@
 """Simulated time and how a resident tells it.
 
 Simulated time is an integer count of seconds since 00:00 of day 1. `Clock` advances it in real
-time at `speed_active` while any resident is busy (in a model request or a tool execution, as
-the runtime reports through `set_busy`) and at `speed_idle` otherwise; `hold` stops it, which
-the world does while a checkpoint is written. `ManualClock` has the same interface and moves
-only when a test tells it to.
+time at a speed set by how many residents are busy (in a model request or a tool execution,
+as the runtime reports through `set_busy`); `hold` stops it, which the world does while a
+checkpoint is written. `ManualClock` has the same interface and moves only when a test tells
+it to.
 
 A resident reads a moment by weekday, date and hour ("Tuesday 3 March, 14:05"), never by a day
 number: the length of the run is nothing it may infer from the calendar.
@@ -63,14 +63,27 @@ def tell_moment(t: int, start: date) -> str:
 class Clock:
     """Simulated time running in real time at a speed set by load.
 
-    The speed is `speed_active` while any resident is busy, `speed_idle` otherwise, and zero
-    while held. Every change of speed re-anchors the clock and wakes the sleepers, which
-    re-evaluate how long they still have to wait.
+    With none of the town's `residents` busy the speed is `speed_idle`; with k busy it falls
+    linearly from `speed_busy_one` at k = 1 to `speed_busy_all` at k = `residents` (a town of one
+    runs at `speed_busy_one`), so that a few thinkers do not make the town crawl and a saturated
+    model server does not let time race ahead of what the residents can do. Held, it is zero.
+    Every change of speed re-anchors the clock and wakes the sleepers, which re-evaluate how long
+    they still have to wait.
     """
 
-    def __init__(self, start: int, speed_active: float, speed_idle: float) -> None:
-        self._active = speed_active
+    def __init__(
+        self,
+        start: int,
+        residents: int,
+        *,
+        speed_idle: float,
+        speed_busy_one: float,
+        speed_busy_all: float,
+    ) -> None:
+        self._residents = residents
         self._idle = speed_idle
+        self._busy_one = speed_busy_one
+        self._busy_all = speed_busy_all
         self._sim = float(start)
         self._real = time.monotonic()
         self._busy: set[str] = set()
@@ -79,9 +92,18 @@ class Clock:
 
     @property
     def speed(self) -> float:
+        """Simulated seconds per real second, now."""
         if self._held:
             return 0.0
-        return self._active if self._busy else self._idle
+        if not self._busy:
+            return self._idle
+        fall = (self._busy_all - self._busy_one) * (len(self._busy) - 1)
+        return self._busy_one + fall / max(self._residents - 1, 1)
+
+    @property
+    def busy_count(self) -> int:
+        """How many residents are busy, now."""
+        return len(self._busy)
 
     def now(self) -> int:
         return int(self._exact())
@@ -128,8 +150,9 @@ class Clock:
         return self._sim + (time.monotonic() - self._real) * self.speed
 
     def _rebase(self) -> None:
-        self._sim = self._exact()
-        self._real = time.monotonic()
+        real = time.monotonic()
+        self._sim += (real - self._real) * self.speed
+        self._real = real
 
     def _notify(self) -> None:
         self._changed.set()

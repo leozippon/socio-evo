@@ -63,8 +63,8 @@ async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_tow
         assert conversation.budget == {x: 3, y: 3}
     told = town.take(a)[-1]
     assert (
-        told == f"You met {b} at the café on the square. You have 3 messages each; speak of "
-        "your work alone."
+        told == f"You met {b} at the café on the square. You each have 3 turns to speak; speak "
+        "of your work alone."
     )
     assert "speak of your work alone" in world.ports[a].situation()
 
@@ -74,7 +74,7 @@ async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_tow
     assert world.ports[b].interrupt.is_set()
     assert [p.kind for p in world.ports[c].pending()] == []  # the other pair hears nothing
     assert (await town.call(a, "say", text="One more thing.")).text == (
-        "You have used all your messages for this meeting."
+        "You have no turns left to speak at this meeting."
     )
     assert (await town.call(b, "say", text="Hi", to=[c])).text == f"{c} is not here."
     await town.call(b, "leave_conversation")

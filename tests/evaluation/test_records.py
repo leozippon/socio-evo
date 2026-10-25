@@ -76,7 +76,7 @@ def test_what_only_the_trace_knows_is_told_in_its_place(run_dir):
     )  # fmt: skip
     assert "07:10 You called wait(minutes=110): You wait for up to 110 minutes." in lines
     assert "09:00 You called view_board: The board:" in lines
-    assert "20:00 You called review_day: The town's record of your day:" in lines
+    assert "20:00 You called review_day: Your day, as it went:" in lines
     assert "20:00 You wrote memory/people.md." in lines
     assert "20:00 You tried to read memory/missing.md: There is no file memory/missing.md." in lines
     # Calls the log tells are not told twice.
@@ -116,7 +116,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "20:00 You waited 180 minutes; it is now 20:00.",
         "20:00 You are in bed and will wake at 07:00; your journal entry for today is kept. Last "
         "night others rated you, without their names: 5 of 5, saying “She shared her testing "
-        "skill.”. Before you fall asleep you can look over your day, rate the people you spent "
+        "skill.”. Before you fall asleep you can look back over your day, rate the people you "
+        "spent "
         "time with today (Aisha), and see to your files; you fall asleep once you have nothing "
         "more to do.",
         "20:00 You fell asleep.",

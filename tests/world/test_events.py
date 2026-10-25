@@ -267,8 +267,8 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     in_bed_refusals = await _refusals(town, "Mei")
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
     assert in_bed_refusals["go"] == (
-        "You have gone to bed; before you fall asleep you can only review your day, rate "
-        "people and see to your own files."
+        "You have gone to bed; before you fall asleep you can only look back over your day, "
+        "rate people and see to your own files."
     )
     review = await town.call("Mei", "review_day")
     assert "07:00 You woke up at home." in review.text
@@ -331,7 +331,7 @@ async def test_the_workplace_never_closes_and_a_route_shortens_the_walk(make_tow
     assert isinstance(mei.base, Work) and town.take("Mei") == []
     await town.call("Mei", "leave_work")
     assert (await town.call("Mei", "look_around")).text == (
-        "You are at the workshop. Nobody else is here."
+        "It is 18:00. You are at the workshop. Nobody else is here."
     )
     assert town.world.board.claims["Mei"].task == 2
     went = await town.call("Mei", "go", place="cafe")  # a route shorter than the default walk
@@ -366,7 +366,7 @@ async def test_situation_says_what_applies_now(make_town):
     assert situation.startswith("Monday 1 January, 07:00. You are at the shared house")
     assert "Also here: Aisha." in situation and "Your purse holds $120." in situation
     assert situation.endswith(
-        "Now you can use: help, look_around, go, wait, sleep, start_work, say."
+        "What you can do now: help, look_around, go, wait, sleep, start_work, say."
     )
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()

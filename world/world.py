@@ -131,7 +131,13 @@ class World:
         self._forced_wake = parse_hour(config.day.forced_wake)
         self._checkpoint_hour = parse_hour(config.day.checkpoint)
         start = self._checkpoint_hour
-        self.clock = clock or Clock(start, config.clock.speed_active, config.clock.speed_idle)
+        self.clock = clock or Clock(
+            start,
+            len(config.residents),
+            speed_idle=config.clock.speed_idle,
+            speed_busy_one=config.clock.speed_busy_one,
+            speed_busy_all=config.clock.speed_busy_all,
+        )
         self.clock.set(start)
         self.log = WorldLog(run.world_log_path)
         names = [r.name for r in config.residents]
@@ -140,6 +146,7 @@ class World:
             tasks,
             backend,
             config.work,
+            seed=config.seed,
             shared=config.social.mode == "town",
             names=names,
             money=self.economy.money,
@@ -214,7 +221,7 @@ class World:
 
     def _schedule_day(self, day: int) -> None:
         if day == 1:  # only a new world lives day 1: its board is posted as it starts
-            self._at(self.clock.now(), self._post_board)
+            self._at(self.clock.now(), partial(self._post_board, 1))
         exchange = self.config.social.exchange
         if exchange is not None:
             evening = (day - 1) * DAY + self.config.day.of_day(exchange.at)
@@ -223,7 +230,9 @@ class World:
         self._at(day * DAY + self._forced, partial(self._force_sleep, day))
         self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
 
-    def _post_board(self) -> None:
+    def _post_board(self, day: int) -> None:
+        """Post the board of calendar day `day` and tell those at the workplace."""
+        self.board.post(day)
         workplace = self.config.workplace
         here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
         hour = clock_time(self.clock.now())
@@ -232,7 +241,7 @@ class World:
             lambda w: f"It is {hour}: the day's board is posted at {workplace.name}.",
             place=workplace.id,
             audience=here,
-            payload={"tasks": len(self.board.tasks)},
+            payload={"tasks": len(self.board.posted)},
         )
 
     def _midnight(self, day: int) -> None:
@@ -240,7 +249,7 @@ class World:
         the next day's board."""
         self._settle(day)
         self._expire(day)
-        self._post_board()
+        self._post_board(day + 1)
 
     def _expire(self, day: int) -> None:
         for name in self.board.expired(day):
@@ -357,8 +366,8 @@ class World:
                 return f"{a.name} and {b.name} met at {place} to talk about their work."
             other = b.name if w == a.name else a.name
             return (
-                f"You met {other} at {place}. You have {counted(n, 'message')} each; speak of "
-                "your work alone."
+                f"You met {other} at {place}. You each have {counted(n, 'turn')} to speak; "
+                "speak of your work alone."
             )
 
         self.record(
@@ -492,6 +501,7 @@ class World:
         if set(state["residents"]) != set(self.residents):
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
+        self.board.post(state["time"] // DAY + 1)  # the board of the calendar day the clock is in
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -587,7 +597,7 @@ class World:
     def look(self, r: Resident) -> str:
         assert r.place is not None
         place = self.config.place(r.place)
-        text = f"You are at {place.name}."
+        text = f"It is {clock_time(self.clock.now())}. You are at {place.name}."
         if place.kind == "home":
             homes = [rc.name for rc in self.config.residents if rc.home == place.id]
             if self.config.social.mode == "isolated":
@@ -757,14 +767,14 @@ class World:
             if ratings or not again:
                 parts.append(tell_ratings(ratings))
             parts.append(
-                "Before you fall asleep you can look over your day, "
+                "Before you fall asleep you can look back over your day, "
                 + (f"rate the people you spent time with today ({listed(met)}), " if met else "")
                 + "and see to your files; you fall asleep once you have nothing more to do."
             )
         else:
             parts.append(
-                "Before you fall asleep you can look over your day and see to your files; you "
-                "fall asleep once you have nothing more to do."
+                "Before you fall asleep you can look back over your day and see to your files; "
+                "you fall asleep once you have nothing more to do."
             )
         told = " ".join(parts)
         self.record(
@@ -868,7 +878,7 @@ class World:
                 if r.conversation.budget is not None:
                     left = r.conversation.budget[r.name]
                     parts.append(
-                        f"You have {counted(left, 'message')} left; speak of your work alone."
+                        f"You have {counted(left, 'turn')} left to speak; speak of your work alone."
                     )
             elif isinstance(r.base, Work):
                 parts.append(f"You are at work at {place}.")
@@ -885,13 +895,13 @@ class World:
             parts.append("There is nothing to do until you arrive.")
         else:
             usable = [spec.name for spec in self.tool_specs if spec.name in event.tools]
-            files = " and your own files" if isinstance(event, Sleep) else ""
-            parts.append(f"Now you can use: {', '.join(usable)}{files}.")
+            files = ", and see to your files" if isinstance(event, Sleep) else ""
+            parts.append(f"What you can do now: {', '.join(usable)}{files}.")
         return " ".join(parts)
 
     def review(self, r: Resident) -> str:
-        """The town's record of `r`'s day, in its words; the work in a workspace is told as
-        one line per stretch of commands and file reads and writes."""
+        """The world's record of `r`'s day, told to it as its own day; the work in a workspace
+        is told as one line per stretch of commands and file reads and writes."""
         lines: list[str] = []
         stretch: dict[str, Any] | None = None
 
@@ -940,8 +950,8 @@ class World:
             lines.append(f"{clock_time(t)} {text}")
         close_stretch()
         if not lines:
-            return "The town has nothing on record for you today."
-        return "The town's record of your day:\n" + "\n".join(lines)
+            return "Nothing to look back on yet today."
+        return "Your day, as it went:\n" + "\n".join(lines)
 
     async def call(self, r: Resident, name: str, args: dict[str, Any]) -> ToolResult:
         handler = tools.HANDLERS[name]

@@ -53,8 +53,8 @@ def _number(description: str, minimum: int, maximum: int | None = None) -> dict[
 
 _REPO_PATH = "the file's path, from the repository's folder"
 WORKSPACE_SPECS = (
-    spec("shell", "Run a shell command in your workspace, in the repository's folder, without "
-         "internet. You get its whole output and its exit code.", ("command",),
+    spec("shell", "Run a shell command in your workspace, from the repository's folder; there "
+         "is no internet. You see its whole output and its exit code.", ("command",),
          command=_text("the command line")),
     spec("read_repo_file", "Read a file of your workspace. For a long file, give offset and "
          "limit to read some of its lines.", ("path",), path=_text(_REPO_PATH),
@@ -67,46 +67,46 @@ WORKSPACE_SPECS = (
          path=_text(_REPO_PATH), old_text=_text("the passage as it stands"),
          new_text=_text("what replaces it")),
 )  # fmt: skip
-"""The tools that act in a task's workspace, in their declared order."""
+# What acts in a task's workspace, in declared order; `world.solo` declares these too.
 
 
 def specs(config: TownConfig) -> list[ToolSpec]:
     workplace = config.workplace.name
     return [
-        spec("help", f"Read the town's rules on one topic: {listed(list(TOPICS))}.",
+        spec("help", f"Read how the town works, on one point: {listed(list(TOPICS))}.",
              topic={"type": "string", "enum": list(TOPICS)}),
         spec("look_around", "See where you are, who is here and what each of them is doing."),
         spec("go", "Walk to another place in town. You arrive after the walk; on the way you "
              "can do nothing and nobody can speak to you.", ("place",),
              place={"type": "string", "enum": [place.id for place in config.places],
-                    "description": "the place's name as the rules give it in brackets"}),
+                    "description": "the place's short name, as given in brackets under Places"}),
         spec("wait", "Let time pass where you are. You are told when something happens, or "
              "when the minutes are up.", ("minutes",),
              minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
         spec("sleep", "Go to bed at home, at any hour, until the hour you give. You can then "
-             "look over your day, rate people and see to your files before you fall asleep.",
-             ("until", "journal"),
+             "look back over your day, rate people and see to your files before you fall "
+             "asleep.", ("until", "journal"),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("your account of the day in your own words: what work you did and "
                            "with what result, what methods you used and where they came from, "
                            "what you concluded, and what remains open")),
-        spec("start_work", f"Start work at {workplace}. If you hold a task, its workspace is "
-             "set up again as you left it."),
-        spec("view_board", "Read the board: each task's number, repository, first line and "
-             "pay, and whether it is held or already paid to you. If you hold a task, its "
-             "whole problem is shown too."),
-        spec("claim_task", "Claim a task from the board. You get a workspace with the task's "
-             "repository and are shown its whole problem.", ("task",),
+        spec("start_work", f"Sit down to work at {workplace}. If you hold a task, your "
+             "workspace is set up again as you left it."),
+        spec("view_board", "Read the board: each task's number, repository, the first line of "
+             "its problem and its pay, and whether it is held or already paid to you. If you "
+             "hold a task, its whole problem is shown too."),
+        spec("claim_task", "Claim a task from the board. You get a workspace with its "
+             "repository and read the whole problem.", ("task",),
              task=_number("the task's number on the board", 1)),
         *WORKSPACE_SPECS,
-        spec("submit", "Hand in your changes to the repository for checking. You are told "
-             "whether they were accepted, and if so you are paid at once; if not, what kind of "
-             "failure it was and how many checks failed. Each task can be handed in only a few "
-             "times a day."),
+        spec("submit", "Hand in your fix for the task you hold. The client's checks run on it "
+             "in a clean copy of the repository; you are told whether it was accepted, and if "
+             "so you are paid at once, and if not, what went wrong and how many checks failed. "
+             "Each task can be handed in only a few times a day."),
         spec("abandon_task", "Give up the task you hold. Its changes are thrown away and you "
              "are not paid."),
-        spec("leave_work", f"Stop working and step out of {workplace}. You keep your task and "
-             "its changes."),
+        spec("leave_work", f"Stop working for now. You stay at {workplace} and keep your task "
+             "and its changes."),
         spec("say", "Speak where you are. Without `to`, everyone awake here hears you; with "
              "`to`, only the people you name, and the others notice only that you said "
              "something to them.", ("text",), text=_text("what you say"),
@@ -114,13 +114,13 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                  "description": "the names of the people you speak to"}),
         spec("give_money", "Hand some of your money to someone you are talking with.",
              ("to", "amount"), to=_text("their name"), amount=_number("how much", 1)),
-        spec("share_skill", "Pass one of your skills to someone you are talking with: they "
-             "receive the text of its file.", ("to", "skill"), to=_text("their name"),
+        spec("share_skill", "Pass one of your skills on to someone you are talking with: they "
+             "get its text to keep.", ("to", "skill"), to=_text("their name"),
              skill=_text("the skill's file name in your skills folder")),
         spec("leave_conversation", "Step out of the conversation and go back to what you "
              "were doing."),
-        spec("review_day", "Read the town's record of your day: where you went, what you did, "
-             "what was said to you and by you, and the money you received and paid."),
+        spec("review_day", "Look back over your day, hour by hour: where you went, what you "
+             "did, what was said to you and by you, and the money you received and paid."),
         spec("rate", "Rate someone you spent time with today, from 1 to 5, with your reason. "
              "They read it the next night, without your name.", ("resident", "score", "reason"),
              resident=_text("their name"), score=_number("from 1 to 5", 1, 5),
@@ -230,6 +230,11 @@ async def edit_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bo
 Handler = Callable[["World", "Resident", dict[str, Any]], Awaitable[ToolResult]]
 
 
+def _now(world: World) -> str:
+    """The clock, as a result tells it when a stretch of work begins or ends."""
+    return f"It is {clock_time(world.clock.now())}."
+
+
 async def _help(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(world.rules.help(r.name, args.get("topic", "")))
 
@@ -288,14 +293,16 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} started work.", actor=r)
     claim = world.board.claims.get(r.name)
     if claim is None:
-        return ToolResult("You started work. You hold no task; the board shows what there is.")
+        return ToolResult(
+            f"You started work. You hold no task; the board shows what there is. {_now(world)}"
+        )
     if r.name not in world.board.workspaces:
         await world.board.reopen(r.name)
         return ToolResult(
             f"You started work. The workspace of task {claim.task}, which you hold, is set up "
-            "again with your changes."
+            f"again with your changes. {_now(world)}"
         )
-    return ToolResult(f"You started work. You hold task {claim.task}.")
+    return ToolResult(f"You started work. You hold task {claim.task}. {_now(world)}")
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -316,8 +323,8 @@ async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
         payload={"task": number, "instance_id": task.instance_id},
     )
     return ToolResult(
-        f"You claimed task {number}, in {task.repo}; your workspace is ready. The problem:\n\n"
-        f"{task.problem_statement}"
+        f"You claimed task {number}, in {task.repo}; your workspace is ready. {_now(world)} "
+        f"The problem:\n\n{task.problem_statement}"
     )
 
 
@@ -452,7 +459,7 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
             if left > 0
             else f"You cannot hand in task {number} again today."
         )
-        return ToolResult(f"Not accepted: {failure(verdict)}. {again}")
+        return ToolResult(f"Not accepted: {failure(verdict)}. {again} {_now(world)}")
     finished = board.finish(r.name, claim)
     if finished is not None:
         await finished.close()
@@ -467,7 +474,8 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
         payload={"task": number, "amount": payment, "purse": world.economy.purses[r.name]},
     )
     return ToolResult(
-        f"Accepted. You were paid {world.economy.money(payment)}. {world.economy.purse(r.name)}"
+        f"Accepted. You were paid {world.economy.money(payment)}. {world.economy.purse(r.name)} "
+        f"{_now(world)}"
     )
 
 
@@ -484,14 +492,14 @@ async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> Tool
         actor=r,
         payload={"task": claim.task},
     )
-    return ToolResult(f"You gave up task {claim.task}; its changes are gone.")
+    return ToolResult(f"You gave up task {claim.task}; its changes are gone. {_now(world)}")
 
 
 async def _leave_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.stop_work(r)
     claim = world.board.claims.get(r.name)
     held = f" You still hold task {claim.task}." if claim else ""
-    return ToolResult(f"You stopped work and stepped out of {world.config.workplace.name}.{held}")
+    return ToolResult(f"You stopped work.{held} {_now(world)}")
 
 
 async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -501,7 +509,7 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     conversation = r.conversation
     budget = conversation.budget if conversation else None
     if budget is not None and budget[r.name] <= 0:
-        return ToolResult("You have used all your messages for this meeting.")
+        return ToolResult("You have no turns left to speak at this meeting.")
     present = world.addressable(r)
     private = "to" in args
     if private:
@@ -551,7 +559,7 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         },
     )
     left = conversation.budget[r.name] if conversation.budget is not None else None
-    tail = "" if left is None else f" You have {counted(left, 'message')} left."
+    tail = "" if left is None else f" You have {counted(left, 'turn')} left to speak."
     return ToolResult(tell(r.name) + tail)
 
 

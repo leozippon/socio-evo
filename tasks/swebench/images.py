@@ -94,11 +94,11 @@ def require(image: str) -> None:
         raise MissingImage(f"{image} is not pulled; run `{PULL_COMMAND}` or `docker pull {image}`")
 
 
-def pull(images: Sequence[str], workers: int = 8, attempts: int = 3) -> None:
-    """Pull the images not yet on this machine, `workers` at a time, printing progress. An image
-    whose pull fails is tried again up to `attempts` times in all, and layers a failed or
-    stopped pull left behind are kept, so pulling again resumes. Raises after trying every
-    image if any could not be pulled."""
+def pull(images: Sequence[str], workers: int = 8, attempts: int = 3) -> dict[str, str]:
+    """Pull the images not yet on this machine, `workers` at a time, printing progress, and
+    return Docker's error for each image that could not be pulled. An image whose pull fails is
+    tried again up to `attempts` times in all, and layers a failed or stopped pull left behind
+    are kept, so pulling again resumes."""
     missing = [image for image in dict.fromkeys(images) if not local(image)]
     print(f"{len(images) - len(missing)} of {len(images)} images present; pulling {len(missing)}")
     started = time.monotonic()
@@ -113,9 +113,7 @@ def pull(images: Sequence[str], workers: int = 8, attempts: int = 3) -> None:
             minutes = (time.monotonic() - started) / 60
             print(f"[{done}/{len(missing)}, {minutes:.1f} min] {outcome} {image}", flush=True)
     print(f"Docker reports {images_disk_use()} on disk for all images of this daemon")
-    if failed:
-        lines = "\n".join(f"  {image}: {error}" for image, error in failed.items())
-        raise RuntimeError(f"{len(failed)} images could not be pulled:\n{lines}")
+    return failed
 
 
 def _pull(image: str, attempts: int) -> subprocess.CompletedProcess[str]:

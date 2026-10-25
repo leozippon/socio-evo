@@ -1,5 +1,5 @@
 # A check of the whole loop against the model before a group is run: Mei and Tomas under
-# group C's rules for one day, the clock running twice as fast while either is busy.
+# group C's rules for one day.
 base: groups/c.yaml
 name: smoke
 days: 1
@@ -8,6 +8,5 @@ residents:
   - {name: Tomas, background: experiments/residents/tomas.md}
 town:
   residents:
-    - {name: Mei, home: mill-street-house, purse: 200}
-    - {name: Tomas, home: college-flat, purse: 240}
-  clock: {speed_active: 8}
+    - {name: Mei, home: mill-street-house, purse: 240}
+    - {name: Tomas, home: college-flat, purse: 260}

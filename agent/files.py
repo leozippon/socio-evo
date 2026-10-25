@@ -142,7 +142,7 @@ class FileTools:
     def _list_files(self, args: dict[str, Any]) -> str:
         folder = args.get("path") or ""
         if not isinstance(folder, str):
-            raise _Refusal(texts.NEEDS.format(tool="list_files", argument="path", kind=texts.TEXT))
+            raise _Refusal(texts.NEEDS.format(name="list_files", argument="path", kind=texts.TEXT))
         if folder.strip("/"):
             located = self._locate(folder, writing=False, folder=True)
             folder = located.relative_to(self._root).as_posix()
@@ -181,7 +181,7 @@ class FileTools:
 def _text(args: dict[str, Any], tool: str, name: str) -> str:
     value = args.get(name)
     if not isinstance(value, str):
-        raise _Refusal(texts.NEEDS.format(tool=tool, argument=name, kind=texts.TEXT))
+        raise _Refusal(texts.NEEDS.format(name=tool, argument=name, kind=texts.TEXT))
     return value
 
 
@@ -190,5 +190,5 @@ def _number(args: dict[str, Any], tool: str, name: str) -> int | None:
     if value is None:
         return None
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
-        raise _Refusal(texts.NEEDS.format(tool=tool, argument=name, kind=texts.NUMBER))
+        raise _Refusal(texts.NEEDS.format(name=tool, argument=name, kind=texts.NUMBER))
     return value
