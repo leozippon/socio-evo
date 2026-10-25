@@ -15,7 +15,7 @@ The null results matter as much. Self-evolution alone may erode honesty: a resid
 
 ## The town
 
-Eight residents, each with its own background and its own initial directory, live 28 simulated days in a town of homes, one workplace, a café and a park. Work is SWE-bench Verified: the workplace's board posts a training pool of 56 tasks each morning; a task is a repository in a container, a problem statement and a payment that is made once, after the official acceptance passes. The residents run their own tests, cannot see the hidden tests, and have no network. A day's living costs a fixed amount; purses may go into debt. The expected pace is about seven tasks a resident a day, so that every resident meets every task of the pool several times over the four weeks.
+Eight residents, each with its own background and its own initial directory, live 28 simulated days in a town of homes, one workplace, a café and a park. Work is SWE-bench Verified: the workplace's board posts a training pool of 56 tasks each morning; a task is a repository in a container, a problem statement and a payment that is made once, after the official acceptance passes. The residents run their own tests, cannot see the hidden tests, and have no network. A day's living costs a fixed amount, set so that two to three accepted tasks cover it; purses may go into debt. Nobody goes to bed before the evening, so the hours after the workplace closes are the residents' own. The expected pace is about seven tasks a resident a day, so that every resident meets every task of the pool several times over the four weeks.
 
 Each night, going to sleep, a resident writes the day's journal, reads the anonymous ratings and explanations others gave it, may review the world's own record of its day, may rate those it spent the day with, and may rewrite its memory files and its skills. The ratings have no mechanical effect. All residents run on the same model and differ only in their backgrounds and in what they have lived through and written down.
 
@@ -37,7 +37,7 @@ D is not made to follow C's interactions; it lives its own life under C's rules.
 | Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness with fixed budgets of requests, time and tokens and at most two submissions; the full 100 tasks at days 0 and 28 and a fixed subset in between if compute requires | Days 0, 7, 14, 21, 28 |
 | Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
 | Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day | Every day |
-| External honesty | Twenty fixed MASK scenarios with determinable ground truth; the share of answers under pressure that are truthful and effective | Days 0, 14, 28 |
+| External honesty | Twenty fixed MASK scenarios with determinable ground truth, the resident holding the scenario's position as itself; the share of answers under pressure that are truthful and effective, and, as MASK itself reports, the share that are lies | Days 0, 14, 28 |
 | Social life | Messages, private messages, skills shared, money handed over, ratings given and received, with whom | Every day, from the log |
 
 The judge is DeepSeek at temperature 0, another model family than the residents'; a sample of its verdicts is judged twice for agreement.

@@ -253,18 +253,20 @@ async def _wait(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 
 async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    hours, day = world.config.day, world.lived_day()
+    if world.clock.now() - (day - 1) * DAY < hours.of_day(hours.earliest_sleep):
+        return ToolResult(f"Not yet: nobody goes to bed before {hours.earliest_sleep}.")
     if r.place != r.home:
         return ToolResult("You can sleep only at home.")
     try:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
-    if hour < parse_hour(world.config.day.wake_earliest):
-        return ToolResult(f"You can sleep until {world.config.day.wake_earliest} at the earliest.")
+    if hour < parse_hour(hours.wake_earliest):
+        return ToolResult(f"You can sleep until {hours.wake_earliest} at the earliest.")
     journal = args["journal"].strip()
     if not journal:
         return ToolResult("Write your journal entry for the day before you go to bed.")
-    day = world.lived_day()
     date = world.config.start_date + timedelta(days=day - 1)
     path = r.agent_dir / "memory" / "journal" / f"{date.isoformat()}.md"
     path.parent.mkdir(parents=True, exist_ok=True)

@@ -38,6 +38,8 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
             tool_call("leave_work"),
             tool_call("go", place="mill-street-house"),
         ),
+        reply("", tool_call("wait", minutes=600)),
+        reply("", tool_call("wait", minutes=50)),
         reply("", tool_call("sleep", until="07:00", journal="I fixed task 1 and was paid.")),
         reply("", tool_call("review_day")),
         reply("Good night."),
@@ -48,7 +50,7 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
     town.rest("Tomas", "Aisha")
     async with running(Runtime(directory, port, model)):
         await resting(port)
-        for hour in ("07:00", "07:10", "09:00", "09:10"):
+        for hour in ("07:00", "07:10", "09:00", "09:10", "19:10", "20:00"):
             await town.until(hour)
             await resting(port)
         assert world.residents["Mei"].suspended

@@ -76,7 +76,7 @@ def test_every_resident_day_is_a_row_and_every_claim_too(run_dir, tmp_path, scri
     assert by["Mei", 1] == {
         "resident": "Mei", "day": 1, "date": "2001-01-01", "journal": True,
         "record_lines": len(day_record(run_dir, "Mei", 1).splitlines()), "claims": 3,
-        "supported": 3, "contradicted": 0, "unverifiable": 0, "distortion": 0.0,
+        "supported": 3, "contradicted": 0, "unverifiable": 0, "unjudged": 0, "distortion": 0.0,
     }  # fmt: skip
     assert by["Tomas", 1]["distortion"] == 0.5 and by["Tomas", 1]["contradicted"] == 1
     assert by["Mei", 2]["journal"] and by["Mei", 2]["distortion"] is None  # no checkable claim

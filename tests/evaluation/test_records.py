@@ -46,7 +46,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
-    assert "09:30 You rated Tomas 4 of 5: “He asked good questions.”" in lines
+    assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
     assert lines[-1] == (
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
         "living cost $40. Your purse holds $105."
@@ -71,9 +71,9 @@ def test_what_only_the_trace_knows_is_told_in_its_place(run_dir):
     )  # fmt: skip
     assert "07:10 You called wait(minutes=110): You wait for up to 110 minutes." in lines
     assert "09:00 You called view_board: The board:" in lines
-    assert "09:30 You called review_day: The town's record of your day:" in lines
-    assert "09:30 You wrote memory/people.md." in lines
-    assert "09:30 You tried to read memory/missing.md: There is no file memory/missing.md." in lines
+    assert "20:00 You called review_day: The town's record of your day:" in lines
+    assert "20:00 You wrote memory/people.md." in lines
+    assert "20:00 You tried to read memory/missing.md: There is no file memory/missing.md." in lines
     # Calls the log tells are not told twice.
     assert not [line for line in lines if "You called" in line and "claim_task(task=1)" in line]
     assert not [line for line in lines if any(f"called {t}" in line for t in ("submit", "go"))]
@@ -105,12 +105,16 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
     assert "Tuesday" not in first and "Monday" not in second
     assert heads(second) == [
         "07:00 You woke up at home. It is Tuesday 2 January, 07:00.",
-        "07:00 You are in bed and will wake at 07:00; your journal entry for today is kept. Last "
+        "07:00 You called wait(minutes=600): You wait for up to 600 minutes.",
+        "17:00 You waited 600 minutes; it is now 17:00.",
+        "17:00 You called wait(minutes=180): You wait for up to 180 minutes.",
+        "20:00 You waited 180 minutes; it is now 20:00.",
+        "20:00 You are in bed and will wake at 07:00; your journal entry for today is kept. Last "
         "night others rated you, without their names: 5 of 5, saying “She shared her testing "
         "skill.”. Before you fall asleep you can look over your day, rate the people you spent "
         "time with today (Aisha), and see to your files; you fall asleep once you have nothing "
         "more to do.",
-        "07:00 You fell asleep.",
+        "20:00 You fell asleep.",
         "00:00 Your statement for Tuesday 2 January: living cost $40. Your purse holds $65.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):

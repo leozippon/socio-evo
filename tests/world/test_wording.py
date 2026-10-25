@@ -94,6 +94,7 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
     texts.append((await town.call("Mei", "submit")).text)
     await town.call("Mei", "leave_work")
+    texts.append((await town.call("Mei", "sleep", until="07:00", journal="Tired.")).text)
     await town.until("19:30")
     await town.call("Mei", "go", place="mill-street-house")
     await town.until("21:00")

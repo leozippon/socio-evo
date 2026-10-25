@@ -12,6 +12,7 @@ from tests.world.conftest import (
     B_EXCHANGE,
     RESIDENTS,
     FakeBackend,
+    Town,
     at,
     awake_at,
     make_agent_dirs,
@@ -22,17 +23,16 @@ from world.events import Movement
 from world.log import KINDS
 from world.world import World
 
-FIVE = RESIDENTS + (
-    {"name": "Jonas", "home": "college-flat", "purse": 60},
-    {"name": "Olga", "home": "college-flat", "purse": 80},
-)
+FOUR = RESIDENTS + ({"name": "Jonas", "home": "college-flat", "purse": 60},)
 
 
 async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_town):
-    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FIVE))
+    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FOUR))
     await awake_at(town)
     world = town.world
-    await town.call("Jonas", "sleep", until="07:00", journal="Tired.")
+    await town.until("18:30")
+    refused = await town.call("Jonas", "sleep", until="07:00", journal="Tired.")
+    assert refused.text == "Not yet: nobody goes to bed before 20:00."
     await town.until("18:55")
     await town.call("Tomas", "go", place="park")
     for name in world.residents:
@@ -41,7 +41,8 @@ async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_tow
 
     pairings = [e for e in world.log.entries() if e["kind"] == "exchange_pairing"]
     pairs = [tuple(e["payload"]["pair"]) for e in pairings]
-    assert sorted(len(pair) for pair in pairs) == [2, 2] and "Jonas" not in sum(pairs, ())
+    assert sorted(len(pair) for pair in pairs) == [2, 2]
+    assert sorted(sum(pairs, ())) == sorted(world.residents)  # Jonas among them
     (a, b), (c, d) = pairs
     assert town.take(a) == [
         f"It is 19:00: by lot, you are to meet {b} at the café on the square "
@@ -126,6 +127,7 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
 async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     town = make_town()
     await awake_at(town)
+    await town.until("20:00")
     await town.call("Mei", "sleep", until="09:00", journal="Early.")
     town.take("Mei")
     waiting = asyncio.create_task(town.world.ports["Mei"].wait())
@@ -168,6 +170,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.call("Mei", "leave_work")
+    await town.until("20:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy morning.")
     await town.call("Aisha", "rate", resident="Mei", score=3, reason="Busy all day.")
     town.rest()
@@ -207,6 +210,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
+    await town.until("20:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy.")
     town.rest()
     await town.until("03:00", day=2)
@@ -216,8 +220,6 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     backend = FakeBackend()
     later = World(town.world.config, tmp_path, backend, clock=ManualClock())
     later.restore(json.loads(json.dumps(state)))
-    from tests.world.conftest import Town
-
     again = Town(later, backend)
     again.start(until_day=2)
     await again.until("10:00", day=2)

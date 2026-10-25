@@ -65,7 +65,7 @@ town:
   work:
     split: train
     payment: 60
-    living_cost: 40
+    living_cost: 150
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the next day's closing
     shell_timeout_s: 600
@@ -79,5 +79,6 @@ town:
     idle_minutes: 30
   day:
     wake_earliest: "06:00"
+    earliest_sleep: "20:00"
     forced_sleep: "02:00"
     checkpoint: "02:30"

@@ -25,6 +25,9 @@ def test_a_town_validates():
     assert config.workplace.id == "workshop"
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
+    data = config.model_dump(mode="json")
+    data["day"]["earliest_sleep"] = "01:00"  # after midnight, before the forced sleep
+    assert type(config).model_validate(data).day.earliest_sleep == "01:00"
 
 
 @pytest.mark.parametrize(
@@ -52,6 +55,17 @@ def test_a_town_validates():
         ),
         (lambda d: d["day"].update(checkpoint="01:00"), {}, "forced_sleep < checkpoint"),
         (lambda d: d["day"].update(wake_earliest="09:30"), {}, "workplace opens"),
+        (
+            lambda d: d["day"].update(earliest_sleep="17:00"),
+            {},
+            "earliest bedtime must come after the workplace closes",
+        ),
+        (lambda d: d["day"].update(earliest_sleep="03:00"), {}, "before the forced sleep"),
+        (
+            lambda d: d["day"].update(earliest_sleep="18:30"),
+            {"mode": "isolated", "exchange": B_EXCHANGE},
+            "earliest bedtime must come after the evening exchange",
+        ),
         (lambda d: d["social"].update(exchange=B_EXCHANGE), {}, "isolated mode"),
         (
             lambda d: d["social"]["exchange"].update(place="park", at="17:00"),

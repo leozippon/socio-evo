@@ -17,7 +17,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, model_validator
 
 from infrastructure.config import StrictModel
-from world.clock import parse_hour
+from world.clock import DAY, parse_hour
 
 
 def _hour(text: str) -> str:
@@ -111,12 +111,20 @@ class ClockSettings(StrictModel):
 
 
 class DayHours(StrictModel):
-    """The fixed hours of a day: nobody wakes before `wake_earliest`; at `forced_sleep`, after
-    midnight, whoever is still up falls asleep; at `checkpoint` the day's state is saved."""
+    """The fixed hours of a day: nobody wakes before `wake_earliest` nor goes to bed before
+    `earliest_sleep`; at `forced_sleep`, after midnight, whoever is still up falls asleep; at
+    `checkpoint` the day's state is saved."""
 
     wake_earliest: Hour
+    earliest_sleep: Hour
     forced_sleep: Hour
     checkpoint: Hour
+
+    def of_day(self, hour: str) -> int:
+        """`hour` in seconds from the midnight that begins the day; an hour earlier than
+        `wake_earliest` falls after the next midnight."""
+        t = parse_hour(hour)
+        return t + DAY if t < parse_hour(self.wake_earliest) else t
 
 
 class TownConfig(StrictModel):
@@ -155,14 +163,23 @@ class TownConfig(StrictModel):
             raise ValueError("the hours must run forced_sleep < checkpoint < wake_earliest")
         if wake > parse_hour(workplace.opens or ""):
             raise ValueError("nobody could be up when the workplace opens")
+        closes = parse_hour(workplace.closes or "")
+        bedtime = self.day.of_day(self.day.earliest_sleep)
+        if not closes < bedtime < self.day.of_day(self.day.forced_sleep):
+            raise ValueError(
+                "the earliest bedtime must come after the workplace closes and before the "
+                "forced sleep"
+            )
         exchange = self.social.exchange
         if exchange is not None:
             if self.social.mode != "isolated":
                 raise ValueError("the evening exchange belongs to the isolated mode")
             if places.get(exchange.place, None) is None or places[exchange.place].kind != "social":
                 raise ValueError(f"the exchange place {exchange.place} is not a social place")
-            if parse_hour(exchange.at) < parse_hour(workplace.closes or ""):
+            if parse_hour(exchange.at) < closes:
                 raise ValueError("the evening exchange must come after the workplace closes")
+            if parse_hour(exchange.at) >= bedtime:
+                raise ValueError("the earliest bedtime must come after the evening exchange")
         return self
 
     @property

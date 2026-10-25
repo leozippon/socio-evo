@@ -7,7 +7,7 @@ import asyncio
 
 import pytest
 
-from tests.world.conftest import at, awake_at
+from tests.world.conftest import B_EXCHANGE, at, awake_at, town_config
 from world.events import (
     CONVERSATION_TOOLS,
     IDLE_TOOLS,
@@ -168,9 +168,43 @@ async def test_speech_interrupts_only_those_it_reaches(make_town):
     assert "Tomas" not in town.world.residents["Mei"].conversation.members
 
 
+@pytest.mark.parametrize(
+    "config",
+    [
+        town_config("isolated"),
+        town_config("isolated", exchange=B_EXCHANGE),
+        town_config("town"),
+        town_config("town", shareable=False),
+    ],
+    ids=["A", "B", "C", "D"],
+)
+async def test_nobody_goes_to_bed_before_the_earliest_bedtime(make_town, config):
+    town = make_town(config)
+    await awake_at(town)
+    await town.until("18:30")
+    refused = await town.call("Mei", "sleep", until="07:00", journal="Tired.")
+    assert refused.text == "Not yet: nobody goes to bed before 20:00."
+    assert isinstance(town.world.residents["Mei"].event, Idle) and "sleep" not in town.kinds()
+    await town.until("20:00")
+    home = next(
+        r for r in town.world.residents.values() if r.place == r.home and isinstance(r.event, Idle)
+    )  # in B, the one left over by the pairing; the others are at the café
+    went = await town.call(home.name, "sleep", until="07:00", journal="A long day.")
+    assert went.text == "You went to bed."
+
+
+async def test_bed_stays_open_after_midnight(make_town):
+    town = make_town()
+    await awake_at(town)
+    await town.until("01:00", day=2)
+    went = await town.call("Mei", "sleep", until="07:00", journal="A late night.")
+    assert went.text == "You went to bed."
+
+
 async def test_nobody_can_address_a_resident_in_bed_or_asleep(make_town):
     town = make_town()
     await awake_at(town)
+    await town.until("20:00")
     slept = await town.call("Aisha", "sleep", until="08:00", journal="Short day.")
     assert slept.ends_turn and slept.text == "You went to bed."
     assert (await town.call("Mei", "say", text="Hi", to=["Aisha"])).text == "Aisha is asleep."
@@ -183,18 +217,19 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     town = make_town()
     await awake_at(town)
     port, mei = town.world.ports["Mei"], town.world.residents["Mei"]
+    await town.until("20:00")
     assert (await town.call("Mei", "sleep", until="06:00", journal="x")).text == (
         "You can sleep until 07:00 at the earliest."
     )
     assert (await town.call("Mei", "sleep", until="7am", journal="x")).text.startswith("Give")
     assert (await town.call("Mei", "sleep", until="08:00", journal=" ")).text.startswith("Write")
     await town.call("Mei", "go", place="park")
-    await town.until("07:10")
+    await town.until("20:10")
     assert (await town.call("Mei", "sleep", until="08:00", journal="x")).text == (
         "You can sleep only at home."
     )
     await town.call("Mei", "go", place="mill-street-house")
-    await town.until("07:20")
+    await town.until("20:20")
     town.take("Mei")
 
     await town.call("Mei", "sleep", until="08:30", journal="I walked to the park and back.")
@@ -215,7 +250,7 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert "You went to bed" not in review.text  # the actor's own wording is the in-bed text
 
     waiting = asyncio.create_task(port.wait())
-    await town.until("07:21")
+    await town.until("20:21")
     assert mei.suspended and not waiting.done()
     assert (await town.call("Mei", "look_around")).text == "You are asleep."
     town.rest("Tomas", "Aisha")  # the checkpoint waits for every runtime to rest
@@ -231,6 +266,7 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     town = make_town()
     await awake_at(town)
     await town.call("Tomas", "go", place="park")
+    await town.until("20:00")
     await town.call("Mei", "sleep", until="09:00", journal="Early night.")
     await town.until("01:59", day=2)
     town.take("Tomas")

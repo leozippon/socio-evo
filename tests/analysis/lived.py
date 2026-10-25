@@ -7,14 +7,16 @@ Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way o
 the opening, claims task 1 (and is refused task 2, as she holds one), runs two commands, writes
 the fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas, who claimed task 2,
 asks her privately how she runs the tests; she answers privately and passes him her skill. He
-tells Aisha something privately in her presence and gives her $5; she leaves for home, goes to
-bed at 09:30 with her journal, reads the record of her day, rates Tomas 4, writes her notes on
-people and fails to read a file she does not have. Tomas works until the closing, goes home, goes
-to bed with a journal that claims he fixed task 2, and rates Mei 5. Aisha never goes to bed and
-is put to sleep at 02:00. The living cost is $40.
+tells Aisha something privately in her presence and gives her $5; she leaves for home at 09:20,
+waits there until the earliest bedtime, goes to bed at 20:00 with her journal, reads the record
+of her day, rates Tomas 4, writes her notes on people and fails to read a file she does not
+have. Tomas works until the closing, goes home, goes to bed at 20:00 with a journal that claims
+he fixed task 2, and rates Mei 5. Aisha never goes to bed and is put to sleep at 02:00. The
+living cost is $40.
 
-Day 2. Mei wakes, goes back to bed with a second journal entry and reads Tomas's rating; Tomas's
-claim runs out at the closing; Tomas and Aisha are put to sleep at 02:00.
+Day 2. Mei wakes, waits at home until 20:00, goes back to bed with a second journal entry and
+reads Tomas's rating; Tomas's claim runs out at the closing; Tomas and Aisha are put to sleep at
+02:00.
 """
 
 from __future__ import annotations
@@ -85,7 +87,10 @@ MEI_STEPS = (
         tool_call("leave_work"),
         tool_call("go", place="mill-street-house"),
     ),
-    # 09:30, home.
+    # 09:30, home, until the earliest bedtime.
+    step(tool_call("wait", minutes=600)),
+    step(tool_call("wait", minutes=30)),
+    # 20:00.
     step(tool_call("sleep", until="07:00", journal=MEI_JOURNAL)),
     step(
         tool_call("review_day"),
@@ -94,7 +99,9 @@ MEI_STEPS = (
         tool_call("read_file", path="memory/missing.md"),
     ),
     step(text="Good night."),
-    # Day 2, 07:00, waking.
+    # Day 2, 07:00, waking, and at home until the earliest bedtime.
+    step(tool_call("wait", minutes=600)),
+    step(tool_call("wait", minutes=180)),
     step(tool_call("sleep", until="07:00", journal=MEI_JOURNAL_2)),
     step(),
 )
@@ -162,11 +169,15 @@ async def live(root: Path) -> None:
         await settled("18:00")
         await tomas("go", place="college-flat")
         await settled("18:10")
+        await settled("19:30")
+        await settled("20:00")
         await tomas("sleep", until="07:30", journal=TOMAS_JOURNAL)
         await tomas("rate", resident="Mei", score=5, reason="She shared her testing skill.")
         harness.rest("Tomas", "Aisha")
         await settled("02:30", day=2)
         await settled("07:00", day=2)
+        await settled("17:00", day=2)
+        await settled("20:00", day=2)
         await settled("02:30", day=3)
         async with asyncio.timeout(5):
             while len(harness.checkpoints) < 2:

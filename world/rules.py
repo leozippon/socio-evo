@@ -142,9 +142,9 @@ class Rules:
             )
 
         sleep = (
-            "Go to bed at home with sleep, giving the hour you want to wake, no earlier than "
-            f"{c.day.wake_earliest}, and your journal entry for the day, which is kept in your "
-            "journal folder."
+            f"Go to bed at home from {c.day.earliest_sleep} on, with sleep, giving the hour you "
+            f"want to wake, no earlier than {c.day.wake_earliest}, and your journal entry for "
+            "the day, which is kept in your journal folder."
         )
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "

@@ -95,7 +95,7 @@ async def test_ratings_go_to_those_one_was_with_and_arrive_anonymously_the_next_
     await town.call("Tomas", "go", place="mill-street-house")
     await town.until("07:10")
     await town.call("Tomas", "go", place="college-flat")
-    await town.until("07:20")
+    await town.until("20:00")
     for name in town.world.residents:
         await town.call(name, "sleep", until="07:00", journal=f"{name}'s first day.")
     in_bed = town.take("Mei")[-1]
@@ -134,6 +134,7 @@ async def test_ratings_go_to_those_one_was_with_and_arrive_anonymously_the_next_
 async def test_nobody_can_be_rated_without_having_been_met(make_town):
     town = make_town()
     await awake_at(town)
+    await town.until("20:00")
     await town.call("Tomas", "sleep", until="07:00", journal="Alone.")
     refused = await town.call("Tomas", "rate", resident="Mei", score=3, reason="Never saw her.")
     assert refused.text == "You did not spend time with Mei today."
@@ -150,6 +151,7 @@ async def test_an_isolated_resident_meets_nobody_and_hears_of_no_ratings(make_to
     assert (
         await town.call("Mei", "say", text="Hello?")
     ).text == "There is nobody here to hear you."
+    await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="Quiet.")
     in_bed = town.take("Mei")[-1]
     assert "rated" not in in_bed and "rate" not in in_bed
