@@ -2,14 +2,16 @@
 
     python -m evaluation.capability AGENT_DIR --split eval --out OUT_DIR --model MODEL.yaml
         [--limit N] [--tasks ID ...] [--runtime RUNTIME.yaml] [--concurrency N]
-        [--reasoning EFFORT] [--skills-read-only]
+        [--reasoning EFFORT]
 
 Each task is worked by the resident's own runtime over a `world.solo.SoloPort`: the town's work
 tools, through the same backend, with nothing of the town around them. For each task the agent
 directory's background, memory and skills (never its session or trace) are copied into
 OUT_DIR/<instance id>/agent, so the export is never written to and every task starts with a
 fresh session; the trace written there is the record of the attempt, and every change handed in
-is kept beside it as submission-N.patch. Tasks run concurrently, `concurrency` at a time.
+is kept beside it as submission-N.patch. Skills are read-only in the harness, for every group:
+the evaluation measures the resident as it stands, and within one task nothing written there
+could be read back anyway. Tasks run concurrently, `concurrency` at a time.
 
 A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions
 and their verdicts, the model requests (steps) and their tokens, the real seconds and the
@@ -114,11 +116,10 @@ async def evaluate_capability(
     concurrency: int,
     out_dir: Path,
     backend: Backend,
-    skills_writable: bool = True,
 ) -> CapabilityResult:
     """The resident exported at `export_dir` on each of `tasks`, worked through `backend` with
     the model `client`, `concurrency` tasks at a time; its copies and traces go under
-    `out_dir`, which must not exist. `skills_writable` is False for group D."""
+    `out_dir`, which must not exist."""
     names = [task.instance_id for task in tasks]
     if not names:
         raise ValueError("no tasks to evaluate")
@@ -138,7 +139,6 @@ async def evaluate_capability(
                 runtime_config,
                 solo_config,
                 backend,
-                skills_writable,
             )
 
     return CapabilityResult.of(await asyncio.gather(*map(attempt, tasks)))
@@ -152,14 +152,13 @@ async def _attempt(
     runtime_config: RuntimeConfig,
     solo_config: SoloConfig,
     backend: Backend,
-    skills_writable: bool,
 ) -> TaskResult:
     """One task worked from a fresh copy of the resident; any exception is the row's error."""
     port: SoloPort | None = None
     failure: str | None = None
     seconds = 0.0
     try:
-        directory = _copy(export_dir, task_dir / "agent", skills_writable)
+        directory = _copy(export_dir, task_dir / "agent")
         port = SoloPort(task, backend, solo_config, name=export_dir.name)
         metered = _Metered(client, port, runtime_config.model_attempts)
         try:
@@ -194,15 +193,16 @@ async def _attempt(
     )
 
 
-def _copy(export: Path, destination: Path, skills_writable: bool) -> AgentDirectory:
+def _copy(export: Path, destination: Path) -> AgentDirectory:
     """The resident's own files of `export` (background, memory, skills) copied to
-    `destination`, which must not exist: an agent directory with no session or trace yet."""
+    `destination`, which must not exist: an agent directory with no session or trace yet, its
+    skills read-only."""
     destination.mkdir(parents=True)
     shutil.copy2(export / BACKGROUND, destination / BACKGROUND)
     for area in AREAS:
         if (export / area).is_dir():
             shutil.copytree(export / area, destination / area)
-    return AgentDirectory(destination, skills_writable=skills_writable)
+    return AgentDirectory(destination, skills_writable=False)
 
 
 async def _live(runtime: Runtime, port: SoloPort) -> None:
@@ -270,9 +270,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--runtime", type=Path, help="RuntimeConfig YAML; defaults otherwise")
     parser.add_argument("--concurrency", type=int, default=4, help="tasks at a time")
     parser.add_argument("--reasoning", choices=("low", "medium", "xhigh"), help="over --runtime")
-    parser.add_argument(
-        "--skills-read-only", action="store_true", help="skills cannot be changed (group D)"
-    )
     args = parser.parse_args(argv)
 
     if args.out.exists():
@@ -305,7 +302,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             concurrency=args.concurrency,
             out_dir=args.out,
             backend=backend,
-            skills_writable=not args.skills_read_only,
         )
     )
     report = {
@@ -314,7 +310,6 @@ def main(argv: Sequence[str] | None = None) -> None:
         "model": model.model_dump(mode="json"),
         "runtime": runtime.model_dump(mode="json"),
         "solo": solo.model_dump(mode="json"),
-        "skills_writable": not args.skills_read_only,
         "concurrency": args.concurrency,
         "seconds": round(time.perf_counter() - started, 1),
         **result.model_dump(mode="json"),
