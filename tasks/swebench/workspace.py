@@ -63,7 +63,7 @@ newer=$(git rev-list --all --since="$((base + 1))" | wc -l)
 
 # The working tree as a tree object, staged in a scratch index so the worker's index is left
 # alone, and the patch from the baseline tree to it, by plumbing that ignores git's diff config.
-_STAGE = 'set -e; export GIT_INDEX_FILE=$(mktemp -u); trap \'rm -f "$GIT_INDEX_FILE"\' EXIT; '
+_STAGE = "set -e; export GIT_INDEX_FILE=$(mktemp -u); trap 'rm -f \"$GIT_INDEX_FILE\"' EXIT; "
 _STAGE += 'cp .git/index "$GIT_INDEX_FILE"; git add --all; '
 _SNAPSHOT = _STAGE + "git write-tree"
 _DIFF = _STAGE + "git diff-index --cached --patch --no-color {baseline}"
@@ -93,10 +93,26 @@ class Container:
         container = cls(f"socio-evo-swe-{slug}-{uuid.uuid4().hex[:8]}")
         _live.add(container.name)
         code, _, err = await _docker(
-            "run", "--detach", "--init", "--name", container.name,
-            "--label", f"{LABEL}={os.getpid()}", "--network", "none",
-            "--cpus", str(cpus), "--memory", memory, "--pids-limit", str(pids),
-            "--workdir", WORKDIR, image, "sleep", "infinity",
+            "run",
+            "--detach",
+            "--init",
+            "--name",
+            container.name,
+            "--label",
+            f"{LABEL}={os.getpid()}",
+            "--network",
+            "none",
+            "--cpus",
+            str(cpus),
+            "--memory",
+            memory,
+            "--pids-limit",
+            str(pids),
+            "--workdir",
+            WORKDIR,
+            image,
+            "sleep",
+            "infinity",
             timeout=600,
         )
         if code != 0:
@@ -111,9 +127,17 @@ class Container:
         once `timeout_s` has passed."""
         started = time.monotonic()
         code, out, err = await _docker(
-            "exec", *(["--interactive"] if stdin is not None else []), "--workdir", WORKDIR,
-            self.name, "timeout", f"--kill-after={_GRACE}", str(timeout_s), *argv,
-            stdin=stdin, timeout=timeout_s + _GRACE + 60,
+            "exec",
+            *(["--interactive"] if stdin is not None else []),
+            "--workdir",
+            WORKDIR,
+            self.name,
+            "timeout",
+            f"--kill-after={_GRACE}",
+            str(timeout_s),
+            *argv,
+            stdin=stdin,
+            timeout=timeout_s + _GRACE + 60,
         )
         timed_out = code in (124, 137) and time.monotonic() - started >= timeout_s
         return ExecResult(code, out, err, timed_out)
@@ -141,9 +165,7 @@ class Workspace:
         self.baseline = baseline
 
     @classmethod
-    async def open(
-        cls, task: Task, name: str, *, cpus: float = 4, memory: str = "16g"
-    ) -> Self:
+    async def open(cls, task: Task, name: str, *, cpus: float = 4, memory: str = "16g") -> Self:
         """Start a workspace on `task` for the worker `name`."""
         container = await Container.start(task.image, name, cpus=cpus, memory=memory)
         try:
@@ -223,15 +245,15 @@ def clip(text: str, limit: int) -> str:
     return f"{text[:head]}\n[... {len(text) - limit} characters cut ...]\n{text[-tail:]}"
 
 
-async def _docker(
-    *args: str, timeout: float, stdin: str | None = None
-) -> tuple[int, str, str]:
+async def _docker(*args: str, timeout: float, stdin: str | None = None) -> tuple[int, str, str]:
     """Run the Docker command line and return its exit code and outputs. A command line still
     running after `timeout` seconds is killed and raises."""
     process = await asyncio.create_subprocess_exec(
-        "docker", *args,
+        "docker",
+        *args,
         stdin=subprocess.PIPE if stdin is not None else subprocess.DEVNULL,
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
     )
     try:
         data = stdin.encode() if stdin is not None else None

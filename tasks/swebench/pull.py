@@ -1,6 +1,6 @@
 """Pull the task images of the splits from ghcr.io, resuming where an earlier pull stopped.
 
-    python -m tasks.swebench.pull [--split train|eval] [--workers N]
+python -m tasks.swebench.pull [--split train|eval] [--workers N]
 """
 
 import argparse

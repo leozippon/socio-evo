@@ -1,6 +1,6 @@
 """Accept a patch for a task officially and print the verdict as JSON.
 
-    python -m tasks.swebench.accept <instance_id> <patch_file> [--timeout SECONDS]
+python -m tasks.swebench.accept <instance_id> <patch_file> [--timeout SECONDS]
 """
 
 import argparse

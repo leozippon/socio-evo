@@ -1,6 +1,6 @@
 """Remove the task containers whose process has ended, such as one that was killed.
 
-    python -m tasks.swebench.cleanup
+python -m tasks.swebench.cleanup
 """
 
 import os
@@ -21,8 +21,12 @@ def running(pid: int) -> bool:
 
 def main() -> None:
     listed = docker(
-        "ps", "--all", "--filter", f"label={LABEL}",
-        "--format", f'{{{{.Names}}}} {{{{.Label "{LABEL}"}}}}',
+        "ps",
+        "--all",
+        "--filter",
+        f"label={LABEL}",
+        "--format",
+        f'{{{{.Names}}}} {{{{.Label "{LABEL}"}}}}',
         timeout=120,
     )
     if listed.returncode != 0:
