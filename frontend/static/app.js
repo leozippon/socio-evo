@@ -1,5 +1,6 @@
 "use strict";
-// The timeline viewer: one lane per resident over simulated time, read from /api/timeline.
+// The timeline viewer: one lane per resident over simulated time, read from /api/timeline; and
+// the overview of all the runs, one table of days per run, read from /api/progress.
 
 const DAY = 86400;
 const LABEL_W = 136, AXIS_H = 40, LANE_H = 74;
@@ -15,6 +16,27 @@ const MARKERS = {
 };
 const COLOURS = ["page", "surface", "ink", "ink-2", "muted", "grid", "axis", "select", "idle", "sleep",
   "movement", "work", "conversation", "skill", "rating", "good", "critical", "on-fill"];
+const OVERVIEW = ""; // the run selector's value for the overview of all the runs
+// The overview's columns: heading, what it shows, and the field of the day or the cell made of it.
+const PROGRESS_COLUMNS = [
+  ["Day", "The lived day, from one checkpoint to the next", "day"],
+  ["Date", "Its date", (d) => dateName(d.date)],
+  ["Hours", "The real hours the day took", (d) => (d.in_progress ? "…" : d.hours.toFixed(2))],
+  ["Claims", "Tasks claimed", "claims"],
+  ["Sub.", "Tasks handed in", "submissions"],
+  ["✓", "Handed in and accepted", "accepted"],
+  ["✗", "Handed in and not accepted", "rejected"],
+  ["Paid", "Payments for accepted tasks", "payments"],
+  ["Amount", "The total paid", (d, run) => d.paid && money(d.paid, run.currency)],
+  ["Speech", "Things said", "speeches"],
+  ["Gifts", "Gifts of money", "gifts"],
+  ["Skills", "Skills passed on", "skills_shared"],
+  ["Ratings", "Ratings given", "ratings"],
+  ["Journals", "Gone to bed with the day's journal", "journals"],
+  ["Forced", "Fallen asleep at the forced hour without a journal", "forced_sleeps"],
+  ["Purses", "The residents' purses at the end of the day (now, for the day in progress): lowest · median · highest",
+    (d, run) => [d.purse.min, d.purse.median, d.purse.max].map((n) => money(n, run.currency)).join(" · ")],
+];
 
 const $ = (id) => document.getElementById(id);
 const canvas = $("canvas"), ctx = canvas.getContext("2d"), tip = $("tip");
@@ -28,11 +50,12 @@ function hhmm(t) {
   const s = ((t % DAY) + DAY) % DAY;
   return `${pad(Math.floor(s / 3600))}:${pad(Math.floor((s % 3600) / 60))}`;
 }
-function dateOf(t) {
-  const [y, m, d] = state.data.start_date.split("-").map(Number);
-  const day = new Date(Date.UTC(y, m - 1, d + Math.floor(t / DAY)));
+function dateName(iso, later = 0) { // the date `later` days after `iso`, e.g. "Mon 2 Mar"
+  const [y, m, d] = iso.split("-").map(Number);
+  const day = new Date(Date.UTC(y, m - 1, d + later));
   return `${WEEKDAYS[day.getUTCDay()]} ${day.getUTCDate()} ${MONTHS[day.getUTCMonth()]}`;
 }
+const dateOf = (t) => dateName(state.data.start_date, Math.floor(t / DAY));
 const dayOf = (t) => Math.floor(t / DAY) + 1;
 const moment = (t) => `Day ${dayOf(t)}, ${dateOf(t)} ${hhmm(t)}`;
 function between(a, b) {
@@ -46,7 +69,7 @@ function duration(s) {
 // Data helpers ----------------------------------------------------------------------------
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-const money = (n) => (n < 0 ? `-${state.data.currency}${-n}` : `${state.data.currency}${n}`);
+const money = (n, currency = state.data.currency) => (n < 0 ? `-${currency}${-n}` : `${currency}${n}`);
 const placeName = (id) => (id == null ? "on the way" : state.data.places[id] || id);
 const listed = (names) => names.join(", ");
 function lowerBound(items, t, key) {
@@ -399,13 +422,22 @@ function message(text) {
 
 function renderRuns() {
   const select = $("run");
-  select.replaceChildren(...state.runs.map((run) => {
+  select.replaceChildren(new Option("All runs", OVERVIEW), ...state.runs.map((run) => {
     const option = document.createElement("option");
     option.value = run.name;
     option.textContent = `${run.name} (${run.status}, ${run.days} day${run.days === 1 ? "" : "s"} done)`;
     return option;
   }));
-  select.value = state.run || "";
+  select.value = state.run ?? OVERVIEW;
+}
+
+// Shows the overview when no run is chosen, and the chosen run's timeline otherwise.
+function showView() {
+  document.body.classList.toggle("overview", state.run === null);
+  if (state.run === null) {
+    $("status").textContent = "";
+    history.replaceState(null, "", "#progress");
+  }
 }
 
 function renderStatus() {
@@ -439,9 +471,48 @@ async function loadRun(view) {
   }
 }
 
+// The overview: one table per run, a row per lived day, the day in progress highlighted.
+async function loadProgress() {
+  state.busy = true;
+  try {
+    const runs = await getJSON("/api/progress");
+    if (state.run !== null) return; // a run was chosen meanwhile
+    state.runs = runs;
+    renderRuns();
+    const running = runs.filter((r) => r.status === "running").length;
+    $("status").textContent = `${runs.length} run${runs.length === 1 ? "" : "s"}, ${running} running`;
+    $("progress").innerHTML = runs.length ? runs.map(progressTable).join("") : "<p>There are no runs under the runs root yet.</p>";
+  } catch (error) {
+    if (state.run === null) $("progress").innerHTML = `<p>Could not load the progress of the runs: ${esc(error.message)}</p>`;
+  } finally {
+    state.busy = false;
+  }
+}
+
+function progressTable(run) {
+  const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+  const pace = run.hours_per_day == null ? "no day completed yet" : `${run.hours_per_day.toFixed(2)} real hours per day`;
+  const head = PROGRESS_COLUMNS.map(([name, title]) => `<th title="${esc(title)}">${esc(name)}</th>`).join("");
+  const rows = run.daily.map((d) => {
+    const cells = PROGRESS_COLUMNS.map(([, , cell]) => {
+      const value = typeof cell === "string" ? d[cell] : cell(d, run);
+      return `<td${value === 0 ? ' class="zero"' : ""}>${esc(value)}</td>`;
+    });
+    return `<tr${d.in_progress ? ' class="current" title="The day in progress"' : ""}>${cells.join("")}</tr>`;
+  });
+  return `<article class="run-progress"><h2>${esc(run.name)}</h2>`
+    + `<p class="muted">${esc(run.status)} · day ${run.day} at ${run.clock} · ${plural(run.days, "day")} done · ${pace}</p>`
+    + `<table><thead><tr>${head}</tr></thead><tbody>${rows.join("")}</tbody></table></article>`;
+}
+
 async function refresh() {
+  if (state.busy || document.hidden) return;
+  if (state.run === null) {
+    if (state.runs.some((r) => r.status === "running")) await loadProgress();
+    return;
+  }
   const run = state.runs.find((r) => r.name === state.run);
-  if (state.busy || document.hidden || !run || run.status !== "running") return;
+  if (!run || run.status !== "running") return;
   try {
     state.runs = await getJSON("/api/runs");
     renderRuns();
@@ -455,7 +526,10 @@ async function refresh() {
 function readHash() {
   const p = new URLSearchParams(location.hash.slice(1));
   const from = Number(p.get("from")), to = Number(p.get("to"));
-  return { run: p.get("run"), who: p.get("who"), view: p.has("from") && p.has("to") && to > from ? [from, to] : null };
+  return {
+    overview: p.has("progress"), run: p.get("run"), who: p.get("who"),
+    view: p.has("from") && p.has("to") && to > from ? [from, to] : null,
+  };
 }
 
 function writeHash() {
@@ -522,10 +596,13 @@ $("entries").addEventListener("click", (e) => {
   setView(t - half, t + half);
 });
 $("run").addEventListener("change", () => {
-  state.run = $("run").value;
+  const value = $("run").value;
+  state.run = value === OVERVIEW ? null : value;
   state.data = null;
   state.selected = null;
-  loadRun();
+  showView();
+  if (state.run === null) loadProgress();
+  else loadRun();
 });
 $("all").addEventListener("click", () => state.data && wholeRun());
 $("day").addEventListener("click", () => state.data && oneDay());
@@ -547,11 +624,13 @@ async function start() {
   }
   const wanted = readHash();
   const running = state.runs.find((r) => r.status === "running");
-  state.run = state.runs.some((r) => r.name === wanted.run) ? wanted.run : (running || state.runs[0] || {}).name || null;
+  const chosen = state.runs.some((r) => r.name === wanted.run) ? wanted.run : (running || state.runs[0] || {}).name;
+  state.run = wanted.overview || !chosen ? null : chosen;
   state.selected = wanted.who;
   renderRuns();
-  if (!state.run) { message("There are no runs under the runs root yet."); return; }
-  await loadRun(wanted.run === state.run ? wanted.view : null);
+  showView();
+  if (state.run === null) await loadProgress();
+  else await loadRun(wanted.run === state.run ? wanted.view : null);
   setInterval(refresh, REFRESH_MS);
 }
 

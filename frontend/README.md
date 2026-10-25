@@ -1,6 +1,6 @@
 # Timeline viewer
 
-A small web page that shows every resident of a run side by side over simulated time: what each was doing, where, with whom it talked, and what it claimed, handed in, earned, gave and wrote. It reads the run directories and never writes to them, so it can watch a run while it is still going.
+A small web page that shows every resident of a run side by side over simulated time: what each was doing, where, with whom it talked, and what it claimed, handed in, earned, gave and wrote. It can also set all the runs side by side, day by day, to show how far each has come. It reads the run directories and never writes to them, so it can watch a run while it is still going.
 
 ## Starting it
 
@@ -24,6 +24,14 @@ Scroll over the chart to zoom around the pointer, and drag (or scroll sideways, 
 
 A run whose status is running is fetched again every five seconds. If the view reaches the end of the log it follows the end as the run goes on; otherwise it stays where it is.
 
+## Comparing the runs
+
+The first entry of the run selector, "All runs", replaces the timeline with one table per run, side by side and wrapping onto further rows on a narrow screen. Above each table are the run's status, the day it has reached and the hour on its clock at the end of the log, the number of days checkpointed, and the real hours a completed day has taken on average.
+
+The table has a row for every lived day, from one checkpoint to the next, with the day in progress highlighted at the bottom. A row gives the day's date and the real hours it took; how many tasks were claimed, handed in, accepted and not accepted; the payments and the total paid; how much was said, the gifts, skills passed on, ratings, journal entries and forced sleeps; and the lowest, median and highest purse at the end of the day, or now for the day in progress. Hovering over a column heading explains it. A day's real hours run from the checkpoint before it, or from the resumption that went back to that checkpoint, to its own; the first day is timed from the first entry of the log, so the few minutes of sleep before it are not counted.
+
+While any run is running the tables are fetched again every five seconds. The address bar keeps this view as well.
+
 ## Where the data comes from
 
-The page is built from the run's world log, its frozen configuration (for the town, the starting purses and the date of the first day), its manifest and its checkpoints. The end of the log stands for "now": a running town's clock can be a little ahead of its last entry. When a run was resumed from a checkpoint, the entries of the day that was lost are left out, as in every analysis of the log. The shape of the data the page receives is described at the top of `timeline.py`.
+The page is built from the run's world log, its frozen configuration (for the town, the starting purses and the date of the first day), its manifest and its checkpoints. The end of the log stands for "now": a running town's clock can be a little ahead of its last entry. When a run was resumed from a checkpoint, the entries of the day that was lost are left out, as in every analysis of the log. The shape of the data the page receives is described at the top of `timeline.py` and `progress.py`.

@@ -1,7 +1,9 @@
-"""A run directory written by a real world living a day, for the viewer's tests."""
+"""A run directory written by a real world living a day, and single log entries written by
+hand, for the viewer's tests."""
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -77,3 +79,23 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Tomas", "sleep", until="08:00", journal="Task 2 is hard.")
     town.rest()
     await town.until("18:05", day=2)
+
+
+def entry(
+    seq: int, kind: str, t: int, actor: str | None = None, *, real_time: float = 0.0, **payload: Any
+) -> str:
+    """A line of the world log."""
+    return json.dumps(
+        {
+            "seq": seq,
+            "kind": kind,
+            "sim_time": t,
+            "real_time": real_time,
+            "actor": actor,
+            "place": "mill-street-house",
+            "audience": [],
+            "text": "",
+            "personal": {},
+            "payload": payload,
+        }
+    )

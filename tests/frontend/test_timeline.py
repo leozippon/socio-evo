@@ -1,6 +1,7 @@
 """The timeline of a run, built from the world log of a day lived in a real world: the base
 events contiguous per resident, conversation layered over what it interrupted, the markers, the
-purse, the days, a growing log read a line at a time, and a lost day set aside on resumption."""
+purse, the days and when they were lived in real time, a growing log read a line at a time, and
+a lost day set aside on resumption."""
 
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import pytest
 
 from frontend import timeline as module
 from frontend.timeline import timeline
-from tests.frontend.conftest import live_a_day, new_town
+from tests.frontend.conftest import entry, live_a_day, new_town
 from tests.world.conftest import at
 from world.clock import DAY
 
@@ -107,15 +108,30 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     ]
     assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 155]]
     assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 0]]
+    entries = list(town.world.log.entries())
+    first = entries[0]["real_time"]
+    (closed,) = [e["real_time"] for e in entries if e["kind"] == "checkpoint"]
     assert data["days"] == [
-        {"day": 1, "start": start, "end": at("02:30", day=2)},
-        {"day": 2, "start": at("02:30", day=2), "end": None},
+        {
+            "day": 1,
+            "start": start,
+            "end": at("02:30", day=2),
+            "real_start": first,
+            "real_end": closed,
+        },
+        {
+            "day": 2,
+            "start": at("02:30", day=2),
+            "end": None,
+            "real_start": closed,
+            "real_end": None,
+        },
     ]
 
     # Read while the day was lived: the open segment and conversation ended at that moment.
     (early,) = middle
     assert early["now"] == at("09:35") and early["days"] == [
-        {"day": 1, "start": start, "end": None}
+        {"day": 1, "start": start, "end": None, "real_start": first, "real_end": None}
     ]
     assert spans(early, "Mei")[-1] == ("work", at("09:00"), at("09:35"), "workshop", 1)
     module._caches.clear()
@@ -146,7 +162,9 @@ async def test_a_run_without_entries_is_everyone_asleep_at_the_start(tmp_path):
     run, _ = new_town(tmp_path)
     data = timeline(run.root)
     assert data["now"] == data["start"] == at("02:30")
-    assert data["days"] == [{"day": 1, "start": at("02:30"), "end": None}]
+    assert data["days"] == [
+        {"day": 1, "start": at("02:30"), "end": None, "real_start": None, "real_end": None}
+    ]
     assert [r["segments"] for r in data["residents"]][0] == [
         {
             "kind": "sleep",
@@ -178,27 +196,24 @@ async def test_the_entries_of_a_lost_day_are_set_aside_on_resumption(tmp_path):
     data = timeline(run.root)
     assert data["now"] == at("07:00", day=2)
     assert [s["kind"] for s in lane(data, "Mei")["segments"]] == ["sleep", "idle", "sleep", "idle"]
-    assert data["days"] == [
-        {"day": 1, "start": at("02:30"), "end": at("02:30", day=2)},
-        {"day": 2, "start": at("02:30", day=2), "end": None},
-    ]
-
-
-def entry(seq: int, kind: str, t: int, actor: str | None = None, **payload: Any) -> str:
-    return json.dumps(
+    entries = list(again.world.log.entries())
+    real = {e["kind"]: e["real_time"] for e in entries if e["kind"] in ("checkpoint", "resume")}
+    assert data["days"] == [  # the day lived again was begun at the resumption
         {
-            "seq": seq,
-            "kind": kind,
-            "sim_time": t,
-            "real_time": 0.0,
-            "actor": actor,
-            "place": "mill-street-house",
-            "audience": [],
-            "text": "",
-            "personal": {},
-            "payload": payload,
-        }
-    )
+            "day": 1,
+            "start": at("02:30"),
+            "end": at("02:30", day=2),
+            "real_start": entries[0]["real_time"],
+            "real_end": real["checkpoint"],
+        },
+        {
+            "day": 2,
+            "start": at("02:30", day=2),
+            "end": None,
+            "real_start": real["resume"],
+            "real_end": None,
+        },
+    ]
 
 
 def test_resuming_the_start_sets_aside_all_before_and_a_checkpoint_never_logged_fails(tmp_path):

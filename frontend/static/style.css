@@ -148,3 +148,31 @@ main {
   overflow-wrap: anywhere;
 }
 #entries .journal { border-left: 3px solid var(--axis); padding-left: 8px; }
+
+/* The overview: one table per run, side by side, wrapping on narrow screens. */
+body.overview #legend, body.overview nav, body.overview main { display: none; }
+body:not(.overview) #progress { display: none; }
+#progress {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 16px 16px;
+}
+#progress > p { margin: 0; color: var(--ink-2); }
+.run-progress {
+  max-width: 100%;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.run-progress p { margin: 0 0 8px; font-size: 12px; }
+.run-progress table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+.run-progress th, .run-progress td { padding: 2px 5px; text-align: right; white-space: nowrap; }
+.run-progress th { font-weight: 600; color: var(--ink-2); border-bottom: 1px solid var(--axis); cursor: help; }
+.run-progress td { border-top: 1px solid var(--grid); }
+.run-progress :is(th, td):nth-child(2) { text-align: left; }
+.run-progress td.zero { color: var(--muted); }
+.run-progress tr.current td { background: var(--select); font-weight: 600; }

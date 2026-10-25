@@ -5,6 +5,8 @@
     GET /                        the page and its static files
     GET /api/runs                [{"name": "smoke", "status": "running", "days": 2}, ...]
     GET /api/timeline?run=NAME   the timeline of that run (`frontend.timeline`)
+    GET /api/progress            every run's entry of /api/runs with its progress
+                                 (`frontend.progress`)
 
 A run is a directory directly under the root that holds a manifest; its status is the
 manifest's and its days the last day checkpointed (0 before the first). An unknown run is a
@@ -22,6 +24,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+from frontend.progress import progress
 from frontend.timeline import timeline
 from infrastructure.storage import RunDirectory
 
@@ -68,6 +71,14 @@ class Handler(SimpleHTTPRequestHandler):
                     self._json(timeline(found[name].root))
                     return
                 self._json({"error": f"no run named {name!r}"}, HTTPStatus.NOT_FOUND)
+                return
+            if url.path == "/api/progress":
+                self._json(
+                    [
+                        summary(name, run) | progress(timeline(run.root))
+                        for name, run in found.items()
+                    ]
+                )
                 return
         except (OSError, ValueError) as error:
             self._json(

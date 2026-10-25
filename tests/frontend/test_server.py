@@ -1,5 +1,5 @@
-"""The viewer's server: the list of runs, a run's timeline, a missing run, the page, and no
-caching anywhere."""
+"""The viewer's server: the list of runs, a run's timeline, the progress of every run, a missing
+run, the page, and no caching anywhere."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ import threading
 from urllib.error import HTTPError
 from urllib.request import urlopen
 
+from frontend.progress import progress
 from frontend.server import Server
 from frontend.timeline import timeline
 from tests.frontend.conftest import live_a_day, new_town
@@ -48,6 +49,11 @@ async def test_the_endpoints_serve_runs_and_timelines_and_a_missing_run_is_404(t
         status, cache, _, body = get(f"{base}/api/timeline?run=town")
         assert (status, cache) == (200, "no-store")
         assert json.loads(body) == json.loads(json.dumps(timeline(run.root)))
+
+        status, cache, _, body = get(f"{base}/api/progress")
+        assert (status, cache) == (200, "no-store")
+        expected = {"name": "town", "status": "running", "days": 1} | progress(timeline(run.root))
+        assert json.loads(body) == [json.loads(json.dumps(expected))]
 
         for missing in ("nope", "not-a-run", "town/..", ""):
             status, cache, _, body = get(f"{base}/api/timeline?run={missing}")

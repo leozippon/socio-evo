@@ -9,8 +9,13 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
       "start": 9000,                when the world began: the checkpoint hour of day 1
       "now": 95400,                 the time of the last entry in the log
       "places": {"workshop": "the workshop", ...},
-      "days": [{"day": 1, "start": 9000, "end": 95400}, ...],
-          the lived days, from one checkpoint to the next; the day in progress ends at null
+      "days": [{"day": 1, "start": 9000, "end": 95400,
+                "real_start": 1792871249.7, "real_end": 1792880505.6}, ...],
+          the lived days, from one checkpoint to the next; the day in progress ends at null.
+          "real_start" and "real_end" are the real (Unix) times at which the day was begun and
+          checkpointed: it was begun at the checkpoint before it, at the resumption that went
+          back to that checkpoint, or, for day 1, at the first entry of the log (the few
+          minutes before it, everyone asleep, are not counted); null with no entries at all
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
@@ -92,10 +97,12 @@ _FOLDED = frozenset(
         "rating",
         "settlement",
         "checkpoint",
+        "resume",
     }
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
-the time told, the board posted) add nothing to it."""
+the time told, the board posted) add nothing to it. A `resume` is kept after it has set the lost
+day aside, for the real time at which the day was begun again."""
 
 
 @dataclass
@@ -150,7 +157,7 @@ def _read(cache: _Cache, path: Path) -> bool:
         kind = entry["kind"]
         if kind == "resume":
             _set_aside_lost_day(cache.entries, entry)
-        elif kind in _FOLDED:
+        if kind in _FOLDED:
             payload = entry["payload"]
             if kind == "submission":
                 payload = {"task": payload["task"]}  # not the patch
@@ -159,7 +166,7 @@ def _read(cache: _Cache, path: Path) -> bool:
     return bool(whole)
 
 
-_KEPT = ("seq", "kind", "sim_time", "actor", "place", "audience")
+_KEPT = ("seq", "kind", "sim_time", "real_time", "actor", "place", "audience")
 
 
 def _set_aside_lost_day(entries: list[dict[str, Any]], resume: dict[str, Any]) -> None:
@@ -264,6 +271,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     start = parse_hour(town.day.checkpoint)
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
     days: list[dict[str, Any]] = []
+    begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
@@ -344,13 +352,29 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "settlement":
             lane.purse.append([t, payload["purse"]])
         elif kind == "checkpoint":
-            begun = days[-1]["end"] if days else start
-            days.append({"day": payload["day"], "start": begun, "end": t})
+            days.append(
+                {
+                    "day": payload["day"],
+                    "start": days[-1]["end"] if days else start,
+                    "end": t,
+                    "real_start": begun,
+                    "real_end": entry["real_time"],
+                }
+            )
+            begun = entry["real_time"]
+        elif kind == "resume":
+            begun = entry["real_time"]
     end = start if now is None else now
-    if not days:
-        days.append({"day": 1, "start": start, "end": None})
-    elif end > days[-1]["end"]:
-        days.append({"day": days[-1]["day"] + 1, "start": days[-1]["end"], "end": None})
+    if not days or end > days[-1]["end"]:
+        days.append(
+            {
+                "day": days[-1]["day"] + 1 if days else 1,
+                "start": days[-1]["end"] if days else start,
+                "end": None,
+                "real_start": begun,
+                "real_end": None,
+            }
+        )
     return {
         "start_date": town.start_date.isoformat(),
         "currency": town.currency,
