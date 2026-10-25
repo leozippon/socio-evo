@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import bisect
 import json
+import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -202,6 +203,11 @@ def _told(entry: Entry, resident: str) -> str:
         text += f"\n{OUTPUT}\n{tail}" if tail else " It printed nothing."
     elif kind in ("file_read", "file_write") and not payload["ok"]:
         text += " It could not be done."
+    elif kind == "settlement" and entry["actor"] == resident:
+        # The journal is written before the charge; the figure it quotes is the one before it.
+        currency = re.search(r"living cost (\D*)\d", text)
+        before = payload["purse"] + payload["living_cost"]
+        text += f" Before the living cost it held {currency.group(1) if currency else ''}{before}."
     return text
 
 

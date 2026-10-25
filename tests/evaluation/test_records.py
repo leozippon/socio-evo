@@ -35,10 +35,15 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
         "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
         "leave_conversation", "leave_work", "sleep", "rating", "fell_asleep", "settlement",
     }  # fmt: skip
-    told = [
-        f"{clock_time(e['sim_time'])} {e['personal'].get('Mei', e['text']).splitlines()[0]}"
-        for e in mine
-    ]
+
+    def head(e):
+        text = e["personal"].get("Mei", e["text"]).splitlines()[0]
+        if e["kind"] == "settlement":  # the record adds the purse before the charge
+            before = e["payload"]["purse"] + e["payload"]["living_cost"]
+            text += f" Before the living cost it held ${before}."
+        return f"{clock_time(e['sim_time'])} {text}"
+
+    told = [head(e) for e in mine]
     lines = heads(day_record(run_dir, "Mei", 1))
     assert all(lines.count(line) == 1 for line in told)
     assert [line for line in lines if line in told] == told
@@ -49,7 +54,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
     assert lines[-1] == (
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
-        "living cost $40. Your purse holds $105."
+        "living cost $40. Your purse holds $105. Before the living cost it held $145."
     )
 
 
@@ -115,7 +120,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "time with today (Aisha), and see to your files; you fall asleep once you have nothing "
         "more to do.",
         "20:00 You fell asleep.",
-        "00:00 Your statement for Tuesday 2 January: living cost $40. Your purse holds $65.",
+        "00:00 Your statement for Tuesday 2 January: living cost $40. Your purse holds $65. "
+        "Before the living cost it held $105.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)
