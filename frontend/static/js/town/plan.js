@@ -5,7 +5,8 @@
 //
 // Pure and deterministic (seeded by the world's own ids), so the same world always gives the
 // same town, and it runs under node for tests. Coordinates are world pixels: one unit of the
-// configured map is `unit` pixels, and every building faces down the map.
+// configured map is `unit` pixels, and every building faces down the map. Where the residents
+// stand on the plan at a moment is laid out here too, as purely.
 
 export function seeded(text) {
   let x = 2166136261;
@@ -558,4 +559,77 @@ export function walkways(plan) {
     }
     return best.get(b)?.line ?? null;
   };
+}
+
+// Residents ------------------------------------------------------------------------------------
+
+/**
+ * Where the residents stand at a moment of the timeline (replay.js) and which way they face, at
+ * figure scale `k`: on the way, on their road (`walk`, from `walkways`); at a place, in front of
+ * it, asleep by the door at home, in a ring facing its middle while in conversation, and in rows
+ * otherwise. The people at a place stand in the order of `names`, so a moment always gives the
+ * same positions, however often it is laid out and from whichever copy of the timeline. `speech`
+ * maps a place to its recent lines ({agent, to}), and a speaker turns to the one it addresses
+ * if both stand there; when `dark`, those asleep away from home show it.
+ */
+export function standing(plan, walk, { names, state, speech, k, dark }) {
+  const groups = new Map(); // place -> the residents standing there
+  const out = new Map();
+  for (const name of names) {
+    const found = state.residents[name];
+    if (!found?.segment) continue;
+    if (found.moving) {
+      const road = found.moving.from ? walk(found.moving.from, found.moving.to) : null;
+      const to = plan.byId.get(found.moving.to);
+      if (!to) continue;
+      if (road) {
+        const p = pointAlong(road, found.moving.fraction * lengthOf(road));
+        out.set(name, { x: p.x, y: p.y, facing: p.dx > 0.5 ? 1 : p.dx < -0.5 ? -1 : 0, walking: true });
+      } else out.set(name, { x: to.front.x, y: to.front.y, facing: 0, walking: true });
+      continue;
+    }
+    const id = found.segment.place;
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(name);
+  }
+  for (const [id, here] of groups) {
+    const p = plan.byId.get(id);
+    if (!p) continue;
+    const asleep = here.filter((name) => state.residents[name].segment.kind === "sleep");
+    const awake = here.filter((name) => !asleep.includes(name));
+    if (p.kind === "home" && asleep.length) asleep.forEach((name, i) => out.set(name, { x: p.door.x + (i - (asleep.length - 1) / 2) * 13 * k, y: p.base + 9 * k, facing: 0, asleep: true }));
+    else awake.push(...asleep);
+    const circle = awake.filter((name) => state.residents[name].conversation);
+    const rest = awake.filter((name) => !circle.includes(name));
+    const yardMid = (p.yard.x0 + p.yard.x1) / 2;
+    if (circle.length) {
+      // A conversation: a ring in front of the place, everyone facing its middle.
+      const c = { x: yardMid, y: p.base + 20 * k };
+      const radius = Math.max(15, circle.length * 5.5) * k;
+      circle.forEach((name, i) => {
+        const a = Math.PI / 2 + ((i + 0.5) / circle.length) * Math.PI * 2;
+        const x = c.x + Math.cos(a) * radius;
+        out.set(name, { x, y: c.y + Math.sin(a) * radius * 0.5, facing: Math.abs(x - c.x) < 3 ? 0 : x < c.x ? 1 : -1 });
+      });
+    }
+    // Everyone else in rows across the front.
+    const per = Math.max(3, Math.floor((p.yard.x1 - p.yard.x0 + 20) / (17 * k)));
+    const startY = p.base + (circle.length ? 46 : 14) * k;
+    rest.forEach((name, i) => {
+      const row = Math.floor(i / per);
+      const inRow = Math.min(per, rest.length - row * per);
+      const col = i - row * per;
+      out.set(name, { x: yardMid + (col - (inRow - 1) / 2) * 17 * k + (row % 2) * 6 * k, y: startY + row * 15 * k, facing: 0, asleep: dark && state.residents[name].segment.kind === "sleep" });
+    });
+  }
+  // Speakers turn to the one they address, if both stand there.
+  const latest = new Map();
+  for (const lines of speech.values()) for (const line of lines) latest.set(line.agent, line);
+  for (const [name, line] of latest) {
+    const a = out.get(name);
+    const b = line.to?.length === 1 && out.get(line.to[0]);
+    const there = [...groups.values()].some((here) => here.includes(name) && here.includes(line.to[0]));
+    if (a && b && there && !a.asleep) a.facing = b.x > a.x + 2 ? 1 : b.x < a.x - 2 ? -1 : a.facing;
+  }
+  return out;
 }

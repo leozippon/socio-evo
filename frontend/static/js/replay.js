@@ -2,7 +2,8 @@
 // each resident is, what it is in (idle, on the way, at work on a task, asleep, in conversation),
 // what it holds and what it has. Pure: no DOM, no fetching, so it runs under node as well as in
 // the browser. The timeline is the server's reading of the world log; the viewer adds no reading
-// of its own, only looks up moments in it.
+// of its own, only looks up moments in it. The timeline's times are whole seconds, but a moment
+// looked up need not be: the town plays through the seconds between them.
 
 import { livedDay } from "./clock.js";
 
@@ -18,30 +19,41 @@ export function lowerBound(items, value, key) {
   return lo;
 }
 
-/** The span of `spans` (contiguous, each `{start, end}`) holding time `t`: start ≤ t < end, or the last span for the moment it ends. */
-function spanAt(spans, t) {
-  if (!spans.length) return null;
-  const i = Math.min(lowerBound(spans, t + 1, (span) => span.end), spans.length - 1);
-  const span = spans[i];
-  return span.start <= t && t <= span.end ? span : null;
+/** The first whole second after `t`: a time of the timeline is after `t` exactly when it is at least this. */
+const after = (t) => Math.floor(t) + 1;
+
+/**
+ * The span of `spans` (in order, each `{start, end}`) holding time `t`: start ≤ t < end, or t = end
+ * for the last span when it is still open at the timeline's `now`. A span that closed before then
+ * does not hold the moment it ended, whether or not another has followed it yet, so a moment
+ * reads the same in every later publish of the timeline.
+ */
+function spanAt(spans, t, now) {
+  const span = spans[lowerBound(spans, after(t), (s) => s.end)];
+  if (span && span.start <= t) return span;
+  const last = spans.at(-1);
+  return last && last.end === now && t === now ? last : null;
 }
 
+/** Where a lane's timeline ends: its segments run on to the timeline's now. */
+const nowOf = (lane) => lane.segments.at(-1)?.end;
+
 /** The base event of a lane at `t`, one of its contiguous segments. */
-export const segmentAt = (lane, t) => spanAt(lane.segments, t);
+export const segmentAt = (lane, t) => spanAt(lane.segments, t, nowOf(lane));
 
 /** The conversation a lane is in at `t`, or null. */
-export const conversationAt = (lane, t) => spanAt(lane.conversations, t);
+export const conversationAt = (lane, t) => spanAt(lane.conversations, t, nowOf(lane));
 
 /** The purse of a lane at `t`: after its last change at or before `t`. */
 export function purseAt(lane, t) {
-  const i = lowerBound(lane.purse, t + 1, (point) => point[0]) - 1;
+  const i = lowerBound(lane.purse, after(t), (point) => point[0]) - 1;
   return lane.purse[Math.max(i, 0)][1];
 }
 
 /** The markers of a lane with `from` < t ≤ `to` (every marker up to `to` when `from` is null). */
 export function markersBetween(lane, from, to) {
-  const first = from === null ? 0 : lowerBound(lane.markers, from + 1, (m) => m.t);
-  const last = lowerBound(lane.markers, to + 1, (m) => m.t);
+  const first = from === null ? 0 : lowerBound(lane.markers, after(from), (m) => m.t);
+  const last = lowerBound(lane.markers, after(to), (m) => m.t);
   return lane.markers.slice(first, last);
 }
 
@@ -79,9 +91,3 @@ export function moment(timeline, t) {
   }
   return { time: t, day: livedDay(timeline.days, t), residents };
 }
-
-/** Where a resident is at `t`: its place, or null while on the way. */
-export const placeAt = (lane, t) => {
-  const segment = segmentAt(lane, t);
-  return segment && segment.kind !== "movement" ? segment.place : null;
-};

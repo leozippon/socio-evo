@@ -1,7 +1,8 @@
 """The viewer under node and headless Chromium: the replay looks the town up in the published
-timeline as the progress document counts it, the town plan holds for published and made-up
-worlds, and every route renders at a desktop and a phone width without an error in the console
-or horizontal overflow."""
+timeline as the progress document counts it, also between whole seconds, and the town stands its
+residents where the moment alone says; the town plan holds for published and made-up worlds; and
+every route renders at a desktop and a phone width without an error in the console or horizontal
+overflow."""
 
 from __future__ import annotations
 
@@ -54,6 +55,7 @@ def test_the_replay_looks_up_the_town_the_progress_counts(site):
     code, summary = replay_check(site)
     assert code == 0, summary["failures"]
     assert summary["checks"] > 60 and summary["days"] == 2
+    assert summary["clusters"] > 0  # residents standing together were laid out and compared
 
 
 def test_the_check_fails_when_the_timeline_and_the_progress_disagree(site, tmp_path):

@@ -12,7 +12,7 @@ import { daylight } from "../clock.js";
 import { h, s } from "../dom.js";
 import { icon } from "../icons.js";
 import { shortName } from "../world.js";
-import { f, lengthOf, pointAlong, townPlan, walkways } from "./plan.js";
+import { f, standing, townPlan, walkways } from "./plan.js";
 import { drawScenery } from "./scenery.js";
 
 const FIGURE = 31; // a resident's height in the drawing
@@ -60,7 +60,6 @@ export class TownMap {
     this.onSelect = onSelect;
     this.plan = townPlan(world);
     this.path = walkways(this.plan);
-    this.byId = new Map(world.places.map((place) => [place.id, place]));
     const { svg, places } = drawScenery(this.plan);
     this.sites = places;
 
@@ -88,6 +87,7 @@ export class TownMap {
     this.tokens = new Map();
     this.spots = new Map();
     this.boxes = { labels: new Map(), bubbles: [], deeds: [], tag: null };
+    this.noticesKey = null;
     this.animation = null;
     this.drawLights();
     this.drawActors();
@@ -399,77 +399,11 @@ export class TownMap {
     this.el.classList.toggle("night", light < 0.4);
   }
 
-  /** Where everyone stands, and which way they face; residents on the way stand on their road. */
-  standing() {
-    const { state, second } = this.frame;
-    const k = this.k ?? 1;
-    const dark = 1 - daylight(second) > 0.7;
-    const groups = new Map();
-    const out = new Map();
-    for (const name of this.cast.names) {
-      const found = state.residents[name];
-      if (!found?.segment) continue;
-      if (found.moving) {
-        const road = found.moving.from ? this.path(found.moving.from, found.moving.to) : null;
-        const to = this.plan.byId.get(found.moving.to);
-        if (!to) continue;
-        if (road) {
-          const p = pointAlong(road, found.moving.fraction * lengthOf(road));
-          out.set(name, { x: p.x, y: p.y, facing: p.dx > 0.5 ? 1 : p.dx < -0.5 ? -1 : 0, walking: true });
-        } else out.set(name, { x: to.front.x, y: to.front.y, facing: 0, walking: true });
-        continue;
-      }
-      const id = found.segment.place;
-      if (!groups.has(id)) groups.set(id, []);
-      groups.get(id).push(name);
-    }
-    for (const [id, names] of groups) {
-      const p = this.plan.byId.get(id);
-      if (!p) continue;
-      const place = this.byId.get(id);
-      const asleep = names.filter((name) => state.residents[name].segment.kind === "sleep");
-      const awake = names.filter((name) => !asleep.includes(name));
-      if (place.kind === "home" && asleep.length) asleep.forEach((name, i) => out.set(name, { x: p.door.x + (i - (asleep.length - 1) / 2) * 13 * k, y: p.base + 9 * k, facing: 0, asleep: true }));
-      else awake.push(...asleep);
-      const circle = awake.filter((name) => state.residents[name].conversation);
-      const rest = awake.filter((name) => !circle.includes(name));
-      const yardMid = (p.yard.x0 + p.yard.x1) / 2;
-      if (circle.length) {
-        // A conversation: a ring in front of the place, everyone facing its middle.
-        const c = { x: yardMid, y: p.base + 20 * k };
-        const radius = Math.max(15, circle.length * 5.5) * k;
-        circle.forEach((name, i) => {
-          const a = Math.PI / 2 + ((i + 0.5) / circle.length) * Math.PI * 2;
-          const x = c.x + Math.cos(a) * radius;
-          out.set(name, { x, y: c.y + Math.sin(a) * radius * 0.5, facing: Math.abs(x - c.x) < 3 ? 0 : x < c.x ? 1 : -1 });
-        });
-      }
-      // Everyone else in rows across the front.
-      const per = Math.max(3, Math.floor((p.yard.x1 - p.yard.x0 + 20) / (17 * k)));
-      const startY = p.base + (circle.length ? 46 : 14) * k;
-      rest.forEach((name, i) => {
-        const row = Math.floor(i / per);
-        const inRow = Math.min(per, rest.length - row * per);
-        const col = i - row * per;
-        out.set(name, { x: yardMid + (col - (inRow - 1) / 2) * 17 * k + (row % 2) * 6 * k, y: startY + row * 15 * k, facing: 0, asleep: dark && state.residents[name].segment.kind === "sleep" });
-      });
-    }
-    // Speakers turn to the one they address, if both are there.
-    const latest = new Map();
-    for (const lines of this.frame.speech.values()) for (const line of lines) latest.set(line.agent, line);
-    for (const [name, line] of latest) {
-      const a = out.get(name);
-      const b = line.to?.length === 1 && out.get(line.to[0]);
-      if (a && b && !a.asleep) a.facing = b.x > a.x + 2 ? 1 : b.x < a.x - 2 ? -1 : a.facing;
-    }
-    return out;
-  }
-
   layoutPeople() {
-    const spots = this.standing();
-    this.spots = spots;
     const k = this.k ?? 1;
-    const { selected } = this.frame;
+    const { state, second, speech, selected } = this.frame;
+    const spots = standing(this.plan, this.path, { names: this.cast.names, state, speech, k, dark: 1 - daylight(second) > 0.7 });
+    this.spots = spots;
     this.walking = false;
     for (const [name, token] of this.tokens) {
       const spot = spots.get(name);
@@ -522,33 +456,39 @@ export class TownMap {
 
   // Floating boxes ------------------------------------------------------------------------------
 
+  /**
+   * Speech, what each resident just did, and the selected name tag. A box that shows what it
+   * showed before is kept rather than made again, so it does not fade in anew every frame while
+   * the town plays.
+   */
   bubbles(frame) {
-    for (const old of [...this.boxes.bubbles, ...this.boxes.deeds]) old.el.remove();
-    this.boxes.bubbles = [];
-    this.boxes.deeds = [];
-    for (const [id, lines] of frame.speech) {
-      if (!lines.length) continue;
-      const el = h(
-        "div",
-        { class: "bubble", "data-place": id },
-        lines.slice(-2).map((line) =>
+    const speech = [...frame.speech]
+      .filter(([, lines]) => lines.length)
+      .map(([id, lines]) => {
+        const shown = lines.slice(-2);
+        const make = () =>
           h(
             "div",
-            { class: "bubble-line" },
-            h("div", { class: "bubble-who" }, this.cast.badge(line.agent, 14), h("b", {}, line.agent), line.to?.length ? h("span", { class: "bubble-to" }, line.private ? [icon("lock", 11), `privately to ${line.to.join(", ")}`] : `to ${line.to.join(", ")}`) : null),
-            h("p", { class: "bubble-text" }, line.text),
-          ),
-        ),
-        h("span", { class: "tail" }),
-      );
-      this.overlay.append(el);
-      this.boxes.bubbles.push({ el, place: id, speakers: [...new Set(lines.slice(-2).map((line) => line.agent))], size: null });
-    }
-    for (const [agent, deed] of frame.deeds ?? []) {
-      const el = h("div", { class: `deed${deed.tone ? ` tone-${deed.tone}` : ""}` }, icon(deed.icon, 12), h("span", {}, deed.text));
-      this.overlay.append(el);
-      this.boxes.deeds.push({ el, agent, size: null });
-    }
+            { class: "bubble", "data-place": id },
+            shown.map((line) =>
+              h(
+                "div",
+                { class: "bubble-line" },
+                h("div", { class: "bubble-who" }, this.cast.badge(line.agent, 14), h("b", {}, line.agent), line.to?.length ? h("span", { class: "bubble-to" }, line.private ? [icon("lock", 11), `privately to ${line.to.join(", ")}`] : `to ${line.to.join(", ")}`) : null),
+                h("p", { class: "bubble-text" }, line.text),
+              ),
+            ),
+            h("span", { class: "tail" }),
+          );
+        return { key: JSON.stringify([id, shown]), make, place: id, speakers: [...new Set(shown.map((line) => line.agent))] };
+      });
+    this.boxes.bubbles = this.keep(this.boxes.bubbles, speech);
+    const deeds = [...(frame.deeds ?? [])].map(([agent, deed]) => ({
+      key: JSON.stringify([agent, deed]),
+      make: () => h("div", { class: `deed${deed.tone ? ` tone-${deed.tone}` : ""}` }, icon(deed.icon, 12), h("span", {}, deed.text)),
+      agent,
+    }));
+    this.boxes.deeds = this.keep(this.boxes.deeds, deeds);
     const selected = frame.selected;
     this.tag.hidden = !selected;
     if (selected && this.tag.dataset.agent !== selected) {
@@ -556,6 +496,14 @@ export class TownMap {
       this.tag.replaceChildren(h("b", {}, selected));
       this.tagSize = null;
     }
+  }
+
+  /** The floating boxes `wanted` ({key, make, ...}): the one shown for a key is kept, the others made; those no longer wanted go. */
+  keep(shown, wanted) {
+    const before = new Map(shown.map((item) => [item.key, item]));
+    const next = wanted.map(({ make, ...item }) => before.get(item.key) ?? { ...item, el: this.overlay.appendChild(make()), size: null });
+    for (const item of shown) if (!next.includes(item)) item.el.remove();
+    return next;
   }
 
   /** Lay out names, speech and the selected name tag so that none covers another. */
@@ -721,6 +669,9 @@ export class TownMap {
   /** The town's notices of the moment, at the top of the map: forced sleeps, claims run out, pairings. */
   drawNotices(frame) {
     const notices = frame.notices ?? [];
+    const key = JSON.stringify(notices);
+    if (key === this.noticesKey) return; // as shown: made again, they would fade in anew
+    this.noticesKey = key;
     this.notices.hidden = !notices.length;
     this.notices.replaceChildren(...notices.map((notice) => h("div", { class: `notice${notice.tone ? ` tone-${notice.tone}` : ""}` }, icon(notice.icon, 14), h("span", {}, this.cast.mention(notice.text)))));
   }

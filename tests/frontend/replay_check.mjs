@@ -1,7 +1,9 @@
 // Checks the viewer's replay module against a published run: what it looks up in the timeline
 // at the end of every lived day (purses, the task held) and over each day (the markers counted)
 // must equal what the bundle's progress document says, the lanes must be contiguous and
-// distinct, and a moment looked up at any time must be consistent with itself.
+// distinct, a moment looked up at any time must be consistent with itself, also between whole
+// seconds as the town plays, and where the town shows its residents (town/plan.js) must be a
+// function of the moment alone.
 //
 //   node tests/frontend/replay_check.mjs SITE RUN_PATH
 //
@@ -14,8 +16,9 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { heldAt, markersBetween, moment, purseAt, segmentAt } = await viewer("replay.js");
-const { DAY, livedDay } = await viewer("clock.js");
+const { conversationAt, heldAt, markersBetween, moment, purseAt, segmentAt } = await viewer("replay.js");
+const { DAY, daylight, livedDay, secondOfDay } = await viewer("clock.js");
+const { standing, townPlan, walkways } = await viewer("town/plan.js");
 
 const read = (path) => JSON.parse(readFileSync(join(site, runPath, path.split("?")[0]), "utf8"));
 const run = read("run.json");
@@ -92,5 +95,67 @@ for (let k = 0; k < 60; k++) {
 }
 check("a moment before the start is the first", moment(timeline, timeline.start - DAY).day, timeline.days[0]);
 
-console.log(JSON.stringify({ run: runPath, days: progress.daily.length, checks, failures: failures.slice(0, 10), failed: failures.length }));
+// Between whole seconds, as the town plays, a lookup gives what holds in the second the moment
+// falls in: nobody drops out of a segment or a conversation in its last second, and a purse
+// or a marker counts from its own second, not the one before.
+for (const lane of timeline.residents) {
+  for (const segment of lane.segments) if (segment.end - segment.start >= 1) check(`${lane.name}'s segment ending at ${segment.end} holds half a second before`, segmentAt(lane, segment.end - 0.5) === segment, true);
+  for (const talk of lane.conversations) if (talk.end - talk.start >= 1) check(`${lane.name}'s conversation ending at ${talk.end} holds half a second before`, conversationAt(lane, talk.end - 0.5) === talk, true);
+  lane.purse.forEach(([t], i) => i && lane.purse[i - 1][0] < t && check(`${lane.name}'s purse half a second before its change at ${t}`, purseAt(lane, t - 0.5), lane.purse[i - 1][1]));
+  for (const m of lane.markers) check(`${lane.name}'s ${m.kind} at ${m.t} falls in its own second`, markersBetween(lane, m.t - 0.5, m.t).includes(m) && !markersBetween(lane, m.t - 1, m.t - 0.5).includes(m), true);
+}
+
+// Where the town shows its residents. Every resident has a spot at every moment, also in the
+// last half second of anyone's segment; and where two or more stand together at a place, they
+// stand where they did the last time the moment was laid out, whether the timeline is the same
+// one, a copy fetched again, or the one published earlier while the run went on, which held the
+// same past with its open spans ending then. A resident on the way is left out of the last: how
+// far along its road it is depends on when an open way ends, which is not known until it does.
+const world = read(run.world);
+const plan = townPlan(world);
+const walk = walkways(plan);
+const names = world.residents.map((resident) => resident.name);
+const layout = (data, t) => {
+  const state = moment(data, t);
+  const speech = new Map();
+  for (const lane of data.residents) {
+    const here = state.residents[lane.name];
+    for (const m of markersBetween(lane, t - 10 * 60, t)) {
+      if (m.kind !== "speech" || here.moving || !here.segment) continue;
+      if (!speech.has(here.segment.place)) speech.set(here.segment.place, []);
+      speech.get(here.segment.place).push({ agent: lane.name, to: m.to });
+    }
+  }
+  return standing(plan, walk, { names, state, speech, k: 1.35, dark: 1 - daylight(secondOfDay(t)) > 0.7 });
+};
+const shown = (spots, still = false) => JSON.stringify([...spots].filter(([, spot]) => !(still && spot.walking)));
+const publishedAt = (end) => ({
+  ...timeline,
+  now: end,
+  residents: timeline.residents.map((lane) => ({
+    ...lane,
+    segments: lane.segments.filter((s) => s.start < end).map((s) => ({ ...s, end: Math.min(s.end, end) })),
+    conversations: lane.conversations.filter((c) => c.start <= end).map((c) => ({ ...c, end: Math.min(c.end, end) })),
+    markers: lane.markers.filter((m) => m.t <= end),
+    purse: lane.purse.filter(([t]) => t <= end),
+  })),
+});
+const fetchedAgain = JSON.parse(JSON.stringify(timeline));
+const boundaries = [...new Set(timeline.residents.flatMap((lane) => lane.segments.slice(1).map((s) => s.start)))].sort((a, b) => a - b);
+for (const t of boundaries) check(`everyone has a spot half a second before ${t}`, [...layout(timeline, t - 0.5).keys()].sort(), [...names].sort());
+let clusters = 0;
+for (const t of boundaries) {
+  const counts = new Map();
+  for (const found of Object.values(moment(timeline, t).residents)) if (!found.moving) counts.set(found.segment.place, (counts.get(found.segment.place) ?? 0) + 1);
+  if (![...counts.values()].some((count) => count > 1)) continue;
+  clusters += 1;
+  for (const at of [t, t + 0.5]) {
+    const spots = layout(timeline, at);
+    check(`the town at ${at} laid out again`, shown(layout(timeline, at)), shown(spots));
+    check(`the town at ${at} from the timeline fetched again`, shown(layout(fetchedAgain, at)), shown(spots));
+    check(`the town at ${at} from the timeline published at ${t + 1}`, shown(layout(publishedAt(t + 1), at), true), shown(spots, true));
+  }
+}
+
+console.log(JSON.stringify({ run: runPath, days: progress.daily.length, clusters, checks, failures: failures.slice(0, 10), failed: failures.length }));
 process.exit(failures.length ? 1 : 0);

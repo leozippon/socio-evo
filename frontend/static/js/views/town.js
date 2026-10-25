@@ -468,7 +468,7 @@ export function mountTown(root, ctx) {
     paint();
   }
 
-  const nextMoment = (time) => moments[lowerBound(moments, time + 1, (t) => t)] ?? null;
+  const nextMoment = (time) => moments[lowerBound(moments, Math.floor(time) + 1, (t) => t)] ?? null;
   const previousMoment = (time) => moments[lowerBound(moments, time, (t) => t) - 1] ?? null;
 
   function step(unit, direction) {
