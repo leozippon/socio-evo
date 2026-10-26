@@ -31,3 +31,6 @@ exports/
 results/
 # Local state of the coding assistant.
 .claude/
+
+# Archived runs, exports and results of earlier configurations
+archive/
