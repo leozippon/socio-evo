@@ -35,3 +35,5 @@ In the first hours of C on the relay the shared board was paying every resident 
 ## A compaction cannot be answered with a tool call
 
 DeepSeek through the relay answered one of Mei's compaction requests with a tool call and no text, `tool_choice: "none"` notwithstanding, so the runtime recorded a lapse ("empty summary") and the context stayed as it was until the next compaction succeeded. The compaction request now declares no tools at all, which no model can answer with a tool call, at the price of the cached prefix for that one request; the trace records the tools each request carried rather than the declared list, and the dry run's scripted model knows the compaction by the absence of tools.
+
+C was stopped at 15:35, its first attempt archived (archive/runs/c-2026-10-26a: a day in which 107 payments covered forty tasks), and started afresh at 2862b03, where a paid task leaves the day's board; the day-0 baselines of the earlier export go on, the resident as created being the same.
