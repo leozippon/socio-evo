@@ -8,15 +8,18 @@
 # the Store and the clinic. The only fixed hours are the night's below, together with the longest
 # one sleep may last.
 #
-# Calibration of a life. A task pays 60. Rent runs from 30 a day for a room in a shared house to
+# Calibration of a life. A task pays 30. Rent runs from 30 a day for a room in a shared house to
 # 70 for the cottage, and a day's food from 12 (groceries, 36 for three days) to 20 (supper at the
-# Anchor), so the cheapest life costs 42 a day and the dearest 90: one task a day keeps a room in a
-# shared house, two keep any home in town, and a day without work costs something without
-# threatening. Starting purses of 180-300 are three to five days of the resident's own life. The
-# residents have worked five to seven tasks a day (under the flat cost of 90 their purses stood at
-# 1,500-2,500 by day 7), so the things to save for are priced against that pace, not against the
-# rent: the bicycle (360) is a full day's work and more than any purse at the start, the phone
-# (240, then 5 a day) most of one, the coat (150) half, the book (40) under a task.
+# Anchor), so the cheapest life costs 42 a day and the dearest 90: a task and a half a day keeps a
+# room in a shared house, three keep any home in town, and a day without work costs something
+# without threatening. Starting purses of 180-300 are three to six days of the resident's own
+# life. The board posts seven tasks a resident a day, and the residents now work through them
+# fast (on the relayed model a task takes minutes, and under the flat cost of 90 with a payment
+# of 60 the slower model's purses already stood at 1,500-2,500 by day 7), so the pay is set
+# against a full board: 210 a day at most, two to five days of life. The things to save for are
+# priced against that pace: the bicycle (360) is nearly two full boards and more than any purse at
+# the start, the phone (240, then 5 a day) most of one, the coat (150) five tasks, the book (40)
+# one and a bit.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
@@ -202,7 +205,7 @@ town:
   work:
     split: train
     board_size: 56 # seven a resident a day; the pool comes round in turn
-    payment: 60
+    payment: 30
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600

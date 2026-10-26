@@ -115,23 +115,23 @@ def test_ties_are_mutual_pass_the_guard_and_reach_only_the_town_groups():
         assert Rules(a.town).people_notes(name) == "# People\n"
 
 
-def test_a_task_a_day_keeps_the_cheapest_life_and_the_things_to_save_for_cost_a_days_work():
+def test_a_task_and_a_half_a_day_keeps_the_cheapest_life_and_a_board_or_two_buys_the_rest():
     town = group("c").town
-    payment = town.work.payment
+    payment, board = town.work.payment, town.work.board_size // len(town.residents)
     rents = {place.id: place.rent for place in town.places if place.kind == "home"}
     food = [good for good in town.goods if good.effect == "food"]
     a_day = min(
         good.price // good.days if good.kind == "consumable" else good.price for good in food
     )
-    assert min(rents.values()) + a_day <= payment  # a day without work costs something
+    assert payment <= min(rents.values()) + a_day <= 1.5 * payment  # a day without work costs
     assert (
         max(rents.values()) + max(good.price for good in food if good.kind == "immediate")
-        <= 2 * payment
-    )  # and does not threaten
+        <= 3 * payment
+    )  # and does not threaten: a full board of seven is two to five days of life
     for resident in town.residents:  # three to six days of the resident's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
     durables = [good for good in town.goods if good.kind == "durable"]
     assert max(good.price for good in durables) > max(r.purse for r in town.residents)
-    assert all(good.price <= 6 * payment for good in durables)  # a day's work at the pace seen
-    assert all(good.fee_per_day <= payment // 10 for good in durables)
+    assert all(good.price <= 2 * board * payment for good in durables)  # two full boards
+    assert all(good.fee_per_day <= payment // 6 for good in durables)
