@@ -1,4 +1,5 @@
-"""The board's daily posting: the next tasks of a rotation through the pool, seeded by the run."""
+"""The board's daily posting: the next tasks of a rotation through the pool, seeded by the run;
+a task paid for leaves a shared board for the day."""
 
 from collections import Counter
 from itertools import pairwise
@@ -11,10 +12,11 @@ from world.board import Board
 from world.testing import FakeBackend
 
 
-def make_board(pool: int, size: int, seed: int = 7) -> Board:
+def make_board(pool: int, size: int, seed: int = 7, *, shared: bool = True) -> Board:
     backend = FakeBackend(pool)
     work = town_config(board_size=size).work
-    return Board(backend.tasks, backend, work, seed=seed, shared=True, names=["Mei"], money=str)
+    names = ["Mei", "Tomas"]
+    return Board(backend.tasks, backend, work, seed=seed, shared=shared, names=names, money=str)
 
 
 def postings(board: Board, days: int) -> list[list[int]]:
@@ -63,6 +65,36 @@ async def test_only_posted_tasks_are_claimed_and_a_held_task_stays_held_off_the_
         f"Details of {held}."
     )
     assert (board.expired(1), board.expired(2)) == ([], ["Mei"])
+
+
+async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round_again():
+    board = make_board(10, 4)
+    board.post(1)
+    number = board.posted[0]
+    board.finish("Mei", await board.claim("Mei", number, day=1))
+    assert number not in board.posted and board.done["Mei"] == {number}
+    assert board.claim_refusal("Tomas", number) == f"There is no task {number} on the board."
+    listed = board.text("Tomas").splitlines()[1:]
+    assert [int(line.split(".")[0]) for line in listed] == board.posted and len(listed) == 3
+    for day in range(2, 5):  # a pool of 10 on a board of 4 comes round whole by day 4
+        board.post(day)
+        if number in board.posted:
+            break
+    assert number in board.posted and board.claim_refusal("Tomas", number) is None
+    assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
+    assert (
+        f"{number}. org/repo{number}: Problem {number} goes wrong. Pays 20. You have been paid "
+        in (board.text("Mei"))
+    )
+
+
+async def test_a_task_paid_for_stays_on_an_isolated_board():
+    board = make_board(10, 4, shared=False)
+    board.post(1)
+    number = board.posted[0]
+    board.finish("Mei", await board.claim("Mei", number, day=1))
+    assert number in board.posted and board.claim_refusal("Tomas", number) is None
+    assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
 
 
 def test_the_board_posts_at_least_one_task():

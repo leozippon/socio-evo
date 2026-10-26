@@ -1,5 +1,5 @@
 """The board, posted at midnight, claims and their expiry, work at any hour, workspaces across the
-night, and acceptance."""
+night, acceptance, and the task it takes off a shared board."""
 
 from __future__ import annotations
 
@@ -159,7 +159,7 @@ async def test_other_failures_are_told_by_their_kind(make_town):
     ]
 
 
-async def test_an_accepted_task_is_paid_once_and_done_for_that_resident(make_town):
+async def test_an_accepted_task_is_paid_once_and_leaves_the_shared_board_for_the_day(make_town):
     backend = FakeBackend()
     town = make_town(backend=backend)
     await at_work(town, "Mei", "Tomas")
@@ -168,16 +168,41 @@ async def test_an_accepted_task_is_paid_once_and_done_for_that_resident(make_tow
     accepted = await town.call("Mei", "submit")
     assert accepted.text == "Accepted. You were paid $20. Your purse holds $140. It is 09:00."
     assert "Mei" not in town.world.board.claims and backend.opened[0].closed
-    assert (
-        "1. org/repo1: Problem 1 goes wrong. Pays $20. You have been paid for it."
-        in (await town.call("Mei", "view_board")).text
-    )
-    assert (await town.call("Mei", "claim_task", task=1)).text == (
-        "You have already been paid for task 1."
-    )
-    assert (await town.call("Tomas", "claim_task", task=1)).text.startswith("You claimed task 1")
+    for name in ("Mei", "Tomas"):
+        assert (await town.call(name, "claim_task", task=1)).text == (
+            "There is no task 1 on the board."
+        )
+        assert (await town.call(name, "view_board")).text.splitlines()[1:] == [
+            "2. org/repo2: Problem 2 goes wrong. Pays $20.",
+            "3. org/repo3: Problem 3 goes wrong. Pays $20.",
+        ]
     kinds = town.kinds()
     assert kinds.index("submission") < kinds.index("verdict") < kinds.index("payment")
+
+
+async def test_a_task_paid_for_after_midnight_is_gone_from_the_restored_board(make_town, tmp_path):
+    town = make_town()
+    await awake_at(town)
+    stocked(town)
+    await town.call("Mei", "go", place="workshop")
+    town.rest()
+    await town.until("00:30", day=2)
+    board = town.world.board
+    number = board.posted[0]
+    await town.call("Mei", "start_work")
+    await town.call("Mei", "claim_task", task=number)
+    await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
+    assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
+    assert number not in board.posted
+    await town.until("03:00", day=2)
+    ((day, state),) = town.checkpoints
+    assert day == 1 and state["posted"] == board.posted and number not in state["posted"]
+
+    config, root = town.world.config, tmp_path / "restored"
+    make_agent_dirs(root, config)
+    restored = World(config, root, FakeBackend(), clock=ManualClock())
+    restored.restore(json.loads(json.dumps(state)))
+    assert restored.board.posted == board.posted and restored.snapshot() == state
 
 
 async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):

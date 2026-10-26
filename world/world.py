@@ -712,7 +712,7 @@ class World:
                 "unread_ratings": copy.deepcopy(self.ratings.unread[name]),
                 "held": [asdict(percept) for percept in r.port.held],
             }
-        return {"time": self.clock.now(), "residents": residents}
+        return {"time": self.clock.now(), "posted": list(self.board.posted), "residents": residents}
 
     def restore(self, state: dict[str, Any]) -> None:
         """Put a new world in the state `snapshot` returned, and log the resumption."""
@@ -721,7 +721,7 @@ class World:
         if set(state["residents"]) != set(self.residents):
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
-        self.board.post(state["time"] // DAY + 1)  # the board of the calendar day the clock is in
+        self.board.posted = list(state["posted"])  # the day's board, less what was paid for
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None

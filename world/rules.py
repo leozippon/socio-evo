@@ -191,7 +191,8 @@ class Rules:
         )
         work += (
             " Everyone works from the same board; a task someone holds is shown as held, and "
-            "nobody else can claim it."
+            "nobody else can claim it; a task someone has been paid for leaves the board for "
+            "the day."
             if social.mode == "town"
             else " The board is yours alone."
         )
