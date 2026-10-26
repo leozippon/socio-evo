@@ -21,11 +21,11 @@ Credentials live in the git-ignored `.env`, which the code does not load; export
 set -a; . ./.env; set +a
 ```
 
-It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the judge's key (`LIGHTING_API_KEY`, a relay to DeepSeek) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
+It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the relay's keys (`LIGHTING_API_KEY` for the judge, `LIGHTING_API_KEY_ALT` for the residents while they run on DeepSeek) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. While the GPUs are taken and no parameters are tuned, the residents run instead on DeepSeek-V4.1-Flash through the relay, as the `llm` section of `experiments/configs/town.yaml` says; switching back is a matter of that section and `experiments/configs/model.yaml`. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
 
 ```bash
 python -m tasks.swebench.pull

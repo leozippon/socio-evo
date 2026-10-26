@@ -135,10 +135,10 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_
             dry_run=True,
         )
     monkeypatch.delenv("VLLM_BASE_URL", raising=False)
+    llm = config.llm.model_copy(update={"base_url": "${VLLM_BASE_URL}"})
     with pytest.raises(LLMConfigError, match="unset environment variable"):
-        await simulation.run(config, tmp_path)
-    monkeypatch.setenv("VLLM_BASE_URL", "http://127.0.0.1:9/v1")
-    llm = config.llm.model_copy(update={"api_key_env": "SOCIO_EVO_NO_SUCH_KEY"})
+        await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
+    llm = llm.model_copy(update={"base_url": "http://127.0.0.1:9/v1", "api_key_env": "SOCIO_EVO_NO_SUCH_KEY"})
     with pytest.raises(LLMConfigError, match="SOCIO_EVO_NO_SUCH_KEY is not set"):
         await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
     assert list(tmp_path.iterdir()) == []

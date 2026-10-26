@@ -7,11 +7,17 @@
 # 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
 # The only fixed hours are the night's below, together with the longest one sleep may last.
 
+# For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
+# our quota: the GPUs are taken and no parameters are tuned yet. The standing setup is the local
+# vLLM server (base_url ${VLLM_BASE_URL}, api_key_env VLLM_API_KEY, model qwen3.8-27b-fp8, no
+# extra_body); DeepSeek ignores the runtime's reasoning effort.
 llm:
-  base_url: ${VLLM_BASE_URL}
-  api_key_env: VLLM_API_KEY
-  model: qwen3.8-27b-fp8
+  base_url: https://lightingtheword.com/v1
+  api_key_env: LIGHTING_API_KEY_ALT
+  model: DeepSeek-V4.1-Flash
   max_concurrency: 8 # one request in flight per resident
+  extra_body:
+    thinking: {type: enabled}
 
 runtime:
   reasoning_effort: low
