@@ -111,7 +111,6 @@ class Runtime:
         self._config = config or RuntimeConfig()
         self._files = files.FileTools(directory)
         self._world = {spec.name for spec in world}
-        self._names = names
         self._tools = tuple(
             {
                 "type": "function",
@@ -206,10 +205,7 @@ class Runtime:
         effort = self._config.reasoning_effort
         for _ in range(2):
             request = self._request(
-                (*messages, INSTRUCTION),
-                effort,
-                self._config.summary_max_tokens,
-                tool_choice="none",
+                (*messages, INSTRUCTION), effort, self._config.summary_max_tokens, tools=False
             )
             reply = await self._ask(request, ids, purpose="compaction")
             if reply is None:
@@ -248,7 +244,7 @@ class Runtime:
                     "request",
                     purpose=purpose,
                     messages=ids,
-                    tools=self._names,
+                    tools=[tool["function"]["name"] for tool in request.tools],
                     reasoning_effort=request.reasoning_effort,
                     max_tokens=request.sampling.max_tokens,
                     attempt=attempt,
@@ -357,12 +353,13 @@ class Runtime:
         effort: Effort,
         max_tokens: int,
         *,
-        tool_choice: str | None = None,
+        tools: bool = True,
     ) -> LLMRequest:
+        """A request with every tool declared, or, when the reply must be text, with none: a
+        model may answer `tool_choice="none"` with a tool call, but not an empty tool list."""
         return LLMRequest(
             messages=messages,
-            tools=self._tools,
-            tool_choice=tool_choice,
+            tools=self._tools if tools else (),
             reasoning_effort=effort,
             sampling=Sampling(max_tokens=max_tokens),
         )

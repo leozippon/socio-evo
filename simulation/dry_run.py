@@ -59,7 +59,7 @@ class DryRunModel:
         self._meal = meals[0] if meals else None
 
     def __call__(self, request: LLMRequest) -> LLMResponse:
-        if request.tool_choice == "none":
+        if not request.tools:  # the compaction: the one request that declares no tools
             return reply(
                 "## What I am doing and where I stand\nLiving my day.\n## Facts I must not "
                 "lose\nNone.\n## Decisions and their reasons\nNone.\n## Open questions\nNone."

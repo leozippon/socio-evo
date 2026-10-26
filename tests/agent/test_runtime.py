@@ -271,9 +271,12 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
         await settle(port)
 
     before, summarizing, after = model.requests[1:]
-    assert summarizing.messages[-1] == INSTRUCTION and summarizing.tool_choice == "none"
+    assert summarizing.messages[-1] == INSTRUCTION
     assert summarizing.messages[: len(before.messages)] == before.messages
-    assert summarizing.tools == before.tools
+    assert before.tools and summarizing.tools == () and summarizing.tool_choice is None
+    requests = [r for r in trace(directory) if r["kind"] == "request"]
+    assert [r["tools"] == [] for r in requests] == [False, False, True, False]
+    assert requests[2]["purpose"] == "compaction"
     assert [m.role for m in after.messages] == ["system", "user", "assistant", "tool"]
     assert after.messages[1].content == texts.SUMMARY.format(
         summary="## What I am doing and where I stand\nLooking around."

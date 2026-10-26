@@ -1,10 +1,10 @@
 """Compaction: what the resident is asked for when its context is condensed, and what is kept.
 
 The runtime compacts when the context exceeds its threshold or the resident calls `compact`.
-It asks the model, in the same session (same system prompt, tools and messages, so that the
-cached prefix serves), for a summary under fixed headings, then records in the session the
-summary and the ids of every message it replaces. The context is rebuilt as the system prompt,
-the summary as a user message and the last few exchanges kept whole.
+It asks the model, in the same session (same system prompt and messages) but with no tools
+declared, so that the reply can only be text, for a summary under fixed headings, then records
+in the session the summary and the ids of every message it replaces. The context is rebuilt as
+the system prompt, the summary as a user message and the last few exchanges kept whole.
 """
 
 from __future__ import annotations
