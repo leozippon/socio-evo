@@ -30,17 +30,16 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     for name in town.world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert town.take("Mei")[-3:] == [
+    assert town.take("Mei")[-2:] == [
         "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; rent for "
-        "your room at the shared house on Mill Street $20. You had nothing to eat today. Your "
-        "purse holds $105.",
-        "You went hungry today, too hungry to concentrate on work before the next meal.",
+        "your room at the shared house on Mill Street $20. You had nothing to eat today. You are "
+        "starving. You are fresh. You are in good health. Your purse holds $105.",
         "It is 00:00: the day's board is posted at the workshop.",  # she is still there
     ]
-    assert town.take("Aisha")[-2] == (
+    assert town.take("Aisha")[-1] == (
         "Your statement for Monday 1 January: received $15 from Mei; bought a coat for $30; rent "
         "for your room at the shared house on Mill Street $20. You had nothing to eat today. You "
-        "are $5 in debt."
+        "are starving. You are a little tired. You are in good health. You are $5 in debt."
     )
     assert town.world.economy.purses == {"Mei": 105, "Tomas": 150, "Aisha": -5}
     assert "You are $5 in debt." in town.world.ports["Aisha"].situation()
@@ -64,10 +63,10 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     assert [p.text for p in town.heard["Aisha"] if p.kind == "settlement"][-1] == (
         "Your statement for Tuesday 2 January: received $20 from Mei; bought groceries for $12; "
         "rent for your room at the shared house on Mill Street $20. You ate today: groceries (a "
-        "day's worth). You are $17 in debt."
+        "day's worth). You are hungry. You are a little tired. You are in good health. You are "
+        "$17 in debt."
     )
     assert town.world.economy.purses == {"Mei": 65, "Tomas": 120, "Aisha": -17}
-    assert not town.world.residents["Aisha"].living.hungry
     gifts = [e for e in town.world.log.entries() if e["kind"] == "gift"]
     assert [(e["actor"], e["payload"]) for e in gifts] == [
         ("Mei", {"to": "Aisha", "amount": 15}),

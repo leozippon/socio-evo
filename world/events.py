@@ -1,8 +1,9 @@
-"""The five events a resident lives in, the tools each offers, and the refusal of the others.
+"""The events a resident lives in, the tools each offers, and the refusal of the others.
 
-A resident is always in exactly one event. Its base event is Idle, Movement, Work or Sleep; a
-Conversation sits on top of the Idle or Work it interrupted, and leaving the conversation
-returns the resident to that event as it was. One leaves by doing something else: `go` and
+A resident is always in exactly one event. Its base event is Idle, Movement, Work or Sleep, or
+Dead once its health has run out, from which nothing brings it back; a Conversation sits on top
+of the Idle or Work it interrupted, and leaving the conversation returns the resident to that
+event as it was. One leaves by doing something else: `go` and
 `sleep` leave a conversation and work on their own, and `start_work` a conversation; waiting in
 a conversation is listening, and leaves it standing. A Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
@@ -26,6 +27,7 @@ IDLE_TOOLS = frozenset(
     {
         "help",
         "look_around",
+        "how_am_i",
         "go",
         "start_work",
         "say",
@@ -39,6 +41,7 @@ IDLE_TOOLS = frozenset(
 WORK_TOOLS = frozenset(
     {
         "look_around",
+        "how_am_i",
         "go",
         "sleep",
         "view_board",
@@ -62,6 +65,7 @@ CONVERSATION_TOOLS = frozenset(
         "share_skill",
         "buy",
         "look_around",
+        "how_am_i",
         "go",
         "wait",
         "sleep",
@@ -69,7 +73,7 @@ CONVERSATION_TOOLS = frozenset(
         "leave_conversation",
     }
 )
-SLEEP_TOOLS = frozenset({"look_around", "review_day", "rate"})
+SLEEP_TOOLS = frozenset({"look_around", "how_am_i", "review_day", "rate"})
 
 
 @dataclass
@@ -100,6 +104,12 @@ class Sleep:
     tools: ClassVar[frozenset[str]] = SLEEP_TOOLS
 
 
+@dataclass
+class Dead:
+    kind: ClassVar[str] = "dead"
+    tools: ClassVar[frozenset[str]] = frozenset()
+
+
 @dataclass(eq=False)
 class Conversation:
     """`budget` is the messages each member has left, in a paired exchange only; `pair` names
@@ -116,8 +126,10 @@ class Conversation:
     tools: ClassVar[frozenset[str]] = CONVERSATION_TOOLS
 
 
-Base = Idle | Movement | Work | Sleep
+Base = Idle | Movement | Work | Sleep | Dead
 Event = Base | Conversation
+ENDED = "Your life has ended."
+"""What a dead resident reads, should its runtime still ask anything."""
 
 
 def refusal(
@@ -126,6 +138,8 @@ def refusal(
     """Why `tool`, which `event` does not offer, cannot be used now. `workplace` and
     `destination` are the names of the workplace and of where a moving resident is going;
     `ratings` whether the town has bedtime ratings."""
+    if isinstance(event, Dead):
+        return ENDED
     if isinstance(event, Movement):
         return f"You are on your way to {destination}; you can do nothing until you arrive."
     if isinstance(event, Sleep):
@@ -133,8 +147,8 @@ def refusal(
             return "You are asleep."
         rate = ", rate people" if ratings else ""
         return (
-            "You have gone to bed; before you fall asleep you can only look around, look back "
-            f"over your day{rate} and see to your own files."
+            "You have gone to bed; before you fall asleep you can only look around, take stock "
+            f"of how you feel, look back over your day{rate} and see to your own files."
         )
     if isinstance(event, Conversation):
         return "You are in a conversation; leave it first."

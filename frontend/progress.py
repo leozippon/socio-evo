@@ -16,7 +16,7 @@ JSON-serialisable data:
           "claims": 80, "submissions": 77, "accepted": 50, "rejected": 25,
           "payments": 50, "paid": 1000, "speeches": 40, "messages": 3, "gifts": 0,
           "purchases": 12, "skills_shared": 0, "ratings": 19, "journals": 8, "forced_sleeps": 0,
-          "purse": {"min": 30, "median": 112.5, "max": 300}
+          "deaths": 0, "purse": {"min": 30, "median": 112.5, "max": 300}
       }, ...]
     }
 
@@ -48,6 +48,7 @@ _COUNTED = {
     "rating": "ratings",
     "journal": "journals",
     "forced_sleep": "forced_sleeps",
+    "death": "deaths",
 }
 """The markers counted, by the name of their count."""
 

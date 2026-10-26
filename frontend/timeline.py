@@ -23,7 +23,7 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
                         "place": "mill-street-house", "task": null}, ...],
               the base event, contiguous from "start" to "now": "idle", "movement" (its place
               is the destination), "work" (its task is the task held, a new segment when that
-              changes) or "sleep" (in bed and asleep alike)
+              changes), "sleep" (in bed and asleep alike) or "dead" (at no place, to the end)
           "conversations": [{"start", "end", "place", "over": "work", "with": ["Tomas"]}, ...],
               the conversations layered over the base event they interrupted ("over" is its
               kind when the conversation began); "with" is whom the resident spoke to or heard
@@ -50,6 +50,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     rating        rated, score, reason
     journal       text, day, wake, ratings_read   going to bed with the day's journal entry
     forced_sleep  wake
+    condition     need, band, lowest     a need of the body crossed into another band
+    death                                the resident's health ran out; its lane is dead from here
 
 The log is the only source. A running run's clock may be ahead of its last entry; the open
 segment and conversation end at "now" all the same. When the world went back to a checkpoint,
@@ -102,6 +104,8 @@ _FOLDED = frozenset(
         "move_in",
         "rating",
         "settlement",
+        "condition",
+        "death",
         "checkpoint",
         "resume",
     }
@@ -372,6 +376,18 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             )
         elif kind == "settlement":
             lane.purse.append([t, payload["purse"]])
+        elif kind == "condition":
+            lane.mark(
+                entry,
+                "condition",
+                need=payload["need"],
+                band=payload["band"],
+                lowest=payload["lowest"],
+            )
+        elif kind == "death":
+            lane.hold(t, None)
+            lane.enter(t, "dead", None)
+            lane.mark(entry, "death")
         elif kind == "checkpoint":
             days.append(
                 {

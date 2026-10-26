@@ -56,6 +56,7 @@ COUNTED = (
     "ratings",
     "journals",
     "forced_sleeps",
+    "deaths",
 )
 """The counts of `frontend.progress` summed into a run's headline."""
 GRAPH = (
@@ -104,6 +105,7 @@ EXPLORED = (
     "rating_received_mean",
     "journal",
     "forced_sleep",
+    "health",
 )
 """The town measures compared across groups, as exploration."""
 
@@ -170,6 +172,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         ],
         "work": town.work.model_dump(mode="json"),
         "goods": [good.model_dump(mode="json") for good in town.goods],
+        "needs": town.needs.model_dump(mode="json"),
         "social": town.social.model_dump(mode="json"),
         "skills_writable": config.skills_writable,
         "day": town.day.model_dump(mode="json"),

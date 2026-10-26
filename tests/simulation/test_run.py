@@ -50,16 +50,16 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # - 15 - 30, Tomas 260 + 60 - 36 - 15 - 55; two days of groceries are left.
     purses = {name: r["purse"] for name, r in saved["residents"].items()}
     assert purses == {"Mei": 219, "Tomas": 214}
-    assert saved["residents"]["Mei"]["living"] == {
-        "things": {"groceries": 2},
-        "eaten": {},
-        "hungry": False,
-    }
+    living = saved["residents"]["Mei"]["living"]
+    # Fed by the café's meal and a helping of the stock in the evening, rested, in good health.
+    assert living["things"] == {"groceries": 8} and living["eaten"] == {}
+    assert living["health"] == 100 and living["satiety"] > 35 and living["energy"] > 65
+    assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
     lived = ("wake", "claim", "verdict", "payment", "purchase", "speech", "sleep", "settlement")
     for kind in lived:
         assert kind in log, kind
-    assert log[-1] == "checkpoint" and "forced_sleep" not in log and "hungry" not in log
+    assert log[-1] == "checkpoint" and "forced_sleep" not in log and "death" not in log
     for name in ("Mei", "Tomas"):
         agent = run.agent_dir(name)
         repository = Repository(agent)

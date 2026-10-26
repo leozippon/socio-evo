@@ -215,7 +215,16 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to."""
 
-    COUNTED = ("claim", "submission", "accepted", "speech", "gift", "skill_shared", "forced_sleep")
+    COUNTED = (
+        "claim",
+        "submission",
+        "accepted",
+        "speech",
+        "gift",
+        "skill_shared",
+        "forced_sleep",
+        "death",
+    )
 
     def __init__(self, directory: RunDirectory, town: TownConfig) -> None:
         self._directory, self._town = directory, town

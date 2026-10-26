@@ -6,7 +6,7 @@
 // dropped. Only the manifest and the index are fetched afresh. A 404 for a reference means the
 // index has moved on: the run is refreshed and the document asked for again, once.
 
-export const FORMAT = 4;
+export const FORMAT = 6;
 
 export class FetchError extends Error {
   constructor(url, status, detail) {

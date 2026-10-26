@@ -8,15 +8,24 @@ one shared board); `social.exchange` is set in B alone (the evening pairing); an
 configuration is validated, so that a bad configuration stops a run before anything is written.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
-for each, and a `comfort`, kept for the needs to come and unused so far), and the goods it buys.
-Goods are a catalogue (`goods`): the world implements three kinds of good and the effects of
-`Effect`, and everything else about a good is data, so the catalogue grows without code. A
-`consumable` is bought as a stock of `uses` and used up `per_day` at midnight; an `immediate` good
-is consumed as it is bought; a `durable` is owned once and kept, billed `fee_per_day` on the
-statement while owned. A good with the effect `food` gives its `nourishment` when it is consumed,
-and a resident that took none in a day went hungry; `travel` makes the owner's journeys take
-`factor` of the time; `messaging` lets owners write to one another wherever they are;
-`appearance` shows `phrase` to whoever sees the owner.
+for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
+and the goods it buys. Goods are a catalogue (`goods`): the world implements three kinds of good
+and the effects of `Effect`, and everything else about a good is data, so the catalogue grows
+without code. A `consumable` is bought as a stock of `uses`, which its owner eats from as it gets
+hungry, at most `per_day` units a day; an `immediate` good is consumed as it is bought; a
+`durable` is owned once and kept, billed `fee_per_day` on the statement while owned. A good with
+the effect `food` gives its `nourishment` when it is eaten, a share of a day's need (100 a full
+day); `travel` makes the owner's journeys take `factor` of the time; `messaging` lets owners
+write to one another wherever they are; `appearance` shows `phrase` to whoever sees the owner;
+`examination` tells the buyer the numbers of its body and their causes; `treatment` restores
+`restores` of its health.
+
+The residents' bodies (`needs`, implemented by `world.body`) are three needs, each a number from
+0 to 100 that the resident reads in bands of plain words: satiety, which falls by the hour and
+rises with what is eaten; energy, spent awake, at work and on the road and restored by sleep
+in proportion to the home's comfort, never above the resident's health; and health, reckoned
+at midnight from the day. Every rate and band is configuration; the world knows only the three
+needs and that the lowest band of each is where the consequences lie.
 """
 
 from __future__ import annotations
@@ -42,9 +51,11 @@ Hour = Annotated[str, AfterValidator(_hour)]
 Id = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 """A resident's name: one capitalised word, the way others address it."""
-Effect = Literal["food", "travel", "messaging", "appearance"]
+Effect = Literal["food", "travel", "messaging", "appearance", "examination", "treatment"]
 """What a good does in the world: the one enumeration of effects, each implemented by the world."""
 EFFECTS: tuple[str, ...] = get_args(Effect)
+IMMEDIATE_EFFECTS = frozenset({"examination", "treatment"})
+"""The effects that only an immediate good has: a service, used up as it is bought."""
 
 
 class Place(StrictModel):
@@ -88,6 +99,7 @@ class Good(StrictModel):
     nourishment: int | None = Field(default=None, ge=1, description="food: what one unit gives")
     factor: float | None = Field(default=None, gt=0, le=1, description="travel: the time taken")
     phrase: str | None = Field(default=None, description="appearance: what others see")
+    restores: float | None = Field(default=None, gt=0, description="treatment: the health given")
 
     @model_validator(mode="after")
     def _consistent(self) -> Good:
@@ -104,6 +116,11 @@ class Good(StrictModel):
         if self.effect == "food":
             if self.kind == "durable":
                 raise ValueError(f"{what} is food and so is consumable or immediate")
+        elif self.effect in IMMEDIATE_EFFECTS:
+            if self.kind != "immediate":
+                raise ValueError(
+                    f"{what} has the effect {self.effect}, which only an immediate has"
+                )
         elif self.kind != "durable":
             raise ValueError(f"{what} has the effect {self.effect}, which only a durable has")
         if (self.nourishment is not None) != (self.effect == "food"):
@@ -112,6 +129,8 @@ class Good(StrictModel):
             raise ValueError(f"{what}: factor belongs to the effect travel, and only to it")
         if (self.phrase is not None) != (self.effect == "appearance"):
             raise ValueError(f"{what}: phrase belongs to the effect appearance, and only to it")
+        if (self.restores is not None) != (self.effect == "treatment"):
+            raise ValueError(f"{what}: restores belongs to the effect treatment, and only to it")
         if self.phrase is not None:
             if not self.phrase.strip():
                 raise ValueError(f"{what} has an empty phrase")
@@ -124,6 +143,84 @@ class Good(StrictModel):
         """How many days one purchase of a consumable lasts."""
         assert self.uses is not None and self.per_day is not None
         return self.uses // self.per_day
+
+
+class Band(StrictModel):
+    """A band of a need: the values from `floor` up to the next band's floor. `name` is how the
+    resident reads it, after "you are" ("hungry", "a little tired"); `seen` is how others see it
+    on the resident, if the band shows ("looking unwell")."""
+
+    floor: float = Field(ge=0, lt=100)
+    name: str = Field(min_length=1)
+    seen: str | None = None
+
+    @model_validator(mode="after")
+    def _worded(self) -> Band:
+        for text in (self.name, self.seen or ""):
+            if text != text.strip() or (text and not text.strip()):
+                raise ValueError(f"the band {self.name!r} has blank wording")
+            if found := offences(text):
+                raise ValueError(f"the band {self.name!r} has words the town does not use: {found}")
+        return self
+
+
+class Need(StrictModel):
+    """A need from 0 to 100, read in `bands` from the top band down to the lowest, whose floor
+    is 0 and where the consequences lie."""
+
+    bands: tuple[Band, ...] = Field(min_length=2)
+
+    @model_validator(mode="after")
+    def _descending(self) -> Need:
+        floors = [band.floor for band in self.bands]
+        if floors != sorted(floors, reverse=True) or len(set(floors)) < len(floors):
+            raise ValueError("a need's bands run from the top down, each floor below the last")
+        if floors[-1] != 0:
+            raise ValueError("a need's lowest band begins at 0")
+        if len({band.name for band in self.bands}) < len(self.bands):
+            raise ValueError("a need's bands have different names")
+        return self
+
+    @property
+    def lowest(self) -> Band:
+        return self.bands[-1]
+
+
+class Satiety(Need):
+    """Falls `per_hour` at all hours; a day's need is 100, which is what nourishment is a
+    share of."""
+
+    per_hour: float = Field(gt=0)
+
+
+class Energy(Need):
+    """Falls `awake_per_hour` awake, `work_per_hour` more at work, `walk_per_minute` more on the
+    road; rises `sleep_per_hour` times the home's comfort asleep, never above the resident's
+    health. In its lowest band the workplace refuses to let the resident sit down to work."""
+
+    awake_per_hour: float = Field(ge=0)
+    work_per_hour: float = Field(ge=0)
+    walk_per_minute: float = Field(ge=0)
+    sleep_per_hour: float = Field(gt=0)
+
+
+class Health(Need):
+    """Reckoned at midnight: falls `starving` when satiety is in its lowest band, `exhausted`
+    when energy is, `poor_home` when the home's comfort is below 1; rises `recovery` when
+    neither starving nor exhausted. At 0 the resident dies."""
+
+    starving: float = Field(ge=0)
+    exhausted: float = Field(ge=0)
+    poor_home: float = Field(ge=0)
+    recovery: float = Field(ge=0)
+
+
+class Needs(StrictModel):
+    """The three needs of a resident's body (see the module docstring)."""
+
+    satiety: Satiety
+    energy: Energy
+    health: Health
 
 
 class Route(StrictModel):
@@ -230,6 +327,7 @@ class TownConfig(StrictModel):
     residents: tuple[Resident, ...] = Field(min_length=1)
     work: Work
     goods: tuple[Good, ...] = Field(min_length=1)
+    needs: Needs
     social: Social
     clock: ClockSettings
     day: DayHours

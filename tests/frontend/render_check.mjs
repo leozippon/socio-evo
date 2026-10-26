@@ -184,7 +184,8 @@ const MEASURES = `(() => {
     const el = document.querySelector(selector);
     if (el && el.scrollWidth > el.clientWidth + 1) overflow.push(selector + " " + el.scrollWidth + " > " + el.clientWidth);
   }
-  return { overflow, text: document.getElementById("main").innerText.trim().length };
+  const fatal = document.querySelector("#main .fatal");
+  return { overflow, text: document.getElementById("main").innerText.trim().length, fatal: fatal ? fatal.innerText.trim() : null };
 })()`;
 
 /** The routes of the site: the home page, every comparison, and one run's views. */
@@ -200,7 +201,7 @@ function routes() {
   const timeline = JSON.parse(readFileSync(join(dirname(runFile), run.timeline.split("?")[0]), "utf8"));
   const base = `#/run/${encodeURIComponent(entry.name)}`;
   found.push(["run", base]);
-  for (const section of ["money", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
+  for (const section of ["money", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
   found.push(["town", `${base}/town`]);
   const agent = run.residents[0]?.name;
   if (agent) {
@@ -251,6 +252,7 @@ try {
       checks += 1;
       if (!settled) failures.push({ where, what: "did not finish loading" });
       if (!measured.text) failures.push({ where, what: "nothing shown" });
+      if (measured.fatal) failures.push({ where, what: `the viewer gave up: ${measured.fatal}` });
       for (const line of measured.overflow) failures.push({ where, what: `horizontal overflow: ${line}` });
       for (const line of page.log) failures.push({ where, what: line });
       if (shots) await page.shot(join(shots, `${size.width}${dark ? "-dark" : ""}-${name}.png`));

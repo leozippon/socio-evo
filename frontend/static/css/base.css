@@ -47,6 +47,7 @@
   --lane-sleep: #a9a79f;
   --lane-movement: #1baf7a;
   --lane-work: #2a78d6;
+  --lane-dead: #3a3732;
   --lane-conversation: #eb6834;
   --lane-skill: #6250d6;
   --lane-rating: #eda100;
@@ -116,6 +117,7 @@
     --lane-sleep: #64635d;
     --lane-movement: #199e70;
     --lane-work: #3987e5;
+    --lane-dead: #171614;
     --lane-conversation: #d95926;
     --lane-skill: #9085e9;
     --lane-rating: #c98500;

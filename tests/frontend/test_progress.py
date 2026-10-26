@@ -26,6 +26,7 @@ NOTHING = {
     "ratings": 0,
     "journals": 0,
     "forced_sleeps": 0,
+    "deaths": 0,
 }
 
 

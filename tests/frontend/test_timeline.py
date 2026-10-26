@@ -79,7 +79,10 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert lane(data, "Aisha")["conversations"] == []
 
     def markers(name: str) -> list[tuple[str, int]]:
-        return [(m["kind"], m["t"]) for m in lane(data, name)["markers"]]
+        """The lane's markers but the body's, which come by the hour and are checked below."""
+        return [
+            (m["kind"], m["t"]) for m in lane(data, name)["markers"] if m["kind"] != "condition"
+        ]
 
     assert markers("Mei") == [
         ("claim", at("09:00")),
@@ -101,6 +104,12 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert tomas["submission"]["fail_to_pass"] == [1, 3]
     assert tomas["expiry"]["t"] == DAY and tomas["expiry"]["task"] == 2  # the first midnight
     assert markers("Aisha") == [("forced_sleep", at("02:00", day=2))]
+    felt = [m for m in lane(data, "Aisha")["markers"] if m["kind"] == "condition"]
+    assert [(m["need"], m["band"], m["lowest"]) for m in felt][:3] == [
+        ("satiety", "a little hungry", False),
+        ("satiety", "hungry", False),
+        ("satiety", "starving", True),
+    ]
 
     assert lane(data, "Mei")["purse"] == [
         [start, 120],

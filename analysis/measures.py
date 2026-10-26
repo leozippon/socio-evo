@@ -37,6 +37,9 @@ MEASURES = {
     "spent_food": "money spent on food",
     "spent_goods": "money spent on other goods",
     "hungry": "1 if it had nothing to eat that day",
+    "starving": "1 if it was starving at midnight, which wore its health",
+    "health": "its health at midnight, after the night's reckoning, 0 to 100",
+    "died": "1 if its health ran out that midnight",
     "purse": "the purse after the midnight charges",
     "in_debt": "1 if that purse is below zero",
     "work_hours": "simulated hours at work, from starting work to stopping it or being taken away",
@@ -66,7 +69,7 @@ MEASURES = {
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
-LEVELS = frozenset({"purse", "rating_given_mean", "rating_received_mean", "cached_share"})
+LEVELS = frozenset({"health", "purse", "rating_given_mean", "rating_received_mean", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
 
 Row = dict[str, Any]
@@ -122,7 +125,10 @@ def world_measures(day: Day, name: str) -> Row:
         "spent_goods": sum(
             e["payload"]["amount"] for e in bought if e["payload"]["effect"] != "food"
         ),
-        "hungry": int(bool(mine("hungry"))),
+        "hungry": int(bool(settled) and settled[-1]["payload"]["nourishment"] == 0),
+        "starving": int(bool(settled) and "starving" in settled[-1]["payload"]["night"]),
+        "health": settled[-1]["payload"]["health"] if settled else None,
+        "died": int(bool(mine("death"))),
         "purse": purse,
         "in_debt": None if purse is None else int(purse < 0),
         "work_hours": _work_seconds(day, name) / 3600,

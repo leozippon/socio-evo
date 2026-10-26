@@ -8,7 +8,7 @@ import { parseDiff, renderFile } from "../diff.js";
 import { append, emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
 import { markdown } from "../markdown.js";
-import { markersBetween, purseAt } from "../replay.js";
+import { conditionAt, markersBetween, purseAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { detail, feedItems, glyph, involved, line, witnessed } from "../town/events.js";
 import { groupLabel, placeById } from "../world.js";
@@ -147,6 +147,8 @@ export function mountPerson(root, ctx) {
       }
     }
     const mean = ([n, total]) => (n ? `${fmt.num(total / n, 1)} (${n})` : "–");
+    const feels = Object.values(conditionAt(me, moment.time)).join(" · ");
+    const dead = me.segments.some((seg) => seg.kind === "dead" && seg.start <= moment.time);
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     return [
       h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, and with whom. The other tabs hold the day as the world told it, every journal entry, the ratings given and received, the files at every version, and the raw trace of the runtime.`),
@@ -159,6 +161,7 @@ export function mountPerson(root, ctx) {
         stat("Skills", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "passed on / received"),
         stat("Rating received", received.length ? fmt.num(received.reduce((a, m) => a + m.score, 0) / received.length, 2) : "–", `${fmt.plural(received.length, "rating")} received · ${fmt.int(count("rating"))} given`),
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
+        stat("How they feel", dead ? "Dead" : feels || "–", dead ? "health ran out at midnight" : "as the body last said it", dead ? "critical" : ""),
       ),
       h(
         "div",

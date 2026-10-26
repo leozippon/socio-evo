@@ -20,8 +20,8 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert sections["money"].startswith(
         "You have $120 to begin with. Your room at the shared house on Mill Street costs $20 a "
         "day; rent, and the daily charge on anything you own that carries one, is taken from "
-        "your purse at midnight, when you get a statement of your money. You eat once a day or "
-        "go hungry"
+        "your purse at midnight, when you get a statement of your money. You pay for everything "
+        "in cash."
     )
     assert sections["money"].endswith(
         "A purse can go below zero when rent is taken; you are then in debt, and can still be "
@@ -32,21 +32,33 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert "Your home is the shared house on Mill Street." in sections["places"]
     assert (
         "The homes, with the rent a day for a room and the rooms free: the shared house on Mill "
-        "Street $20 (3 rooms, 1 free) and the flat by the college gates $30 (6 rooms, 5 free)."
+        "Street $20 (3 rooms, 1 free, little comfort) and the flat by the college gates $30 (6 "
+        "rooms, 5 free)."
     ) in sections["places"]
     assert sections["shopping"] == (
         "For sale, paid in cash with buy: at the café on the square, a meal at the café ($10); at "
         "the store, groceries ($12, 3 days' worth), a bicycle ($50), a phone ($40, then $2 a day) "
-        "and a coat ($30). A meal at the café: eaten on the spot, the day's food. Groceries: kept "
-        "in stock, and a day's worth is used up each midnight, which is the day's food too. With a "
-        "bicycle your journeys take half the time. With a phone you can write to anyone else who "
-        "has one, wherever they are, with message; they read it when they next look up from what "
-        "they are doing. What you wear and carry, others see: with a coat, in a new coat. What "
-        "you have, and how much of it is left, is told with help on money."
+        "and a coat ($30); at the clinic, an examination ($10) and treatment ($25). A meal at the "
+        "café: eaten on the spot, the day's food. Groceries: kept in stock, and eaten from "
+        "whenever you could eat, a day's worth a day. With a bicycle your journeys take half the "
+        "time. With a phone you can write to anyone else who has one, wherever they are, with "
+        "message; they read it when they next look up from what they are doing. What you wear "
+        "and carry, others see: with a coat, in a new coat. What you have, and how much of it is "
+        "left, is told with help on money."
+    )
+    assert sections["health"] == (
+        "Through the day you get hungry, and what you eat restores you: a meal, or a day's worth "
+        "of a stock, is about a day's need. You tire with the hours awake, faster at work and on "
+        "the road, and sleep restores you, the more the better your home; too tired, you cannot "
+        "sit down to work at the workshop. A day that ends with you starving or exhausted, or "
+        "lived in a home of little comfort, wears your health down; a day in which you have "
+        "eaten and rested mends it. When your health is gone, you die. You can take stock of how "
+        "you feel at any time with how_am_i, and at the clinic an examination tells you exactly "
+        "how you stand and treatment restores your health."
     )
     assert "phone" not in Rules(town_config("isolated")).sections("Mei")["shopping"]
     moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha"]}
-    assert "(3 rooms, 2 free)" in rules.help("Mei", "places", moved)
+    assert "(3 rooms, 2 free, little comfort)" in rules.help("Mei", "places", moved)
     assert "Aisha (the flat by the college gates)" in rules.help("Mei", "people", moved)
     assert "rate" not in Rules(town_config(ratings=False)).sections("Mei")["sleep"]
     assert "rate each person you spoke with" in sections["sleep"]
@@ -54,13 +66,16 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert "Tomas (the flat by the college gates) and Aisha (the shared house on Mill Street)" in (
         people
     )
-    assert "People run into one another at the café on the square, the park and the store" in people
+    assert (
+        "People run into one another at the café on the square, the park, the store and the clinic"
+    ) in people
     assert "call on someone at home, or find them at the workshop while they work" in people
     assert "pays $20" in sections["work"] and "the client's own checks" in sections["work"]
     assert rules.help("Mei", "Money") == sections["money"]
     assert rules.help("Mei", "weather") == f"You can ask about: {', '.join(TOPICS)}."
     text = rules.text("Mei")
     assert text.startswith("How the town works.\n\nPlaces. ") and "\n\nSleep. " in text
+    assert "\n\nHealth. Through the day you get hungry" in text
 
 
 def test_ties_are_told_in_the_town_mode_and_seed_the_notes_on_people():

@@ -68,7 +68,8 @@ const ICONS = {
   exchange_pairing: "pair",
   meeting: "pair",
   settlement: "coin",
-  hungry: "alert",
+  condition: "eye",
+  death: "alert",
   sleep: "book",
   rating: "star",
   fell_asleep: "clock",
@@ -92,9 +93,10 @@ export function tone(entry) {
       return "serious";
     case "expiry":
     case "forced_sleep":
+    case "death":
       return "critical";
-    case "hungry":
-      return "warn";
+    case "condition":
+      return p.lowest ? "warn" : null;
     case "command":
       return p.exit_code === 0 || p.exit_code === undefined ? null : "warn";
     default:
@@ -211,6 +213,10 @@ export function describeMarker(m, by, who) {
     }
     case "forced_sleep":
       return [`fell asleep at the forced hour without a journal entry, to wake at ${hhmm(secondOfDay(m.wake))}`];
+    case "condition":
+      return [`is ${m.band}`];
+    case "death":
+      return ["died"];
     default:
       return [m.kind.replaceAll("_", " ")];
   }

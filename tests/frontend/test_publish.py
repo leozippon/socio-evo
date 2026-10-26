@@ -272,6 +272,8 @@ def test_every_file_has_exactly_the_documented_fields(published):
             "rating",
             "journal",
             "forced_sleep",
+            "condition",
+            "death",
         )
     }
     timeline = read(site, f"{RUN}/timeline.json")
@@ -356,19 +358,25 @@ def test_the_world_lays_the_town_out_and_names_the_group(published):
     _, _, site = published
     world = read(site, f"{RUN}/world.json")
     assert [(p["id"], p["kind"], p["x"], p["y"]) for p in world["places"]] == [
-        ("mill-street-house", "home", 0.5, 0.0),
-        ("college-flat", "home", 1.5, 0.0),
-        ("workshop", "workplace", 1.0, 1.5),
+        ("mill-street-house", "home", 1.0, 0.0),
+        ("college-flat", "home", 2.0, 0.0),
+        ("workshop", "workplace", 1.5, 1.5),
         ("cafe", "social", 0.0, 3.0),
         ("park", "social", 1.0, 3.0),
         ("store", "shop", 2.0, 3.0),
+        ("clinic", "shop", 3.0, 3.0),
     ]
     assert [(p["rent"], p["rooms"], p["comfort"]) for p in world["places"]][:3] == [
         (20, 3, 0.9),
         (30, 6, 1.0),
         (None, None, None),
     ]
-    assert [g["id"] for g in world["goods"]] == ["groceries", "meal", "bicycle", "phone", "coat"]
+    assert [g["id"] for g in world["goods"]] == [
+        "groceries", "meal", "bicycle", "phone", "coat", "examination", "treatment",
+    ]  # fmt: skip
+    assert world["needs"]["health"]["bands"][-1] == {
+        "floor": 0, "name": "gravely ill", "seen": "looking gravely ill",
+    }  # fmt: skip
     assert [r["name"] for r in world["residents"]] == list(RESIDENTS)
     assert world["residents"][0]["rules"].startswith("How the town works.")
     assert world["group"] == "C" and world["currency"] == "$"

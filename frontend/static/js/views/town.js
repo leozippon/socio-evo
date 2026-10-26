@@ -189,7 +189,7 @@ export function mountTown(root, ctx) {
   // The moment ----------------------------------------------------------------------------------
   function phase(time, state) {
     const second = secondOfDay(time);
-    const awake = Object.values(state.residents).filter((found) => found.segment && found.segment.kind !== "sleep").length;
+    const awake = Object.values(state.residents).filter((found) => found.segment && found.segment.kind !== "sleep" && found.segment.kind !== "dead").length;
     const up = `${awake} of ${cast.names.length} up`;
     if (second < hours.forced_sleep) return `Past midnight · ${up}`;
     if (second < hours.checkpoint) return `Forced sleep · ${up}`;
@@ -253,9 +253,9 @@ export function mountTown(root, ctx) {
       }
     }
     const notices = m.dayEntries
-      .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "exchange_pairing", "meeting", "board_posted"].includes(e.kind))
+      .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "death", "exchange_pairing", "meeting", "board_posted"].includes(e.kind))
       .slice(-3)
-      .map((e) => ({ icon: e.kind === "forced_sleep" || e.kind === "expiry" ? "alert" : e.kind === "board_posted" ? "board" : "pair", tone: e.kind === "forced_sleep" || e.kind === "expiry" ? "critical" : null, text: textFor(e, m.reader) }));
+      .map((e) => ({ icon: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "alert" : e.kind === "board_posted" ? "board" : "pair", tone: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "critical" : null, text: textFor(e, m.reader) }));
     const key = `${m.time}|${m.dayEntries.length}|${m.reader}`;
     return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, notices, effects, key };
   }
@@ -289,6 +289,10 @@ export function mountTown(root, ctx) {
         return { icon: "book", text: "to bed, journal written" };
       case "forced_sleep":
         return { icon: "alert", text: "falls asleep at the forced hour", tone: "critical" };
+      case "condition":
+        return { icon: "eye", text: `is ${mk.band}`, tone: mk.lowest ? "warn" : null };
+      case "death":
+        return { icon: "alert", text: "died", tone: "critical" };
       default:
         return null;
     }

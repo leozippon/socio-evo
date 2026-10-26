@@ -65,6 +65,9 @@ ARCHITECTURE_TABLE = {
     },
     "sleep": {"look_around", "review_day", "rate"},
 }
+for _event, _tools in ARCHITECTURE_TABLE.items():
+    if _event != "movement":
+        _tools.add("how_am_i")  # taking stock of oneself is free in every event but a walk
 
 
 def test_the_tool_sets_are_the_architecture_table():
@@ -338,7 +341,10 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     town.rest("Mei")
     await town.until("15:00")
     assert isinstance(mei.base, Idle)
-    assert town.heard["Mei"][-1].text == "You woke up at home. It is Monday 1 January, 15:00."
+    assert town.heard["Mei"][-1].text == (
+        "You woke up at home. It is Monday 1 January, 15:00. You are a little hungry. You are "
+        "fresh. You are in good health."
+    )
     await town.until("23:00")
     await town.call("Mei", "sleep", until="09:00", journal="A short afternoon after the nap.")
     assert mei.base.wake == at("09:00", day=2)  # an hour already past: tomorrow
@@ -428,8 +434,8 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     in_bed_refusals = await _refusals(town, "Mei")
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
     assert in_bed_refusals["go"] == (
-        "You have gone to bed; before you fall asleep you can only look around, look back over "
-        "your day, rate people and see to your own files."
+        "You have gone to bed; before you fall asleep you can only look around, take stock of "
+        "how you feel, look back over your day, rate people and see to your own files."
     )
     review = await town.call("Mei", "review_day")
     assert "07:00 You woke up at home." in review.text
@@ -444,7 +450,10 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert [day for day, _ in town.checkpoints] == [1]
     woke = waiting.result()
     assert [p.kind for p in woke][-1] == "wake"
-    assert woke[-1].text == "You woke up at home. It is Tuesday 2 January, 08:00."
+    assert woke[-1].text == (
+        "You woke up at home. It is Tuesday 2 January, 08:00. You are starving. You are fresh. "
+        "You are in good health."
+    )
     assert isinstance(mei.base, Idle) and mei.place == "mill-street-house"
 
 
@@ -464,10 +473,10 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
         "at 07:00."
     ]
     assert mei.suspended
-    assert town.take("Mei")[-3:] == [
+    assert town.take("Mei")[-2:] == [
         "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
-        "Street $20. You had nothing to eat today. Your purse holds $100.",
-        "You went hungry today, too hungry to concentrate on work before the next meal.",
+        "Street $20. You had nothing to eat today. You are starving. You are fresh. You are in "
+        "good health. Your purse holds $100.",
         "It is 02:00: you fell asleep.",
     ]
     assert not (tmp_path / "agents" / "Tomas" / "memory" / "journal").exists()
@@ -491,7 +500,12 @@ async def test_the_workplace_never_closes_and_a_route_shortens_the_walk(make_tow
     town.take("Mei")
     await town.until("18:00")
     mei = town.world.residents["Mei"]
-    assert isinstance(mei.base, Work) and town.take("Mei") == []
+    assert isinstance(mei.base, Work)
+    assert town.take("Mei") == [  # a long stretch of work: only the body speaks, by the hour
+        "You are a little hungry.",
+        "You are a little tired.",
+        "You are hungry.",
+    ]
     await town.call("Mei", "leave_work")
     assert (await town.call("Mei", "look_around")).text == (
         "It is 18:00. You are at the workshop. Nobody else is here."
@@ -530,8 +544,8 @@ async def test_situation_says_what_applies_now(make_town):
     assert "Also here: Aisha." in situation and "Your purse holds $120." in situation
     assert "You have nothing of your own yet." in situation  # told at home
     assert situation.endswith(
-        "What you can do now: help, look_around, go, wait, sleep, start_work, say, buy, "
-        "move_in, message."
+        "What you can do now: help, look_around, how_am_i, go, wait, sleep, start_work, say, "
+        "buy, move_in, message."
     )
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()

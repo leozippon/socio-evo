@@ -49,8 +49,10 @@ KINDS = {
     "move_in": "a resident moved into another home",
     "exchange_pairing": "the evening pairing of group B",
     "meeting": "a paired exchange began",
-    "settlement": "the rent and fees charged at midnight, with the statement and the day's food",
-    "hungry": "a resident took no food in the day and cannot sit down to work until it eats",
+    "settlement": "the rent and fees charged at midnight, with the statement, the day's food and "
+    "the body's numbers after the night's reckoning of health",
+    "condition": "a need of a resident's body crossed into another band; told to it if awake",
+    "death": "a resident's health ran out at midnight: its life ended, and the others were told",
     "sleep": "a resident went to bed, with its journal entry and the ratings it read",
     "rating": "a rating given at night",
     "fell_asleep": "a resident in bed fell asleep",

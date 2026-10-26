@@ -39,6 +39,9 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert rows["Aisha", 2]["in_debt"] == 1
     assert (mei["spent_rent"], tomas["spent_rent"], aisha["spent_rent"]) == (20, 30, 20)
     assert (mei["spent_fees"], mei["spent_food"], mei["spent_goods"], mei["hungry"]) == (0, 0, 0, 1)
+    # Nobody ate: starving at midnight wore 15 of everyone's health, and 2 more on Mill Street.
+    assert (mei["starving"], mei["health"], mei["died"]) == (1, 83, 0)
+    assert (tomas["health"], aisha["health"], rows["Mei", 2]["health"]) == (85, 83, 66)
     assert (mei["messages_sent"], mei["messages_received"]) == (0, 0)
     # Mei worked from 09:00 to 09:20, Tomas from 09:00 until he left at 18:00.
     assert mei["work_hours"] == pytest.approx(1 / 3) and tomas["work_hours"] == 9.0
@@ -61,10 +64,10 @@ def test_ratings_sleep_and_the_runtime(rows):
     assert (rows["Tomas", 2]["forced_sleep"], aisha["forced_sleep"], mei["forced_sleep"]) == (
         1, 1, 0,
     )  # fmt: skip
-    # Mei's thirteen steps of day 1 and four of day 2, each reporting 1000 prompt tokens (600
+    # Mei's fourteen steps of day 1 and four of day 2, each reporting 1000 prompt tokens (600
     # cached) and 100 completion tokens; Tomas has an empty trace.
     assert [mei[k] for k in ("requests", "prompt_tokens", "completion_tokens")] == [
-        13, 13000, 1300,
+        14, 14000, 1400,
     ]  # fmt: skip
     assert mei["cached_share"] == 0.6 and rows["Mei", 2]["requests"] == 4
     assert (mei["lapses"], mei["interruptions"], mei["compactions"]) == (0, 0, 0)
@@ -78,6 +81,10 @@ def test_daily_totals_and_means(rows):
     }  # fmt: skip
     assert found[1, "in_debt"]["total"] == 0 and found[2, "in_debt"]["total"] == 1
     assert found[2, "forced_sleep"]["total"] == 2 and found[1, "hungry"]["total"] == 3
+    assert found[1, "starving"]["total"] == 3 and found[1, "died"]["total"] == 0
+    assert found[1, "health"]["total"] is None and found[1, "health"]["mean"] == pytest.approx(
+        (83 + 85 + 83) / 3
+    )
     assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 280 / 3
     assert found[1, "rating_received_mean"]["mean"] == 4.5
     assert found[1, "rating_received_mean"]["residents"] == 2

@@ -5,7 +5,7 @@
 import { hhmm, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { icon } from "../icons.js";
-import { markersBetween } from "../replay.js";
+import { conditionAt, markersBetween } from "../replay.js";
 import { EVENTS, shortName } from "../world.js";
 import { STRUCTURE, clockOf, detail, feedItems, glyph, involved, line, textFor, witnessed } from "./events.js";
 
@@ -20,15 +20,17 @@ export function doing(found, places) {
   if (conversation) bits.push(`talking with ${conversation.with.join(", ")}`);
   if (segment.kind === "work") bits.push(held ? `at work on task ${held.task}` : "at work, no task");
   else if (segment.kind === "sleep") bits.push("asleep");
+  else if (segment.kind === "dead") bits.push("dead");
   else if (!conversation) bits.push("idle");
   if (segment.kind !== "work" && held) bits.push(`holds task ${held.task}`);
   return bits.join(" · ");
 }
 
-/** The residents at each place at the moment, by place id; those on the way under null. */
+/** The residents at each place at the moment, by place id; those on the way under null; the dead nowhere. */
 export function byPlace(m) {
   const found = new Map();
   for (const [name, resident] of Object.entries(m.state.residents)) {
+    if (resident.segment?.kind === "dead") continue;
     const place = resident.moving ? null : resident.segment?.place ?? null;
     if (!found.has(place)) found.set(place, []);
     found.get(place).push(name);
@@ -109,6 +111,7 @@ export class PeoplePanel {
           const found = m.state.residents[name];
           const place = found.moving ? null : m.places.get(found.segment?.place);
           const delta = found.purse - m.dayStartPurses[name];
+          const feels = Object.values(conditionAt(found.lane, m.time)).join(" · ");
           return h(
             "li",
             {},
@@ -116,7 +119,7 @@ export class PeoplePanel {
               "button",
               { type: "button", class: `person-row${m.selected === name ? " on" : ""}`, "aria-pressed": String(m.selected === name), onclick: () => m.select(name) },
               m.cast.badge(name, 28),
-              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? shortName(place) : found.moving ? "on the way" : ""), h("span", { class: "person-job" }, doing(found, m.places))),
+              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? shortName(place) : found.moving ? "on the way" : ""), h("span", { class: "person-job" }, doing(found, m.places)), feels ? h("span", { class: "person-feels", title: "How the resident feels, as its body last told it" }, feels) : null),
               h(
                 "span",
                 { class: "person-figures" },
@@ -264,7 +267,7 @@ export class WorkPanel {
 }
 
 /** The kinds of entry the chronicle keeps, each a moment worth finding. */
-const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "abandon", "expiry", "gift", "message", "purchase", "move_in", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement", "hungry"]);
+const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "abandon", "expiry", "gift", "message", "purchase", "move_in", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement", "condition", "death"]);
 
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {
@@ -279,7 +282,7 @@ export class ChroniclePanel {
     if (key === this.key) return;
     this.key = key;
     const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || (e.kind === "speech" && e.payload.private));
-    const classOf = (e) => ({ good: "", serious: "serious", critical: "critical", warn: "warn" })[({ verdict: e.payload.resolved ? "good" : "serious", abandon: "serious", expiry: "critical", forced_sleep: "critical" })[e.kind]] ?? "";
+    const classOf = (e) => ({ good: "", serious: "serious", critical: "critical", warn: "warn" })[({ verdict: e.payload.resolved ? "good" : "serious", abandon: "serious", expiry: "critical", forced_sleep: "critical", death: "critical", condition: e.payload.lowest ? "warn" : "good" })[e.kind]] ?? "";
     const broke = Object.entries(m.state.residents).filter(([, found]) => found.purse < 0);
     fill(
       this.el,

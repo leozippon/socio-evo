@@ -11,8 +11,8 @@ export const GROUPS = {
 /** A group's short label, "Group C · social learning"; a run of no group has none. */
 export const groupLabel = (group) => (GROUPS[group] ? `Group ${GROUPS[group][0]} · ${GROUPS[group][1]}` : null);
 
-/** The five events a resident is always in one of, and the conversation layered over them. */
-export const EVENTS = { idle: "Idle", movement: "Movement", work: "Work", sleep: "Sleep", conversation: "Conversation" };
+/** The events a resident is always in one of (dead to the end, once its health ran out), and the conversation layered over them. */
+export const EVENTS = { idle: "Idle", movement: "Movement", work: "Work", sleep: "Sleep", dead: "Dead", conversation: "Conversation" };
 
 export const placeById = (world) => new Map(world.places.map((place) => [place.id, place]));
 

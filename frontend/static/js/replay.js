@@ -57,14 +57,21 @@ export function markersBetween(lane, from, to) {
   return lane.markers.slice(first, last);
 }
 
-/** The task a lane holds at `t`: its last claim not yet paid, given up or run out; null for none. */
+/** The task a lane holds at `t`: its last claim not yet paid, given up, run out or dropped by death; null for none. */
 export function heldAt(lane, t) {
   let held = null;
   for (const m of markersBetween(lane, null, t)) {
     if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t };
-    else if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry") held = null;
+    else if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry" || m.kind === "death") held = null;
   }
   return held;
+}
+
+/** How a lane's body stood at `t`, by need, from the bands its condition markers last crossed into; empty before any. */
+export function conditionAt(lane, t) {
+  const found = {};
+  for (const m of markersBetween(lane, null, t)) if (m.kind === "condition") found[m.need] = m.band;
+  return found;
 }
 
 /** The place a lane set off from for the movement `segment`: the place of the segment before it. */

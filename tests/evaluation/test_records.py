@@ -34,7 +34,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
         "wake", "depart", "arrive", "time", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
         "leave_conversation", "leave_work", "sleep", "rating", "fell_asleep", "settlement",
-        "hungry",
+        "condition",
     }  # fmt: skip
 
     def head(e):
@@ -48,16 +48,21 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     lines = heads(day_record(run_dir, "Mei", 1))
     assert all(lines.count(line) == 1 for line in told)
     assert [line for line in lines if line in told] == told
-    assert "07:00 You woke up at home. It is Monday 1 January, 07:00." in lines
+    assert (
+        "07:00 You woke up at home. It is Monday 1 January, 07:00. You are well fed. You are "
+        "fresh. You are in good health."
+    ) in lines
+    assert "11:00 You are a little hungry." in lines and "18:00 You are hungry." in lines
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
     assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
     assert lines[-2:] == [
+        "00:00 You are starving.",
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
         "rent for your room at the shared house on Mill Street $20. You had nothing to eat today. "
-        "Your purse holds $125. Before the midnight charges it held $145.",
-        "00:00 You went hungry today, too hungry to concentrate on work before the next meal.",
+        "You are starving. You are fresh. You are in good health. Your purse holds $125. Before "
+        "the midnight charges it held $145.",
     ]
 
 
@@ -100,7 +105,7 @@ def test_others_private_speech_their_days_and_the_journal_stay_out(run_dir):
     assert "09:20 Tomas said something to Aisha that you could not hear." in record
     assert "Do not tell Mei" not in record
     assert "Tomas claimed" not in record and "Tomas ran" not in record
-    assert "Tomas rated" not in record and "18:00" not in record
+    assert "Tomas rated" not in record and "Tomas stopped work" not in record
     assert not any(f"Mei {verb}" in record for verb in ("claimed", "said", "ran", "rated"))
     assert MEI_JOURNAL not in record and "I fixed task 1" not in record
     tomas = day_record(run_dir, "Tomas", 1)
@@ -112,7 +117,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
     first, second = day_record(run_dir, "Mei", 1), day_record(run_dir, "Mei", 2)
     assert "Tuesday" not in first and "Monday" not in second
     assert heads(second) == [
-        "07:00 You woke up at home. It is Tuesday 2 January, 07:00.",
+        "07:00 You woke up at home. It is Tuesday 2 January, 07:00. You are starving. You are "
+        "fresh. You are in good health.",
         "07:00 You called wait(minutes=600): You wait for up to 600 minutes.",
         "17:00 You waited 600 minutes; it is now 17:00.",
         "17:00 You called wait(minutes=180): You wait for up to 180 minutes.",
@@ -123,9 +129,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "files; you fall asleep once you have nothing more to do.",  # she spoke with nobody
         "20:00 You fell asleep.",
         "00:00 Your statement for Tuesday 2 January: rent for your room at the shared house on "
-        "Mill Street $20. You had nothing to eat today. Your purse holds $105. Before the "
-        "midnight charges it held $125.",
-        "00:00 You went hungry today, too hungry to concentrate on work before the next meal.",
+        "Mill Street $20. You had nothing to eat today. You are starving. You are fresh. You are "
+        "in good health. Your purse holds $105. Before the midnight charges it held $125.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)

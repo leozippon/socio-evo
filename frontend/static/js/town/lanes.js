@@ -1,8 +1,9 @@
 // Every resident's events side by side on one canvas: a lane per resident over simulated time.
-// A lane, top to bottom: three rows of markers (tasks, money, social and rest) in which markers
-// within a few pixels fold into one count; the conversation row, naming the partners where
-// there is room; the base event as a band (idle light, movement hatched, work solid with the
-// task written, sleep dim) with the place as a strip under it; and the purse as a step line.
+// A lane, top to bottom: three rows of markers (tasks, money, social, rest and the body) in
+// which markers within a few pixels fold into one count; the conversation row, naming the
+// partners where there is room; the base event as a band (idle light, movement hatched, work
+// solid with the task written, sleep dim, dead dark) with the place as a strip under it; and
+// the purse as a step line.
 // The view zooms and pans by wheel, pinch, drag and buttons, a day strip over the axis moves
 // across a long run, and the moment shown elsewhere is a cursor.
 
@@ -21,7 +22,7 @@ const LANE_H = 108;
 const ROWS = ["tasks", "money", "social"];
 const ROW_Y = [11, 24, 37]; // the rows' centres
 const ROW_H = 13;
-const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2 };
+const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -35,7 +36,7 @@ const GAP = 8; // a marker closer than this to the last one drawn in its row joi
 const MIN_SPAN = 600;
 const FONT = "system-ui, sans-serif";
 const PLACE_COLOUR = { home: "o1", workplace: "o3", social: "o5", shop: "o5" };
-const TOKENS = ["page", "surface", "surface-3", "ink", "ink-2", "muted", "line", "line-2", "accent", "accent-soft", "good", "serious", "critical", "o1", "o3", "o5", "lane-idle", "lane-sleep", "lane-movement", "lane-work", "lane-conversation", "lane-skill", "lane-rating", ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [`a${n}`, `a${n}-ink`])];
+const TOKENS = ["page", "surface", "surface-3", "ink", "ink-2", "muted", "line", "line-2", "accent", "accent-soft", "good", "serious", "critical", "warn", "o1", "o3", "o5", "lane-idle", "lane-sleep", "lane-movement", "lane-work", "lane-dead", "lane-conversation", "lane-skill", "lane-rating", ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [`a${n}`, `a${n}-ink`])];
 
 /** The marker's glyph in a box of ten pixels, as the legend and the lanes draw it. */
 export function drawMarker(g, m, cx, cy, C) {
@@ -205,6 +206,18 @@ export function drawMarker(g, m, cx, cy, C) {
       g.fillStyle = C.o1;
       g.fill();
       break;
+    case "condition": // a small ring: how the body feels changed; filled where it is at its worst
+      g.arc(cx, cy, 3.2, 0, 2 * Math.PI);
+      g.fillStyle = m.lowest ? C.warn : C.surface;
+      g.fill();
+      g.strokeStyle = m.lowest ? C.warn : C.muted;
+      g.stroke();
+      break;
+    case "death": // a dark disc: the lane ends here
+      g.arc(cx, cy, 5, 0, 2 * Math.PI);
+      g.fillStyle = C.ink;
+      g.fill();
+      break;
     default: // a kind the viewer does not know
       g.arc(cx, cy, 4, 0, 2 * Math.PI);
       g.strokeStyle = C["ink-2"];
@@ -256,11 +269,12 @@ export function legend(C) {
   return h(
     "div",
     { class: "lanes-legend" },
-    row("Doing", ...["idle", "movement", "work", "sleep"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
+    row("Doing", ...["idle", "movement", "work", "sleep", "dead"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
     row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at the workplace"), item(swatch("place-social"), "out, at a social place or a shop"), item(swatch("place-road"), "on the way")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up"), item(glyph({ kind: "expiry" }), "claim run out")),
     row("Money", item(glyph({ kind: "payment" }), "paid for a task"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought")),
     row("Social", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "rating" }), "a rating given"), item(glyph({ kind: "skill_shared" }), "a skill passed on"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
+    row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "death" }), "died")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "purse, one scale for all")),
   );
 }

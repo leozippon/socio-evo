@@ -1,12 +1,12 @@
 # The town every group lives in: eight residents in five homes, the Workshop, Café Linde, the
-# Anchor, the river walk and the Store, for 28 days. Not a complete configuration by itself: each
-# file of groups/ overlays it with the group's name and social rules (see experiments/config.py
-# for how an overlay merges).
+# Anchor, the river walk, the Store and the clinic, for 28 days. Not a complete configuration by
+# itself: each file of groups/ overlays it with the group's name and social rules (see
+# experiments/config.py for how an overlay merges).
 #
 # The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
-# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk
-# and the Store. The only fixed hours are the night's below, together with the longest one sleep
-# may last.
+# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk,
+# the Store and the clinic. The only fixed hours are the night's below, together with the longest
+# one sleep may last.
 #
 # Calibration of a life. A task pays 60. Rent runs from 30 a day for a room in a shared house to
 # 70 for the cottage, and a day's food from 12 (groceries, 36 for three days) to 20 (supper at the
@@ -16,9 +16,24 @@
 # residents have worked five to seven tasks a day (under the flat cost of 90 their purses stood at
 # 1,500-2,500 by day 7), so the things to save for are priced against that pace, not against the
 # rent: the bicycle (360) is a full day's work and more than any purse at the start, the phone
-# (240, then 5 a day) most of one, the coat (150) half, the book (40) under a task. Nourishment is
-# a food's share of a day's need, 100 being a full day; for now only taking some or none matters,
-# and a resident that took none by midnight went hungry.
+# (240, then 5 a day) most of one, the coat (150) half, the book (40) under a task.
+#
+# Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
+# full day: groceries are nine helpings of a third of it, eaten three a day as the owner gets
+# hungry, so a stock keeps a resident fed round the clock; supper at the Anchor is most of a
+# day's need and a meal at the café two thirds, so one meal out a day leaves a resident hungry by
+# evening but not starving at midnight. Satiety falls 100 a day; a resident that eats
+# nothing is starving from about twenty hours after its last meal, and every midnight found
+# starving takes 15 of its 100 health, so one that never eats dies at the seventh midnight, with
+# "run down" told on the third day and "looking unwell" seen by others from the fifth; one that
+# eats once a day cannot die of hunger. Energy falls 2 an hour awake, 6 at work and 8 on foot
+# (half the road with a bicycle), and a night's sleep gives 12 an hour times the home's comfort:
+# seven hours in a flat restore 84, so a resident that wakes rested can work twelve hours before
+# it is exhausted and cannot sit down to work, and one that stays up until the forced sleep wakes
+# with half a day's energy. A midnight found exhausted costs 5 health, a home of little comfort
+# (the shared houses, 0.9) costs 2 a night, and a night neither starving nor exhausted mends 5, so
+# the shared houses are a slow drag that an ordinary life more than covers. Treatment at the
+# clinic restores 25 health for a task's pay; an examination costs a third of one.
 
 # For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
 # our quota: the GPUs are taken and no parameters are tuned yet. The standing setup is the local
@@ -53,7 +68,8 @@ town:
   start_date: 2026-03-02 # a Monday
   seed: 20260302
   # Homes: the rent a day for a room, the rooms (one a resident; the free ones can be moved into)
-  # and a comfort, kept for the needs to come (0.9 a shared house, 1 a flat, 1.1 the cottage).
+  # and a comfort (0.9 a shared house, 1 a flat, 1.1 the cottage), which scales what sleep
+  # restores and, below 1, wears health a little each night.
   places:
     - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 30, rooms: 3, comfort: 0.9}
     - {id: college-flat, name: the flat by the college gates, kind: home, rent: 55, rooms: 1, comfort: 1.0}
@@ -65,8 +81,9 @@ town:
     - {id: anchor, name: the Anchor, kind: social}
     - {id: river-walk, name: the river walk, kind: social}
     - {id: store, name: the Store, kind: shop}
-  # Fifteen minutes from or to a home; ten among the Workshop, the café, the Anchor, the walk and
-  # the Store.
+    - {id: clinic, name: the clinic, kind: shop}
+  # Fifteen minutes from or to a home; ten among the Workshop, the café, the Anchor, the walk,
+  # the Store and the clinic.
   travel_minutes: 15
   routes:
     - {between: [workshop, cafe], minutes: 10}
@@ -79,6 +96,11 @@ town:
     - {between: [anchor, river-walk], minutes: 10}
     - {between: [anchor, store], minutes: 10}
     - {between: [river-walk, store], minutes: 10}
+    - {between: [workshop, clinic], minutes: 10}
+    - {between: [cafe, clinic], minutes: 10}
+    - {between: [anchor, clinic], minutes: 10}
+    - {between: [river-walk, clinic], minutes: 10}
+    - {between: [store, clinic], minutes: 10}
   # Starting purses: three to five days of the resident's own life (see the calibration above),
   # more for Lucia, who saved for her year, least for Aisha, whose savings are nearly gone. Ties
   # are the people each resident knows already, told to it in the town mode (groups C and D) and seeding its notes on people; each is
@@ -181,16 +203,51 @@ town:
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The goods for sale (see world/config.py for the kinds and effects). Every good does something
-  # in the world: feeds, shortens journeys, lets owners write to one another, or shows on its
-  # owner wherever others see it. Names carry their article, as a sentence names them.
+  # in the world: feeds, shortens journeys, lets owners write to one another, shows on its owner
+  # wherever others see it, or looks after the body. Names carry their article, as a sentence
+  # names them.
   goods:
-    - {id: groceries, name: groceries, price: 36, sold_at: [store], kind: consumable, uses: 3, per_day: 1, effect: food, nourishment: 60}
-    - {id: cafe-meal, name: a meal at Café Linde, price: 15, sold_at: [cafe], kind: immediate, effect: food, nourishment: 60}
-    - {id: supper, name: supper at the Anchor, price: 20, sold_at: [anchor], kind: immediate, effect: food, nourishment: 80}
+    - {id: groceries, name: groceries, price: 36, sold_at: [store], kind: consumable, uses: 9, per_day: 3, effect: food, nourishment: 34}
+    - {id: cafe-meal, name: a meal at Café Linde, price: 15, sold_at: [cafe], kind: immediate, effect: food, nourishment: 65}
+    - {id: supper, name: supper at the Anchor, price: 20, sold_at: [anchor], kind: immediate, effect: food, nourishment: 85}
     - {id: bicycle, name: a bicycle, price: 360, sold_at: [store], kind: durable, effect: travel, factor: 0.5}
     - {id: phone, name: a phone, price: 240, sold_at: [store], kind: durable, effect: messaging, fee_per_day: 5}
     - {id: coat, name: a coat, price: 150, sold_at: [store], kind: durable, effect: appearance, phrase: in a new coat}
     - {id: book, name: a book, price: 40, sold_at: [store], kind: durable, effect: appearance, phrase: with a book under one arm}
+    - {id: examination, name: an examination, price: 20, sold_at: [clinic], kind: immediate, effect: examination}
+    - {id: treatment, name: treatment, price: 60, sold_at: [clinic], kind: immediate, effect: treatment, restores: 25}
+  # The body: three needs from 0 to 100, each read in bands from the top down (a band's name
+  # follows "you are"; `seen` is what others see on a resident in that band). The lowest band is
+  # where the consequences lie: starving and exhausted wear health at midnight, exhausted bars
+  # sitting down to work, and health at 0 is death. See the calibration above.
+  needs:
+    satiety:
+      per_hour: 4.2 # a day's need, 100, over the day
+      bands:
+        - {floor: 65, name: well fed}
+        - {floor: 35, name: a little hungry}
+        - {floor: 10, name: hungry}
+        - {floor: 0, name: starving}
+    energy:
+      awake_per_hour: 2
+      work_per_hour: 4 # on top of the hour awake
+      walk_per_minute: 0.1 # on top of the hour awake
+      sleep_per_hour: 12 # times the home's comfort, never above the resident's health
+      bands:
+        - {floor: 65, name: fresh}
+        - {floor: 35, name: a little tired}
+        - {floor: 15, name: tired}
+        - {floor: 0, name: exhausted}
+    health:
+      starving: 15
+      exhausted: 5
+      poor_home: 2
+      recovery: 5
+      bands:
+        - {floor: 65, name: in good health}
+        - {floor: 35, name: run down}
+        - {floor: 10, name: unwell, seen: looking unwell}
+        - {floor: 0, name: gravely ill, seen: looking gravely ill}
   social:
     silence_minutes: 15 # counted while nobody in the conversation is still thinking
     skills_shareable: true

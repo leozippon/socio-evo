@@ -10,7 +10,7 @@ from agent.directory import AgentDirectory
 from agent.runtime import Runtime
 from agent.testing import ScriptedModel, reply, running, tool_call
 from infrastructure.storage import read_jsonl
-from tests.world.conftest import FakeBackend, Town, make_agent_dirs, town_config
+from tests.world.conftest import FakeBackend, Town, make_agent_dirs, stocked, town_config
 from world.clock import ManualClock
 from world.events import Work
 from world.world import World
@@ -48,6 +48,7 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
         reply("Good night."),
     )
     town = Town(world, FakeBackend())
+    stocked(town)  # fed from its stock, Mei's body has nothing to say before the evening
     port = world.ports["Mei"]
     town.start(until_day=1)
     town.rest("Tomas", "Aisha")

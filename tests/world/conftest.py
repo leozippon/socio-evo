@@ -1,8 +1,8 @@
 """A small town for the world's tests: three residents (backgrounds from the old town), two homes,
-a shop with a few goods of every kind and effect, the fake work backend of `world.testing`, and a
-harness that runs the world on a manual clock and stands in for the residents' runtimes. The
-test town has ratings on unless a test turns them off, so that the rating tests keep their
-setting; the real town has them off."""
+a shop and a clinic with a good of every kind and effect, the real town's needs, the fake work
+backend of `world.testing`, and a harness that runs the world on a manual clock and stands in for
+the residents' runtimes. The test town has ratings on unless a test turns them off, so that the
+rating tests keep their setting; the real town has them off."""
 
 from __future__ import annotations
 
@@ -28,17 +28,58 @@ RESIDENTS = (
 
 GOODS = (
     {"id": "groceries", "name": "groceries", "price": 12, "sold_at": ["store"],
-     "kind": "consumable", "uses": 3, "per_day": 1, "effect": "food", "nourishment": 60},
+     "kind": "consumable", "uses": 9, "per_day": 3, "effect": "food", "nourishment": 34},
     {"id": "meal", "name": "a meal at the café", "price": 10, "sold_at": ["cafe"],
-     "kind": "immediate", "effect": "food", "nourishment": 60},
+     "kind": "immediate", "effect": "food", "nourishment": 65},
     {"id": "bicycle", "name": "a bicycle", "price": 50, "sold_at": ["store"],
      "kind": "durable", "effect": "travel", "factor": 0.5},
     {"id": "phone", "name": "a phone", "price": 40, "sold_at": ["store"],
      "kind": "durable", "effect": "messaging", "fee_per_day": 2},
     {"id": "coat", "name": "a coat", "price": 30, "sold_at": ["store"],
      "kind": "durable", "effect": "appearance", "phrase": "in a new coat"},
+    {"id": "examination", "name": "an examination", "price": 10, "sold_at": ["clinic"],
+     "kind": "immediate", "effect": "examination"},
+    {"id": "treatment", "name": "treatment", "price": 25, "sold_at": ["clinic"],
+     "kind": "immediate", "effect": "treatment", "restores": 25},
 )  # fmt: skip
 """The test town's catalogue: a good of each kind and each effect."""
+
+NEEDS = {
+    "satiety": {
+        "per_hour": 4.2,
+        "bands": [
+            {"floor": 65, "name": "well fed"},
+            {"floor": 35, "name": "a little hungry"},
+            {"floor": 10, "name": "hungry"},
+            {"floor": 0, "name": "starving"},
+        ],
+    },
+    "energy": {
+        "awake_per_hour": 2,
+        "work_per_hour": 4,
+        "walk_per_minute": 0.1,
+        "sleep_per_hour": 12,
+        "bands": [
+            {"floor": 65, "name": "fresh"},
+            {"floor": 35, "name": "a little tired"},
+            {"floor": 15, "name": "tired"},
+            {"floor": 0, "name": "exhausted"},
+        ],
+    },
+    "health": {
+        "starving": 15,
+        "exhausted": 5,
+        "poor_home": 2,
+        "recovery": 5,
+        "bands": [
+            {"floor": 65, "name": "in good health"},
+            {"floor": 35, "name": "run down"},
+            {"floor": 10, "name": "unwell", "seen": "looking unwell"},
+            {"floor": 0, "name": "gravely ill", "seen": "looking gravely ill"},
+        ],
+    },
+}
+"""The test town's needs: the real town's rates and bands."""
 
 
 def town_config(
@@ -77,6 +118,7 @@ def town_config(
                 {"id": "cafe", "name": "the café on the square", "kind": "social"},
                 {"id": "park", "name": "the park", "kind": "social"},
                 {"id": "store", "name": "the store", "kind": "shop"},
+                {"id": "clinic", "name": "the clinic", "kind": "shop"},
             ],
             "travel_minutes": 10,
             "routes": [{"between": ["workshop", "cafe"], "minutes": 5}],
@@ -92,6 +134,7 @@ def town_config(
             }
             | work,
             "goods": list(goods),
+            "needs": NEEDS,
             "social": {
                 "mode": mode,
                 "silence_minutes": 10,
@@ -213,5 +256,7 @@ async def awake_at(town: Town, hour: str = "07:00", day: int = 1) -> None:
 def stocked(town: Town, days: int = 3) -> None:
     """Give every resident a stock of groceries for `days`, so that a test that crosses midnight
     on its way to something else is not about hunger."""
+    good = town.world.config.good("groceries")
+    assert good.per_day is not None
     for r in town.world.residents.values():
-        r.living.things["groceries"] = days
+        r.living.things["groceries"] = days * good.per_day

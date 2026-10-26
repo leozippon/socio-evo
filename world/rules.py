@@ -16,13 +16,14 @@ from world.clock import parse_hour
 from world.config import DayHours, Good, TownConfig
 from world.telling import cap, counted, listed
 
-TOPICS = ("places", "day", "work", "money", "shopping", "people", "sleep")
+TOPICS = ("places", "day", "work", "money", "shopping", "health", "people", "sleep")
 _HEADINGS = {
     "places": "Places",
     "day": "The day",
     "work": "Work",
     "money": "Money",
     "shopping": "Shopping",
+    "health": "Health",
     "people": "People",
     "sleep": "Sleep",
 }
@@ -50,6 +51,16 @@ def fraction(factor: float) -> str:
     if factor == 0.25:
         return "a quarter of"
     return f"{round(factor * 100)}% of"
+
+
+def comfort_word(comfort: float) -> str | None:
+    """How a home's comfort is told beside its rent: `little comfort` below an ordinary home's,
+    `comfortable` above it, nothing for an ordinary home."""
+    if comfort < 1:
+        return "little comfort"
+    if comfort > 1:
+        return "comfortable"
+    return None
 
 
 def longest_sleep(day: DayHours) -> str:
@@ -125,10 +136,12 @@ class Rules:
         for place in c.places:
             if place.kind == "home":
                 assert place.rooms is not None and place.rent is not None
+                assert place.comfort is not None
                 free = place.rooms - len(homes.get(place.id, ()))
+                comfort = comfort_word(place.comfort)
                 rooms.append(
                     f"{place.name} {money(place.rent)} ({counted(place.rooms, 'room')}, "
-                    f"{free or 'none'} free)"
+                    f"{free or 'none'} free{f', {comfort}' if comfort else ''})"
                 )
         places = (
             f"The town has these places, each with the short name you use to go there: {names}. "
@@ -143,8 +156,9 @@ class Rules:
 
         day = (
             f"{cap(workplace.name)} is open at all hours. At midnight rent is taken from every "
-            "purse, the day's food is reckoned and the board for the new day is posted. You go "
-            "to bed at home at whatever hour you choose, giving the hour you want to wake and "
+            "purse, your health is reckoned from the day and the board for the new day is "
+            "posted. You go to bed at home at whatever hour you choose, giving the hour you "
+            "want to wake and "
             f"writing up your day. At {c.day.forced_sleep} anyone still up falls asleep and "
             f"wakes at home at {c.day.forced_wake}, with no journal entry for that day."
         )
@@ -189,9 +203,8 @@ class Rules:
             f"{money(my_home.rent)} a day; rent"
             + (", and the daily charge on anything you own that carries one," if fees else "")
             + " is taken from your purse at midnight, when you get a statement of your money. "
-            "You eat once a day or go hungry: if you have had no food by midnight, you go "
-            "hungry, and are too hungry to sit down to work until you have eaten. You pay for "
-            "everything in cash. A purse can go below zero when rent is taken; you are then in "
+            "You pay for everything in cash. A purse can go below zero when rent is taken; you "
+            "are then in "
             "debt, and can still be paid, pay your rent and receive money, but can buy nothing "
             "until your purse covers the price."
         )
@@ -202,6 +215,7 @@ class Rules:
             )
 
         shopping = self._shopping(for_sale, money)
+        health = self._health(for_sale)
 
         conversation = (
             f"A conversation lasts until its people leave it or nobody speaks for "
@@ -212,7 +226,7 @@ class Rules:
                 [
                     f"{r.name} ({c.place(home_of[r.name]).name})"
                     for r in c.residents
-                    if r.name != name
+                    if r.name != name and r.name in home_of  # the dead live nowhere
                 ]
             )
             meeting = listed([place.name for place in c.places if place.kind in ("social", "shop")])
@@ -263,9 +277,36 @@ class Rules:
             "work": work,
             "money": money_rules,
             "shopping": shopping,
+            "health": health,
             "people": people,
             "sleep": sleep,
         }
+
+    def _health(self, for_sale: list[Good]) -> str:
+        """How the body works, in a few lines: what wears it and what restores it, and where
+        it can be looked at."""
+        c = self.config
+        clinic = [
+            c.place(place_id).name
+            for good in for_sale
+            if good.effect in ("examination", "treatment")
+            for place_id in good.sold_at
+        ]
+        text = (
+            "Through the day you get hungry, and what you eat restores you: a meal, or a day's "
+            "worth of a stock, is about a day's need. You tire with the hours awake, faster at "
+            "work and on the road, and sleep restores you, the more the better your home; too "
+            f"tired, you cannot sit down to work at {c.workplace.name}. A day that ends with "
+            "you starving or exhausted, or lived in a home of little comfort, wears your health "
+            "down; a day in which you have eaten and rested mends it. When your health is gone, "
+            "you die. You can take stock of how you feel at any time with how_am_i"
+        )
+        if clinic:
+            text += (
+                f", and at {listed(sorted(set(clinic)))} an examination tells you exactly how "
+                "you stand and treatment restores your health"
+            )
+        return text + "."
 
     def _routes(self) -> str:
         """The routes that differ from the usual walk, grouped by their minutes: `10 minutes
@@ -305,8 +346,8 @@ class Rules:
             text += f" {cap(listed(on_the_spot, 'or'))}: eaten on the spot, the day's food."
         if stocked:
             text += (
-                f" {cap(listed(stocked, 'or'))}: kept in stock, and a day's worth is used up "
-                "each midnight, which is the day's food too."
+                f" {cap(listed(stocked, 'or'))}: kept in stock, and eaten from whenever you "
+                "could eat, a day's worth a day."
             )
         for good in for_sale:
             if good.effect == "travel":

@@ -123,7 +123,8 @@ async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
 
     def woken_and_paired(name: str) -> list[str]:
         return [
-            "It is 19:00: you were woken at home for the evening meeting.",
+            "It is 19:00: you were woken at home for the evening meeting. You are hungry. You "
+            "are fresh. You are in good health.",
             f"It is 19:00: by lot, you are to meet {partner[name]} at the café on the square "
             "and talk about your work.",
         ]
@@ -193,7 +194,7 @@ async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     await town.until("08:59", day=2)
     assert not waiting.done()
     await town.until("09:00", day=2)
-    assert [p.kind for p in waiting.result()] == ["settlement", "hungry", "wake"]
+    assert [p.kind for p in waiting.result()] == ["settlement", "wake"]
 
 
 async def test_the_checkpoint_waits_for_every_runtime_to_rest_and_holds_the_clock(make_town):
@@ -249,13 +250,17 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["residents"]["Mei"]["done"] == [1]
     assert state["residents"]["Mei"]["unread_ratings"] == [[3, "Busy all day."]]
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
-    assert state["residents"]["Mei"]["living"] == {  # a day's groceries went at midnight
-        "things": {"groceries": 2, "coat": 1},
-        "eaten": {},
-        "hungry": False,
+    mei_living = state["residents"]["Mei"]["living"]
+    # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today.
+    assert mei_living["things"] == {"groceries": 7, "coat": 1} and mei_living["eaten"] == {}
+    assert set(mei_living) == {"things", "eaten", "satiety", "energy", "health", "night"}
+    assert mei_living["health"] == 100 and mei_living["night"] == {
+        "poor_home": -2,
+        "recovery": 5,
     }
-    assert state["residents"]["Aisha"]["living"] == {"things": {}, "eaten": {}, "hungry": True}
-    assert [p["kind"] for p in state["residents"]["Aisha"]["held"]] == ["settlement", "hungry"]
+    aisha_living = state["residents"]["Aisha"]["living"]
+    assert aisha_living["satiety"] == 0 and aisha_living["health"] == 83  # starving, Mill Street
+    assert [p["kind"] for p in state["residents"]["Aisha"]["held"]] == ["settlement"]
     assert state["residents"]["Aisha"]["wake"] == at("10:00", day=2)
     saved = json.loads(json.dumps(state))
     last_seq = list(town.world.log.entries())[-1]["seq"]
@@ -293,10 +298,13 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await again.until("10:00", day=2)
     aisha = again.take("Aisha")
     assert aisha[0].startswith("Your statement for Monday 1 January")
-    assert aisha[-1] == "You woke up at home. It is Tuesday 2 January, 10:00."
+    assert aisha[-1] == (
+        "You woke up at home. It is Tuesday 2 January, 10:00. You are well fed. You are fresh. "
+        "You are in good health."
+    )
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
-    assert later.residents["Mei"].living.things == {"groceries": 2}  # the stock came back
+    assert later.residents["Mei"].living.things == {"groceries": 6}  # the stock came back
     await again.call("Mei", "start_work")
     assert (await again.call("Mei", "read_repo_file", path="b.py")).text == "half\n"
     await again.close()
@@ -359,7 +367,8 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     await town.call("Mei", "rate", resident="Tomas", score=4, reason="Good company.")
     town.rest()
-    await town.until("00:00", day=3)  # Tomas's claim runs out
+    town.world.residents["Aisha"].living.health = 1  # her last night
+    await town.until("00:00", day=3)  # Tomas's claim runs out; Aisha dies
 
     b_town = make_town(
         town_config("isolated", exchange=B_EXCHANGE, residents=RESIDENTS[:2]), root=tmp_path / "b"

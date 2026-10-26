@@ -8,15 +8,16 @@ Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way o
 fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas, who claimed task 2,
 asks her privately how she runs the tests; she answers privately and passes him her skill. He
 tells Aisha something privately in her presence and gives Mei $5; Mei leaves for home at 09:20,
-waits there until 20:00, goes to bed with her journal, reads the record of her day, rates Tomas
-4, writes her notes on people and fails to read a file she does not have. Tomas works until
+waits there until 20:00 (her body speaks twice, at 11:00 and 18:00, and she waits on), goes to
+bed with her journal, reads the record of her day, rates Tomas 4, writes her notes on people and
+fails to read a file she does not have. Tomas works until
 18:00, goes home, goes to bed at 20:00 with a journal that claims he fixed task 2, and rates Mei
-5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so everyone goes hungry at
-midnight; rent is $20 a day on Mill Street and $30 at the flat.
+5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so everyone is starving
+by midnight and loses health for it; rent is $20 a day on Mill Street and $30 at the flat.
 
-Day 2. Mei wakes, waits at home until 20:00, goes back to bed with a second journal entry and
-reads Tomas's rating; Tomas's claim runs out at midnight; Tomas and Aisha are put to sleep at
-02:00.
+Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00), goes back to bed
+with a second journal entry and reads Tomas's rating; Tomas's claim runs out at midnight; Tomas
+and Aisha are put to sleep at 02:00.
 """
 
 from __future__ import annotations
@@ -87,9 +88,10 @@ MEI_STEPS = (
         tool_call("leave_work"),
         tool_call("go", place="mill-street-house"),
     ),
-    # 09:30, home, until 20:00.
+    # 09:30, home, until 20:00: a little hungry at 11:00, hungry at 18:00.
     step(tool_call("wait", minutes=600)),
-    step(tool_call("wait", minutes=30)),
+    step(tool_call("wait", minutes=420)),
+    step(tool_call("wait", minutes=120)),
     # 20:00.
     step(tool_call("sleep", until="07:00", journal=MEI_JOURNAL)),
     step(

@@ -1,7 +1,7 @@
 // A run's dashboard, from the published measures and progress. What matters first leads: the
 // run itself, a few key figures and the rules it ran under. Everything else is one tap away, in
-// sections: work, money, social life, evolution (what residents rewrote each night), the
-// evaluation of their exports, and model usage.
+// sections: work, money, the body, social life, evolution (what residents rewrote each night),
+// the evaluation of their exports, and model usage.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
 import { duration, parseHHMM } from "../clock.js";
@@ -15,13 +15,14 @@ import { groupPill, progress, progressTable, reached } from "./landing.js";
 const SECTIONS = [
   ["work", "Work"],
   ["money", "Money"],
+  ["body", "Body"],
   ["social", "Social life"],
   ["evolution", "Evolution"],
   ["evaluation", "Evaluation"],
   ["usage", "Model usage"],
 ];
 /** Sections whose charts draw one mark per resident, so the emphasis legend applies. */
-const BY_RESIDENT = new Set(["work", "money", "social", "usage", "evaluation"]);
+const BY_RESIDENT = new Set(["work", "money", "body", "social", "usage", "evaluation"]);
 const AREAS = { memory: ["memory", /^memory\/(?!journal\/)/], skills: ["skills", /^skills\//], journal: ["journal", /^memory\/journal\//], background: ["background", /^background\.md$/] };
 
 export const stat = (label, value, sub = null, cls = "") => h("div", { class: `stat ${cls}` }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), sub ? h("div", { class: "stat-sub" }, sub) : null);
@@ -178,6 +179,7 @@ export function mountOverview(root, ctx) {
       stat("Median purse", last ? fmt.money(last.purse.median) : "–", last ? `${fmt.money(last.purse.min)} to ${fmt.money(last.purse.max)}` : null),
       stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} skills passed on`),
       stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps · ${fmt.int(total("ratings"))} ratings given`),
+      total("deaths") ? stat("Deaths", fmt.int(total("deaths")), "health run out at midnight", "critical") : null,
     );
   }
 
@@ -327,6 +329,27 @@ export function mountOverview(root, ctx) {
             legend: swatchLegend([["paid for tasks", "var(--o2)"], ["handed over", "var(--o4)"]]),
           }),
           dayFigure({ title: "In debt", note: "Residents whose purse was below zero at midnight.", lines: [{ key: "debt", label: "residents in debt", color: "var(--critical)", points: dailyPoints(daily, "in_debt", "total") }], max: cast.names.length }),
+        ),
+      ];
+    },
+    body() {
+      const { daily, rows } = measures;
+      return [
+        h("p", { class: "note section-note" }, `Each resident's body has three needs from 0 to 100, read in bands of plain words: satiety, which food restores; energy, spent awake, at work and on the road and restored by sleep up to its health; and health, worn at midnight by a day ended starving or exhausted and by a home of little comfort, mended by days of rest and by the clinic, and fatal at 0. ${fmt.plural(sum(rows, "hungry"), "resident-day")} with nothing eaten, ${fmt.int(sum(rows, "starving"))} starving at midnight, ${fmt.int(sum(rows, "died"))} deaths over the closed days.`),
+        h(
+          "div",
+          { class: "figures" },
+          agentFigure({ title: "Health", note: "Each resident's health at midnight, after the night's reckoning, 0 to 100.", points: residentPoints("health"), min: 0, max: 100 }),
+          dayFigure({
+            title: "Hunger",
+            note: "Residents that ate nothing in the day, and those starving at midnight, whose health it wore.",
+            lines: [
+              { key: "hungry", label: "nothing eaten", color: "var(--o4)", points: dailyPoints(daily, "hungry", "total") },
+              { key: "starving", label: "starving at midnight", color: "var(--critical)", points: dailyPoints(daily, "starving", "total") },
+            ],
+            legend: swatchLegend([["nothing eaten", "var(--o4)", "line"], ["starving at midnight", "var(--critical)", "line"]]),
+            max: cast.names.length,
+          }),
         ),
       ];
     },

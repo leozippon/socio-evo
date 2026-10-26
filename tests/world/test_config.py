@@ -26,9 +26,11 @@ def test_a_town_validates():
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
     assert config.good("groceries").days == 3 and config.place("college-flat").comfort == 1.0
-    assert [g.id for g in config.for_sale()] == ["groceries", "meal", "bicycle", "coat"]  # alone
-    everything = ["groceries", "meal", "bicycle", "phone", "coat"]
+    alone = ["groceries", "meal", "bicycle", "coat", "examination", "treatment"]
+    assert [g.id for g in config.for_sale()] == alone  # nothing to write with
+    everything = ["groceries", "meal", "bicycle", "phone", "coat", "examination", "treatment"]
     assert [g.id for g in town_config().for_sale()] == everything
+    assert config.needs.satiety.lowest.name == "starving"
     data = config.model_dump(mode="json")
     data["social"]["exchange"]["at"] = "01:00"  # after midnight, before the forced sleep
     assert type(config).model_validate(data).social.exchange.at == "01:00"
@@ -98,7 +100,7 @@ def test_a_town_validates():
         (lambda d: d["goods"][0].update(sold_at=[]), {}, "at least 1 item"),
         (lambda d: d.update(goods=[d["goods"][2]]), {}, "sells nothing to eat"),
         (lambda d: d["goods"][0].pop("uses"), {}, "needs uses and per_day"),
-        (lambda d: d["goods"][0].update(per_day=4), {}, "uses more a day than one purchase holds"),
+        (lambda d: d["goods"][0].update(per_day=10), {}, "uses more a day than one purchase holds"),
         (lambda d: d["goods"][1].update(uses=2), {}, "is not consumable and has no uses"),
         (lambda d: d["goods"][1].update(fee_per_day=1), {}, "is not durable and carries no fee"),
         (lambda d: d["goods"][2].update(effect="food"), {}, "is food and so is consumable"),
@@ -107,6 +109,34 @@ def test_a_town_validates():
         (lambda d: d["goods"][2].update(phrase="x"), {}, "phrase belongs to the effect appearance"),
         (lambda d: d["goods"][4].update(phrase=" "), {}, "has an empty phrase"),
         (lambda d: d["goods"][4].update(phrase="in an honest coat"), {}, "the town does not use"),
+        (lambda d: d["goods"][5].update(kind="durable"), {}, "which only an immediate has"),
+        (
+            lambda d: d["goods"][5].update(restores=5),
+            {},
+            "restores belongs to the effect treatment",
+        ),
+        (lambda d: d["goods"][6].pop("restores"), {}, "restores belongs to the effect treatment"),
+        (lambda d: d.pop("needs"), {}, "needs\n  Field required"),
+        (lambda d: d["needs"]["satiety"].update(per_hour=0), {}, "greater than 0"),
+        (lambda d: d["needs"]["energy"].pop("sleep_per_hour"), {}, "Field required"),
+        (lambda d: d["needs"]["health"].update(starving=-1), {}, "greater than or equal to 0"),
+        (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=70), {}, "from the top down"),
+        (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=65), {}, "from the top down"),
+        (
+            lambda d: d["needs"]["satiety"]["bands"][3].update(floor=1),
+            {},
+            "lowest band begins at 0",
+        ),
+        (lambda d: d["needs"]["satiety"]["bands"].pop(), {}, "lowest band begins at 0"),
+        (lambda d: d["needs"]["satiety"].update(bands=[]), {}, "at least 2 items"),
+        (lambda d: d["needs"]["satiety"]["bands"][0].update(name="hungry"), {}, "different names"),
+        (
+            lambda d: d["needs"]["energy"]["bands"][0].update(name="lazy"),
+            {},
+            "the town does not use",
+        ),
+        (lambda d: d["needs"]["health"]["bands"][2].update(seen=" "), {}, "blank wording"),
+        (lambda d: d["needs"]["health"]["bands"][0].update(floor=100), {}, "less than 100"),
         (lambda d: d.update(colour="red"), {}, "Extra inputs are not permitted"),
     ],
 )

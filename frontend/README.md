@@ -43,10 +43,10 @@ The viewer is plain HTML, CSS and JavaScript modules: no build step, no framewor
 | --- | --- |
 | `#/` | Every run: status, group, the day reached, headline numbers, and its progress table, one row per lived day. Runs of one directory stand together, each set leading to the comparison of its groups. Runs the publisher could not read are listed with the reason. |
 | `#/compare/<set>` | The groups of a set of runs compared, resident by resident, on the declared outcomes (capability, journal distortion, honesty under pressure) and on the town's measures as exploration, with the daily means of the groups side by side. |
-| `#/run/<run>` | The run's dashboard: key figures, the day-by-day table and the town's rules first, then one section at a time (`section=`): work, money, social life (with who spoke to, rated, paid and taught whom), evolution (what each resident's files changed each night), the evaluation measures over days, and model usage. |
+| `#/run/<run>` | The run's dashboard: key figures, the day-by-day table and the town's rules first, then one section at a time (`section=`): work, money, the body (each resident's health at midnight, and who ate nothing or was starving), social life (with who spoke to, rated, paid and taught whom), evolution (what each resident's files changed each night), the evaluation measures over days, and model usage. |
 | `…/town?t=<day>-<HH:MM>` | The town at a moment; `agent=` selects someone, `as=1` reads the town as the selected resident was told it, `only=1` keeps the feed to the selected resident, `panel=` opens a panel and `speed=` sets how fast it plays. |
-| `…/timeline?t=…&agent=…&from=&to=` | Every resident's events side by side over the run, one lane each: what it did as marks in three rows (tasks, money, social life and rest), those within a few pixels folded into a count that opens on hover; its conversations as a band naming the partners; what it was doing as a band (idle, movement, work with the task held, sleep) with the place as a strip under it; and its purse. Hovering a conversation outlines it on the partners' lanes too, hovering something said shows who heard it, and the strip over the axis moves across a long run; `from` and `to` are the visible window in simulated seconds. The legend folds on a phone, where the lanes keep only the name and the purse in their label. |
-| `…/people/<agent>?t=…&tab=…&day=…&v=…` | One resident as of a moment: how it fared and its relationships, its day as the world told it (`day=` picks a lived day), every journal entry, the ratings it gave and received, its files at every version with diffs (`v=` opens one), and the raw trace of its runtime for a day, each record folded to a line of its time, kind and gist that opens on a tap, with the kinds of record as toggles. |
+| `…/timeline?t=…&agent=…&from=&to=` | Every resident's events side by side over the run, one lane each: what it did as marks in three rows (tasks, money, social life, rest and how its body felt), those within a few pixels folded into a count that opens on hover; its conversations as a band naming the partners; what it was doing as a band (idle, movement, work with the task held, sleep, and dead to the end once its health ran out) with the place as a strip under it; and its purse. Hovering a conversation outlines it on the partners' lanes too, hovering something said shows who heard it, and the strip over the axis moves across a long run; `from` and `to` are the visible window in simulated seconds. The legend folds on a phone, where the lanes keep only the name and the purse in their label. |
+| `…/people/<agent>?t=…&tab=…&day=…&v=…` | One resident as of a moment: how it fared (how it feels, as its body last said it) and its relationships, its day as the world told it (`day=` picks a lived day), every journal entry, the ratings it gave and received, its files at every version with diffs (`v=` opens one), and the raw trace of its runtime for a day, each record folded to a line of its time, kind and gist that opens on a tap, with the kinds of record as toggles. |
 | `…/evaluation` | The evaluation of the run's residents: capability, honesty under pressure and journal distortion per resident and evaluated day, and the results that could not be read. |
 
 The town is drawn from the run's timeline (the server's reading of the world log) and the entries of one lived day at a time, fetched as they are needed. Time is the main control: space plays or pauses, the arrow keys step from moment to moment and with Shift from day to day, Home and End go to the start and to the newest moment, and Escape clears the selection. Quiet stretches pass quickly. Residents keep their badge as their head, walk the streets between places during their movements (where they stand on the road is where the timeline puts them at that moment), stand in a ring when they talk and sleep at home. With a resident selected, the town can be read as that resident read it (`as=1`): every entry it was told reads in the wording the world gave it, with itself as "you". The feed folds a spell of commands and file reads and writes in a workspace into one line.
@@ -117,7 +117,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `format` | integer | The bundle format, currently 4. |
+| `format` | integer | The bundle format, currently 6. |
 | `files` | array | Every kind of file in the bundle. |
 | `files[].kind` | string | The kind, named as in this section's headings. |
 | `files[].path` | string | Its path pattern; `{day}` is a two-digit day number. |
@@ -158,6 +158,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.ratings` | integer | Ratings given. |
 | `runs[].headline.journals` | integer | Bedtimes with a journal entry. |
 | `runs[].headline.forced_sleeps` | integer | Residents put to sleep at the forced hour. |
+| `runs[].headline.deaths` | integer | Residents whose health ran out. |
 | `runs[].headline.purse` | object | The residents' purses at the end of the last day, or now: `min`, `median` and `max`. |
 | `skipped` | array | Runs found under the runs root but left out, by name. |
 | `skipped[].name` | string | The run's path under the runs root. |
@@ -236,7 +237,8 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `residents[].purse` | integer | The money it started with. |
 | `residents[].rules` | string | The standing rules of the town as this resident was told them, which also seeded its `memory/town.md`. |
 | `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day, and `claim_expiry_days`. |
-| `goods` | array | The catalogue of goods for sale as configured, each with `id`, `name`, `price`, `sold_at` (place ids), `kind` (`consumable`, `immediate` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`) and the fields of its kind and effect (`uses`, `per_day`, `fee_per_day`, `nourishment`, `factor`, `phrase`), null where they do not apply. |
+| `goods` | array | The catalogue of goods for sale as configured, each with `id`, `name`, `price`, `sold_at` (place ids), `kind` (`consumable`, `immediate` or `durable`), `effect` (`food`, `travel`, `messaging`, `appearance`, `examination` or `treatment`) and the fields of its kind and effect (`uses`, `per_day`, `fee_per_day`, `nourishment`, `factor`, `phrase`, `restores`), null where they do not apply. |
+| `needs` | object | The residents' bodies as configured: `satiety`, `energy` and `health`, each with its rates and its `bands` from the top down, each band with `floor`, `name` (what follows "you are") and `seen` (what others see, or null). |
 | `social` | object | The social rules as configured: `mode` (`isolated`, each resident in a town of its own, or `town`), `exchange` (group B's evening pairing, or null), `skills_shareable`, `ratings` (whether the bedtime ratings are on) and `silence_minutes`. |
 | `skills_writable` | boolean | Whether residents may write their skills. |
 | `day` | object | The fixed hours of a day as configured, each `HH:MM`, such as `forced_sleep`, `checkpoint` and `forced_wake`. |
@@ -284,10 +286,10 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `residents[].name` | string | The resident. |
 | `residents[].home` | string | The id of its home. |
 | `residents[].segments` | array | Its base events, contiguous from `start` to `now`. |
-| `residents[].segments[].kind` | string | `idle`, `movement`, `work` or `sleep` (in bed and asleep alike). |
+| `residents[].segments[].kind` | string | `idle`, `movement`, `work`, `sleep` (in bed and asleep alike) or `dead`, from the midnight its health ran out to the end. |
 | `residents[].segments[].start` | integer | When it began. |
 | `residents[].segments[].end` | integer | When it ended, or `now`. |
-| `residents[].segments[].place` | string | The place id; for a movement, the destination. |
+| `residents[].segments[].place` | string or null | The place id; for a movement, the destination; null for the dead. |
 | `residents[].segments[].task` | integer or null | For work, the task held, a new segment when that changes; null otherwise. |
 | `residents[].conversations` | array | The conversations layered over the base events they interrupted. |
 | `residents[].conversations[].start` | integer | When it began. |
@@ -314,6 +316,8 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `rating` | `rated`, `score`, `reason` |
 | `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime |
 | `forced_sleep` | `wake` |
+| `condition` | `need`, `band`, `lowest`: a need of the body crossed into another band, named as the resident reads it; `lowest` where that band is the need's lowest |
+| `death` | the resident's health ran out at midnight; its claim, if any, is dropped and its lane is dead from here |
 
 ### `runs/{run}/progress.json`
 
@@ -345,6 +349,7 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 | `daily[].ratings` | integer | Ratings given. |
 | `daily[].journals` | integer | Bedtimes with a journal entry. |
 | `daily[].forced_sleeps` | integer | Residents put to sleep at the forced hour. |
+| `daily[].deaths` | integer | Residents whose health ran out at that day's midnight. |
 | `daily[].purse` | object | The residents' purses at the end of the day, or now for the day in progress: `min`, `median` and `max`. |
 
 ### `runs/{run}/measures.json`

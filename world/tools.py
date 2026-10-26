@@ -25,7 +25,7 @@ from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
 from world.clock import DAY, calendar_day, clock_time, parse_hour
-from world.config import TownConfig
+from world.config import IMMEDIATE_EFFECTS, TownConfig
 from world.events import Work
 from world.rules import TOPICS, bare, longest_sleep
 from world.telling import cap, counted, listed, you
@@ -85,6 +85,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("help", f"Read how the town works, on one point: {listed(list(TOPICS))}.",
              topic={"type": "string", "enum": list(TOPICS)}),
         spec("look_around", "See where you are, who is here and what each of them is doing."),
+        spec("how_am_i", "Take stock of how you feel: how hungry, how tired and how well you are."),
         spec("go", "Walk to another place in town. You arrive after the walk; on the way you "
              "can do nothing and nobody can speak to you.", ("place",),
              place={"type": "string", "enum": [place.id for place in config.places],
@@ -122,8 +123,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              to={"type": "array", "items": {"type": "string"},
                  "description": "the names of the people you speak to"}),
         spec("buy", "Buy something where you are and pay for it in cash at once. Something "
-             "eaten on the spot is eaten as you buy it; a stock is kept and used up a day's "
-             f"worth each midnight; a thing you keep is yours from then on. For sale {counters}.",
+             "eaten on the spot is eaten as you buy it; a stock is kept, and you eat from it "
+             "whenever you could eat, a day's worth a day; a thing you keep is yours from then "
+             f"on. For sale {counters}.",
              ("item",),
              item={"type": "string", "enum": [g.id for g in for_sale],
                    "description": "the good's short name, as given in brackets"},
@@ -272,6 +274,11 @@ async def _look_around(world: World, r: Resident, args: dict[str, Any]) -> ToolR
     return ToolResult(world.look(r))
 
 
+async def _how_am_i(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    world.reckon(r)
+    return ToolResult(world.body.condition(r.living))
+
+
 async def _go(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     place = world.config.place(args["place"])
     if place.id == r.place:
@@ -321,8 +328,9 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     workplace = world.config.workplace
     if r.place != workplace.id:
         return ToolResult(f"You are not at {workplace.name}.")
-    if r.living.hungry and not isinstance(r.base, Work):
-        return ToolResult("You are too hungry to concentrate on work until you have eaten.")
+    world.reckon(r)
+    if world.body.lowest("energy", r.living.energy) and not isinstance(r.base, Work):
+        return ToolResult("You are too tired to sit down to work; sleep first.")
     told = ""
     if r.conversation is not None:
         world.leave_conversation(r)
@@ -627,6 +635,10 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             return ToolResult(f"You already have {good.name}.")
         if quantity != 1:
             return ToolResult(f"One {bare(good.name)} is all you can have.")
+    elif good.effect in IMMEDIATE_EFFECTS and quantity != 1:
+        return ToolResult(f"One {bare(good.name)} at a time.")
+    if good.effect == "treatment" and r.living.health >= 100:
+        return ToolResult("The doctor finds nothing to treat.")
     total = good.price * quantity
     refusal = world.economy.cannot_pay(r.name, total)
     if refusal:
@@ -634,16 +646,33 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     bought = f"{quantity} × {good.name}" if quantity > 1 else good.name
     economy = world.economy
     economy.buy(r.name, total, bought)
+    world.reckon(r)
+    before = world.body.bands(r.living)
+    findings = ""
     if good.kind == "durable":
         r.living.things[good.id] = 1
+        tail = world.things_told(r)
     elif good.kind == "consumable":
         assert good.uses is not None
         r.living.things[good.id] = r.living.things.get(good.id, 0) + good.uses * quantity
+        world.feed(r)
+        tail = world.things_told(r)
     elif good.effect == "food":
         world.eat(r, good, quantity)
+        tail = world.body.told("satiety", r.living.satiety)
+    elif good.effect == "treatment":
+        assert good.restores is not None
+        world.body.treat(r.living, good.restores)
+        tail = world.body.told("health", r.living.health)
+    else:
+        tail = findings = world.body.examination(r.living)
+    world.note_bands(r, before, tell=False)
     world.record(
         "purchase",
-        lambda w: f"{cap(you(r.name, w))} bought {bought} for {economy.money(total)}.",
+        lambda w: (
+            f"{cap(you(r.name, w))} bought {bought} for {economy.money(total)}."
+            + (f" {findings}" if findings and w == r.name else "")
+        ),
         actor=r,
         payload={
             "item": good.id,
@@ -653,11 +682,6 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             "quantity": quantity,
             "amount": total,
         },
-    )
-    tail = (
-        "You have eaten today."
-        if good.kind == "immediate" and good.effect == "food"
-        else world.things_told(r)
     )
     return ToolResult(
         f"You bought {bought} for {economy.money(total)}. {tail} {economy.purse(r.name)}"
@@ -688,6 +712,8 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
         return ToolResult(f"There is nobody called {name} in the town.")
     if other is r:
         return ToolResult("You cannot write to yourself.")
+    if not other.alive:
+        return ToolResult(f"{name} is dead.")
     if not any(other.living.things.get(good.id) for good in writing):
         return ToolResult(f"{name} has no {names}.")
     if not text:
@@ -783,6 +809,7 @@ async def _rate(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 HANDLERS: dict[str, Handler] = {
     "help": _help,
     "look_around": _look_around,
+    "how_am_i": _how_am_i,
     "go": _go,
     "wait": _wait,
     "sleep": _sleep,
