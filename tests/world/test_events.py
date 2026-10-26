@@ -475,7 +475,7 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     assert mei.suspended
     assert town.take("Mei")[-2:] == [
         "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
-        "Street $20. You had nothing to eat today. You are starving. You are fresh. You are in "
+        "Street $20. You had nothing to eat today. You are hungry. You are fresh. You are in "
         "good health. Your purse holds $100.",
         "It is 02:00: you fell asleep.",
     ]
@@ -504,7 +504,6 @@ async def test_the_workplace_never_closes_and_a_route_shortens_the_walk(make_tow
     assert town.take("Mei") == [  # a long stretch of work: only the body speaks, by the hour
         "You are a little hungry.",
         "You are a little tired.",
-        "You are hungry.",
     ]
     await town.call("Mei", "leave_work")
     assert (await town.call("Mei", "look_around")).text == (

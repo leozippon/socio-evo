@@ -195,13 +195,16 @@ class Satiety(Need):
 
 class Energy(Need):
     """Falls `awake_per_hour` awake, `work_per_hour` more at work, `walk_per_minute` more on the
-    road; rises `sleep_per_hour` times the home's comfort asleep, never above the resident's
-    health. In its lowest band the workplace refuses to let the resident sit down to work."""
+    road; rises `sleep_per_hour` times the home's comfort asleep, up to the resident's health or
+    to `rested_at_least`, whichever is higher, so that an ill resident still wakes with some of
+    a day's energy. In its lowest band the workplace refuses to let the resident sit down to
+    work."""
 
     awake_per_hour: float = Field(ge=0)
     work_per_hour: float = Field(ge=0)
     walk_per_minute: float = Field(ge=0)
     sleep_per_hour: float = Field(gt=0)
+    rested_at_least: float = Field(ge=0, le=100)
 
 
 class Health(Need):

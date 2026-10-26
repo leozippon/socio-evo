@@ -71,7 +71,7 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     assert (await town.call("Mei", "buy", item="meal")).text == (
         "You bought a meal at the café for $10. You are well fed. Your purse holds $110."
     )
-    assert world.nourishment(mei) == 65 and mei.living.eaten == {"meal": 1}
+    assert world.nourishment(mei) == 100 and mei.living.eaten == {"meal": 1}
     assert (await town.call("Tomas", "buy", item="groceries")).text == (
         "You bought groceries for $12. You have groceries (3 days' worth). Your purse holds $168."
     )
@@ -83,7 +83,7 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     assert statements["Mei"] == (
         "Your statement for Monday 1 January: bought a meal at the café for $10; rent for your "
         "room at the shared house on Mill Street $20. You ate today: a meal at the café. You are "
-        "hungry. You are fresh. You are in good health. Your purse holds $90."
+        "a little hungry. You are fresh. You are in good health. Your purse holds $90."
     )
     assert statements["Tomas"] == (  # helpings of the stock, eaten as he could eat
         "Your statement for Monday 1 January: bought groceries for $12; rent for your room at "
@@ -92,16 +92,17 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     )
     assert statements["Aisha"] == (
         "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
-        "Street $20. You had nothing to eat today. You are starving. You are fresh. You are in "
+        "Street $20. You had nothing to eat today. You are hungry. You are fresh. You are in "
         "good health. Your purse holds $10."
     )
     # The day's record starts afresh; the stock went down by the two helpings Tomas ate when
-    # he could eat, at 11:00 and 19:00.
+    # he could eat, at 12:00 and 21:00. Aisha, full when the town began, is hungry but not yet
+    # starving at the first midnight.
     assert world.nourishment(mei) == 0 and tomas.living.things == {"groceries": 7}
     settled = [e for e in world.log.entries() if e["kind"] == "settlement"]
-    assert [e["payload"]["nourishment"] for e in settled] == [65, 68, 0]
+    assert [e["payload"]["nourishment"] for e in settled] == [100, 68, 0]
     assert [e["payload"]["purse"] for e in settled] == [90, 138, 10]
-    assert settled[2]["payload"]["night"] == {"starving": -15, "poor_home": -2}
+    assert settled[2]["payload"]["night"] == {"poor_home": -2, "recovery": 5}
 
     # The stock is drawn on as its owner gets hungry, at most a day's worth a day, and the
     # statement tells when it is nearly gone and when it is gone.
@@ -131,7 +132,7 @@ async def test_a_durable_is_kept_and_its_charge_is_billed_each_midnight_while_ow
     assert town.take("Mei")[-1] == (
         "Your statement for Monday 1 January: bought a phone for $40; rent for your room at the "
         "shared house on Mill Street $20; the daily charge on a phone $2. You had nothing to eat "
-        "today. You are starving. You are fresh. You are in good health. Your purse holds $58."
+        "today. You are hungry. You are fresh. You are in good health. Your purse holds $58."
     )
     settled = [e for e in town.world.log.entries() if e["kind"] == "settlement"]
     assert {k: settled[0]["payload"][k] for k in ("rent", "fees", "nourishment", "purse")} == {

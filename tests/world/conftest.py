@@ -30,7 +30,7 @@ GOODS = (
     {"id": "groceries", "name": "groceries", "price": 12, "sold_at": ["store"],
      "kind": "consumable", "uses": 9, "per_day": 3, "effect": "food", "nourishment": 34},
     {"id": "meal", "name": "a meal at the café", "price": 10, "sold_at": ["cafe"],
-     "kind": "immediate", "effect": "food", "nourishment": 65},
+     "kind": "immediate", "effect": "food", "nourishment": 100},
     {"id": "bicycle", "name": "a bicycle", "price": 50, "sold_at": ["store"],
      "kind": "durable", "effect": "travel", "factor": 0.5},
     {"id": "phone", "name": "a phone", "price": 40, "sold_at": ["store"],
@@ -46,7 +46,7 @@ GOODS = (
 
 NEEDS = {
     "satiety": {
-        "per_hour": 4.2,
+        "per_hour": 3.75,
         "bands": [
             {"floor": 65, "name": "well fed"},
             {"floor": 35, "name": "a little hungry"},
@@ -55,10 +55,11 @@ NEEDS = {
         ],
     },
     "energy": {
-        "awake_per_hour": 2,
-        "work_per_hour": 4,
+        "awake_per_hour": 1.5,
+        "work_per_hour": 3,
         "walk_per_minute": 0.1,
         "sleep_per_hour": 12,
+        "rested_at_least": 50,
         "bands": [
             {"floor": 65, "name": "fresh"},
             {"floor": 35, "name": "a little tired"},

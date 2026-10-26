@@ -39,9 +39,12 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert rows["Aisha", 2]["in_debt"] == 1
     assert (mei["spent_rent"], tomas["spent_rent"], aisha["spent_rent"]) == (20, 30, 20)
     assert (mei["spent_fees"], mei["spent_food"], mei["spent_goods"], mei["hungry"]) == (0, 0, 0, 1)
-    # Nobody ate: starving at midnight wore 15 of everyone's health, and 2 more on Mill Street.
-    assert (mei["starving"], mei["health"], mei["died"]) == (1, 83, 0)
-    assert (tomas["health"], aisha["health"], rows["Mei", 2]["health"]) == (85, 83, 66)
+    # Nobody ate: full when the town began, everyone is hungry at the first midnight and
+    # starving at the second, which wore 15 of their health, and 2 more on Mill Street.
+    assert (mei["starving"], mei["health"], mei["died"]) == (0, 100, 0)
+    assert (tomas["health"], aisha["health"]) == (100, 100)
+    assert [rows[name, 2]["health"] for name in ("Mei", "Tomas", "Aisha")] == [83, 85, 83]
+    assert rows["Mei", 2]["starving"] == 1
     assert (mei["messages_sent"], mei["messages_received"]) == (0, 0)
     # Mei worked from 09:00 to 09:20, Tomas from 09:00 until he left at 18:00.
     assert mei["work_hours"] == pytest.approx(1 / 3) and tomas["work_hours"] == 9.0
@@ -81,10 +84,9 @@ def test_daily_totals_and_means(rows):
     }  # fmt: skip
     assert found[1, "in_debt"]["total"] == 0 and found[2, "in_debt"]["total"] == 1
     assert found[2, "forced_sleep"]["total"] == 2 and found[1, "hungry"]["total"] == 3
-    assert found[1, "starving"]["total"] == 3 and found[1, "died"]["total"] == 0
-    assert found[1, "health"]["total"] is None and found[1, "health"]["mean"] == pytest.approx(
-        (83 + 85 + 83) / 3
-    )
+    assert found[2, "starving"]["total"] == 3 and found[1, "starving"]["total"] == 0
+    assert found[2, "died"]["total"] == 0 and found[1, "health"]["total"] is None
+    assert found[2, "health"]["mean"] == pytest.approx((83 + 85 + 83) / 3)
     assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 280 / 3
     assert found[1, "rating_received_mean"]["mean"] == 4.5
     assert found[1, "rating_received_mean"]["residents"] == 2

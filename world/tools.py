@@ -26,7 +26,7 @@ from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
 from world.clock import DAY, calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
-from world.events import Work
+from world.events import ENDED, Work
 from world.rules import TOPICS, bare, longest_sleep
 from world.telling import cap, counted, listed, you
 
@@ -502,6 +502,8 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
             "pass_to_pass": list(verdict.pass_to_pass),
         },
     )
+    if not r.alive:  # died at midnight while the checks ran: the verdict stands, nobody is paid
+        return ToolResult(ENDED, ends_turn=True)
     if not verdict.resolved:
         again = (
             f"You can hand in task {number} {counted(left, 'more time')} today."

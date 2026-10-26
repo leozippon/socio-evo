@@ -4,8 +4,9 @@ Each need is a number from 0 to 100 on the resident's `Living`, read in the band
 the configuration (`Needs`) gives it, from the top band down to the lowest, where the
 consequences lie. Satiety falls by the hour, asleep or awake, and rises by the nourishment of
 what is eaten. Energy falls by the hour awake, faster at work and on the road, and rises by the
-hour asleep in proportion to the home's comfort, never above the resident's health, so that
-health sets the day's energy. Health is the slow integral, reckoned once at midnight from the
+hour asleep in proportion to the home's comfort, up to the resident's health (or to a configured
+least, so that illness limits the day without trapping it), so that health sets the day's energy.
+Health is the slow integral, reckoned once at midnight from the
 day: it falls for a midnight found starving (satiety in its lowest band), for one found
 exhausted (energy in its lowest band) and for a home of comfort below 1, and rises when neither
 starving nor exhausted; treatment restores it; at 0 the resident dies. The world drives the
@@ -85,13 +86,15 @@ class Body:
 
     def elapse(self, living: Living, seconds: int, activity: Activity, comfort: float) -> None:
         """`seconds` pass in `activity`, in a home of `comfort`: satiety falls, energy falls or,
-        asleep, rises towards the resident's health."""
+        asleep, rises towards the resident's health, or towards the configured least if that is
+        higher."""
         hours = seconds / 3600
         living.satiety = clamp(living.satiety - self.needs.satiety.per_hour * hours)
         energy = self.needs.energy
         if activity == "sleep":
             gained = living.energy + energy.sleep_per_hour * comfort * hours
-            living.energy = clamp(max(living.energy, min(gained, living.health)))
+            rested = max(living.health, energy.rested_at_least)
+            living.energy = clamp(max(living.energy, min(gained, rested)))
             return
         rate = energy.awake_per_hour
         if activity == "work":

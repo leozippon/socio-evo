@@ -52,16 +52,16 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
         "07:00 You woke up at home. It is Monday 1 January, 07:00. You are well fed. You are "
         "fresh. You are in good health."
     ) in lines
-    assert "11:00 You are a little hungry." in lines and "18:00 You are hungry." in lines
+    assert "12:00 You are a little hungry." in lines and "20:00 You are hungry." in lines
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
     assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
     assert lines[-2:] == [
-        "00:00 You are starving.",
+        "20:00 You fell asleep.",
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
         "rent for your room at the shared house on Mill Street $20. You had nothing to eat today. "
-        "You are starving. You are fresh. You are in good health. Your purse holds $125. Before "
+        "You are hungry. You are fresh. You are in good health. Your purse holds $125. Before "
         "the midnight charges it held $145.",
     ]
 
@@ -117,6 +117,7 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
     first, second = day_record(run_dir, "Mei", 1), day_record(run_dir, "Mei", 2)
     assert "Tuesday" not in first and "Monday" not in second
     assert heads(second) == [
+        "03:00 You are starving.",  # logged in her sleep, told at waking
         "07:00 You woke up at home. It is Tuesday 2 January, 07:00. You are starving. You are "
         "fresh. You are in good health.",
         "07:00 You called wait(minutes=600): You wait for up to 600 minutes.",

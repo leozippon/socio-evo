@@ -510,6 +510,7 @@ class World:
                 self.board.orphans.append(workspace)
         r.base, r.place = Dead(), None
         r.port.held = []
+        r.port.pending()  # nothing told before is read now
         others = [
             other
             for other in self.residents.values()

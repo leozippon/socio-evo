@@ -23,19 +23,21 @@ def test_the_arithmetic_of_the_needs():
     body = Body(town_config().needs)
     living = Living()
     body.elapse(living, 10 * 3600, "awake", 1.0)
-    assert (living.satiety, living.energy) == (58, 80)  # 4.2 and 2 an hour
+    assert (living.satiety, living.energy) == (62.5, 85)  # 3.75 and 1.5 an hour
     body.elapse(living, 3600, "work", 1.0)
-    assert living.energy == pytest.approx(74)  # 2 + 4 an hour at work
+    assert living.energy == pytest.approx(80.5)  # 1.5 + 3 an hour at work
     body.elapse(living, 1800, "walk", 1.0)
-    assert living.energy == pytest.approx(70)  # 2 an hour and 0.1 a minute on the road
+    assert living.energy == pytest.approx(76.75)  # 1.5 an hour and 0.1 a minute on the road
     body.eat(living, 65)
     assert living.satiety == 100  # capped
     body.elapse(living, 5 * 3600, "sleep", 0.9)
     assert living.energy == pytest.approx(100)  # 12 an hour times the comfort, capped
-    assert living.satiety == pytest.approx(79)  # satiety falls asleep too
+    assert living.satiety == pytest.approx(81.25)  # satiety falls asleep too
     living.health, living.energy = 40, 30
     body.elapse(living, 3600, "sleep", 1.0)
-    assert living.energy == 40  # sleep restores energy up to health, never above
+    assert living.energy == 42  # sleep restores energy up to health, or up to 50
+    body.elapse(living, 3600, "sleep", 1.0)
+    assert living.energy == 50  # and no further, however long
     living.energy = 60
     body.elapse(living, 3600, "sleep", 1.0)
     assert living.energy == 60  # and never takes it away
@@ -85,12 +87,61 @@ def test_health_moves_at_midnight_by_the_days_wear_and_recovery():
     assert "Last night" not in body.examination(Living())
 
 
+def _live_day(body: Body, living: Living, comfort: float, hours: list[tuple[str, float]]) -> None:
+    """A day from one midnight to the next as a list of (activity, hours), "eat" meaning a
+    day's food, then the night's reckoning."""
+    for activity, span in hours:
+        if activity == "eat":
+            body.eat(living, 100)
+        else:
+            body.elapse(living, round(span * 3600), activity, comfort)  # type: ignore[arg-type]
+    body.night(living, comfort)
+
+
+WORK_DAY = [("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), ("awake", 3)]
+"""Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and up until midnight."""
+
+
+def test_the_calibration_keeps_a_working_life_in_good_health_and_traps_nobody():
+    body = Body(town_config().needs)
+    # Twelve-hour days in a shared house, a meal a day, bed at midnight, for four weeks.
+    living = Living()
+    for _ in range(28):
+        _live_day(body, living, 0.9, WORK_DAY)
+        assert living.health >= 65 and not body.lowest("energy", living.energy)
+    assert living.health == 100 and body.band("energy", living.energy).name == "a little tired"
+    # Ill, a resident that eats and rests recovers: it wakes with half a day's energy.
+    living = Living(health=10)
+    for day in range(1, 5):
+        _live_day(body, living, 1.0, [("sleep", 7), ("eat", 0), ("awake", 17)])
+        assert living.health == 10 + 5 * day and living.night == {"recovery": 5}
+    # One that never eats, full at its last meal, is starving from the second midnight and dies
+    # in about a week: at the eighth midnight in a flat, the seventh in a shared house.
+    for comfort, nights in ((1.0, 8), (0.9, 7)):
+        living = Living()
+        for night in range(1, nights + 1):
+            _live_day(body, living, comfort, [("sleep", 7), ("awake", 17)])
+            assert living.alive == (night < nights), (comfort, night)
+    # Twelve-hour days up to the forced sleep, on five-hour nights: tired, not exhausted, at
+    # first; the third such day ends exhausted, once, and a full night after it mends it.
+    short = [("sleep", 5), ("awake", 2), ("eat", 0), ("work", 12), ("awake", 5)]
+    living = Living()
+    bands = []
+    for _ in range(3):
+        _live_day(body, living, 0.9, short)
+        bands.append(body.band("energy", living.energy).name)
+    assert bands == ["a little tired", "tired", "exhausted"]
+    assert living.health == 93 and living.night == {"exhausted": -5, "poor_home": -2}
+    _live_day(body, living, 0.9, WORK_DAY)
+    assert body.band("energy", living.energy).name == "tired" and living.health == 96
+
+
 async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking(make_town):
     town = make_town()
     await awake_at(town)
     world = town.world
     mei = world.residents["Mei"]
-    assert mei.living.satiety == pytest.approx(100 - 4.5 * 4.2)  # since 02:30, asleep
+    assert mei.living.satiety == pytest.approx(100 - 4.5 * 3.75)  # since 02:30, asleep
     assert (await town.call("Mei", "how_am_i")).text == (
         "You are well fed. You are fresh. You are in good health."
     )
@@ -100,25 +151,27 @@ async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking
     town.take("Mei")
     await town.until("23:00")
     assert town.take("Mei") == [
-        "You are a little hungry.",  # 11:00
-        "You are a little tired.",  # 15:00
-        "You are hungry.",  # 18:00
-        "You are tired.",  # 20:00
-        "You are exhausted.",  # 23:00, after fourteen hours at work
+        "You are a little hungry.",  # 12:00
+        "You are a little tired.",  # 16:00
+        "You are hungry.",  # 20:00
+        "You are tired.",  # 23:00, after fourteen hours at work
     ]
     assert (await town.call("Mei", "how_am_i")).text == (
-        "You are hungry. You are exhausted. You are in good health."
+        "You are hungry. You are tired. You are in good health."
     )
-    assert "You are exhausted." in world.ports["Mei"].situation()
+    situation = world.ports["Mei"].situation()
+    assert "starving" not in situation and "exhausted" not in situation  # no need at its worst
     told = [e for e in world.log.entries() if e["kind"] == "condition" and e["actor"] == "Mei"]
     assert [(e["sim_time"], e["text"]) for e in told][:2] == [
-        (at("11:00"), "Mei is a little hungry."),
-        (at("15:00"), "Mei is a little tired."),
+        (at("12:00"), "Mei is a little hungry."),
+        (at("16:00"), "Mei is a little tired."),
     ]
     assert told[-1]["payload"] == {
-        "need": "energy", "band": "exhausted", "value": 11.0, "lowest": True,
+        "need": "energy", "band": "tired", "value": 33.0, "lowest": False,
     }  # fmt: skip
-    assert told[-1]["audience"] == ["Mei"] and told[-1]["personal"] == {"Mei": "You are exhausted."}
+    assert told[-1]["audience"] == ["Mei"] and told[-1]["personal"] == {"Mei": "You are tired."}
+    mei.living.energy = 5
+    assert "You are exhausted." in world.ports["Mei"].situation()
     # Asleep, the body is reckoned and logged but nothing is told until the wake-up.
     town.take("Tomas")
     town.rest()
@@ -129,10 +182,8 @@ async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking
         "You are in good health."
     )
     logged = [e for e in world.log.entries() if e["kind"] == "condition" and e["actor"] == "Tomas"]
-    assert [e["payload"]["band"] for e in logged] == [
-        "a little hungry", "hungry", "starving", "a little tired", "fresh",
-    ]  # fmt: skip
-    assert logged[-1]["audience"] == [] and logged[-1]["sim_time"] > at("02:00", day=2)
+    assert [e["payload"]["band"] for e in logged] == ["a little hungry", "hungry", "starving"]
+    assert logged[-1]["audience"] == [] and logged[-1]["sim_time"] == at("03:00", day=2)
 
 
 async def test_eating_restores_satiety_and_a_stock_is_drawn_on_as_one_gets_hungry(make_town):
@@ -146,7 +197,7 @@ async def test_eating_restores_satiety_and_a_stock_is_drawn_on_as_one_gets_hungr
     assert (await town.call("Mei", "buy", item="meal")).text == (
         "You bought a meal at the café for $10. You are well fed. Your purse holds $110."
     )
-    assert mei.living.satiety == pytest.approx(20 - 4.2 / 6 + 65)
+    assert mei.living.satiety == 100  # a day's food, capped
     eaten = [e for e in world.log.entries() if e["kind"] == "condition" and e["actor"] == "Mei"]
     assert [e["payload"]["band"] for e in eaten] == ["well fed"] and eaten[0]["audience"] == []
 
@@ -154,7 +205,7 @@ async def test_eating_restores_satiety_and_a_stock_is_drawn_on_as_one_gets_hungr
     tomas.living.satiety = 30
     await town.until("08:00")  # the hour's reckoning: he eats until he could eat no more
     assert tomas.living.things == {"groceries": 1} and tomas.living.eaten == {"groceries": 2}
-    assert tomas.living.satiety == pytest.approx(30 - 4.2 + 68)
+    assert tomas.living.satiety == pytest.approx(30 - 3.75 + 68)
     assert town.take("Tomas")[-1] == "You are well fed."
     tomas.living.satiety = 30
     await town.until("09:00")
@@ -183,6 +234,13 @@ async def test_sleep_restores_energy_by_the_homes_comfort_and_never_above_health
     assert mei.living.energy == pytest.approx(60)  # 20 + 5 * 10.8 = 74, capped by her health
     assert [p.text for p in town.heard["Mei"] if p.kind == "wake"][-1].endswith(
         "You are a little tired. You are run down."
+    )
+    mei.living.energy, mei.living.health = 20, 30
+    await town.call("Mei", "sleep", until="19:00", journal="Another.")
+    await town.until("19:00")
+    assert mei.living.energy == pytest.approx(50)  # ill, one still wakes with half a day's
+    assert [p.text for p in town.heard["Mei"] if p.kind == "wake"][-1].endswith(
+        "You are a little tired. You are unwell."
     )
 
 
@@ -229,8 +287,8 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
     )
     examined = (await town.call("Mei", "buy", item="examination")).text
     assert examined == (
-        "You bought an examination for $10. The doctor looks you over. Food: 80 of 100, you are "
-        "well fed. Energy: 97 of 100, you are fresh. Health: 30 of 100, you are unwell. Your "
+        "You bought an examination for $10. The doctor looks you over. Food: 82 of 100, you are "
+        "well fed. Energy: 98 of 100, you are fresh. Health: 30 of 100, you are unwell. Your "
         "purse holds $110."
     )
     assert (await town.call("Mei", "buy", item="treatment")).text == (
@@ -240,7 +298,7 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
     bought = [e for e in world.log.entries() if e["kind"] == "purchase" and e["actor"] == "Mei"]
     assert bought[0]["text"] == "Mei bought an examination for $10."
     assert bought[0]["personal"]["Mei"].startswith(
-        "You bought an examination for $10. The doctor looks you over. Food: 80 of 100"
+        "You bought an examination for $10. The doctor looks you over. Food: 82 of 100"
     )
     assert bought[1]["personal"] == {"Mei": "You bought treatment for $25."}
     assert bought[1]["payload"]["effect"] == "treatment"
@@ -267,7 +325,7 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
         for name in ("Mei", "Tomas")
     }
     assert "You are starving. You are exhausted. You are unwell." in statements["Mei"]
-    assert "You are hungry. You are fresh. You are run down." in statements["Tomas"]
+    assert "You are a little hungry. You are fresh. You are run down." in statements["Tomas"]
     settled = {e["actor"]: e["payload"] for e in world.log.entries() if e["kind"] == "settlement"}
     assert settled["Mei"]["night"] == {"starving": -15, "exhausted": -5, "poor_home": -2}
     assert (settled["Mei"]["satiety"], settled["Mei"]["energy"], settled["Mei"]["health"]) == (
@@ -351,6 +409,31 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     assert restored.ports["Mei"].situation() == ENDED
     await town.until("07:00", day=2)
     assert isinstance(aisha.base, Idle) and mei.day == [] and not mei.alive
+
+
+async def test_a_resident_that_dies_while_its_checks_run_is_not_paid(make_town, monkeypatch):
+    town = make_town()
+    await awake_at(town)
+    world = town.world
+    mei = world.residents["Mei"]
+    await town.call("Mei", "go", place="workshop")
+    await town.until("23:50")
+    await town.call("Mei", "start_work")
+    await town.call("Mei", "claim_task", task=1)
+    await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
+    mei.living.health, mei.living.satiety = 10, 0
+    accept = world.board.backend.accept
+
+    async def slow_accept(*args):  # midnight passes while the client's checks run
+        await town.until("00:05", day=2)
+        return await accept(*args)
+
+    monkeypatch.setattr(world.board.backend, "accept", slow_accept)
+    assert (await town.call("Mei", "submit")) == ToolResult(ENDED, ends_turn=True)
+    assert not mei.alive and world.economy.purses["Mei"] == 120
+    kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
+    assert "verdict" in kinds and "payment" not in kinds
+    assert kinds.index("death") < kinds.index("verdict")  # the check ended after her life
 
 
 async def test_in_a_town_of_ones_own_nobody_is_told_of_a_death(make_town):

@@ -123,8 +123,8 @@ async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
 
     def woken_and_paired(name: str) -> list[str]:
         return [
-            "It is 19:00: you were woken at home for the evening meeting. You are hungry. You "
-            "are fresh. You are in good health.",
+            "It is 19:00: you were woken at home for the evening meeting. You are a little "
+            "hungry. You are fresh. You are in good health.",
             f"It is 19:00: by lot, you are to meet {partner[name]} at the café on the square "
             "and talk about your work.",
         ]
@@ -259,7 +259,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "recovery": 5,
     }
     aisha_living = state["residents"]["Aisha"]["living"]
-    assert aisha_living["satiety"] == 0 and aisha_living["health"] == 83  # starving, Mill Street
+    assert aisha_living["satiety"] == 10 and aisha_living["health"] == 100  # hungry, not starving
     assert [p["kind"] for p in state["residents"]["Aisha"]["held"]] == ["settlement"]
     assert state["residents"]["Aisha"]["wake"] == at("10:00", day=2)
     saved = json.loads(json.dumps(state))
