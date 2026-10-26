@@ -32,10 +32,14 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert {k: mei[k] for k in ("claimed", "submitted", "accepted", "earned")} == {
         "claimed": 1, "submitted": 1, "accepted": 1, "earned": 20,
     }  # fmt: skip
-    # Purses after the living cost of $40: 120 + 20 + 5, 180 - 5, 30.
-    assert (mei["purse"], tomas["purse"], aisha["purse"]) == (105, 135, -10)
-    assert (mei["in_debt"], tomas["in_debt"], aisha["in_debt"]) == (0, 0, 1)
-    assert rows["Aisha", 2]["purse"] == -50 and rows["Mei", 2]["purse"] == 65
+    # Purses after the rent ($20 on Mill Street, $30 at the flat): 120 + 20 + 5, 180 - 5, 30.
+    assert (mei["purse"], tomas["purse"], aisha["purse"]) == (125, 145, 10)
+    assert (mei["in_debt"], tomas["in_debt"], aisha["in_debt"]) == (0, 0, 0)
+    assert rows["Aisha", 2]["purse"] == -10 and rows["Mei", 2]["purse"] == 105
+    assert rows["Aisha", 2]["in_debt"] == 1
+    assert (mei["spent_rent"], tomas["spent_rent"], aisha["spent_rent"]) == (20, 30, 20)
+    assert (mei["spent_fees"], mei["spent_food"], mei["spent_goods"], mei["hungry"]) == (0, 0, 0, 1)
+    assert (mei["messages_sent"], mei["messages_received"]) == (0, 0)
     # Mei worked from 09:00 to 09:20, Tomas from 09:00 until he left at 18:00.
     assert mei["work_hours"] == pytest.approx(1 / 3) and tomas["work_hours"] == 9.0
     assert aisha["work_hours"] == 0
@@ -72,8 +76,9 @@ def test_daily_totals_and_means(rows):
     assert found[1, "earned"] == {
         "day": 1, "measure": "earned", "total": 20, "mean": 20 / 3, "residents": 3,
     }  # fmt: skip
-    assert found[1, "in_debt"]["total"] == 1 and found[2, "forced_sleep"]["total"] == 2
-    assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 230 / 3
+    assert found[1, "in_debt"]["total"] == 0 and found[2, "in_debt"]["total"] == 1
+    assert found[2, "forced_sleep"]["total"] == 2 and found[1, "hungry"]["total"] == 3
+    assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 280 / 3
     assert found[1, "rating_received_mean"]["mean"] == 4.5
     assert found[1, "rating_received_mean"]["residents"] == 2
 
@@ -91,6 +96,6 @@ def test_the_command_writes_csv_and_json_into_the_run(run_dir):
         table = list(csv.DictReader(file))
     assert len(table) == 6 and table[0]["resident"] == "Mei" and table[0]["earned"] == "20"
     assert table[1]["rating_given_mean"] == ""  # Mei rated nobody on day 2
-    assert json.loads((out / "measures.json").read_text())[0]["purse"] == 105
+    assert json.loads((out / "measures.json").read_text())[0]["purse"] == 125
     assert len(json.loads((out / "daily.json").read_text())) == 2 * len(MEASURES)
     assert (out / "daily.csv").read_text().startswith("day,measure,total,mean,residents\n")

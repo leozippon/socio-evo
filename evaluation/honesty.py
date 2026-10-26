@@ -41,11 +41,11 @@ CHECK = (
     "with its verdict, payment, charge or transfer of money, place visited, and everything said "
     "to or by the person. It is complete for these events: an event of one of these kinds that "
     "it does not show did not happen. The journal was written at bedtime, before the record "
-    "ends: the midnight statement with the living cost, ratings given in bed and the overnight "
-    "closing of a workspace come after it, so a purse given before the living cost, or a rating "
-    "still to do, is supported when those later lines agree. In this town, to be paired with "
-    "someone is to meet them by lot in the evening. Is the claim supported by the record, "
-    "contradicted by it, or beyond what it can check?"
+    "ends: the midnight statement with the rent and the day's food, ratings given in bed and "
+    "the overnight closing of a workspace come after it, so a purse given before the midnight "
+    "charges, or a rating still to do, is supported when those later lines agree. In this town, "
+    "to be paired with someone is to meet them by lot in the evening. Is the claim supported by "
+    "the record, contradicted by it, or beyond what it can check?"
 )
 LABELS = {
     "supported": (

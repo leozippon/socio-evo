@@ -141,6 +141,7 @@ export function mountOverview(root, ctx) {
 
   function rules() {
     const first = world.residents[0];
+    const range = (amounts) => (Math.min(...amounts) === Math.max(...amounts) ? fmt.money(amounts[0]) : `${fmt.money(Math.min(...amounts))}–${fmt.money(Math.max(...amounts))}`);
     return h(
       "section",
       { class: "conditions", "aria-label": "Rules" },
@@ -154,7 +155,8 @@ export function mountOverview(root, ctx) {
           h("li", {}, h("span", { class: "muted" }, "social life"), " ", h("b", {}, world.social.mode === "town" ? "one town, free conversation" : world.social.exchange ? `each alone; paired at ${world.social.exchange.at} at ${world.places.find((p) => p.id === world.social.exchange.place)?.name ?? world.social.exchange.place}` : "each in a town of its own")),
           h("li", {}, h("span", { class: "muted" }, "skills"), " ", h("b", {}, world.skills_writable ? (world.social.skills_shareable ? "written and passed on" : "written, not passed on") : "neither written nor passed on")),
           h("li", {}, h("span", { class: "muted" }, "a task pays"), " ", h("b", {}, fmt.money(world.work.payment))),
-          h("li", {}, h("span", { class: "muted" }, "living cost"), " ", h("b", {}, `${fmt.money(world.work.living_cost)} a day`)),
+          h("li", {}, h("span", { class: "muted" }, "rent for a room"), " ", h("b", {}, `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day`)),
+          h("li", {}, h("span", { class: "muted" }, "for sale"), " ", h("b", {}, `${fmt.plural(world.goods.length, "good")}, ${range(world.goods.map((g) => g.price))}`)),
           h("li", {}, h("span", { class: "muted" }, "acceptance runs"), " ", h("b", {}, `${world.work.acceptance_runs} per task a day`)),
           h("li", {}, h("span", { class: "muted" }, "a claim runs out"), " ", h("b", {}, `after ${world.work.claim_expiry_days + 1} ${world.work.claim_expiry_days ? "midnights" : "midnight"}`)),
           Object.entries(world.day).map(([name, clock]) => h("li", {}, h("span", { class: "muted" }, DAY_HOURS[name] ?? name.replaceAll("_", " ")), " ", h("b", {}, dayHour(name, clock)))),
@@ -310,11 +312,11 @@ export function mountOverview(root, ctx) {
     money() {
       const { daily } = measures;
       return [
-        h("p", { class: "note section-note" }, `Each accepted task pays ${fmt.money(world.work.payment)} at once; the living cost of ${fmt.money(world.work.living_cost)} is charged at midnight, and a purse may go into debt. Residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
+        h("p", { class: "note section-note" }, `Each accepted task pays ${fmt.money(world.work.payment)} at once; rent for the room, and the daily charge on anything owned that carries one, is taken at midnight, goods are paid in cash as they are bought, and a purse may go into debt. Residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Purses", note: "Each resident's purse after the living cost at midnight.", points: residentPoints("purse"), zero: true }),
+          agentFigure({ title: "Purses", note: "Each resident's purse after the midnight charges.", points: residentPoints("purse"), zero: true }),
           dayFigure({
             title: "Money paid and handed over",
             note: "Paid for accepted tasks, and handed from one resident to another, per day.",

@@ -155,7 +155,7 @@ export function mountPerson(root, ctx) {
         { class: "stats" },
         stat("Purse", fmt.money(purseAt(me, moment.time)), `earned ${fmt.money(earned)} in all`),
         stat("Hand-ins accepted", fmt.int(accepted), `${fmt.int(count("submission"))} handed in · ${fmt.int(count("claim"))} claims · ${fmt.int(count("abandon") + count("expiry"))} given up or run out`),
-        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("gift"))} gifts given`),
+        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · money handed over ${fmt.plural(count("gift"), "time")} · ${fmt.plural(count("purchase"), "purchase")}`),
         stat("Skills", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "passed on / received"),
         stat("Rating received", received.length ? fmt.num(received.reduce((a, m) => a + m.score, 0) / received.length, 2) : "–", `${fmt.plural(received.length, "rating")} received · ${fmt.int(count("rating"))} given`),
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),

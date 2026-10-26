@@ -84,6 +84,11 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
     await awake_at(town)
     texts += [world_.ports[name].situation() for name in world_.residents]
     await town.call("Mei", "say", text="Morning.")
+    await town.call("Mei", "go", place="store")
+    await town.until("07:10")
+    texts.append((await town.call("Mei", "buy", item="coat")).text)
+    texts.append((await town.call("Mei", "buy", item="groceries")).text)
+    texts.append((await town.call("Mei", "help", topic="money")).text)
     await town.call("Mei", "go", place="workshop")
     texts.append(world_.ports["Mei"].situation())
     await town.until("09:00")

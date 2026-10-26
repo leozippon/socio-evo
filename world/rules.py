@@ -4,24 +4,52 @@ The rules are derived from the configuration once and never change during a run;
 of the system prompt and the seed of the resident's notes on the town, and the ties they tell in
 the town mode seed its notes on people. They describe what can be done and what follows from it,
 in plain words, and nothing else: not the length of the run, not the machinery, not how anyone
-ought to behave.
+ought to behave. `help` tells the same paragraphs with what has changed since: who lives where
+and which rooms are free, as the world passes it in.
 """
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
+
 from world.clock import parse_hour
-from world.config import DayHours, TownConfig
+from world.config import DayHours, Good, TownConfig
 from world.telling import cap, counted, listed
 
-TOPICS = ("places", "day", "work", "money", "people", "sleep")
+TOPICS = ("places", "day", "work", "money", "shopping", "people", "sleep")
 _HEADINGS = {
     "places": "Places",
     "day": "The day",
     "work": "Work",
     "money": "Money",
+    "shopping": "Shopping",
     "people": "People",
     "sleep": "Sleep",
 }
+Homes = Mapping[str, Sequence[str]]
+"""Who lives where: the names of the residents of each home, by the home's id."""
+
+
+def worth(days: int) -> str:
+    """`a day's worth`, `3 days' worth`."""
+    return "a day's worth" if days == 1 else f"{days} days' worth"
+
+
+def bare(name: str) -> str:
+    """A good's name without its article: `a phone` is `phone`."""
+    for article in ("a ", "an ", "the "):
+        if name.startswith(article):
+            return name[len(article) :]
+    return name
+
+
+def fraction(factor: float) -> str:
+    """`half`, `a quarter of`, `70% of`: the share of the time a journey takes."""
+    if factor == 0.5:
+        return "half"
+    if factor == 0.25:
+        return "a quarter of"
+    return f"{round(factor * 100)}% of"
 
 
 def longest_sleep(day: DayHours) -> str:
@@ -41,13 +69,26 @@ class Rules:
         body = "\n\n".join(f"{_HEADINGS[topic]}. {sections[topic]}" for topic in TOPICS)
         return f"How the town works.\n\n{body}"
 
-    def help(self, name: str, topic: str) -> str:
-        """The rules on `topic`, or the list of topics."""
-        sections = self.sections(name)
+    def help(self, name: str, topic: str, homes: Homes | None = None) -> str:
+        """The rules on `topic`, with `homes` as they stand now, or the list of topics."""
+        sections = self.sections(name, homes)
         key = topic.strip().lower()
         if key in sections:
             return sections[key]
         return f"You can ask about: {', '.join(TOPICS)}."
+
+    def homes(self, name: str) -> dict[str, list[str]]:
+        """Who lives where as `name` knows it at the start: in the isolated mode, only itself."""
+        c = self.config
+        return {
+            place.id: [
+                r.name
+                for r in c.residents
+                if r.home == place.id and (c.social.mode == "town" or r.name == name)
+            ]
+            for place in c.places
+            if place.kind == "home"
+        }
 
     def ties(self, name: str) -> list[str]:
         """What `name` is told of the people it knows already: its ties, in the town mode."""
@@ -61,40 +102,51 @@ class Rules:
         it knows already, as the rules tell them."""
         return "# People\n" + "".join(f"\n{tie}\n" for tie in self.ties(name))
 
-    def sections(self, name: str) -> dict[str, str]:
+    def sections(self, name: str, homes: Homes | None = None) -> dict[str, str]:
+        """The rules by topic, told to `name`, with `homes` as they stand (at the start if not
+        given)."""
         c = self.config
         me = next(resident for resident in c.residents if resident.name == name)
+        homes = homes if homes is not None else self.homes(name)
+        home_of = {who: place for place, people in homes.items() for who in people}
+        my_home = c.place(home_of[name])
         workplace = c.workplace
         social = c.social
         exchange = social.exchange
         contact = social.mode == "town" or exchange is not None
+        for_sale = c.for_sale()
 
         def money(amount: int) -> str:
             return f"-{c.currency}{-amount}" if amount < 0 else f"{c.currency}{amount}"
 
         names = listed([f"{place.name} ({place.id})" for place in c.places])
-        routes = listed(
-            [
-                f"between {c.place(a).name} and {c.place(b).name}, {route.minutes}"
-                for route in c.routes
-                for a, b in [route.between]
-            ]
-        )
+        routes = self._routes()
+        rooms = []
+        for place in c.places:
+            if place.kind == "home":
+                assert place.rooms is not None and place.rent is not None
+                free = place.rooms - len(homes.get(place.id, ()))
+                rooms.append(
+                    f"{place.name} {money(place.rent)} ({counted(place.rooms, 'room')}, "
+                    f"{free or 'none'} free)"
+                )
         places = (
             f"The town has these places, each with the short name you use to go there: {names}. "
-            f"Your home is {c.place(me.home).name}. Walking from one place to another takes "
-            f"{c.travel_minutes} minutes"
-            + (f", except {routes} minutes" if routes else "")
+            f"Walking from one place to another takes {c.travel_minutes} minutes"
+            + (f", except {routes}" if routes else "")
             + ". On the way you notice nothing of where you are going, and nobody can speak "
-            "to you."
+            f"to you. The homes, with the rent a day for a room and the rooms free: "
+            f"{listed(rooms)}. Your home is {my_home.name}. At a home with a free room you can "
+            "move in with move_in: you give up your old room, and the new rent is taken from "
+            "the next midnight."
         )
 
         day = (
-            f"{cap(workplace.name)} is open at all hours. At midnight the day's living cost is "
-            "taken from every purse and the board for the new day is posted. You go to bed at "
-            "home at whatever hour you choose, giving the hour you want to wake and writing up "
-            f"your day. At {c.day.forced_sleep} anyone still up falls asleep and wakes at home "
-            f"at {c.day.forced_wake}, with no journal entry for that day."
+            f"{cap(workplace.name)} is open at all hours. At midnight rent is taken from every "
+            "purse, the day's food is reckoned and the board for the new day is posted. You go "
+            "to bed at home at whatever hour you choose, giving the hour you want to wake and "
+            f"writing up your day. At {c.day.forced_sleep} anyone still up falls asleep and "
+            f"wakes at home at {c.day.forced_wake}, with no journal entry for that day."
         )
         if exchange is not None:
             day += (
@@ -130,14 +182,26 @@ class Rules:
             else " The board is yours alone."
         )
 
+        assert my_home.rent is not None
+        fees = any(good.fee_per_day for good in for_sale)
         money_rules = (
-            f"You have {money(me.purse)} to begin with. Living here costs "
-            f"{money(c.work.living_cost)} a day, rent and board, taken from your purse at "
-            "midnight, when you get a statement of your money. A purse can go below zero; you "
-            "are then in debt."
+            f"You have {money(me.purse)} to begin with. Your room at {my_home.name} costs "
+            f"{money(my_home.rent)} a day; rent"
+            + (", and the daily charge on anything you own that carries one," if fees else "")
+            + " is taken from your purse at midnight, when you get a statement of your money. "
+            "You eat once a day or go hungry: if you have had no food by midnight, you go "
+            "hungry, and are too hungry to sit down to work until you have eaten. You pay for "
+            "everything in cash. A purse can go below zero when rent is taken; you are then in "
+            "debt, and can still be paid, pay your rent and receive money, but can buy nothing "
+            "until your purse covers the price."
         )
         if contact:
-            money_rules += " You can hand money to someone you are talking with."
+            money_rules += (
+                " You can hand money to someone you are talking with, as a gift or a loan, on "
+                "terms you agree between you; the town keeps no account of it."
+            )
+
+        shopping = self._shopping(for_sale, money)
 
         conversation = (
             f"A conversation lasts until its people leave it or nobody speaks for "
@@ -145,9 +209,13 @@ class Rules:
         )
         if social.mode == "town":
             others = listed(
-                [f"{r.name} ({c.place(r.home).name})" for r in c.residents if r.name != name]
+                [
+                    f"{r.name} ({c.place(home_of[r.name]).name})"
+                    for r in c.residents
+                    if r.name != name
+                ]
             )
-            meeting = listed([place.name for place in c.places if place.kind == "social"])
+            meeting = listed([place.name for place in c.places if place.kind in ("social", "shop")])
             people = f"The others who live in the town, with their homes: {others}. "
             if meeting:
                 people += f"People run into one another at {meeting}; you can also "
@@ -185,7 +253,7 @@ class Rules:
             "before, without their names; you can look back over your day; you can rate each "
             "person you spoke with that day from 1 to 5, with a reason, which they read "
             "the next night without your name; and you can see to your files."
-            if contact
+            if contact and social.ratings
             else " In bed, before you fall asleep, you can look back over your day and see to "
             "your files."
         )
@@ -194,6 +262,82 @@ class Rules:
             "day": day,
             "work": work,
             "money": money_rules,
+            "shopping": shopping,
             "people": people,
             "sleep": sleep,
         }
+
+    def _routes(self) -> str:
+        """The routes that differ from the usual walk, grouped by their minutes: `10 minutes
+        among A, B and C` where every pair among those places has that route, else each pair."""
+        c = self.config
+        by_minutes: dict[int, list[tuple[str, str]]] = {}
+        for route in c.routes:
+            by_minutes.setdefault(route.minutes, []).append(route.between)
+        parts = []
+        for minutes, pairs in sorted(by_minutes.items()):
+            joined = {place for pair in pairs for place in pair}
+            places = [place.name for place in c.places if place.id in joined]
+            if len(places) > 2 and len(pairs) == len(places) * (len(places) - 1) // 2:
+                parts.append(f"{minutes} minutes among {listed(places)}")
+            else:
+                parts += [
+                    f"{minutes} minutes between {c.place(a).name} and {c.place(b).name}"
+                    for a, b in pairs
+                ]
+        return listed(parts)
+
+    def _shopping(self, for_sale: list[Good], money) -> str:
+        """What is for sale where, and what each good does, from the catalogue."""
+        c = self.config
+        counters = []
+        for place in c.places:
+            sold = [good for good in for_sale if place.id in good.sold_at]
+            if sold:
+                counters.append(
+                    f"at {place.name}, {listed([self._priced(g, money) for g in sold])}"
+                )
+        text = f"For sale, paid in cash with buy: {'; '.join(counters)}."
+        food = [good for good in for_sale if good.effect == "food"]
+        on_the_spot = [good.name for good in food if good.kind == "immediate"]
+        stocked = [good.name for good in food if good.kind == "consumable"]
+        if on_the_spot:
+            text += f" {cap(listed(on_the_spot, 'or'))}: eaten on the spot, the day's food."
+        if stocked:
+            text += (
+                f" {cap(listed(stocked, 'or'))}: kept in stock, and a day's worth is used up "
+                "each midnight, which is the day's food too."
+            )
+        for good in for_sale:
+            if good.effect == "travel":
+                assert good.factor is not None
+                text += f" With {good.name} your journeys take {fraction(good.factor)} the time."
+        writing = [good.name for good in for_sale if good.effect == "messaging"]
+        if writing:
+            text += (
+                f" With {listed(writing, 'or')} you can write to anyone else who has one, "
+                "wherever they are, with message; they read it when they next look up from what "
+                "they are doing."
+            )
+        seen = [
+            f"with {good.name}, {good.phrase}" for good in for_sale if good.effect == "appearance"
+        ]
+        if seen:
+            text += f" What you wear and carry, others see: {'; '.join(seen)}."
+        text += " What you have, and how much of it is left, is told with help on money."
+        return text
+
+    @staticmethod
+    def _priced(good: Good, money) -> str:
+        """`groceries ($36, 3 days' worth)`, `a phone ($80, then $3 a day)`."""
+        detail = ""
+        if good.kind == "consumable":
+            assert good.uses is not None and good.per_day is not None
+            detail = (
+                f", {worth(good.days)}"
+                if good.uses % good.per_day == 0
+                else f", {good.uses} uses, {good.per_day} a day"
+            )
+        if good.fee_per_day:
+            detail += f", then {money(good.fee_per_day)} a day"
+        return f"{good.name} ({money(good.price)}{detail})"

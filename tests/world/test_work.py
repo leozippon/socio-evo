@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import at, awake_at, make_agent_dirs, town_config
+from tests.world.conftest import at, awake_at, make_agent_dirs, stocked, town_config
 from world.clock import ManualClock
 from world.events import Sleep
 from world.testing import FakeBackend, FakeVerdict
@@ -48,6 +48,7 @@ async def test_a_shared_board_lets_one_resident_hold_a_task(make_town):
 async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     town = make_town()
     await awake_at(town)
+    stocked(town)
     world = town.world
     await town.until("22:00")
     await town.call("Mei", "sleep", until="04:30", journal="To bed early, to work early.")
@@ -267,6 +268,7 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
     backend = FakeBackend()
     town = make_town(backend=backend)
     await at_work(town, "Mei")
+    stocked(town)
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="a.py", content="half done\n")
     await town.call("Mei", "leave_work")
@@ -310,6 +312,7 @@ async def test_acceptance_runs_count_afresh_each_day(make_town):
     backend = FakeBackend()
     town = make_town(town_config(acceptance_runs=1), backend)
     await at_work(town, "Mei")
+    stocked(town)
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
     await town.call("Mei", "submit")

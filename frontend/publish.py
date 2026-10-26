@@ -46,7 +46,7 @@ from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag, read_jsonl
 from simulation.config import ExperimentConfig
 
-FORMAT = 4
+FORMAT = 5
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,

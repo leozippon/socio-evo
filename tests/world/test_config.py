@@ -25,6 +25,10 @@ def test_a_town_validates():
     assert config.workplace.id == "workshop"
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
+    assert config.good("groceries").days == 3 and config.place("college-flat").comfort == 1.0
+    assert [g.id for g in config.for_sale()] == ["groceries", "meal", "bicycle", "coat"]  # alone
+    everything = ["groceries", "meal", "bicycle", "phone", "coat"]
+    assert [g.id for g in town_config().for_sale()] == everything
     data = config.model_dump(mode="json")
     data["social"]["exchange"]["at"] = "01:00"  # after midnight, before the forced sleep
     assert type(config).model_validate(data).social.exchange.at == "01:00"
@@ -86,6 +90,23 @@ def test_a_town_validates():
             "Mei's tie to Tomas says nothing",
         ),
         (lambda d: d["work"].update(payment=0), {}, "greater than or equal to 1"),
+        (lambda d: d["places"][0].pop("rent"), {}, "needs rent, rooms and comfort"),
+        (lambda d: d["places"][2].update(rent=5), {}, "is not a home and has no rent"),
+        (lambda d: d["places"][0].update(rooms=1), {}, "has 1 rooms for 2 residents"),
+        (lambda d: d["goods"].append(dict(d["goods"][0])), {}, "duplicate good id"),
+        (lambda d: d["goods"][0].update(sold_at=["workshop"]), {}, "not a shop or social place"),
+        (lambda d: d["goods"][0].update(sold_at=[]), {}, "at least 1 item"),
+        (lambda d: d.update(goods=[d["goods"][2]]), {}, "sells nothing to eat"),
+        (lambda d: d["goods"][0].pop("uses"), {}, "needs uses and per_day"),
+        (lambda d: d["goods"][0].update(per_day=4), {}, "uses more a day than one purchase holds"),
+        (lambda d: d["goods"][1].update(uses=2), {}, "is not consumable and has no uses"),
+        (lambda d: d["goods"][1].update(fee_per_day=1), {}, "is not durable and carries no fee"),
+        (lambda d: d["goods"][2].update(effect="food"), {}, "is food and so is consumable"),
+        (lambda d: d["goods"][1].update(effect="travel"), {}, "which only a durable has"),
+        (lambda d: d["goods"][0].pop("nourishment"), {}, "nourishment belongs to the effect food"),
+        (lambda d: d["goods"][2].update(phrase="x"), {}, "phrase belongs to the effect appearance"),
+        (lambda d: d["goods"][4].update(phrase=" "), {}, "has an empty phrase"),
+        (lambda d: d["goods"][4].update(phrase="in an honest coat"), {}, "the town does not use"),
         (lambda d: d.update(colour="red"), {}, "Extra inputs are not permitted"),
     ],
 )

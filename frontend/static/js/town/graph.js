@@ -123,7 +123,7 @@ export class TiesPanel {
         ({
           said: () => `${fmt.plural(t.said, "thing")} said${t.said_private ? `, ${fmt.int(t.said_private)} privately` : ""}`,
           ratings: () => `${fmt.plural(t.ratings, "rating")}, mean ${fmt.num(t.ratings_sum / t.ratings, 1)}`,
-          money: () => `${fmt.money(t.money)} in ${fmt.plural(t.gifts, "gift")}`,
+          money: () => `${fmt.money(t.money)} handed over, ${fmt.plural(t.gifts, "time")}`,
           skills: () => fmt.plural(t.skills, "skill"),
         })[measure.field]();
       for (const t of arrows) {

@@ -21,7 +21,18 @@ from world.events import (
 )
 
 ARCHITECTURE_TABLE = {
-    "idle": {"help", "look_around", "go", "start_work", "say", "sleep", "wait"},
+    "idle": {
+        "help",
+        "look_around",
+        "go",
+        "start_work",
+        "say",
+        "message",
+        "buy",
+        "move_in",
+        "sleep",
+        "wait",
+    },
     "movement": set(),
     "work": {
         "look_around",
@@ -36,12 +47,15 @@ ARCHITECTURE_TABLE = {
         "submit",
         "abandon_task",
         "say",
+        "message",
         "leave_work",
     },
     "conversation": {
         "say",
+        "message",
         "give_money",
         "share_skill",
+        "buy",
         "look_around",
         "go",
         "wait",
@@ -450,8 +464,10 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
         "at 07:00."
     ]
     assert mei.suspended
-    assert town.take("Mei")[-2:] == [
-        "Your statement for Monday 1 January: living cost $30. Your purse holds $90.",
+    assert town.take("Mei")[-3:] == [
+        "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
+        "Street $20. You had nothing to eat today. Your purse holds $100.",
+        "You went hungry today, too hungry to concentrate on work before the next meal.",
         "It is 02:00: you fell asleep.",
     ]
     assert not (tmp_path / "agents" / "Tomas" / "memory" / "journal").exists()
@@ -512,8 +528,10 @@ async def test_situation_says_what_applies_now(make_town):
     situation = port.situation()
     assert situation.startswith("Monday 1 January, 07:00. You are at the shared house")
     assert "Also here: Aisha." in situation and "Your purse holds $120." in situation
+    assert "You have nothing of your own yet." in situation  # told at home
     assert situation.endswith(
-        "What you can do now: help, look_around, go, wait, sleep, start_work, say."
+        "What you can do now: help, look_around, go, wait, sleep, start_work, say, buy, "
+        "move_in, message."
     )
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()

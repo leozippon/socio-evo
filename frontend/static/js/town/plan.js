@@ -25,6 +25,7 @@ const STYLES = [
   ["workplace", /./, "office"],
   ["social", /tavern|\bpub\b|\binn\b|\bbar\b|alehouse|anchor/, "tavern"],
   ["social", /./, "cafe"],
+  ["shop", /./, "shop"],
   ["home", /cottage/, "cottage"],
   ["home", /\bflat\b|apartment/, "flat"],
   ["home", /shared|lodging|boarding/, "shared"],
@@ -41,6 +42,7 @@ export const SIZES = {
   office: { w: 66, h: 48, roof: 8 },
   cafe: { w: 62, h: 36, roof: 18 },
   tavern: { w: 66, h: 40, roof: 24 },
+  shop: { w: 62, h: 36, roof: 18 },
 };
 
 const words = (place) => `${place.name} ${place.description ?? ""}`.toLowerCase();
@@ -466,7 +468,7 @@ export function townPlan(world) {
       if (!lamps.some((l) => dist(l, { x, y }) < 30)) lamps.push({ x, y });
     benches.push({ x: square.x0 + 14, y: square.y1 - 6 }, { x: square.x1 - 18, y: square.y0 + 10 });
   }
-  for (const p of built.filter((q) => q.kind === "social")) {
+  for (const p of built.filter((q) => q.kind === "social" || q.kind === "shop")) {
     const lamp = { x: p.door.x + 14, y: p.base + 3 };
     if (!lamps.some((l) => dist(l, lamp) < 24)) lamps.push({ ...lamp, porch: true });
   }

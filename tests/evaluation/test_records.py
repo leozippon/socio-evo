@@ -34,13 +34,14 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
         "wake", "depart", "arrive", "time", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
         "leave_conversation", "leave_work", "sleep", "rating", "fell_asleep", "settlement",
+        "hungry",
     }  # fmt: skip
 
     def head(e):
         text = e["personal"].get("Mei", e["text"]).splitlines()[0]
-        if e["kind"] == "settlement":  # the record adds the purse before the charge
-            before = e["payload"]["purse"] + e["payload"]["living_cost"]
-            text += f" Before the living cost it held ${before}."
+        if e["kind"] == "settlement":  # the record adds the purse before the charges
+            before = e["payload"]["purse"] + e["payload"]["rent"] + e["payload"]["fees"]
+            text += f" Before the midnight charges it held ${before}."
         return f"{clock_time(e['sim_time'])} {text}"
 
     told = [head(e) for e in mine]
@@ -52,10 +53,12 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
     assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
-    assert lines[-1] == (
+    assert lines[-2:] == [
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
-        "living cost $40. Your purse holds $105. Before the living cost it held $145."
-    )
+        "rent for your room at the shared house on Mill Street $20. You had nothing to eat today. "
+        "Your purse holds $125. Before the midnight charges it held $145.",
+        "00:00 You went hungry today, too hungry to concentrate on work before the next meal.",
+    ]
 
 
 def test_what_only_the_trace_knows_is_told_in_its_place(run_dir):
@@ -119,8 +122,10 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "skill.”. Before you fall asleep you can look back over your day and see to your "
         "files; you fall asleep once you have nothing more to do.",  # she spoke with nobody
         "20:00 You fell asleep.",
-        "00:00 Your statement for Tuesday 2 January: living cost $40. Your purse holds $65. "
-        "Before the living cost it held $105.",
+        "00:00 Your statement for Tuesday 2 January: rent for your room at the shared house on "
+        "Mill Street $20. You had nothing to eat today. Your purse holds $105. Before the "
+        "midnight charges it held $125.",
+        "00:00 You went hungry today, too hungry to concentrate on work before the next meal.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)

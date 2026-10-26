@@ -38,9 +38,9 @@ their workspaces, which the bundle does not carry."""
 UNPUBLISHED = frozenset({"session.jsonl", "trace.jsonl"})
 """Files of an agent's repository whose changes, diffs and contents the bundle leaves out."""
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-ROWS = {"home": 0.0, "workplace": 1.5, "social": 3.0}
+ROWS = {"home": 0.0, "workplace": 1.5, "social": 3.0, "shop": 3.0}
 """Where each kind of place stands on the map, in map units: the homes in a row at the top, the
-workplace in the middle, the social places in a row below."""
+workplace in the middle, the social places and the shops in a row below."""
 COUNTED = (
     "claims",
     "submissions",
@@ -49,14 +49,26 @@ COUNTED = (
     "payments",
     "paid",
     "speeches",
+    "messages",
     "gifts",
+    "purchases",
     "skills_shared",
     "ratings",
     "journals",
     "forced_sleeps",
 )
 """The counts of `frontend.progress` summed into a run's headline."""
-GRAPH = ("minutes", "said", "said_private", "gifts", "money", "skills", "ratings", "ratings_sum")
+GRAPH = (
+    "minutes",
+    "said",
+    "said_private",
+    "messages",
+    "gifts",
+    "money",
+    "skills",
+    "ratings",
+    "ratings_sum",
+)
 """What one resident had to do with another on a day, by field."""
 JOURNAL_FIELDS = (
     "resident",
@@ -110,13 +122,15 @@ def group_of(config: ExperimentConfig) -> str | None:
 
 
 def layout(places: Sequence[Any]) -> dict[str, tuple[float, float]]:
-    """Map positions of the places by id: each kind in its own row (`ROWS`), the places of a row
-    one unit apart and centred under one another."""
-    rows = {kind: [place for place in places if place.kind == kind] for kind in ROWS}
+    """Map positions of the places by id: each kind in its row (`ROWS`; kinds that share a row
+    share it), the places of a row one unit apart and centred under one another."""
+    rows = {
+        y: [place for place in places if ROWS[place.kind] == y]
+        for y in dict.fromkeys(ROWS.values())
+    }
     width = max(len(found) for found in rows.values()) - 1
     found: dict[str, tuple[float, float]] = {}
-    for kind, y in ROWS.items():
-        row = rows[kind]
+    for y, row in rows.items():
         for index, place in enumerate(row):
             found[place.id] = (width / 2 + index - (len(row) - 1) / 2, y)
     return found
@@ -138,6 +152,9 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
                 "id": place.id,
                 "name": place.name,
                 "kind": place.kind,
+                "rent": place.rent,
+                "rooms": place.rooms,
+                "comfort": place.comfort,
                 "x": coords[place.id][0],
                 "y": coords[place.id][1],
             }
@@ -152,6 +169,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
             for r in town.residents
         ],
         "work": town.work.model_dump(mode="json"),
+        "goods": [good.model_dump(mode="json") for good in town.goods],
         "social": town.social.model_dump(mode="json"),
         "skills_writable": config.skills_writable,
         "day": town.day.model_dump(mode="json"),
@@ -199,8 +217,9 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     with anything to count, by day, source and target. `minutes` are simulated minutes `source`
     spent in conversations `target` took part in (from the timeline's conversations, each on
     the day it began); the rest counts the day's entries: things `source` said that `target`
-    heard (`said`, of which `said_private` to it by name), money handed over (`gifts` times,
-    `money` in all), skills passed on, and ratings given with the sum of their scores."""
+    heard (`said`, of which `said_private` to it by name), messages written to it, money handed
+    over (`gifts` times, `money` in all), skills passed on, and ratings given with the sum of
+    their scores."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 
@@ -227,6 +246,8 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
                     add(day, actor, other, "said", 1)
                     if payload["private"]:
                         add(day, actor, other, "said_private", 1)
+            elif kind == "message":
+                add(day, actor, payload["to"], "messages", 1)
             elif kind == "gift":
                 add(day, actor, payload["to"], "gifts", 1)
                 add(day, actor, payload["to"], "money", payload["amount"])

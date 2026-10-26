@@ -11,7 +11,8 @@ tells Aisha something privately in her presence and gives Mei $5; Mei leaves for
 waits there until 20:00, goes to bed with her journal, reads the record of her day, rates Tomas
 4, writes her notes on people and fails to read a file she does not have. Tomas works until
 18:00, goes home, goes to bed at 20:00 with a journal that claims he fixed task 2, and rates Mei
-5. Aisha never goes to bed and is put to sleep at 02:00. The living cost is $40.
+5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so everyone goes hungry at
+midnight; rent is $20 a day on Mill Street and $30 at the flat.
 
 Day 2. Mei wakes, waits at home until 20:00, goes back to bed with a second journal entry and
 reads Tomas's rating; Tomas's claim runs out at midnight; Tomas and Aisha are put to sleep at
@@ -115,7 +116,7 @@ async def resting(port: WorldPort) -> None:
 
 async def live(root: Path) -> None:
     """Live the two days into a new run directory at `root`."""
-    town = town_config(living_cost=40)
+    town = town_config()
     config = ExperimentConfig(
         name=root.name,
         llm=LLMConfig(backend="scripted", base_url="-", api_key_env="-", model="scripted"),

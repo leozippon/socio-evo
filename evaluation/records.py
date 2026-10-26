@@ -20,9 +20,10 @@ indented lines. It holds:
   failed; submissions and verdicts; payments; giving a task up and claims running out; workspaces
   closed at night; speech it said or was told, with who said what to whom (what others said
   privately in its presence only as something it could not hear); leaving and ending
-  conversations; money handed over; skills passed on, with the text of one it received; group B's
-  pairing and meeting; the midnight statement; going to bed, with the ratings it read; ratings it
-  gave; falling asleep and forced sleep; the hours it was told while waiting;
+  conversations; money handed over; skills passed on, with the text of one it received; messages
+  written and received; goods bought; moving house; group B's pairing and meeting; the midnight
+  statement, with the purse before its charges; going hungry; going to bed, with the ratings it
+  read; ratings it gave; falling asleep and forced sleep; the hours it was told while waiting;
 - from its trace, what leaves no entry in the log: its own files (background, memory, skills)
   read, written, changed or listed, by path; and every call of a world tool that left no entry of
   it in the log (reading the board, the rules or the record of its day, looking around, waiting,
@@ -204,10 +205,11 @@ def _told(entry: Entry, resident: str) -> str:
     elif kind in ("file_read", "file_write") and not payload["ok"]:
         text += " It could not be done."
     elif kind == "settlement" and entry["actor"] == resident:
-        # The journal is written before the charge; the figure it quotes is the one before it.
-        currency = re.search(r"living cost (\D*)\d", text)
-        before = payload["purse"] + payload["living_cost"]
-        text += f" Before the living cost it held {currency.group(1) if currency else ''}{before}."
+        # The journal is written before the charges; the figure it quotes is the one before them.
+        currency = re.search(r"rent for your room at .*? (\S+?)\d+[;.]", text)
+        before = payload["purse"] + payload["rent"] + payload["fees"]
+        symbol = currency.group(1) if currency else ""
+        text += f" Before the midnight charges it held {symbol}{before}."
     return text
 
 

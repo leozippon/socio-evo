@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from tests.world.conftest import Town, make_agent_dirs, town_config
+from tests.world.conftest import Town, make_agent_dirs, stocked, town_config
 from world.backend import SwebenchBackend
 from world.clock import ManualClock
 from world.world import World
@@ -52,6 +52,7 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
     town = Town(World(config, tmp_path, OneTask(task), clock=ManualClock()), None)
     try:
         town.start(until_day=3)
+        stocked(town)
         await town.until("07:00")
         await town.call("Mei", "go", place="workshop")
         await town.until("09:00")

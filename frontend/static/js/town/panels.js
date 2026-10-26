@@ -264,7 +264,7 @@ export class WorkPanel {
 }
 
 /** The kinds of entry the chronicle keeps, each a moment worth finding. */
-const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "abandon", "expiry", "gift", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement"]);
+const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "abandon", "expiry", "gift", "message", "purchase", "move_in", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement", "hungry"]);
 
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {

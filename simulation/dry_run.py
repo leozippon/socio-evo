@@ -2,10 +2,11 @@
 plausible day from what each request shows, so that the whole pipeline runs without a model.
 
 The day it plays: go to the workplace, start work, read the board, claim a free task, run a
-command, read a file, write a fix, submit and leave; go to a social place and, if anyone is there,
-say something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's
-forced waking hour; in bed, review the day, rate whoever it may rate, note the day in
-memory/work.md and fall asleep.
+command, read a file, write a fix, submit and leave; go to a shop, if the town has one, and buy
+a stock of food; go to a social place, eat there if it sells a meal and, if anyone is there, say
+something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's forced
+waking hour; in bed, review the day, rate whoever it may rate (where the town has ratings), note
+the day in memory/work.md and fall asleep.
 Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
 resident's name comes from the system prompt, and the day so far from the messages since the
 last wake-up, so it continues a resumed run as it would have continued the run.
@@ -46,6 +47,16 @@ class DryRunModel:
         exchange = town.social.exchange
         social = [place.id for place in town.places if place.kind == "social"]
         self._social = exchange.place if exchange else social[0]
+        for_sale = town.for_sale()
+        stocks = [g for g in for_sale if g.kind == "consumable" and g.effect == "food"]
+        self._stock = stocks[0] if stocks else None
+        self._shop = self._stock.sold_at[0] if self._stock else None
+        meals = [
+            g
+            for g in for_sale
+            if g.kind == "immediate" and g.effect == "food" and self._social in g.sold_at
+        ]
+        self._meal = meals[0] if meals else None
 
     def __call__(self, request: LLMRequest) -> LLMResponse:
         if request.tool_choice == "none":
@@ -95,7 +106,7 @@ class _Day:
             return reply("", *calls, tool_call("leave_conversation"))
         if "You are at work at" in s:
             if self._did("submit"):
-                return reply("", tool_call("leave_work"), tool_call("go", place=self.social))
+                return reply("", tool_call("leave_work"), tool_call("go", place=self.after_work))
             return reply("", tool_call("view_board"))
         place = self._place()
         town = self.model._town
@@ -105,15 +116,25 @@ class _Day:
             return reply("", self._sleep())
         if place == town.workplace.id:
             if self._did("start_work", "You started work"):
-                return reply("", tool_call("go", place=self.social))
+                return reply("", tool_call("go", place=self.after_work))
             return reply("", tool_call("start_work"), tool_call("view_board"))
+        if place == self.model._shop and place != self.social:
+            calls = [] if self._did("buy", "You bought") else [self._buy(self.model._stock)]
+            return reply("", *calls, tool_call("go", place=self.social))
         if place == self.social and self.hour < EVENING:
             calls = []
+            meal = self.model._meal
+            if meal is not None and not self._did("buy", f"You bought {meal.name}"):
+                calls.append(self._buy(meal))
             if "Also here:" in s and not self._said():
-                calls = [tool_call("say", text=self._greeting()), tool_call("leave_conversation")]
+                calls += [tool_call("say", text=self._greeting()), tool_call("leave_conversation")]
             minutes = min(600, max(1, (EVENING - self.hour) // 60))
             return reply("", *calls, tool_call("wait", minutes=minutes))
         return reply("", tool_call("go", place=self.home))
+
+    @staticmethod
+    def _buy(good) -> ToolCall:
+        return tool_call("buy", item=good.id, quantity=1)
 
     def _after(self, batch: list[_Call]) -> LLMResponse:
         """The reply once the calls of `batch` have been answered and nothing new was told."""
@@ -145,7 +166,7 @@ class _Day:
             tool_call("write_repo_file", path="fix.py", content="FIX\n"),
             tool_call("submit"),
             tool_call("leave_work"),
-            tool_call("go", place=self.social),
+            tool_call("go", place=self.after_work),
         )
 
     def _in_bed(self) -> LLMResponse:
@@ -188,6 +209,8 @@ class _Day:
         if submit is not None:
             accepted = "Accepted." in submit.result
             parts.append("My fix was accepted." if accepted else "My fix was not accepted.")
+        if self._did("buy", "You bought"):
+            parts.append("I bought what I needed.")
         if self._said():
             parts.append("I talked with people in the evening.")
         return " ".join(parts) or "A quiet day."
@@ -219,3 +242,8 @@ class _Day:
     @property
     def social(self) -> str:
         return self.model._social
+
+    @property
+    def after_work(self) -> str:
+        """Where the day goes after work: the shop, if the town has one to buy food at."""
+        return self.model._shop or self.social

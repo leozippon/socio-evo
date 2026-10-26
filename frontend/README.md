@@ -51,7 +51,7 @@ The viewer is plain HTML, CSS and JavaScript modules: no build step, no framewor
 
 The town is drawn from the run's timeline (the server's reading of the world log) and the entries of one lived day at a time, fetched as they are needed. Time is the main control: space plays or pauses, the arrow keys step from moment to moment and with Shift from day to day, Home and End go to the start and to the newest moment, and Escape clears the selection. Quiet stretches pass quickly. Residents keep their badge as their head, walk the streets between places during their movements (where they stand on the road is where the timeline puts them at that moment), stand in a ring when they talk and sleep at home. With a resident selected, the town can be read as that resident read it (`as=1`): every entry it was told reads in the wording the world gave it, with itself as "you". The feed folds a spell of commands and file reads and writes in a workspace into one line.
 
-The map is drawn from the world alone. Each place stands where the bundle lays it out (homes in a row at the top, the workplace in the middle, the social places below), as a building whose style its kind and words give: a workshop, a café with its awning, a tavern with its sign, a cottage, a flat or a house. Streets join the places around their buildings and lead out of town; a river runs past places that say they are by one, a square lies in front of places that say they stand on one, and a hill rises behind a place named for one. Gardens, trees, lamps and benches fill the space that is left. The scenery is seeded by the world's ids, so it never jumps, and it never stands for data: the light follows the simulated hour, windows are lit and chimneys smoke only where someone is, and everything else is decoration. The map pans and zooms by drag and pinch, wheel, double tap, its buttons and the + − 0 keys.
+The map is drawn from the world alone. Each place stands where the bundle lays it out (homes in a row at the top, the workplace in the middle, the social places and shops below), as a building whose style its kind and words give: a workshop, a café with its awning, a tavern with its sign, a shop with its shopfront, a cottage, a flat or a house. Streets join the places around their buildings and lead out of town; a river runs past places that say they are by one, a square lies in front of places that say they stand on one, and a hill rises behind a place named for one. Gardens, trees, lamps and benches fill the space that is left. The scenery is seeded by the world's ids, so it never jumps, and it never stands for data: the light follows the simulated hour, windows are lit and chimneys smoke only where someone is, and everything else is decoration. The map pans and zooms by drag and pinch, wheel, double tap, its buttons and the + − 0 keys.
 
 On a wide screen the panels stand beside the map. Below 1000 pixels a run's views move to a tab bar at the bottom of the screen, and in the town the timeline and the panels share a bottom sheet that is dragged or tapped open over the map, and opens by itself when the address names a panel or a resident. On a phone the top bar keeps the brand mark, which leads home, and the run's name, which leads to its dashboard; tables scroll inside their card with a shadow at the edge that has more; every page says under its title what it shows, and every empty place says what would appear there and when.
 
@@ -151,7 +151,9 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.payments` | integer | Payments made. |
 | `runs[].headline.paid` | integer | Money paid in all. |
 | `runs[].headline.speeches` | integer | Things said. |
-| `runs[].headline.gifts` | integer | Gifts of money. |
+| `runs[].headline.messages` | integer | Written messages sent. |
+| `runs[].headline.gifts` | integer | Money handed over, as gifts or loans. |
+| `runs[].headline.purchases` | integer | Goods bought. |
 | `runs[].headline.skills_shared` | integer | Skills passed on. |
 | `runs[].headline.ratings` | integer | Ratings given. |
 | `runs[].headline.journals` | integer | Bedtimes with a journal entry. |
@@ -218,8 +220,11 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `places` | array | Every place, in configured order. |
 | `places[].id` | string | The id used in entries. |
 | `places[].name` | string | The name residents read. |
-| `places[].kind` | string | `home`, `workplace` or `social`. |
-| `places[].x` | number | Map position, in map units: the homes in a row at the top, the workplace in the middle, the social places in a row below, the places of a row one unit apart and centred. |
+| `places[].kind` | string | `home`, `workplace`, `social` or `shop`. |
+| `places[].rent` | integer or null | A home's rent a day for one room; null for other places. |
+| `places[].rooms` | integer or null | A home's rooms, one a resident; null for other places. |
+| `places[].comfort` | number or null | A home's comfort, 1 an ordinary home; null for other places. |
+| `places[].x` | number | Map position, in map units: the homes in a row at the top, the workplace in the middle, the social places and shops in a row below, the places of a row one unit apart and centred. |
 | `places[].y` | number | Map position. |
 | `routes` | array | The walking times between places that differ from the default. |
 | `routes[].between` | array of two strings | The two place ids. |
@@ -230,8 +235,9 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `residents[].home` | string | The id of its home. |
 | `residents[].purse` | integer | The money it started with. |
 | `residents[].rules` | string | The standing rules of the town as this resident was told them, which also seeded its `memory/town.md`. |
-| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `living_cost` charged at midnight, `acceptance_runs` per task and day, and `claim_expiry_days`. |
-| `social` | object | The social rules as configured: `mode` (`isolated`, each resident in a town of its own, or `town`), `exchange` (group B's evening pairing, or null), `skills_shareable` and `silence_minutes`. |
+| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day, and `claim_expiry_days`. |
+| `goods` | array | The catalogue of goods for sale as configured, each with `id`, `name`, `price`, `sold_at` (place ids), `kind` (`consumable`, `immediate` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`) and the fields of its kind and effect (`uses`, `per_day`, `fee_per_day`, `nourishment`, `factor`, `phrase`), null where they do not apply. |
+| `social` | object | The social rules as configured: `mode` (`isolated`, each resident in a town of its own, or `town`), `exchange` (group B's evening pairing, or null), `skills_shareable`, `ratings` (whether the bedtime ratings are on) and `silence_minutes`. |
 | `skills_writable` | boolean | Whether residents may write their skills. |
 | `day` | object | The fixed hours of a day as configured, each `HH:MM`, such as `forced_sleep`, `checkpoint` and `forced_wake`. |
 | `model` | object | The model behind the residents: `backend` (`scripted` for a dry run) and `name`. |
@@ -300,7 +306,10 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `abandon` | `task`: the resident gave its task up |
 | `expiry` | `task`: the claim ran out unpaid |
 | `speech` | `text`, `to` (everyone who heard it), `private` |
+| `message` | `to`, `text`: a written message, read by `to` alone |
 | `gift` | `to`, `amount` |
+| `purchase` | `item`, `name`, `quantity`, `amount` |
+| `move_in` | `from`, `to`: the resident moved house, and its lane's home follows |
 | `skill_shared` | `to`, `skill` |
 | `rating` | `rated`, `score`, `reason` |
 | `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime |
@@ -329,7 +338,9 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 | `daily[].payments` | integer | Payments made. |
 | `daily[].paid` | integer | Money paid in all. |
 | `daily[].speeches` | integer | Things said. |
-| `daily[].gifts` | integer | Gifts of money. |
+| `daily[].messages` | integer | Written messages sent. |
+| `daily[].gifts` | integer | Money handed over, as gifts or loans. |
+| `daily[].purchases` | integer | Goods bought. |
 | `daily[].skills_shared` | integer | Skills passed on. |
 | `daily[].ratings` | integer | Ratings given. |
 | `daily[].journals` | integer | Bedtimes with a journal entry. |
@@ -351,6 +362,7 @@ The measures of every lived day a checkpoint closed, from `analysis.measures`, a
 | `graph[].minutes` | number | Simulated minutes `source` spent in conversations `target` took part in, each conversation counted on the day it began. |
 | `graph[].said` | integer | Things `source` said that `target` heard. |
 | `graph[].said_private` | integer | Of those, the ones said to `target` by name. |
+| `graph[].messages` | integer | Written messages `source` sent `target`. |
 | `graph[].gifts` | integer | Times `source` handed `target` money. |
 | `graph[].money` | integer | The money handed over in all. |
 | `graph[].skills` | integer | Skills `source` passed to `target`. |

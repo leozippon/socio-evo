@@ -1,11 +1,15 @@
-"""Purses: payment, gifts, and the living cost charged at midnight with a statement.
+"""Purses: payments, money handed over, purchases, and the midnight charges with a statement.
 
-Money is a whole number of the town's currency. A purse may go below zero; the statement then
-says how deep in debt the resident is. The ledger keeps each resident's purse movements since
-its last statement, for the next one.
+Money is a whole number of the town's currency. A purse may go below zero when rent and fees are
+charged; the statement then says how deep in debt the resident is. A purchase is paid in cash:
+`cannot_pay` is the refusal when the purse does not cover the price, in debt or not. The ledger
+keeps each resident's purse movements since its last statement, for the next one; the world keeps
+no account of what passes between residents beyond the hand-over itself.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 
 class Economy:
@@ -24,6 +28,12 @@ class Economy:
             return f"You are {self.money(-balance)} in debt."
         return f"Your purse holds {self.money(balance)}."
 
+    def cannot_pay(self, name: str, amount: int) -> str | None:
+        """Why `name` cannot pay `amount` in cash now, or None if it can."""
+        if amount > self.purses[name]:
+            return f"You do not have {self.money(amount)}. {self.purse(name)}"
+        return None
+
     def pay(self, name: str, amount: int, task: int) -> None:
         self.purses[name] += amount
         self.ledger[name].append(["payment", amount, str(task)])
@@ -34,18 +44,26 @@ class Economy:
         self.ledger[giver].append(["gave", amount, recipient])
         self.ledger[recipient].append(["received", amount, giver])
 
-    def settle(self, name: str, living_cost: int, date: str) -> str:
-        """Charge the living cost and return the statement since the last one."""
-        self.purses[name] -= living_cost
+    def buy(self, name: str, amount: int, what: str) -> None:
+        """`name` pays `amount` for `what` (the good as a sentence names it)."""
+        self.purses[name] -= amount
+        self.ledger[name].append(["bought", amount, what])
+
+    def settle(self, name: str, charges: Sequence[tuple[str, int]]) -> list[str]:
+        """Take the midnight `charges` ((what, amount) each) from the purse and return the
+        statement's items: the day's movements, then the charges; the ledger starts afresh."""
         told = {
             "payment": "paid {money} for task {about}",
             "received": "received {money} from {about}",
             "gave": "gave {money} to {about}",
+            "bought": "bought {about} for {money}",
         }
-        parts = [
+        items = [
             told[str(kind)].format(money=self.money(int(amount)), about=about)
             for kind, amount, about in self.ledger[name]
         ]
-        parts.append(f"living cost {self.money(living_cost)}")
+        for what, amount in charges:
+            self.purses[name] -= amount
+            items.append(f"{what} {self.money(amount)}")
         self.ledger[name] = []
-        return f"Your statement for {date}: {'; '.join(parts)}. {self.purse(name)}"
+        return items

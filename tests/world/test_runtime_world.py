@@ -63,7 +63,7 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
                 await asyncio.sleep(0.01)
     await town.close()
 
-    assert not model._replies and world.economy.purses["Mei"] == 120 + 20 - 30
+    assert not model._replies and world.economy.purses["Mei"] == 120 + 20 - 20  # the rent
     assert (directory.root / "memory" / "journal" / "2001-01-01.md").read_text() == (
         "I fixed task 1 and was paid.\n"
     )

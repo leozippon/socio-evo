@@ -32,14 +32,21 @@ MEASURES = {
     "submitted": "tasks handed in (acceptance runs)",
     "accepted": "hand-ins accepted",
     "earned": "money paid for accepted tasks",
-    "purse": "the purse after the living cost at midnight",
+    "spent_rent": "rent charged at midnight",
+    "spent_fees": "the daily charges on what it owns, at midnight",
+    "spent_food": "money spent on food",
+    "spent_goods": "money spent on other goods",
+    "hungry": "1 if it had nothing to eat that day",
+    "purse": "the purse after the midnight charges",
     "in_debt": "1 if that purse is below zero",
     "work_hours": "simulated hours at work, from starting work to stopping it or being taken away",
     "said_public": "things said to everyone present",
     "said_private": "things said to named residents",
     "heard_public": "things said by others to everyone present, heard",
     "heard_private": "things said by others to it by name",
-    "interlocutors": "distinct residents it spoke to or was spoken to by",
+    "interlocutors": "distinct residents it spoke or wrote to, or was spoken or written to by",
+    "messages_sent": "written messages it sent",
+    "messages_received": "written messages it received",
     "skills_given": "skills passed to others",
     "skills_received": "skills received",
     "money_given": "money handed to others",
@@ -96,15 +103,26 @@ def world_measures(day: Day, name: str) -> Row:
 
     settled = mine("settlement")
     purse = settled[-1]["payload"]["purse"] if settled else None
+    bought = mine("purchase")
     speech = [e for e in day.entries if e["kind"] == "speech"]
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
+    sent, got = mine("message"), to_me("message", "to")
     given, received = mine("rating"), to_me("rating", "rated")
     return {
         "claimed": len(mine("claim")),
         "submitted": len(mine("submission")),
         "accepted": sum(e["payload"]["resolved"] for e in mine("verdict")),
         "earned": sum(e["payload"]["amount"] for e in mine("payment")),
+        "spent_rent": sum(e["payload"]["rent"] for e in settled),
+        "spent_fees": sum(e["payload"]["fees"] for e in settled),
+        "spent_food": sum(
+            e["payload"]["amount"] for e in bought if e["payload"]["effect"] == "food"
+        ),
+        "spent_goods": sum(
+            e["payload"]["amount"] for e in bought if e["payload"]["effect"] != "food"
+        ),
+        "hungry": int(bool(mine("hungry"))),
         "purse": purse,
         "in_debt": None if purse is None else int(purse < 0),
         "work_hours": _work_seconds(day, name) / 3600,
@@ -113,8 +131,13 @@ def world_measures(day: Day, name: str) -> Row:
         "heard_public": sum(not e["payload"]["private"] for e in heard),
         "heard_private": sum(e["payload"]["private"] for e in heard),
         "interlocutors": len(
-            {other for e in said for other in e["payload"]["to"]} | {e["actor"] for e in heard}
+            {other for e in said for other in e["payload"]["to"]}
+            | {e["actor"] for e in heard}
+            | {e["payload"]["to"] for e in sent}
+            | {e["actor"] for e in got}
         ),
+        "messages_sent": len(sent),
+        "messages_received": len(got),
         "skills_given": len(mine("skill_shared")),
         "skills_received": len(to_me("skill_shared", "to")),
         "money_given": sum(e["payload"]["amount"] for e in mine("gift")),

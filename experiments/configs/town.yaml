@@ -1,11 +1,24 @@
 # The town every group lives in: eight residents in five homes, the Workshop, Café Linde, the
-# Anchor and the river walk, for 28 days. Not a complete configuration by itself: each file of
-# groups/ overlays it with the group's name and social rules (see experiments/config.py for how
-# an overlay merges).
+# Anchor, the river walk and the Store, for 28 days. Not a complete configuration by itself: each
+# file of groups/ overlays it with the group's name and social rules (see experiments/config.py
+# for how an overlay merges).
 #
 # The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
-# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk.
-# The only fixed hours are the night's below, together with the longest one sleep may last.
+# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk
+# and the Store. The only fixed hours are the night's below, together with the longest one sleep
+# may last.
+#
+# Calibration of a life. A task pays 60. Rent runs from 30 a day for a room in a shared house to
+# 70 for the cottage, and a day's food from 12 (groceries, 36 for three days) to 20 (supper at the
+# Anchor), so the cheapest life costs 42 a day and the dearest 90: one task a day keeps a room in a
+# shared house, two keep any home in town, and a day without work costs something without
+# threatening. Starting purses of 180-300 are three to five days of the resident's own life. The
+# residents have worked five to seven tasks a day (under the flat cost of 90 their purses stood at
+# 1,500-2,500 by day 7), so the things to save for are priced against that pace, not against the
+# rent: the bicycle (360) is a full day's work and more than any purse at the start, the phone
+# (240, then 5 a day) most of one, the coat (150) half, the book (40) under a task. Nourishment is
+# a food's share of a day's need, 100 being a full day; for now only taking some or none matters,
+# and a resident that took none by midnight went hungry.
 
 # For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
 # our quota: the GPUs are taken and no parameters are tuned yet. The standing setup is the local
@@ -39,28 +52,36 @@ town:
   currency: $
   start_date: 2026-03-02 # a Monday
   seed: 20260302
+  # Homes: the rent a day for a room, the rooms (one a resident; the free ones can be moved into)
+  # and a comfort, kept for the needs to come (0.9 a shared house, 1 a flat, 1.1 the cottage).
   places:
-    - {id: mill-street-house, name: the shared house on Mill Street, kind: home}
-    - {id: college-flat, name: the flat by the college gates, kind: home}
-    - {id: market-flat, name: the flat on the market square, kind: home}
-    - {id: river-cottage, name: the cottage by the river, kind: home}
-    - {id: hill-road-house, name: the house on Hill Road, kind: home}
+    - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 30, rooms: 3, comfort: 0.9}
+    - {id: college-flat, name: the flat by the college gates, kind: home, rent: 55, rooms: 1, comfort: 1.0}
+    - {id: market-flat, name: the flat on the market square, kind: home, rent: 50, rooms: 2, comfort: 1.0}
+    - {id: river-cottage, name: the cottage by the river, kind: home, rent: 70, rooms: 1, comfort: 1.1}
+    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 35, rooms: 3, comfort: 0.9}
     - {id: workshop, name: the Workshop, kind: workplace}
     - {id: cafe, name: Café Linde, kind: social}
     - {id: anchor, name: the Anchor, kind: social}
     - {id: river-walk, name: the river walk, kind: social}
-  # Fifteen minutes from or to a home; ten between the Workshop, the café, the Anchor and the walk.
+    - {id: store, name: the Store, kind: shop}
+  # Fifteen minutes from or to a home; ten among the Workshop, the café, the Anchor, the walk and
+  # the Store.
   travel_minutes: 15
   routes:
     - {between: [workshop, cafe], minutes: 10}
     - {between: [workshop, anchor], minutes: 10}
     - {between: [workshop, river-walk], minutes: 10}
+    - {between: [workshop, store], minutes: 10}
     - {between: [cafe, anchor], minutes: 10}
     - {between: [cafe, river-walk], minutes: 10}
+    - {between: [cafe, store], minutes: 10}
     - {between: [anchor, river-walk], minutes: 10}
-  # Starting purses: two to three days of living, more for Lucia, who saved for her year, least
-  # for Aisha, whose savings are nearly gone. Ties are the people each resident knows already,
-  # told to it in the town mode (groups C and D) and seeding its notes on people; each is
+    - {between: [anchor, store], minutes: 10}
+    - {between: [river-walk, store], minutes: 10}
+  # Starting purses: three to five days of the resident's own life (see the calibration above),
+  # more for Lucia, who saved for her year, least for Aisha, whose savings are nearly gone. Ties
+  # are the people each resident knows already, told to it in the town mode (groups C and D) and seeding its notes on people; each is
   # written to its owner and must be mutual.
   residents:
     - name: Mei
@@ -155,14 +176,25 @@ town:
     split: train
     board_size: 56 # seven a resident a day; the pool comes round in turn
     payment: 60
-    living_cost: 90 # a task and a half
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
+  # The goods for sale (see world/config.py for the kinds and effects). Every good does something
+  # in the world: feeds, shortens journeys, lets owners write to one another, or shows on its
+  # owner wherever others see it. Names carry their article, as a sentence names them.
+  goods:
+    - {id: groceries, name: groceries, price: 36, sold_at: [store], kind: consumable, uses: 3, per_day: 1, effect: food, nourishment: 60}
+    - {id: cafe-meal, name: a meal at Café Linde, price: 15, sold_at: [cafe], kind: immediate, effect: food, nourishment: 60}
+    - {id: supper, name: supper at the Anchor, price: 20, sold_at: [anchor], kind: immediate, effect: food, nourishment: 80}
+    - {id: bicycle, name: a bicycle, price: 360, sold_at: [store], kind: durable, effect: travel, factor: 0.5}
+    - {id: phone, name: a phone, price: 240, sold_at: [store], kind: durable, effect: messaging, fee_per_day: 5}
+    - {id: coat, name: a coat, price: 150, sold_at: [store], kind: durable, effect: appearance, phrase: in a new coat}
+    - {id: book, name: a book, price: 40, sold_at: [store], kind: durable, effect: appearance, phrase: with a book under one arm}
   social:
     silence_minutes: 15 # counted while nobody in the conversation is still thinking
     skills_shareable: true
+    ratings: false # the bedtime ratings are off for now; true turns them back on
   clock:
     speed_idle: 240 # a sleeping town passes 8 hours in 2 minutes
     speed_busy_one: 32 # one thinker's minute is half a simulated hour

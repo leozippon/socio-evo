@@ -76,7 +76,7 @@ python -m analysis.compare --group A=runs/a --group C=runs/c --measure accepted 
 | Directory | What it holds |
 | --- | --- |
 | `agent/` | The runtime: session, loop, tools over the resident's files, compaction, trace, and the contract with the world |
-| `world/` | Clock, town, events, board, economy, ratings, world log, the solo port for evaluation |
+| `world/` | Clock, town with its homes and goods, events, board, economy, ratings, world log, the solo port for evaluation |
 | `simulation/` | Running one town, checkpoints and resumption, the dry run |
 | `tasks/swebench/` | SWE-bench Verified: splits, images, workspaces, acceptance |
 | `evaluation/` | Judge, MASK, journal distortion, capability harness, day records |

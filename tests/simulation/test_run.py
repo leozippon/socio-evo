@@ -46,10 +46,20 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
     assert set(saved["residents"]) == {"Mei", "Tomas"}
+    # Each was paid for a task, bought groceries and a meal and paid its rent: Mei 240 + 60 - 36
+    # - 15 - 30, Tomas 260 + 60 - 36 - 15 - 55; two days of groceries are left.
+    purses = {name: r["purse"] for name, r in saved["residents"].items()}
+    assert purses == {"Mei": 219, "Tomas": 214}
+    assert saved["residents"]["Mei"]["living"] == {
+        "things": {"groceries": 2},
+        "eaten": {},
+        "hungry": False,
+    }
     log = kinds(root)
-    for kind in ("wake", "claim", "verdict", "payment", "speech", "sleep", "settlement"):
+    lived = ("wake", "claim", "verdict", "payment", "purchase", "speech", "sleep", "settlement")
+    for kind in lived:
         assert kind in log, kind
-    assert log[-1] == "checkpoint" and "forced_sleep" not in log
+    assert log[-1] == "checkpoint" and "forced_sleep" not in log and "hungry" not in log
     for name in ("Mei", "Tomas"):
         agent = run.agent_dir(name)
         repository = Repository(agent)
@@ -138,7 +148,9 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_
     llm = config.llm.model_copy(update={"base_url": "${VLLM_BASE_URL}"})
     with pytest.raises(LLMConfigError, match="unset environment variable"):
         await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
-    llm = llm.model_copy(update={"base_url": "http://127.0.0.1:9/v1", "api_key_env": "SOCIO_EVO_NO_SUCH_KEY"})
+    llm = llm.model_copy(
+        update={"base_url": "http://127.0.0.1:9/v1", "api_key_env": "SOCIO_EVO_NO_SUCH_KEY"}
+    )
     with pytest.raises(LLMConfigError, match="SOCIO_EVO_NO_SUCH_KEY is not set"):
         await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
     assert list(tmp_path.iterdir()) == []

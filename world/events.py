@@ -7,11 +7,14 @@ returns the resident to that event as it was. One leaves by doing something else
 a conversation is listening, and leaves it standing. A Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
-review its day, rate and see to its files, and suspended, once its runtime has nothing more to
-do (or at the forced hour), from which only the wake-up brings it back.
+review its day, rate (where ratings are on) and see to its files, and suspended, once its
+runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
+back.
 
-The tool sets are exactly the architecture's table. Every world tool is declared at every step;
-calling one the current event does not offer returns the refusal below, naming the condition.
+The tool sets are exactly the architecture's table. Every world tool the town declares is
+declared at every step (`rate` and `message` only where the town has ratings or something to
+write with); calling one the current event does not offer returns the refusal below, naming the
+condition.
 """
 
 from __future__ import annotations
@@ -19,7 +22,20 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-IDLE_TOOLS = frozenset({"help", "look_around", "go", "start_work", "say", "sleep", "wait"})
+IDLE_TOOLS = frozenset(
+    {
+        "help",
+        "look_around",
+        "go",
+        "start_work",
+        "say",
+        "message",
+        "buy",
+        "move_in",
+        "sleep",
+        "wait",
+    }
+)
 WORK_TOOLS = frozenset(
     {
         "look_around",
@@ -34,14 +50,17 @@ WORK_TOOLS = frozenset(
         "submit",
         "abandon_task",
         "say",
+        "message",
         "leave_work",
     }
 )
 CONVERSATION_TOOLS = frozenset(
     {
         "say",
+        "message",
         "give_money",
         "share_skill",
+        "buy",
         "look_around",
         "go",
         "wait",
@@ -101,19 +120,21 @@ Base = Idle | Movement | Work | Sleep
 Event = Base | Conversation
 
 
-def refusal(event: Event, tool: str, *, workplace: str, destination: str) -> str:
+def refusal(
+    event: Event, tool: str, *, workplace: str, destination: str, ratings: bool = True
+) -> str:
     """Why `tool`, which `event` does not offer, cannot be used now. `workplace` and
-    `destination` are the names of the workplace and of where a moving resident is going."""
+    `destination` are the names of the workplace and of where a moving resident is going;
+    `ratings` whether the town has bedtime ratings."""
     if isinstance(event, Movement):
         return f"You are on your way to {destination}; you can do nothing until you arrive."
     if isinstance(event, Sleep):
+        if event.suspended:
+            return "You are asleep."
+        rate = ", rate people" if ratings else ""
         return (
-            "You are asleep."
-            if event.suspended
-            else (
-                "You have gone to bed; before you fall asleep you can only look around, look "
-                "back over your day, rate people and see to your own files."
-            )
+            "You have gone to bed; before you fall asleep you can only look around, look back "
+            f"over your day{rate} and see to your own files."
         )
     if isinstance(event, Conversation):
         return "You are in a conversation; leave it first."

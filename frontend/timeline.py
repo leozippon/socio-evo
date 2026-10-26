@@ -42,8 +42,11 @@ The markers, each on the lane of the resident who acted, with their own fields:
     abandon       task                    the resident gave its task up
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
+    message       to, text                a written message, read by "to" alone
     gift          to, amount
     skill_shared  to, skill
+    purchase      item, name, quantity, amount
+    move_in       from, to                the resident moved house; its lane's home follows
     rating        rated, score, reason
     journal       text, day, wake, ratings_read   going to bed with the day's journal entry
     forced_sleep  wake
@@ -89,11 +92,14 @@ _FOLDED = frozenset(
         "abandon",
         "expiry",
         "speech",
+        "message",
         "meeting",
         "leave_conversation",
         "conversation_end",
         "gift",
         "skill_shared",
+        "purchase",
+        "move_in",
         "rating",
         "settlement",
         "checkpoint",
@@ -335,10 +341,25 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "conversation_end":
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
+        elif kind == "message":
+            lane.mark(entry, "message", to=payload["to"], text=payload["text"])
         elif kind == "gift":
             lane.mark(entry, "gift", to=payload["to"], amount=payload["amount"])
             lane.credit(t, -payload["amount"])
             lanes[payload["to"]].credit(t, payload["amount"])
+        elif kind == "purchase":
+            lane.mark(
+                entry,
+                "purchase",
+                item=payload["item"],
+                name=payload["name"],
+                quantity=payload["quantity"],
+                amount=payload["amount"],
+            )
+            lane.credit(t, -payload["amount"])
+        elif kind == "move_in":
+            lane.home = payload["to"]
+            lane.mark(entry, "move_in", **{"from": payload["from"], "to": payload["to"]})
         elif kind == "skill_shared":
             lane.mark(entry, "skill_shared", to=payload["to"], skill=payload["skill"])
         elif kind == "rating":

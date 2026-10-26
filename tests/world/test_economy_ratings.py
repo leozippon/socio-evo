@@ -1,11 +1,16 @@
-"""Purses, the midnight statement and debt, gifts, skills handed over, and ratings."""
+"""Purses, the midnight statement and debt, money handed over, skills handed over, and ratings on
+and off."""
 
 from __future__ import annotations
+
+import re
+
+import pytest
 
 from tests.world.conftest import awake_at, town_config
 
 
-async def test_the_midnight_statement_tells_the_days_money_and_debt(make_town):
+async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(make_town):
     town = make_town()
     await awake_at(town)
     await town.call("Mei", "go", place="workshop")
@@ -19,25 +24,55 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt(make_town):
     await town.until("10:00")
     await town.call("Aisha", "say", text="Could you spare some money?")
     await town.call("Mei", "give_money", to="Aisha", amount=15)
+    await town.call("Aisha", "go", place="store")
+    await town.until("10:10")
+    await town.call("Aisha", "buy", item="coat")  # $30 of her $45
     for name in town.world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert town.take("Mei")[-2:] == [
-        "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; living "
-        "cost $30. Your purse holds $95.",
+    assert town.take("Mei")[-3:] == [
+        "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; rent for "
+        "your room at the shared house on Mill Street $20. You had nothing to eat today. Your "
+        "purse holds $105.",
+        "You went hungry today, too hungry to concentrate on work before the next meal.",
         "It is 00:00: the day's board is posted at the workshop.",  # she is still there
     ]
     assert town.take("Aisha")[-2] == (
-        "Your statement for Monday 1 January: received $15 from Mei; living cost $30. Your "
-        "purse holds $15."
+        "Your statement for Monday 1 January: received $15 from Mei; bought a coat for $30; rent "
+        "for your room at the shared house on Mill Street $20. You had nothing to eat today. You "
+        "are $5 in debt."
+    )
+    assert town.world.economy.purses == {"Mei": 105, "Tomas": 150, "Aisha": -5}
+    assert "You are $5 in debt." in town.world.ports["Aisha"].situation()
+    # In debt one is still paid and still owes rent, and can still be given money, but can buy
+    # nothing until the purse covers the price: cash only.
+    assert (await town.call("Aisha", "buy", item="groceries")).text == (
+        "You do not have $12. You are $5 in debt."
+    )
+    await town.call("Mei", "go", place="store")
+    await town.until("00:10", day=2)
+    await town.call("Mei", "say", text="Here, pay me back when you can.", to=["Aisha"])
+    assert (await town.call("Mei", "give_money", to="Aisha", amount=20)).text == (
+        "You gave Aisha $20. Your purse holds $85."
+    )
+    assert (await town.call("Aisha", "buy", item="groceries")).text == (
+        "You bought groceries for $12. You have groceries (3 days' worth) and a coat. Your purse "
+        "holds $3."
     )
     town.rest()
     await town.until("00:00", day=3)
     assert [p.text for p in town.heard["Aisha"] if p.kind == "settlement"][-1] == (
-        "Your statement for Tuesday 2 January: living cost $30. You are $15 in debt."
+        "Your statement for Tuesday 2 January: received $20 from Mei; bought groceries for $12; "
+        "rent for your room at the shared house on Mill Street $20. You ate today: groceries (a "
+        "day's worth). You are $17 in debt."
     )
-    assert town.world.economy.purses == {"Mei": 65, "Tomas": 120, "Aisha": -15}
-    assert "You are $15 in debt." in town.world.ports["Aisha"].situation()
+    assert town.world.economy.purses == {"Mei": 65, "Tomas": 120, "Aisha": -17}
+    assert not town.world.residents["Aisha"].living.hungry
+    gifts = [e for e in town.world.log.entries() if e["kind"] == "gift"]
+    assert [(e["actor"], e["payload"]) for e in gifts] == [
+        ("Mei", {"to": "Aisha", "amount": 15}),
+        ("Mei", {"to": "Aisha", "amount": 20}),
+    ]  # a gift or a loan, on their own terms: the world keeps no account of which
 
 
 async def test_gifts_go_only_to_conversation_partners_and_only_from_what_one_has(make_town):
@@ -147,6 +182,35 @@ async def test_nobody_can_be_rated_without_having_been_met(make_town):
     assert (await town.call("Tomas", "rate", resident="Tomas", score=5, reason="Me.")).text == (
         "You did not speak with Tomas today."
     )
+
+
+async def test_with_ratings_off_nothing_a_resident_reads_mentions_them(make_town):
+    town = make_town(town_config(ratings=False))
+    await awake_at(town)
+    world = town.world
+    assert "rate" not in [spec.name for spec in world.tool_specs]
+    texts = [world.rules.text("Mei"), world.rules.people_notes("Mei")]
+    texts += [spec.description for spec in world.tool_specs]
+    await town.call("Tomas", "go", place="mill-street-house")
+    await town.until("07:10")
+    await town.call("Tomas", "say", text="Morning, Mei.", to=["Mei"])
+    texts.append(world.ports["Mei"].situation())
+    await town.call("Tomas", "go", place="college-flat")
+    await town.until("20:00")
+    await town.call("Mei", "sleep", until="07:00", journal="A day.")
+    in_bed = town.take("Mei")[-1]
+    assert in_bed == (
+        "You are in bed and will wake at 07:00; your journal entry for today is kept. Before you "
+        "fall asleep you can look back over your day and see to your files; you fall asleep once "
+        "you have nothing more to do."
+    )
+    refused = await town.call("Mei", "go", place="park")  # what one may still do in bed
+    texts += [in_bed, world.ports["Mei"].situation(), refused.text]
+    assert [text for text in texts if re.search(r"\brat(e|es|ed|ing|ings)\b", text)] == []
+    with pytest.raises(KeyError):  # not declared, so as unknown as any other name
+        await town.call("Mei", "rate", resident="Tomas", score=4, reason="x")
+    slept = [e for e in world.log.entries() if e["kind"] == "sleep"][-1]
+    assert slept["payload"]["ratings_read"] == []
 
 
 async def test_an_isolated_resident_meets_nobody_and_hears_of_no_ratings(make_town):

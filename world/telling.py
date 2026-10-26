@@ -20,11 +20,11 @@ def cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
 
-def listed(items: Sequence[str]) -> str:
-    """`a`, `a and b`, `a, b and c`."""
+def listed(items: Sequence[str], joiner: str = "and") -> str:
+    """`a`, `a and b`, `a, b and c`; with `joiner` "or", `a, b or c`."""
     if len(items) <= 1:
         return "".join(items)
-    return f"{', '.join(items[:-1])} and {items[-1]}"
+    return f"{', '.join(items[:-1])} {joiner} {items[-1]}"
 
 
 def counted(n: int, thing: str, things: str | None = None) -> str:

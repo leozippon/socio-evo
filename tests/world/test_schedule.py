@@ -16,6 +16,7 @@ from tests.world.conftest import (
     at,
     awake_at,
     make_agent_dirs,
+    stocked,
     town_config,
 )
 from world.clock import ManualClock, settle
@@ -192,7 +193,7 @@ async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     await town.until("08:59", day=2)
     assert not waiting.done()
     await town.until("09:00", day=2)
-    assert [p.kind for p in waiting.result()] == ["settlement", "wake"]
+    assert [p.kind for p in waiting.result()] == ["settlement", "hungry", "wake"]
 
 
 async def test_the_checkpoint_waits_for_every_runtime_to_rest_and_holds_the_clock(make_town):
@@ -216,6 +217,10 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     town = make_town(backend=backend)
     await awake_at(town)
     await town.call("Aisha", "say", text="Busy day?", to=["Mei"])
+    await town.call("Mei", "go", place="store")
+    await town.until("07:10")
+    await town.call("Mei", "buy", item="groceries")
+    await town.call("Mei", "buy", item="coat")
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
     await town.call("Mei", "start_work")
@@ -243,7 +248,14 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     }
     assert state["residents"]["Mei"]["done"] == [1]
     assert state["residents"]["Mei"]["unread_ratings"] == [[3, "Busy all day."]]
-    assert [p["kind"] for p in state["residents"]["Aisha"]["held"]] == ["settlement"]
+    assert state["residents"]["Mei"]["home"] == "mill-street-house"
+    assert state["residents"]["Mei"]["living"] == {  # a day's groceries went at midnight
+        "things": {"groceries": 2, "coat": 1},
+        "eaten": {},
+        "hungry": False,
+    }
+    assert state["residents"]["Aisha"]["living"] == {"things": {}, "eaten": {}, "hungry": True}
+    assert [p["kind"] for p in state["residents"]["Aisha"]["held"]] == ["settlement", "hungry"]
     assert state["residents"]["Aisha"]["wake"] == at("10:00", day=2)
     saved = json.loads(json.dumps(state))
     last_seq = list(town.world.log.entries())[-1]["seq"]
@@ -260,6 +272,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
 async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_path):
     town = make_town()
     await awake_at(town)
+    stocked(town)
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
     await town.call("Mei", "start_work")
@@ -283,6 +296,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     assert aisha[-1] == "You woke up at home. It is Tuesday 2 January, 10:00."
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
+    assert later.residents["Mei"].living.things == {"groceries": 2}  # the stock came back
     await again.call("Mei", "start_work")
     assert (await again.call("Mei", "read_repo_file", path="b.py")).text == "half\n"
     await again.close()
@@ -329,8 +343,18 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "share_skill", to="Tomas", skill="triage")
     await town.call("Mei", "leave_conversation")
     await town.call("Mei", "leave_work")
+    await town.call("Tomas", "leave_work")
     await town.until("18:00")
-    await town.call("Mei", "go", place="mill-street-house")
+    for name in ("Mei", "Tomas"):
+        await town.call(name, "go", place="store")
+    await town.until("18:10")
+    for name in ("Mei", "Tomas"):
+        await town.call(name, "buy", item="phone")
+    await town.call("Mei", "buy", item="groceries")
+    await town.call("Mei", "message", to="Tomas", text="Supper later?")
+    await town.call("Mei", "go", place="college-flat")
+    await town.until("18:20")
+    await town.call("Mei", "move_in")
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     await town.call("Mei", "rate", resident="Tomas", score=4, reason="Good company.")

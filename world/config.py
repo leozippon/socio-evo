@@ -1,21 +1,33 @@
-"""The configuration of a town: its places, its residents, its work, its social life, its clock
-and the few fixed hours of its night.
+"""The configuration of a town: its places, its residents, its work, the goods for sale, its
+social life, its clock and the few fixed hours of its night.
 
 The four groups of the design differ only here: `social.mode` is `isolated` in A and B (each
 resident lives in a town of its own and has a board of its own) and `town` in C and D (one town,
 one shared board); `social.exchange` is set in B alone (the evening pairing); and
 `social.skills_shareable` is false in D. Every check that the world relies on is made when the
 configuration is validated, so that a bad configuration stops a run before anything is written.
+
+Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
+for each, and a `comfort`, kept for the needs to come and unused so far), and the goods it buys.
+Goods are a catalogue (`goods`): the world implements three kinds of good and the effects of
+`Effect`, and everything else about a good is data, so the catalogue grows without code. A
+`consumable` is bought as a stock of `uses` and used up `per_day` at midnight; an `immediate` good
+is consumed as it is bought; a `durable` is owned once and kept, billed `fee_per_day` on the
+statement while owned. A good with the effect `food` gives its `nourishment` when it is consumed,
+and a resident that took none in a day went hungry; `travel` makes the owner's journeys take
+`factor` of the time; `messaging` lets owners write to one another wherever they are;
+`appearance` shows `phrase` to whoever sees the owner.
 """
 
 from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, get_args
 
 from pydantic import AfterValidator, Field, model_validator
 
+from agent.wording import offences
 from infrastructure.config import StrictModel
 from world.clock import DAY, parse_hour
 
@@ -30,15 +42,88 @@ Hour = Annotated[str, AfterValidator(_hour)]
 Id = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 """A resident's name: one capitalised word, the way others address it."""
+Effect = Literal["food", "travel", "messaging", "appearance"]
+"""What a good does in the world: the one enumeration of effects, each implemented by the world."""
+EFFECTS: tuple[str, ...] = get_args(Effect)
 
 
 class Place(StrictModel):
     """A place of the town. `name` is how a sentence names it ("the café on the square").
-    Every place, the workplace included, can be visited and used at any hour."""
+    Every place, the workplace included, can be visited and used at any hour. A home has `rooms`,
+    one a resident, charges `rent` a day for each and has a `comfort` (1 is an ordinary home); a
+    shop and a social place may sell goods."""
 
     id: Id
     name: str = Field(min_length=1)
-    kind: Literal["home", "workplace", "social"]
+    kind: Literal["home", "workplace", "social", "shop"]
+    rent: int | None = Field(default=None, ge=0, description="a home's rent a day for one room")
+    rooms: int | None = Field(default=None, ge=1, description="a home's rooms, one a resident")
+    comfort: float | None = Field(default=None, gt=0, description="a home's comfort, 1 ordinary")
+
+    @model_validator(mode="after")
+    def _by_kind(self) -> Place:
+        given = (self.rent, self.rooms, self.comfort)
+        if self.kind == "home":
+            if any(value is None for value in given):
+                raise ValueError(f"the home {self.id} needs rent, rooms and comfort")
+        elif any(value is not None for value in given):
+            raise ValueError(f"{self.id} is not a home and has no rent, rooms or comfort")
+        return self
+
+
+class Good(StrictModel):
+    """A good for sale (see the module docstring). `name` is how a sentence names it, with its
+    article ("a bicycle", "groceries", "a meal at Café Linde"); `sold_at` names the places that
+    sell it."""
+
+    id: Id
+    name: str = Field(min_length=1)
+    price: int = Field(ge=1)
+    sold_at: tuple[Id, ...] = Field(min_length=1)
+    kind: Literal["consumable", "immediate", "durable"]
+    effect: Effect
+    uses: int | None = Field(default=None, ge=1, description="a consumable's units in one purchase")
+    per_day: int | None = Field(default=None, ge=1, description="a consumable's units used a day")
+    fee_per_day: int = Field(default=0, ge=0, description="a durable's charge a day while owned")
+    nourishment: int | None = Field(default=None, ge=1, description="food: what one unit gives")
+    factor: float | None = Field(default=None, gt=0, le=1, description="travel: the time taken")
+    phrase: str | None = Field(default=None, description="appearance: what others see")
+
+    @model_validator(mode="after")
+    def _consistent(self) -> Good:
+        what = f"the good {self.id}"
+        if self.kind == "consumable":
+            if self.uses is None or self.per_day is None:
+                raise ValueError(f"{what} is consumable and needs uses and per_day")
+            if self.per_day > self.uses:
+                raise ValueError(f"{what} uses more a day than one purchase holds")
+        elif self.uses is not None or self.per_day is not None:
+            raise ValueError(f"{what} is not consumable and has no uses or per_day")
+        if self.kind != "durable" and self.fee_per_day:
+            raise ValueError(f"{what} is not durable and carries no fee")
+        if self.effect == "food":
+            if self.kind == "durable":
+                raise ValueError(f"{what} is food and so is consumable or immediate")
+        elif self.kind != "durable":
+            raise ValueError(f"{what} has the effect {self.effect}, which only a durable has")
+        if (self.nourishment is not None) != (self.effect == "food"):
+            raise ValueError(f"{what}: nourishment belongs to the effect food, and only to it")
+        if (self.factor is not None) != (self.effect == "travel"):
+            raise ValueError(f"{what}: factor belongs to the effect travel, and only to it")
+        if (self.phrase is not None) != (self.effect == "appearance"):
+            raise ValueError(f"{what}: phrase belongs to the effect appearance, and only to it")
+        if self.phrase is not None:
+            if not self.phrase.strip():
+                raise ValueError(f"{what} has an empty phrase")
+            if found := offences(self.phrase):
+                raise ValueError(f"{what}'s phrase has words the town does not use: {found}")
+        return self
+
+    @property
+    def days(self) -> int:
+        """How many days one purchase of a consumable lasts."""
+        assert self.uses is not None and self.per_day is not None
+        return self.uses // self.per_day
 
 
 class Route(StrictModel):
@@ -70,7 +155,6 @@ class Work(StrictModel):
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
     payment: int = Field(ge=1)
-    living_cost: int = Field(ge=0)
     acceptance_runs: int = Field(ge=1, description="acceptance runs per task per resident per day")
     claim_expiry_days: int = Field(ge=0)
     shell_timeout_s: int = Field(ge=1)
@@ -87,9 +171,13 @@ class Exchange(StrictModel):
 
 
 class Social(StrictModel):
+    """`ratings` turns the bedtime ratings on: whether a resident may rate those it spoke with
+    and reads the ratings it received; off, nothing a resident reads mentions them."""
+
     mode: Literal["isolated", "town"]
     silence_minutes: int = Field(ge=1, description="a conversation ends after this much silence")
     skills_shareable: bool
+    ratings: bool
     exchange: Exchange | None = None
 
 
@@ -141,6 +229,7 @@ class TownConfig(StrictModel):
     routes: tuple[Route, ...] = ()
     residents: tuple[Resident, ...] = Field(min_length=1)
     work: Work
+    goods: tuple[Good, ...] = Field(min_length=1)
     social: Social
     clock: ClockSettings
     day: DayHours
@@ -152,6 +241,18 @@ class TownConfig(StrictModel):
         _unique("resident name", [resident.name for resident in self.residents])
         _unique("agent directory", [r.agent_dir for r in self.residents if r.agent_dir])
         _unique("route", [frozenset(route.between) for route in self.routes])
+        _unique("good id", [good.id for good in self.goods])
+        for good in self.goods:
+            for place_id in good.sold_at:
+                if places.get(place_id, None) is None or places[place_id].kind not in (
+                    "social",
+                    "shop",
+                ):
+                    raise ValueError(
+                        f"the good {good.id} is sold at {place_id}, not a shop or social place"
+                    )
+        if not any(good.effect == "food" for good in self.goods):
+            raise ValueError("the town sells nothing to eat")
         for route in self.routes:
             a, b = route.between
             if a == b or a not in places or b not in places:
@@ -163,6 +264,15 @@ class TownConfig(StrictModel):
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
+        for place in self.places:
+            if place.kind == "home":
+                living = [resident.name for resident in self.residents if resident.home == place.id]
+                assert place.rooms is not None
+                if len(living) > place.rooms:
+                    raise ValueError(
+                        f"{place.id} has {place.rooms} rooms for {len(living)} residents"
+                    )
+        for resident in self.residents:
             for other, how in resident.ties.items():
                 if other == resident.name or other not in residents:
                     raise ValueError(
@@ -196,6 +306,16 @@ class TownConfig(StrictModel):
 
     def place(self, place_id: str) -> Place:
         return next(place for place in self.places if place.id == place_id)
+
+    def good(self, good_id: str) -> Good:
+        return next(good for good in self.goods if good.id == good_id)
+
+    def for_sale(self) -> list[Good]:
+        """The goods a resident of this town can buy: all of them, except that in the isolated
+        mode, where nobody else is in the town to write to, nothing for messaging is sold."""
+        return [
+            good for good in self.goods if good.effect != "messaging" or self.social.mode == "town"
+        ]
 
     def travel(self, a: str, b: str) -> int:
         """Walking minutes from place `a` to place `b`; zero from a place to itself."""

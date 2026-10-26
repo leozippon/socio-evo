@@ -115,14 +115,7 @@ const BUILD = {
     win(out, windows, -w * 0.44, -h * 0.58, w * 0.32, h * 0.44);
     win(out, windows, w * 0.16, -h * 0.58, w * 0.28, h * 0.44);
     out.push(door(-5, -h * 0.62, 10, h * 0.62));
-    // The awning: stripes with a scalloped edge across the whole front.
-    const n = 7;
-    const sw = (w + 6) / n;
-    const top = -h * 0.84;
-    for (let i = 0; i < n; i++) {
-      const x = -w / 2 - 3 + i * sw;
-      out.push(s("path", { class: `awning ${i % 2 ? "b" : "a"}`, d: `M${f(x)},${f(top)}h${f(sw)}v8a${f(sw / 2)},3 0 0 1 ${f(-sw)},0Z` }));
-    }
+    awning(out, w, -h * 0.84);
     // Two small tables at the edges of the terrace.
     for (const side of [-1, 1]) {
       const tx = side * (Math.max(w + 10, 76) / 2 - 7);
@@ -150,7 +143,27 @@ const BUILD = {
     out.push(s("rect", { class: "barrel", x: -w / 2 - 15, y: -7, width: 6, height: 7, rx: 2.2 }));
     return smoke;
   },
+  shop(p, out, windows) {
+    const { w, h, roof } = p;
+    out.push(s("rect", { class: `wall w${p.variant}`, x: -w / 2, y: -h, width: w, height: h }));
+    out.push(s("path", { class: "roof r1", d: gable(w, h, roof, 4, 8) }));
+    // A shopfront: one wide window beside the door, under an awning.
+    win(out, windows, -w * 0.44, -h * 0.6, w * 0.52, h * 0.46);
+    out.push(door(w * 0.16, -h * 0.62, 12, h * 0.62));
+    awning(out, w, -h * 0.84);
+    return null;
+  },
 };
+
+/** An awning across the whole front, its top at `top`: stripes with a scalloped edge. */
+function awning(out, w, top) {
+  const n = 7;
+  const sw = (w + 6) / n;
+  for (let i = 0; i < n; i++) {
+    const x = -w / 2 - 3 + i * sw;
+    out.push(s("path", { class: `awning ${i % 2 ? "b" : "a"}`, d: `M${f(x)},${f(top)}h${f(sw)}v8a${f(sw / 2)},3 0 0 1 ${f(-sw)},0Z` }));
+  }
+}
 
 function tree(t) {
   const shadow = s("ellipse", { class: "tree-shadow", cx: 3, cy: 2, rx: t.r * 0.95, ry: t.r * 0.38 });

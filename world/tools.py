@@ -1,6 +1,7 @@
 """The world's tools: the declared list, constant for the run, and their handlers.
 
-`specs` builds the list once from the configuration; every resident's runtime declares it at
+`specs` builds the list once from the configuration (`rate` only where the town has ratings,
+`message` only where something to write with is sold); every resident's runtime declares it at
 every step. `World.call` refuses a tool the resident's event does not offer and arguments that
 do not fit the spec; the handlers here check the remaining conditions, each refusal one line
 naming the condition, and act. Outputs of shell commands and repository files are passed
@@ -26,7 +27,7 @@ from world.board import Claim, failure
 from world.clock import DAY, calendar_day, clock_time, parse_hour
 from world.config import TownConfig
 from world.events import Work
-from world.rules import TOPICS, longest_sleep
+from world.rules import TOPICS, bare, longest_sleep
 from world.telling import cap, counted, listed, you
 
 if TYPE_CHECKING:
@@ -72,6 +73,14 @@ WORKSPACE_SPECS = (
 
 def specs(config: TownConfig) -> list[ToolSpec]:
     workplace = config.workplace.name
+    for_sale = config.for_sale()
+    counters = "; ".join(
+        f"at {place.name}: {listed([f'{g.name} ({g.id})' for g in sold])}"
+        for place in config.places
+        if (sold := [g for g in for_sale if place.id in g.sold_at])
+    )
+    writing = listed([bare(g.name) for g in for_sale if g.effect == "messaging"], "or")
+    rate = ", rate people" if config.social.ratings else ""
     return [
         spec("help", f"Read how the town works, on one point: {listed(list(TOPICS))}.",
              topic={"type": "string", "enum": list(TOPICS)}),
@@ -84,8 +93,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "when the minutes are up.", ("minutes",),
              minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
         spec("sleep", "Go to bed at home, at any hour, until the hour you give. You can then "
-             "look back over your day, rate people and see to your files before you fall "
-             "asleep.", ("until", "journal"),
+             f"look back over your day{rate} and see to your files before you fall asleep.",
+             ("until", "journal"),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("your account of the day in your own words: what work you did and "
                            "with what result, what methods you used and where they came from, "
@@ -112,7 +121,22 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "something to them.", ("text",), text=_text("what you say"),
              to={"type": "array", "items": {"type": "string"},
                  "description": "the names of the people you speak to"}),
-        spec("give_money", "Hand some of your money to someone you are talking with.",
+        spec("buy", "Buy something where you are and pay for it in cash at once. Something "
+             "eaten on the spot is eaten as you buy it; a stock is kept and used up a day's "
+             f"worth each midnight; a thing you keep is yours from then on. For sale {counters}.",
+             ("item",),
+             item={"type": "string", "enum": [g.id for g in for_sale],
+                   "description": "the good's short name, as given in brackets"},
+             quantity=_number("how many: stocks or helpings; one thing you keep (1 if left "
+                              "out)", 1)),
+        spec("move_in", "Move into the home you are at, if it has a free room: you give up your "
+             "old room and pay the new rent from the next midnight."),
+        *([spec("message", f"Write to someone who also has a {writing}, wherever they are. "
+                "They read it when they next look up from what they are doing; nobody else "
+                "sees it.", ("to", "text"), to=_text("their name"), text=_text("what you write"))]
+          if writing else []),
+        spec("give_money", "Hand some of your money to someone you are talking with, as a gift "
+             "or a loan, on terms you agree between you.",
              ("to", "amount"), to=_text("their name"), amount=_number("how much", 1)),
         spec("share_skill", "Pass one of your skills on to someone you are talking with: they "
              "get its text to keep.", ("to", "skill"), to=_text("their name"),
@@ -121,10 +145,11 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
              "did, what was said to you and by you, and the money you received and paid."),
-        spec("rate", "Rate someone you spoke with today, from 1 to 5, with your reason. "
-             "They read it the next night, without your name.", ("resident", "score", "reason"),
-             resident=_text("their name"), score=_number("from 1 to 5", 1, 5),
-             reason=_text("why")),
+        *([spec("rate", "Rate someone you spoke with today, from 1 to 5, with your reason. "
+                "They read it the next night, without your name.", ("resident", "score", "reason"),
+                resident=_text("their name"), score=_number("from 1 to 5", 1, 5),
+                reason=_text("why"))]
+          if config.social.ratings else []),
     ]  # fmt: skip
 
 
@@ -236,7 +261,11 @@ def _now(world: World) -> str:
 
 
 async def _help(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    return ToolResult(world.rules.help(r.name, args.get("topic", "")))
+    topic = args.get("topic", "")
+    text = world.rules.help(r.name, topic, world.homes(r))
+    if topic.strip().lower() == "money":
+        text += f" {world.things_told(r)}"
+    return ToolResult(text)
 
 
 async def _look_around(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -292,6 +321,8 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     workplace = world.config.workplace
     if r.place != workplace.id:
         return ToolResult(f"You are not at {workplace.name}.")
+    if r.living.hungry and not isinstance(r.base, Work):
+        return ToolResult("You are too hungry to concentrate on work until you have eaten.")
     told = ""
     if r.conversation is not None:
         world.leave_conversation(r)
@@ -585,6 +616,91 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(tell(r.name) + tail)
 
 
+async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    good = world.config.good(args["item"])
+    quantity = args.get("quantity", 1)
+    if r.place not in good.sold_at:
+        where = listed([world.config.place(place).name for place in good.sold_at], "or")
+        return ToolResult(f"You can buy {good.name} at {where}, not here.")
+    if good.kind == "durable":
+        if r.living.things.get(good.id):
+            return ToolResult(f"You already have {good.name}.")
+        if quantity != 1:
+            return ToolResult(f"One {bare(good.name)} is all you can have.")
+    total = good.price * quantity
+    refusal = world.economy.cannot_pay(r.name, total)
+    if refusal:
+        return ToolResult(refusal)
+    bought = f"{quantity} × {good.name}" if quantity > 1 else good.name
+    economy = world.economy
+    economy.buy(r.name, total, bought)
+    if good.kind == "durable":
+        r.living.things[good.id] = 1
+    elif good.kind == "consumable":
+        assert good.uses is not None
+        r.living.things[good.id] = r.living.things.get(good.id, 0) + good.uses * quantity
+    elif good.effect == "food":
+        world.eat(r, good, quantity)
+    world.record(
+        "purchase",
+        lambda w: f"{cap(you(r.name, w))} bought {bought} for {economy.money(total)}.",
+        actor=r,
+        payload={
+            "item": good.id,
+            "name": good.name,
+            "kind": good.kind,
+            "effect": good.effect,
+            "quantity": quantity,
+            "amount": total,
+        },
+    )
+    tail = (
+        "You have eaten today."
+        if good.kind == "immediate" and good.effect == "food"
+        else world.things_told(r)
+    )
+    return ToolResult(
+        f"You bought {bought} for {economy.money(total)}. {tail} {economy.purse(r.name)}"
+    )
+
+
+async def _move_in(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    assert r.place is not None
+    place = world.config.place(r.place)
+    if place.kind != "home":
+        return ToolResult("You can move into a home only when you are there.")
+    if r.home == place.id:
+        return ToolResult("You live here already.")
+    assert place.rooms is not None
+    if len(world.occupants(place.id, r)) >= place.rooms:
+        return ToolResult(f"There is no free room at {place.name}.")
+    return ToolResult(world.move_in(r, place.id))
+
+
+async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    name, text = args["to"], args["text"].strip()
+    writing = [good for good in world.for_sale if good.effect == "messaging"]
+    names = listed([bare(good.name) for good in writing], "or")
+    if not any(r.living.things.get(good.id) for good in writing):
+        return ToolResult(f"You have no {names}.")
+    other = world.residents.get(name)
+    if other is None:
+        return ToolResult(f"There is nobody called {name} in the town.")
+    if other is r:
+        return ToolResult("You cannot write to yourself.")
+    if not any(other.living.things.get(good.id) for good in writing):
+        return ToolResult(f"{name} has no {names}.")
+    if not text:
+        return ToolResult("You wrote nothing.")
+    world.ratings.meet(r.name, name)
+
+    def tell(w: str | None) -> str:
+        return f"{cap(you(r.name, w))} wrote to {you(name, w)}: “{text}”"
+
+    world.record("message", tell, actor=r, audience=[other], payload={"to": name, "text": text})
+    return ToolResult(tell(r.name))
+
+
 def _partner_refusal(world: World, r: Resident, name: str) -> str | None:
     other = world.residents.get(name)
     if other is None or other is r or other.conversation is not r.conversation:
@@ -681,6 +797,9 @@ HANDLERS: dict[str, Handler] = {
     "abandon_task": _abandon_task,
     "leave_work": _leave_work,
     "say": _say,
+    "buy": _buy,
+    "move_in": _move_in,
+    "message": _message,
     "give_money": _give_money,
     "share_skill": _share_skill,
     "leave_conversation": _leave_conversation,

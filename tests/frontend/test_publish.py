@@ -336,7 +336,7 @@ def test_the_index_names_the_runs_their_groups_and_the_comparison(published):
     town = index["runs"][0]
     assert (town["settled_day"], town["last_day"], town["residents"]) == (1, 2, list(RESIDENTS))
     assert town["headline"]["accepted"] == 1 and town["headline"]["paid"] == 20
-    assert town["headline"]["day"] == 2 and town["headline"]["purse"]["median"] == 105
+    assert town["headline"]["day"] == 2 and town["headline"]["purse"]["median"] == 115
     assert index["skipped"] == []
     [comparison] = index["comparisons"]
     assert (comparison["name"], comparison["runs"]) == ("runs", ["town", "twin"])
@@ -356,12 +356,19 @@ def test_the_world_lays_the_town_out_and_names_the_group(published):
     _, _, site = published
     world = read(site, f"{RUN}/world.json")
     assert [(p["id"], p["kind"], p["x"], p["y"]) for p in world["places"]] == [
-        ("mill-street-house", "home", 0.0, 0.0),
-        ("college-flat", "home", 1.0, 0.0),
-        ("workshop", "workplace", 0.5, 1.5),
+        ("mill-street-house", "home", 0.5, 0.0),
+        ("college-flat", "home", 1.5, 0.0),
+        ("workshop", "workplace", 1.0, 1.5),
         ("cafe", "social", 0.0, 3.0),
         ("park", "social", 1.0, 3.0),
+        ("store", "shop", 2.0, 3.0),
     ]
+    assert [(p["rent"], p["rooms"], p["comfort"]) for p in world["places"]][:3] == [
+        (20, 3, 0.9),
+        (30, 6, 1.0),
+        (None, None, None),
+    ]
+    assert [g["id"] for g in world["goods"]] == ["groceries", "meal", "bicycle", "phone", "coat"]
     assert [r["name"] for r in world["residents"]] == list(RESIDENTS)
     assert world["residents"][0]["rules"].startswith("How the town works.")
     assert world["group"] == "C" and world["currency"] == "$"

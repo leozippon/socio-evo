@@ -62,9 +62,13 @@ const ICONS = {
   conversation_end: "chevronLeft",
   gift: "coin",
   skill_shared: "spark",
+  message: "speech",
+  purchase: "coin",
+  move_in: "home",
   exchange_pairing: "pair",
   meeting: "pair",
   settlement: "coin",
+  hungry: "alert",
   sleep: "book",
   rating: "star",
   fell_asleep: "clock",
@@ -89,6 +93,8 @@ export function tone(entry) {
     case "expiry":
     case "forced_sleep":
       return "critical";
+    case "hungry":
+      return "warn";
     case "command":
       return p.exit_code === 0 || p.exit_code === undefined ? null : "warn";
     default:
@@ -191,6 +197,12 @@ export function describeMarker(m, by, who) {
       return own ? [`gave ${m.to} ${fmt.money(m.amount)}`] : [`received ${fmt.money(m.amount)} from ${by}`];
     case "skill_shared":
       return own ? [`passed the skill “${m.skill}” to ${m.to}`] : [`received the skill “${m.skill}” from ${by}`];
+    case "message":
+      return own ? [`wrote to ${m.to}`, m.text] : [`received a message from ${by}`, m.text];
+    case "purchase":
+      return [`bought ${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name} for ${fmt.money(m.amount)}`];
+    case "move_in":
+      return [`moved house, into ${m.to.replaceAll("-", " ")}`];
     case "rating":
       return own ? [`rated ${m.rated} ${m.score} of 5`, m.reason] : [`was rated ${m.score} of 5 by ${by}`, m.reason];
     case "journal": {
@@ -205,4 +217,4 @@ export function describeMarker(m, by, who) {
 }
 
 /** Whether a marker on `by`'s lane concerns `who` too. */
-export const concerns = (m, by, who) => by === who || (m.kind === "speech" && m.to.includes(who)) || ((m.kind === "gift" || m.kind === "skill_shared") && m.to === who) || (m.kind === "rating" && m.rated === who);
+export const concerns = (m, by, who) => by === who || (m.kind === "speech" && m.to.includes(who)) || ((m.kind === "gift" || m.kind === "skill_shared" || m.kind === "message") && m.to === who) || (m.kind === "rating" && m.rated === who);

@@ -275,6 +275,12 @@ export function mountTown(root, ctx) {
         return { icon: "clock", text: `task ${mk.task} ran out`, tone: "critical" };
       case "gift":
         return { icon: "coin", text: `hands ${mk.to} ${fmt.money(mk.amount)}` };
+      case "message":
+        return { icon: "speech", text: `writes to ${mk.to}` };
+      case "purchase":
+        return { icon: "coin", text: `buys ${mk.quantity > 1 ? `${mk.quantity} × ` : ""}${mk.name} for ${fmt.money(mk.amount)}` };
+      case "move_in":
+        return { icon: "home", text: `moves into ${data.places[mk.to] ?? mk.to}` };
       case "skill_shared":
         return { icon: "spark", text: `passes “${mk.skill}” to ${mk.to}` };
       case "rating":
@@ -522,8 +528,9 @@ export function mountTown(root, ctx) {
       for (const mk of markersBetween(lane, before, time)) {
         if (mk.kind === "payment") effects.push({ agent: lane.name, text: `+${mk.amount}`, tone: "good" });
         if (mk.kind === "gift") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" }, { agent: mk.to, text: `+${mk.amount}`, tone: "good" });
+        if (mk.kind === "purchase") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" });
       }
-    for (const e of loaded.get(dayOf(time).day) ?? []) if (e.kind === "settlement" && e.sim_time > before && e.sim_time <= time) effects.push({ agent: e.actor, text: `−${e.payload.living_cost}`, tone: "muted" });
+    for (const e of loaded.get(dayOf(time).day) ?? []) if (e.kind === "settlement" && e.sim_time > before && e.sim_time <= time) effects.push({ agent: e.actor, text: `−${e.payload.rent + e.payload.fees}`, tone: "muted" });
     paint(effects);
   }
 

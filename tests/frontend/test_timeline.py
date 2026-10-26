@@ -106,10 +106,10 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         [start, 120],
         [at("09:32"), 115],
         [at("10:00"), 135],
-        [DAY, 105],
+        [DAY, 115],  # rent on Mill Street is $20
     ]
     assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 155]]
-    assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 0]]
+    assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 10]]
     entries = list(town.world.log.entries())
     first = next(e for e in entries if e["kind"] in module._FOLDED)["real_time"]  # the viewer's
     (closed,) = [e["real_time"] for e in entries if e["kind"] == "checkpoint"]
