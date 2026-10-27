@@ -65,7 +65,7 @@ export function progressTable(doc, status = "running") {
     ["Skills", "Skills passed on", (d) => d.skills_shared],
     ["Ratings", "Ratings given", (d) => d.ratings],
     ["Journals", "Residents gone to bed with the day's journal", (d) => d.journals],
-    ["Forced asleep", "Residents fallen asleep at the forced hour, without a journal", (d) => d.forced_sleeps],
+    ["Forced asleep", "Residents fallen asleep at the forced hour, without going to bed", (d) => d.forced_sleeps],
     ["Purses low · median · high", "The residents' purses at the end of the day, or at its latest moment for the day in progress", (d) => [d.purse.min, d.purse.median, d.purse.max].map((n) => money(n, currency)).join(" · ")],
   ];
   return h(

@@ -36,7 +36,8 @@ files; the problem statements it read; what it thought or wrote without calling 
 condensing of its conversation. A refused call's longer text arguments are left out, and the
 journal never appears in the record, which is what the journal is set against.
 
-The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it.
+The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it;
+a day it wrote none, going to bed without one or never going to bed, has no journal.
 The file `memory/journal/<date>.md` starts with the same text, but the resident's file tools can
 rewrite it at any time afterwards, so a file read later is not that night's account.
 """
@@ -162,16 +163,18 @@ def day_record(run_dir: Path, resident: str, day: int) -> str:
 
 def journal(run_dir: Path, resident: str, day: int) -> str | None:
     """The journal entry `resident` wrote going to bed on lived day `day`, None if it wrote
-    none (it fell asleep without going to bed)."""
+    none."""
     agent_dir(run_dir, town(run_dir), resident)  # fails for a name that is no resident's
     return journal_of(lived(lived_days(run_dir), day).entries, resident)
 
 
 def journal_of(entries: Iterable[Entry], resident: str) -> str | None:
-    """The journal of `resident` for a day of `entries`: the entry of each bedtime, joined with a
-    blank line as the journal file joins them; None if it did not go to bed."""
+    """The journal of `resident` for a day of `entries`: the entry of each bedtime that gave
+    one, joined with a blank line as the journal file joins them; None if no bedtime did."""
     found = [
-        e["payload"]["journal"] for e in entries if e["kind"] == "sleep" and e["actor"] == resident
+        e["payload"]["journal"]
+        for e in entries
+        if e["kind"] == "sleep" and e["actor"] == resident and e["payload"]["journal"]
     ]
     return "\n\n".join(found) if found else None
 

@@ -97,6 +97,13 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
                 {"journal": "j", "day": 1, "wake": 0, "ratings_read": []},
             ),
             ("rating", at("22:00"), "Mei", 1013.0, {"rated": "Tomas", "score": 4, "reason": "r"}),
+            (  # to bed without a journal entry: no journal counted
+                "sleep",
+                at("22:10"),
+                "Tomas",
+                1013.5,
+                {"journal": None, "day": 1, "wake": 0, "ratings_read": []},
+            ),
             ("settlement", DAY, "Mei", 1014.0, settlement(105)),
             ("settlement", DAY, "Tomas", 1015.0, settlement(155)),
             ("settlement", DAY, "Aisha", 1016.0, settlement(0)),

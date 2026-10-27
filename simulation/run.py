@@ -259,6 +259,7 @@ class _Checkpoints:
         "speech",
         "gift",
         "skill_shared",
+        "journal",
         "forced_sleep",
         "death",
     )
@@ -275,6 +276,7 @@ class _Checkpoints:
             if entry["seq"] > self._seen:
                 counts[entry["kind"]] += 1
                 counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
+                counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
         self._seen = self._last_seq()
         purses = {name: saved["purse"] for name, saved in state["residents"].items()}
         took = timedelta(seconds=round(time.monotonic() - self._started))

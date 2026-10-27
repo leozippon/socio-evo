@@ -182,7 +182,13 @@ def test_two_bedtimes_in_a_day_make_one_journal_joined_by_a_blank_line():
     def bed(actor, text):
         return {"kind": "sleep", "actor": actor, "audience": [actor], "payload": {"journal": text}}
 
-    entries = [bed("Mei", "Slept after lunch."), bed("Tomas", "His day."), bed("Mei", "Evening.")]
+    entries = [
+        bed("Mei", "Slept after lunch."),
+        bed("Tomas", "His day."),
+        bed("Mei", None),  # a bedtime without an entry adds nothing
+        bed("Mei", "Evening."),
+        bed("Aisha", None),
+    ]
     assert journal_of(entries, "Mei") == "Slept after lunch.\n\nEvening."
     assert journal_of(entries, "Tomas") == "His day."
-    assert journal_of(entries, "Kofi") is None
+    assert journal_of(entries, "Aisha") is None and journal_of(entries, "Kofi") is None

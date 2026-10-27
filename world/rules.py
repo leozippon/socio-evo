@@ -155,9 +155,9 @@ class Rules:
             f"{cap(workplace.name)} is open at all hours. At {c.day.board_posted} its board for "
             "the day is posted; what is left of the day before's stays up until then. At "
             "midnight rent is taken from every purse and your health is reckoned from the day. "
-            "You go to bed at home at whatever hour you choose, giving the hour you want to wake "
-            f"and writing up your day. At {c.day.forced_sleep} anyone still up falls asleep and "
-            f"wakes at home at {c.day.forced_wake}, with no journal entry for that day."
+            "You go to bed at home at whatever hour you choose, giving the hour you want to "
+            f"wake. At {c.day.forced_sleep} anyone still up falls asleep and wakes at home at "
+            f"{c.day.forced_wake}."
         )
         if exchange is not None:
             day += (
@@ -255,10 +255,10 @@ class Rules:
             )
 
         sleep = (
-            "Go to bed at home at any hour with sleep, giving the hour you want to wake and "
-            "your journal entry for the day, which is kept in your journal folder; if you go to "
-            "bed more than once in a day, each entry is added to that day's journal. "
-            f"{longest_sleep(c.day)}."
+            "Go to bed at home at any hour with sleep, giving the hour you want to wake and, if "
+            "you write one, the day's entry in your own journal, which is kept in your journal "
+            "folder; an entry given at a later bedtime the same day, or again from bed, is added "
+            f"to that day's. {longest_sleep(c.day)}."
         )
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "

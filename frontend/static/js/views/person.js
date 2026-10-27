@@ -317,7 +317,7 @@ export function mountPerson(root, ctx) {
               ),
             ),
           )
-        : h("div", { class: "card" }, emptyState("No journal entry yet.", `${agentName()} writes one on going to bed; a night passed at the forced hour leaves none.`)),
+        : h("div", { class: "card" }, emptyState("No journal entry yet.", `An entry is written on going to bed, if ${agentName()} gives one; a night passed at the forced hour leaves none.`)),
     ];
   }
 

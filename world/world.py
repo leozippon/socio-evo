@@ -629,12 +629,12 @@ class World:
             self.break_off(r)
             if r.timer is not None:
                 r.timer.cancel()
-            unwritten = "going to bed again" if self.journaled(r) else "writing a journal entry"
+            again = " again" if self.went_to_bed(r) else ""
             self.record(
                 "forced_sleep",
-                lambda w, r=r, unwritten=unwritten: (
-                    f"It is {hour}: {you(r.name, w)} fell asleep without {unwritten}, and will "
-                    f"wake at home at {clock_time(wake)}."
+                lambda w, r=r, again=again: (
+                    f"It is {hour}: {you(r.name, w)} fell asleep without going to bed{again}, and "
+                    f"will wake at home at {clock_time(wake)}."
                 ),
                 actor=r,
                 audience=[r],
@@ -1102,19 +1102,18 @@ class World:
             wake = night + self._checkpoint_hour
         return wake
 
-    def journaled(self, r: Resident) -> bool:
-        """Whether `r` has gone to bed, and so written in its journal, in the day being lived."""
+    def went_to_bed(self, r: Resident) -> bool:
+        """Whether `r` has gone to bed in the day being lived."""
         return any(kind == "sleep" for _, kind, _, _ in r.day)
 
-    def go_to_bed(self, r: Resident, wake: int, journal: str, day: int) -> None:
-        """`r` goes to bed with its journal entry written; it hears what it may still do. Going
-        to bed again the same day, it hears of ratings only if new ones came."""
-        again = self.journaled(r)
+    def go_to_bed(self, r: Resident, wake: int, journal: str | None, day: int) -> None:
+        """`r` goes to bed, with the day's entry in its journal if it wrote one; it hears what
+        it may still do. Going to bed again the same day, it hears of ratings only if new ones
+        came."""
+        again = self.went_to_bed(r)
         self._put_to_sleep(r, wake)
-        parts = [
-            f"You are in bed and will wake at {clock_time(wake)}; your journal entry for "
-            "today is kept."
-        ]
+        kept = "; your journal entry for today is kept" if journal else ""
+        parts = [f"You are in bed and will wake at {clock_time(wake)}{kept}."]
         ratings: list[list[int | str]] = []
         if self.ratings_on:
             ratings = self.ratings.take_unread(r.name)
@@ -1132,9 +1131,10 @@ class World:
                 "you fall asleep once you have nothing more to do."
             )
         told = " ".join(parts)
+        wrote = " and wrote in the journal" if journal else ""
         self.record(
             "sleep",
-            lambda w: told if w == r.name else f"{r.name} went to bed and wrote the day's journal.",
+            lambda w: told if w == r.name else f"{r.name} went to bed{wrote}.",
             actor=r,
             audience=[r],
             payload={"journal": journal, "day": day, "wake": wake, "ratings_read": ratings},

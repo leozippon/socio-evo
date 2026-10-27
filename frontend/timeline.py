@@ -48,7 +48,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     purchase      item, name, quantity, amount
     move_in       from, to                the resident moved house; its lane's home follows
     rating        rated, score, reason
-    journal       text, day, wake, ratings_read   going to bed with the day's journal entry
+    journal       text, day, wake, ratings_read   going to bed with the day's journal entry (a
+                  bedtime without one has no marker)
     forced_sleep  wake
     settlement    rent, fees, nourishment, satiety, energy, health, night
                   midnight: the rent and the daily charges taken, the day's food as a share of
@@ -299,14 +300,15 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.enter(t, "idle", payload["place"])
         elif kind == "sleep":
             lane.enter(t, "sleep", place)
-            lane.mark(
-                entry,
-                "journal",
-                text=payload["journal"],
-                day=payload["day"],
-                wake=payload["wake"],
-                ratings_read=payload["ratings_read"],
-            )
+            if payload["journal"]:
+                lane.mark(
+                    entry,
+                    "journal",
+                    text=payload["journal"],
+                    day=payload["day"],
+                    wake=payload["wake"],
+                    ratings_read=payload["ratings_read"],
+                )
         elif kind == "forced_sleep":
             lane.enter(t, "sleep", lane.home)
             lane.mark(entry, "forced_sleep", wake=payload["wake"])

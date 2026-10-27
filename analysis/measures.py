@@ -59,7 +59,7 @@ MEASURES = {
     "rating_given_mean": "the mean score of those ratings",
     "ratings_received": "ratings others gave it that night",
     "rating_received_mean": "the mean score of those ratings",
-    "journal": "1 if it went to bed with a journal entry",
+    "journal": "1 if it wrote a journal entry, going to bed",
     "forced_sleep": "1 if it was put to sleep at the forced hour",
     "requests": "model requests, retries and compactions included",
     "prompt_tokens": "prompt tokens reported",
@@ -153,7 +153,7 @@ def world_measures(day: Day, name: str) -> Row:
         "rating_given_mean": _mean(e["payload"]["score"] for e in given),
         "ratings_received": len(received),
         "rating_received_mean": _mean(e["payload"]["score"] for e in received),
-        "journal": int(bool(mine("sleep"))),
+        "journal": int(any(e["payload"]["journal"] for e in mine("sleep"))),
         "forced_sleep": len(mine("forced_sleep")),
     }
 

@@ -316,7 +316,7 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `move_in` | `from`, `to`: the resident moved house, and its lane's home follows |
 | `skill_shared` | `to`, `skill` |
 | `rating` | `rated`, `score`, `reason` |
-| `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime |
+| `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime that gave one |
 | `forced_sleep` | `wake` |
 | `settlement` | `rent`, `fees`, `nourishment`, `satiety`, `energy`, `health`, `night`: midnight, when the rent and the daily charges on what is owned are taken (the purse after them is a point of `purse`), with the day's food as a share of a day's need, the body's three needs after the night's reckoning, and how health moved, by cause (`starving`, `exhausted`, `poor_home`, `recovery`) |
 | `condition` | `need`, `band`, `value`, `lowest`: a need of the body crossed into another band, named as the resident reads it, with its value then; `lowest` where that band is the need's lowest |

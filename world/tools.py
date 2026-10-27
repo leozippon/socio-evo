@@ -96,11 +96,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
         spec("sleep", "Go to bed at home, at any hour, until the hour you give. You can then "
              f"look back over your day{rate} and see to your files before you fall asleep.",
-             ("until", "journal"),
+             ("until",),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
-             journal=_text("your account of the day in your own words: what work you did and "
-                           "with what result, what methods you used and where they came from, "
-                           "what you concluded, and what remains open")),
+             journal=_text("the day's entry in your own journal, in your own words")),
         spec("start_work", f"Sit down to work at {workplace}. If you hold a task, your "
              "workspace is set up again as you left it."),
         spec("view_board", "Read the board: each task's number, repository, the first line of "
@@ -310,16 +308,15 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         return ToolResult(
             f"{longest_sleep(world.config.day)}: give an hour no later than {latest}."
         )
-    journal = args["journal"].strip()
-    if not journal:
-        return ToolResult("Write your journal entry for the day before you go to bed.")
+    journal = args.get("journal", "").strip() or None
     day = world.lived_day()
-    date = world.config.start_date + timedelta(days=day - 1)
-    path = r.agent_dir / "memory" / "journal" / f"{date.isoformat()}.md"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
-    with path.open("a", encoding="utf-8") as file:
-        file.write(entry)
+    if journal is not None:
+        date = world.config.start_date + timedelta(days=day - 1)
+        path = r.agent_dir / "memory" / "journal" / f"{date.isoformat()}.md"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
+        with path.open("a", encoding="utf-8") as file:
+            file.write(entry)
     told = world.break_off(r)
     world.go_to_bed(r, world.wake_time(hour), journal, day)
     return ToolResult(f"{told}You went to bed.", ends_turn=True)

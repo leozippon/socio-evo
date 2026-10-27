@@ -441,7 +441,6 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     port, mei = town.world.ports["Mei"], town.world.residents["Mei"]
     await town.until("20:00")
     assert (await town.call("Mei", "sleep", until="7am", journal="x")).text.startswith("Give")
-    assert (await town.call("Mei", "sleep", until="08:00", journal=" ")).text.startswith("Write")
     await town.call("Mei", "go", place="park")
     await town.until("20:10")
     assert (await town.call("Mei", "sleep", until="08:00", journal="x")).text == (
@@ -486,6 +485,23 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert isinstance(mei.base, Idle) and mei.place == "mill-street-house"
 
 
+async def test_going_to_bed_without_a_journal_entry_writes_none(make_town, tmp_path):
+    town = make_town()
+    await awake_at(town)
+    await town.until("21:00")
+    slept = await town.call("Mei", "sleep", until="07:00")
+    assert slept.ends_turn and slept.text == "You went to bed."
+    assert town.take("Mei")[-1].startswith("You are in bed and will wake at 07:00. Nobody rated")
+    assert (await town.call("Aisha", "sleep", until="07:00", journal="  ")).ends_turn
+    assert not (tmp_path / "agents" / "Mei" / "memory" / "journal").exists()
+    assert not (tmp_path / "agents" / "Aisha" / "memory" / "journal").exists()
+    sleeps = [e for e in town.world.log.entries() if e["kind"] == "sleep"]
+    assert [(e["text"], e["payload"]["journal"]) for e in sleeps] == [
+        ("Mei went to bed.", None),
+        ("Aisha went to bed.", None),
+    ]
+
+
 async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(make_town, tmp_path):
     town = make_town()
     await awake_at(town)
@@ -500,8 +516,7 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     tomas, mei = town.world.residents["Tomas"], town.world.residents["Mei"]
     assert tomas.suspended and tomas.place == "college-flat"
     assert town.take("Tomas") == [
-        "It is 02:00: you fell asleep without writing a journal entry, and will wake at home "
-        "at 07:00."
+        "It is 02:00: you fell asleep without going to bed, and will wake at home at 07:00."
     ]
     assert town.take("Aisha") == [
         "It is 02:00: you fell asleep without going to bed again, and will wake at home at 07:00."
