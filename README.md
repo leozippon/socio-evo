@@ -21,11 +21,11 @@ Credentials live in the git-ignored `.env`, which the code does not load; export
 set -a; . ./.env; set +a
 ```
 
-It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the relay's keys (`LIGHTING_API_KEY` for the judge, `LIGHTING_API_KEY_ALT` for the residents while they run on DeepSeek) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
+It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the relay's key (`LIGHTING_API_KEY` for the judge) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. While the GPUs are taken and no parameters are tuned, the residents run instead on DeepSeek-V4.1-Flash through the relay, as the `llm` section of `experiments/configs/town.yaml` says; switching back is a matter of that section. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. The `llm` section of `experiments/configs/town.yaml` names the server, the model and its replica count, to one of which each resident keeps. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
 
 ```bash
 python -m tasks.swebench.pull
@@ -47,7 +47,7 @@ python -m experiments.run experiments/configs/groups/c.yaml --until-day 7
 python -m experiments.run experiments/configs/groups/c.yaml --resume
 ```
 
-A run resumes from its last daily checkpoint with the configuration unchanged; Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.publish --runs-root runs --out build/site` publishes every run as a static site (the town, every resident's timeline side by side, each resident's files and trace, the measures and the evaluation), `python -m frontend.server --runs-root runs` serves it at http://127.0.0.1:8765/ live for a running run, and `frontend/deploy/push.sh cornerhead build/site` pushes it to the private web server.
+A run refuses to start or resume when the model does not answer, and fails after five lapses in a row; it resumes from its last daily checkpoint with the configuration unchanged, and Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.publish --runs-root runs --out build/site` publishes every run as a static site (the town, every resident's timeline side by side, each resident's files and trace, the measures and the evaluation), `python -m frontend.server --runs-root runs` serves it at http://127.0.0.1:8765/ live for a running run, and `frontend/deploy/push.sh cornerhead build/site` pushes it to the private web server.
 
 ## Evaluate and analyse
 

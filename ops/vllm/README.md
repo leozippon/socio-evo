@@ -47,7 +47,7 @@ The environment needed three local repairs, all inside `~/miniconda3/envs/vllm`.
 
 - Reasoning arrives in `message.reasoning` (streaming: `delta.reasoning`); vLLM 0.32 no longer names it `reasoning_content`, though it still accepts that name in request messages.
 - `reasoning_effort` accepts `low`, `medium` and `xhigh` (the default); `none` turns thinking off, as does `chat_template_kwargs: {"enable_thinking": false}`. The chat template rejects `high` and `minimal` with a 400. The effort reaches the template, but its effect on reasoning length is modest: over 36 samples of three short puzzles, low averaged 963 reasoning characters, medium 1,089 and xhigh 972.
-- Requests are balanced across replicas by load, not by conversation, so consecutive turns of one conversation often land on a replica that has not cached its prefix. A client keeps a conversation on one replica by sending the header `X-data-parallel-rank: <n>`, with `n` from 0 to the replica count minus one (for example a hash of the agent id). In a 32-agent, four-turn test this raised the prefix-cache hit rate from 45% to 63% of prompt tokens and output throughput from 705 to 801 tokens/s. Without it, the runtime's integration test `tests/agent/test_vllm.py` fails its assertion that the second reply reuses cached prompt tokens; it passed on a single-replica layout.
+- Requests are balanced across replicas by load, not by conversation, so consecutive turns of one conversation often land on a replica that has not cached its prefix. A client keeps a conversation on one replica by sending the header `X-data-parallel-rank: <n>`, with `n` from 0 to the replica count minus one; the runtime does so for every resident (its place in the run's list of residents modulo `llm.replicas`) and refuses to start when `llm.replicas` exceeds the server's. In a 32-agent, four-turn test this raised the prefix-cache hit rate from 45% to 63% of prompt tokens and output throughput from 705 to 801 tokens/s. Without it, the runtime's integration test `tests/agent/test_vllm.py` fails its assertion that the second reply reuses cached prompt tokens; it passed on a single-replica layout.
 
 ## Measurements
 
@@ -68,15 +68,6 @@ Single changes measured at 32 requests on eight GPUs: the untuned Triton kernel 
 
 A single request on an idle replica with a 59,849-token prompt took 18.3 s to the first token and 20.2 s in total. Needle questions at 59,849, 169,511 and 243,822 prompt tokens were all answered correctly; the last took 128.5 s to the first token.
 
-## One server per group
+## One server, several replicas
 
-vLLM's data-parallel router sends each request to the least-loaded replica, not to the replica that holds the conversation's prefix, so under four replicas a resident's next request usually misses the cache it had just built (the runtime's integration test, which expects cached prompt tokens on the second request, fails against the four-replica server and passes against one replica). The experiments therefore run one independent two-card server per group, each on its own port, and every resident of a group always reaches the same replica:
-
-```bash
-set -a; . ./.env; set +a
-for i in 0 1 2 3; do
-  GPUS=$((2*i)),$((2*i+1)) VLLM_BASE_URL=http://127.0.0.1:$((8011+i))/v1 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &
-done
-```
-
-A group's run is given its server through `VLLM_BASE_URL` when it is started or resumed; the frozen configuration holds only the variable. When the machine is reduced to four GPUs, two servers remain and two groups share each.
+vLLM's data-parallel router sends each request to the least-loaded replica, not to the replica that holds the conversation's prefix, so a resident whose requests were spread over replicas missed the cache it had just built. The runtime now names each resident's replica in every request (above), so one server of several replicas serves a run and its evaluations: `GPUS=0,1,2,3` gives two replicas, and the run's configuration says `replicas: 2`.

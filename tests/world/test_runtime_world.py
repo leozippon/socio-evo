@@ -107,8 +107,8 @@ async def test_a_partner_who_left_is_told_before_what_one_said_after_and_only_on
     seen = model.requests[-1].messages
     said, left = [m.content for m in seen if m.role == "tool"]
     assert said == (
-        "Meanwhile:\n07:00 — At 07:00 Aisha left the conversation.\n"
-        "07:00 — At 07:00 the conversation ended.\n\n"
+        "Meanwhile:\nAt 07:00 Aisha left the conversation.\n"
+        "At 07:00 the conversation ended.\n\n"
         "Back to what you were doing:\nYou said: “Did you sleep well?”"
     )
     assert left == "You left the conversation."

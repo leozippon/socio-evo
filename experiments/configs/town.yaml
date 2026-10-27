@@ -56,17 +56,15 @@
 # gives half a day's energy. Treatment at the clinic restores 25
 # health for four tasks' pay; an examination costs a task and a third.
 
-# For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
-# our quota: the GPUs are taken and no parameters are tuned yet. The standing setup is the local
-# vLLM server (base_url ${VLLM_BASE_URL}, api_key_env VLLM_API_KEY, model qwen3.8-27b-fp8, no
-# extra_body); DeepSeek ignores the runtime's reasoning effort.
+# The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
+# tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
 llm:
-  base_url: https://lightingtheword.com/v1
-  api_key_env: LIGHTING_API_KEY_ALT
-  model: DeepSeek-V4.1-Flash
+  base_url: ${VLLM_BASE_URL}
+  api_key_env: VLLM_API_KEY
+  model: qwen3.8-27b-fp8
   max_concurrency: 8 # one request in flight per resident
-  extra_body:
-    thinking: {type: enabled}
+  replicas: 2 # the server's data-parallel replicas; a resident keeps to one
+  max_retries: 1 # vLLM never asks for a retry; one covers a dropped connection without holding a stalled step for hours
 
 runtime:
   reasoning_effort: low
