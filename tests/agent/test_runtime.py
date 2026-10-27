@@ -168,7 +168,7 @@ async def test_percepts_that_come_meanwhile_are_told_ahead_of_the_next_result(di
     def look(args):
         port.clock = 86_400 + 9 * 3600 + 15 * 60  # the next day, 09:15
         port.deliver("Ben arrived.", kind="arrive")
-        port.deliver("Mei says: “Busy?”")
+        port.deliver("At 09:12 Mei left the conversation.", kind="leave")  # its own hour
         return ToolResult("You see the street.")
 
     def wave_meanwhile(request):
@@ -186,7 +186,7 @@ async def test_percepts_that_come_meanwhile_are_told_ahead_of_the_next_result(di
     assert [m.role for m in after] == ["system", "user", "assistant", "tool", "tool"]
     assert [after[3].content, after[4].content] == [
         "Meanwhile:\n09:14 — Ana waved.\n\nBack to what you were doing:\nYou see the street.",
-        "Meanwhile:\n09:15 — Ben arrived.\n09:15 — Mei says: “Busy?”\n\n"
+        "Meanwhile:\n09:15 — Ben arrived.\nAt 09:12 Mei left the conversation.\n\n"
         "Back to what you were doing:\nSaid.",
     ]
     kinds = [r["kind"] for r in trace(directory)]

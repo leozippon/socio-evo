@@ -32,6 +32,7 @@ import asyncio
 import itertools
 import json
 import logging
+import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Literal
@@ -56,6 +57,9 @@ from infrastructure.llm import (
 )
 
 log = logging.getLogger(__name__)
+
+TELLS_ITS_HOUR = re.compile(r"At \d\d:\d\d\b")
+"""How a percept's text opens when the world tells the hour in it already."""
 
 Effort = Literal["low", "medium", "xhigh"]
 """The reasoning efforts the served model takes."""
@@ -320,9 +324,7 @@ class Runtime:
             )
             content = shorten(result.text, self._config.tool_result_chars)
             if before:
-                news = "\n".join(
-                    texts.NEWS_ITEM.format(hour=_hour(p.sim_time), text=p.text) for p in before
-                )
+                news = "\n".join(_timed(percept) for percept in before)
                 content = texts.NEWS_AHEAD.format(news=news, result=content)
             answers.append(Message(role="tool", content=content, tool_call_id=call.id))
         return answers, ends, condense
@@ -425,9 +427,14 @@ def shorten(text: str, limit: int) -> str:
     return f"{text[:half]}\n\n{omitted}\n\n{text[len(text) - half :]}"
 
 
-def _hour(t: int) -> str:
-    """The hour of the simulated moment `t`, seconds since 00:00 of day 1, as HH:MM."""
-    return f"{t % 86_400 // 3600:02d}:{t % 3600 // 60:02d}"
+def _timed(percept: Percept) -> str:
+    """The text of `percept` led by its hour, unless it opens with its hour already."""
+    if TELLS_ITS_HOUR.match(percept.text):
+        return percept.text
+    t = percept.sim_time
+    return texts.NEWS_ITEM.format(
+        hour=f"{t % 86_400 // 3600:02d}:{t % 3600 // 60:02d}", text=percept.text
+    )
 
 
 def _describe(error: BaseException) -> str:
