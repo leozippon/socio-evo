@@ -151,6 +151,7 @@ export class TownMap {
         figure,
         head,
         s("text", { class: "zz", x: 6.5, y: -12 }, "z"),
+        s("circle", { class: "actor-alert", cx: 7, cy: -29.5, r: 2.8 }),
       );
       this.actors.append(g);
       this.tokens.set(name, { g, figure, head, legs, x: null, y: null, facing: 0, asleep: false, walking: false, k: 1 });
@@ -355,8 +356,8 @@ export class TownMap {
   /**
    * Show a moment. `frame`: {state (the moment of the timeline), second (of the day), selected,
    * speech: Map(place -> [{agent, text, to, private}]), scenes: Map(place -> {label}),
-   * deeds: Map(agent -> {icon, text, tone}), notices: [{icon, text, tone}], effects: [{agent,
-   * text, tone}], key}.
+   * deeds: Map(agent -> {icon, text, tone}), ailing: Set(agent) whose body is at its worst in
+   * some need, notices: [{icon, text, tone}], effects: [{agent, text, tone}], key}.
    */
   update(frame) {
     const previous = this.frame;
@@ -418,6 +419,7 @@ export class TownMap {
       if (spot.walking) this.walking = true;
       token.g.classList.toggle("selected", selected === name);
       token.g.classList.toggle("asleep", token.asleep);
+      token.g.classList.toggle("ailing", Boolean(this.frame.ailing?.has(name)));
       this.pose(token, stride);
     }
     this.sortActors();

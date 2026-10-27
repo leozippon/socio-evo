@@ -30,7 +30,7 @@ function domain(values, { zero = false, min = null, max = null, integer = false 
   let lo = min ?? Math.min(...finite, zero ? 0 : Infinity);
   let hi = max ?? Math.max(...finite, zero ? 0 : -Infinity);
   if (!Number.isFinite(lo) || !Number.isFinite(hi)) [lo, hi] = [0, 1];
-  if (lo === hi) [lo, hi] = [lo - 1, hi + 1];
+  if (lo === hi) [lo, hi] = zero && lo === 0 ? [0, 1] : [lo - 1, hi + 1];
   const t = ticks(lo, hi, 4, integer);
   const step = t.length > 1 ? t[1] - t[0] : 1;
   return [min ?? Math.min(lo, Math.floor(lo / step) * step), max ?? Math.max(hi, Math.ceil(hi / step) * step)];
@@ -196,7 +196,9 @@ export class DayChart {
     // Only labels pushed past the bottom move back up; one that had room stays at its line end.
     if (placed.length) placed.at(-1).ly = Math.min(placed.at(-1).ly, bottom);
     for (let i = placed.length - 2; i >= 0; i--) placed[i].ly = Math.min(placed[i].ly, placed[i + 1].ly - gap);
-    const lx = sc.x1 + 14;
+    // The labels stand just past the last point, so that a run of a day or two does not draw
+    // long leaders across an empty plot; with the run grown, that is the right margin.
+    const lx = Math.min(sc.x1 + 14, Math.max(...placed.map((end) => end.x)) + 16);
     return placed.map(({ line, x, y, ly }) => {
       const dim = this.spec.highlight && line.key !== this.spec.highlight;
       return s(

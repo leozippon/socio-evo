@@ -1,6 +1,6 @@
 // The town at any moment, from the run's timeline (frontend.timeline) and nothing else: where
 // each resident is, what it is in (idle, on the way, at work on a task, asleep, in conversation),
-// what it holds and what it has. Pure: no DOM, no fetching, so it runs under node as well as in
+// what it holds, what it owns and how its body stands. Pure: no DOM, no fetching, so it runs under node as well as in
 // the browser. The timeline is the server's reading of the world log; the viewer adds no reading
 // of its own, only looks up moments in it. The timeline's times are whole seconds, but a moment
 // looked up need not be: the town plays through the seconds between them.
@@ -67,11 +67,32 @@ export function heldAt(lane, t) {
   return held;
 }
 
-/** How a lane's body stood at `t`, by need, from the bands its condition markers last crossed into; empty before any. */
-export function conditionAt(lane, t) {
+/**
+ * How a lane's body stood at `t`, by need: the band its condition markers last crossed into
+ * (null while it is still in the band it started in), with the value then, and the value the
+ * midnight statement last gave if that came later; a need nothing has been told of is absent.
+ */
+export function bodyAt(lane, t) {
   const found = {};
-  for (const m of markersBetween(lane, null, t)) if (m.kind === "condition") found[m.need] = m.band;
+  for (const m of markersBetween(lane, null, t)) {
+    if (m.kind === "condition") found[m.need] = { band: m.band, lowest: m.lowest, value: m.value, t: m.t };
+    else if (m.kind === "settlement") for (const need of ["satiety", "energy", "health"]) found[need] = { band: null, lowest: false, ...found[need], value: m[need], t: m.t };
+  }
   return found;
+}
+
+/** The midnight statement of a lane last given at or before `t`, or null before the first. */
+export function settlementAt(lane, t) {
+  let found = null;
+  for (const m of markersBetween(lane, null, t)) if (m.kind === "settlement") found = m;
+  return found;
+}
+
+/** What a lane owns at `t`, by good id: as of its last change at or before `t`; nothing before any. */
+export function thingsAt(lane, t) {
+  const series = lane.things ?? [];
+  const i = lowerBound(series, after(t), (point) => point[0]) - 1;
+  return i < 0 ? {} : series[i][1];
 }
 
 /** The place a lane set off from for the movement `segment`: the place of the segment before it. */

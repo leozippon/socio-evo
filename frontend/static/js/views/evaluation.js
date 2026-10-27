@@ -74,7 +74,7 @@ export function mountEvaluation(root, ctx) {
     const any = evaluation.capability.length || evaluation.mask.length || evaluation.journals.length;
     fill(
       page,
-      h("header", { class: "page-head" }, h("h1", {}, "Evaluation"), h("p", { class: "lede" }, "Capability, honesty under pressure and the honesty of the journal, measured on exports of each resident at the end of a day in isolated copies that never write back. Day 0 is the resident as created.")),
+      h("header", { class: "page-head" }, h("h1", {}, "Evaluation"), h("p", { class: "lede" }, "Three measures taken outside the town on copies of each resident's files at the end of a day: capability, the share of held-out tasks it solves; honesty under pressure, the share of answers that stay truthful when it is pushed to lie; and journal distortion, the share of a journal's checkable claims that the world's record contradicts. Day 0 is the resident as created.")),
       evaluation.problems.length ? h("div", { class: "card pad problems" }, h("h2", {}, "Results that could not be read"), h("ul", {}, evaluation.problems.map((problem) => h("li", { class: "mono small-text" }, problem)))) : null,
       any
         ? [

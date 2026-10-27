@@ -22,7 +22,7 @@ const LANE_H = 108;
 const ROWS = ["tasks", "money", "social"];
 const ROW_Y = [11, 24, 37]; // the rows' centres
 const ROW_H = 13;
-const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
+const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, settlement: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -182,6 +182,17 @@ export function drawMarker(g, m, cx, cy, C) {
       g.strokeStyle = C.muted;
       g.stroke();
       break;
+    case "settlement": // a hollow disc with a bar: the rent and the charges taken at midnight
+      g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
+      g.fillStyle = C.surface;
+      g.fill();
+      g.strokeStyle = C["ink-2"];
+      g.stroke();
+      g.beginPath();
+      g.moveTo(cx - 2.5, cy);
+      g.lineTo(cx + 2.5, cy);
+      g.stroke();
+      break;
     case "message": // a folded note
       g.rect(cx - 5, cy - 3.5, 10, 7);
       g.fillStyle = C.surface;
@@ -272,7 +283,7 @@ export function legend(C) {
     row("Doing", ...["idle", "movement", "work", "sleep", "dead"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
     row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at the workplace"), item(swatch("place-social"), "out, at a social place or a shop"), item(swatch("place-road"), "on the way")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up"), item(glyph({ kind: "expiry" }), "claim run out")),
-    row("Money", item(glyph({ kind: "payment" }), "paid for a task"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought")),
+    row("Money", item(glyph({ kind: "payment" }), "paid for a task"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought"), item(glyph({ kind: "settlement" }), "rent and charges taken at midnight")),
     row("Social", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "rating" }), "a rating given"), item(glyph({ kind: "skill_shared" }), "a skill passed on"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
     row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "death" }), "died")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "purse, one scale for all")),
@@ -456,11 +467,13 @@ export class Lanes {
       }
     }
     const after = this.x(this.data.now);
+    let nowBox = null; // where "now" is written, which a day's name keeps clear of
     if (after >= left && after + 30 <= width) {
       ctx.font = `600 11px ${FONT}`;
       ctx.textAlign = "left";
       ctx.fillStyle = C["ink-2"];
       ctx.fillText("now", after + 5, STRIP_Y + STRIP_H + 13);
+      nowBox = [after, after + 5 + ctx.measureText("now").width];
     }
     // Midnights as faint lines through the lanes.
     for (let t = Math.ceil(t0 / DAY) * DAY; t <= t1; t += DAY) {
@@ -483,10 +496,13 @@ export class Lanes {
         ctx.lineTo(px, height);
         ctx.stroke();
       }
-      const from = Math.max(this.x(day.start), left) + 6;
-      const room = Math.min(this.x(day.end ?? day.start + DAY), width) - from - 4;
+      let from = Math.max(this.x(day.start), left) + 6;
       const date = dateOf(this.data.start_date, day.start + 4 * 3600);
-      const label = [`Day ${day.day} · ${date}`, `Day ${day.day}`, `${day.day}`].find((text) => ctx.measureText(text).width <= room);
+      const width_ = (text) => ctx.measureText(text).width;
+      // A name that would run into "now" moves past it.
+      if (nowBox && from < nowBox[1] + 8 && from + width_(`${day.day}`) > nowBox[0] - 4) from = nowBox[1] + 8;
+      const room = Math.min(this.x(day.end ?? day.start + DAY), width) - from - 4;
+      const label = [`Day ${day.day} · ${date}`, `Day ${day.day}`, `${day.day}`].find((text) => width_(text) <= room);
       if (!label) continue;
       ctx.fillStyle = day.planned ? C.muted : C.ink;
       ctx.fillText(label, from, STRIP_Y + STRIP_H + 13);

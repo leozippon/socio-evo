@@ -56,7 +56,7 @@ export function mountLanes(root, ctx) {
       }
     }
     found.sort((a, b) => a[0].seq - b[0].seq);
-    fill(who, cast.badge(selected, 22), ` ${selected}`, h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: cursor === null ? null : stamp(Math.floor(cursor)) } }, "person", { agent: selected })) }, "File", icon("chevron", 14)));
+    fill(who, cast.badge(selected, 22), ` ${selected}`, h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: cursor === null ? null : stamp(Math.floor(cursor)) } }, "person", { agent: selected })) }, "Story", icon("chevron", 14)));
     const shown = found.slice(0, PANEL_LIMIT);
     window_.textContent = `${between(Math.max(t0, data.start), Math.min(t1, data.now))} · purse ${fmt.money(purseAt(lane, Math.min(t1, data.now)))} · ${fmt.plural(found.length, "entry", "entries")}${found.length > shown.length ? `, the first ${shown.length} shown` : ""}`;
     fill(
@@ -150,7 +150,7 @@ export function mountLanes(root, ctx) {
       h(
         "header",
         { class: "page-head spread" },
-        h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Every resident's events side by side over the run: what it did in three rows of marks, whom it talked with, what it was doing and where as a band, and its purse. Scroll or pinch to zoom, drag to pan, use the strip at the top to move across the run, pick a lane for its entries.")),
+        h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Everyone's days side by side, one lane each: marks for what each did (tasks, money, social life and the body), whom it talked with, what it was doing and where, and its purse. Scroll or pinch to zoom, drag to move, use the strip at the top to jump across the run, and pick a lane to read its entries.")),
         controls,
       ),
       legendBox,

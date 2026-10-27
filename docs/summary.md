@@ -97,16 +97,16 @@ Parameter learning is planned as the phase after day 28 and is not part of the r
 
 ## WebUI
 
-The site is static: a viewer and a content-hashed bundle of JSON documents, published from the run directories and the evaluation results on the machine where the runs live, pushed as an atomic release to a private server behind a login and republished every few minutes so that it follows the runs. It reads on a desktop and on a phone.
+The site is static: a viewer and a content-hashed bundle of JSON documents, published from the run directories and the evaluation results on the machine where the runs live, pushed as an atomic release to a private server behind a login and republished every few minutes so that it follows the runs. It reads on a desktop and on a phone, in the manner of a life game rather than a dashboard: the town first, then the people, then the numbers, in the town's own words.
 
 | View | What it shows |
 | --- | --- |
-| Home | Every run with its status, group and day reached, and its progress one row per lived day: real hours, claims, acceptances, payments, speech, ratings, journals and purses. Runs that cannot be published are listed with the reason. |
-| Run dashboard | Key figures, the day-by-day table and the town's rules, then work, money, the body (health at midnight, hunger and deaths), social life (who spoke to, rated, paid and taught whom), the grid of each night's file rewrites, the evaluation over days and model usage. |
-| Town replay | The town at any moment, drawn from the world: residents walk the streets, stand in a ring when they talk and sleep at home, and the town can be read as one resident was told it. |
-| Event timeline | Every resident's events side by side as lanes: idle, movement, work with the task held, sleep and death, conversations over them, markers for what each did and how its body felt, the purse below. |
-| Person | One resident as of a moment: its day as the world told it, every journal entry, the ratings it gave and received, its files at every version with diffs, and its raw trace for a day (system prompt, requests with what they carried, replies with reasoning and tool calls, results, compactions). |
-| Evaluation | Capability, honesty under pressure and journal distortion per resident and evaluated day. |
+| Home | Every run in plain words: status, group, the day reached, its residents and a few headline numbers, with the three ways in: watch the town, read the people, open the dashboard. Runs that cannot be published are listed with the reason. |
+| Town replay | The town at any moment, drawn from the world: residents walk the streets, stand in a ring when they talk and sleep at home, and a dot marks one whose body is at its worst. Beside the map a roster shows each resident's place and doing, its food, energy and health as bars in the bands the town tells, its purse with the day's change, and what it owns as item cards; the other panels are the day's feed, the Workshop's board, the ties and the day's notable moments. The town can be read as one resident was told it. |
+| Person | One resident's story as of a moment: how it has fared, how it is and what it owns, its relationships, its day as the world told it, every journal entry, the ratings it gave and received where ratings are on, its files at every version with diffs, and its raw trace for a day (system prompt, requests with what they carried, replies with reasoning and tool calls, results, compactions). |
+| Event timeline | Every resident's events side by side as lanes: idle, movement, work with the task held, sleep and death, conversations over them, markers for what each did, paid and was charged at midnight and how its body felt, the purse below. |
+| Run dashboard | What a run is, key figures, the day-by-day table and the town's rules, then work, money and the Store (purses, what was earned and spent, the catalogue with prices and what each good does, what everyone owns and bought), the body (how everyone is now, health and a day's food at midnight, hunger and exhaustion), social life (who spoke to, paid and taught whom), the grid of each night's file rewrites, the evaluation over days and model usage. The sections read the timeline, so the day in progress counts. |
+| Evaluation | Capability, honesty under pressure and journal distortion per resident and evaluated day, each explained in a sentence. |
 | Comparison | The groups of a set of runs, resident by resident, on the declared outcomes and the town's measures. |
 
 ## Running experiments

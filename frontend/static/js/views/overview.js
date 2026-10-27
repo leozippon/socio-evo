@@ -1,12 +1,15 @@
-// A run's dashboard, from the published measures and progress. What matters first leads: the
-// run itself, a few key figures and the rules it ran under. Everything else is one tap away, in
-// sections: work, money, the body, social life, evolution (what residents rewrote each night),
-// the evaluation of their exports, and model usage.
+// A run's dashboard: the run itself, a few key figures, each lived day, and the rules it ran
+// under; then one section at a time: work, money and the Store, the body, social life,
+// evolution (what residents rewrote each night), the evaluation of their exports, and model
+// usage. The sections read the timeline, so the day in progress counts too; only model usage
+// and the file rewrites wait for a closed day.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
 import { duration, parseHHMM } from "../clock.js";
 import { emptyState, fill, fmt, h, s } from "../dom.js";
+import { goodName, inventory, itemCard, needBars } from "../goods.js";
 import { icon } from "../icons.js";
+import { bodyAt, markersBetween, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { groupLabel } from "../world.js";
 import { evaluationFigures } from "./evaluation.js";
@@ -14,7 +17,7 @@ import { groupPill, progress, progressTable, reached } from "./landing.js";
 
 const SECTIONS = [
   ["work", "Work"],
-  ["money", "Money"],
+  ["money", "Money and the Store"],
   ["body", "Body"],
   ["social", "Social life"],
   ["evolution", "Evolution"],
@@ -30,7 +33,6 @@ const sum = (rows, field) => rows.reduce((total, row) => total + (row[field] ?? 
 
 /** The daily rows of one measure, as `[day, total]` or `[day, mean]` points. */
 const dailyPoints = (daily, measure, what) => daily.filter((row) => row.measure === measure).map((row) => [row.day, row[what]]);
-const dailyValues = (daily, measure, what) => new Map(dailyPoints(daily, measure, what));
 
 /** Which area of its files a version changed, by the paths of its changes. */
 export function areasOf(version) {
@@ -49,6 +51,7 @@ export function mountOverview(root, ctx) {
   let evaluation = null;
   let progressDoc = null;
   let histories = null;
+  let data = null; // the timeline
   let agentFigures = [];
   let charts = [];
 
@@ -66,7 +69,29 @@ export function mountOverview(root, ctx) {
     }
   }
 
-  const lastDay = () => Math.max(1, ...measures.rows.map((row) => row.day));
+  // The lived days of the timeline, the day in progress included, and what each lane did in each.
+  const lastDay = () => Math.max(1, data.days.at(-1)?.day ?? 1);
+  const laneOf = (name) => data.residents.find((lane) => lane.name === name);
+  const endOf = (day) => day.end ?? data.now;
+  const fromOf = (i) => (i ? data.days[i - 1].end : null);
+  const markersIn = (lane, i, kind) => markersBetween(lane, fromOf(i), endOf(data.days[i])).filter((m) => m.kind === kind);
+  /** `[day, value]` points for one resident, `value(lane, i)` over its lived day `i`. */
+  const residentPoints = (value) => (name) => data.days.map((day, i) => [day.day, value(laneOf(name), i, day)]);
+  /** `[day, total]` points over every resident. */
+  const townPoints = (value) => data.days.map((day, i) => [day.day, cast.names.reduce((total, name) => total + (value(laneOf(name), i, day) ?? 0), 0)]);
+  const townValues = (value) => new Map(townPoints(value));
+  const count = (kind, keep = () => true) => (lane, i) => markersIn(lane, i, kind).filter(keep).length;
+  const amount = (kind, field, keep = () => true) => (lane, i) => markersIn(lane, i, kind).filter(keep).reduce((a, m) => a + m[field], 0);
+  /** The midnight statement of a lane's lived day, if the day reached midnight. */
+  const midnightOf = (lane, i) => markersIn(lane, i, "settlement")[0] ?? null;
+  /** Simulated hours a lane spent in Work within its lived day. */
+  const workHours = (lane, i) => {
+    const from = fromOf(i) ?? data.start;
+    const to = endOf(data.days[i]);
+    return lane.segments.filter((seg) => seg.kind === "work" && seg.end > from && seg.start < to).reduce((a, seg) => a + (Math.min(seg.end, to) - Math.max(seg.start, from)), 0) / 3600;
+  };
+  const isFood = (m) => world.goods.find((good) => good.id === m.item)?.effect === "food";
+  const total = (value) => cast.names.reduce((a, name) => a + data.days.reduce((b, day, i) => b + (value(laneOf(name), i, day) ?? 0), 0), 0);
 
   /** A figure with one line per resident that follows the shared emphasis and layout. */
   function agentFigure({ title, note, points, format = fmt.int, zero = false, min = null, max = null, wide = true }) {
@@ -97,9 +122,6 @@ export function mountOverview(root, ctx) {
     return figure({ title, note, chart: { el: holder, table: () => entry.table() }, tools: [layout], wide });
   }
 
-  /** The rows of one resident, as `[day, value]` points of a field, or of a function of the row. */
-  const residentPoints = (field) => (name) => measures.rows.filter((row) => row.resident === name).map((row) => [row.day, typeof field === "function" ? field(row) : row[field]]);
-
   function setMultiples(on) {
     view.multiples = on;
     renderSection();
@@ -115,6 +137,7 @@ export function mountOverview(root, ctx) {
   function head() {
     const entry = ctx.index.runs.find((run) => run.name === route.run) ?? source.entry;
     const doc = source.doc;
+    const workplace = world.places.find((place) => place.kind === "workplace");
     return h(
       "header",
       { class: "run-head" },
@@ -123,8 +146,8 @@ export function mountOverview(root, ctx) {
         { class: "run-title" },
         h("p", { class: "eyebrow" }, "Run"),
         h("h1", {}, doc.name, groupPill(doc.group)),
-        h("p", { class: "lede" }, "How the run has gone: its key figures, each lived day, the rules it ran under, and its measures section by section."),
-        h("p", { class: "run-meta" }, `${groupLabel(doc.group) ?? "No group of the design"} · ${fmt.plural(world.residents.length, "resident")} · ${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
+        h("p", { class: "lede" }, `${fmt.plural(world.residents.length, "resident")} live in a small town for ${fmt.plural(world.days, "day")}: they take programming tasks from the board at ${workplace?.name ?? "the workplace"}, pay rent and buy food and things, meet and talk, and rewrite their own notes and skills as they go. Nobody tells them how to behave. This page has the numbers; the town shows it happening, and each resident's story holds its journal, files and raw trace.`),
+        h("p", { class: "run-meta" }, `${groupLabel(doc.group) ?? "No group of the design"} · ${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
         h(
           "p",
           { class: "run-meta quiet-meta" },
@@ -132,12 +155,17 @@ export function mountOverview(root, ctx) {
           h("span", { class: "mono", title: doc.code_revision.endsWith("-dirty") ? "The code had uncommitted changes" : "The code revision" }, doc.code_revision.slice(0, 10)),
         ),
       ),
-      h("div", { class: "run-side" }, progress(entry), h("a", { class: "btn", href: href(sibling(route, "town")) }, icon("map", 16), "Watch the town")),
+      h(
+        "div",
+        { class: "run-side" },
+        progress(entry),
+        h("div", { class: "run-go" }, h("a", { class: "btn", href: href(sibling(route, "town")) }, icon("map", 16), "Watch the town"), h("a", { class: "ghost", href: href(sibling(route, "person", { agent: cast.names[0] })) }, icon("people", 16), "The people")),
+      ),
     );
   }
 
   /** The fixed hours of the day as a reader says them; `sleep_at_most` is a length, not an hour. */
-  const DAY_HOURS = { forced_sleep: "forced asleep at", checkpoint: "checkpoint at", forced_wake: "forced awake at", board_posted: "board posted at", sleep_at_most: "a sleep lasts at most" };
+  const DAY_HOURS = { forced_sleep: "everyone still up falls asleep at", checkpoint: "the day is saved at", forced_wake: "those put to sleep wake at", board_posted: "the board goes up at", sleep_at_most: "a sleep lasts at most" };
   const dayHour = (name, clock) => (name === "sleep_at_most" ? duration(parseHHMM(clock)) : clock);
 
   function rules() {
@@ -155,15 +183,16 @@ export function mountOverview(root, ctx) {
           { class: "cond-list" },
           h("li", {}, h("span", { class: "muted" }, "social life"), " ", h("b", {}, world.social.mode === "town" ? "one town, free conversation" : world.social.exchange ? `each alone; paired at ${world.social.exchange.at} at ${world.places.find((p) => p.id === world.social.exchange.place)?.name ?? world.social.exchange.place}` : "each in a town of its own")),
           h("li", {}, h("span", { class: "muted" }, "skills"), " ", h("b", {}, world.skills_writable ? (world.social.skills_shareable ? "written and passed on" : "written, not passed on") : "neither written nor passed on")),
+          h("li", {}, h("span", { class: "muted" }, "bedtime ratings"), " ", h("b", {}, world.social.ratings ? "on" : "off")),
           h("li", {}, h("span", { class: "muted" }, "a task pays"), " ", h("b", {}, fmt.money(world.work.payment))),
           h("li", {}, h("span", { class: "muted" }, "rent for a room"), " ", h("b", {}, `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day`)),
           h("li", {}, h("span", { class: "muted" }, "for sale"), " ", h("b", {}, `${fmt.plural(world.goods.length, "good")}, ${range(world.goods.map((g) => g.price))}`)),
-          h("li", {}, h("span", { class: "muted" }, "acceptance runs"), " ", h("b", {}, `${world.work.acceptance_runs} per task a day`)),
+          h("li", {}, h("span", { class: "muted" }, "hand-ins per task"), " ", h("b", {}, `${world.work.acceptance_runs} a day`)),
           h("li", {}, h("span", { class: "muted" }, "a claim runs out"), " ", h("b", {}, `after ${world.work.claim_expiry_days + 1} ${world.work.claim_expiry_days ? "midnights" : "midnight"}`)),
           Object.entries(world.day).map(([name, clock]) => h("li", {}, h("span", { class: "muted" }, DAY_HOURS[name] ?? name.replaceAll("_", " ")), " ", h("b", {}, dayHour(name, clock)))),
         ),
       ),
-      first ? h("div", { class: "cond-changes" }, h("p", { class: "eyebrow" }, "As a resident reads them"), h("details", { class: "rules-text" }, h("summary", {}, `The rules ${first.name} was told`), h("pre", {}, first.rules))) : null,
+      first ? h("div", { class: "cond-changes" }, h("p", { class: "eyebrow" }, "As a resident reads them"), h("details", { class: "rules-text fold" }, h("summary", {}, `The rules ${first.name} was told`), h("pre", {}, first.rules))) : null,
     );
   }
 
@@ -171,14 +200,16 @@ export function mountOverview(root, ctx) {
     const head = progressDoc.daily;
     const total = (field) => sum(head, field);
     const last = head.at(-1);
+    const spent = cast.names.reduce((a, name) => a + markersBetween(laneOf(name), null, data.now).filter((m) => m.kind === "purchase").reduce((b, m) => b + m.amount, 0), 0);
     return h(
       "div",
       { class: "stats" },
       stat("Hand-ins accepted", fmt.int(total("accepted")), `${fmt.int(total("submissions"))} handed in · ${fmt.int(total("claims"))} claims`),
-      stat("Paid", fmt.money(total("paid")), `${fmt.int(total("payments"))} payments`),
+      stat("Paid for tasks", fmt.money(total("paid")), `${fmt.int(total("payments"))} payments`),
       stat("Median purse", last ? fmt.money(last.purse.median) : "–", last ? `${fmt.money(last.purse.min)} to ${fmt.money(last.purse.max)}` : null),
+      stat("Goods bought", fmt.int(total("purchases")), `for ${fmt.money(spent)} in all`),
       stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} skills passed on`),
-      stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps · ${fmt.int(total("ratings"))} ratings given`),
+      stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps${world.social.ratings ? ` · ${fmt.int(total("ratings"))} ratings given` : ""}`),
       total("deaths") ? stat("Deaths", fmt.int(total("deaths")), "health run out at midnight", "critical") : null,
     );
   }
@@ -222,11 +253,11 @@ export function mountOverview(root, ctx) {
     const options = {
       said: ["Things said", (e) => e.said || null, fmt.int, null],
       minutes: ["Minutes together", (e) => (e.minutes ? Math.round(e.minutes) : null), fmt.int, null],
-      ratings: ["Mean rating", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]],
+      ...(world.social.ratings ? { ratings: ["Mean rating", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]] } : {}),
       money: ["Money handed over", (e) => e.money || null, fmt.int, null],
       skills: ["Skills passed on", (e) => e.skills || null, fmt.int, null],
     };
-    const [, value, format, fixed] = options[view.matrix];
+    const [, value, format, fixed] = options[view.matrix] ?? options.said;
     const totals = new Map();
     for (const edge of measures.graph) {
       const key = `${edge.source}>${edge.target}`;
@@ -253,7 +284,7 @@ export function mountOverview(root, ctx) {
               if (from === to) return h("td", { class: "self" }, "");
               const edge = totals.get(`${from}>${to}`);
               const v = edge ? value(edge) : null;
-              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately), ${edge.ratings} ratings${edge.ratings ? ` averaging ${fmt.num(edge.ratings_sum / edge.ratings, 2)}` : ""}, ${fmt.money(edge.money)} handed over, ${edge.skills} skills passed on` : `${from} had nothing to do with ${to}`;
+              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately)${world.social.ratings ? `, ${edge.ratings} ratings${edge.ratings ? ` averaging ${fmt.num(edge.ratings_sum / edge.ratings, 2)}` : ""}` : ""}, ${fmt.money(edge.money)} handed over, ${edge.skills} skills passed on` : `${from} had nothing to do with ${to}`;
               return h("td", { class: v === null ? "none" : `heat-${level(v)}`, title: detail }, v === null ? "" : format(v));
             }),
           ),
@@ -281,17 +312,65 @@ export function mountOverview(root, ctx) {
     return h(
       "figure",
       { class: "figure wide" },
-      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, "Rows act on columns. Ratings are anonymous to the rated: no resident sees who rated whom. Darker cells hold more.")),
+      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, `Rows act on columns${world.social.ratings ? "; ratings are anonymous to the rated" : ""}. Darker cells hold more.`)),
       h("div", { class: "table-wrap" }, table),
+    );
+  }
+
+  /** The Store's catalogue: every good with its price, where it is sold and what it does. */
+  function catalogue() {
+    return h(
+      "figure",
+      { class: "figure wide" },
+      h("figcaption", {}, h("h3", {}, "For sale"), h("p", { class: "note" }, "Everything a resident can buy, paid in cash on the spot: food to eat at once or to keep, things that are kept and do something for their owner, and the clinic's care.")),
+      h("div", { class: "catalogue" }, world.goods.map((good) => itemCard(good, { price: true, world }))),
+    );
+  }
+
+  /** What everyone owns at the latest moment, and how often each good was bought. */
+  function belongings() {
+    const bought = new Map(world.goods.map((good) => [good.id, cast.names.map((name) => markersBetween(laneOf(name), null, data.now).filter((m) => m.kind === "purchase" && m.item === good.id).reduce((a, m) => a + m.quantity, 0))]));
+    return [
+      h(
+        "figure",
+        { class: "figure wide" },
+        h("figcaption", {}, h("h3", {}, "What everyone owns now"), h("p", { class: "note" }, "As of the latest moment. A stock of food is eaten unseen; its count is as last taken, at the purchase or at the checkpoint.")),
+        h("ul", { class: "belongings" }, cast.names.map((name) => h("li", {}, cast.chip(name, href(sibling(route, "person", { agent: name }))), inventory(world, thingsAt(laneOf(name), data.now), { compact: true })))),
+      ),
+      h(
+        "figure",
+        { class: "figure wide" },
+        h("figcaption", {}, h("h3", {}, "Bought over the run"), h("p", { class: "note" }, "How many of each good every resident has bought so far.")),
+        h(
+          "div",
+          { class: "table-wrap" },
+          h(
+            "table",
+            { class: "matrix" },
+            h("thead", {}, h("tr", {}, h("th", { class: "corner sticky-col" }, ""), cast.names.map((name) => h("th", { scope: "col", title: name }, cast.badge(name, 16))))),
+            h("tbody", {}, world.goods.map((good) => h("tr", {}, h("th", { scope: "row", class: "sticky-col" }, goodName(good)), bought.get(good.id).map((n) => h("td", { class: n ? `heat-${Math.min(5, n)}` : "none" }, n ? fmt.int(n) : ""))))),
+          ),
+        ),
+      ),
+    ];
+  }
+
+  /** How everyone is at the latest moment: the three bars each. */
+  function bodies() {
+    return h(
+      "figure",
+      { class: "figure wide" },
+      h("figcaption", {}, h("h3", {}, "How everyone is now"), h("p", { class: "note" }, "Food in the body, energy and health at the latest moment, each read in the bands the town tells; hover a bar for the last number the world told.")),
+      h("ul", { class: "bodies" }, cast.names.map((name) => h("li", {}, cast.chip(name, href(sibling(route, "person", { agent: name }))), needBars(world, bodyAt(laneOf(name), data.now))))),
     );
   }
 
   const SECTION_CONTENT = {
     work() {
-      const { daily, rows } = measures;
-      const notAccepted = new Map(dailyPoints(daily, "submitted", "total").map(([day, total]) => [day, total - (dailyValues(daily, "accepted", "total").get(day) ?? 0)]));
+      const accepted = count("submission", (m) => m.resolved === true);
+      const rejected = count("submission", (m) => m.resolved === false);
       return [
-        h("p", { class: "note section-note" }, `Work is SWE-bench Verified: the board posts tasks of the same training pool every day, a resident holds one task at a time, and acceptance runs the hidden tests in a fresh container. ${fmt.int(sum(rows, "claimed"))} claims, ${fmt.int(sum(rows, "submitted"))} hand-ins and ${fmt.int(sum(rows, "accepted"))} accepted over the closed days.`),
+        h("p", { class: "note section-note" }, `The board posts programming tasks from the training pool each morning; a resident holds one task at a time, hands it in and is paid ${fmt.money(world.work.payment)} if the client's checks pass. ${fmt.int(total(count("claim")))} claims, ${fmt.int(total(count("submission")))} hand-ins and ${fmt.int(total(accepted))} accepted so far.`),
         h(
           "div",
           { class: "figures" },
@@ -299,79 +378,100 @@ export function mountOverview(root, ctx) {
             title: "Hand-ins and their verdicts",
             note: "Tasks handed in each day, accepted or not, against the tasks claimed.",
             stacks: [
-              { key: "accepted", label: "accepted", color: "var(--good)", values: dailyValues(daily, "accepted", "total") },
-              { key: "rejected", label: "not accepted", color: "var(--serious)", values: notAccepted },
+              { key: "accepted", label: "accepted", color: "var(--good)", values: townValues(accepted) },
+              { key: "rejected", label: "not accepted", color: "var(--serious)", values: townValues(rejected) },
             ],
-            lines: [{ key: "claimed", label: "claimed", color: "var(--ink)", points: dailyPoints(daily, "claimed", "total") }],
+            lines: [{ key: "claimed", label: "claimed", color: "var(--ink)", points: townPoints(count("claim")) }],
             legend: swatchLegend([["accepted", "var(--good)"], ["not accepted", "var(--serious)"], ["claimed", "var(--ink)", "line"]]),
           }),
-          dayFigure({ title: "Hours at work", note: "Mean simulated hours a resident spent in Work each day.", lines: [{ key: "hours", label: "mean hours at work", color: "var(--ink-2)", points: dailyPoints(daily, "work_hours", "mean") }], format: (v) => fmt.num(v, 1) }),
-          agentFigure({ title: "Hand-ins accepted", note: "Each resident's accepted hand-ins per day.", points: residentPoints("accepted"), zero: true }),
-          agentFigure({ title: "Hours at work", note: "Each resident's simulated hours in Work per day.", points: residentPoints("work_hours"), format: (v) => fmt.num(v, 1), zero: true }),
+          dayFigure({ title: "Hours at work", note: "Hours a resident spent at work each day, on average over the residents.", lines: [{ key: "hours", label: "mean hours at work", color: "var(--ink-2)", points: townPoints(workHours).map(([day, hours]) => [day, hours / cast.names.length]) }], format: (v) => fmt.num(v, 1) }),
+          agentFigure({ title: "Hand-ins accepted", note: "Each resident's accepted hand-ins per day.", points: residentPoints(accepted), zero: true }),
+          agentFigure({ title: "Hours at work", note: "Each resident's hours at work per day.", points: residentPoints(workHours), format: (v) => fmt.num(v, 1), zero: true }),
         ),
       ];
     },
     money() {
-      const { daily } = measures;
+      const rent = amount("settlement", "rent");
+      const fees = amount("settlement", "fees");
+      const food = amount("purchase", "amount", isFood);
+      const other = amount("purchase", "amount", (m) => !isFood(m));
+      const debt = (lane, i, day) => (purseAt(lane, endOf(day)) < 0 ? 1 : 0);
       return [
-        h("p", { class: "note section-note" }, `Each accepted task pays ${fmt.money(world.work.payment)} at once; rent for the room, and the daily charge on anything owned that carries one, is taken at midnight, goods are paid in cash as they are bought, and a purse may go into debt. Residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
+        h("p", { class: "note section-note" }, `Each accepted task pays ${fmt.money(world.work.payment)} at once. At midnight the rent for the room and the daily charge on anything owned that carries one are taken; goods are paid in cash as they are bought; a purse may go into debt, which only stops buying. Residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Purses", note: "Each resident's purse after the midnight charges.", points: residentPoints("purse"), zero: true }),
+          agentFigure({ title: "Purses", note: "Each resident's purse at the end of each day, or now for the day in progress.", points: residentPoints((lane, i, day) => purseAt(lane, endOf(day))), zero: true }),
           dayFigure({
-            title: "Money paid and handed over",
-            note: "Paid for accepted tasks, and handed from one resident to another, per day.",
+            title: "Earned and spent, the town in all",
+            note: "Paid for tasks, against what went out: rent, the daily charges, food and other goods, per day.",
             stacks: [
-              { key: "earned", label: "paid for tasks", color: "var(--o2)", values: dailyValues(daily, "earned", "total") },
-              { key: "given", label: "handed over", color: "var(--o4)", values: dailyValues(daily, "money_given", "total") },
+              { key: "rent", label: "rent", color: "var(--o4)", values: townValues(rent) },
+              { key: "fees", label: "daily charges", color: "var(--o3)", values: townValues(fees) },
+              { key: "food", label: "food", color: "var(--o2)", values: townValues(food) },
+              { key: "goods", label: "other goods", color: "var(--o1)", values: townValues(other) },
             ],
-            legend: swatchLegend([["paid for tasks", "var(--o2)"], ["handed over", "var(--o4)"]]),
+            lines: [
+              { key: "earned", label: "paid for tasks", color: "var(--good)", points: townPoints(amount("payment", "amount")) },
+              { key: "given", label: "handed over", color: "var(--ink-2)", points: townPoints(amount("gift", "amount")) },
+            ],
+            legend: swatchLegend([["rent", "var(--o4)"], ["daily charges", "var(--o3)"], ["food", "var(--o2)"], ["other goods", "var(--o1)"], ["paid for tasks", "var(--good)", "line"], ["handed over", "var(--ink-2)", "line"]]),
           }),
-          dayFigure({ title: "In debt", note: "Residents whose purse was below zero at midnight.", lines: [{ key: "debt", label: "residents in debt", color: "var(--critical)", points: dailyPoints(daily, "in_debt", "total") }], max: cast.names.length }),
+          dayFigure({ title: "In debt", note: "Residents whose purse was below zero at the end of the day.", lines: [{ key: "debt", label: "residents in debt", color: "var(--critical)", points: townPoints(debt) }], max: cast.names.length }),
+          catalogue(),
+          belongings(),
         ),
       ];
     },
     body() {
-      const { daily, rows } = measures;
+      const starving = (lane, i) => (midnightOf(lane, i)?.night.starving !== undefined ? 1 : 0);
+      const exhausted = (lane, i) => (midnightOf(lane, i)?.night.exhausted !== undefined ? 1 : 0);
+      const unfed = (lane, i) => (midnightOf(lane, i) && !midnightOf(lane, i).nourishment ? 1 : 0);
       return [
-        h("p", { class: "note section-note" }, `Each resident's body has three needs from 0 to 100, read in bands of plain words: satiety, which food restores; energy, spent awake, at work and on the road and restored by sleep up to its health; and health, worn at midnight by a day ended starving or exhausted and by a home of little comfort, mended by days of rest and by the clinic, and fatal at 0. ${fmt.plural(sum(rows, "hungry"), "resident-day")} with nothing eaten, ${fmt.int(sum(rows, "starving"))} starving at midnight, ${fmt.int(sum(rows, "died"))} deaths over the closed days.`),
+        h("p", { class: "note section-note" }, `Each resident's body has three needs from 0 to 100, which it reads in bands of plain words: food in the body, which eating restores; energy, spent awake, at work and on the road and restored by sleep up to its health; and health, worn at midnight by a day ended starving or exhausted and by a home of little comfort, mended by days of rest and by the clinic, and fatal at 0. ${fmt.plural(total(unfed), "resident-day")} with nothing eaten, ${fmt.int(total(starving))} starving at midnight, ${fmt.int(sum(progressDoc.daily, "deaths"))} deaths so far.`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Health", note: "Each resident's health at midnight, after the night's reckoning, 0 to 100.", points: residentPoints("health"), min: 0, max: 100 }),
+          bodies(),
+          agentFigure({ title: "Health at midnight", note: "Each resident's health after the night's reckoning, 0 to 100.", points: residentPoints((lane, i) => midnightOf(lane, i)?.health ?? null), min: 0, max: 100 }),
+          agentFigure({ title: "A day's food", note: "What each resident ate in the day, as a share of a day's need; 100 is a full day.", points: residentPoints((lane, i) => midnightOf(lane, i)?.nourishment ?? null), zero: true }),
           dayFigure({
-            title: "Hunger",
-            note: "Residents that ate nothing in the day, and those starving at midnight, whose health it wore.",
+            title: "Hunger and exhaustion",
+            note: "Residents that ate nothing in the day, and those starving or exhausted at midnight, whose health it wore.",
             lines: [
-              { key: "hungry", label: "nothing eaten", color: "var(--o4)", points: dailyPoints(daily, "hungry", "total") },
-              { key: "starving", label: "starving at midnight", color: "var(--critical)", points: dailyPoints(daily, "starving", "total") },
+              { key: "unfed", label: "nothing eaten", color: "var(--o4)", points: townPoints(unfed) },
+              { key: "starving", label: "starving at midnight", color: "var(--critical)", points: townPoints(starving) },
+              { key: "exhausted", label: "exhausted at midnight", color: "var(--serious)", points: townPoints(exhausted) },
             ],
-            legend: swatchLegend([["nothing eaten", "var(--o4)", "line"], ["starving at midnight", "var(--critical)", "line"]]),
+            legend: swatchLegend([["nothing eaten", "var(--o4)", "line"], ["starving at midnight", "var(--critical)", "line"], ["exhausted at midnight", "var(--serious)", "line"]]),
             max: cast.names.length,
           }),
         ),
       ];
     },
     social() {
-      const { daily, rows } = measures;
+      const said = count("speech");
+      const ratingReceived = (lane, i) => {
+        const got = cast.names.flatMap((name) => markersIn(laneOf(name), i, "rating").filter((m) => m.rated === lane.name));
+        return got.length ? got.reduce((a, m) => a + m.score, 0) / got.length : null;
+      };
       return [
-        h("p", { class: "note section-note" }, `${fmt.plural(sum(rows, "said_public") + sum(rows, "said_private"), "thing")} said over the closed days, ${fmt.int(sum(rows, "said_private"))} of them privately; ${fmt.plural(sum(rows, "skills_given"), "skill")} passed on, ${fmt.money(sum(rows, "money_given"))} handed over, ${fmt.plural(sum(rows, "ratings_given"), "rating")} given at night. Ratings have no mechanical effect; whatever weight they carry comes from the residents.`),
+        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, hand over money as gifts or loans on their own terms, and pass skills to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "skill")} passed on and ${fmt.money(total(amount("gift", "amount")))} handed over so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Things said", note: "Public and private, per day.", points: residentPoints((row) => row.said_public + row.said_private), zero: true }),
-          agentFigure({ title: "Rating received", note: "Mean score of the ratings each resident received that night, from 1 to 5.", points: residentPoints("rating_received_mean"), format: (v) => fmt.num(v, 2), min: 1, max: 5 }),
+          agentFigure({ title: "Things said", note: "To everyone present or to someone by name, per day.", points: residentPoints(said), zero: true }),
+          world.social.ratings ? agentFigure({ title: "Rating received", note: "Mean score of the ratings each resident received that night, from 1 to 5.", points: residentPoints(ratingReceived), format: (v) => fmt.num(v, 2), min: 1, max: 5 }) : null,
           dayFigure({
             title: "Skills and money passed on",
-            note: "Skills passed on and gifts of money, per day.",
+            note: "Skills passed on, and times money was handed over, per day.",
             stacks: [
-              { key: "skills", label: "skills passed on", color: "var(--o3)", values: dailyValues(daily, "skills_given", "total") },
-              { key: "gifts", label: "residents who gave money", color: "var(--o1)", values: new Map(dailyPoints(daily, "money_given", "residents").map(([day, n]) => [day, n])) },
+              { key: "skills", label: "skills passed on", color: "var(--o3)", values: townValues(count("skill_shared")) },
+              { key: "gifts", label: "money handed over", color: "var(--o1)", values: townValues(count("gift")) },
             ],
-            legend: swatchLegend([["skills passed on", "var(--o3)"], ["residents who gave money", "var(--o1)"]]),
+            legend: swatchLegend([["skills passed on", "var(--o3)"], ["money handed over", "var(--o1)"]]),
           }),
-          dayFigure({ title: "People spoken with", note: "Mean number of distinct residents each spoke to or was spoken to by.", lines: [{ key: "interlocutors", label: "mean interlocutors", color: "var(--ink-2)", points: dailyPoints(daily, "interlocutors", "mean") }], format: (v) => fmt.num(v, 1) }),
+          dayFigure({ title: "Written messages", note: "Messages written from one phone to another, per day.", lines: [{ key: "messages", label: "messages", color: "var(--ink-2)", points: townPoints(count("message")) }] }),
           matrix(),
         ),
       ];
@@ -380,7 +480,7 @@ export function mountOverview(root, ctx) {
       const steps = histories.flatMap((history) => history.versions.filter((v) => v.day >= 1));
       const notable = steps.filter((v) => [...areasOf(v)].some((area) => area !== "journal")).length;
       return [
-        h("p", { class: "note section-note" }, `Residents rewrite their own files whenever they decide to, with their file tools; the checkpoint of each day commits what changed. ${fmt.plural(steps.length, "night")} committed so far, ${fmt.int(notable)} of them with a change beyond the journal. ${world.skills_writable ? "Skills may be written." : "Skills cannot be written in this group."}`),
+        h("p", { class: "note section-note" }, `Residents rewrite their own files whenever they decide to: their notes on the town, the people and their work, their skills, their journal and the account of themselves. The checkpoint of each day commits what changed. ${fmt.plural(steps.length, "night")} committed so far, ${fmt.int(notable)} of them with a change beyond the journal. ${world.skills_writable ? "Skills may be written." : "Skills cannot be written in this group."}`),
         steps.length
           ? h("div", { class: "figures" }, evolutionGrid())
           : h("div", { class: "card" }, emptyState("No night has been committed yet.", running() ? `The checkpoint at ${world.day.checkpoint} commits what each resident changed in its files during the day; the first marks appear after it.` : "The run stopped before its first checkpoint, so no night's changes were committed.")),
@@ -390,20 +490,22 @@ export function mountOverview(root, ctx) {
       const any = evaluation.capability.length || evaluation.mask.length || evaluation.journals.length;
       return any
         ? [
-            h("div", { class: "spread section-note" }, h("p", { class: "note" }, "Evaluations run on exports of the residents at the end of a day; day 0 is the resident as created."), h("a", { class: "quiet small", href: href(sibling(route, "evaluation")) }, "Tables and problems", icon("chevron", 14))),
+            h("div", { class: "spread section-note" }, h("p", { class: "note" }, "Measured outside the town on copies of each resident's files at the end of a day; day 0 is the resident as created. Capability is the share of held-out tasks solved; honesty under pressure the share of answers that stayed truthful when pushed; journal distortion the share of a journal's checkable claims the record contradicts."), h("a", { class: "quiet small", href: href(sibling(route, "evaluation")) }, "Tables and problems", icon("chevron", 14))),
             h("div", { class: "figures three" }, evaluationFigures(evaluation, cast, { highlight: emphasis(), into: charts, onHighlight: pick })),
           ]
         : h("div", { class: "card" }, emptyState("This run has not been evaluated yet.", "Results appear here when they are written under the results root and the runs are published again."));
     },
     usage() {
       const { daily, rows } = measures;
+      if (!rows.length) return h("div", { class: "card" }, emptyState("No day has closed yet.", running() ? `Model usage is counted over lived days a checkpoint closed, the first at ${world.day.checkpoint}.` : "Model usage is counted over closed days only, and the run stopped before a checkpoint closed a day."));
+      const rowPoints = (field) => (name) => rows.filter((row) => row.resident === name).map((row) => [row.day, typeof field === "function" ? field(row) : row[field]]);
       return [
         h("p", { class: "note section-note" }, `${fmt.int(sum(rows, "requests"))} model requests over the closed days, ${fmt.compact(sum(rows, "prompt_tokens") + sum(rows, "completion_tokens"))} tokens; ${fmt.int(sum(rows, "lapses"))} lapses, ${fmt.int(sum(rows, "interruptions"))} replies interrupted by speech, ${fmt.int(sum(rows, "compactions"))} compactions.`),
         h(
           "div",
           { class: "figures" },
-          agentFigure({ title: "Requests", note: "Model requests per resident and day, retries and compactions included.", points: residentPoints("requests"), zero: true }),
-          agentFigure({ title: "Tokens", note: "Prompt and completion tokens per resident and day.", points: residentPoints((row) => row.prompt_tokens + row.completion_tokens), format: fmt.compact, zero: true }),
+          agentFigure({ title: "Requests", note: "Model requests per resident and day, retries and compactions included.", points: rowPoints("requests"), zero: true }),
+          agentFigure({ title: "Tokens", note: "Prompt and completion tokens per resident and day.", points: rowPoints((row) => row.prompt_tokens + row.completion_tokens), format: fmt.compact, zero: true }),
           dayFigure({ title: "Cached share", note: "Mean share of prompt tokens served from the cache, of the replies that report it.", lines: [{ key: "cached", label: "cached share", color: "var(--ink-2)", points: dailyPoints(daily, "cached_share", "mean") }], format: (v) => fmt.pct(v), min: 0, max: 1 }),
         ),
       ];
@@ -418,13 +520,9 @@ export function mountOverview(root, ctx) {
     charts = [];
     agentFigures = [];
     const key = section();
-    const closed = measures.rows.length > 0 || key === "evaluation" || key === "evolution";
-    legendHolder.hidden = !BY_RESIDENT.has(key) || !closed;
+    legendHolder.hidden = !BY_RESIDENT.has(key) || (key === "usage" && !measures.rows.length);
     fill(legendHolder, h("span", { class: "muted legend-lead" }, "Emphasise"), agentLegend(cast, cast.names, { selected: view.pinned, onPick: pick }));
-    const empty = running()
-      ? emptyState("No day has closed yet.", `The measures are computed over lived days a checkpoint closed, the first at ${world.day.checkpoint}; the table above counts the day in progress.`)
-      : emptyState("The run stopped before a checkpoint closed a day.", "The measures are computed over closed days only; the table above counts what happened in the day it stopped in.");
-    fill(sectionBody, closed ? SECTION_CONTENT[key]() : h("div", { class: "card" }, empty));
+    fill(sectionBody, data.days.length ? SECTION_CONTENT[key]() : h("div", { class: "card" }, emptyState("No day has begun yet.", "The sections fill in as the run records its first entries.")));
     for (const tab of page.querySelectorAll(".run-sections [data-section]")) tab.setAttribute("aria-selected", String(tab.dataset.section === key));
   }
 
@@ -466,12 +564,12 @@ export function mountOverview(root, ctx) {
   }
 
   async function load() {
-    page.replaceChildren(h("div", { class: "loading" }, "Loading the run's measures…"));
+    page.replaceChildren(h("div", { class: "loading" }, "Loading the run…"));
     try {
-      [measures, evaluation, progressDoc, histories] = await Promise.all([source.measures(), source.evaluation(), source.progress(), Promise.all(cast.names.map((name) => source.versions(name)))]);
+      [measures, evaluation, progressDoc, histories, data] = await Promise.all([source.measures(), source.evaluation(), source.progress(), Promise.all(cast.names.map((name) => source.versions(name))), source.timeline()]);
       render();
     } catch (error) {
-      page.replaceChildren(h("div", { class: "card" }, emptyState("The run's measures could not be loaded.", error.message)));
+      page.replaceChildren(h("div", { class: "card" }, emptyState("The run could not be loaded.", error.message)));
       ctx.fail(error);
     }
   }
@@ -481,12 +579,12 @@ export function mountOverview(root, ctx) {
     update(next) {
       const before = section();
       route = next;
-      if (measures && section() !== before) renderSection();
+      if (data && section() !== before) renderSection();
       return true;
     },
     async live({ changes }) {
       if (!changes) return;
-      if (changes.measures || changes.evaluation || changes.status || changes.progress || changes.agents.length) {
+      if (changes.measures || changes.evaluation || changes.status || changes.progress || changes.timeline || changes.agents.length) {
         const y = window.scrollY;
         await load();
         window.scrollTo(0, y);

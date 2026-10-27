@@ -1,11 +1,13 @@
-// Every run and how far it has come: status, the day reached, a few headline numbers, and the
-// progress table of its lived days. Runs of one directory stand together, each set leading to
-// the comparison of its groups. Runs the publisher could not read are named with the reason.
+// Every run and how far it has come: status, the day reached, who lives there, a few headline
+// numbers, and the ways in: the town to watch, the people to read, the dashboard for the
+// numbers. Runs of one directory stand together, each set leading to the comparison of its
+// groups. Runs the publisher could not read are named with the reason.
 
 import { dateOf } from "../clock.js";
 import { readProgress } from "../data.js";
 import { emptyState, fill, fmt, h, money } from "../dom.js";
 import { icon } from "../icons.js";
+import { Cast } from "../identity.js";
 import { href } from "../router.js";
 import { groupLabel } from "../world.js";
 
@@ -57,8 +59,9 @@ export function progressTable(doc, status = "running") {
     ["Accepted", "Handed in and accepted", (d) => d.accepted],
     ["Not accepted", "Handed in and not accepted", (d) => d.rejected],
     ["Paid", "The total paid for accepted tasks", (d) => (d.paid ? money(d.paid, currency) : 0)],
+    ["Bought", "Goods bought", (d) => d.purchases],
     ["Said", "Things said", (d) => d.speeches],
-    ["Gifts", "Gifts of money", (d) => d.gifts],
+    ["Gifts", "Times money was handed over", (d) => d.gifts],
     ["Skills", "Skills passed on", (d) => d.skills_shared],
     ["Ratings", "Ratings given", (d) => d.ratings],
     ["Journals", "Residents gone to bed with the day's journal", (d) => d.journals],
@@ -93,7 +96,7 @@ export function progressTable(doc, status = "running") {
 function runRow(entry, index) {
   const head = entry.headline;
   const open = { view: "overview", run: entry.name, query: {} };
-  const table = h("div", { class: "run-progress" }, h("div", { class: "loading" }, "Loading the days…"));
+  const cast = new Cast({ residents: entry.residents.map((name) => ({ name })) });
   // The index gives no currency; the run's progress document does, so the sums of money read
   // as plain numbers until it arrives.
   const paid = figure("paid for tasks", fmt.int(head.paid), `${fmt.int(head.payments)} payments`);
@@ -103,9 +106,8 @@ function runRow(entry, index) {
       paid.firstChild.textContent = money(head.paid, doc.currency);
       purse.firstChild.textContent = money(head.purse.median, doc.currency);
       purse.title = `${money(head.purse.min, doc.currency)} to ${money(head.purse.max, doc.currency)}`;
-      fill(table, doc.daily.length ? progressTable(doc, entry.status) : emptyState("No day has begun yet.", "The table of lived days fills in as the run records its first entries."));
     },
-    (error) => fill(table, emptyState("The progress could not be loaded.", error.message)),
+    () => {},
   );
   const pace = head.hours_per_day === null ? "no day completed yet" : `${head.hours_per_day.toFixed(1)} real hours a day`;
   return h(
@@ -117,6 +119,7 @@ function runRow(entry, index) {
       h("a", { class: "run-name", href: href(open) }, entry.name),
       h("div", { class: "row" }, statusPill(entry), groupPill(entry.group), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null),
       h("span", { class: "muted small-text" }, `${reached(entry)} · ${pace}`),
+      h("div", { class: "run-cast", "aria-label": "The residents" }, entry.residents.map((name) => h("a", { class: "chip", href: href({ view: "person", run: entry.name, agent: name, query: {} }), title: name }, cast.badge(name, 18), h("span", { class: "sr" }, name)))),
     ),
     progress(entry),
     h(
@@ -127,8 +130,7 @@ function runRow(entry, index) {
       figure("things said", fmt.int(head.speeches), `${fmt.int(head.gifts)} gifts, ${fmt.int(head.skills_shared)} skills passed on`),
       purse,
     ),
-    h("div", { class: "run-links" }, h("a", { class: "ghost small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Town"), h("a", { class: "ghost small", href: href({ ...open, view: "lanes" }) }, icon("lines", 15), "Timeline"), h("a", { class: "btn small", href: href(open), "aria-label": `Open ${entry.name}` }, "Open", icon("chevron", 15))),
-    table,
+    h("div", { class: "run-links" }, h("a", { class: "btn small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Watch the town"), h("a", { class: "ghost small", href: href({ ...open, view: "person", agent: entry.residents[0] }) }, icon("people", 15), "People"), h("a", { class: "ghost small", href: href(open) }, icon("chart", 15), "Dashboard")),
   );
 }
 
@@ -158,7 +160,12 @@ export function mountLanding(root, ctx) {
       );
     fill(
       page,
-      h("header", { class: "page-head" }, h("h1", {}, "Runs"), h("p", { class: "lede" }, "Every run published, how far each has come, and the sets of runs whose groups are compared. A run is one town of residents living their days; the groups of the design differ in the social life they allow. Live runs update as they go.")),
+      h(
+        "header",
+        { class: "page-head" },
+        h("h1", {}, "A small town"),
+        h("p", { class: "lede" }, "Each run is one town of residents living their days: they take tasks from the Workshop's board, pay rent, buy food and things, meet and talk, and keep their own notes. Nobody tells them how to behave; what they become is the question. Watch a town as it happens, read each resident's story, or open the dashboard for the numbers. Live runs update as they go."),
+      ),
       index.runs.length || index.skipped.length ? null : h("div", { class: "card" }, emptyState("No runs are published yet.", "Runs appear here once one has been started and the runs root is published; a run just created shows up before its first entry.")),
       sets.map((set) => section(set.name, set.runs, set.name)),
       alone.length ? section(sets.length ? "Other runs" : "All runs", alone, null) : null,

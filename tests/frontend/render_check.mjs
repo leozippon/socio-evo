@@ -9,8 +9,9 @@
 // for one run (the first, or NAME) the dashboard with each of its sections, the town with each
 // panel, the timeline over the whole run and zoomed in to one hour with a moment shown, one
 // resident with each tab, and the evaluation; `--route` keeps one of them, by the name the
-// summary gives it. `--shots` writes a full-page screenshot of every route
-// and width into DIR; `--dark` renders in the dark colour scheme. Chromium is found through
+// summary gives it, and `--at MOMENT` (`5-09:05`, calendar day and clock) shows the town and
+// the resident at that moment instead of the newest. `--shots` writes a full-page screenshot of
+// every route and width into DIR; `--dark` renders in the dark colour scheme. Chromium is found through
 // SOCIO_EVO_CHROME, else in Playwright's cache, else on PATH. Prints a JSON summary, an overflow
 // naming the widest elements outside any sideways-scrolling box; exits 1 on failures and 2 when
 // no Chromium is found.
@@ -31,7 +32,7 @@ const TYPES = { ".html": "text/html; charset=utf-8", ".css": "text/css", ".js": 
 const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
 const args = process.argv.slice(2);
-const options = { "--run": null, "--route": null, "--shots": null, "--dark": false };
+const options = { "--run": null, "--route": null, "--at": null, "--shots": null, "--dark": false };
 const positional = [];
 for (let i = 0; i < args.length; i++) {
   if (args[i] === "--dark") options[args[i]] = true;
@@ -39,12 +40,13 @@ for (let i = 0; i < args.length; i++) {
   else positional.push(args[i]);
 }
 if (positional.length !== 1) {
-  console.error("usage: node render_check.mjs SITE [--run NAME] [--route NAME] [--shots DIR] [--dark]");
+  console.error("usage: node render_check.mjs SITE [--run NAME] [--route NAME] [--at MOMENT] [--shots DIR] [--dark]");
   process.exit(2);
 }
 const site = resolve(positional[0]);
 const runName = options["--run"];
 const onlyRoute = options["--route"];
+const at = options["--at"];
 const shots = options["--shots"];
 const dark = options["--dark"];
 
@@ -202,18 +204,19 @@ function routes() {
   const base = `#/run/${encodeURIComponent(entry.name)}`;
   found.push(["run", base]);
   for (const section of ["money", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
-  found.push(["town", `${base}/town`]);
+  const when = at ? `&t=${at}` : "";
+  found.push(["town", `${base}/town?${when.slice(1)}`]);
   const agent = run.residents[0]?.name;
   if (agent) {
-    for (const panel of ["people", "feed", "work", "ties", "day"]) found.push([`town-${panel}`, `${base}/town?panel=${panel}&agent=${encodeURIComponent(agent)}`]);
+    for (const panel of ["people", "feed", "board", "ties", "day"]) found.push([`town-${panel}`, `${base}/town?panel=${panel}&agent=${encodeURIComponent(agent)}${when}`]);
     found.push(["timeline", `${base}/timeline?agent=${encodeURIComponent(agent)}`]);
     // One hour of the first day, five hours in, with the moment shown in its middle.
     const from = timeline.start + 5 * 3600;
     const moment = from + 1800;
     const stamp = `${Math.floor(moment / 86400) + 1}-${String(Math.floor((moment % 86400) / 3600)).padStart(2, "0")}:${String(Math.floor((moment % 3600) / 60)).padStart(2, "0")}`;
     found.push(["timeline-hour", `${base}/timeline?agent=${encodeURIComponent(agent)}&t=${stamp}&from=${from}&to=${from + 3600}`]);
-    found.push(["person", `${base}/people/${encodeURIComponent(agent)}`]);
-    for (const tab of ["day", "journal", "ratings", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}`]);
+    found.push(["person", `${base}/people/${encodeURIComponent(agent)}?${when.slice(1)}`]);
+    for (const tab of ["day", "journal", "ratings", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}${when}`]);
   } else found.push(["timeline", `${base}/timeline`]);
   found.push(["evaluation", `${base}/evaluation`]);
   return found;

@@ -63,7 +63,7 @@ function header() {
   document.title = r.run ? `${r.run} · socio-evo` : r.comparison ? `${r.comparison} · socio-evo` : "socio-evo";
   if (r.run && entry) {
     const tab = (view, label, glyph) => h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));
-    fill($("tabs"), tab("overview", "Overview", "chart"), tab("town", "Town", "map"), tab("lanes", "Timeline", "lines"), tab("person", "People", "people"), tab("evaluation", "Evaluation", "scale"));
+    fill($("tabs"), tab("town", "Town", "map"), tab("person", "People", "people"), tab("lanes", "Timeline", "lines"), tab("overview", "Dashboard", "chart"), tab("evaluation", "Evaluation", "scale"));
     fill($("status"), statusPill(entry), groupPill(entry.group), h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null);
   } else {
     fill($("tabs"));

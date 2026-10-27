@@ -4,12 +4,11 @@
 
 import { hhmm, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
+import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { conditionAt, markersBetween } from "../replay.js";
-import { EVENTS, shortName } from "../world.js";
+import { bodyAt, markersBetween, thingsAt } from "../replay.js";
+import { shortName } from "../world.js";
 import { STRUCTURE, clockOf, detail, feedItems, glyph, involved, line, textFor, witnessed } from "./events.js";
-
-const RECENT = 30 * 60; // seconds of speech the moment panel keeps in view
 
 /** A resident's doing in a few words: at work on a task, talking, on the way, asleep, idle. */
 export function doing(found, places) {
@@ -26,6 +25,9 @@ export function doing(found, places) {
   return bits.join(" · ");
 }
 
+/** Where a resident is, in a word or two: the place's short name; nothing on the way, which `doing` tells. */
+export const whereabouts = (found, places) => (found.moving || found.segment?.kind === "dead" ? "" : places.get(found.segment?.place) ? shortName(places.get(found.segment.place)) : "");
+
 /** The residents at each place at the moment, by place id; those on the way under null; the dead nowhere. */
 export function byPlace(m) {
   const found = new Map();
@@ -38,60 +40,10 @@ export function byPlace(m) {
   return found;
 }
 
-/** The moment: who is where and what each is in, and what was said lately. */
-export class NowPanel {
-  constructor() {
-    this.el = h("div", { class: "panel now" });
-    this.key = null;
-  }
-
-  update(m) {
-    const key = `${m.time}|${m.selected}|${m.reader}|${m.dayEntries.length}`;
-    if (key === this.key) return;
-    this.key = key;
-    const where = byPlace(m);
-    const places = m.world.places.filter((place) => where.has(place.id));
-    const moving = where.get(null) ?? [];
-    const recent = m.dayEntries.filter((e) => e.kind === "speech" && e.sim_time >= m.time - RECENT).slice(-6);
-    fill(
-      this.el,
-      h("div", { class: "now-head" }, h("h3", {}, m.phase)),
-      places.length || moving.length
-        ? h(
-            "ul",
-            { class: "scenes" },
-            places.map((place) =>
-              h(
-                "li",
-                {},
-                h("span", { class: "scene-name" }, h("b", {}, shortName(place)), h("span", { class: "muted" }, ` · ${fmt.plural(where.get(place.id).length, "person", "people")}`)),
-                h("span", { class: "present" }, where.get(place.id).map((name) => m.cast.badge(name, 16))),
-                h("span", { class: "sr" }, where.get(place.id).join(", ")),
-              ),
-            ),
-            moving.length ? h("li", {}, h("span", { class: "scene-name" }, h("b", {}, "On the way")), h("span", { class: "present" }, moving.map((name) => m.cast.badge(name, 16)))) : null,
-          )
-        : emptyState("Nobody is anywhere yet.", "The residents appear as the run records its first entries."),
-      h(
-        "ul",
-        { class: "doings" },
-        m.cast.names.map((name) => {
-          const found = m.state.residents[name];
-          return h(
-            "li",
-            { class: m.selected === name ? "on" : "" },
-            h("button", { type: "button", class: "linkish", onclick: () => m.select(name) }, m.cast.badge(name, 18), h("b", {}, name)),
-            h("span", { class: "muted" }, ` ${doing(found, m.places)}`),
-          );
-        }),
-      ),
-      h("p", { class: "turn-label" }, recent.length ? "Said lately" : "Nothing said lately"),
-      recent.length ? h("ul", { class: "outcomes" }, recent.map((e) => h("li", {}, glyph(e), h("span", { class: "muted" }, `${clockOf(e)} `), line(e, m)))) : null,
-    );
-  }
-}
-
-/** The people of the town at the moment: where each is, what it holds, how it fares. */
+/**
+ * The people of the town at the moment, one card each: where it is and what it is doing, how
+ * its body stands in three bars, its purse and the day's change, and what it owns.
+ */
 export class PeoplePanel {
   constructor() {
     this.el = h("div", { class: "panel people" });
@@ -104,32 +56,40 @@ export class PeoplePanel {
     this.key = key;
     fill(
       this.el,
+      h("p", { class: "note roster-note" }, `${m.phase}. Tap someone to follow them.`),
       h(
         "ul",
         { class: "people-list" },
         m.cast.names.map((name) => {
           const found = m.state.residents[name];
-          const place = found.moving ? null : m.places.get(found.segment?.place);
           const delta = found.purse - m.dayStartPurses[name];
-          const feels = Object.values(conditionAt(found.lane, m.time)).join(" · ");
+          const dead = found.segment?.kind === "dead";
+          const things = thingsAt(found.lane, m.time);
           return h(
             "li",
             {},
             h(
               "button",
-              { type: "button", class: `person-row${m.selected === name ? " on" : ""}`, "aria-pressed": String(m.selected === name), onclick: () => m.select(name) },
-              m.cast.badge(name, 28),
-              h("span", { class: "person-main" }, h("b", {}, name), h("span", { class: "muted" }, place ? shortName(place) : found.moving ? "on the way" : ""), h("span", { class: "person-job" }, doing(found, m.places)), feels ? h("span", { class: "person-feels", title: "How the resident feels, as its body last told it" }, feels) : null),
+              { type: "button", class: `person-row${m.selected === name ? " on" : ""}${dead ? " dead" : ""}`, "aria-pressed": String(m.selected === name), onclick: () => m.select(name) },
+              m.cast.badge(name, 30),
+              h(
+                "span",
+                { class: "person-main" },
+                h("span", { class: "person-line" }, h("b", {}, name), h("span", { class: "muted" }, whereabouts(found, m.places))),
+                h("span", { class: "person-job" }, doing(found, m.places)),
+                dead ? null : inventory(m.world, things, { compact: true }),
+              ),
               h(
                 "span",
                 { class: "person-figures" },
-                h("span", { class: `money${found.purse < 0 ? " debt" : ""}`, title: "Money, and its change since the day began" }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
-                h("span", { class: "esteem", title: "The event the resident is in" }, EVENTS[found.conversation ? "conversation" : found.segment?.kind] ?? ""),
+                h("span", { class: `money${found.purse < 0 ? " debt" : ""}`, title: "The purse, and its change since the day began" }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
+                dead ? h("span", { class: "muted small-text" }, "died") : needBars(m.world, bodyAt(found.lane, m.time), { label: false, size: "mini" }),
               ),
             ),
           );
         }),
       ),
+      h("p", { class: "note small-text" }, "The bars are food in the body, energy and health, each filled to the band the resident is in; hover one for the last number told."),
     );
   }
 }
@@ -209,8 +169,8 @@ export class FeedPanel {
   }
 }
 
-/** The work of the day at the moment: what each resident holds, has handed in and was paid. */
-export class WorkPanel {
+/** The Workshop's board at the moment: what each resident holds, has handed in and was paid today. */
+export class BoardPanel {
   constructor() {
     this.el = h("div", { class: "panel board" });
     this.key = null;
@@ -260,7 +220,7 @@ export class WorkPanel {
     });
     fill(
       this.el,
-      h("p", { class: "note" }, `Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}. Each task pays ${fmt.money(m.world.work.payment)} once accepted; everyone holds at most one.`),
+      h("p", { class: "note" }, `The Workshop posts a board of tasks each morning; a resident holds one at a time, hands it in, and is paid ${fmt.money(m.world.work.payment)} if the client's checks pass. Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}.`),
       h("ul", { class: "tasks" }, rows),
     );
   }
@@ -293,7 +253,7 @@ export class ChroniclePanel {
             { class: "chronicle-list" },
             notes.map((e) => h("li", { class: classOf(e) }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.sim_time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, glyph(e), " ", line(e, m))))),
           )
-        : emptyState("Nothing notable yet today.", "Wakings, claims, verdicts, payments, gifts, ratings and bedtimes appear here as they happen."),
+        : emptyState("Nothing notable yet today.", "Wakings, claims, verdicts, payments, purchases, the midnight statements and bedtimes appear here as they happen."),
       broke.length ? h("p", { class: "note" }, "In debt: ", broke.map(([name, found], i) => [i ? ", " : "", m.cast.mention(name), ` ${fmt.money(found.purse)}`])) : null,
     );
   }

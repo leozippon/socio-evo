@@ -9,28 +9,29 @@
 
 import { DAY, parseHHMM, parseStamp, secondOfDay, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
+import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { lowerBound, markersBetween, moment as momentOf, purseAt } from "../replay.js";
+import { bodyAt, lowerBound, markersBetween, moment as momentOf, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { textFor } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
-import { ChroniclePanel, FeedPanel, NowPanel, PeoplePanel, WorkPanel, doing } from "../town/panels.js";
+import { BoardPanel, ChroniclePanel, FeedPanel, PeoplePanel, doing, whereabouts } from "../town/panels.js";
 import { SPEEDS, Timeline } from "../town/timeline.js";
-import { placeById, shortName } from "../world.js";
+import { placeById } from "../world.js";
 import { areasOf } from "./overview.js";
 
 const QUIET = 12 * 60; // simulated seconds without a moment that playback crosses quickly
 const SKIP_SPEED = 240 * 60; // simulated seconds per second across quiet stretches
 const RECENT = 10 * 60; // seconds of speech and deeds the map keeps in view
 const PANELS = [
-  ["now", "Now"],
   ["people", "People"],
   ["feed", "Feed"],
-  ["work", "Work"],
+  ["board", "Board"],
   ["ties", "Ties"],
   ["day", "Day"],
 ];
+const DEFAULT_PANEL = "people";
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -59,7 +60,7 @@ export function mountTown(root, ctx) {
     selected: cast.has(route.query.agent) ? route.query.agent : null,
     only: route.query.only === "1",
     lens: route.query.as === "1", // read what the selected resident was told in its own wording
-    panel: PANELS.some(([key]) => key === route.query.panel) ? route.query.panel : "now",
+    panel: PANELS.some(([key]) => key === route.query.panel) ? route.query.panel : DEFAULT_PANEL,
     follow: false,
   };
   let data = null; // the timeline document
@@ -95,7 +96,6 @@ export function mountTown(root, ctx) {
     },
   });
   const panels = {
-    now: new NowPanel(),
     people: new PeoplePanel(),
     feed: new FeedPanel({
       onFollow: (on) => {
@@ -104,7 +104,7 @@ export function mountTown(root, ctx) {
         refreshPanel(true);
       },
     }),
-    work: new WorkPanel(),
+    board: new BoardPanel(),
     ties: new TiesPanel({ cast, onSelect: (name) => select(name) }),
     day: new ChroniclePanel({ onJump: (time) => seek(time, true) }),
   };
@@ -246,18 +246,20 @@ export function mountTown(root, ctx) {
       if (bits.length) scenes.set(place.id, { label: bits.join(" · ") });
     }
     const deeds = new Map();
+    const ailing = new Set();
     for (const lane of data.residents) {
       for (const mk of markersBetween(lane, recent, m.time)) {
         const deed = deedOf(mk);
         if (deed) deeds.set(lane.name, deed);
       }
+      if (Object.values(bodyAt(lane, m.time)).some((need) => need.lowest)) ailing.add(lane.name);
     }
     const notices = m.dayEntries
       .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "death", "exchange_pairing", "meeting", "board_posted"].includes(e.kind))
       .slice(-3)
       .map((e) => ({ icon: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "alert" : e.kind === "board_posted" ? "board" : "pair", tone: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "critical" : null, text: textFor(e, m.reader) }));
     const key = `${m.time}|${m.dayEntries.length}|${m.reader}`;
-    return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, notices, effects, key };
+    return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, ailing, notices, effects, key };
   }
 
   /** What a marker says in a few words by the resident, with its tone. */
@@ -279,6 +281,8 @@ export function mountTown(root, ctx) {
         return { icon: "speech", text: `writes to ${mk.to}` };
       case "purchase":
         return { icon: "coin", text: `buys ${mk.quantity > 1 ? `${mk.quantity} × ` : ""}${mk.name} for ${fmt.money(mk.amount)}` };
+      case "settlement":
+        return { icon: "coin", text: `pays ${fmt.money(mk.rent + mk.fees)} rent and charges` };
       case "move_in":
         return { icon: "home", text: `moves into ${data.places[mk.to] ?? mk.to}` };
       case "skill_shared":
@@ -298,22 +302,32 @@ export function mountTown(root, ctx) {
     }
   }
 
-  /** The selected resident: who, where, doing what, and whose wording the panels read. */
+  /** The selected resident: who, where, doing what, how it stands and what it owns, and whose wording the panels read. */
   function renderSelected(m = moment()) {
     selectedBox.hidden = !view.selected;
     if (!view.selected) return fill(selectedBox);
     const found = m.state.residents[view.selected];
-    const home = places.get(cast.agent(view.selected).home);
+    const dead = found.segment?.kind === "dead";
+    const delta = found.purse - m.dayStartPurses[view.selected];
     fill(
       selectedBox,
       h(
         "div",
         { class: "selected-head" },
         cast.badge(view.selected, 34),
-        h("div", { class: "selected-text" }, h("b", {}, view.selected), h("span", { class: "muted" }, `${home ? shortName(home) : ""} · ${fmt.money(found.purse)}`), h("span", { class: "selected-job" }, doing(found, places))),
-        h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })) }, "File", icon("chevron", 14)),
+        h("div", { class: "selected-text" }, h("b", {}, view.selected), h("span", { class: "muted" }, whereabouts(found, places)), h("span", { class: "selected-job" }, doing(found, places))),
+        h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })), title: `${view.selected}'s story: journal, files and the raw trace` }, "Story", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
+      dead
+        ? h("p", { class: "note" }, `${view.selected} died: health ran out at midnight.`)
+        : h(
+            "div",
+            { class: "selected-life" },
+            needBars(world, bodyAt(found.lane, m.time)),
+            h("div", { class: "selected-purse" }, h("span", { class: `money${found.purse < 0 ? " debt" : ""}` }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)} today`) : null), h("span", { class: "muted small-text" }, "in the purse")),
+            inventory(world, thingsAt(found.lane, m.time), { compact: true }),
+          ),
       h(
         "div",
         { class: "seg lens", role: "group", "aria-label": "Whose wording to read" },
@@ -375,7 +389,7 @@ export function mountTown(root, ctx) {
         ...route.query,
         t: stamp(Math.floor(view.time)),
         agent: view.selected,
-        panel: view.panel === "now" ? null : view.panel,
+        panel: view.panel === DEFAULT_PANEL ? null : view.panel,
         only: view.only && view.selected ? "1" : null,
         as: view.lens && view.selected ? "1" : null,
         speed: view.speed === 3 ? null : String(view.speed),
@@ -533,8 +547,8 @@ export function mountTown(root, ctx) {
         if (mk.kind === "payment") effects.push({ agent: lane.name, text: `+${mk.amount}`, tone: "good" });
         if (mk.kind === "gift") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" }, { agent: mk.to, text: `+${mk.amount}`, tone: "good" });
         if (mk.kind === "purchase") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" });
+        if (mk.kind === "settlement") effects.push({ agent: lane.name, text: `−${mk.rent + mk.fees}`, tone: "muted" });
       }
-    for (const e of loaded.get(dayOf(time).day) ?? []) if (e.kind === "settlement" && e.sim_time > before && e.sim_time <= time) effects.push({ agent: e.actor, text: `−${e.payload.rent + e.payload.fees}`, tone: "muted" });
     paint(effects);
   }
 
@@ -612,7 +626,7 @@ export function mountTown(root, ctx) {
     sync();
     // A shared address that names a panel or a resident is read for them: on a phone the
     // sheet opens to show the panel, as it does when the reader asks for one.
-    if (!WIDE.matches && (view.panel !== "now" || view.selected)) setSheet("half");
+    if (!WIDE.matches && (view.panel !== DEFAULT_PANEL || view.selected)) setSheet("half");
     source.measures().then((found) => {
       measures = found;
       if (view.panel === "ties") refreshPanel(true);
@@ -634,7 +648,7 @@ export function mountTown(root, ctx) {
         renderSelected();
       }
       if (wanted !== null && wanted !== view.time) seek(wanted, true);
-      const panel = PANELS.some(([key]) => key === next.query.panel) ? next.query.panel : "now";
+      const panel = PANELS.some(([key]) => key === next.query.panel) ? next.query.panel : DEFAULT_PANEL;
       if (panel !== view.panel) showPanel(panel);
       if ((next.query.as === "1") !== view.lens) setLens(next.query.as === "1");
       return true;

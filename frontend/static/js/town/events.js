@@ -119,7 +119,7 @@ export const textFor = (entry, reader) => (reader && entry.personal?.[reader]) |
 export function line(entry, m) {
   const text = textFor(entry, m.reader);
   const spoken = entry.kind === "speech" && entry.payload.private ? h("span", { class: "private-tag" }, icon("lock", 11), "privately ") : null;
-  return h("span", {}, spoken, m.cast.mention(text));
+  return h("span", { class: "feed-text" }, spoken, m.cast.mention(text));
 }
 
 /** What an entry carries beyond its line: a command's output, a journal entry, a rating's reason. */
@@ -203,6 +203,10 @@ export function describeMarker(m, by, who) {
       return own ? [`wrote to ${m.to}`, m.text] : [`received a message from ${by}`, m.text];
     case "purchase":
       return [`bought ${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name} for ${fmt.money(m.amount)}`];
+    case "settlement": {
+      const night = Object.entries(m.night ?? {}).map(([cause, change]) => `${fmt.signed(change)} ${cause.replaceAll("_", " ")}`);
+      return [`was charged ${fmt.money(m.rent)} rent${m.fees ? ` and ${fmt.money(m.fees)} in daily charges` : ""} at midnight`, `Ate ${m.nourishment ? `${fmt.int(m.nourishment)}% of a day's food` : "nothing"}. Food in the body ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int(Math.round(m.energy))}, health ${fmt.int(Math.round(m.health))} of 100${night.length ? ` (${night.join(", ")})` : ""}.`];
+    }
     case "move_in":
       return [`moved house, into ${m.to.replaceAll("-", " ")}`];
     case "rating":

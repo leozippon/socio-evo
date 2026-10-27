@@ -421,6 +421,48 @@ table.data tbody tr:last-child td, table.data tbody tr:last-child th { border-bo
 table.data.text th, table.data.text td { text-align: left; white-space: normal; }
 .sticky-col { position: sticky; left: 0; background: var(--surface); z-index: 1; }
 
+/* A life, as a game shows it: the body's needs as bars read in bands, and things as item cards.
+   The bars fill in tones from good (the top band) to critical (the lowest); the cards wear the
+   surface and a line icon, so the residents' colours stay for the residents. ------------------- */
+.needs { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
+.need { display: grid; grid-template-columns: 16px 52px minmax(60px, 1fr) auto; gap: 7px; align-items: center; font-size: 12px; min-width: 0; }
+.need-icon { display: inline-flex; color: var(--muted); }
+.need-word { color: var(--ink-2); font-weight: 550; }
+.need-bar { position: relative; height: 9px; border-radius: 5px; background: var(--surface-3); overflow: hidden; box-shadow: inset 0 0 0 1px var(--line); }
+.need-fill { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 5px; background: var(--good); transition: width 0.3s; }
+.need.tone-warn .need-fill { background: var(--warn); }
+.need.tone-serious .need-fill { background: var(--serious); }
+.need.tone-critical .need-fill { background: var(--critical); }
+.need-tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--surface); opacity: 0.9; }
+.need-band { color: var(--ink-2); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.need.tone-critical .need-band { color: var(--critical-text); font-weight: 600; }
+.needs.mini { flex-direction: row; gap: 6px; }
+.needs.mini .need { grid-template-columns: 12px 34px; gap: 3px; }
+.needs.mini .need-bar { height: 6px; }
+.inventory { display: flex; flex-wrap: wrap; gap: 6px; }
+.inventory.compact { gap: 4px; }
+.item {
+  display: inline-grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 2px 9px; align-items: center;
+  padding: 7px 10px; border-radius: var(--r-m); background: var(--surface-2); box-shadow: inset 0 0 0 1px var(--line);
+  font-size: 12.5px; line-height: 1.3; max-width: 100%;
+}
+.item-icon { display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--surface); color: var(--ink-2); box-shadow: inset 0 0 0 1px var(--line); }
+.item.effect-food .item-icon { color: var(--a4-shade); }
+.item.effect-travel .item-icon { color: var(--a3-shade); }
+.item.effect-messaging .item-icon { color: var(--a1-shade); }
+.item.effect-appearance .item-icon { color: var(--a7-shade); }
+.item.effect-examination .item-icon, .item.effect-treatment .item-icon { color: var(--a8-shade); }
+.item-text { display: flex; flex-direction: column; min-width: 0; }
+.item-text b { font-weight: 600; }
+.item-line { color: var(--ink-2); font-size: 12px; overflow-wrap: anywhere; }
+.item-price { display: flex; flex-direction: column; align-items: flex-end; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.item-price small { font-weight: 500; color: var(--muted); font-size: 11px; }
+.item.compact { grid-template-columns: auto auto auto; gap: 5px; padding: 2px 8px 2px 3px; border-radius: 999px; font-size: 11.5px; }
+.item.compact .item-icon { width: 20px; height: 20px; border-radius: 50%; box-shadow: none; }
+.item-count { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.catalogue { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: var(--s2); }
+.catalogue .item { display: grid; }
+
 /* Markdown written by agents: long identifiers and paths wrap anywhere rather than widen the page. */
 .md { min-width: 0; overflow-wrap: anywhere; }
 .md p, .md li { max-width: 72ch; }
