@@ -20,7 +20,7 @@ The experiment's claim is that character emerges from social life. That claim fa
 
 Two things have no counterpart in a town, and take the most natural human frame instead of being named.
 
-The condensation of a long context is the resident writing notes for itself. The request reads "Before you go on, write down for yourself what you will want to remember of all that has happened so far", and the notes come back framed as "Your notes on what came before, as you wrote them for yourself … You carry on from here", because the message necessarily arrives as if someone else had spoken and the words alone must carry that nobody did. The `compact` action is described the same way.
+The condensation of a long context is the resident writing notes for itself. The request reads "Before you go on, write down for yourself what you will want to remember of all that has happened so far", and the notes come back introduced in the resident's own voice, "These are my notes of what came before, as I wrote them down for myself.", because the message necessarily arrives as if someone else had spoken and the words alone must carry that nobody did; asked for notes again, the resident knows the earlier ones for its own. The `compact` action is described the same way.
 
 The file tools are the resident's own files: who it is, what it knows of the town, the people, its work, its journal, its skills, and whatever else it wants to keep under memory/ (notes, drafts, a book). What remains visible is the names of the actions themselves (read_file, shell, compact) and the file paths, which a resident uses as a person uses the name of a program.
 

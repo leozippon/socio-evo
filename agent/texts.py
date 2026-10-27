@@ -100,7 +100,6 @@ COMPACTION_REQUEST = (
     + "\n\nYour reply is the notes themselves, written out in full, and nothing else."
 )
 
-SUMMARY = (
-    "Your notes on what came before, as you wrote them for yourself:\n\n{summary}\n\n"
-    "That is all you keep of it. You carry on from here."
-)
+SUMMARY = "These are my notes of what came before, as I wrote them down for myself.\n\n{summary}"
+"""The notes in the context, introduced in the resident's own voice, so that it knows them for its
+own, and finds there its earlier notes when it writes new ones."""
