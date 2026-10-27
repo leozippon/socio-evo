@@ -8,6 +8,7 @@ from typing import Any, Literal, Protocol
 from pydantic import (
     Field,
     JsonValue,
+    NonNegativeInt,
     PositiveInt,
     SerializerFunctionWrapHandler,
     model_serializer,
@@ -126,6 +127,9 @@ class LLMRequest(StrictModel):
     `tool_choice` (`auto`, `none`, `required` or a named tool) constrains it; both are sent
     only when set, as is `reasoning_effort`. `extra_body` is merged over the configuration's
     for this request, key by key at the top level (`chat_template_kwargs`, for instance).
+    `replica` keeps a conversation on one replica of a server that runs several: the request
+    goes to replica `replica` modulo their number, whose prefix cache then serves the
+    conversation's next request.
     `metadata` (agent id, purpose, simulated time, ...) is logged and never sent to the model.
     `verdict` is how the caller will judge the reply, for a log of the calls to record with
     it: None if the reply serves, else how it fails; it is neither sent nor logged itself.
@@ -140,6 +144,7 @@ class LLMRequest(StrictModel):
     tool_choice: str | dict[str, JsonValue] | None = None
     reasoning_effort: str | None = None
     extra_body: dict[str, JsonValue] = Field(default_factory=dict)
+    replica: NonNegativeInt | None = None
     metadata: dict[str, JsonValue] = Field(default_factory=dict)
     verdict: Callable[[LLMResponse], str | None] | None = Field(
         default=None, exclude=True, repr=False

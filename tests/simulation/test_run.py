@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -162,11 +163,21 @@ def unanswered(request: LLMRequest) -> LLMResponse:
 
 
 async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch):
+    replicas: dict[str, set[int | None]] = {}
+
     def down(request: LLMRequest) -> LLMResponse | str:
-        return "Yes." if not request.tools else unanswered(request)  # the check before the run
+        if not request.tools:  # the check before the run, at the last replica
+            replicas["check"] = {request.replica}
+            return "Yes."
+        name = re.search(r"\bI am (\w+)", request.messages[0].content)[1]
+        replicas.setdefault(name, set()).add(request.replica)
+        return unanswered(request)
 
     monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(down))
-    config = smoke(runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2))
+    config = smoke(
+        llm=smoke().llm.model_copy(update={"replicas": 3}),
+        runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2),
+    )
     async with asyncio.timeout(60):
         with pytest.raises(RuntimeError, match="the runtime of (Mei|Tomas) ended") as raised:
             await simulation.run(config, tmp_path, dry_run=True)
@@ -175,6 +186,7 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
     assert run.read_manifest().status == "failed"
     log = run.run_log_path.read_text()
     assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
+    assert replicas == {"check": {2}, "Mei": {0}, "Tomas": {1}}  # each its place in the list
 
 
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(

@@ -193,6 +193,23 @@ async def test_replies_cut_off_or_empty_are_returned_for_the_caller_to_judge(mon
         assert (response.text, response.truncated) == (text or "", finish_reason == "length")
 
 
+async def test_a_request_goes_to_the_replica_it_names(monkeypatch):
+    ranks: list[str | None] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        ranks.append(request.headers.get("X-data-parallel-rank"))
+        if json.loads(request.content).get("stream"):
+            return _sse(STREAM)
+        return httpx2.Response(200, json=_completion("ok"))
+
+    two = _client(monkeypatch, handler, replicas=2)
+    for replica in (0, 1, 2, 3, None):
+        await two.complete(_request(replica=replica))
+    await two.stream(_request(replica=5))
+    await _client(monkeypatch, handler).complete(_request(replica=1))  # a server of one
+    assert ranks == ["0", "1", "0", "1", None, "1", None]
+
+
 async def test_concurrency_is_bounded(monkeypatch):
     active = peak = 0
 

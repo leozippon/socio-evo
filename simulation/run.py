@@ -9,6 +9,10 @@ with the town's rules as the world tells them to that resident, memory/people.md
 it knows already, work.md with a heading), makes it a git repository, and saves the world's
 starting state as day 0.
 
+Every runtime shares the one client. A resident's requests name, as their replica, its place in
+the configuration's list of residents, which is frozen with the run: on a server of several
+replicas each resident is always served by the same one, and the residents are spread evenly.
+
 Saving day N commits every agent directory at the simulated moment and tags it `day-NN`, then
 writes the world's state to `checkpoints/day-NN.json`, so that a checkpoint always has its tags.
 A tag left by a save that was killed before its checkpoint is moved when the day is lived again.
@@ -136,8 +140,9 @@ async def run(
                     world.ports[r.name],
                     client,
                     config.runtime,
+                    replica=index,
                 )
-                for r in config.residents
+                for index, r in enumerate(config.residents)
             }
             await _live(world, runtimes, until, _Checkpoints(directory, config.town))
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
@@ -182,11 +187,13 @@ def _client(config: ExperimentConfig, dry_run: bool) -> StreamingClient:
 
 async def _check_model(client: StreamingClient, config: ExperimentConfig) -> None:
     """Fail fast, with LLMCallError, unless the model answers one small request at the
-    residents' reasoning effort."""
+    residents' reasoning effort, sent to the last of the replicas the configuration counts,
+    which a server with fewer refuses."""
     request = LLMRequest(
         messages=(Message(role="user", content="Say yes."),),
         reasoning_effort=config.runtime.reasoning_effort,
         sampling=Sampling(max_tokens=16),
+        replica=config.llm.replicas - 1,
     )
     try:
         await client.stream(request)

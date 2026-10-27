@@ -22,9 +22,12 @@ class LLMConfig(StrictModel):
     in a string ends the string, and the model, unable to write what it meant, may fill the
     reply with whitespace up to the token limit; unenforced, a model asked again tends to
     repeat its slip word for word. `extra_body` is merged into every request body for
-    server-specific options. `backend: scripted` keeps these settings but replaces the
-    endpoint with a responder supplied in code, for dry runs; the endpoint fields are then
-    unused.
+    server-specific options. `replicas` is the number of data-parallel replicas the server
+    runs: above one, a request that names its replica is sent there (vLLM's
+    `X-data-parallel-rank` header), instead of where the server's balancing by load would
+    send it, which is seldom the replica that has the conversation's prefix cached.
+    `backend: scripted` keeps these settings but replaces the endpoint with a responder
+    supplied in code, for dry runs; the endpoint fields are then unused.
 
     The defaults suit a shared server that is sometimes saturated: a call may wait `timeout`
     seconds for the server (a whole reply, or each piece of a stream), long enough for the
@@ -45,6 +48,7 @@ class LLMConfig(StrictModel):
     max_retries: NonNegativeInt = 6
     backoff: PositiveFloat = 2.0
     max_concurrency: PositiveInt = 8
+    replicas: PositiveInt = 1
     structured_output: StructuredMode = "json_schema"
     structured_retry: StructuredMode | None = None
     extra_body: dict[str, JsonValue] = Field(default_factory=dict)

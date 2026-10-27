@@ -99,7 +99,9 @@ class RuntimeConfig(StrictModel):
 class Runtime:
     """The runtime of the resident whose directory is `directory`, meeting the world through
     `port` and the model through `client`. The session and the trace live in the directory;
-    a session already there is continued."""
+    a session already there is continued. Every request names `replica`, if it is given, so
+    that a server of several replicas keeps the resident on the one that has its prefix
+    cached."""
 
     def __init__(
         self,
@@ -107,6 +109,8 @@ class Runtime:
         port: WorldPort,
         client: StreamingClient,
         config: RuntimeConfig | None = None,
+        *,
+        replica: int | None = None,
     ) -> None:
         world = port.tool_specs()
         specs = [*files.SPECS, COMPACT, *world]
@@ -117,6 +121,7 @@ class Runtime:
         self._port = port
         self._client = client
         self._config = config or RuntimeConfig()
+        self._replica = replica
         self._files = files.FileTools(directory)
         self._world = {spec.name for spec in world}
         self._tools = tuple(
@@ -386,6 +391,7 @@ class Runtime:
             tool_choice=tool_choice,
             reasoning_effort=effort,
             sampling=Sampling(max_tokens=max_tokens),
+            replica=self._replica,
         )
 
     @contextmanager

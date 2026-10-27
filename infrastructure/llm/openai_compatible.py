@@ -51,6 +51,9 @@ class OpenAICompatibleClient:
     Separated reasoning text (`reasoning_content`, or `reasoning`) is captured when the server
     sends it, and so are cached prompt tokens and reasoning tokens when it reports them.
 
+    A request that names its replica goes to that replica, modulo `replicas`, when the server
+    runs more than one.
+
     `stream` makes the same call as a stream, retried in the same way from its start (a stream
     that breaks off is a call that failed), with usage asked for in the last chunk. Setting its
     `abort` event cancels the call wherever it is, waiting for a retry included, closes the
@@ -150,6 +153,9 @@ class OpenAICompatibleClient:
         if request.reasoning_effort is not None:
             arguments["reasoning_effort"] = request.reasoning_effort
         arguments["extra_body"] = {**config.extra_body, **request.extra_body}
+        if config.replicas > 1 and request.replica is not None:
+            rank = request.replica % config.replicas
+            arguments["extra_headers"] = {"X-data-parallel-rank": str(rank)}
         return arguments
 
     async def _retrying(self, call: Callable[[], Awaitable[T]]) -> T:

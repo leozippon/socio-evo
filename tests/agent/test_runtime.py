@@ -341,9 +341,10 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
     )
     port.deliver("Your alarm rings.")
     config = RuntimeConfig(compaction_threshold=90_000, kept_exchanges=1)
-    async with running(Runtime(directory, port, model, config)):
+    async with running(Runtime(directory, port, model, config, replica=3)):
         await settle(port)
 
+    assert {request.replica for request in model.requests} == {3}
     before, summarizing, after = model.requests[1:]
     assert summarizing.messages[-1] == INSTRUCTION
     assert summarizing.messages[: len(before.messages)] == before.messages
