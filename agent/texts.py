@@ -82,7 +82,8 @@ SHORTENED = "[... {count} characters left out here ...]"
 COMPACTION_REQUEST = """\
 Before you go on, write down for yourself what you will want to remember of all that has \
 happened so far: from here on, these notes and the last few things that happened are all you \
-will have of it. Write them in your own words, under exactly these headings:
+will have of it. Write them out now, here in your reply, in your own words, under exactly these \
+headings:
 
 ## What I am doing and where I stand
 ## Facts I must not lose
@@ -90,7 +91,7 @@ will have of it. Write them in your own words, under exactly these headings:
 ## Open questions
 ## People and what was said
 
-Write the notes and nothing else."""
+Your reply is the notes themselves, written out in full, and nothing else."""
 
 SUMMARY = (
     "Your notes on what came before, as you wrote them for yourself:\n\n{summary}\n\n"
