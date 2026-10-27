@@ -4,10 +4,11 @@
 town's work tools: the town's workspace tools (`world.tools.WORKSPACE_SPECS`: `shell` and the
 reading, writing and editing of repository files) act in a workspace of the task, opened on
 first use through the same `Backend` as the town's, and answer as the town's do, being the same
-code; `submit` runs the official acceptance in a fresh container, at most `max_submissions`
-times; `give_up` ends the work. There is no clock, place, purse or other resident. The resident is
-told how the work goes in place of the town's rules, and the situation tells the task's
-problem and repository and the verdict of the last submission.
+code, except that a command stopped by its limit is told in seconds, there being no clock;
+`submit` runs the official acceptance in a fresh container, at most `max_submissions` times;
+`give_up` ends the work. There is no clock, place, purse or other resident. The resident is told
+how the work goes in place of the town's rules, and the situation tells the task's problem and
+repository and the verdict of the last submission.
 
 The task ends when a submission is accepted, when the last submission allowed is not, when the
 resident gives up, when a budget is spent, or when the machinery fails: an `error`, never the
@@ -252,7 +253,8 @@ class SoloPort:
     async def _shell(self, args: dict[str, Any]) -> ToolResult:
         workspace = await self._open()
         timeout = self.config.shell_timeout_s
-        return ToolResult(told_command(await workspace.exec(args["command"], timeout), timeout))
+        result = await workspace.exec(args["command"], timeout)
+        return ToolResult(told_command(result, f"The command was stopped after {timeout} seconds."))
 
     async def _read_repo_file(self, args: dict[str, Any]) -> ToolResult:
         return ToolResult((await read_repo(await self._open(), args))[0])

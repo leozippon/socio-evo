@@ -243,7 +243,7 @@ async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):
     assert (await town.call("Mei", "shell", command="ls -la")).text == "ran ls -la\nExit code 0."
     assert (await town.call("Mei", "shell", command="false")).text == "stderr:\nboom\nExit code 1."
     slow = await town.call("Mei", "shell", command="sleep forever")
-    assert slow.text == "The command was stopped after 60 seconds."
+    assert slow.text == "The command ran too long and was stopped. It is 09:00."
     missing = await town.call("Mei", "read_repo_file", path="nope.py")
     assert (
         missing.text == "You could not read nope.py: cannot read nope.py: No such file or directory"

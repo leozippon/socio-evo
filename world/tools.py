@@ -11,7 +11,8 @@ truncates what enters its context.
 The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared and answered here
 for the town and for the work-only port of `world.solo` alike: what they do in a workspace and
 tell of it is `told_command`, `read_repo`, `write_repo` and `edit_repo`, and the town's handlers
-add the claim they need and the log entry.
+add the claim they need and the log entry. A command stopped by its limit of real time, which the
+town's clock outruns, is told in the town as having run too long, with the hour.
 """
 
 from __future__ import annotations
@@ -187,14 +188,14 @@ def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
     return None
 
 
-def told_command(result: ExecResult, timeout: int) -> str:
-    """What `shell` tells of a command's outcome: its outputs whole, then its exit code, or that
-    it was stopped after `timeout` seconds."""
+def told_command(result: ExecResult, stopped: str) -> str:
+    """What `shell` tells of a command's outcome: its outputs whole, then its exit code, or
+    `stopped`, which tells that it ran too long and was stopped."""
     parts = [result.stdout.rstrip("\n")] if result.stdout else []
     if result.stderr:
         parts.append("stderr:\n" + result.stderr.rstrip("\n"))
     if result.timed_out:
-        parts.append(f"The command was stopped after {timeout} seconds.")
+        parts.append(stopped)
     else:
         parts.append(f"Exit code {result.exit_code}.")
     return "\n".join(parts)
@@ -396,8 +397,7 @@ async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         return held
     claim, workspace = held
     number = claim.task
-    timeout = world.config.work.shell_timeout_s
-    result = await workspace.exec(args["command"], timeout)
+    result = await workspace.exec(args["command"], world.config.work.shell_timeout_s)
     command = args["command"]
     world.record(
         "command",
@@ -414,7 +414,10 @@ async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             "output_tail": (result.stdout + result.stderr)[-1000:],
         },
     )
-    return ToolResult(told_command(result, timeout))
+    # The limit is of real time, which the town's clock outruns: told in the town's hours.
+    return ToolResult(
+        told_command(result, f"The command ran too long and was stopped. {_now(world)}")
+    )
 
 
 async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
