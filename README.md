@@ -25,7 +25,7 @@ It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the r
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. The `llm` section of `experiments/configs/town.yaml` names the server, the model and its replica count, to one of which each resident keeps. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. The `llm` section of `experiments/configs/town.yaml` names the server, the model and its replica count, to one of which each resident keeps. Work needs rootless Docker and the SWE-bench images of the two fixed splits: 100 held-out tasks from SWE-bench Verified, and 1,912 training tasks, the 350 other usable ones of Verified followed by 1,562 of SWE-bench's full test split. The images take about 260 GB of Docker's image store and are pulled once from Epoch AI's registry:
 
 ```bash
 python -m tasks.swebench.pull

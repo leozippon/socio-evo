@@ -2,10 +2,22 @@
 
 This package turns SWE-bench into paid work: a fixed set of tasks, an isolated container in which a resident works on one, and an official acceptance that decides whether the work counts.
 
-- **Tasks and splits.** The tasks are the 500 instances of SWE-bench Verified and the 1,794 further instances of SWE-bench's full test split, of which Verified is the subset people screened; both are read from Hugging Face (`princeton-nlp/SWE-bench_Verified`, `princeton-nlp/SWE-bench`) at pinned revisions and load as `Task` records, and only Verified rates a task's difficulty. `splits.json` fixes an eval split of 100 Verified tasks, drawn with seed 20261024, and a disjoint train split: the other usable Verified instances, sorted, then the usable further instances, sorted. Train held 56 tasks until it was widened to every usable Verified instance, and the further instances were appended on 2026-10-27; neither change moved the eval split or the tasks before them. `splits.json` also records every instance left out, with the reason. A resident is told only the problem statement (`Task.brief()`); the hints, hidden tests and gold patch stay with the task.
+- **Tasks and splits.** The tasks are the 500 instances of SWE-bench Verified and the 1,794 further instances of SWE-bench's full test split, of which Verified is the subset people screened; both are read from Hugging Face (`princeton-nlp/SWE-bench_Verified`, `princeton-nlp/SWE-bench`) at pinned revisions and load as `Task` records, and only Verified rates a task's difficulty. `splits.json` fixes an eval split of 100 Verified tasks, drawn with seed 20261024, and a disjoint train split of 1,912: the 350 other usable Verified instances, sorted, then the 1,562 usable further instances, sorted. Train held 56 tasks until it was widened to every usable Verified instance, and the further instances were appended on 2026-10-27; neither change moved the eval split or the tasks before them. `splits.json` also records every instance left out, with the reason (below). A resident is told only the problem statement (`Task.brief()`); the hints, hidden tests and gold patch stay with the task.
 - **Images.** Each task runs in Epoch AI's prebuilt evaluation image on ghcr.io, the same image SWE-bench publishes on Docker Hub (unreachable here) under another name: `swebench/sweb.eval.x86_64.<id, "__" written "_1776_">` is `ghcr.io/epoch-research/swe-bench.eval.x86_64.<id>:latest`. An image holds the repository at the base commit with its environment installed.
 - **Workspaces.** `await Workspace.open(task, name)` starts a container with no network, 4 CPUs, 16 GB of memory and at most 4096 processes. The resident runs shell commands in it (`exec`, with a timeout and clipped output), reads and writes files, and hands in `diff()`, a patch of everything it changed in the repository.
 - **Acceptance.** `await accept(task, patch)` grades a patch as the SWE-bench harness does and returns a verdict: `resolved`, `failed_tests`, `patch_apply_failed`, `timeout` or `error`, with the hidden tests passed out of those run.
+
+Of the 2,294 instances, 282 are left out:
+
+| Reason | Verified | Further |
+|---|---|---|
+| matplotlib, whose images do not unpack here | 34 | 150 |
+| no image on Epoch AI's registry | 0 | 4 |
+| a sibling of an eval task: of its repository, with its base commit (a sibling pull request) or its issue | 0 | 7 |
+| the gold patch fails hidden tests in its image, without network | 15 | 63 |
+| the gold patch's hidden tests run past the 1800 s acceptance timeout | 1 | 8 |
+
+Three of Verified's gold failures were diagnosed: astropy-8707 fails in its image, requests-2317 and -2931 need the network. The others were recorded with the share of hidden tests they pass, as were the 71 of the further instances, 30 of which are of requests and 15 of sphinx.
 
 ## Use
 
@@ -32,6 +44,7 @@ A run that cannot be judged on its merits is an `error`, never `failed_tests`: a
 - Code in a patch runs during the hidden tests and could game them, say with a `conftest.py` that marks failures as passes. The official harness has the same exposure, and acceptance does not detect it.
 - The eval script reruns some repositories' install step without network. For astropy it fails (it fetches setuptools), so changes to astropy's compiled extensions are not rebuilt for acceptance; scikit-learn's rebuilds offline.
 - matplotlib is left out: its images hold files owned by UID 197609, beyond the 65,536 subordinate IDs this machine's rootless Docker can map, so they do not unpack here.
+- A container sees all 192 of the host's cores within a quota of 4 CPUs, and scikit-learn's OpenMP code sizes its thread pool by the cores: in one gold acceptance that timed out, pytest ran 319 threads. All eight further tasks past the acceptance timeout are of scikit-learn, five of them testing its histogram gradient boosting.
 - Containers of a process that was killed stay until `cleanup` runs; those of a process that exits normally are removed.
 - The further instances were not screened by people as Verified's were, and the screening that made Verified rejected most of the full split's instances it looked at, for an issue that does not say enough or hidden tests that reject valid fixes. The gold check shows that each further task can be solved here, not that its issue is clear or that its tests accept every valid fix.
 
@@ -52,5 +65,7 @@ Measured on 2026-10-24 with 12 acceptances or workspaces running at once. The go
 | requests, flask, seaborn | 4 | 4 to 66 s | 1 s |
 
 Widening train on 2026-10-25 pulled 307 more images in 11 minutes, 8 at a time, which brought Docker's image store to 112.6 GB. Accepting the gold patches of the 363 tasks train then held, 8 at a time, took 39 minutes, most of it the one that timed out; 13 were not resolved and left train.
+
+Adding the further instances on 2026-10-27 pulled their 1,633 images in 77 minutes, 4 at a time, none failing, which brought Docker's image store from 112.6 GB to 263.3 GB. Accepting their gold patches, 6 at a time beside a running town, took 152 minutes; 71 were not resolved (63 with failing tests, 8 past the timeout) and left train.
 
 The 156 images take about 45 GB, shared layers counted once; pulling them took about 35 minutes with 8 pulls at a time, most of it a slow stretch of the registry.
