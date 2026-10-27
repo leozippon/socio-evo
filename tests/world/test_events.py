@@ -26,6 +26,7 @@ ARCHITECTURE_TABLE = {
         "look_around",
         "go",
         "start_work",
+        "view_board",
         "say",
         "message",
         "buy",
@@ -61,6 +62,7 @@ ARCHITECTURE_TABLE = {
         "wait",
         "sleep",
         "start_work",
+        "view_board",
         "leave_conversation",
     },
     "sleep": {"look_around", "review_day", "rate", "sleep"},
@@ -570,8 +572,8 @@ async def test_situation_says_what_applies_now(make_town):
     assert "Also here: Aisha." in situation and "Your purse holds $120." in situation
     assert "You have nothing of your own yet." in situation  # told at home
     assert situation.endswith(
-        "What you can do now: help, look_around, how_am_i, go, wait, sleep, start_work, say, "
-        "buy, move_in, message."
+        "What you can do now: help, look_around, how_am_i, go, wait, sleep, start_work, "
+        "view_board, say, buy, move_in, message."
     )
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()

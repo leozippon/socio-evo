@@ -31,6 +31,7 @@ IDLE_TOOLS = frozenset(
         "how_am_i",
         "go",
         "start_work",
+        "view_board",
         "say",
         "message",
         "buy",
@@ -71,6 +72,7 @@ CONVERSATION_TOOLS = frozenset(
         "wait",
         "sleep",
         "start_work",
+        "view_board",
         "leave_conversation",
     }
 )

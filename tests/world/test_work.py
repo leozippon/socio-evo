@@ -104,6 +104,20 @@ async def test_the_board_is_posted_every_morning_and_what_is_left_stays_up_until
     assert posted[0]["payload"] == {"tasks": 4} and posted[0]["audience"] == ["Tomas"]
 
 
+async def test_the_board_is_read_by_whoever_is_at_the_workshop(make_town):
+    town = make_town()
+    await awake_at(town)
+    assert (await town.call("Mei", "view_board")).text == "You are not at the workshop."
+    for name in ("Mei", "Tomas"):
+        await town.call(name, "go", place="workshop")
+    await town.until("08:00")
+    board = (await town.call("Mei", "view_board")).text  # without sitting down to work
+    assert board.startswith("The board:\n1. org/repo1: Problem 1 goes wrong.")
+    await town.call("Tomas", "say", text="Seen the board?", to=["Mei"])
+    assert town.world.residents["Mei"].conversation is not None
+    assert (await town.call("Mei", "view_board")).text == board  # nor leaving the conversation
+
+
 async def test_isolated_boards_are_each_residents_own(make_town):
     town = make_town(town_config("isolated"))
     await at_work(town, "Mei", "Tomas")

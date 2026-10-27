@@ -355,6 +355,9 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    workplace = world.config.workplace
+    if r.place != workplace.id:  # the board hangs there, for whoever is there to read
+        return ToolResult(f"You are not at {workplace.name}.")
     return ToolResult(world.board.text(r.name, world.config.day.board_posted))
 
 

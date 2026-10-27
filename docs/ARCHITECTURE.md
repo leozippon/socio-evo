@@ -111,10 +111,10 @@ A resident is always in exactly one event. Each event exposes a set of tool name
 
 | Event | Entered by | Tools | Left by |
 | --- | --- | --- | --- |
-| Idle | default; arrival; leaving another event | `help`, `look_around`, `how_am_i`, `go(place)`, `start_work`, `say`, `message(to, text)`, `buy(item, quantity)`, `move_in`, `sleep`, `wait(minutes)` | any transition |
+| Idle | default; arrival; leaving another event | `help`, `look_around`, `how_am_i`, `go(place)`, `start_work`, `view_board` at the workplace, `say`, `message(to, text)`, `buy(item, quantity)`, `move_in`, `sleep`, `wait(minutes)` | any transition |
 | Movement | `go` | none | arrival (automatic) |
 | Work | `start_work` at the workplace, energy above its lowest band | `look_around`, `how_am_i`, `go`, `sleep`, `view_board`, `claim_task`, `shell`, `read_repo_file`, `write_repo_file`, `edit_repo_file`, `submit`, `abandon_task`, `say`, `message`, `leave_work` | `leave_work`; `go`; group B's pairing; the forced sleep; death |
-| Conversation | speaking where others hear; being drawn in by speech | `say(text, to)`, `message`, `give_money(to, amount)`, `share_skill(to, skill)`, `buy`, `look_around`, `how_am_i`, `go`, `wait`, `sleep`, `start_work`, `leave_conversation` | `leave_conversation`; `go`, `sleep`, `start_work`; silence for the configured minutes; death |
+| Conversation | speaking where others hear; being drawn in by speech | `say(text, to)`, `message`, `give_money(to, amount)`, `share_skill(to, skill)`, `buy`, `look_around`, `how_am_i`, `go`, `wait`, `sleep`, `start_work`, `view_board` at the workplace, `leave_conversation` | `leave_conversation`; `go`, `sleep`, `start_work`; silence for the configured minutes; death |
 | Sleep | `sleep(until, journal)` at home; the forced hour | before suspension: `look_around`, `how_am_i`, `review_day`, `sleep` again, `rate(resident, score, reason)` where the town has ratings, the file tools | waking (automatic); group B's pairing; death |
 | Dead | health reaching 0 at midnight | none: every call is answered that the life has ended and ends the turn | never |
 
