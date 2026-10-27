@@ -79,19 +79,22 @@ CUT_OFF = "You broke off above, having gone on too long; nothing in it was done.
 SHORTENED = "[... {count} characters left out here ...]"
 
 # Compaction.
-COMPACTION_REQUEST = """\
-Before you go on, write down for yourself what you will want to remember of all that has \
-happened so far: from here on, these notes and the last few things that happened are all you \
-will have of it. Write them out now, here in your reply, in your own words, under exactly these \
-headings:
-
-## What I am doing and where I stand
-## Facts I must not lose
-## Decisions and their reasons
-## Open questions
-## People and what was said
-
-Your reply is the notes themselves, written out in full, and nothing else."""
+NOTES_HEADINGS = (
+    "## What I am doing and where I stand",
+    "## Facts I must not lose",
+    "## Decisions and their reasons",
+    "## Open questions",
+    "## People and what was said",
+)
+"""The headings of the notes a resident writes for itself when its context is condensed."""
+COMPACTION_REQUEST = (
+    "Before you go on, write down for yourself what you will want to remember of all that has "
+    "happened so far: from here on, these notes and the last few things that happened are all "
+    "you will have of it. Write them out now, here in your reply, in your own words, under "
+    "exactly these headings:\n\n"
+    + "\n".join(NOTES_HEADINGS)
+    + "\n\nYour reply is the notes themselves, written out in full, and nothing else."
+)
 
 SUMMARY = (
     "Your notes on what came before, as you wrote them for yourself:\n\n{summary}\n\n"

@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from agent.testing import reply, tool_call
+from agent.texts import NOTES_HEADINGS
 from infrastructure.llm import LLMRequest, LLMResponse, Message, ToolCall
 from world.clock import parse_hour
 from world.config import TownConfig
@@ -59,12 +60,10 @@ class DryRunModel:
         self._meal = meals[0] if meals else None
 
     def __call__(self, request: LLMRequest) -> LLMResponse:
-        if not request.tools:  # the compaction: the one request that declares no tools
-            return reply(
-                "## What I am doing and where I stand\nLiving my day.\n## Facts I must not "
-                "lose\nNone.\n## Decisions and their reasons\nNone.\n## Open questions\nNone."
-                "\n## People and what was said\nNothing."
-            )
+        if not request.tools:  # the check that the model answers, before the run
+            return reply("Yes.")
+        if request.tool_choice == "none":  # the compaction: the one request for text only
+            return reply("\n".join(f"{heading}\nLiving my day." for heading in NOTES_HEADINGS))
         name = re.search(r"\bI am (\w+)", request.messages[0].content)
         if name is None:
             raise ValueError("the dry run cannot find the resident's name in the system prompt")

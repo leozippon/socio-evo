@@ -19,6 +19,7 @@ SAY = ToolSpec("say", "Say something to those here.", ANYTHING)
 GO = ToolSpec("go", "Go somewhere.", ANYTHING)
 LOOK = ToolSpec("look_around", "See who and what is here.", ANYTHING)
 SHELL = ToolSpec("shell", "Run a command in your workspace.", ANYTHING)
+NOTES = "\n".join(f"{heading}\nLooking around." for heading in texts.NOTES_HEADINGS)
 
 
 async def settle(port: FakePort) -> None:
@@ -335,7 +336,7 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
     model = ScriptedModel(
         reply("", tool_call("look_around"), prompt_tokens=1_000),
         reply("", tool_call("look_around"), prompt_tokens=95_000),
-        reply("## What I am doing and where I stand\nLooking around."),
+        reply(NOTES),
         reply("Enough.", prompt_tokens=2_000),
     )
     port.deliver("Your alarm rings.")
@@ -346,14 +347,12 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
     before, summarizing, after = model.requests[1:]
     assert summarizing.messages[-1] == INSTRUCTION
     assert summarizing.messages[: len(before.messages)] == before.messages
-    assert before.tools and summarizing.tools == () and summarizing.tool_choice is None
+    assert before.tools and summarizing.tools == before.tools == after.tools
+    assert summarizing.tool_choice == "none" and before.tool_choice is None
     requests = [r for r in trace(directory) if r["kind"] == "request"]
-    assert [r["tools"] == [] for r in requests] == [False, False, True, False]
-    assert requests[2]["purpose"] == "compaction"
+    assert [r["purpose"] for r in requests] == ["step", "step", "compaction", "step"]
     assert [m.role for m in after.messages] == ["system", "user", "assistant", "tool"]
-    assert after.messages[1].content == texts.SUMMARY.format(
-        summary="## What I am doing and where I stand\nLooking around."
-    )
+    assert after.messages[1].content == texts.SUMMARY.format(summary=NOTES)
     assert after.messages[2].tool_calls[0].id == after.messages[3].tool_call_id
     (compaction,) = [r for r in trace(directory) if r["kind"] == "compaction"]
     assert compaction["replaced"] == [1, 2, 3] and compaction["kept"] == [4, 5]
@@ -364,7 +363,7 @@ async def test_the_resident_can_compact_on_its_own(directory):
     port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
     compact = tool_call("compact")
     model = ScriptedModel(
-        reply("", tool_call("look_around")), reply("", compact), reply("I woke."), reply("Fresh.")
+        reply("", tool_call("look_around")), reply("", compact), reply(NOTES), reply("Fresh.")
     )
     port.deliver("Your alarm rings.")
     async with running(Runtime(directory, port, model, RuntimeConfig(kept_exchanges=1))):
@@ -374,6 +373,36 @@ async def test_the_resident_can_compact_on_its_own(directory):
     after = model.requests[3].messages
     assert [m.role for m in after] == ["system", "user", "assistant", "tool"]
     assert after[2].tool_calls == (compact,) and after[3].content == texts.CONDENSING
+
+
+async def test_notes_that_are_empty_hold_a_call_or_lack_a_heading_are_never_kept(directory):
+    as_text = "<tool_call>\n<function=write_file>\n<parameter=path>\nmemory/notes.md\n"
+    model = ScriptedModel(
+        reply("", tool_call("compact")),
+        reply("\n\n"),  # what vLLM leaves of a call it strips
+        reply(as_text + NOTES),
+        reply("Done."),
+        reply("", tool_call("compact")),
+        reply(NOTES.replace(f"{texts.NOTES_HEADINGS[3]}\n", "")),
+        reply(NOTES),
+        reply("Fresh."),
+    )
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_exchanges=1))):
+        await settle(port)
+        (lapse,) = [r for r in trace(directory) if r["kind"] == "lapse"]
+        assert lapse["purpose"] == "compaction"
+        assert lapse["errors"] == ["empty", "a tool call written out as text"]
+        assert not [r for r in trace(directory) if r["kind"] == "compaction"]
+        port.deliver("Ben says hi.")
+        await settle(port)
+
+    (compaction,) = [r for r in trace(directory) if r["kind"] == "compaction"]
+    assert compaction["summary"] == NOTES
+    asked = [r for r in trace(directory) if r["kind"] == "request" and r["purpose"] == "compaction"]
+    assert [r["attempt"] for r in asked] == [1, 2, 1, 2]
+    assert context(directory)[0].content == texts.SUMMARY.format(summary=NOTES)
 
 
 async def test_cancelling_mid_request_stops_cleanly(directory):

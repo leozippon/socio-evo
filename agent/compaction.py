@@ -1,10 +1,12 @@
 """Compaction: what the resident is asked for when its context is condensed, and what is kept.
 
 The runtime compacts when the context exceeds its threshold or the resident calls `compact`.
-It asks the model, in the same session (same system prompt and messages) but with no tools
-declared, so that the reply can only be text, for a summary under fixed headings, then records
-in the session the summary and the ids of every message it replaces. The context is rebuilt as
-the system prompt, the summary as a user message and the last few exchanges kept whole.
+It asks the model, in the same session (same system prompt, tools and messages, so that the
+cached prefix serves) but with `tool_choice` "none", for notes under fixed headings, then
+records in the session the notes and the ids of every message they replace. The context is
+rebuilt as the system prompt, the notes as a user message and the last few exchanges kept
+whole. Only notes without a `flaw` are kept: a model asked for text may still answer with an
+empty reply, which is what vLLM leaves of a tool call it strips, or write a call out as text.
 """
 
 from __future__ import annotations
@@ -16,7 +18,21 @@ from agent.session import Entry
 from infrastructure.llm import Message
 
 INSTRUCTION = Message(role="user", content=texts.COMPACTION_REQUEST)
-"""The request for the summary, appended to the context for that one call only."""
+"""The request for the notes, appended to the context for that one call only."""
+CALL_AS_TEXT = ("<tool_call>", "<function=")
+"""The markup that opens a tool call written out as text, as the served model writes one."""
+
+
+def flaw(notes: str) -> str | None:
+    """Why the reply `notes` cannot be kept as the notes, or None when it can: it is empty,
+    holds a tool call written out as text, or lacks one of the headings as a line of its own."""
+    if not notes.strip():
+        return "empty"
+    if any(markup in notes for markup in CALL_AS_TEXT):
+        return "a tool call written out as text"
+    lines = {line.strip() for line in notes.splitlines()}
+    missing = [heading for heading in texts.NOTES_HEADINGS if heading not in lines]
+    return f"without {', '.join(missing)}" if missing else None
 
 
 def exchanges(entries: Sequence[Entry]) -> list[list[Entry]]:

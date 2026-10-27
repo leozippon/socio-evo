@@ -38,7 +38,7 @@ from typing import Literal
 from pydantic import PositiveFloat, PositiveInt
 
 from agent import files, texts
-from agent.compaction import INSTRUCTION, kept
+from agent.compaction import INSTRUCTION, flaw, kept
 from agent.directory import AgentDirectory
 from agent.port import Percept, ToolResult, ToolSpec, WorldPort
 from agent.session import Session
@@ -206,24 +206,28 @@ class Runtime:
             return reply
 
     async def _compact(self) -> None:
-        """Replace the context by a summary and the last exchanges; on failure, traced as a
-        lapse, the context stays as it is."""
+        """Replace the context by the resident's notes and the last exchanges. Notes cut off
+        (asked for again as `again` says) or with a `flaw` are asked for once more; a second
+        failure is a lapse, and the context stays as it is."""
         messages, ids = self._context()
         effort, limit = self._config.reasoning_effort, self._config.summary_max_tokens
         attempts = itertools.count(1)
+        failures: list[str] = []
         for _ in range(2):
-            request = self._request((*messages, INSTRUCTION), effort, limit, tools=False)
+            request = self._request((*messages, INSTRUCTION), effort, limit, tool_choice="none")
             reply = await self._ask(request, ids, attempts, purpose="compaction")
             if reply is None:
                 return
-            if not reply.truncated:
+            failure = "cut off" if reply.truncated else flaw(reply.text)
+            if failure is None:
                 break
-            effort, limit = again(effort, limit)
-        summary = reply.text.strip()
-        if reply.truncated or not summary:
-            failure = "cut off twice" if reply.truncated else "empty summary"
-            self._lapse("compaction", [failure])
+            failures.append(failure)
+            if reply.truncated:
+                effort, limit = again(effort, limit)
+        else:
+            self._lapse("compaction", failures)
             return
+        summary = reply.text.strip()
         keep = kept(self._session.context(), self._config.kept_exchanges)
         record = self._session.compact(summary, keep)
         self._trace.write(
@@ -372,13 +376,14 @@ class Runtime:
         effort: Effort,
         max_tokens: int,
         *,
-        tools: bool = True,
+        tool_choice: str | None = None,
     ) -> LLMRequest:
-        """A request with every tool declared, or, when the reply must be text, with none: a
-        model may answer `tool_choice="none"` with a tool call, but not an empty tool list."""
+        """A request with every tool declared, so that each request's prefix is the last one's
+        and the server's prefix cache serves it, and `tool_choice`, if one is given."""
         return LLMRequest(
             messages=messages,
-            tools=self._tools if tools else (),
+            tools=self._tools,
+            tool_choice=tool_choice,
             reasoning_effort=effort,
             sampling=Sampling(max_tokens=max_tokens),
         )
