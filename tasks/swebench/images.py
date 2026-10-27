@@ -1,4 +1,4 @@
-"""The task images: Epoch AI's prebuilt SWE-bench Verified evaluation images on ghcr.io.
+"""The task images: Epoch AI's prebuilt SWE-bench evaluation images on ghcr.io.
 
 SWE-bench publishes an instance's evaluation image on Docker Hub as
 `swebench/sweb.eval.x86_64.<instance id>`, with the "__" of the id written "_1776_". Docker Hub
