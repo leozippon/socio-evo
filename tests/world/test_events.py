@@ -395,22 +395,28 @@ async def test_going_to_bed_again_from_bed_adds_to_the_journal_and_sets_the_hour
     assert wakes == [at("07:00"), at("08:00", day=2)]  # the hour first given wakes her no more
 
 
-async def test_one_sleep_lasts_at_most_twelve_hours_and_the_forced_sleep_is_unchanged(make_town):
+async def test_the_body_wakes_one_after_twelve_hours_and_the_forced_sleep_is_unchanged(make_town):
     town = make_town()
     await awake_at(town)
     mei, tomas = town.world.residents["Mei"], town.world.residents["Tomas"]
     await town.until("08:23")
-    refused = await town.call("Mei", "sleep", until="07:00", journal="Tired already.")
-    assert refused.text == (
-        "Nobody sleeps longer than 12 hours at a stretch: give an hour no later than 20:23."
+    slept = await town.call("Mei", "sleep", until="07:00", journal="Tired already.")
+    assert slept.ends_turn and slept.text == "You went to bed."  # any hour is taken
+    assert mei.base.wake == at("20:23") and mei.base.longest
+    assert town.take("Mei")[-1].startswith(
+        "You are in bed and will wake at 20:23, since you cannot sleep longer than 12 hours; "
+        "your journal entry for today is kept."
     )
-    assert not refused.ends_turn and isinstance(mei.base, Idle) and "sleep" not in town.kinds()
-    assert (await town.call("Mei", "sleep", until="20:00", journal="Tired already.")).ends_turn
-    assert mei.base.wake == at("20:00")
+    town.rest("Mei")
+    await town.until("20:23")
+    assert isinstance(mei.base, Idle)
+    assert town.heard["Mei"][-1].text.startswith(
+        "You could sleep no longer and woke up at home. It is Monday 1 January, 20:23."
+    )
     await town.until("23:00")
     await town.call("Tomas", "sleep", until="07:00", journal="A long day.")
-    assert tomas.base.wake == at("07:00", day=2)
-    town.rest()
+    assert tomas.base.wake == at("07:00", day=2) and not tomas.base.longest
+    town.rest("Tomas", "Aisha")
     await town.until("02:00", day=2)  # Mei, up again, and Aisha, never in bed
     forced = [e for e in town.world.log.entries() if e["kind"] == "forced_sleep"]
     assert sorted(e["actor"] for e in forced) == ["Aisha", "Mei"]

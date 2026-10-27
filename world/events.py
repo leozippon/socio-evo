@@ -104,8 +104,12 @@ class Work:
 
 @dataclass
 class Sleep:
+    """`longest`: the body wakes the resident at `wake`, before the hour it gave, since one sleep
+    lasts no longer."""
+
     wake: int
     suspended: bool = False
+    longest: bool = False
     kind: ClassVar[str] = "sleep"
     tools: ClassVar[frozenset[str]] = SLEEP_TOOLS
 

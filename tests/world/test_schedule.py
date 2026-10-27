@@ -348,7 +348,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.until("22:00")
-    await town.call("Aisha", "sleep", until="10:00", journal="Lazy.")
+    await town.call("Aisha", "sleep", until="11:00", journal="Lazy.")  # longer than she can
     town.rest()
     await town.until("03:00", day=2)
     (_, state) = town.checkpoints[0]
@@ -363,8 +363,8 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     aisha = again.take("Aisha")
     assert aisha[0].startswith("Your statement for Monday 1 January")
     assert aisha[-1] == (
-        "You woke up at home. It is Tuesday 2 January, 10:00. You are well fed. You are fresh. "
-        "You are in good health."
+        "You could sleep no longer and woke up at home. It is Tuesday 2 January, 10:00. You are "
+        "well fed. You are fresh. You are in good health."
     )
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)

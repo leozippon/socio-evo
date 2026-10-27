@@ -60,10 +60,9 @@ def comfort_word(comfort: float) -> str | None:
 
 
 def longest_sleep(day: DayHours) -> str:
-    """The rule on how long one sleep may last, without its full stop; `sleep` refuses with it."""
+    """How long one sleep lasts at most, told: `12 hours`."""
     hours, minutes = divmod(parse_hour(day.sleep_at_most) // 60, 60)
-    span = listed([counted(n, unit) for n, unit in ((hours, "hour"), (minutes, "minute")) if n])
-    return f"Nobody sleeps longer than {span} at a stretch"
+    return listed([counted(n, unit) for n, unit in ((hours, "hour"), (minutes, "minute")) if n])
 
 
 class Rules:
@@ -258,7 +257,8 @@ class Rules:
             "Go to bed at home at any hour with sleep, giving the hour you want to wake and, if "
             "you write one, the day's entry in your own journal, which is kept in your journal "
             "folder; an entry given at a later bedtime the same day, or again from bed, is added "
-            f"to that day's. {longest_sleep(c.day)}."
+            f"to that day's. You cannot sleep longer than {longest_sleep(c.day)} at a stretch: "
+            "by then you wake, whatever hour you gave."
         )
         sleep += (
             " In bed, before you fall asleep, you read the ratings others gave you the night "

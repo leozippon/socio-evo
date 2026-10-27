@@ -82,7 +82,7 @@ from world.economy import Economy
 from world.events import ENDED, Base, Conversation, Dead, Idle, Movement, Sleep, Work, refusal
 from world.log import Entry, WorldLog
 from world.ratings import Ratings, tell_ratings
-from world.rules import Rules, bare
+from world.rules import Rules, bare, longest_sleep
 from world.telling import cap, counted, listed, you
 
 Tell = Callable[[str | None], str]
@@ -165,6 +165,7 @@ class World:
         self._forced_wake = parse_hour(config.day.forced_wake)
         self._board_posted = parse_hour(config.day.board_posted)
         self._checkpoint_hour = parse_hour(config.day.checkpoint)
+        self._longest = parse_hour(config.day.sleep_at_most)
         start = self._checkpoint_hour
         self.clock = clock or Clock(
             start,
@@ -714,6 +715,7 @@ class World:
                 "home": r.home,
                 "living": asdict(r.living),
                 "wake": r.base.wake if isinstance(r.base, Sleep) else None,
+                "longest": isinstance(r.base, Sleep) and r.base.longest,
                 "purse": self.economy.purses[name],
                 "ledger": copy.deepcopy(self.economy.ledger[name]),
                 "claim": asdict(claim) if claim else None,
@@ -740,7 +742,9 @@ class World:
             r.living = Living(**copy.deepcopy(saved["living"]))
             r.reckoned = state["time"]
             if r.living.alive:
-                self._put_to_sleep(r, saved["wake"], suspended=True)
+                # A checkpoint from before the body woke anyone early has no `longest`.
+                longest = saved.get("longest", False)
+                self._put_to_sleep(r, saved["wake"], suspended=True, longest=longest)
             else:
                 assert saved["wake"] is None
                 r.base = Dead()
@@ -1080,42 +1084,53 @@ class World:
 
     # Sleep, waking and waiting --------------------------------------------------------------
 
-    def _put_to_sleep(self, r: Resident, wake: int, suspended: bool = False) -> None:
-        """`r` sleeps until `wake`, which replaces any hour it was to wake at before."""
+    def _put_to_sleep(
+        self, r: Resident, wake: int, suspended: bool = False, longest: bool = False
+    ) -> None:
+        """`r` sleeps until `wake`, which replaces any hour it was to wake at before; `longest`
+        whether that is when its longest sleep ends, before the hour it gave."""
         self.reckon(r)
         if r.timer is not None:
             r.timer.cancel()
-        r.base = Sleep(wake, suspended)
+        r.base = Sleep(wake, suspended, longest)
         r.timer = self._at(wake, partial(self._wake_up, r))
 
-    def wake_time(self, hour: int) -> int:
+    def wake_time(self, hour: int) -> tuple[int, bool]:
         """When a resident who goes to bed now, asking to wake at `hour` (seconds after
-        midnight), wakes: at the next time the clock shows that hour, an hour at or before the
-        present one meaning tomorrow. Everyone must be asleep from the forced sleep to the
-        checkpoint, so an hour in between becomes the checkpoint's."""
+        midnight), wakes, and whether its body wakes it before that hour: at the next time the
+        clock shows that hour, an hour at or before the present one meaning tomorrow, or when
+        the longest sleep ends, if that is sooner. Everyone must be asleep from the forced sleep
+        to the checkpoint, so a waking in between becomes the checkpoint's."""
         now = self.clock.now()
         wake = now - now % DAY + hour
         if wake <= now:
             wake += DAY
+        longest = wake - now > self._longest
+        wake = min(wake, now + self._longest)
         night = self.lived_day() * DAY
         if night + self._forced <= wake < night + self._checkpoint_hour:
             wake = night + self._checkpoint_hour
-        return wake
+        return wake, longest
 
     def went_to_bed(self, r: Resident) -> bool:
         """Whether `r` has gone to bed in the day being lived."""
         return any(kind == "sleep" for _, kind, _, _ in r.day)
 
-    def go_to_bed(self, r: Resident, wake: int, journal: str | None, day: int) -> str:
-        """`r` goes to bed, with the day's entry in its journal if it wrote one, and returns what
-        `sleep` answers. Going to bed from elsewhere, it is told in bed what it may still do;
-        from bed, the answer alone tells the hour it will wake, so that with nothing more to read
-        it falls asleep at its next wait. Going to bed again the same day, it hears of ratings
-        only if new ones came."""
+    def go_to_bed(self, r: Resident, hour: int, journal: str | None, day: int) -> str:
+        """`r` goes to bed, to wake at `hour` (seconds after midnight) or when its longest sleep
+        ends, with the day's entry in its journal if it wrote one, and returns what `sleep`
+        answers. Going to bed from elsewhere, it is told in bed what it may still do; from bed,
+        the answer alone tells the hour it will wake, so that with nothing more to read it falls
+        asleep at its next wait. Going to bed again the same day, it hears of ratings only if
+        new ones came."""
         again, in_bed = self.went_to_bed(r), isinstance(r.base, Sleep)
-        self._put_to_sleep(r, wake)
+        wake, longest = self.wake_time(hour)
+        self._put_to_sleep(r, wake, longest=longest)
+        until = f"You are in bed and will wake at {clock_time(wake)}"
+        if longest:
+            until += f", since you cannot sleep longer than {longest_sleep(self.config.day)}"
         kept = "; your journal entry for today is kept" if journal else ""
-        parts = [f"You are in bed and will wake at {clock_time(wake)}{kept}."]
+        parts = [f"{until}{kept}."]
         ratings: list[list[int | str]] = []
         if self.ratings_on:
             ratings = self.ratings.take_unread(r.name)
@@ -1166,9 +1181,10 @@ class World:
         self.rest_changed()
 
     def _wake_up(self, r: Resident, tell: Tell | None = None) -> None:
-        """`r` wakes at home, at its hour or, told `tell`, woken by the town, eats from its
-        stock if it could, and is told what shape it is in."""
+        """`r` wakes at home, at its hour, when its longest sleep ends or, told `tell`, woken
+        by the town, eats from its stock if it could, and is told what shape it is in."""
         self.reckon(r)
+        longest = isinstance(r.base, Sleep) and r.base.longest
         r.timer = None
         r.base, r.place = Idle(), r.home
         before = self.body.bands(r.living)
@@ -1176,7 +1192,8 @@ class World:
         self.note_bands(r, before, tell=False)
         r.port.release()
         moment = tell_moment(self.clock.now(), self.config.start_date)
-        woke = tell or (lambda w: f"{cap(you(r.name, w))} woke up at home. It is {moment}.")
+        could = " could sleep no longer and" if longest else ""
+        woke = tell or (lambda w: f"{cap(you(r.name, w))}{could} woke up at home. It is {moment}.")
         shape = self.body.condition(r.living)
         self.record(
             "wake",

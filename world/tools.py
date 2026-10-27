@@ -25,10 +25,10 @@ from typing import TYPE_CHECKING, Any
 from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
-from world.clock import DAY, calendar_day, clock_time, parse_hour
+from world.clock import calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
 from world.events import ENDED, Work
-from world.rules import TOPICS, bare, longest_sleep
+from world.rules import TOPICS, bare
 from world.telling import cap, counted, listed, you
 
 if TYPE_CHECKING:
@@ -302,12 +302,6 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
-    now, longest = world.clock.now(), parse_hour(world.config.day.sleep_at_most)
-    if ((hour - now) % DAY or DAY) > longest:  # an hour at or before now means tomorrow
-        latest = clock_time(now + longest)
-        return ToolResult(
-            f"{longest_sleep(world.config.day)}: give an hour no later than {latest}."
-        )
     journal = args.get("journal", "").strip() or None
     day = world.lived_day()
     if journal is not None:
@@ -318,7 +312,7 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         with path.open("a", encoding="utf-8") as file:
             file.write(entry)
     told = world.break_off(r)
-    went = world.go_to_bed(r, world.wake_time(hour), journal, day)
+    went = world.go_to_bed(r, hour, journal, day)
     return ToolResult(f"{told}{went}", ends_turn=True)
 
 
