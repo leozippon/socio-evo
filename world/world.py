@@ -82,7 +82,7 @@ from world.economy import Economy
 from world.events import ENDED, Base, Conversation, Dead, Idle, Movement, Sleep, Work, refusal
 from world.log import Entry, WorldLog
 from world.ratings import Ratings, tell_ratings
-from world.rules import Rules, bare, worth
+from world.rules import Rules, bare
 from world.telling import cap, counted, listed, you
 
 Tell = Callable[[str | None], str]
@@ -451,7 +451,7 @@ class World:
                 if not left:
                     stock.append(f"You have used up your {bare(good.name)}.")
                 elif left <= good.per_day:
-                    stock.append(f"Your {bare(good.name)} will last one more day.")
+                    stock.append(f"You have {counted(left, 'helping')} of {bare(good.name)} left.")
             charges = [(f"rent for your room at {home.name}", home.rent)]
             charges += [
                 (f"the daily charge on {good.name}", good.fee_per_day)
@@ -461,7 +461,11 @@ class World:
             fees = sum(amount for _, amount in charges[1:])
             nourishment = self.nourishment(r)
             eaten = [
-                good.name + (f" ({worth(-(-units // good.per_day))})" if good.per_day else "")
+                f"{counted(units, 'helping')} of {bare(good.name)}"
+                if good.kind == "consumable"
+                else good.name
+                if units == 1
+                else f"{units} × {good.name}"
                 for good in self.config.goods
                 if (units := living.eaten.get(good.id))
             ]
@@ -868,8 +872,8 @@ class World:
             left = r.living.things.get(good.id, 0)
             if not left:
                 continue
-            if good.per_day is not None:
-                things.append(f"{good.name} ({worth(-(-left // good.per_day))})")
+            if good.kind == "consumable":
+                things.append(f"{good.name} ({counted(left, 'helping')})")
             else:
                 things.append(good.name)
         return f"You have {listed(things)}." if things else "You have nothing of your own yet."

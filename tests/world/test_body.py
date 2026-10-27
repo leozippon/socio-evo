@@ -213,7 +213,7 @@ async def test_eating_restores_satiety_and_a_stock_is_drawn_on_as_one_gets_hungr
     tomas.living.things["groceries"] = 3
     tomas.living.satiety = 30
     await town.until("10:00")
-    assert tomas.living.things == {"groceries": 3}  # a day's worth a day, no more
+    assert tomas.living.things == {"groceries": 3}  # three helpings a day, no more
     town.rest("Tomas")
     await town.until("07:00", day=2)
     assert tomas.living.things == {} and tomas.living.eaten == {"groceries": 3}  # at waking

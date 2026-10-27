@@ -32,11 +32,6 @@ Homes = Mapping[str, Sequence[str]]
 """Who lives where: the names of the residents of each home, by the home's id."""
 
 
-def worth(days: int) -> str:
-    """`a day's worth`, `3 days' worth`."""
-    return "a day's worth" if days == 1 else f"{days} days' worth"
-
-
 def bare(name: str) -> str:
     """A good's name without its article: `a phone` is `phone`."""
     for article in ("a ", "an ", "the "):
@@ -295,11 +290,17 @@ class Rules:
             if good.effect in ("examination", "treatment")
             for place_id in good.sold_at
         ]
+        stocks = [
+            f"{counted(good.per_day, 'helping')} of {bare(good.name)}"
+            for good in for_sale
+            if good.kind == "consumable" and good.per_day is not None
+        ]
         text = (
-            "Through the day you get hungry, and what you eat restores you: a meal, or a day's "
-            "worth of a stock, is about a day's need. You tire with the hours awake, faster at "
-            "work and on the road, and sleep restores you, the more the better your home; too "
-            f"tired, you cannot sit down to work at {c.workplace.name}. A day that ends with "
+            "Through the day you get hungry, and what you eat restores you: a meal"
+            + (f", or {listed(stocks, 'or')}," if stocks else "")
+            + " is about a day's need. You tire with the hours awake, faster at work and on the "
+            "road, and sleep restores you, the more the better your home; too tired, you cannot "
+            f"sit down to work at {c.workplace.name}. A day that ends with "
             "you starving or exhausted, or lived in a home of little comfort, wears your health "
             "down; a day in which you have eaten and rested mends it. When your health is gone, "
             "you die. You can take stock of how you feel at any time with how_am_i"
@@ -344,14 +345,15 @@ class Rules:
         text = f"For sale, paid in cash with buy: {'; '.join(counters)}."
         food = [good for good in for_sale if good.effect == "food"]
         on_the_spot = [good.name for good in food if good.kind == "immediate"]
-        stocked = [good.name for good in food if good.kind == "consumable"]
         if on_the_spot:
             text += f" {cap(listed(on_the_spot, 'or'))}: eaten on the spot, the day's food."
-        if stocked:
-            text += (
-                f" {cap(listed(stocked, 'or'))}: kept in stock, and eaten from whenever you "
-                "could eat, a day's worth a day."
-            )
+        for good in food:
+            if good.kind == "consumable":
+                assert good.per_day is not None
+                text += (
+                    f" {cap(good.name)}: kept in stock and eaten a helping at a time whenever "
+                    f"you could eat, at most {counted(good.per_day, 'helping')} a day."
+                )
         for good in for_sale:
             if good.effect == "travel":
                 assert good.factor is not None
@@ -373,15 +375,11 @@ class Rules:
 
     @staticmethod
     def _priced(good: Good, money) -> str:
-        """`groceries ($36, 3 days' worth)`, `a phone ($80, then $3 a day)`."""
+        """`groceries ($36, 9 helpings)`, `a phone ($80, then $3 a day)`."""
         detail = ""
         if good.kind == "consumable":
-            assert good.uses is not None and good.per_day is not None
-            detail = (
-                f", {worth(good.days)}"
-                if good.uses % good.per_day == 0
-                else f", {good.uses} uses, {good.per_day} a day"
-            )
+            assert good.uses is not None
+            detail = f", {counted(good.uses, 'helping')}"
         if good.fee_per_day:
             detail += f", then {money(good.fee_per_day)} a day"
         return f"{good.name} ({money(good.price)}{detail})"

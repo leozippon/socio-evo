@@ -54,16 +54,15 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
         "You gave Aisha $20. Your purse holds $85."
     )
     assert (await town.call("Aisha", "buy", item="groceries")).text == (
-        "You bought groceries for $12. You have groceries (3 days' worth) and a coat. Your purse "
-        "holds $3."
+        "You bought groceries for $12. You have groceries (7 helpings) and a coat. Your purse "
+        "holds $3."  # she ate two helpings as she bought them
     )
     town.rest()
     await town.until("00:00", day=3)
     assert [p.text for p in town.heard["Aisha"] if p.kind == "settlement"][-1] == (
         "Your statement for Tuesday 2 January: received $20 from Mei; bought groceries for $12; "
-        "rent for your room at the shared house on Mill Street $20. You ate today: groceries (a "
-        "day's worth). You are hungry. You are fresh. You are in good health. You are $17 in "
-        "debt."
+        "rent for your room at the shared house on Mill Street $20. You ate today: 3 helpings of "
+        "groceries. You are hungry. You are fresh. You are in good health. You are $17 in debt."
     )
     assert town.world.economy.purses == {"Mei": 65, "Tomas": 120, "Aisha": -17}
     gifts = [e for e in town.world.log.entries() if e["kind"] == "gift"]

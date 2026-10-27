@@ -36,11 +36,10 @@ async def test_a_good_is_bought_only_where_it_is_sold_and_only_with_the_cash(mak
         "You do not have $12. Your purse holds $0."
     )
     assert (await town.call("Mei", "buy", item="groceries", quantity=2)).text == (
-        "You bought 2 × groceries for $24. You have groceries (6 days' worth). Your purse "
-        "holds $96."
+        "You bought 2 × groceries for $24. You have groceries (18 helpings). Your purse holds $96."
     )
     assert (await town.call("Mei", "help", topic="money")).text.endswith(
-        "You have groceries (6 days' worth)."
+        "You have groceries (18 helpings)."
     )
     bought = [e for e in town.world.log.entries() if e["kind"] == "purchase"]
     assert [(e["actor"], e["text"], e["payload"]) for e in bought] == [
@@ -73,7 +72,7 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     )
     assert world.nourishment(mei) == 100 and mei.living.eaten == {"meal": 1}
     assert (await town.call("Tomas", "buy", item="groceries")).text == (
-        "You bought groceries for $12. You have groceries (3 days' worth). Your purse holds $168."
+        "You bought groceries for $12. You have groceries (9 helpings). Your purse holds $168."
     )
     assert world.nourishment(tomas) == 0 and tomas.living.things == {"groceries": 9}
     for name in world.residents:
@@ -87,7 +86,7 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     )
     assert statements["Tomas"] == (  # helpings of the stock, eaten as he could eat
         "Your statement for Monday 1 January: bought groceries for $12; rent for your room at "
-        "the flat by the college gates $30. You ate today: groceries (a day's worth). You are "
+        "the flat by the college gates $30. You ate today: 2 helpings of groceries. You are "
         "well fed. You are fresh. You are in good health. Your purse holds $138."
     )
     assert statements["Aisha"] == (
@@ -104,18 +103,18 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
     assert [e["payload"]["purse"] for e in settled] == [90, 138, 10]
     assert settled[2]["payload"]["night"] == {"poor_home": -2, "recovery": 5}
 
-    # The stock is drawn on as its owner gets hungry, at most a day's worth a day, and the
-    # statement tells when it is nearly gone and when it is gone.
+    # The stock is drawn on as its owner gets hungry, at most three helpings a day, and the
+    # statement tells what is left when it is nearly gone and when it is gone.
     town.rest()
     await town.until("00:01", day=6)
     statements = [p.text for p in town.heard["Tomas"] if p.kind == "settlement"]
     notes = [
         note
         for text in statements
-        for note in ("will last one more day", "used up your groceries")
+        for note in ("helpings of groceries left", "used up your groceries")
         if note in text
     ]
-    assert notes == ["will last one more day", "used up your groceries"]
+    assert notes == ["helpings of groceries left", "used up your groceries"]
     assert tomas.living.things == {} and "You had nothing to eat today." in statements[-1]
 
 

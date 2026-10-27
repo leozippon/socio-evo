@@ -37,18 +37,19 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     ) in sections["places"]
     assert sections["shopping"] == (
         "For sale, paid in cash with buy: at the café on the square, a meal at the café ($10); at "
-        "the store, groceries ($12, 3 days' worth), a bicycle ($50), a phone ($40, then $2 a day) "
+        "the store, groceries ($12, 9 helpings), a bicycle ($50), a phone ($40, then $2 a day) "
         "and a coat ($30); at the clinic, an examination ($10) and treatment ($25). A meal at the "
-        "café: eaten on the spot, the day's food. Groceries: kept in stock, and eaten from "
-        "whenever you could eat, a day's worth a day. With a bicycle your journeys take half the "
-        "time. With a phone you can write to anyone else who has one, wherever they are, with "
-        "message; they read it when they next look up from what they are doing. What you wear "
+        "café: eaten on the spot, the day's food. Groceries: kept in stock and eaten a helping at "
+        "a time whenever you could eat, at most 3 helpings a day. With a bicycle your journeys "
+        "take half the time. With a phone you can write to anyone else who has one, wherever "
+        "they are, with message; they read it when they next look up from what they are doing. "
+        "What you wear "
         "and carry, others see: with a coat, in a new coat. What you have, and how much of it is "
         "left, is told with help on money."
     )
     assert sections["health"] == (
-        "Through the day you get hungry, and what you eat restores you: a meal, or a day's worth "
-        "of a stock, is about a day's need. You tire with the hours awake, faster at work and on "
+        "Through the day you get hungry, and what you eat restores you: a meal, or 3 helpings of "
+        "groceries, is about a day's need. You tire with the hours awake, faster at work and on "
         "the road, and sleep restores you, the more the better your home; too tired, you cannot "
         "sit down to work at the workshop. A day that ends with you starving or exhausted, or "
         "lived in a home of little comfort, wears your health down; a day in which you have "
