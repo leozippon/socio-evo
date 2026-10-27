@@ -86,7 +86,7 @@ def test_the_compaction_threshold_is_bounded_by_the_models_context_window(tmp_pa
     c = group("c")
     # A context just past the threshold, grown by a reply and a margin, leaves the notes room.
     assert (c.llm.context_window, c.runtime.ceiling(c.llm.context_window)) == (262_144, 229_376)
-    assert c.runtime.compaction_threshold == 160_000
+    assert c.runtime.compaction_threshold == 225_000
     at, above = tmp_path / "at.yaml", tmp_path / "above.yaml"
     for path, threshold in ((at, 229_376), (above, 229_377)):
         base = CONFIGS / "groups" / "c.yaml"

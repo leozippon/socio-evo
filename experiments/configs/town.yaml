@@ -92,13 +92,14 @@ llm:
 # A resident's context is compacted past compaction_threshold tokens, which the window bounds: a
 # context just past it must still hold a reply, the notes and a step's growth, so at most
 # 262,144 - 16,384 - 8,192 - 8,192 = 229,376. What sets the value under that bound is the server's
-# cache: a replica holds 1,535,199 tokens of it, four residents at 160k take 42% and at 240k 63%,
-# and the sixteen evaluation tasks that share the server reach up to 90k each. So 160,000 while
-# evaluations run, and about 225,000 once the residents have the replicas to themselves (at 240k
-# the model kept its recall, its use of tools and its notes, measured on 27 October 2026).
+# cache: a replica holds 1,535,199 tokens of it, four residents at 225k take 59% and at 240k 63%,
+# and the evaluation tasks that share the server are held to 90k each, one a resident
+# (ops/evaluate.sh), about a quarter of the two replicas. So 225,000, just under the bound: at
+# 240k the model kept its recall, its use of tools and its notes (measured on 27 October 2026),
+# and a lost prefix costs about 130 s to rebuild, which the budget above avoids.
 runtime:
   reasoning_effort: low
-  compaction_threshold: 160000
+  compaction_threshold: 225000
   kept_tokens: 20000 # kept whole after a compaction: the most recent exchanges within this many tokens, at least one
 
 days: 28
