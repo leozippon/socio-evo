@@ -16,6 +16,11 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           checkpointed: it was begun at the checkpoint before it, at the resumption that went
           back to that checkpoint, or, for day 1, at the first entry of the log, the board
           posted as the world began; null with no entries at all
+      "projects": [{"day": 1, "repo": "django/django", "tasks": [12, 40, 77],
+                    "posted": 28800, "ends": 172800, "done": 51300}, ...],
+          the clients' projects, as the boards that formed them were posted: the calendar day
+          and time of the posting, the midnight by which all their tasks were to be accepted,
+          and when the bonus was paid, null for a project not (or not yet) done
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
@@ -44,6 +49,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
                   (passed and total counts); with, the partner, of a task held by two, the
                   verdict on the second of the two hand-ins being the first's too
     payment       task, amount; with, the partner, of a task held by two
+    bonus         tasks, amount           a client's project's bonus (the purse after it is a
+                                          point of "purse")
     abandon       task                    the resident gave its task up
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
@@ -85,7 +92,7 @@ from typing import Any
 from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
-from world.clock import parse_hour
+from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
 
 _FOLDED = frozenset(
@@ -102,6 +109,7 @@ _FOLDED = frozenset(
         "submission",
         "verdict",
         "payment",
+        "bonus",
         "abandon",
         "expiry",
         "speech",
@@ -299,6 +307,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     start = parse_hour(town.day.checkpoint)
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
     days: list[dict[str, Any]] = []
+    projects: list[dict[str, Any]] = []
     begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
@@ -352,10 +361,36 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                     pass_to_pass=payload["pass_to_pass"],
                 )
                 one.submitted = None
+        elif kind == "board_posted":
+            day = calendar_day(t)
+            ends = (day + town.work.claim_expiry_days) * DAY
+            projects += [
+                {
+                    "day": day,
+                    "repo": project["repo"],
+                    "tasks": project["tasks"],
+                    "posted": t,
+                    "ends": ends,
+                    "done": None,
+                }
+                for project in payload.get("projects", [])  # absent in a town without projects
+            ]
         elif kind == "payment":
             lane.hold(t, None)
             lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"], **paired)
             lane.purse.append([t, payload["purse"]])
+        elif kind == "bonus":
+            lane.mark(entry, "bonus", tasks=payload["tasks"], amount=payload["amount"])
+            lane.purse.append([t, payload["purse"]])
+            done = [
+                project
+                for project in projects
+                if (project["day"], project["tasks"]) == (payload["day"], payload["tasks"])
+            ]
+            if not done:
+                raise ValueError(f"entry {entry['seq']}: the bonus of a project never posted")
+            if done[0]["done"] is None:  # the first of its bonuses, all paid at one moment
+                done[0]["done"] = t
         elif kind in ("abandon", "expiry"):
             lane.hold(t, None)
             lane.mark(entry, kind, task=payload["task"])
@@ -476,5 +511,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         "now": end,
         "places": {place.id: place.name for place in town.places},
         "days": days,
+        "projects": projects,
         "residents": [lane.data(end) for lane in lanes.values()],
     }

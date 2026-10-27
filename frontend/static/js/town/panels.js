@@ -2,7 +2,7 @@
 // everyone is and what each is in), the day's entries up to that moment, who is selected and
 // whose wording is read.
 
-import { hhmm, secondOfDay } from "../clock.js";
+import { dateOf, hhmm, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
 import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
@@ -169,7 +169,7 @@ export class FeedPanel {
   }
 }
 
-/** The Workshop's board at the moment: what each resident holds, has handed in and was paid today. */
+/** The Workshop's board at the moment: the clients' projects running, each task with who holds it or was paid for it, and what each resident holds, has handed in and was paid today. */
 export class BoardPanel {
   constructor() {
     this.el = h("div", { class: "panel board" });
@@ -218,16 +218,36 @@ export class BoardPanel {
         ),
       );
     });
+    const work = m.world.work;
+    const projects = m.state.projects.map((p) =>
+      h(
+        "li",
+        { class: "task" },
+        h(
+          "div",
+          { class: "task-head static" },
+          h("span", { class: "task-reward" }, `${p.tasks.filter((x) => x.paid).length}/${p.tasks.length}`, h("small", {}, "accepted")),
+          h(
+            "span",
+            { class: "task-title" },
+            h("b", {}, `Project in ${p.repo}`),
+            h("span", { class: "task-meta" }, h("span", { class: "muted" }, p.done !== null ? `done at ${hhmm(secondOfDay(p.done))}: a bonus of ${fmt.money(work.project_bonus)} to each paid for its tasks` : `a bonus of ${fmt.money(work.project_bonus)} to each paid for its tasks if all are accepted by the end of ${dateOf(m.world.start_date, p.ends - 1)}`)),
+            h("span", { class: "parts" }, p.tasks.map((x) => h("span", { class: `part-chip${x.paid ? " in" : ""}` }, `task ${x.task}`, h("small", {}, x.paid ? `accepted · ${x.paid}` : x.holder ? `held · ${x.holder}` : "free")))),
+          ),
+        ),
+      ),
+    );
     fill(
       this.el,
-      h("p", { class: "note" }, `The Workshop posts a board of tasks each morning; a resident holds one at a time, hands it in, and is paid ${fmt.money(m.world.work.payment)} if the client's checks pass${m.world.work.for_two ? `, or ${fmt.money(m.world.work.payment_for_two)} each for a task for two, which two hold and hand in together` : ""}. Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}.`),
+      h("p", { class: "note" }, `The Workshop posts a board of tasks each morning; a resident holds one at a time, hands it in, and is paid ${fmt.money(work.payment)} if the client's checks pass${work.for_two ? `, or ${fmt.money(work.payment_for_two)} each for a task for two, which two hold and hand in together` : ""}${work.projects_a_day ? `; a client's project of ${work.project_size} tasks pays a bonus besides once all are accepted in time` : ""}. Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}.`),
+      projects.length ? h("ul", { class: "tasks" }, projects) : null,
       h("ul", { class: "tasks" }, rows),
     );
   }
 }
 
 /** The kinds of entry the chronicle keeps, each a moment worth finding. */
-const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "abandon", "expiry", "gift", "message", "purchase", "move_in", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement", "condition", "death"]);
+const NOTABLE = new Set(["wake", "claim", "verdict", "payment", "bonus", "abandon", "expiry", "gift", "message", "purchase", "move_in", "skill_shared", "rating", "sleep", "forced_sleep", "exchange_pairing", "meeting", "settlement", "condition", "death"]);
 
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {

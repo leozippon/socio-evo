@@ -54,6 +54,7 @@ const ICONS = {
   submission: "check",
   verdict: "eye",
   payment: "coin",
+  bonus: "coin",
   abandon: "cross",
   expiry: "clock",
   workspace_closed: "lock",
@@ -86,6 +87,7 @@ export function tone(entry) {
     case "verdict":
       return p.resolved ? "good" : "serious";
     case "payment":
+    case "bonus":
     case "gift":
     case "skill_shared":
       return "good";
@@ -192,6 +194,8 @@ export function describeMarker(m, by, who) {
     }
     case "payment":
       return [`was paid ${fmt.money(m.amount)} for task ${m.task}${pairing(m)}`];
+    case "bonus":
+      return [`received a bonus of ${fmt.money(m.amount)} for a client's project, tasks ${m.tasks.join(", ")}`];
     case "abandon":
       return [`gave up task ${m.task}`];
     case "expiry":

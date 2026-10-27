@@ -113,9 +113,22 @@ export function originOf(lane, segment) {
 }
 
 /**
- * The moment `t` of a timeline: its lived day, and for each resident its segment, its
- * conversation, its purse, the task it holds and, on the way somewhere, where from, where to and
- * how far along (0 to 1).
+ * The clients' projects running at `t`, posted and their midnight not yet come, with `residents`
+ * as `moment` finds them: each task with who holds it and who was paid for it since the posting
+ * (null for nobody), and `done`, the time its bonus was paid if that was by `t`, else null.
+ */
+export function projectsAt(timeline, t, residents) {
+  const holder = (task) => Object.keys(residents).find((name) => residents[name].held?.task === task) ?? null;
+  const payee = (task, posted) => timeline.residents.find((lane) => markersBetween(lane, posted, t).some((m) => m.kind === "payment" && m.task === task))?.name ?? null;
+  return timeline.projects
+    .filter((p) => p.posted <= t && t < p.ends)
+    .map((p) => ({ ...p, done: p.done !== null && p.done <= t ? p.done : null, tasks: p.tasks.map((task) => ({ task, holder: holder(task), paid: payee(task, p.posted) })) }));
+}
+
+/**
+ * The moment `t` of a timeline: its lived day, for each resident its segment, its conversation,
+ * its purse, the task it holds and, on the way somewhere, where from, where to and how far along
+ * (0 to 1), and the clients' projects then running (`projectsAt`).
  */
 export function moment(timeline, t) {
   const residents = {};
@@ -128,5 +141,5 @@ export function moment(timeline, t) {
     }
     residents[lane.name] = { lane, segment, conversation: conversationAt(lane, t), purse: purseAt(lane, t), held: heldAt(lane, t), moving };
   }
-  return { time: t, day: livedDay(timeline.days, t), residents };
+  return { time: t, day: livedDay(timeline.days, t), residents, projects: projectsAt(timeline, t, residents) };
 }

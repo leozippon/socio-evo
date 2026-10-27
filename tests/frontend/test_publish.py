@@ -264,6 +264,7 @@ def test_every_file_has_exactly_the_documented_fields(published):
             "claim",
             "submission",
             "payment",
+            "bonus",
             "abandon",
             "expiry",
             "speech",

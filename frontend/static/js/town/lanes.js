@@ -22,7 +22,7 @@ const LANE_H = 108;
 const ROWS = ["tasks", "money", "social"];
 const ROW_Y = [11, 24, 37]; // the rows' centres
 const ROW_H = 13;
-const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, settlement: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
+const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, bonus: 1, gift: 1, purchase: 1, settlement: 1, speech: 2, message: 2, rating: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -112,13 +112,14 @@ export function drawMarker(g, m, cx, cy, C) {
       g.stroke();
       break;
     case "payment":
+    case "bonus":
     case "gift":
       g.moveTo(cx, cy - 5.5);
       g.lineTo(cx + 5, cy);
       g.lineTo(cx, cy + 5.5);
       g.lineTo(cx - 5, cy);
       g.closePath();
-      if (m.kind === "payment") {
+      if (m.kind !== "gift") {
         g.fillStyle = C.good;
         g.fill();
       } else {
@@ -283,7 +284,7 @@ export function legend(C) {
     row("Doing", ...["idle", "movement", "work", "sleep", "dead"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
     row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at the workplace"), item(swatch("place-social"), "out, at a social place or a shop"), item(swatch("place-road"), "on the way")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up"), item(glyph({ kind: "expiry" }), "claim run out")),
-    row("Money", item(glyph({ kind: "payment" }), "paid for a task"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought"), item(glyph({ kind: "settlement" }), "rent and charges taken at midnight")),
+    row("Money", item(glyph({ kind: "payment" }), "paid for a task, or a project's bonus"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought"), item(glyph({ kind: "settlement" }), "rent and charges taken at midnight")),
     row("Social", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "rating" }), "a rating given"), item(glyph({ kind: "skill_shared" }), "a file passed on"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
     row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "death" }), "died")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "purse, one scale for all")),

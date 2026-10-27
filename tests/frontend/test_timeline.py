@@ -344,3 +344,47 @@ def test_a_task_for_two_names_the_partner_and_its_verdict_reaches_both_hand_ins(
         [at("11:10"), "Mei"],
         [at("11:20"), None],  # Mei gave it up
     ]
+
+
+def test_a_clients_project_is_kept_as_posted_and_its_bonus_marked_with_the_purse(tmp_path):
+    run, _ = new_town(tmp_path)  # claims, and so projects, run out at the first midnight
+    tasks = [3, 1, 2]
+    bonus = {"tasks": tasks, "day": 1, "amount": 10}
+    lines = [
+        entry(
+            1, "board_posted", at("08:00"), tasks=3, projects=[{"repo": "org/big", "tasks": tasks}]
+        ),
+        entry(2, "payment", at("10:00"), "Mei", task=3, amount=20, purse=140),
+        entry(3, "payment", at("11:00"), "Tomas", task=1, amount=20, purse=200),
+        entry(4, "payment", at("12:00"), "Aisha", task=2, amount=20, purse=50),
+        entry(5, "bonus", at("12:00"), "Aisha", **bonus, purse=60),
+        entry(6, "bonus", at("12:00"), "Mei", **bonus, purse=150),
+        entry(7, "bonus", at("12:00"), "Tomas", **bonus, purse=210),
+    ]
+    run.world_log_path.write_text("\n".join(lines) + "\n")
+    data = timeline(run.root)
+    assert data["projects"] == [
+        {
+            "day": 1,
+            "repo": "org/big",
+            "tasks": tasks,
+            "posted": at("08:00"),
+            "ends": DAY,
+            "done": at("12:00"),
+        }
+    ]
+    mei = lane(data, "Mei")
+    assert {k: v for k, v in mei["markers"][-1].items() if k not in ("seq", "place")} == {
+        "t": at("12:00"),
+        "kind": "bonus",
+        "tasks": tasks,
+        "amount": 10,
+    }
+    assert mei["purse"][-2:] == [[at("10:00"), 140], [at("12:00"), 150]]
+
+    run.world_log_path.write_text(
+        "\n".join([entry(1, "board_posted", at("08:00"), tasks=3, projects=[]), *lines[1:]]) + "\n"
+    )
+    module._caches.clear()
+    with pytest.raises(ValueError, match="the bonus of a project never posted"):
+        timeline(run.root)
