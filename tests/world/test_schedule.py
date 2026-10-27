@@ -145,6 +145,35 @@ async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
     assert sorted(sorted(e["payload"]["pair"]) for e in meetings) == sorted(map(sorted, pairs))
 
 
+async def test_a_pair_that_never_meets_meets_nowhere_else_and_parts_at_the_forced_sleep(
+    make_town,
+):
+    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FOUR))
+    town.start(until_day=2)
+    town.rest()
+    world = town.world
+    mei = world.residents["Mei"]
+    await town.until("18:40")
+    await town.call("Mei", "go", place="cafe")
+    await town.until("19:00")
+    other = world.residents[mei.partner]
+    assert mei.place == "cafe" and isinstance(other.base, Movement)
+    await town.call("Mei", "go", place="workshop")  # gone before her partner comes
+    await town.until("19:30")
+    await town.call(other.name, "go", place="workshop")
+    await town.until("20:00")
+    assert mei.place == other.place == "workshop"
+    assert mei.conversation is other.conversation is None  # they meet only at the café
+    meetings = [e["payload"]["pair"] for e in world.log.entries() if e["kind"] == "meeting"]
+    assert not [pair for pair in meetings if "Mei" in pair]
+    await town.call("Mei", "go", place=mei.home)
+    await town.until("20:30")
+    await town.call("Mei", "sleep", until="08:00", journal="A walk across town.")
+    await town.until("03:00", day=2)  # her partner is still up at the forced sleep
+    assert mei.partner is other.partner is None
+    assert [day for day, _ in town.checkpoints] == [1]
+
+
 async def test_an_odd_one_out_is_told_nobody_is_free(make_town):
     town = make_town(town_config("isolated", exchange=B_EXCHANGE))
     await awake_at(town)

@@ -50,7 +50,8 @@ interrupted, and reads it, like everything else, with its runtime's next tool re
 next waits. A resident in transit is at no place and perceives nothing there; an asleep resident
 cannot be addressed, and what is told to it while suspended is held until it wakes. In the
 isolated mode a resident perceives nobody, except its partner in group B's evening exchange
-from the pairing until their conversation ends.
+from the pairing until their conversation ends or, if they never meet at the exchange's place,
+until the forced sleep.
 """
 
 from __future__ import annotations
@@ -616,6 +617,7 @@ class World:
         for r in self.residents.values():
             if not r.alive:
                 continue
+            r.partner = None  # an evening's pair that has not met parts here
             if isinstance(r.base, Sleep):
                 if not r.base.suspended:
                     self._fall_asleep(r, f"It is {hour}: you fell asleep.")
@@ -623,7 +625,6 @@ class World:
             self.break_off(r)
             if r.timer is not None:
                 r.timer.cancel()
-            r.partner = None
             self.record(
                 "forced_sleep",
                 lambda w, r=r: (
@@ -980,8 +981,14 @@ class World:
             audience=[r, *others],
             payload={"place": place},
         )
+        exchange = self.config.social.exchange
         partner = self.residents.get(r.partner) if r.partner else None
-        if partner is not None and partner.place == place and r.conversation is None:
+        if (
+            partner is not None
+            and exchange is not None
+            and place == exchange.place == partner.place
+            and r.conversation is None
+        ):
             self._meet(r, partner)
 
     # Conversations --------------------------------------------------------------------------
