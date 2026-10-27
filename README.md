@@ -51,7 +51,7 @@ A run resumes from its last daily checkpoint with the configuration unchanged; C
 
 ## Evaluate and analyse
 
-Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records the run's model and runtime settings beside the residents, and the evaluations answer through those. `ops/evaluate.sh c 7` exports day 7 of run c and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`); the pieces are:
+Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records each resident's commit and the run's model and runtime settings beside the residents, the evaluations answer through those and record the commit with their results. `ops/evaluate.sh c 7` exports day 7 of run c (keeping an export there of the same commits, replacing one of others) and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`); the pieces are:
 
 ```bash
 python -m experiments.export runs/c --day 7 --out exports/c/day-07

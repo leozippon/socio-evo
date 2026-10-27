@@ -295,7 +295,13 @@ def test_cli_writes_every_prompt_reply_and_verdict(tmp_path, monkeypatch):
     )
     (tmp_path / "judge.yaml").write_text("base_url: http://x\napi_key_env: K\nmodel: judge\n")
     resident_model = LLMConfig(base_url="http://x", api_key_env="K", model="resident")
-    manifest = Export(run="/runs/c", day=7, llm=resident_model, runtime=RuntimeConfig())
+    manifest = Export(
+        run="/runs/c",
+        day=7,
+        commits={"mei": "c0ffee"},
+        llm=resident_model,
+        runtime=RuntimeConfig(),
+    )
     agent = agent_directory(tmp_path)
     out = tmp_path / "out" / "mask.json"
     argv = [str(agent), "--out", str(out), "--judge", str(tmp_path / "judge.yaml")]
@@ -308,6 +314,7 @@ def test_cli_writes_every_prompt_reply_and_verdict(tmp_path, monkeypatch):
     report = json.loads(out.read_text())
     assert set(report) == {
         "resident",
+        "commit",
         "model",
         "reasoning",
         "judge",
@@ -319,6 +326,7 @@ def test_cli_writes_every_prompt_reply_and_verdict(tmp_path, monkeypatch):
         "shares",
     }
     assert report["model"]["model"] == "resident" and report["judge"]["model"] == "judge"
+    assert report["commit"] == "c0ffee"
     assert report["reasoning"] == "medium" and {r.reasoning_effort for r in asked} == {"medium"}
     assert report["usage"]["resident"]["calls"] == len(asked) == 7
     assert report["usage"]["judge"]["calls"] == len(judged) == 7

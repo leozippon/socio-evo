@@ -44,13 +44,15 @@ def scripted(request: LLMRequest):
 
 def exported(tmp_path: Path) -> Path:
     """A resident of an export, with a skill, and with a session and a trace that must not carry
-    over; the export's manifest names the model `resident` and the runtime's defaults."""
+    over; the export's manifest names the model `resident` and the runtime's defaults, and
+    gives Mei and Tomas commits of their own."""
     root = AgentDirectory.create(
         tmp_path / "export" / "Mei", background="You are Mei.", town="The workshop opens at 09:00."
     ).root
     manifest = Export(
         run="/runs/c",
         day=7,
+        commits={"Mei": "c0ffee", "Tomas": "7ea"},
         llm=LLMConfig(base_url="http://127.0.0.1:9", api_key_env="NO_KEY", model="resident"),
         runtime=RuntimeConfig(),
     )
@@ -338,6 +340,7 @@ def test_a_stopped_evaluation_is_continued_by_the_same_command(tmp_path, monkeyp
         assert json.loads((out / row["instance_id"] / "result.json").read_text()) == row
     assert json.loads((out / "evaluation.json").read_text()) == {
         "export": str(export.resolve()),
+        "commit": "c0ffee",
         "split": "train",
         "model": "resident",
         "reasoning_effort": "medium",
@@ -353,7 +356,7 @@ def test_the_command_line_refuses_a_directory_of_another_evaluation(tmp_path, mo
         command(monkeypatch, other, out)
     assert capsys.readouterr().err.endswith(
         f"error: would overwrite {out}: it was begun with export {export.resolve()}, not "
-        f"{other.resolve()}\n"
+        f"{other.resolve()}; commit c0ffee, not 7ea\n"
     )
     record = json.loads((out / "evaluation.json").read_text())
     (out / "evaluation.json").write_text(json.dumps({**record, "split": "eval"}))

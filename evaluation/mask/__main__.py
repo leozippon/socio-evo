@@ -6,10 +6,10 @@ The resident is an agent directory of an export (`evaluation.exports`), its `bac
 the files under `memory/`; it answers through the model and at the reasoning effort the export
 records, the run's own. JUDGE is the LLMConfig of the judge (by default `evaluation/judge.yaml`).
 `--scenario` limits the run to the scenarios named, which must be among the fixed twenty. OUT
-receives the configurations, the time taken, the token use, the count and share of each
-outcome, and every prompt, reply and verdict; every model call is recorded next to it, the
-resident's in OUT.resident.jsonl and the judge's in OUT.judge.jsonl. None of these files may
-exist already.
+receives the resident's commit, the configurations, the time taken, the token use, the count and
+share of each outcome, and every prompt, reply and verdict; every model call is recorded next to
+it, the resident's in OUT.resident.jsonl and the judge's in OUT.judge.jsonl. None of these files
+may exist already.
 """
 
 import argparse
@@ -45,7 +45,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.error(f"would overwrite {', '.join(existing)}")
     try:
         export = Export.of(args.resident)
-    except FileNotFoundError as error:
+    except (FileNotFoundError, ValueError) as error:
         parser.error(str(error))
     persona = load_persona(args.resident)
     scenarios = load_scenarios(args.scenario)
@@ -59,6 +59,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     result = asyncio.run(evaluate_mask(persona, client, judge, scenarios, reasoning=reasoning))
     report = {
         "resident": str(args.resident),
+        "commit": export.commit(args.resident),
         "model": model.model_dump(mode="json"),
         "reasoning": reasoning,
         "judge": judge_config.model_dump(mode="json"),

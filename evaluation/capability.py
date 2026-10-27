@@ -23,16 +23,16 @@ stop of real time, an error of the harness) makes the row an `error`, left out o
 rate rather than counted against the resident. The resolved rate is resolved over evaluated
 tasks, with a Wilson 95% interval.
 
-OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export, the
-split, the model and the reasoning effort); then each task's folder, with the task's row as
-result.json once the task is over; and, when every task is over, results.json: the
-configurations, the time taken, the summary (with the count of rows of each ending), the rows
-and how many of them were resumed. Each file is written whole or not at all. A stopped
-evaluation is continued by running the same command again: the tasks whose row was written are
-kept, except error rows, and every other task folder, an attempt cut off, is removed and its
-task worked again; the configurations and the time taken in results.json are then those of the
-last invocation. An OUT_DIR that holds anything else, an evaluation of something else or a
-finished one, is refused.
+OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export and
+the resident's commit, the split, the model and the reasoning effort); then each task's folder,
+with the task's row as result.json once the task is over; and, when every task is over,
+results.json: the same, the configurations, the time taken, the summary (with the count of rows
+of each ending), the rows and how many of them were resumed. Each file is written whole or not
+at all. A stopped evaluation is continued by running the same command again: the tasks whose row
+was written are kept, except error rows, and every other task folder, an attempt cut off, is
+removed and its task worked again; the configurations and the time taken in results.json are
+then those of the last invocation. An OUT_DIR that holds anything else, an evaluation of
+something else (another export or commit) or a finished one, is refused.
 """
 
 from __future__ import annotations
@@ -360,7 +360,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         parser.error("--concurrency and --limit must be at least 1")
     try:
         export = Export.of(args.export)
-    except FileNotFoundError as error:
+    except (FileNotFoundError, ValueError) as error:
         parser.error(str(error))
     model, runtime = export.llm, export.runtime
     backend = SwebenchBackend()
@@ -373,6 +373,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     tasks = tasks[: args.limit]
     record = {
         "export": str(args.export.resolve()),
+        "commit": export.commit(args.export),
         "split": args.split,
         "model": model.model,
         "reasoning_effort": runtime.reasoning_effort,
@@ -399,6 +400,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     report = {
         "export": str(args.export.resolve()),
+        "commit": export.commit(args.export),
         "split": args.split,
         "model": model.model_dump(mode="json"),
         "runtime": runtime.model_dump(mode="json"),

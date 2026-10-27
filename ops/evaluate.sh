@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Evaluate a run's residents at a day: export the day's checkpoint, then for every resident
+# Evaluate a run's residents at a day: export the day's checkpoint (an export there already is
+# kept when it is of the run's present tags and replaced when it is not), then for every resident
 # run the MASK scenarios and the held-out capability tasks in the background, one chain a
 # resident, with a log each under runs/eval-logs/. Both answer through the run's own model and
 # runtime settings, which the export records from the run's frozen configuration. Day 0 is the
@@ -15,7 +16,7 @@ set -a; . ./.env; set +a
 python=${PYTHON:-$HOME/miniconda3/envs/socio-evo/bin/python}
 export=exports/$run/$dd
 if [[ $day -eq 0 ]]; then results=results/$dd; else results=results/$run/$dd; fi
-[[ -d $export ]] || "$python" -m experiments.export "runs/$run" --day "$day" --out "$export"
+"$python" -m experiments.export "runs/$run" --day "$day" --out "$export"
 mkdir -p runs/eval-logs "$results/mask" "$results/capability"
 for dir in "$export"/*/; do
     r=$(basename "$dir")
