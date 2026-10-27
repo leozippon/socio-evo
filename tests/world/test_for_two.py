@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import date
 
 import pytest
 from pydantic import ValidationError
@@ -49,7 +50,16 @@ def told(town) -> list[str]:
 def test_a_share_of_the_rotation_is_posted_for_two_and_never_on_a_board_of_ones_own():
     backend = FakeBackend(20)
     work = town_config(for_two=0.25, payment_for_two=30, board_size=8).work
-    board = Board(backend.tasks, backend, work, seed=7, shared=True, names=["Mei"], money=str)
+    board = Board(
+        backend.tasks,
+        backend,
+        work,
+        seed=7,
+        shared=True,
+        names=["Mei"],
+        money=str,
+        start=date(2001, 1, 1),
+    )
     assert board.for_two == set(board.rotation[3::4])  # every fourth of the rotation
     for day in (1, 2, 3):
         board.post(day)

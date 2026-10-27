@@ -25,6 +25,15 @@ waits for a partner, and a second claim of it joins the first; it can be worked 
 once both hold it. One who leaves it, by giving it up or by dying, leaves it to the other,
 waiting again; both lose it at the same midnight, the first claim's.
 
+A shared board may also group tasks into clients' projects (`projects_a_day` of them a day, of
+`project_size` tasks each). When a board is posted, its tasks are taken in rotation order, those
+for two and those of a project still running left out, and the first repository to reach
+`project_size` of them makes a project of those, the next another, until there are
+`projects_a_day`; a repository makes one at most. Each task of a project is claimed, worked and
+paid as any other; the project records who was paid for each (`paid_for`) and is over once all
+are, or lapses at the midnight that ends the calendar day `claim_expiry_days` days after the day
+it was posted (`lapse`), the same midnight as a claim made that day.
+
 A claim opens a workspace once it is ready; the two of a pair share it. When nobody holds a
 claim any more, by acceptance or abandonment, its workspace is closed at once; when it runs out,
 its workspace may be in use by a command still running, so it is set aside and closed at the
@@ -43,11 +52,13 @@ import math
 import random
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 from world.backend import Backend, Task, Verdict, Workspace
+from world.clock import tell_date
 from world.config import Work
-from world.telling import counted, first_line
+from world.telling import counted, first_line, listed, you
 
 KEPT_CHANGES = "/tmp/kept-changes.patch"
 
@@ -73,6 +84,25 @@ class Claim:
         return {"task": self.task, "day": self.day, "diff": self.diff, "handed": self.handed}
 
 
+@dataclass(eq=False)
+class Project:
+    """A client's project: `tasks` of one repository, in rotation order, posted on calendar day
+    `day`, and who has been paid for each of them so far (`paid`, by task)."""
+
+    tasks: tuple[int, ...]
+    day: int
+    paid: dict[int, str] = field(default_factory=dict)
+
+    def saved(self) -> dict[str, Any]:
+        """What a checkpoint keeps of it."""
+        paid = [[number, name] for number, name in self.paid.items()]
+        return {"tasks": list(self.tasks), "day": self.day, "paid": paid}
+
+    @classmethod
+    def restored(cls, saved: dict[str, Any]) -> Project:
+        return cls(tuple(saved["tasks"]), saved["day"], dict(saved["paid"]))
+
+
 class Board:
     def __init__(
         self,
@@ -84,6 +114,7 @@ class Board:
         shared: bool,
         names: Iterable[str],
         money: Callable[[int], str],
+        start: date,
     ) -> None:
         self.tasks = list(tasks)
         self.backend = backend
@@ -99,7 +130,9 @@ class Board:
         self.posted: list[int] = []
         self.shared = shared
         self.money = money
+        self.start = start
         names = list(names)
+        self.projects: list[Project] = []
         self.claims: dict[str, Claim] = {}
         self.done: dict[str, set[int]] = {name: set() for name in names}
         self.runs: dict[str, dict[int, int]] = {name: {} for name in names}
@@ -108,12 +141,69 @@ class Board:
     def task(self, number: int) -> Task:
         return self.tasks[number - 1]
 
-    def post(self, day: int) -> None:
-        """Post the board of calendar day `day`."""
+    def post(self, day: int) -> list[Project]:
+        """Post the board of calendar day `day`; returns the projects formed on it."""
         size = min(self.work.board_size, len(self.rotation))
         start = (day - 1) * size
         turn = [self.rotation[(start + i) % len(self.rotation)] for i in range(size)]
         self.posted = sorted(turn)
+        if not self.work.projects_a_day:
+            return []
+        running = {number for project in self.projects for number in project.tasks}
+        by_repo: dict[str, list[int]] = {}
+        formed: list[Project] = []
+        for number in turn:
+            if number in self.for_two or number in running:
+                continue
+            same = by_repo.setdefault(self.task(number).repo, [])
+            same.append(number)
+            if len(same) == self.work.project_size:
+                formed.append(Project(tuple(same), day))
+                if len(formed) == self.work.projects_a_day:
+                    break
+        self.projects += formed
+        return formed
+
+    def project(self, number: int) -> Project | None:
+        """The running project task `number` is part of, if any."""
+        return next((project for project in self.projects if number in project.tasks), None)
+
+    def paid_for(self, name: str, number: int) -> Project | None:
+        """Count the payment of `name` for task `number` towards its project; returns the project
+        if that payment completed it, which is then over."""
+        project = self.project(number)
+        if project is None:
+            return None
+        project.paid[number] = name
+        if len(project.paid) < len(project.tasks):
+            return None
+        self.projects.remove(project)
+        return project
+
+    def lapse(self, day: int) -> None:
+        """Let the projects that run out at the midnight that ends calendar day `day` lapse."""
+        self.projects = [p for p in self.projects if p.day + self.work.claim_expiry_days > day]
+
+    def deadline(self, project: Project) -> str:
+        """The day by the end of which `project` is to be done, told: `Tuesday 2 January`."""
+        return tell_date(project.day + self.work.claim_expiry_days, self.start)
+
+    def standing(self, name: str, number: int) -> str:
+        """How the other tasks of the project of task `number`, which `name` holds, stand, as
+        `name` is told it: `task 12 accepted from Tomas and task 77 held by nobody`."""
+        project = self.project(number)
+        assert project is not None
+        parts = []
+        for other in project.tasks:
+            if other == number:
+                continue
+            claim = self.taken(name, other)
+            if other in project.paid:
+                parts.append(f"task {other} accepted from {you(project.paid[other], name)}")
+            else:
+                holder = self.holders(claim)[0] if claim is not None else "nobody"
+                parts.append(f"task {other} held by {holder}")
+        return listed(parts)
 
     def taken(self, name: str, number: int) -> Claim | None:
         """The claim others than `name` hold on task `number` of a shared board, if any."""
@@ -137,34 +227,25 @@ class Board:
         return claim.task not in self.for_two or len(self.holders(claim)) == 2
 
     def text(self, name: str, posting: str) -> str:
-        """The posted tasks as `name` reads them, with the problem of the task it holds; with
-        nothing posted, when the next board goes up, at the hour `posting`."""
+        """The posted tasks as `name` reads them, those of each project on it grouped after the
+        others under a line that tells the project, with who holds each and who was paid for
+        those accepted, and the problem of the task `name` holds; with nothing posted, when the
+        next board goes up, at the hour `posting`."""
         mine = self.claims.get(name)
-        lines = []
-        for number in self.posted:
-            task = self.task(number)
-            line = f"{number}. {task.repo}: {first_line(task.problem_statement)} "
-            if number in self.for_two:
-                assert self.work.payment_for_two is not None
-                line += f"For two: pays {self.money(self.work.payment_for_two)} to each."
-            else:
-                line += f"Pays {self.money(self.work.payment)}."
-            other = self.taken(name, number)
-            if mine is not None and mine.task == number:
-                partner = self.partner(name)
-                if partner is not None:
-                    line += f" You hold it with {partner}."
-                elif self.ready(mine):
-                    line += " You hold it."
-                else:
-                    line += " You hold it, waiting for a partner."
-            elif number in self.done[name]:
-                line += " You have been paid for it."
-            elif other is not None and self.ready(other):
-                line += " Held."
-            elif other is not None:
-                line += f" {self.holders(other)[0]} is waiting for a partner."
-            lines.append(line)
+        projects = [p for p in self.projects if set(p.tasks) & set(self.posted)]
+        grouped = {number for project in projects for number in project.tasks}
+        lines = [self._line(name, number) for number in self.posted if number not in grouped]
+        for project in projects:
+            assert self.work.project_bonus is not None
+            size = len(project.tasks)
+            lines += [
+                "",
+                f"Project for one client, {counted(size, 'task')} in "
+                f"{self.task(project.tasks[0]).repo}: a bonus of "
+                f"{self.money(self.work.project_bonus)} to each of those paid for them, if all "
+                f"{size} are accepted by the end of {self.deadline(project)}.",
+                *(self._line(name, number) for number in project.tasks),
+            ]
         text = (
             "The board:\n" + "\n".join(lines)
             if lines
@@ -175,8 +256,42 @@ class Board:
             text += f"\n\nThe problem of task {mine.task}, which you hold:\n\n{problem}"
         return text
 
+    def _line(self, name: str, number: int) -> str:
+        """Task `number` as `name` reads it on the board: a task of a project accepted already,
+        which has left the board, by whom; one held, by whom if it is a project's."""
+        task = self.task(number)
+        line = f"{number}. {task.repo}: {first_line(task.problem_statement)} "
+        mine, other, project = self.claims.get(name), self.taken(name, number), self.project(number)
+        if project is not None and number in project.paid:
+            return line + f"Accepted from {you(project.paid[number], name)}."
+        if number in self.for_two:
+            assert self.work.payment_for_two is not None
+            line += f"For two: pays {self.money(self.work.payment_for_two)} to each."
+        else:
+            line += f"Pays {self.money(self.work.payment)}."
+        if mine is not None and mine.task == number:
+            partner = self.partner(name)
+            if partner is not None:
+                line += f" You hold it with {partner}."
+            elif self.ready(mine):
+                line += " You hold it."
+            else:
+                line += " You hold it, waiting for a partner."
+        elif number in self.done[name]:
+            line += " You have been paid for it."
+        elif other is not None and project is not None:
+            line += f" Held by {self.holders(other)[0]}."
+        elif other is not None and self.ready(other):
+            line += " Held."
+        elif other is not None:
+            line += f" {self.holders(other)[0]} is waiting for a partner."
+        return line
+
     def claim_refusal(self, name: str, number: int) -> str | None:
         if number not in self.posted:
+            project = self.project(number)
+            if project is not None and number in project.paid:  # still shown with its project
+                return f"Task {number} has been accepted from {you(project.paid[number], name)}."
             return f"There is no task {number} on the board."
         if name in self.claims:
             return f"You already hold task {self.claims[name].task}; submit it or give it up first."

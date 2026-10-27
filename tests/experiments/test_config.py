@@ -34,12 +34,14 @@ def test_the_four_groups_share_the_town_and_differ_only_in_their_rules():
     assert [g.skills_writable for g in (a, b, c, d)] == [True, True, True, False]
     assert not d.town.social.skills_shareable and c.town.social.skills_shareable
     assert [g.town.work.for_two for g in (a, b, c, d)] == [0, 0, 0.25, 0.25]  # a board of one's own
+    assert [g.town.work.projects_a_day for g in (a, b, c, d)] == [0, 0, 2, 2]  # likewise
     common = {"name", "town", "skills_writable"}
     for g in (a, b, d):
         assert g.model_dump(exclude=common) == c.model_dump(exclude=common)
         rules = {"social", "work"}
         assert g.town.model_dump(exclude=rules) == c.town.model_dump(exclude=rules)
-        assert g.town.work.model_copy(update={"for_two": c.town.work.for_two}) == c.town.work
+        shared = {"for_two": c.town.work.for_two, "projects_a_day": c.town.work.projects_a_day}
+        assert g.town.work.model_copy(update=shared) == c.town.work
     assert c.days == 28 and len(c.residents) == 8 and c.runtime.reasoning_effort == "low"
     assert c.llm.max_concurrency == len(c.residents)
     assert c.town.start_date.strftime("%A %d %B %Y") == "Monday 02 March 2026"

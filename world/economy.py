@@ -1,4 +1,5 @@
-"""Purses: payments, money handed over, purchases, and the midnight charges with a statement.
+"""Purses: payments and bonuses, money handed over, purchases, and the midnight charges with a
+statement.
 
 Money is a whole number of the town's currency. A purse may go below zero when rent and fees are
 charged; the statement then says how deep in debt the resident is. A purchase is paid in cash:
@@ -38,6 +39,11 @@ class Economy:
         self.purses[name] += amount
         self.ledger[name].append(["payment", amount, str(task)])
 
+    def bonus(self, name: str, amount: int, repo: str) -> None:
+        """`name` receives the bonus of a client's project in `repo`."""
+        self.purses[name] += amount
+        self.ledger[name].append(["bonus", amount, repo])
+
     def give(self, giver: str, recipient: str, amount: int) -> None:
         self.purses[giver] -= amount
         self.purses[recipient] += amount
@@ -54,6 +60,7 @@ class Economy:
         statement's items: the day's movements, then the charges; the ledger starts afresh."""
         told = {
             "payment": "paid {money} for task {about}",
+            "bonus": "paid a bonus of {money} for the project in {about}",
             "received": "received {money} from {about}",
             "gave": "gave {money} to {about}",
             "bought": "bought {about} for {money}",

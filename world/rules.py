@@ -166,12 +166,14 @@ class Rules:
                 f"{counted(exchange.messages, 'turn')} to speak."
             )
 
-        expiry = {
-            0: "at the first midnight after you claimed it",
-            1: "at the second midnight after you claimed it",
-        }.get(
-            c.work.claim_expiry_days,
-            f"when {c.work.claim_expiry_days + 1} midnights have passed since you claimed it",
+        # A claim runs out, and a project lapses, at the midnight that ends the day this many
+        # days after the day it was made or posted.
+        days = c.work.claim_expiry_days
+        nth = {0: "first", 1: "second"}.get(days)
+        expiry = (
+            f"at the {nth} midnight after you claimed it"
+            if nth
+            else f"when {days + 1} midnights have passed since you claimed it"
         )
         work = (
             f"{cap(workplace.name)} takes in programming work from clients elsewhere and posts "
@@ -200,6 +202,20 @@ class Rules:
                 f"{money(c.work.payment_for_two)} to each of the two. Whoever claims it first "
                 "waits until someone else claims it too; the two then share one workspace, and "
                 "their fix goes to the client's checks once both have handed it in."
+            )
+        if c.work.projects_a_day:
+            assert c.work.project_size is not None and c.work.project_bonus is not None
+            by = (
+                f"by the {nth} midnight after the project was posted"
+                if nth
+                else f"before {days + 1} midnights have passed since the project was posted"
+            )
+            work += (
+                f" Some clients bring a project of {counted(c.work.project_size, 'task')} in one "
+                "repository, listed together on the board, each claimed, handed in and paid "
+                f"like any other task. If all {c.work.project_size} are accepted {by}, everyone "
+                "paid for one of them also receives a bonus of "
+                f"{money(c.work.project_bonus)}."
             )
 
         assert my_home.rent is not None

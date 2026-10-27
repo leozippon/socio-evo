@@ -12,16 +12,17 @@ import pytest
 
 import world
 from agent.wording import offences
-from tests.world.conftest import B_EXCHANGE, awake_at, town_config
+from tests.world.conftest import B_EXCHANGE, awake_at, backend_of, town_config
 from world.events import Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS
 
 PAIRS = {"for_two": 0.25, "payment_for_two": 30}  # told, though none of the three tasks is for two
+PROJECTS = {"projects_a_day": 1, "project_size": 3, "project_bonus": 10}  # the three tasks are one
 GROUPS = {
     "A": town_config("isolated"),
     "B": town_config("isolated", exchange=B_EXCHANGE),
-    "C": town_config("town", **PAIRS),
-    "D": town_config("town", shareable=False, **PAIRS),
+    "C": town_config("town", **PAIRS, **PROJECTS),
+    "D": town_config("town", shareable=False, **PAIRS, **PROJECTS),
 }
 DAY_NUMBER = re.compile(r"\b[Dd]ay[ -]?\d")
 
@@ -59,7 +60,7 @@ def _check(texts: list[str]) -> None:
 
 @pytest.mark.parametrize("group", sorted(GROUPS))
 async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
-    town = make_town(GROUPS[group], root=tmp_path / group)
+    town = make_town(GROUPS[group], backend_of({"org/repo": 3}), root=tmp_path / group)
     world_ = town.world
     texts = [world_.rules.text(name) for name in world_.residents]
     texts += [world_.rules.people_notes(name) for name in world_.residents]

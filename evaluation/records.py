@@ -17,10 +17,10 @@ indented lines. It holds:
   every kind the log has about it: waking; setting off and arriving; the board posted; starting
   and stopping work, or being taken from it; claims; shell commands with
   their exit code and the tail of their output; workspace files read and written, and whether that
-  failed; submissions and verdicts; payments; giving a task up and claims running out; workspaces
-  closed at night; speech it said or was told, with who said what to whom (what others said
-  privately in its presence only as something it could not hear); leaving and ending
-  conversations; money and things given; skills passed on, with the text of one it received;
+  failed; submissions and verdicts; payments and projects' bonuses; giving a task up and claims
+  running out; workspaces closed at night; speech it said or was told, with who said what to whom
+  (what others said privately in its presence only as something it could not hear); leaving and
+  ending conversations; money and things given; skills passed on, with the text of one it received;
   messages written and received; goods bought, with the findings of an examination; moving
   house; group B's pairing and meeting; how it felt, in the body's words, whenever that changed;
   the midnight statement, with the purse before its charges; a death; going to bed, with the

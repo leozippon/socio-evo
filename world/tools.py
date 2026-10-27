@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
-from world.board import Claim, failure, with_partner
+from world.board import Claim, Project, failure, with_partner
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
 from world.events import ENDED, EXHAUSTED, UNTIL_JOINED, Work
@@ -84,6 +84,11 @@ def specs(config: TownConfig) -> list[ToolSpec]:
     rate = ", rate people" if config.social.ratings else ""
     pairs = config.work.for_two > 0  # some tasks are for two: the clauses that tell of them
     for_two = "whether it is for two and who waits for a partner on it, " if pairs else ""
+    projects = (
+        "which tasks make up a client's project and who holds each of them, "
+        if config.work.projects_a_day
+        else ""
+    )
     joined = " A task for two can be worked on once a second person claims it too." if pairs else ""
     both = " A task for two goes to the checks once both of you have handed it in." if pairs else ""
     stays = " A task you hold with someone else stays theirs, changes and all." if pairs else ""
@@ -105,8 +110,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
         spec("view_board", f"Read the board at {workplace}: each task's number, repository, the "
-             f"first line of its problem and its pay, {for_two}and whether it is held or already "
-             "paid to you. If you hold a task, its whole problem is shown too."),
+             f"first line of its problem and its pay, {for_two}{projects}and whether it is held "
+             "or already paid to you. If you hold a task, its whole problem is shown too."),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
              "it. You get a workspace with its repository and read the whole problem; you can "
              f"work in it wherever you are.{joined}", ("task",),
@@ -636,9 +641,45 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
                 **with_partner(next((other for other in paid if other != name), None)),
             },
         )
+    project = board.paid_for(r.name, number)  # a project's task is never for two
+    bonus = _bonus(world, r, project) if project is not None else ""
     return ToolResult(
-        f"Accepted. You were paid {economy.money(payment)}. {economy.purse(r.name)} {_now(world)}"
+        f"Accepted. You were paid {economy.money(payment)}. {bonus}{economy.purse(r.name)} "
+        f"{_now(world)}"
     )
+
+
+def _bonus(world: World, r: Resident, project: Project) -> str:
+    """Pay the bonus of `project`, which `r` has just completed, to each living resident paid
+    for one of its tasks, once; what `r` is told of it."""
+    economy, amount = world.economy, world.config.work.project_bonus
+    assert amount is not None
+    repo = world.board.task(project.tasks[0]).repo
+    paid = dict.fromkeys([r.name, *(project.paid[number] for number in project.tasks)])
+    payees = [world.residents[name] for name in paid if world.residents[name].alive]
+    done = (
+        f"All {counted(len(project.tasks), 'task')} of the client's project in {repo} "
+        f"({listed([str(number) for number in project.tasks])}) were accepted"
+    )
+    for payee in payees:
+        economy.bonus(payee.name, amount, repo)
+        world.record(
+            "bonus",
+            lambda w, name=payee.name: (
+                f"{done}: {you(name, w)} received a bonus of {economy.money(amount)}."
+            ),
+            actor=payee,
+            audience=[] if payee is r else [payee],
+            payload={
+                "tasks": list(project.tasks),
+                "day": project.day,
+                "amount": amount,
+                "purse": economy.purses[payee.name],
+            },
+        )
+    each = " each" if len(payees) > 1 else ""
+    names = listed([you(payee.name, r.name) for payee in payees])
+    return f"{done}, and {names}{each} received a bonus of {economy.money(amount)}. "
 
 
 async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:

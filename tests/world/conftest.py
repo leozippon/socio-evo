@@ -16,7 +16,7 @@ import pytest
 from agent.port import Percept, ToolResult
 from world.clock import DAY, ManualClock, parse_hour, settle
 from world.config import TownConfig
-from world.testing import FakeBackend
+from world.testing import FakeBackend, FakeTask
 from world.world import World
 
 RESIDENTS = (
@@ -161,6 +161,20 @@ def town_config(
 
 
 B_EXCHANGE = {"at": "19:00", "place": "cafe", "messages": 3}
+
+
+def backend_of(repos: dict[str, int]) -> FakeBackend:
+    """The fake backend with tasks of the repositories given, so many of each, numbered from 1 in
+    the order given."""
+    backend = FakeBackend(0)
+    each = [repo for repo, tasks in repos.items() for _ in range(tasks)]
+    backend.tasks = [
+        FakeTask(
+            f"{repo.replace('/', '__')}-{n}", repo, f"Problem {n} goes wrong.\nDetails of {n}."
+        )
+        for n, repo in enumerate(each, 1)
+    ]
+    return backend
 
 
 def at(hour: str, day: int = 1) -> int:

@@ -13,7 +13,8 @@ tells a waiting resident the time, and the day's schedule, which is all the fixe
 has. For day N (whose daytime is calendar day N): the posting of day N's board at the workplace
 in the morning, which replaces what was left of the day before's; group B's pairing, which wakes
 whoever sleeps; midnight, when each resident's food and health are reckoned, its rent and fees
-are charged with a statement and expired claims run out; the forced sleep; and the checkpoint.
+are charged with a statement, expired claims run out and clients' projects not done in time
+lapse; the forced sleep; and the checkpoint.
 Every hour on the hour, besides, the bodies are brought up to date (see below). The workplace
 never closes, and residents go to bed and wake when they choose, except that one sleep lasts at
 most a configured span and that nobody wakes between the forced sleep and the checkpoint.
@@ -77,7 +78,7 @@ from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.storage import RunDirectory
 from world import tools
 from world.backend import Backend
-from world.board import Board, with_partner
+from world.board import Board, Project, with_partner
 from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
 from world.config import Band, Good, TownConfig
@@ -208,6 +209,7 @@ class World:
             shared=config.social.mode == "town",
             names=names,
             money=self.economy.money,
+            start=config.start_date,
         )
         self.ratings = Ratings(names)
         self.body = Body(config.needs)
@@ -298,17 +300,25 @@ class World:
 
     def _post_board(self, day: int) -> None:
         """Post the board of calendar day `day`, in place of what was left of the day before's,
-        and tell those at the workplace."""
-        self.board.post(day)
+        and tell those at the workplace; the log names the projects formed on it, where the town
+        has projects."""
+        formed = self.board.post(day)
         workplace = self.config.workplace
         here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
         hour = clock_time(self.clock.now())
+        projects = [
+            {"repo": self.board.task(project.tasks[0]).repo, "tasks": list(project.tasks)}
+            for project in formed
+        ]
         self.record(
             "board_posted",
             lambda w: f"It is {hour}: the day's board is posted at {workplace.name}.",
             place=workplace.id,
             audience=here,
-            payload={"tasks": len(self.board.posted)},
+            payload={
+                "tasks": len(self.board.posted),
+                **({"projects": projects} if self.config.work.projects_a_day else {}),
+            },
         )
 
     def _hourly(self) -> None:
@@ -322,9 +332,11 @@ class World:
 
     def _midnight(self, day: int) -> None:
         """The end of calendar day `day`: its food and its health reckoned and charges taken,
-        and the claims that run out with it."""
+        the claims that run out with it, and the projects that lapse with it unpaid of their
+        bonus (each paid task having paid as usual)."""
         self._settle(day)
         self._expire(day)
+        self.board.lapse(day)
 
     def _expire(self, day: int) -> None:
         board = self.board
@@ -784,7 +796,12 @@ class World:
                 "unread_ratings": copy.deepcopy(self.ratings.unread[name]),
                 "held": [asdict(percept) for percept in r.port.held],
             }
-        return {"time": self.clock.now(), "posted": list(self.board.posted), "residents": residents}
+        return {
+            "time": self.clock.now(),
+            "posted": list(self.board.posted),
+            "projects": [project.saved() for project in self.board.projects],
+            "residents": residents,
+        }
 
     def restore(self, state: dict[str, Any]) -> None:
         """Put a new world in the state `snapshot` returned, and log the resumption."""
@@ -794,6 +811,8 @@ class World:
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
         self.board.posted = list(state["posted"])  # the last board, less what was paid for
+        # A checkpoint from before the clients' projects has none.
+        self.board.projects = [Project.restored(saved) for saved in state.get("projects", [])]
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -1350,6 +1369,12 @@ class World:
                 held += f" with {partner}"
             elif not self.board.ready(claim):
                 held += f", which is for two; {UNTIL_JOINED}"
+            elif (project := self.board.project(claim.task)) is not None:
+                held += (
+                    ", part of a client's project due by the end of "
+                    f"{self.board.deadline(project)}, with "
+                    f"{self.board.standing(r.name, claim.task)}"
+                )
             parts.append(f"{held}.")
         if r.suspended:
             pass

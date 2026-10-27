@@ -2,6 +2,7 @@
 a task paid for leaves a shared board for the day."""
 
 from collections import Counter
+from datetime import date
 from itertools import pairwise
 
 import pytest
@@ -16,7 +17,16 @@ def make_board(pool: int, size: int, seed: int = 7, *, shared: bool = True) -> B
     backend = FakeBackend(pool)
     work = town_config(board_size=size).work
     names = ["Mei", "Tomas"]
-    return Board(backend.tasks, backend, work, seed=seed, shared=shared, names=names, money=str)
+    return Board(
+        backend.tasks,
+        backend,
+        work,
+        seed=seed,
+        shared=shared,
+        names=names,
+        money=str,
+        start=date(2001, 1, 1),
+    )
 
 
 def postings(board: Board, days: int) -> list[list[int]]:

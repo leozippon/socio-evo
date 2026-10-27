@@ -36,6 +36,19 @@
 # at 80 and 42 at 30, 2,380 against 1,680 without them. In A and B, where each resident has a
 # board of its own and nobody to share a task with, nothing is posted for two.
 #
+# Clients' projects. In C and D each day's board also makes two clients' projects of three tasks
+# of one repository: of the repositories with three tasks not for two on it, the two whose third
+# comes round first in the rotation (on the training pool, two every day of the four weeks:
+# django every day, with sympy on most and sphinx, xarray or scikit-learn on the others). Each
+# task is claimed and paid as any other; once all three are accepted by the second midnight
+# after the board went up, the midnight a claim of that day runs out at, each resident paid for
+# one of them receives a bonus of 30. A project done by three people pays 90 in bonuses, by one
+# who does all three 30, so the two add at most 180 to a day's pot: 2,560 for a cleared board
+# against 2,380, and at most a fifth more than the 840 the town earns at the local model's pace;
+# a project whose last task is not accepted in time adds nothing. To each of the three the bonus
+# doubles the pay of its own task, but only if the other two are accepted in time, which none of
+# them decides alone. A and B, where each resident has a board of its own, have no projects.
+#
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
 # nine helpings of a third of it, eaten three a day as the owner gets hungry, so a stock keeps a
@@ -240,6 +253,9 @@ town:
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     for_two: 0.25 # every fourth task of the rotation is posted for two (none in A and B)
     payment_for_two: 40 # to each of the two, as calibrated above
+    projects_a_day: 2 # clients' projects formed on each day's board (none in A and B)
+    project_size: 3 # tasks of one repository in a project
+    project_bonus: 30 # to each paid for one of a project's tasks once all are, as calibrated above
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The goods for sale (see world/config.py for the kinds and effects). Every good does something

@@ -27,7 +27,8 @@ KINDS = {
     "depart": "a resident set off for another place",
     "arrive": "a resident arrived somewhere",
     "time": "a resident waiting was told the time, or that what it was just told ended its wait",
-    "board_posted": "the day's board posted at the workplace in the morning",
+    "board_posted": "the day's board posted at the workplace in the morning; where the town has "
+    "clients' projects, those formed on it (projects: repo and tasks of each)",
     "start_work": "a resident sat down to work, claiming a task or acting in its workspace",
     "leave_work": "a resident stopped work, or the exchange or the forced sleep stopped it",
     "claim": "a resident claimed a task and got a workspace; the first claim of a task for two "
@@ -39,6 +40,8 @@ KINDS = {
     "checks at the second of its holders' submissions",
     "verdict": "the acceptance verdict on a submission",
     "payment": "a resident was paid for an accepted task",
+    "bonus": "a resident paid for one of the tasks of a client's project received its bonus, all "
+    "of them accepted in time (payload: tasks, the day it was posted, amount, purse)",
     "abandon": "a resident gave up its task",
     "expiry": "a claim ran out unpaid at midnight",
     "workspace_closed": "a workspace closed at the checkpoint, its changes kept",

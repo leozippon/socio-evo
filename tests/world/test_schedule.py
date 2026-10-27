@@ -15,6 +15,7 @@ from tests.world.conftest import (
     Town,
     at,
     awake_at,
+    backend_of,
     make_agent_dirs,
     stocked,
     town_config,
@@ -389,7 +390,8 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
 
 
 async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
-    town = make_town()
+    projects = {"projects_a_day": 1, "project_size": 2, "project_bonus": 5}  # tasks 1 and 2
+    town = make_town(town_config(**projects), backend_of({"org/pair": 2, "org/one": 1}))
     await awake_at(town)
     skill = tmp_path / "agents" / "Mei" / "skills" / "triage.md"
     skill.write_text("Read the traceback first.\n")
@@ -407,6 +409,9 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "submit")
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "abandon_task")
+    await town.call("Mei", "claim_task", task=2)
+    await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
+    await town.call("Mei", "submit")  # the project's bonus
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give", to="Tomas", what="money", amount=5)

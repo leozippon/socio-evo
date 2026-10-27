@@ -261,8 +261,11 @@ class Work(StrictModel):
     pool; a claim made on a calendar day runs out at the midnight that ends the day
     `claim_expiry_days` days later. A share `for_two` of the rotation, spread evenly through
     it, is posted for two, held by two residents together, each of whom is paid
-    `payment_for_two` when it is accepted; a shared board alone can have them, and runs frozen
-    before they existed name neither field and had none."""
+    `payment_for_two` when it is accepted. Up to `projects_a_day` sets of `project_size` tasks
+    of one repository on each day's board are a client's project: once all of them are paid by
+    the midnight a claim made the day it was posted runs out at, each resident paid for one of
+    them is paid `project_bonus` besides. A shared board alone can have tasks for two and
+    projects, and runs frozen before they existed name none of their fields and had none."""
 
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
@@ -273,11 +276,16 @@ class Work(StrictModel):
     acceptance_timeout_s: int = Field(ge=1)
     for_two: float = Field(0, ge=0, le=1, description="the share of the rotation posted for two")
     payment_for_two: int | None = Field(None, ge=1, description="paid to each of the two")
+    projects_a_day: int = Field(0, ge=0, description="clients' projects formed on a day's board")
+    project_size: int | None = Field(None, ge=2, description="the tasks of a project")
+    project_bonus: int | None = Field(None, ge=1, description="to each paid for its tasks")
 
     @model_validator(mode="after")
-    def _paid_for_two(self) -> Work:
+    def _paid(self) -> Work:
         if self.for_two and self.payment_for_two is None:
             raise ValueError("tasks posted for two need payment_for_two")
+        if self.projects_a_day and (self.project_size is None or self.project_bonus is None):
+            raise ValueError("clients' projects need project_size and project_bonus")
         return self
 
 
@@ -417,6 +425,10 @@ class TownConfig(StrictModel):
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         if self.work.for_two and self.social.mode != "town":
             raise ValueError("tasks for two need a shared board: work.for_two is 0 in isolation")
+        if self.work.projects_a_day and self.social.mode != "town":
+            raise ValueError(
+                "clients' projects need a shared board: work.projects_a_day is 0 in isolation"
+            )
         exchange = self.social.exchange
         if exchange is not None:
             if self.social.mode != "isolated":

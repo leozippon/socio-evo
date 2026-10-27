@@ -1,10 +1,11 @@
 # Group B, technical experience sharing: as A, but every evening at 19:00 all residents are
 # paired by lot (whoever is asleep is woken) at the café to talk about their work, eight messages
-# each. Each has a board of its own, so no task is posted for two.
+# each. Each has a board of its own, so no task is posted for two and no client brings a
+# project.
 base: ../town.yaml
 name: b
 town:
   social:
     mode: isolated
     exchange: {at: "19:00", place: cafe, messages: 8}
-  work: {for_two: 0}
+  work: {for_two: 0, projects_a_day: 0}
