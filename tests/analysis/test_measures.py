@@ -112,3 +112,15 @@ def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run
     assert json.loads((out / "measures.json").read_text())[0]["purse"] == 125
     assert len(json.loads((out / "daily.json").read_text())) == 2 * len(MEASURES)
     assert (out / "daily.csv").read_text().startswith("day,measure,total,mean,residents\n")
+
+
+def test_a_verdict_on_a_task_for_two_is_accepted_for_both_who_handed_it_in():
+    verdict = {
+        "kind": "verdict",
+        "actor": "Tomas",
+        "sim_time": 32400,
+        "payload": {"task": 3, "resolved": True, "with": "Mei"},
+    }
+    day = Day(1, (verdict,), None, 0.0)
+    accepted = [world_measures(day, name)["accepted"] for name in ("Mei", "Tomas", "Aisha")]
+    assert accepted == [1, 1, 0]

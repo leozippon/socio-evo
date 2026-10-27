@@ -116,7 +116,11 @@ def world_measures(day: Day, name: str) -> Row:
     return {
         "claimed": len(mine("claim")),
         "submitted": len(mine("submission")),
-        "accepted": sum(e["payload"]["resolved"] for e in mine("verdict")),
+        "accepted": sum(  # a task for two's verdict is on both of its hand-ins
+            e["payload"]["resolved"]
+            for e in day.entries
+            if e["kind"] == "verdict" and name in (e["actor"], e["payload"].get("with"))
+        ),
         "earned": sum(e["payload"]["amount"] for e in mine("payment")),
         "spent_rent": sum(e["payload"]["rent"] for e in settled),
         "spent_fees": sum(e["payload"]["fees"] for e in settled),
