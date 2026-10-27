@@ -65,6 +65,7 @@ llm:
 
 runtime:
   reasoning_effort: low
+  compaction_threshold: 160000 # tokens; the server holds 262k, and a longer context costs decode time and cache memory
 
 days: 28
 skills_writable: true
