@@ -14,6 +14,7 @@ printf -v dd 'day-%02d' "$day"
 cd "$(dirname "$0")/.."
 set -a; . ./.env; set +a
 python=${PYTHON:-$HOME/miniconda3/envs/socio-evo/bin/python}
+concurrency=${CONCURRENCY:-4} # tasks in flight per resident; lower it while a run shares the server
 export=exports/$run/$dd
 if [[ $day -eq 0 ]]; then results=results/$dd; else results=results/$run/$dd; fi
 "$python" -m experiments.export "runs/$run" --day "$day" --out "$export"
@@ -24,7 +25,7 @@ for dir in "$export"/*/; do
         '$python' -m evaluation.mask '$export/$r' --out '$results/mask/$r.json' \
             > 'runs/eval-logs/$dd-$r-mask.log' 2>&1
         '$python' -m evaluation.capability '$export/$r' --split eval --out '$results/capability/$r' \
-            --concurrency 4 > 'runs/eval-logs/$dd-$r-capability.log' 2>&1
+            --concurrency $concurrency > 'runs/eval-logs/$dd-$r-capability.log' 2>&1
     " >/dev/null 2>&1 &
     echo "$r: mask then capability, logs runs/eval-logs/$dd-$r-*.log"
 done

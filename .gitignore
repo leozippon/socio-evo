@@ -5,7 +5,7 @@ CLAUDE.md
 __pycache__/
 *.py[cod]
 *.egg-info/
-build/
+/build/
 dist/
 .pytest_cache/
 .mypy_cache/
@@ -14,7 +14,7 @@ dist/
 
 # Local state
 .env
-runs/
+/runs/
 .pi/tasks/
 
 # Editors and OS
@@ -27,10 +27,10 @@ runs/
 external_references/*/
 
 # Evaluation exports and results are local data
-exports/
-results/
+/exports/
+/results/
 # Local state of the coding assistant.
 .claude/
 
 # Archived runs, exports and results of earlier configurations
-archive/
+/archive/
