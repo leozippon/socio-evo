@@ -1,18 +1,20 @@
 """Capability: the resolved rate of an exported resident on held-out SWE-bench Verified tasks.
 
     python -m evaluation.capability AGENT_DIR --split eval --out OUT_DIR [--limit N]
-        [--tasks ID ...] [--concurrency N]
+        [--tasks ID ...] [--concurrency N] [--compaction-threshold TOKENS]
 
 AGENT_DIR is a resident of an export (`evaluation.exports`), and works with the model and the
-runtime settings the export records, the run's own. Each task is worked by the resident's own
-runtime over a `world.solo.SoloPort`: the town's work tools, through the same backend, with
-nothing of the town around them. For each task the agent directory's background, memory and
-skills (never its session or trace) are copied into OUT_DIR/<instance id>/agent, so the export
-is never written to and every task starts with a fresh session; the trace written there is the
-record of the attempt, and every change handed in is kept beside it as submission-N.patch.
-Skills are read-only in the harness, for every group: the evaluation measures the resident as it
-stands, and within one task nothing written there could be read back anyway. Tasks run
-concurrently, `concurrency` at a time.
+runtime settings the export records, the run's own, except that `--compaction-threshold` may
+replace the runtime's `compaction_threshold`, within the most the model's context window allows
+(`RuntimeConfig.ceiling`). Each task is worked by the resident's own runtime over a
+`world.solo.SoloPort`: the town's work tools, through the same backend, with nothing of the town
+around them. For each task the agent directory's background, memory and skills (never its
+session or trace) are copied into OUT_DIR/<instance id>/agent, so the export is never written to
+and every task starts with a fresh session; the trace written there is the record of the
+attempt, and every change handed in is kept beside it as submission-N.patch. Skills are
+read-only in the harness, for every group: the evaluation measures the resident as it stands,
+and within one task nothing written there could be read back anyway. Tasks run concurrently,
+`concurrency` at a time.
 
 A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions
 and their verdicts, the model requests (steps) and their tokens, the real seconds and the
@@ -24,15 +26,16 @@ rate rather than counted against the resident. The resolved rate is resolved ove
 tasks, with a Wilson 95% interval.
 
 OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export and
-the resident's commit, the split, the model and the reasoning effort); then each task's folder,
-with the task's row as result.json once the task is over; and, when every task is over,
-results.json: the same, the configurations, the time taken, the summary (with the count of rows
-of each ending), the rows and how many of them were resumed. Each file is written whole or not
-at all. A stopped evaluation is continued by running the same command again: the tasks whose row
-was written are kept, except error rows, and every other task folder, an attempt cut off, is
-removed and its task worked again; the configurations and the time taken in results.json are
-then those of the last invocation. An OUT_DIR that holds anything else, an evaluation of
-something else (another export or commit) or a finished one, is refused.
+the resident's commit, the split, the model, the reasoning effort and the compaction threshold);
+then each task's folder, with the task's row as result.json once the task is over; and, when
+every task is over, results.json: the same, the configurations, the time taken, the summary
+(with the count of rows of each ending), the rows and how many of them were resumed. Each file
+is written whole or not at all. A stopped evaluation is continued by running the same command
+again: the tasks whose row was written are kept, except error rows, and every other task folder,
+an attempt cut off, is removed and its task worked again; the configurations and the time taken
+in results.json are then those of the last invocation. An OUT_DIR that holds anything else, an
+evaluation of something else (another export, commit or compaction threshold) or a finished one,
+is refused.
 """
 
 from __future__ import annotations
@@ -252,7 +255,7 @@ def _copy(export: Path, destination: Path) -> AgentDirectory:
     return AgentDirectory(destination, skills_writable=False)
 
 
-def _claim(out_dir: Path, record: dict[str, str], names: Sequence[str]) -> None:
+def _claim(out_dir: Path, record: dict[str, str | int], names: Sequence[str]) -> None:
     """Take `out_dir` for the evaluation `record` of the tasks `names`: create it with the
     record, or continue it when an earlier invocation of the same evaluation left it
     unfinished. Raise ValueError when it holds anything else or a finished evaluation."""
@@ -354,15 +357,31 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--out", type=Path, required=True, help="directory to create, or to continue"
     )
     parser.add_argument("--concurrency", type=int, default=4, help="tasks at a time")
+    parser.add_argument(
+        "--compaction-threshold",
+        type=int,
+        metavar="TOKENS",
+        help="compact the resident's context past this many tokens (default: the export's)",
+    )
     args = parser.parse_args(argv)
 
-    if args.concurrency < 1 or (args.limit is not None and args.limit < 1):
-        parser.error("--concurrency and --limit must be at least 1")
+    counts = (args.concurrency, args.limit, args.compaction_threshold)
+    if any(count is not None and count < 1 for count in counts):
+        parser.error("--concurrency, --limit and --compaction-threshold must be at least 1")
     try:
         export = Export.of(args.export)
     except (FileNotFoundError, ValueError) as error:
         parser.error(str(error))
     model, runtime = export.llm, export.runtime
+    if args.compaction_threshold is not None:
+        runtime = runtime.model_copy(update={"compaction_threshold": args.compaction_threshold})
+        window = model.context_window
+        if window is not None and args.compaction_threshold > runtime.ceiling(window):
+            parser.error(
+                f"--compaction-threshold {args.compaction_threshold} is above "
+                f"{runtime.ceiling(window)}, the most the model's context window of {window} "
+                "tokens allows"
+            )
     backend = SwebenchBackend()
     tasks = list(backend.load_split(args.split))
     if args.tasks:
@@ -377,6 +396,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "split": args.split,
         "model": model.model,
         "reasoning_effort": runtime.reasoning_effort,
+        "compaction_threshold": runtime.compaction_threshold,
     }
     try:
         _claim(args.out, record, [task.instance_id for task in tasks])

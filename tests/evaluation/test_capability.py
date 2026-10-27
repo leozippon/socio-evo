@@ -1,7 +1,8 @@
 """The capability harness on the fake backend with a scripted model: the rows, the endings
 counted, the resolved rate and its interval, the budgets of turns and of completion tokens, the
-export left untouched, failures of the machinery kept apart from the resident's, and a stopped
-evaluation continued from the command line while another or a finished one is refused."""
+export left untouched, failures of the machinery kept apart from the resident's, a stopped
+evaluation continued from the command line while another or a finished one is refused, and the
+compaction threshold the export's unless the command line sets it."""
 
 import json
 from pathlib import Path
@@ -9,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from agent.directory import AgentDirectory
-from agent.runtime import RuntimeConfig
+from agent.runtime import Runtime, RuntimeConfig
 from agent.testing import reply, tool_call
 from evaluation import capability
 from evaluation.capability import evaluate_capability, main
@@ -42,10 +43,14 @@ def scripted(request: LLMRequest):
     return SCRIPTS[repo][sum(message.role == "assistant" for message in request.messages)]
 
 
+RUNTIME = RuntimeConfig(compaction_threshold=160_000, kept_tokens=12_000)
+"""The runtime the export records, the run's, unlike the defaults."""
+
+
 def exported(tmp_path: Path) -> Path:
     """A resident of an export, with a skill, and with a session and a trace that must not carry
-    over; the export's manifest names the model `resident` and the runtime's defaults, and
-    gives Mei and Tomas commits of their own."""
+    over; the export's manifest names the model `resident`, its context window of 262,144
+    tokens and the run's `RUNTIME`, and gives Mei and Tomas commits of their own."""
     root = AgentDirectory.create(
         tmp_path / "export" / "Mei", background="You are Mei.", town="The workshop opens at 09:00."
     ).root
@@ -53,8 +58,13 @@ def exported(tmp_path: Path) -> Path:
         run="/runs/c",
         day=7,
         commits={"Mei": "c0ffee", "Tomas": "7ea"},
-        llm=LLMConfig(base_url="http://127.0.0.1:9", api_key_env="NO_KEY", model="resident"),
-        runtime=RuntimeConfig(),
+        llm=LLMConfig(
+            base_url="http://127.0.0.1:9",
+            api_key_env="NO_KEY",
+            model="resident",
+            context_window=262_144,
+        ),
+        runtime=RUNTIME,
     )
     (root.parent / MANIFEST).write_text(manifest.model_dump_json())
     (root / "skills" / "tests-first.md").write_text("Run the tests before changing code.\n")
@@ -344,6 +354,7 @@ def test_a_stopped_evaluation_is_continued_by_the_same_command(tmp_path, monkeyp
         "split": "train",
         "model": "resident",
         "reasoning_effort": "medium",
+        "compaction_threshold": 160_000,
     }
 
 
@@ -357,6 +368,11 @@ def test_the_command_line_refuses_a_directory_of_another_evaluation(tmp_path, mo
     assert capsys.readouterr().err.endswith(
         f"error: would overwrite {out}: it was begun with export {export.resolve()}, not "
         f"{other.resolve()}; commit c0ffee, not 7ea\n"
+    )
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, out, "--compaction-threshold", "90000")
+    assert capsys.readouterr().err.endswith(
+        f"error: would overwrite {out}: it was begun with compaction_threshold 160000, not 90000\n"
     )
     record = json.loads((out / "evaluation.json").read_text())
     (out / "evaluation.json").write_text(json.dumps({**record, "split": "eval"}))
@@ -402,3 +418,34 @@ def test_the_command_line_refuses_a_finished_evaluation(tmp_path, monkeypatch, c
         "chosen; a finished evaluation is not extended\n"
     )
     assert files(out) == before
+
+
+def test_the_compaction_threshold_is_the_exports_unless_the_command_line_sets_it(
+    tmp_path, monkeypatch, capsys
+):
+    used: list[int] = []
+
+    class Recording(Runtime):
+        def __init__(self, directory, port, client, config):
+            used.append(config.compaction_threshold)
+            super().__init__(directory, port, client, config)
+
+    monkeypatch.setattr(capability, "Runtime", Recording)
+    export = exported(tmp_path)
+    for name, options, threshold in (
+        ("exports", (), 160_000),
+        ("set", ("--compaction-threshold", "90000"), 90_000),
+    ):
+        out = tmp_path / name
+        command(monkeypatch, export, out, "--limit", "1", *options)
+        record = json.loads((out / "evaluation.json").read_text())
+        runtime = json.loads((out / "results.json").read_text())["runtime"]
+        assert used.pop() == record["compaction_threshold"] == threshold
+        assert runtime == RUNTIME.model_dump(mode="json") | {"compaction_threshold": threshold}
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, tmp_path / "above", "--compaction-threshold", "229377")
+    assert capsys.readouterr().err.endswith(
+        "error: --compaction-threshold 229377 is above 229376, the most the model's context "
+        "window of 262144 tokens allows\n"
+    )
+    assert not (tmp_path / "above").exists() and not used
