@@ -17,7 +17,9 @@ session and the trace is gone, and stays in the world log.
 
 A run ends completed after its last day; interrupted after `until_day` short of it, or on
 SIGINT or SIGTERM; failed on any error, which is raised. A resident's runtime that ends fails
-the run, since the checkpoint would wait for it forever. Every way out writes the status.
+the run, since the checkpoint would wait for it forever; so does a model that stops answering,
+since the runtime gives up after a run of lapses, each of which `run.log` records as a warning.
+Every way out writes the status.
 """
 
 from __future__ import annotations
@@ -272,13 +274,17 @@ async def _live(
 
 @contextmanager
 def _logging(path: Path) -> Iterator[None]:
-    """The simulation's log written to `path` as well, at level INFO."""
+    """The simulation's log, at level INFO, and the runtimes' warnings (their lapses) written to
+    `path` as well."""
     handler = logging.FileHandler(path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    log.addHandler(handler)
+    loggers = (log, logging.getLogger("agent"))
+    for logger in loggers:
+        logger.addHandler(handler)
     log.setLevel(logging.INFO)
     try:
         yield
     finally:
-        log.removeHandler(handler)
+        for logger in loggers:
+            logger.removeHandler(handler)
         handler.close()

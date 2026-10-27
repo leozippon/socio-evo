@@ -9,10 +9,16 @@ import json
 import pytest
 
 import simulation.run as simulation
-from agent.runtime import Runtime
+from agent.runtime import Runtime, RuntimeConfig
 from experiments.config import PROJECT_ROOT, load_experiment
 from infrastructure.git import Repository
-from infrastructure.llm import LLMConfigError
+from infrastructure.llm import (
+    LLMCallError,
+    LLMConfigError,
+    LLMRequest,
+    LLMResponse,
+    ScriptedClient,
+)
 from infrastructure.storage import RunDirectory, read_jsonl
 
 
@@ -133,6 +139,22 @@ async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path,
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
     assert run.read_manifest().status == "failed"
     assert "the run failed" in run.run_log_path.read_text()
+
+
+async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch):
+    def down(request: LLMRequest) -> LLMResponse:
+        raise LLMCallError("APIConnectionError: Connection error.")
+
+    monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(down))
+    config = smoke(runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2))
+    async with asyncio.timeout(60):
+        with pytest.raises(RuntimeError, match="the runtime of (Mei|Tomas) ended") as raised:
+            await simulation.run(config, tmp_path, dry_run=True)
+    assert "2 requests in a row lapsed" in str(raised.value.__cause__)
+    run = RunDirectory.open(tmp_path / "smoke-dry-run")
+    assert run.read_manifest().status == "failed"
+    log = run.run_log_path.read_text()
+    assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
 
 
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_path, monkeypatch):

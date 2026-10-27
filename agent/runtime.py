@@ -19,14 +19,16 @@ told at once. A reply cut off at the token limit is asked for again once at a lo
 effort; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
 enters the session together with the results of its calls, so that the session never holds a
 call without its result. A model error is retried; when the attempts run out the request is a
-lapse and the runtime waits for the next percept. Any other error ends the loop, as
-cancellation does.
+lapse, logged as a warning, and the runtime waits for the next percept. A run of lapses ends
+the loop with an error, so that a model that has gone away stops the run instead of letting
+the town live on without its residents; any other error ends it at once, as cancellation does.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Literal
@@ -49,6 +51,8 @@ from infrastructure.llm import (
     StreamingClient,
     ToolCall,
 )
+
+log = logging.getLogger(__name__)
 
 Effort = Literal["low", "medium", "xhigh"]
 """The reasoning efforts the served model takes."""
@@ -75,7 +79,8 @@ class RuntimeConfig(StrictModel):
     context. A tool result enters the context cut to `tool_result_chars` characters (its middle
     left out). A request is made at `reasoning_effort`; a model error, after the client's own
     retries, is retried until `model_attempts` attempts were made, waiting `retry_wait` seconds
-    and then twice as long each time.
+    and then twice as long each time; after `max_consecutive_lapses` requests in a row found no
+    reply, the runtime gives up with an error.
     """
 
     compaction_threshold: PositiveInt = 90_000
@@ -86,6 +91,7 @@ class RuntimeConfig(StrictModel):
     reasoning_effort: Effort = "medium"
     model_attempts: PositiveInt = 3
     retry_wait: PositiveFloat = 10.0
+    max_consecutive_lapses: PositiveInt = 5
 
 
 class Runtime:
@@ -126,6 +132,7 @@ class Runtime:
         self._session = Session(directory.session_path)
         self._trace = Trace(directory.trace_path, port.sim_time)
         self._prompt = ""
+        self._lapses = 0
 
     async def run(self) -> None:
         """Live until cancelled: wait for the world, take steps until the resident is done for
@@ -209,7 +216,7 @@ class Runtime:
         summary = reply.text.strip()
         if reply.truncated or not summary:
             failure = "cut off twice" if reply.truncated else "empty summary"
-            self._trace.write("lapse", purpose="compaction", errors=[failure])
+            self._lapse("compaction", [failure])
             return
         keep = kept(self._session.context(), self._config.kept_exchanges)
         record = self._session.compact(summary, keep)
@@ -225,9 +232,9 @@ class Runtime:
         purpose: str,
         abort: asyncio.Event | None = None,
     ) -> LLMResponse | None:
-        """The model's reply to `request`, traced with it, or None, traced as a lapse, when
-        every attempt failed. The resident is busy throughout, the waits between attempts
-        included, so that the world's clock does not idle while the model is down."""
+        """The model's reply to `request`, traced with it, or None, after a lapse, when every
+        attempt failed. The resident is busy throughout, the waits between attempts included,
+        so that the world's clock does not idle while the model is down."""
         errors = []
         with self._busy():
             for attempt in range(1, self._config.model_attempts + 1):
@@ -248,9 +255,19 @@ class Runtime:
                     errors.append(_describe(error))
                     continue
                 self._trace.write("reply", purpose=purpose, **reply.model_dump(mode="json"))
+                self._lapses = 0
                 return reply
-            self._trace.write("lapse", purpose=purpose, errors=errors)
+            self._lapse(purpose, errors)
             return None
+
+    def _lapse(self, purpose: str, errors: list[str]) -> None:
+        """Trace and log a request of `purpose` that found no usable reply, for `errors`; raise
+        when it is the last of `max_consecutive_lapses` in a row."""
+        self._trace.write("lapse", purpose=purpose, errors=errors)
+        log.warning("%s: a %s request lapsed: %s", self._directory.root, purpose, errors)
+        self._lapses += 1
+        if self._lapses >= self._config.max_consecutive_lapses:
+            raise RuntimeError(f"{self._lapses} requests in a row lapsed; the last: {errors}")
 
     async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[list[Message], bool, bool]:
         """Carry out `calls` in order; the answer to each, led by the percepts pending when it

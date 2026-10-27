@@ -254,6 +254,24 @@ async def test_model_errors_end_in_a_lapse_and_the_runtime_lives_on(directory):
         assert context(directory)[-1] == Message(role="assistant", content="Back.")
 
 
+async def test_lapses_in_a_row_end_the_runtime_and_each_is_logged(directory, caplog):
+    down = LLMCallError("APIConnectionError: Connection error.")
+    model = ScriptedModel(down, reply("Back."), down, down, down)
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    config = RuntimeConfig(model_attempts=1, max_consecutive_lapses=3)
+    task = asyncio.create_task(Runtime(directory, port, model, config).run())
+    for _ in range(4):  # a lapse, a reply, then three lapses in a row
+        await settle(port)
+        port.deliver("Ben says hi.")
+    with pytest.raises(RuntimeError, match="3 requests in a row lapsed"):
+        await asyncio.wait_for(task, 5)
+    assert len([r for r in trace(directory) if r["kind"] == "lapse"]) == 4
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 4
+    assert all(str(directory.root) in w and "Connection error" in w for w in warnings)
+
+
 async def test_any_other_error_in_a_step_ends_the_runtime(directory):
     model = ScriptedModel(reply("Hm."))  # the script has no reply left for the second step
     port = FakePort()
