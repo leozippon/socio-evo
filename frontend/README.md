@@ -118,7 +118,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `format` | integer | The bundle format, currently 6. |
+| `format` | integer | The bundle format, currently 8. |
 | `files` | array | Every kind of file in the bundle. |
 | `files[].kind` | string | The kind, named as in this section's headings. |
 | `files[].path` | string | Its path pattern; `{day}` is a two-digit day number. |
