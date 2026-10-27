@@ -115,23 +115,28 @@ def test_ties_are_mutual_pass_the_guard_and_reach_only_the_town_groups():
         assert Rules(a.town).people_notes(name) == "# People\n"
 
 
-def test_a_task_and_a_half_a_day_keeps_the_cheapest_life_and_a_board_or_two_buys_the_rest():
+def test_the_pay_is_set_against_the_towns_shared_board():
     town = group("c").town
-    payment, board = town.work.payment, town.work.board_size // len(town.residents)
+    payment, n = town.work.payment, len(town.residents)
     rents = {place.id: place.rent for place in town.places if place.kind == "home"}
     food = [good for good in town.goods if good.effect == "food"]
-    a_day = min(
-        good.price // good.days if good.kind == "consumable" else good.price for good in food
-    )
-    assert payment <= min(rents.values()) + a_day <= 1.5 * payment  # a day without work costs
-    assert (
-        max(rents.values()) + max(good.price for good in food if good.kind == "immediate")
-        <= 3 * payment
-    )  # and does not threaten: a full board of seven is two to five days of life
-    for resident in town.residents:  # three to six days of the resident's own life
+    meals = [good.price for good in food if good.kind == "immediate"]
+    a_day = min([good.price // good.days for good in food if good.kind == "consumable"] + meals)
+    cheapest = min(rents.values()) + a_day
+    assert 2 * payment < cheapest <= 3 * payment  # three tasks keep the cheapest life
+    for resident in town.residents:  # and a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
+    # The board of the day is the town's pot: it pays for the town's rent and food with a
+    # margin, but less than twice its cheapest costs, so the slow fall behind.
+    pot = town.work.board_size * payment
+    rent = sum(rents[resident.home] for resident in town.residents)
+    assert rent + n * max(meals) < pot < 2 * (rent + n * a_day)
+    # What an average share saves over the cheapest life in one's own home buys the dearest
+    # durable, which no purse covers at the start, in about a week; daily charges are small.
+    saved = pot / n - (rent / n + a_day)
     durables = [good for good in town.goods if good.kind == "durable"]
-    assert max(good.price for good in durables) > max(r.purse for r in town.residents)
-    assert all(good.price <= 2 * board * payment for good in durables)  # two full boards
-    assert all(good.fee_per_day <= payment // 6 for good in durables)
+    dearest = max(good.price for good in durables)
+    assert dearest > max(resident.purse for resident in town.residents)
+    assert 5 <= dearest / saved <= 10
+    assert all(good.fee_per_day <= saved / 5 for good in durables)

@@ -8,18 +8,21 @@
 # the Store and the clinic. The only fixed hours are the night's below and the morning hour the
 # Workshop's board goes up, together with the longest one sleep may last.
 #
-# Calibration of a life. A task pays 30. Rent runs from 30 a day for a room in a shared house to
-# 70 for the cottage, and a day's food from 12 (groceries, 36 for three days) to 20 (supper at the
-# Anchor), so the cheapest life costs 42 a day and the dearest 90: a task and a half a day keeps a
-# room in a shared house, three keep any home in town, and a day without work costs something
-# without threatening. Starting purses of 180-300 are three to six days of the resident's own
-# life. The board posts seven tasks a resident a day, and the residents now work through them
-# fast (on the relayed model a task takes minutes, and under the flat cost of 90 with a payment
-# of 60 the slower model's purses already stood at 1,500-2,500 by day 7), so the pay is set
-# against a full board: 210 a day at most, two to five days of life. The things to save for are
-# priced against that pace: the bicycle (360) is nearly two full boards and more than any purse at
-# the start, the phone (240, then 5 a day) most of one, the coat (150) five tasks, the book (40)
-# one and a bit.
+# Calibration of a life. Rent runs from 30 a day for a room in a shared house to 70 for the
+# cottage, and a day's food from 12 (three helpings of groceries, 36 for nine) to 20 (supper at
+# the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 15: three keep
+# the cheapest life and six the dearest, and a day without work costs something without
+# threatening, since starting purses of 180-300 are three to six days of the resident's own life.
+# The pay is set against the town's pot, not a resident's: in C and D the eight share one board
+# of 56 tasks a day, which they clear by early afternoon (on the relayed model a task takes
+# minutes), so the town earns at most 840 a day against 451-515 of rent and food, about 1.6 to
+# 1.9 times its costs. An average share, seven tasks or 105 a day, leaves about 50 over the
+# cheapest life in one's own home, so the slow fall behind and the fast save; at a pay of 30 the
+# first day of C paid 1,440, and purses were on course for 1,000 on average and 1,800 at the top
+# by day 7, where money stops mattering. The things to save for are priced against an average
+# earner's savings: the bicycle (360), more than any purse at the start, takes about a week, the
+# phone (240, then 5 a day) about five days, the coat (150) three, the book (40) less than one.
+# In A and B each resident has the whole board to itself, so there its pace is its only limit.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
@@ -46,7 +49,7 @@
 # mends 5, so twelve-hour days in a shared house with a meal a day keep full health at any
 # bedtime, an ill resident that eats and rests gains 3 to 5 a night, and nobody is trapped: at
 # any health a night's sleep gives half a day's energy. Treatment at the clinic restores 25
-# health for a task's pay; an examination costs a third of one.
+# health for four tasks' pay; an examination costs a task and a third.
 
 # For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
 # our quota: the GPUs are taken and no parameters are tuned yet. The standing setup is the local
@@ -114,8 +117,8 @@ town:
     - {between: [anchor, clinic], minutes: 10}
     - {between: [river-walk, clinic], minutes: 10}
     - {between: [store, clinic], minutes: 10}
-  # Starting purses: three to five days of the resident's own life (see the calibration above),
-  # more for Lucia, who saved for her year, least for Aisha, whose savings are nearly gone. Ties
+  # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
+  # whose savings are nearly gone. Ties
   # are the people each resident knows already, told to it in the town mode (groups C and D) and seeding its notes on people; each is
   # written to its owner and must be mutual.
   residents:
@@ -209,8 +212,8 @@ town:
           talking.
   work:
     split: train
-    board_size: 56 # seven a resident a day; the pool comes round in turn
-    payment: 30
+    board_size: 56 # shared by the eight in C and D, each its own in A and B; comes round in turn
+    payment: 15
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600
