@@ -11,12 +11,15 @@ from tasks.swebench.dataset import (
     EVAL_START,
     EXCLUDED_REPOS,
     FULL,
+    RESOLVED,
     REVISIONS,
     SEED,
     SPLITS,
     VERIFIED,
     held_out_siblings,
     load_dataset,
+    load_gold,
+    load_tasks,
     select,
 )
 from tests.tasks.swebench.conftest import make_task
@@ -27,9 +30,23 @@ EVAL_SHA256 = "b616bc4c8f5e40e4988fc66d108d1730a03f59140b64b394f68d94d165758ae0"
 """Of the eval split drawn on 2026-10-24, its ids joined by newlines: it must never change."""
 
 
+FIRST_TRAIN_SHA256 = "acf0a0c00f42bd928e9c631c85f4d736e473848e70fb70135d3189347dd673d9"
+"""Of the 350 Verified tasks train held on 2026-10-25, their ids joined by newlines: they stay
+first in train, in this order, so that the board numbers them as before."""
+
+
 def test_the_eval_split_is_the_one_first_drawn():
     splits = json.loads(SPLITS.read_text())
     assert hashlib.sha256("\n".join(splits["eval"]).encode()).hexdigest() == EVAL_SHA256
+
+
+def test_train_keeps_its_first_tasks_and_holds_only_checked_tasks_apart_from_eval():
+    splits = json.loads(SPLITS.read_text())
+    train, held_out = splits["train"], splits["eval"]
+    assert hashlib.sha256("\n".join(train[:350]).encode()).hexdigest() == FIRST_TRAIN_SHA256
+    assert len(set(train)) == len(train) and not set(train) & set(held_out)
+    gold = load_gold()  # resolved: the image was pulled and the gold patch resolved in it
+    assert [instance for instance in train if gold.get(instance) != RESOLVED] == []
 
 
 def test_eval_is_drawn_from_verified_and_train_is_every_other_eligible_instance():
@@ -94,6 +111,13 @@ def test_tracked_splits_are_drawn_from_the_pinned_datasets():
     assert set(splits["train"]) | set(splits["eval"]) | set(splits["excluded"]) == tasks
     left_out = {instance for instance, task in full.items() if task.repo in EXCLUDED_REPOS}
     assert left_out and left_out <= set(splits["excluded"])
+
+
+@downloaded
+def test_no_training_task_is_a_sibling_of_a_held_out_task():
+    splits, tasks = json.loads(SPLITS.read_text()), load_tasks()
+    train, held_out = (tasks[i] for i in splits["train"]), (tasks[i] for i in splits["eval"])
+    assert held_out_siblings(train, held_out) == {}
 
 
 def test_the_brief_is_the_problem_statement_without_hints_by_default():
