@@ -11,7 +11,13 @@ from agent.port import ToolResult, ToolSpec
 from agent.runtime import Runtime, RuntimeConfig
 from agent.session import Session
 from agent.testing import FakePort, ScriptedModel, reply, running, tool_call
-from infrastructure.llm import LLMBusyError, LLMCallError, Message, ToolCall
+from infrastructure.llm import (
+    LLMBusyError,
+    LLMCallError,
+    LLMContextOverflowError,
+    Message,
+    ToolCall,
+)
 from infrastructure.storage import read_jsonl
 
 ANYTHING = {"type": "object", "properties": {}}
@@ -367,6 +373,52 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
     (compaction,) = [r for r in trace(directory) if r["kind"] == "compaction"]
     assert compaction["replaced"] == [1, 2, 3] and compaction["kept"] == [4, 5]
     assert [m.role for m in context(directory)] == ["user", "assistant", "tool", "assistant"]
+
+
+OVERFLOW = LLMContextOverflowError(
+    "BadRequestError: This model's maximum context length is 262144 tokens."
+)
+
+
+async def test_a_context_the_window_refuses_is_compacted_and_the_step_asked_again(directory):
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
+    model = ScriptedModel(
+        reply("", tool_call("look_around")),
+        reply("", tool_call("look_around")),
+        OVERFLOW,  # the step
+        OVERFLOW,  # the notes, asked for from the whole context
+        reply(NOTES),  # the notes, asked for from the messages they replace
+        reply("Done."),  # the step, asked for again
+    )
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
+        await settle(port)
+
+    refused, whole, replaced, again = model.requests[2:]
+    assert whole.messages == (*refused.messages, INSTRUCTION)
+    assert replaced.messages == (*refused.messages[:4], INSTRUCTION)  # the first exchange
+    assert again.messages[1].content == texts.SUMMARY.format(summary=NOTES)
+    assert again.messages[2:] == refused.messages[4:]  # the last exchange, kept whole
+    records = trace(directory)
+    overflows = [r["purpose"] for r in records if r["kind"] == "overflow"]
+    assert overflows == ["step", "compaction"] and not [r for r in records if r["kind"] == "lapse"]
+    (compaction,) = [r for r in records if r["kind"] == "compaction"]
+    assert compaction["replaced"] == [1, 2, 3] and compaction["kept"] == [4, 5]
+    assert context(directory)[-1] == Message(role="assistant", content="Done.")
+
+
+async def test_a_step_the_window_refuses_after_a_compaction_is_a_lapse(directory):
+    model = ScriptedModel(OVERFLOW, reply(NOTES), OVERFLOW, reply("Back."))
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+        (lapse,) = [r for r in trace(directory) if r["kind"] == "lapse"]
+        assert lapse["purpose"] == "step" and "maximum context length" in lapse["errors"][0]
+        assert len(model.requests) == 3  # a refusal is not asked again as it stands
+        port.deliver("Ben says hi.")
+        await settle(port)
+        assert context(directory)[-1] == Message(role="assistant", content="Back.")
 
 
 async def test_the_resident_can_compact_on_its_own(directory):

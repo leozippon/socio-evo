@@ -89,10 +89,14 @@ class Session:
         ids = [entry.id for entry in self._entries]
         if not set(keep) <= set(ids):
             raise ValueError(f"cannot keep messages outside the context: {set(keep) - set(ids)}")
-        replaced = tuple(i for i in ids if i not in keep or i == self._summary)
-        record = CompactionRecord(id=self._next, replaced=replaced, summary=summary)
+        record = CompactionRecord(id=self._next, replaced=self.replaced(keep), summary=summary)
         self._write(record)
         return record
+
+    def replaced(self, keep: Collection[int]) -> tuple[int, ...]:
+        """The ids of the messages a compaction keeping `keep` replaces: every other message of
+        the context, and any earlier summary."""
+        return tuple(e.id for e in self._entries if e.id not in keep or e.id == self._summary)
 
     def size(self, prefix: str) -> int:
         """The size of the context in tokens: the prompt tokens the server reported for the

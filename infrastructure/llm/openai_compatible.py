@@ -4,6 +4,7 @@ import asyncio
 import json
 import os
 import random
+import re
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any, TypeVar
@@ -15,6 +16,7 @@ from infrastructure.llm.base import (
     LLMBusyError,
     LLMCallError,
     LLMConfigError,
+    LLMContextOverflowError,
     LLMRequest,
     LLMResponse,
     Message,
@@ -29,6 +31,13 @@ TRANSPORT_RETRIES = 2
 """Retries of a call that could not connect, met a server error or got an aborted reply, as
 the SDK makes them by default, so that a dropped connection is not taken for a server that went
 away."""
+OVERFLOW = re.compile(r"maximum (?:context|model) length")
+"""How a server refusing a request (HTTP 400) says that its prompt does not fit the model's
+context window. vLLM (0.32) says "This model's maximum context length is N tokens. However, your
+prompt contains M input tokens ...", "Input length (M) exceeds model's maximum context length
+(N)" or "The decoder prompt (length M) is longer than the maximum model length of N", and OpenAI
+the first; a reply's token limit beyond what the window leaves, vLLM cuts down instead of
+refusing the request."""
 
 T = TypeVar("T")
 
@@ -45,7 +54,9 @@ class OpenAICompatibleClient:
     cannot connect, meets a server error or gets a reply that did not finish (finish reason
     `abort`, as vLLM sends when it shuts down mid-request, or none at all, as when a stream is
     closed early) is retried TRANSPORT_RETRIES times, after the same waits, and then raises
-    LLMCallError, as does at once any other failure (the credentials or the request refused).
+    LLMCallError, as does at once any other failure (the credentials or the request refused);
+    a request refused because it does not fit the model's context window raises
+    LLMContextOverflowError.
     A reply cut off by the token limit is returned marked `truncated`, and an empty one as
     empty, for the caller to judge, each with the token limit it was given.
     Separated reasoning text (`reasoning_content`, or `reasoning`) is captured when the server
@@ -179,6 +190,9 @@ class OpenAICompatibleClient:
                     raise LLMCallError(f"{type(exc).__name__}: {exc}") from exc
                 await asyncio.sleep(self._wait(broken))
                 broken += 1
+            except openai.BadRequestError as exc:
+                refused = LLMContextOverflowError if OVERFLOW.search(exc.message) else LLMCallError
+                raise refused(f"{type(exc).__name__}: {exc}") from exc
             except openai.OpenAIError as exc:
                 raise LLMCallError(f"{type(exc).__name__}: {exc}") from exc
 

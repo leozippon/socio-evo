@@ -180,6 +180,11 @@ class LLMCallError(LLMError):
     answered with an error. Nothing a caller can retry fixes it."""
 
 
+class LLMContextOverflowError(LLMCallError):
+    """The backend refused the request because its messages do not fit the model's context
+    window; asked again as it stands, it is refused again."""
+
+
 class LLMBusyError(LLMError):
     """The backend gave no reply in time: it kept rejecting the call as rate-limited, or the
     call kept timing out, through every retry the client allows. To the caller this is one

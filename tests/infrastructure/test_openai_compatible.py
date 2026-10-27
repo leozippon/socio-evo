@@ -12,6 +12,7 @@ from infrastructure.llm import (
     LLMCallError,
     LLMConfig,
     LLMConfigError,
+    LLMContextOverflowError,
     LLMRequest,
     Message,
     OpenAICompatibleClient,
@@ -179,6 +180,34 @@ async def test_any_other_failure_is_final_after_at_most_two_quick_retries(
     received, handler = _refusing(failure, failure)
     if calls > 1:  # a dropped connection or a passing server error is not the server gone
         assert (await _client(monkeypatch, handler).complete(_request())).text == "{}"
+
+
+async def test_a_prompt_longer_than_the_window_is_refused_at_once_as_an_overflow(monkeypatch):
+    refusal = {  # what vLLM 0.32 answers a prompt longer than its --max-model-len
+        "error": {
+            "message": "This model's maximum context length is 262144 tokens. However, your "
+            "prompt contains 270000 input tokens, which exceeds this limit even without any "
+            "output tokens. Please reduce the length of the input prompt.",
+            "type": "BadRequestError",
+            "param": "input_tokens",
+            "code": 400,
+        }
+    }
+    received: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        received.append(request)
+        return httpx2.Response(400, json=refusal)
+
+    client = _client(monkeypatch, handler, max_retries=3)
+    with pytest.raises(LLMContextOverflowError, match="maximum context length is 262144"):
+        await client.stream(_request())
+    assert len(received) == 1
+
+    _, other = _refusing(400)  # any other refused request is no overflow
+    with pytest.raises(LLMCallError) as refused:
+        await _client(monkeypatch, other).complete(_request())
+    assert not isinstance(refused.value, LLMContextOverflowError)
 
 
 async def test_replies_cut_off_or_empty_are_returned_for_the_caller_to_judge(monkeypatch):

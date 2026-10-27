@@ -15,6 +15,8 @@ Kinds and their fields:
 - `percept`: the percept's `text`, `percept_kind`, `event_id`, `percept_sim_time`,
   `percept_real_time`;
 - `interruption`: `events`, the ids of the percepts that aborted the reply in flight;
+- `overflow`: `purpose` and `error`, when the server refused a request because its context does
+  not fit the model's window;
 - `compaction`: `id` (the session record), `replaced`, `kept`, `summary`;
 - `lapse`: `purpose` and `errors`, when a request found no usable reply.
 """
@@ -36,6 +38,7 @@ Kind = Literal[
     "tool_result",
     "percept",
     "interruption",
+    "overflow",
     "compaction",
     "lapse",
 ]

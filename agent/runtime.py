@@ -21,9 +21,12 @@ asked for again once at a lower reasoning effort, or, at the lowest, with twice 
 limit; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
 enters the session together with the results of its calls, so that the session never holds a
 call without its result. A model error is retried; when the attempts run out the request is a
-lapse, logged as a warning, and the runtime waits for the next percept. A run of lapses ends
-the loop with an error, so that a model that has gone away stops the run instead of letting
-the town live on without its residents; any other error ends it at once, as cancellation does.
+lapse, logged as a warning, and the runtime waits for the next percept. A request refused
+because the context does not fit the model's window is not asked again as it stands: the
+runtime compacts and asks for the step once more, a second refusal being a lapse. A run of
+lapses ends the loop with an error, so that a model that has gone away stops the run instead of
+letting the town live on without its residents; any other error ends it at once, as
+cancellation does.
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ import itertools
 import json
 import logging
 import re
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Literal
 
@@ -47,6 +50,7 @@ from agent.session import Session
 from agent.trace import Trace
 from infrastructure.config import StrictModel, is_record
 from infrastructure.llm import (
+    LLMContextOverflowError,
     LLMError,
     LLMRequest,
     LLMResponse,
@@ -221,17 +225,26 @@ class Runtime:
         return False
 
     async def _reply(self) -> LLMResponse | None:
-        """The reply to the context as it stands, after any interruptions and at most one
-        cut-off; None after a lapse."""
+        """The reply to the context as it stands, after any interruptions, at most one cut-off
+        and at most one compaction of a context the model's window refused; None after a
+        lapse, which a second refusal is."""
         effort, limit = self._config.reasoning_effort, self._config.reply_max_tokens
         attempts = itertools.count(1)
-        retried = False
+        retried = compacted = False
         while True:
             messages, ids = self._context()
             request = self._request(messages, effort, limit)
-            reply = await self._ask(
-                request, ids, attempts, purpose="step", abort=self._port.interrupt
-            )
+            try:
+                reply = await self._ask(
+                    request, ids, attempts, purpose="step", abort=self._port.interrupt
+                )
+            except LLMContextOverflowError as error:
+                if compacted:
+                    self._lapse("step", [_describe(error)])
+                    return None
+                compacted = True
+                await self._compact()
+                continue
             if reply is None:
                 return None
             if reply.aborted:
@@ -247,16 +260,24 @@ class Runtime:
             return reply
 
     async def _compact(self) -> None:
-        """Replace the context by the resident's notes and the last exchanges. Notes cut off
-        (asked for again as `again` says) or with a `flaw` are asked for once more; a second
+        """Replace the context by the resident's notes and the exchanges kept whole. Notes cut
+        off (asked for again as `again` says) or with a `flaw` are asked for once more; so are
+        notes refused because the context does not fit the model's window, then from only the
+        messages they replace, since the exchanges kept whole follow them as they are. A second
         failure is a lapse, and the context stays as it is."""
+        keep = kept(self._session.context(), self._config.kept_tokens)
         messages, ids = self._context()
         effort, limit = self._config.reasoning_effort, self._config.summary_max_tokens
         attempts = itertools.count(1)
         failures: list[str] = []
         for _ in range(2):
             request = self._request((*messages, INSTRUCTION), effort, limit, tool_choice="none")
-            reply = await self._ask(request, ids, attempts, purpose="compaction")
+            try:
+                reply = await self._ask(request, ids, attempts, purpose="compaction")
+            except LLMContextOverflowError as error:
+                failures.append(_describe(error))
+                messages, ids = self._context(only=self._session.replaced(keep))
+                continue
             if reply is None:
                 return
             failure = "cut off" if reply.truncated else flaw(reply.text)
@@ -269,7 +290,6 @@ class Runtime:
             self._lapse("compaction", failures)
             return
         summary = reply.text.strip()
-        keep = kept(self._session.context(), self._config.kept_tokens)
         record = self._session.compact(summary, keep)
         self._trace.write(
             "compaction", id=record.id, replaced=list(record.replaced), kept=keep, summary=summary
@@ -285,9 +305,11 @@ class Runtime:
         abort: asyncio.Event | None = None,
     ) -> LLMResponse | None:
         """The model's reply to `request`, traced with it, or None, after a lapse, when every
-        attempt failed; `attempts` numbers the requests made for one reply in the trace. The
-        resident is busy throughout, the waits between attempts included, so that the world's
-        clock does not idle while the model is down."""
+        attempt failed; `attempts` numbers the requests made for one reply in the trace. A
+        request refused because the context does not fit the model's window is traced and its
+        error raised at once, since it would be refused again. The resident is busy throughout,
+        the waits between attempts included, so that the world's clock does not idle while the
+        model is down."""
         errors = []
         with self._busy():
             for tried in range(self._config.model_attempts):
@@ -304,6 +326,9 @@ class Runtime:
                 )
                 try:
                     reply = await self._client.stream(request, abort=abort)
+                except LLMContextOverflowError as error:
+                    self._trace.write("overflow", purpose=purpose, error=_describe(error))
+                    raise
                 except LLMError as error:
                     errors.append(_describe(error))
                     continue
@@ -397,9 +422,12 @@ class Runtime:
             )
         return "\n\n".join(percept.text for percept in percepts)
 
-    def _context(self) -> tuple[tuple[Message, ...], list[int]]:
-        """The messages of the next request, and the session ids of all but the first."""
-        entries = self._session.context()
+    def _context(
+        self, only: Collection[int] | None = None
+    ) -> tuple[tuple[Message, ...], list[int]]:
+        """The messages of the next request, or of those of them whose ids are in `only`, and
+        the session ids of all but the first."""
+        entries = [e for e in self._session.context() if only is None or e.id in only]
         system = Message(role="system", content=self._system_prompt())
         return (system, *(entry.message for entry in entries)), [entry.id for entry in entries]
 
