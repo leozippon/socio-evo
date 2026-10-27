@@ -573,8 +573,10 @@ async def test_situation_says_what_applies_now(make_town):
     assert "You have nothing of your own yet." in situation  # told at home
     assert situation.endswith(
         "What you can do now: help, look_around, how_am_i, go, wait, sleep, start_work, "
-        "view_board, say, buy, move_in, message."
-    )
+        "view_board, say, buy, move_in."
+    )  # nothing to write with, so no message
+    town.world.residents["Mei"].living.things["phone"] = 1
+    assert port.situation().endswith("say, buy, move_in, message.")
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()
     assert port.sim_time() == at("07:00")

@@ -1266,7 +1266,14 @@ class World:
         elif isinstance(r.base, Movement):
             parts.append("There is nothing to do until you arrive.")
         else:
-            usable = [spec.name for spec in self.tool_specs if spec.name in event.tools]
+            writes = any(
+                r.living.things.get(good.id) for good in self.for_sale if good.effect == "messaging"
+            )  # message is of use only to one who has something to write with
+            usable = [
+                spec.name
+                for spec in self.tool_specs
+                if spec.name in event.tools and (spec.name != "message" or writes)
+            ]
             files = ", and see to your files" if isinstance(event, Sleep) else ""
             parts.append(f"What you can do now: {', '.join(usable)}{files}.")
         return " ".join(parts)
