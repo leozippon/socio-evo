@@ -98,9 +98,13 @@ def test_work_still_open_when_the_day_closed_is_an_error():
         world_measures(Day(4, (entry,), None, 0.0), "Mei")
 
 
-def test_the_command_writes_csv_and_json_into_the_run(run_dir):
-    main([str(run_dir)])
-    out = run_dir / "analysis"
+def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run(run_dir, tmp_path):
+    before = sorted(run_dir.rglob("*"))
+    with pytest.raises(SystemExit):
+        main([str(run_dir)])  # no default place, the run least of all
+    out = tmp_path / "results" / "c" / "measures"
+    main([str(run_dir), "--out", str(out)])
+    assert sorted(run_dir.rglob("*")) == before
     with (out / "measures.csv").open() as file:
         table = list(csv.DictReader(file))
     assert len(table) == 6 and table[0]["resident"] == "Mei" and table[0]["earned"] == "20"

@@ -1,14 +1,15 @@
 """The measures of a run, per resident and lived day, from the world log and the residents'
 traces, with their daily totals and means.
 
-    python -m analysis.measures RUN_DIR [--out DIR]
+    python -m analysis.measures RUN_DIR --out DIR
 
-DIR (by default RUN_DIR/analysis) receives `measures.csv` and `measures.json`, one row per
-resident and lived day with `resident`, `day`, `date` and every measure of `MEASURES`, and
-`daily.csv` and `daily.json`, one row per day and measure with the total over the residents (for
-counts and amounts) and the mean over the residents that have a value. They are derived from
-the run alone and replace what is there. The days are those the world log has closed
-(`evaluation.records`), so a day lost to an interruption counts once, as it was lived again.
+DIR receives `measures.csv` and `measures.json`, one row per resident and lived day with
+`resident`, `day`, `date` and every measure of `MEASURES`, and `daily.csv` and `daily.json`, one
+row per day and measure with the total over the residents (for counts and amounts) and the mean
+over the residents that have a value. They are derived from the run alone and replace what is
+there; DIR is given explicitly (by convention `results/<run>/measures`), since analysis writes
+nothing under the run. The days are those the world log has closed (`evaluation.records`), so a
+day lost to an interruption counts once, as it was lived again.
 
 A measure is None where it has no value: the mean of no ratings, or a cached share that no
 reply reported.
@@ -231,18 +232,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         prog="python -m analysis.measures", description=__doc__.split("\n\n")[0]
     )
     parser.add_argument("run", type=Path, help="the run directory")
-    parser.add_argument("--out", type=Path, help="where to write (default: RUN/analysis)")
+    parser.add_argument("--out", type=Path, required=True, help="where to write")
     args = parser.parse_args(argv)
-    out = args.out or args.run / "analysis"
     rows = measure(args.run)
     if not rows:
         parser.error(f"{args.run} has no lived day closed by a checkpoint")
-    out.mkdir(parents=True, exist_ok=True)
-    write(rows, out / "measures")
-    write(daily(rows), out / "daily")
+    args.out.mkdir(parents=True, exist_ok=True)
+    write(rows, args.out / "measures")
+    write(daily(rows), args.out / "daily")
     days = sorted({row["day"] for row in rows})
     residents = len({row["resident"] for row in rows})
-    print(f"{residents} residents, days {days[0]} to {days[-1]}: written to {out}")
+    print(f"{residents} residents, days {days[0]} to {days[-1]}: written to {args.out}")
 
 
 if __name__ == "__main__":
