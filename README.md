@@ -2,7 +2,7 @@
 
 socio-evo is a long-term multi-agent society simulation. It asks whether social interaction and social selection pressure can shape stable character traits in self-evolving LLM agents: honesty, cooperation, reliability and resistance to reward hacking.
 
-Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live four weeks in a small town in real time. They take paid SWE-bench Verified jobs in containers, talk, hand each other money and skills, rate one another anonymously, write a journal every night and rewrite their own files. Nobody tells them to have any trait. Four groups differ only in social life: alone, an evening exchange of work experience, free social life, and free social life without the right to rewrite skills. Capability, the honesty of each resident's journal about its own day, and honesty under pressure on MASK scenarios are measured on exported snapshots. The design is in [docs/summary.md](docs/summary.md), [docs/experimental-design.md](docs/experimental-design.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live four weeks in a small town in real time. They take paid SWE-bench jobs in containers, talk, hand each other money and skills, rate one another anonymously, write a journal every night and rewrite their own files. Nobody tells them to have any trait. Four groups differ only in social life: alone, an evening exchange of work experience, free social life, and free social life without the right to rewrite skills. Capability, the honesty of each resident's journal about its own day, and honesty under pressure on MASK scenarios are measured on exported snapshots. The design is in [docs/summary.md](docs/summary.md), [docs/experimental-design.md](docs/experimental-design.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Install
 
@@ -80,7 +80,7 @@ python -m analysis.compare --group A=results/a/journals --group C=results/c/jour
 | `agent/` | The runtime: session, loop, tools over the resident's files, compaction, trace, and the contract with the world |
 | `world/` | Clock, town with its homes and goods, events, board, economy, ratings, world log, the solo port for evaluation |
 | `simulation/` | Running one town, checkpoints and resumption, the dry run |
-| `tasks/swebench/` | SWE-bench Verified: splits, images, workspaces, acceptance |
+| `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
 | `evaluation/` | Judge, MASK, journal distortion, capability harness, day records |
 | `analysis/` | Measures and group statistics |
 | `experiments/` | Configurations, resident backgrounds, run and export commands |
