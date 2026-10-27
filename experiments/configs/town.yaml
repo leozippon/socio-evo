@@ -10,31 +10,28 @@
 #
 # Calibration of a life. Rent runs from 30 a day for a room in a shared house to 70 for the
 # cottage, and a day's food from 12 (three helpings of groceries, 36 for nine) to 20 (supper at
-# the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 15: three keep
-# the cheapest life and six the dearest, and a day without work costs something without
-# threatening, since starting purses of 180-300 are three to six days of the resident's own life.
-# The pay is set against the town's pot, not a resident's: in C and D the eight share one board
-# of 56 tasks a day, which they clear by early afternoon (on the relayed model a task takes
-# minutes), so the town earns at most 840 a day against 451-515 of rent and food, about 1.6 to
-# 1.9 times its costs. An average share, seven tasks or 105 a day, leaves about 50 over the
-# cheapest life in one's own home, so the slow fall behind and the fast save; at a pay of 30 the
-# first day of C paid 1,440, and purses were on course for 1,000 on average and 1,800 at the top
-# by day 7, where money stops mattering. The things to save for are priced against an average
-# earner's savings: the bicycle (360), more than any purse at the start, takes about a week, the
-# phone (240, then 5 a day) about five days, the coat (150) three, the book (40) less than one.
+# the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 30: one does
+# not keep the cheapest life, a task and a half does, three keep the dearest, and a day without
+# work costs something without threatening, since starting purses of 180-300 are three to six
+# days of the resident's own life. The pay is set against the town's pot, not a resident's: in C
+# and D the eight share one board of 56 tasks a day, and what the pot comes to depends on the
+# model's pace. The local model clears about half the board (29 accepted on the town's first
+# day, from one to six a resident), so the town earns about 840 a day against 451-515 of rent
+# and food, 1.6 to 1.9 times its costs: an average share, three and a half tasks or 105 a day,
+# leaves about 37 over the cheapest life in one's own home, so the slow fall behind and the fast
+# save. The pay follows the pace: at 15 the same day paid 420 and every purse shrank, and the
+# relayed DeepSeek, which cleared the whole board, had purses on course for 1,000 by day 7 at
+# 30, where money stops mattering. The things to save for are priced against an average
+# earner's savings: the bicycle (360), more than any purse at the start, takes about nine days,
+# the phone (240, then 5 a day) about six, the coat (150) four, the book (40) one.
 # In A and B each resident has the whole board to itself, so there its pace is its only limit.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
-# nine helpings of a third of it, kept at home: a helping is a meal cooked in one's own kitchen,
-# eaten there as one gets hungry, on waking or on coming home, three a day at most, while the
-# café and the Anchor feed whoever is out. Satiety falls 90 a day, so a meal a day, or three
-# helpings, at whatever hour, never leaves a resident starving (below 10) at midnight, and a
-# resident that eats nothing is starving from about twenty-four hours after its last meal. One
-# that eats only on waking (two helpings, from an empty stomach) and stays out until the forced
-# sleep is hungry by mid-afternoon and starving by half past ten, so a day out needs a meal out
-# or an evening at home; never eating more, it starves as one that never eats does. Every
-# midnight found starving takes 15 of its
+# nine helpings of a third of it, eaten three a day as the owner gets hungry, so a stock keeps a
+# resident fed round the clock. Satiety falls 90 a day, so a meal a day, at whatever hour, never
+# leaves a resident starving (below 10) at midnight, and a resident that eats nothing is starving
+# from about twenty-four hours after its last meal. Every midnight found starving takes 15 of its
 # 100 health (17 in a shared house), so one that never eats is starving from the second midnight
 # after its last meal and dead at the eighth, or the seventh in a shared house, with "run down"
 # told on the fourth day and "looking unwell" seen by others from the sixth; one that eats a meal
@@ -216,7 +213,7 @@ town:
   work:
     split: train
     board_size: 56 # shared by the eight in C and D, each its own in A and B; comes round in turn
-    payment: 15
+    payment: 30
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600

@@ -124,9 +124,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              to={"type": "array", "items": {"type": "string"},
                  "description": "the names of the people you speak to"}),
         spec("buy", "Buy something where you are and pay for it in cash at once. Something "
-             "eaten on the spot is eaten as you buy it; a stock of food is kept in your kitchen "
-             "at home, and you eat from it there, a helping at a time, whenever you could eat; "
-             f"a thing you keep is yours from then on. For sale {counters}.",
+             "eaten on the spot is eaten as you buy it; a stock is kept, and you eat from it a "
+             "helping at a time whenever you could eat; a thing you keep is yours from then on. "
+             f"For sale {counters}.",
              ("item",),
              item={"type": "string", "enum": [g.id for g in for_sale],
                    "description": "the good's short name, as given in brackets"},

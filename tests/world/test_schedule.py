@@ -315,10 +315,8 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["residents"]["Mei"]["unread_ratings"] == [[3, "Busy all day."]]
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
     mei_living = state["residents"]["Mei"]["living"]
-    # Away from home all day 1, Mei ate none of her groceries until she came home after
-    # midnight, hungry, and ate two helpings in her kitchen.
-    assert mei_living["things"] == {"groceries": 7, "coat": 1}
-    assert mei_living["eaten"] == {"groceries": 2}
+    # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today.
+    assert mei_living["things"] == {"groceries": 7, "coat": 1} and mei_living["eaten"] == {}
     assert set(mei_living) == {"things", "eaten", "satiety", "energy", "health", "night"}
     assert mei_living["health"] == 100 and mei_living["night"] == {
         "poor_home": -2,

@@ -351,9 +351,8 @@ class Rules:
             if good.kind == "consumable":
                 assert good.per_day is not None
                 text += (
-                    f" {cap(good.name)}: kept in your kitchen at home and eaten only there, a "
-                    "helping cooked at a time when you wake at home or get hungry there, at most "
-                    f"{counted(good.per_day, 'helping')} a day."
+                    f" {cap(good.name)}: kept in stock and eaten a helping at a time whenever "
+                    f"you could eat, at most {counted(good.per_day, 'helping')} a day."
                 )
         for good in for_sale:
             if good.effect == "travel":
