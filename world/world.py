@@ -1311,8 +1311,8 @@ class World:
                 r.living.things.get(good.id) for good in self.for_sale if good.effect == "messaging"
             ):
                 useless.add("message")  # nothing to write with
-            if r.place != self.config.workplace.id:  # the board and the work are there
-                useless |= {"view_board", "claim_task", *TASK_TOOLS}
+            if r.place != self.config.workplace.id:
+                useless |= {"view_board", "claim_task"}  # the board hangs at the workplace
             if r.name not in self.board.claims:
                 useless |= TASK_TOOLS
             usable = [spec.name for spec in self.tool_specs if spec.name in r.tools - useless]

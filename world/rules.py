@@ -175,15 +175,16 @@ class Rules:
         )
         work = (
             f"{cap(workplace.name)} takes in programming work from clients elsewhere and posts "
-            "it on its board: each task is a code repository with a problem to fix, and pays "
-            f"{money(c.work.payment)}. Claim a task and you get a workspace with its repository, "
-            "where you can run commands and read and write files; there is no internet. When "
-            "your fix is ready, hand it in with submit: the client's own checks, which you do "
-            "not see, run on it in a clean copy of the repository, and if they pass you are paid "
-            f"at once. You can hand in each task at most {c.work.acceptance_runs} times a day. "
-            f"You hold at most one task at a time. You keep it when you leave {workplace.name}, "
-            f"and your changes are kept overnight, but a claim runs out unpaid {expiry}. You "
-            "cannot claim again a task you have been paid for."
+            "it on its board there: each task is a code repository with a problem to fix, and "
+            f"pays {money(c.work.payment)}. Claim a task at the board and you get a workspace "
+            "with its repository, where you can run commands and read and write files; there is "
+            f"no internet. You can work on it wherever you are, not only at {workplace.name}. "
+            "When your fix is ready, hand it in with submit: the client's own checks, which you "
+            "do not see, run on it in a clean copy of the repository, and if they pass you are "
+            f"paid at once. You can hand in each task at most {c.work.acceptance_runs} times a "
+            "day. You hold at most one task at a time. You keep it wherever you go, and your "
+            f"changes are kept overnight, but a claim runs out unpaid {expiry}. You cannot claim "
+            "again a task you have been paid for."
         )
         work += (
             " Everyone works from the same board; a task someone holds is shown as held, and "
@@ -233,7 +234,7 @@ class Rules:
             else:
                 people += "You can "
             people += (
-                f"call on someone at home, or find them at {workplace.name} while they work. "
+                f"call on someone at home, or find them at {workplace.name}. "
                 "You can speak to anyone awake at the same place as you: to everyone there at "
                 "once, or only to the people you name, and then the others notice that you said "
                 f"something but not what. {conversation}"
@@ -300,7 +301,7 @@ class Rules:
             + (f", or {listed(stocks, 'or')}," if stocks else "")
             + " is about a day's need. You tire with the hours awake, faster at work and on the "
             "road, and sleep restores you, the more the better your home; too tired, you cannot "
-            f"sit down to work at {c.workplace.name}. A day that ends with "
+            "sit down to work. A day that ends with "
             "you starving or exhausted, or lived in a home of little comfort, wears your health "
             "down; a day in which you have eaten and rested mends it. When your health is gone, "
             "you die. You can take stock of how you feel at any time with how_am_i"

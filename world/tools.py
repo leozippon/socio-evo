@@ -103,7 +103,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "first line of its problem and its pay, and whether it is held or already paid to "
              "you. If you hold a task, its whole problem is shown too."),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
-             "it. You get a workspace with its repository and read the whole problem.", ("task",),
+             "it. You get a workspace with its repository and read the whole problem; you can "
+             "work in it wherever you are.", ("task",),
              task=_number("the task's number on the board", 1)),
         *WORKSPACE_SPECS,
         spec("submit", "Hand in your fix for the task you hold. The client's checks run on it "
@@ -112,8 +113,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "Each task can be handed in only a few times a day."),
         spec("abandon_task", "Give up the task you hold. Its changes are thrown away and you "
              "are not paid."),
-        spec("leave_work", f"Stop working for now. You stay at {workplace} and keep your task "
-             "and its changes."),
+        spec("leave_work", "Stop working for now. You stay where you are and keep your task and "
+             "its changes."),
         spec("say", "Speak where you are. Without `to`, everyone awake here hears you; with "
              "`to`, only the people you name, and the others notice only that you said "
              "something to them.", ("text",), text=_text("what you say"),
@@ -315,13 +316,10 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 
 def _sit_down(world: World, r: Resident) -> str | ToolResult:
-    """`r` sits down to work at the workplace, unless it is at work already: what it is told
-    of it, with the hour, or nothing; or the refusal of one elsewhere or too tired to work."""
+    """`r` sits down to work where it is, unless it is at work already: what it is told of
+    it, with the hour, or nothing; or the refusal of one too tired to work."""
     if isinstance(r.base, Work):
         return ""
-    workplace = world.config.workplace
-    if r.place != workplace.id:
-        return ToolResult(f"You can work only at {workplace.name}.")
     world.reckon(r)
     if world.body.lowest("energy", r.living.energy):
         return ToolResult("You are too tired to sit down to work; sleep first.")

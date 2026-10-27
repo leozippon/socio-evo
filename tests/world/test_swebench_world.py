@@ -1,6 +1,6 @@
 """The world through a real workspace: a claim, commands and files in the container, the night's
-closing with the changes kept, their reapplication the next morning, and an official verdict.
-Skipped unless `tasks.swebench` imports, Docker runs and the task's image is pulled."""
+closing with the changes kept, their reapplication the next morning at home, and an official
+verdict. Skipped unless `tasks.swebench` imports, Docker runs and the task's image is pulled."""
 
 from __future__ import annotations
 
@@ -71,11 +71,9 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         assert town.world.board.workspaces == {}
         assert "+kept" in town.world.board.claims["Mei"].diff
 
-        await town.until("09:00", day=2)
-        await town.call("Mei", "go", place="workshop")
-        await town.until("09:10", day=2)
+        await town.until("09:00", day=2)  # at home: the workspace opens again where she is
         reopened = await town.call("Mei", "read_repo_file", path="probe_note.txt")
-        assert reopened.text == "You sat down to work. It is 09:10.\nkept\n"
+        assert reopened.text == "You sat down to work. It is 09:00.\nkept\n"
         verdict = await town.call("Mei", "submit")
         assert verdict.text.startswith("Not accepted: ")
         assert "test_" not in verdict.text and "::" not in verdict.text

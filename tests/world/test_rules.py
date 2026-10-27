@@ -51,11 +51,11 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
         "Through the day you get hungry, and what you eat restores you: a meal, or 3 helpings of "
         "groceries, is about a day's need. You tire with the hours awake, faster at work and on "
         "the road, and sleep restores you, the more the better your home; too tired, you cannot "
-        "sit down to work at the workshop. A day that ends with you starving or exhausted, or "
-        "lived in a home of little comfort, wears your health down; a day in which you have "
-        "eaten and rested mends it. When your health is gone, you die. You can take stock of how "
-        "you feel at any time with how_am_i, and at the clinic an examination tells you exactly "
-        "how you stand and treatment restores your health."
+        "sit down to work. A day that ends with you starving or exhausted, or lived in a home of "
+        "little comfort, wears your health down; a day in which you have eaten and rested mends "
+        "it. When your health is gone, you die. You can take stock of how you feel at any time "
+        "with how_am_i, and at the clinic an examination tells you exactly how you stand and "
+        "treatment restores your health."
     )
     assert "phone" not in Rules(town_config("isolated")).sections("Mei")["shopping"]
     moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha"]}
@@ -70,8 +70,10 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert (
         "People run into one another at the café on the square, the park, the store and the clinic"
     ) in people
-    assert "call on someone at home, or find them at the workshop while they work" in people
+    assert "call on someone at home, or find them at the workshop." in people
     assert "pays $20" in sections["work"] and "the client's own checks" in sections["work"]
+    assert "posts it on its board there" in sections["work"]
+    assert "You can work on it wherever you are, not only at the workshop." in sections["work"]
     assert rules.help("Mei", "Money") == sections["money"]
     assert rules.help("Mei", "weather") == f"You can ask about: {', '.join(TOPICS)}."
     text = rules.text("Mei")

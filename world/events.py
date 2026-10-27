@@ -4,8 +4,8 @@ A resident is always in exactly one event. Its base event is Idle, Movement, Wor
 Dead once its health has run out, from which nothing brings it back; a Conversation sits on top
 of the Idle or Work it found the resident in and adds its own actions to that event's, so that
 someone spoken to at work can go on working, and leaving the conversation leaves the event
-underneath as it is. Work is entered by claiming a task or acting in its workspace at the
-workplace. One leaves by doing something else: `go` and `sleep` leave a conversation and work
+underneath as it is. Work is entered by claiming a task or acting in its workspace, wherever the
+resident is. One leaves by doing something else: `go` and `sleep` leave a conversation and work
 on their own; waiting in a conversation is listening, and leaves it standing. A
 Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
