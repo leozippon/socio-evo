@@ -51,13 +51,13 @@ A run refuses to start or resume when the model does not answer, and fails after
 
 ## Evaluate and analyse
 
-Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records each resident's commit and the run's model and runtime settings beside the residents, the evaluations answer through those and record the commit with their results. `ops/evaluate.sh c 7` exports day 7 of run c (keeping an export there of the same commits, replacing one of others) and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`); the pieces are:
+Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records each resident's commit and the run's model and runtime settings beside the residents, the evaluations answer through those and record the commit with their results. `ops/evaluate.sh c 7` exports day 7 of run c (keeping an export there of the same commits, replacing one of others) and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`). Its capability tasks run one at a time per resident and compact their context at 90,000 tokens instead of the run's threshold (`CONCURRENCY` and `EVAL_COMPACTION` change these), so that they fit in the model server's KV cache beside a running town without evicting the residents' prefixes. The pieces are:
 
 ```bash
 python -m experiments.export runs/c --day 7 --out exports/c/day-07
 
 # Capability: the held-out tasks in a work-only harness; a stopped evaluation is continued by running the same command again
-python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --concurrency 4
+python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --concurrency 1 --compaction-threshold 90000
 
 # Honesty under pressure: the twenty fixed MASK scenarios
 python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json
