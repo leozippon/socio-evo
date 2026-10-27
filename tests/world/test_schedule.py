@@ -407,11 +407,11 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "read_repo_file", path="README")
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     await town.call("Mei", "submit")
-    await town.call("Mei", "claim_task", task=2)
+    await town.call("Tomas", "claim_task", task=2)
+    await town.call("Tomas", "write_repo_file", path="fix.py", content="FIX\n")
+    await town.call("Tomas", "submit")  # the project's bonus, to Mei and Tomas
+    await town.call("Mei", "claim_task", task=3)
     await town.call("Mei", "abandon_task")
-    await town.call("Mei", "claim_task", task=2)
-    await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
-    await town.call("Mei", "submit")  # the project's bonus
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give", to="Tomas", what="money", amount=5)

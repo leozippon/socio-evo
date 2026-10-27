@@ -30,9 +30,11 @@ A shared board may also group tasks into clients' projects (`projects_a_day` of 
 for two and those of a project still running left out, and the first repository to reach
 `project_size` of them makes a project of those, the next another, until there are
 `projects_a_day`; a repository makes one at most. Each task of a project is claimed, worked and
-paid as any other; the project records who was paid for each (`paid_for`) and is over once all
-are, or lapses at the midnight that ends the calendar day `claim_expiry_days` days after the day
-it was posted (`lapse`), the same midnight as a claim made that day.
+paid as any other, except that the client wants a different person on each: one who has been
+paid for a task of a project cannot claim another of it, and one holds a single task at a time.
+The project records who was paid for each (`paid_for`) and is over once all are, or lapses at the
+midnight that ends the calendar day `claim_expiry_days` days after the day it was posted
+(`lapse`), the same midnight as a claim made that day.
 
 A claim opens a workspace once it is ready; the two of a pair share it. When nobody holds a
 claim any more, by acceptance or abandonment, its workspace is closed at once; when it runs out,
@@ -297,6 +299,13 @@ class Board:
             return f"You already hold task {self.claims[name].task}; submit it or give it up first."
         if number in self.done[name]:
             return f"You have already been paid for task {number}."
+        project = self.project(number)
+        mine = [n for n, payee in project.paid.items() if payee == name] if project else []
+        if mine:  # one task of a project a resident, held (above) or paid for
+            return (
+                f"Task {number} is of the same client's project as task {mine[0]}, which you were "
+                "paid for; the client wants a different person on each of its tasks."
+            )
         other = self.taken(name, number)
         if other is not None and self.ready(other):
             return f"Task {number} is held by someone else."

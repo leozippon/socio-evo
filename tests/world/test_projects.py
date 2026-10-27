@@ -121,22 +121,22 @@ async def test_three_paid_for_a_project_each_receive_its_bonus(make_town):
         ]
     )
 
-    # A task of the project given up and claimed by someone else is the project's all the same.
+    # One who gives a task of the project up may take another of it.
     await town_.call("Tomas", "claim_task", task=c)
     await town_.call("Tomas", "abandon_task")
-    for name, number in (("Mei", a), ("Tomas", b), ("Aisha", c)):
+    for name, number in (("Mei", a), ("Tomas", b)):
         claimed = (await town_.call(name, "claim_task", task=number)).text
         assert f"claimed task {number}, in org/big; your workspace is ready." in claimed
     situation = world.ports["Mei"].situation()
     assert (
         f"You hold task {a} (org/big), part of a client's project due by the end of Tuesday 2 "
-        f"January, with task {b} held by Tomas and task {c} held by Aisha." in situation
+        f"January, with task {b} held by Tomas and task {c} held by nobody." in situation
     )
     texts += [situation, (await town_.call("Mei", "view_board")).text]
     assert texts[-1].endswith(
         f"{a}. org/big: Problem {a} goes wrong. Pays $20. You hold it.\n"
         f"{b}. org/big: Problem {b} goes wrong. Pays $20. Held by Tomas.\n"
-        f"{c}. org/big: Problem {c} goes wrong. Pays $20. Held by Aisha.\n\n"
+        f"{c}. org/big: Problem {c} goes wrong. Pays $20.\n\n"
         f"The problem of task {a}, which you hold:\n\nProblem {a} goes wrong.\nDetails of {a}."
     )
 
@@ -148,6 +148,17 @@ async def test_three_paid_for_a_project_each_receive_its_bonus(make_town):
     assert (await town_.call("Mei", "claim_task", task=a)).text == (
         f"Task {a} has been accepted from you."
     )
+
+    # The client wants a different person on each task: one paid for a task of it takes no other,
+    # which a task given up by one and claimed by another still is.
+    refused = (await town_.call("Mei", "claim_task", task=c)).text
+    assert refused == (
+        f"Task {c} is of the same client's project as task {a}, which you were paid for; the "
+        "client wants a different person on each of its tasks."
+    )
+    assert board.claims.keys() == {"Tomas"}
+    await town_.call("Aisha", "claim_task", task=c)
+    texts.append(refused)
     texts.append((await town_.call("Tomas", "view_board")).text)
     assert f"\n{a}. org/big: Problem {a} goes wrong. Accepted from Mei.\n" in texts[-1]
     assert (await fix(town_, "Tomas")).startswith("Accepted. You were paid $20. Your purse")
@@ -260,9 +271,9 @@ async def test_the_checkpoint_keeps_the_projects_and_a_resumed_town_completes_th
 def test_the_rules_and_the_board_tell_of_projects_only_where_there_are_any():
     sentences = (
         "Some clients bring a project of 3 tasks in one repository, listed together on the "
-        "board, each claimed, handed in and paid like any other task. If all 3 are accepted by "
-        "the second midnight after the project was posted, everyone paid for one of them also "
-        "receives a bonus of $10."
+        "board, and want a different person on each, who claims, hands in and is paid for it "
+        "like any other task. If all 3 are accepted by the second midnight after the project "
+        "was posted, each of the 3 people paid for them also receives a bonus of $10."
     )
     assert Rules(town_config(**PROJECTS)).help("Mei", "work").endswith(sentences)
     board = {spec.name: spec.description for spec in specs(town_config(**PROJECTS))}["view_board"]

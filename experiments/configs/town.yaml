@@ -40,14 +40,15 @@
 # of one repository: of the repositories with three tasks not for two on it, the two whose third
 # comes round first in the rotation (on the training pool two every day of the four weeks, most
 # of them in django and sympy, whose tasks are the most numerous). Each task is claimed and paid
-# as any other; once all three are accepted by the second midnight after the board went up, the
-# midnight a claim of that day runs out at, each resident paid for one of them receives a bonus
-# of 30. A project done by three people pays 90 in bonuses, by one who does all three 30, so the
-# two add at most 180 to a day's pot: 2,560 for a cleared board against 2,380, and at most a
-# fifth more than the 840 the town earns at the local model's pace; a project whose last task is
-# not accepted in time adds nothing. To each of the three the bonus doubles the pay of its own
-# task, but only if the other two are accepted in time, which none of them decides alone. A and
-# B, where each resident has a board of its own, have no projects.
+# as any other, but the client wants a different person on each: one paid for a task of a
+# project cannot claim another of it. Once all three are accepted by the second midnight after
+# the board went up, the midnight a claim of that day runs out at, each of the three paid for
+# them receives a bonus of 30, so a project pays 90 in bonuses and the two add at most 180 to a
+# day's pot: 2,560 for a cleared board against 2,380, and at most a fifth more than the 840 the
+# town earns at the local model's pace; a project whose last task is not accepted in time adds
+# nothing. To each of the three the bonus doubles the pay of its own task, but only if the other
+# two are accepted in time, which none of them decides alone. A and B, where each resident has a
+# board of its own, have no projects.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are

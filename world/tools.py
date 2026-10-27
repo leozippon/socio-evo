@@ -651,7 +651,7 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
 
 def _bonus(world: World, r: Resident, project: Project) -> str:
     """Pay the bonus of `project`, which `r` has just completed, to each living resident paid
-    for one of its tasks, once; what `r` is told of it."""
+    for one of its tasks, a different one for each; what `r` is told of it."""
     economy, amount = world.economy, world.config.work.project_bonus
     assert amount is not None
     repo = world.board.task(project.tasks[0]).repo

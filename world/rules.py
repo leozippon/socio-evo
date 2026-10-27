@@ -212,10 +212,10 @@ class Rules:
             )
             work += (
                 f" Some clients bring a project of {counted(c.work.project_size, 'task')} in one "
-                "repository, listed together on the board, each claimed, handed in and paid "
-                f"like any other task. If all {c.work.project_size} are accepted {by}, everyone "
-                "paid for one of them also receives a bonus of "
-                f"{money(c.work.project_bonus)}."
+                "repository, listed together on the board, and want a different person on each, "
+                "who claims, hands in and is paid for it like any other task. If all "
+                f"{c.work.project_size} are accepted {by}, each of the {c.work.project_size} "
+                f"people paid for them also receives a bonus of {money(c.work.project_bonus)}."
             )
 
         assert my_home.rent is not None
