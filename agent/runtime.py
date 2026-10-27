@@ -71,7 +71,7 @@ COMPACT = ToolSpec(
     description=(
         "Stop and write down for yourself what you will want to remember of all that has happened "
         "so far; you then keep those notes and the last few things that happened, and let the "
-        "rest go. Useful when you turn to something new."
+        "rest go."
     ),
     parameters={"type": "object", "properties": {}},
 )
