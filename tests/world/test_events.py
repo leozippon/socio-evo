@@ -463,14 +463,19 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     await town.call("Tomas", "go", place="park")
     await town.until("21:00")
     await town.call("Mei", "sleep", until="09:00", journal="Early night.")
+    await town.call("Aisha", "sleep", until="23:30", journal="A nap before a late night.")
     await town.until("01:59", day=2)
     town.take("Tomas")
+    town.take("Aisha")  # up again since 23:30, her entry for the day written
     await town.until("02:00", day=2)
     tomas, mei = town.world.residents["Tomas"], town.world.residents["Mei"]
     assert tomas.suspended and tomas.place == "college-flat"
     assert town.take("Tomas") == [
         "It is 02:00: you fell asleep without writing a journal entry, and will wake at home "
         "at 07:00."
+    ]
+    assert town.take("Aisha") == [
+        "It is 02:00: you fell asleep without going to bed again, and will wake at home at 07:00."
     ]
     assert mei.suspended
     assert town.take("Mei")[-2:] == [

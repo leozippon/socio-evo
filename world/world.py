@@ -631,11 +631,12 @@ class World:
             self.break_off(r)
             if r.timer is not None:
                 r.timer.cancel()
+            unwritten = "going to bed again" if self.journaled(r) else "writing a journal entry"
             self.record(
                 "forced_sleep",
-                lambda w, r=r: (
-                    f"It is {hour}: {you(r.name, w)} fell asleep without writing a "
-                    f"journal entry, and will wake at home at {clock_time(wake)}."
+                lambda w, r=r, unwritten=unwritten: (
+                    f"It is {hour}: {you(r.name, w)} fell asleep without {unwritten}, and will "
+                    f"wake at home at {clock_time(wake)}."
                 ),
                 actor=r,
                 audience=[r],
@@ -1102,10 +1103,14 @@ class World:
             wake = night + self._checkpoint_hour
         return wake
 
+    def journaled(self, r: Resident) -> bool:
+        """Whether `r` has gone to bed, and so written in its journal, in the day being lived."""
+        return any(kind == "sleep" for _, kind, _, _ in r.day)
+
     def go_to_bed(self, r: Resident, wake: int, journal: str, day: int) -> None:
         """`r` goes to bed with its journal entry written; it hears what it may still do. Going
         to bed again the same day, it hears of ratings only if new ones came."""
-        again = any(kind == "sleep" for _, kind, _, _ in r.day)
+        again = self.journaled(r)
         self._put_to_sleep(r, wake)
         parts = [
             f"You are in bed and will wake at {clock_time(wake)}; your journal entry for "
