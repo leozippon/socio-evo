@@ -72,7 +72,7 @@ WORK_TOOLS = frozenset(
         "leave_work",
     }
 )
-CONVERSATION_TOOLS = frozenset({"share_skill", "leave_conversation"})
+CONVERSATION_TOOLS = frozenset({"share_file", "leave_conversation"})
 TASK_TOOLS = frozenset(
     {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
 )

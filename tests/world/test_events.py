@@ -61,7 +61,7 @@ ARCHITECTURE_TABLE = {
         "wait",
         "leave_work",
     },
-    "conversation": {"share_skill", "leave_conversation"},  # on top of the event
+    "conversation": {"share_file", "leave_conversation"},  # on top of the event
     "sleep": {"look_around", "review_day", "rate", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():

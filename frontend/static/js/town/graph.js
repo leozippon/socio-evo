@@ -10,7 +10,7 @@ const MEASURES = {
   talk: { label: "Talk", note: "Arrows: things said that the other heard; width counts them.", field: "said", pointed: true },
   ratings: { label: "Ratings", note: "Arrows: ratings given at night; width counts them, darker means a higher mean score.", field: "ratings", pointed: true },
   money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", field: "money", pointed: true },
-  skills: { label: "Skills", note: "Arrows: skills passed on; width counts them.", field: "skills", pointed: true },
+  skills: { label: "Files", note: "Arrows: copies of files passed on; width counts them.", field: "skills", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
 const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "skills", "ratings", "ratings_sum"];
@@ -124,7 +124,7 @@ export class TiesPanel {
           said: () => `${fmt.plural(t.said, "thing")} said${t.said_private ? `, ${fmt.int(t.said_private)} privately` : ""}`,
           ratings: () => `${fmt.plural(t.ratings, "rating")}, mean ${fmt.num(t.ratings_sum / t.ratings, 1)}`,
           money: () => `${fmt.money(t.money)} handed over, ${fmt.plural(t.gifts, "time")}`,
-          skills: () => fmt.plural(t.skills, "skill"),
+          skills: () => fmt.plural(t.skills, "file"),
         })[measure.field]();
       for (const t of arrows) {
         const a = pos.get(t.source);

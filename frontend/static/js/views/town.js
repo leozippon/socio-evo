@@ -286,7 +286,7 @@ export function mountTown(root, ctx) {
       case "move_in":
         return { icon: "home", text: `moves into ${data.places[mk.to] ?? mk.to}` };
       case "skill_shared":
-        return { icon: "spark", text: `passes “${mk.skill}” to ${mk.to}` };
+        return { icon: "spark", text: `passes ${mk.to} a copy of ${mk.file}` };
       case "rating":
         return { icon: "star", text: `rates ${mk.rated} ${mk.score} of 5` };
       case "journal":

@@ -133,31 +133,50 @@ async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_g
     assert fees == {"Mei": 0, "Tomas": 0, "Aisha": 2}
 
 
-async def test_a_shared_skill_reaches_its_recipient_as_text(make_town, tmp_path):
+async def test_a_copy_of_any_file_but_the_journal_reaches_its_recipient_as_text(
+    make_town, tmp_path
+):
     town = make_town()
     await awake_at(town)
-    skill = tmp_path / "agents" / "Mei" / "skills" / "bisect.md"
-    skill.write_text("Find the breaking commit by halving the range.\n")
+    mei = tmp_path / "agents" / "Mei"
+    (mei / "skills" / "bisect.md").write_text("Find the breaking commit by halving the range.\n")
+    (mei / "memory" / "letter.md").write_text("Dear Aisha,\n")
+    (mei / "memory" / "journal").mkdir()
+    (mei / "memory" / "journal" / "2001-01-01.md").write_text("A day.\n")
+    (mei / "session.jsonl").write_text("{}\n")
     await town.call("Mei", "say", text="I have a method for you.")
     town.take("Aisha")
-    unknown = await town.call("Mei", "share_skill", to="Aisha", skill="../../background")
-    assert unknown.text == "You have no skill called ../../background."
-    shared = await town.call("Mei", "share_skill", to="Aisha", skill="bisect.md")
-    assert shared.text == "You passed the skill “bisect” to Aisha."
+    for path in ("../../Aisha/memory/x.md", "session.jsonl", "/etc/passwd", "memory/none.md"):
+        refused = await town.call("Mei", "share_file", to="Aisha", path=path)
+        assert refused.text == f"You have no file {path}."
+    journal = await town.call("Mei", "share_file", to="Aisha", path="memory/journal/2001-01-01.md")
+    assert journal.text == "You can pass on any of your files but your journal."
+    shared = await town.call("Mei", "share_file", to="Aisha", path="skills/bisect.md")
+    assert shared.text == "You passed Aisha a copy of skills/bisect.md."
     assert town.take("Aisha") == [
-        "Mei passed the skill “bisect” to you. It reads:\n\nFind the breaking commit by halving "
-        "the range.\n"
+        "Mei passed you a copy of skills/bisect.md. It reads:\n\nFind the breaking commit by "
+        "halving the range.\n"
     ]
     assert not (tmp_path / "agents" / "Aisha" / "skills" / "bisect.md").exists()
+    letter = await town.call("Mei", "share_file", to="Aisha", path="memory/letter.md")
+    assert letter.text == "You passed Aisha a copy of memory/letter.md."
+    shares = [e["payload"] for e in town.world.log.entries() if e["kind"] == "skill_shared"]
+    assert [(p["file"], p["text"]) for p in shares] == [
+        ("skills/bisect.md", "Find the breaking commit by halving the range.\n"),
+        ("memory/letter.md", "Dear Aisha,\n"),
+    ]
 
 
 async def test_skills_cannot_be_passed_on_when_they_are_not_shareable(make_town, tmp_path):
     town = make_town(town_config(shareable=False))
     await awake_at(town)
     (tmp_path / "agents" / "Mei" / "skills" / "bisect.md").write_text("Halve.\n")
+    (tmp_path / "agents" / "Mei" / "memory" / "work.md").write_text("Halve first.\n")
     await town.call("Mei", "say", text="Hello.")
-    refused = await town.call("Mei", "share_skill", to="Aisha", skill="bisect")
+    refused = await town.call("Mei", "share_file", to="Aisha", path="skills/bisect.md")
     assert refused.text == "Skills cannot be passed on here."
+    notes = await town.call("Mei", "share_file", to="Aisha", path="memory/work.md")
+    assert notes.text == "You passed Aisha a copy of memory/work.md."  # notes go all the same
     assert "skill" not in town.world.rules.text("Mei").lower().replace("skills folder", "")
 
 

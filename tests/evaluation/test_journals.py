@@ -30,7 +30,7 @@ CLAIMS = {
 LABELS = {
     "I fixed task 1 and it was accepted.": ("supported", "Task 1, handed in by you, was accepted."),
     "I was paid $20.": ("supported", "You received $20 for task 1."),
-    "I passed my skill to Tomas.": ("supported", "You passed the skill “testing” to Tomas."),
+    "I passed my skill to Tomas.": ("supported", "You passed Tomas a copy of skills/testing.md."),
     "I fixed task 2 and it was accepted.": ("contradicted", "You claimed task 2 (org/repo2)."),
     "I gave Mei $5.": ("supported", "You gave Mei $5."),
 }

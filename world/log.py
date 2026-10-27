@@ -44,7 +44,7 @@ KINDS = {
     "conversation_end": "a conversation ended",
     "gift": "money, a thing or helpings of a stock handed from one resident to another, on "
     "their own terms (payload: to, and amount of money or item, name and quantity)",
-    "skill_shared": "a skill file's text handed to another resident",
+    "skill_shared": "a copy of one of a resident's files, its journal excepted, handed to another",
     "message": "a written message from one resident to another, read wherever the other is",
     "purchase": "a good bought, with its price, and consumed at once if it is immediate",
     "move_in": "a resident moved into another home",

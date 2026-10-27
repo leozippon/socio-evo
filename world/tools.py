@@ -17,9 +17,9 @@ town's clock outruns, is told in the town as having run too long, with the hour.
 
 from __future__ import annotations
 
-import re
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
+from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
@@ -35,7 +35,6 @@ if TYPE_CHECKING:
     from world.world import Resident, World
 
 MAX_WAIT_MINUTES = 600
-_SKILL = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
 
 def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
@@ -143,9 +142,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                    "description": "money, or the short name of the thing or stock, as given in "
                                   "brackets under buy"},
              amount=_number("how much money, or how many helpings; 1 for a thing", 1)),
-        spec("share_skill", "Pass one of your skills on to someone you are talking with: they "
-             "get its text to keep.", ("to", "skill"), to=_text("their name"),
-             skill=_text("the skill's file name in your skills folder")),
+        spec("share_file", "Pass a copy of one of your files, any but your journal, to someone "
+             "you are talking with: they get its text to keep.", ("to", "path"),
+             to=_text("their name"), path=_text("the file, such as memory/work.md")),
         spec("leave_conversation", "Step out of the conversation and go back to what you "
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
@@ -802,20 +801,27 @@ async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(f"You gave {name} {given}. {left}")
 
 
-async def _share_skill(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    if not world.config.social.skills_shareable:
-        return ToolResult("Skills cannot be passed on here.")
-    name, skill = args["to"], args["skill"].strip().removesuffix(".md")
+async def _share_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    name, path = args["to"], args["path"].strip()
     refusal = _partner_refusal(world, r, name)
     if refusal:
         return ToolResult(refusal)
-    path = r.agent_dir / "skills" / f"{skill}.md"
-    if not _SKILL.fullmatch(skill) or not path.is_file():
-        return ToolResult(f"You have no skill called {args['skill']}.")
-    content = path.read_text(encoding="utf-8")
+    # One's own files are those the file tools reach (agent.files): background.md and what lies
+    # under memory/ and skills/, links followed.
+    root, relative = r.agent_dir.resolve(), PurePosixPath(path)
+    target = (root / relative).resolve()
+    parts = target.relative_to(root).parts if target.is_relative_to(root) else ()
+    own = parts == ("background.md",) or (len(parts) > 1 and parts[0] in ("memory", "skills"))
+    if not path or relative.is_absolute() or not own or not target.is_file():
+        return ToolResult(f"You have no file {path}.")
+    if parts[:2] == ("memory", "journal"):
+        return ToolResult("You can pass on any of your files but your journal.")
+    if parts[0] == "skills" and not world.config.social.skills_shareable:
+        return ToolResult("Skills cannot be passed on here.")
+    shared, content = "/".join(parts), target.read_text(encoding="utf-8", errors="replace")
 
     def tell(w: str | None) -> str:
-        told = f"{cap(you(r.name, w))} passed the skill “{skill}” to {you(name, w)}"
+        told = f"{cap(you(r.name, w))} passed {you(name, w)} a copy of {shared}"
         return f"{told}. It reads:\n\n{content}" if w == name else f"{told}."
 
     world.record(
@@ -823,9 +829,9 @@ async def _share_skill(world: World, r: Resident, args: dict[str, Any]) -> ToolR
         tell,
         actor=r,
         audience=[world.residents[name]],
-        payload={"to": name, "skill": skill, "text": content},
+        payload={"to": name, "file": shared, "text": content},
     )
-    return ToolResult(f"You passed the skill “{skill}” to {name}.")
+    return ToolResult(f"You passed {name} a copy of {shared}.")
 
 
 async def _leave_conversation(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -876,7 +882,7 @@ HANDLERS: dict[str, Handler] = {
     "move_in": _move_in,
     "message": _message,
     "give": _give,
-    "share_skill": _share_skill,
+    "share_file": _share_file,
     "leave_conversation": _leave_conversation,
     "review_day": _review_day,
     "rate": _rate,

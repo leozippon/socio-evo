@@ -249,10 +249,10 @@ class Rules:
             )
         else:
             people = "You live and work on your own here and meet nobody."
-        if contact and social.skills_shareable:
+        if contact:
             people += (
-                " You can pass one of your skills to someone you are talking with; they "
-                "receive its text."
+                " With share_file you can pass a copy of any of your files but your journal to "
+                "someone you are talking with; they receive its text."
             )
 
         sleep = (

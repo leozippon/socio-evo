@@ -269,3 +269,14 @@ async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(t
     ]
     assert lane(data, "Mei")["purse"][-1] == [at("07:10"), 115]
     assert lane(data, "Tomas")["purse"][-1] == [at("07:10"), 185]
+
+
+def test_a_skill_shared_in_an_older_log_is_told_as_its_file(tmp_path):
+    run, _ = new_town(tmp_path)
+    lines = [
+        entry(1, "skill_shared", at("09:00"), "Mei", to="Tomas", skill="triage", text="x"),
+        entry(2, "skill_shared", at("09:01"), "Mei", to="Tomas", file="memory/notes.md", text="y"),
+    ]
+    run.world_log_path.write_text("\n".join(lines) + "\n")
+    shared = [m for m in lane(timeline(run.root), "Mei")["markers"] if m["kind"] == "skill_shared"]
+    assert [m["file"] for m in shared] == ["skills/triage.md", "memory/notes.md"]

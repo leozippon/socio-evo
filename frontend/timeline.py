@@ -45,7 +45,7 @@ The markers, each on the lane of the resident who acted, with their own fields:
     message       to, text                a written message, read by "to" alone
     gift          to, amount              money given; or to, item, name, quantity for a thing
                                           or helpings of a stock
-    skill_shared  to, skill
+    skill_shared  to, file                a copy of one of the resident's files passed on
     purchase      item, name, quantity, amount
     move_in       from, to                the resident moved house; its lane's home follows
     rating        rated, score, reason
@@ -380,8 +380,9 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "move_in":
             lane.home = payload["to"]
             lane.mark(entry, "move_in", **{"from": payload["from"], "to": payload["to"]})
-        elif kind == "skill_shared":
-            lane.mark(entry, "skill_shared", to=payload["to"], skill=payload["skill"])
+        elif kind == "skill_shared":  # a log from before any file was shared names a skill
+            file = payload["file"] if "file" in payload else f"skills/{payload['skill']}.md"
+            lane.mark(entry, "skill_shared", to=payload["to"], file=file)
         elif kind == "rating":
             lane.mark(
                 entry,

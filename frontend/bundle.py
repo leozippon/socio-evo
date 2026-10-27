@@ -222,9 +222,9 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     with anything to count, by day, source and target. `minutes` are simulated minutes `source`
     spent in conversations `target` took part in (from the timeline's conversations, each on
     the day it began); the rest counts the day's entries: things `source` said that `target`
-    heard (`said`, of which `said_private` to it by name), messages written to it, money handed
-    over (`gifts` times, `money` in all), skills passed on, and ratings given with the sum of
-    their scores."""
+    heard (`said`, of which `said_private` to it by name), messages written to it, gifts
+    (`gifts` times, `money` the money among them), copies of files passed on, and ratings given with
+    the sum of their scores."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 

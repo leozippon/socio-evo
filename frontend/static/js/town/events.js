@@ -198,7 +198,7 @@ export function describeMarker(m, by, who) {
     case "gift":
       return own ? [`gave ${m.to} ${given(m)}`] : [`received ${given(m)} from ${by}`];
     case "skill_shared":
-      return own ? [`passed the skill “${m.skill}” to ${m.to}`] : [`received the skill “${m.skill}” from ${by}`];
+      return own ? [`passed ${m.to} a copy of ${m.file}`] : [`received a copy of ${m.file} from ${by}`];
     case "message":
       return own ? [`wrote to ${m.to}`, m.text] : [`received a message from ${by}`, m.text];
     case "purchase":

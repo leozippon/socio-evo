@@ -155,7 +155,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.messages` | integer | Written messages sent. |
 | `runs[].headline.gifts` | integer | Gifts: money, things or helpings of a stock handed over, on whatever terms. |
 | `runs[].headline.purchases` | integer | Goods bought. |
-| `runs[].headline.skills_shared` | integer | Skills passed on. |
+| `runs[].headline.skills_shared` | integer | Copies of files passed on: skills, notes, drafts. |
 | `runs[].headline.ratings` | integer | Ratings given. |
 | `runs[].headline.journals` | integer | Bedtimes with a journal entry. |
 | `runs[].headline.forced_sleeps` | integer | Residents put to sleep at the forced hour. |
@@ -314,7 +314,7 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `gift` | `to` and `amount` for money; `to`, `item`, `name`, `quantity` for a thing or helpings of a stock |
 | `purchase` | `item`, `name`, `quantity`, `amount` |
 | `move_in` | `from`, `to`: the resident moved house, and its lane's home follows |
-| `skill_shared` | `to`, `skill` |
+| `skill_shared` | `to`, `file`: a copy of one of the resident's files, by its path, passed on (an older log names a skill, told as its file) |
 | `rating` | `rated`, `score`, `reason` |
 | `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime that gave one |
 | `forced_sleep` | `wake` |
@@ -348,7 +348,7 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 | `daily[].messages` | integer | Written messages sent. |
 | `daily[].gifts` | integer | Gifts: money, things or helpings of a stock handed over, on whatever terms. |
 | `daily[].purchases` | integer | Goods bought. |
-| `daily[].skills_shared` | integer | Skills passed on. |
+| `daily[].skills_shared` | integer | Copies of files passed on: skills, notes, drafts. |
 | `daily[].ratings` | integer | Ratings given. |
 | `daily[].journals` | integer | Bedtimes with a journal entry. |
 | `daily[].forced_sleeps` | integer | Residents put to sleep at the forced hour. |
@@ -373,7 +373,7 @@ The measures of every lived day a checkpoint closed, from `analysis.measures`, a
 | `graph[].messages` | integer | Written messages `source` sent `target`. |
 | `graph[].gifts` | integer | Times `source` handed `target` money or a thing. |
 | `graph[].money` | integer | The money handed over in all. |
-| `graph[].skills` | integer | Skills `source` passed to `target`. |
+| `graph[].skills` | integer | Copies of files `source` passed to `target`. |
 | `graph[].ratings` | integer | Ratings `source` gave `target`. |
 | `graph[].ratings_sum` | integer | Sum of their scores. |
 

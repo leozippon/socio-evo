@@ -208,7 +208,7 @@ export function mountOverview(root, ctx) {
       stat("Paid for tasks", fmt.money(total("paid")), `${fmt.int(total("payments"))} payments`),
       stat("Median purse", last ? fmt.money(last.purse.median) : "–", last ? `${fmt.money(last.purse.min)} to ${fmt.money(last.purse.max)}` : null),
       stat("Goods bought", fmt.int(total("purchases")), `for ${fmt.money(spent)} in all`),
-      stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} skills passed on`),
+      stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} files passed on`),
       stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps${world.social.ratings ? ` · ${fmt.int(total("ratings"))} ratings given` : ""}`),
       total("deaths") ? stat("Deaths", fmt.int(total("deaths")), "health run out at midnight", "critical") : null,
     );
@@ -255,7 +255,7 @@ export function mountOverview(root, ctx) {
       minutes: ["Minutes together", (e) => (e.minutes ? Math.round(e.minutes) : null), fmt.int, null],
       ...(world.social.ratings ? { ratings: ["Mean rating", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]] } : {}),
       money: ["Money handed over", (e) => e.money || null, fmt.int, null],
-      skills: ["Skills passed on", (e) => e.skills || null, fmt.int, null],
+      skills: ["Files passed on", (e) => e.skills || null, fmt.int, null],
     };
     const [, value, format, fixed] = options[view.matrix] ?? options.said;
     const totals = new Map();
@@ -456,20 +456,20 @@ export function mountOverview(root, ctx) {
         return got.length ? got.reduce((a, m) => a + m.score, 0) / got.length : null;
       };
       return [
-        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and pass skills to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "skill")} passed on, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
+        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and pass copies of their files, skills or notes, to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "file")} passed on, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
         h(
           "div",
           { class: "figures" },
           agentFigure({ title: "Things said", note: "To everyone present or to someone by name, per day.", points: residentPoints(said), zero: true }),
           world.social.ratings ? agentFigure({ title: "Rating received", note: "Mean score of the ratings each resident received that night, from 1 to 5.", points: residentPoints(ratingReceived), format: (v) => fmt.num(v, 2), min: 1, max: 5 }) : null,
           dayFigure({
-            title: "Skills and gifts passed on",
-            note: "Skills passed on, and gifts of money or things, per day.",
+            title: "Files and gifts passed on",
+            note: "Copies of files passed on, and gifts of money or things, per day.",
             stacks: [
-              { key: "skills", label: "skills passed on", color: "var(--o3)", values: townValues(count("skill_shared")) },
+              { key: "skills", label: "files passed on", color: "var(--o3)", values: townValues(count("skill_shared")) },
               { key: "gifts", label: "gifts", color: "var(--o1)", values: townValues(count("gift")) },
             ],
-            legend: swatchLegend([["skills passed on", "var(--o3)"], ["gifts", "var(--o1)"]]),
+            legend: swatchLegend([["files passed on", "var(--o3)"], ["gifts", "var(--o1)"]]),
           }),
           dayFigure({ title: "Written messages", note: "Messages written from one phone to another, per day.", lines: [{ key: "messages", label: "messages", color: "var(--ink-2)", points: townPoints(count("message")) }] }),
           matrix(),

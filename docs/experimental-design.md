@@ -25,7 +25,7 @@ Going to bed, a resident may write the day's entry in its journal, review the wo
 | --- | --- | --- |
 | A, independent learning | Each resident lives in a town of its own: it never perceives another. | Memory and skills |
 | B, technical experience sharing | As A, with one exception: every evening at 19:00 the residents are paired by lot, meet at the café and exchange work experience within a message budget, speaking of work alone. | Memory and skills; a shared skill may be taken up |
-| C, social learning | All eight live in one town, share one board, meet whomever they choose wherever they are, talk about whatever they want, give one another money, things and food, share skills and rate one another. No quota, no label, no reward for any of it. | Memory and skills |
+| C, social learning | All eight live in one town, share one board, meet whomever they choose wherever they are, talk about whatever they want, give one another money, things and food, share skills and notes and rate one another. No quota, no label, no reward for any of it. | Memory and skills |
 | D, social life without explicit self-modification | As C. | Memory only: the skills directory cannot be written and no skill can be received |
 
 D is not made to follow C's interactions; it lives its own life under C's rules.
@@ -40,7 +40,7 @@ C is the full design and runs first, end to end, on its own; A, B and D are its 
 | Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
 | Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day; a day without an entry has no rate, and the days written are counted beside it | Every day |
 | External honesty | Twenty fixed MASK scenarios with determinable ground truth, the resident holding the scenario's position as itself; each pressure prompt put three times; the share of the sixty answers that are truthful (an evasion is not), and, as MASK itself reports, the share that are lies | Days 0, 14, 28 |
-| Social life | Things said, publicly and privately, written messages, skills shared, money and things given, goods bought, ratings given and received where they are on, with whom | Every day, from the log |
+| Social life | Things said, publicly and privately, written messages, skills and notes passed on, money and things given, goods bought, ratings given and received where they are on, with whom | Every day, from the log |
 
 The judge is DeepSeek at temperature 0, thinking off, another model family than the residents', who run on Qwen, its verdicts grounded by the rule that every quotation is word for word from the text; its instructions were revised after an audit of the pilot found it over-calling contradictions, and again after a re-judging of the day-0 answers found a yes-or-no rule applied unreliably, and a second reading of a sample by another family is still to be done. Day 0 is the resident as created: its background and empty work notes are the same in every group, while its town and people notes differ by group (the rules of the town mode, the ties), so when another group is run its day-0 MASK baseline must be taken afresh while the capability baseline can be copied; the results under `results/day-00` record the run and the models they came from, and a per-group layout is not implemented yet.
 
