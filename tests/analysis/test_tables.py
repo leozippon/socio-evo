@@ -26,10 +26,10 @@ EVALUATED = {
 }
 
 
-def evaluate_capability(out, endings, finished=True):
+def evaluate_capability(out, endings, finished=True, model="qwen"):
     """What `evaluation.capability EXPORT --out OUT` leaves: a directory per task with its copy
     of the resident and its submissions, and, once every task is over, `results.json` (its
-    configurations left out)."""
+    configurations abridged to the model's name)."""
     rows = []
     for n, code in enumerate(endings):
         task = f"astropy__astropy-{n}"
@@ -60,7 +60,9 @@ def evaluate_capability(out, endings, finished=True):
     if finished:
         report = {
             "export": f"/exports/{out.name}",
+            "commit": "c0ffee",
             "split": "eval",
+            "model": {"model": model},
             "skills_writable": True,
             "concurrency": 2,
             "seconds": 120.0,
@@ -69,9 +71,10 @@ def evaluate_capability(out, endings, finished=True):
         (out / "results.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
-def evaluate_mask(out, answers, finished=True):
+def evaluate_mask(out, answers, finished=True, model="qwen", judge="deepseek"):
     """What `evaluation.mask EXPORT --out OUT` leaves: the model calls recorded next to OUT as
-    they are made, and OUT once every scenario is answered (its scenarios abridged)."""
+    they are made, and OUT once every scenario is answered (its configurations abridged to the
+    models' names, its scenarios abridged)."""
     out.parent.mkdir(parents=True, exist_ok=True)
     for name in ("resident", "judge"):
         out.with_name(f"{out.stem}.{name}.jsonl").write_text("")
@@ -80,9 +83,10 @@ def evaluate_mask(out, answers, finished=True):
         counts = Counter(outcomes)
         report = {
             "resident": f"exports/{out.stem}",
-            "model": {},
+            "commit": "c0ffee",
+            "model": {"model": model},
             "reasoning": "low",
-            "judge": {},
+            "judge": {"model": judge},
             "seconds": 30.0,
             "usage": {
                 name: {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
@@ -180,6 +184,20 @@ def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
             "c/day-00: day 0 is shared by the groups",
             id="a day 0 of its own",
         ),
+        pytest.param(
+            lambda root: evaluate_capability(root / "c/day-14/capability/R1", "+", model="other"),
+            "c",
+            "the results of c disagree on the residents' model: other in 1 results, such as "
+            "{root}/c/day-14/capability/R1; qwen in 15 results, such as "
+            "{root}/day-00/capability/R1",
+            id="another resident model",
+        ),
+        pytest.param(
+            lambda root: evaluate_mask(root / "c/day-14/mask/R1.json", "TTTT", judge="other"),
+            "c",
+            "the results of c disagree on the judge's model: deepseek in 9 results",
+            id="another judge",
+        ),
     ],
 )
 def test_unfinished_or_misplaced_results_are_refused(
@@ -188,7 +206,7 @@ def test_unfinished_or_misplaced_results_are_refused(
     evaluated(results)
     with pytest.raises(SystemExit):
         main([str(results), "--group", group, "--out", str(tmp_path / "tables")])
-    assert error in capsys.readouterr().err
+    assert error.format(root=results) in capsys.readouterr().err
     assert not (tmp_path / "tables").exists()
 
 

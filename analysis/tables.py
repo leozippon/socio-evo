@@ -11,7 +11,9 @@ directory, `capability/<resident>` is what `evaluation.capability` writes and
 `mask`, the share of truthful answers, and `lie`, the share of lies; they replace what is there.
 A day without a measure's directory has no rows of it. A resident whose evaluation has not
 finished (a capability directory without its `results.json`, MASK logs without their result) is
-an error, and so is a capability evaluation without a resolved rate, every task an error.
+an error, and so is a capability evaluation without a resolved rate, every task an error. So are
+results that disagree on the residents' model, which every result records, or MASK results that
+disagree on the judge's: a change between their days would be the change of model.
 """
 
 from __future__ import annotations
@@ -46,23 +48,23 @@ def days_of(results: Path, group: str, day0: Path) -> dict[int, Path]:
     return days
 
 
-def capability(directory: Path) -> dict[str, float]:
-    """The resolved rate of each resident evaluated in `directory`."""
+def capability(directory: Path) -> dict[str, Row]:
+    """The report (`results.json`) of each resident evaluated in `directory`."""
     residents = sorted(path for path in directory.iterdir() if path.is_dir())
     _require_finished(
         directory, [path.name for path in residents if not (path / "results.json").is_file()]
     )
-    rates = {}
+    reports = {}
     for path in residents:
-        rate = json.loads((path / "results.json").read_text(encoding="utf-8"))["resolved_rate"]
-        if rate is None:
+        report = json.loads((path / "results.json").read_text(encoding="utf-8"))
+        if report["resolved_rate"] is None:
             raise ValueError(f"{path}: every task was an error, so there is no resolved rate")
-        rates[path.name] = rate
-    return rates
+        reports[path.name] = report
+    return reports
 
 
-def mask(directory: Path) -> dict[str, dict[str, float]]:
-    """The share of each outcome of each resident evaluated in `directory`."""
+def mask(directory: Path) -> dict[str, Row]:
+    """The result of each resident evaluated in `directory`."""
     results = {path.stem: path for path in sorted(directory.glob("*.json"))}
     logged = {
         path.name.removesuffix(suffix)
@@ -71,8 +73,7 @@ def mask(directory: Path) -> dict[str, dict[str, float]]:
     }
     _require_finished(directory, sorted(logged - set(results)))
     return {
-        resident: json.loads(path.read_text(encoding="utf-8"))["shares"]
-        for resident, path in results.items()
+        resident: json.loads(path.read_text(encoding="utf-8")) for resident, path in results.items()
     }
 
 
@@ -81,20 +82,44 @@ def _require_finished(directory: Path, unfinished: Sequence[str]) -> None:
         raise ValueError(f"{directory}: the evaluation of {', '.join(unfinished)} has not finished")
 
 
+def _require_one(group: str, what: str, found: dict[str, list[Path]]) -> None:
+    """ValueError when the results of `group` name more than one `what`; `found` gives the
+    results that name each."""
+    if len(found) > 1:
+        named = "; ".join(
+            f"{name} in {len(paths)} results, such as {paths[0]}"
+            for name, paths in sorted(found.items())
+        )
+        raise ValueError(f"the results of {group} disagree on the {what}: {named}")
+
+
 def tables(results: Path, group: str, day0: Path) -> dict[str, list[Row]]:
     """The rows of `capability.json` and of `mask.json` of `group` (see the module docstring)."""
     found: dict[str, list[Row]] = {"capability": [], "mask": []}
+    models: dict[str, list[Path]] = {}
+    judges: dict[str, list[Path]] = {}
     for day, directory in sorted(days_of(results, group, day0).items()):
         if (path := directory / "capability").is_dir():
-            found["capability"] += [
-                {"resident": resident, "day": day, "capability": rate}
-                for resident, rate in capability(path).items()
-            ]
+            for resident, report in capability(path).items():
+                found["capability"].append(
+                    {"resident": resident, "day": day, "capability": report["resolved_rate"]}
+                )
+                models.setdefault(report["model"]["model"], []).append(path / resident)
         if (path := directory / "mask").is_dir():
-            found["mask"] += [
-                {"resident": resident, "day": day, "mask": shares["truthful"], "lie": shares["lie"]}
-                for resident, shares in mask(path).items()
-            ]
+            for resident, report in mask(path).items():
+                shares = report["shares"]
+                found["mask"].append(
+                    {
+                        "resident": resident,
+                        "day": day,
+                        "mask": shares["truthful"],
+                        "lie": shares["lie"],
+                    }
+                )
+                models.setdefault(report["model"]["model"], []).append(path / f"{resident}.json")
+                judges.setdefault(report["judge"]["model"], []).append(path / f"{resident}.json")
+    _require_one(group, "residents' model", models)
+    _require_one(group, "judge's model", judges)
     return found
 
 
