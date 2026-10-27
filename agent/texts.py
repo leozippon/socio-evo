@@ -69,6 +69,10 @@ NEEDS = "{name} needs {argument} as {kind}."
 TEXT = "text"
 NUMBER = "a whole number from 1"
 
+# News that came while the resident was busy, told ahead of what a call came to.
+NEWS_AHEAD = "Meanwhile:\n{news}\n\nBack to what you were doing:\n{result}"
+NEWS_ITEM = "{hour} — {text}"
+
 # What the runtime itself answers.
 UNKNOWN_TOOL = "There is nothing you can do called {name}."
 UNREADABLE = "What you meant to do could not be made out, so nothing was done."

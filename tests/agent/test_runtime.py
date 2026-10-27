@@ -166,10 +166,13 @@ async def test_a_running_tool_finishes_and_the_calls_after_it_are_not_carried_ou
 
 async def test_percepts_that_come_meanwhile_are_told_ahead_of_the_next_result(directory):
     def look(args):
+        port.clock = 86_400 + 9 * 3600 + 15 * 60  # the next day, 09:15
         port.deliver("Ben arrived.", kind="arrive")
+        port.deliver("Mei says: “Busy?”")
         return ToolResult("You see the street.")
 
     def wave_meanwhile(request):
+        port.clock = 9 * 3600 + 14 * 60
         port.deliver("Ana waved.", kind="wave")
         return reply("", tool_call("look_around"), tool_call("say", text="hi"))
 
@@ -182,12 +185,18 @@ async def test_percepts_that_come_meanwhile_are_told_ahead_of_the_next_result(di
     after = model.requests[1].messages
     assert [m.role for m in after] == ["system", "user", "assistant", "tool", "tool"]
     assert [after[3].content, after[4].content] == [
-        "Ana waved.\n\nYou see the street.",
-        "Ben arrived.\n\nSaid.",
+        "Meanwhile:\n09:14 — Ana waved.\n\nBack to what you were doing:\nYou see the street.",
+        "Meanwhile:\n09:15 — Ben arrived.\n09:15 — Mei says: “Busy?”\n\n"
+        "Back to what you were doing:\nSaid.",
     ]
     kinds = [r["kind"] for r in trace(directory)]
     calls = kinds.index("tool_call")
-    assert kinds[calls : calls + 6] == ["tool_call", "percept", "tool_result"] * 2
+    assert kinds[calls : calls + 7] == ["tool_call", "percept", "tool_result"] + [
+        "tool_call",
+        "percept",
+        "percept",
+        "tool_result",
+    ]
     (shown,) = [r for r in trace(directory) if r["kind"] == "tool_result" and r["name"] == "say"]
     assert shown["text"] == "Said."  # the trace keeps the result itself
 

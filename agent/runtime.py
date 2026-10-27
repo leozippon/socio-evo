@@ -10,19 +10,20 @@
         a result that ends the turn   -> wait for the world -> loop
 
 A percept that does not interrupt is told ahead of the result of the next call carried out, so
-that what happened before a call is read before what the call did; with no call to carry, it is
-told with the situation. An interrupting percept aborts a reply in flight: the partial reply is
-traced as aborted and dropped, the percept is told with the situation, and the request is made
-again. A tool that is running is never aborted; once an interrupting percept is pending, the
-calls still to carry out in the same reply are answered as not carried out and the percept is
-told at once. A reply cut off at the token limit is asked for again once at a lower reasoning
-effort, or, at the lowest, with twice the token limit; cut off again, it is kept as it stands,
-without its tool calls, with a note. A reply enters the session together with the results of
-its calls, so that the session never holds a call without its result. A model error is
-retried; when the attempts run out the request is a lapse, logged as a warning, and the
-runtime waits for the next percept. A run of lapses ends the loop with an error, so that a
-model that has gone away stops the run instead of letting the town live on without its
-residents; any other error ends it at once, as cancellation does.
+that what happened before a call is read before what the call did: each with its hour, and all
+set apart from the result, so that none is read as the call's output. With no call to carry,
+it is told with the situation, which tells the hour. An interrupting percept aborts a reply in
+flight: the partial reply is traced as aborted and dropped, the percept is told with the
+situation, and the request is made again. A tool that is running is never aborted; once an
+interrupting percept is pending, the calls still to carry out in the same reply are answered
+as not carried out and the percept is told at once. A reply cut off at the token limit is
+asked for again once at a lower reasoning effort, or, at the lowest, with twice the token
+limit; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
+enters the session together with the results of its calls, so that the session never holds a
+call without its result. A model error is retried; when the attempts run out the request is a
+lapse, logged as a warning, and the runtime waits for the next percept. A run of lapses ends
+the loop with an error, so that a model that has gone away stops the run instead of letting
+the town live on without its residents; any other error ends it at once, as cancellation does.
 """
 
 from __future__ import annotations
@@ -299,12 +300,13 @@ class Runtime:
                 "tool_call", id=call.id, name=call.name, arguments=call.arguments, **unreadable
             )
             error: dict[str, str] = {}
-            before = ""
+            before: Sequence[Percept] = ()
             interrupted = interrupted or self._port.interrupt.is_set()
             if interrupted:
                 result = ToolResult(texts.NOT_CARRIED_OUT)
             else:
-                before = self._traced(self._port.pending())
+                before = self._port.pending()
+                self._traced(before)
                 result, error = await self._carry_out(call)
                 ends = ends or result.ends_turn
                 condense = condense or (call.name == COMPACT.name and not unreadable)
@@ -318,7 +320,10 @@ class Runtime:
             )
             content = shorten(result.text, self._config.tool_result_chars)
             if before:
-                content = f"{before}\n\n{content}"
+                news = "\n".join(
+                    texts.NEWS_ITEM.format(hour=_hour(p.sim_time), text=p.text) for p in before
+                )
+                content = texts.NEWS_AHEAD.format(news=news, result=content)
             answers.append(Message(role="tool", content=content, tool_call_id=call.id))
         return answers, ends, condense
 
@@ -342,11 +347,12 @@ class Runtime:
         """Trace `percepts` and append them, with the situation, as a user message; nothing
         when there are none."""
         if percepts:
-            text = f"{self._traced(percepts)}\n\n{self._port.situation()}"
+            self._traced(percepts)
+            news = "\n\n".join(percept.text for percept in percepts)
+            text = f"{news}\n\n{self._port.situation()}"
             self._session.append(Message(role="user", content=text))
 
-    def _traced(self, percepts: Sequence[Percept]) -> str:
-        """Trace `percepts`; their texts, a paragraph each."""
+    def _traced(self, percepts: Sequence[Percept]) -> None:
         for percept in percepts:
             self._trace.write(
                 "percept",
@@ -417,6 +423,11 @@ def shorten(text: str, limit: int) -> str:
     half = limit // 2
     omitted = texts.SHORTENED.format(count=len(text) - 2 * half)
     return f"{text[:half]}\n\n{omitted}\n\n{text[len(text) - half :]}"
+
+
+def _hour(t: int) -> str:
+    """The hour of the simulated moment `t`, seconds since 00:00 of day 1, as HH:MM."""
+    return f"{t % 86_400 // 3600:02d}:{t % 3600 // 60:02d}"
 
 
 def _describe(error: BaseException) -> str:
