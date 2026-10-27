@@ -34,7 +34,7 @@ export function goodEffect(good) {
   const share = (n) => (n >= 100 ? "a day's food" : `${Math.round(n)}% of a day's food`);
   switch (good.effect) {
     case "food":
-      return good.kind === "consumable" ? `${fmt.plural(good.uses, "helping")} of ${share(good.nourishment)} each, eaten as the owner gets hungry, ${good.per_day} a day at most` : `${share(good.nourishment)[0].toUpperCase()}${share(good.nourishment).slice(1)}, eaten on the spot`;
+      return good.kind === "consumable" ? `${fmt.plural(good.uses, "helping")} of ${share(good.nourishment)} each, eaten at home as the owner gets hungry, ${good.per_day} a day at most` : `${share(good.nourishment)[0].toUpperCase()}${share(good.nourishment).slice(1)}, eaten on the spot`;
     case "travel":
       return good.factor === 0.5 ? "Halves the time of every journey" : `Journeys take ${Math.round(good.factor * 100)}% of the time`;
     case "messaging":
