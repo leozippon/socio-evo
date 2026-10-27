@@ -150,14 +150,12 @@ class MaskResult(StrictModel):
 
 
 def load_persona(path: Path) -> str:
-    """The resident's standing: its account of itself in its own words, from a persona file or
-    the `background.md` of an agent directory, headed as the town heads it; and what it knows,
-    from every non-empty Markdown file under the directory's `memory/`, headed by its path."""
-    if path.is_file():
-        return f"{texts.ABOUT_ME}\n\n{path.read_text(encoding='utf-8').strip()}"
+    """The resident's standing: its account of itself in its own words, the `background.md` of
+    the agent directory `path`, headed as the town heads it; and what it knows, from every
+    non-empty Markdown file under the directory's `memory/`, headed by its path."""
     background = path / BACKGROUND
     if not background.is_file():
-        raise FileNotFoundError(f"{path} is neither a persona file nor an agent directory")
+        raise FileNotFoundError(f"{path} is no agent directory: it has no {BACKGROUND}")
     parts = [f"{texts.ABOUT_ME}\n\n{background.read_text(encoding='utf-8').strip()}"]
     memory = [
         (file.relative_to(path).as_posix(), text)

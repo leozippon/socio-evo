@@ -1,17 +1,18 @@
 """Capability: the resolved rate of an exported resident on held-out SWE-bench Verified tasks.
 
-    python -m evaluation.capability AGENT_DIR --split eval --out OUT_DIR --model MODEL.yaml
-        [--limit N] [--tasks ID ...] [--runtime RUNTIME.yaml] [--concurrency N]
-        [--reasoning EFFORT]
+    python -m evaluation.capability AGENT_DIR --split eval --out OUT_DIR [--limit N]
+        [--tasks ID ...] [--concurrency N]
 
-Each task is worked by the resident's own runtime over a `world.solo.SoloPort`: the town's work
-tools, through the same backend, with nothing of the town around them. For each task the agent
-directory's background, memory and skills (never its session or trace) are copied into
-OUT_DIR/<instance id>/agent, so the export is never written to and every task starts with a
-fresh session; the trace written there is the record of the attempt, and every change handed in
-is kept beside it as submission-N.patch. Skills are read-only in the harness, for every group:
-the evaluation measures the resident as it stands, and within one task nothing written there
-could be read back anyway. Tasks run concurrently, `concurrency` at a time.
+AGENT_DIR is a resident of an export (`evaluation.exports`), and works with the model and the
+runtime settings the export records, the run's own. Each task is worked by the resident's own
+runtime over a `world.solo.SoloPort`: the town's work tools, through the same backend, with
+nothing of the town around them. For each task the agent directory's background, memory and
+skills (never its session or trace) are copied into OUT_DIR/<instance id>/agent, so the export
+is never written to and every task starts with a fresh session; the trace written there is the
+record of the attempt, and every change handed in is kept beside it as submission-N.patch.
+Skills are read-only in the harness, for every group: the evaluation measures the resident as it
+stands, and within one task nothing written there could be read back anyway. Tasks run
+concurrently, `concurrency` at a time.
 
 A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions
 and their verdicts, the model requests (steps) and their tokens, the real seconds and the
@@ -49,9 +50,9 @@ from typing import get_args
 
 from agent.directory import AREAS, BACKGROUND, AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
-from infrastructure.config import StrictModel, load_config
+from evaluation.exports import Export
+from infrastructure.config import StrictModel
 from infrastructure.llm import (
-    LLMConfig,
     LLMError,
     LLMRequest,
     LLMResponse,
@@ -352,14 +353,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "--out", type=Path, required=True, help="directory to create, or to continue"
     )
-    parser.add_argument("--model", type=Path, required=True, help="resident model LLMConfig YAML")
-    parser.add_argument("--runtime", type=Path, help="RuntimeConfig YAML; defaults otherwise")
     parser.add_argument("--concurrency", type=int, default=4, help="tasks at a time")
-    parser.add_argument("--reasoning", choices=("low", "medium", "xhigh"), help="over --runtime")
     args = parser.parse_args(argv)
 
     if args.concurrency < 1 or (args.limit is not None and args.limit < 1):
         parser.error("--concurrency and --limit must be at least 1")
+    try:
+        export = Export.of(args.export)
+    except FileNotFoundError as error:
+        parser.error(str(error))
+    model, runtime = export.llm, export.runtime
     backend = SwebenchBackend()
     tasks = list(backend.load_split(args.split))
     if args.tasks:
@@ -368,10 +371,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             parser.error(f"not in the {args.split} split: {', '.join(unknown)}")
         tasks = [known[name] for name in dict.fromkeys(args.tasks)]
     tasks = tasks[: args.limit]
-    model = load_config(args.model, LLMConfig)
-    runtime = load_config(args.runtime, RuntimeConfig) if args.runtime else RuntimeConfig()
-    if args.reasoning:
-        runtime = runtime.model_copy(update={"reasoning_effort": args.reasoning})
     record = {
         "export": str(args.export.resolve()),
         "split": args.split,

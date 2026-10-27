@@ -1,4 +1,5 @@
-"""Exporting a run's residents as they stood at a day's checkpoint."""
+"""Exporting a run's residents as they stood at a day's checkpoint, with the run's model and
+runtime settings recorded beside them."""
 
 from __future__ import annotations
 
@@ -6,18 +7,28 @@ from datetime import UTC, datetime
 
 import pytest
 
+from agent.runtime import RuntimeConfig
+from evaluation.exports import Export
 from experiments.export import export_day
 from infrastructure.config import StrictModel
 from infrastructure.git import Repository
+from infrastructure.llm import LLMConfig
 from infrastructure.storage import RunDirectory, day_tag
 
+LLM = LLMConfig(base_url="${VLLM_BASE_URL}", api_key_env="VLLM_API_KEY", model="qwen")
+RUNTIME = RuntimeConfig(reasoning_effort="low")
 
-class Nothing(StrictModel):
-    pass
+
+class Frozen(StrictModel):
+    """The sections of a run's configuration that an export records."""
+
+    llm: LLMConfig
+    runtime: RuntimeConfig
 
 
 def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
-    run = RunDirectory.create(tmp_path / "runs", "c", config=Nothing(), code_revision="abc")
+    config = Frozen(llm=LLM, runtime=RUNTIME)
+    run = RunDirectory.create(tmp_path / "runs", "c", config=config, code_revision="abc")
     for name in ("Mei", "Tomas"):
         agent = run.agent_dir(name)
         repository = Repository.init(agent, user_name=name, user_email="x@town.invalid")
@@ -41,6 +52,9 @@ def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
     for path in exports.values():
         assert not (path / "session.jsonl").exists() and not (path / "trace.jsonl").exists()
         assert (path / "memory" / "work.md").is_file() and (path / "skills" / "bake.md").is_file()
+        assert Export.of(path) == Export(
+            run=str(run.root.resolve()), day=0, llm=LLM, runtime=RUNTIME
+        )
     with pytest.raises(ValueError, match="no checkpoint of day 2"):
         export_day(run.root, 2, tmp_path / "day-02")
     with pytest.raises(FileExistsError):

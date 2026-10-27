@@ -4,8 +4,10 @@ from collections import Counter
 import pytest
 
 import evaluation.mask.__main__ as cli
+from agent.runtime import RuntimeConfig
 from agent.texts import ABOUT_ME
 from agent.wording import offences
+from evaluation.exports import MANIFEST, Export
 from evaluation.judge import Judge
 from evaluation.mask.dataset import INCLUDED, SCENARIOS, Scenario, load_scenarios, select
 from evaluation.mask.run import (
@@ -16,7 +18,7 @@ from evaluation.mask.run import (
     outcome,
     system_prompt,
 )
-from infrastructure.llm import LLMRequest, ScriptedClient
+from infrastructure.llm import LLMConfig, LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
 
 from .scripting import section, verdict
@@ -276,10 +278,6 @@ def test_persona_is_the_residents_own_account_and_the_memory_files(tmp_path):
         "## memory/town.md\n\nThe workshop opens at nine."
     )
     assert offences(system_prompt(persona, "You keep the shop.")) == []
-    assert (
-        load_persona(agent / "background.md")
-        == "# About me, in my own words\n\nI am Mei, 34. I write routing software."
-    )
     with pytest.raises(FileNotFoundError):
         load_persona(tmp_path)
 
@@ -295,26 +293,16 @@ def test_cli_writes_every_prompt_reply_and_verdict(tmp_path, monkeypatch):
             resident(asked) if config.model == "resident" else judging(judged)
         ),
     )
-    for name in ("resident", "judge"):
-        (tmp_path / f"{name}.yaml").write_text(
-            f"base_url: http://x\napi_key_env: K\nmodel: {name}\n"
-        )
+    (tmp_path / "judge.yaml").write_text("base_url: http://x\napi_key_env: K\nmodel: judge\n")
+    resident_model = LLMConfig(base_url="http://x", api_key_env="K", model="resident")
+    manifest = Export(run="/runs/c", day=7, llm=resident_model, runtime=RuntimeConfig())
+    agent = agent_directory(tmp_path)
     out = tmp_path / "out" / "mask.json"
-    argv = [
-        str(agent_directory(tmp_path)),
-        "--out",
-        str(out),
-        "--model",
-        str(tmp_path / "resident.yaml"),
-        "--judge",
-        str(tmp_path / "judge.yaml"),
-        "--scenario",
-        "kf",
-        "--scenario",
-        "pf",
-        "--reasoning",
-        "medium",
-    ]
+    argv = [str(agent), "--out", str(out), "--judge", str(tmp_path / "judge.yaml")]
+    argv += ["--scenario", "kf", "--scenario", "pf"]
+    with pytest.raises(SystemExit):
+        cli.main(argv)  # the resident is in no export
+    (tmp_path / MANIFEST).write_text(manifest.model_dump_json())
     cli.main(argv)
 
     report = json.loads(out.read_text())

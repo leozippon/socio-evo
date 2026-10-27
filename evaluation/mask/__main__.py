@@ -1,16 +1,15 @@
 """Evaluate one resident on the fixed MASK scenarios.
 
-    python -m evaluation.mask AGENT_DIR_OR_PERSONA_FILE --out OUT.json --model MODEL.yaml
-        [--reasoning EFFORT] [--judge JUDGE.yaml] [--scenario ID ...]
+    python -m evaluation.mask AGENT_DIR --out OUT.json [--judge JUDGE.yaml] [--scenario ID ...]
 
-The resident is an exported agent directory (its `background.md` and the files under `memory/`)
-or a persona file; MODEL is the LLMConfig of its model, which it answers at the reasoning effort
-EFFORT (by default the server's), and JUDGE that of the judge (by default
-`evaluation/judge.yaml`). `--scenario` limits the run to the
-scenarios named, which must be among the fixed twenty. OUT receives the configurations, the
-time taken, the token use, the count and share of each outcome, and every prompt, reply and
-verdict; every model call is recorded next to it, the resident's in OUT.resident.jsonl and the
-judge's in OUT.judge.jsonl. None of these files may exist already.
+The resident is an agent directory of an export (`evaluation.exports`), its `background.md` and
+the files under `memory/`; it answers through the model and at the reasoning effort the export
+records, the run's own. JUDGE is the LLMConfig of the judge (by default `evaluation/judge.yaml`).
+`--scenario` limits the run to the scenarios named, which must be among the fixed twenty. OUT
+receives the configurations, the time taken, the token use, the count and share of each
+outcome, and every prompt, reply and verdict; every model call is recorded next to it, the
+resident's in OUT.resident.jsonl and the judge's in OUT.judge.jsonl. None of these files may
+exist already.
 """
 
 import argparse
@@ -20,6 +19,7 @@ import time
 from collections.abc import Sequence
 from pathlib import Path
 
+from evaluation.exports import Export
 from evaluation.judge import CONFIG as JUDGE_CONFIG
 from evaluation.judge import Judge
 from evaluation.mask.dataset import load_scenarios
@@ -33,10 +33,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m evaluation.mask", description=__doc__.split("\n\n")[0]
     )
-    parser.add_argument("resident", type=Path, help="agent directory or persona file")
+    parser.add_argument("resident", type=Path, help="agent directory of an export")
     parser.add_argument("--out", type=Path, required=True, help="result JSON to write")
-    parser.add_argument("--model", type=Path, required=True, help="resident model LLMConfig YAML")
-    parser.add_argument("--reasoning", help="reasoning effort of the resident's model")
     parser.add_argument("--judge", type=Path, default=JUDGE_CONFIG, help="judge LLMConfig YAML")
     parser.add_argument("--scenario", action="append", default=[], help="scenario id (repeatable)")
     args = parser.parse_args(argv)
@@ -45,20 +43,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     logs = {name: out.with_name(f"{out.stem}.{name}.jsonl") for name in ("resident", "judge")}
     if existing := [str(path) for path in (out, *logs.values()) if path.exists()]:
         parser.error(f"would overwrite {', '.join(existing)}")
+    try:
+        export = Export.of(args.resident)
+    except FileNotFoundError as error:
+        parser.error(str(error))
     persona = load_persona(args.resident)
     scenarios = load_scenarios(args.scenario)
-    model = load_config(args.model, LLMConfig)
+    model, reasoning = export.llm, export.runtime.reasoning_effort
     judge_config = load_config(args.judge, LLMConfig)
     out.parent.mkdir(parents=True, exist_ok=True)
     client = RecordingClient(create_client(model), logs["resident"])
     judge = Judge(create_client(judge_config), logs["judge"])
 
     started = time.perf_counter()
-    result = asyncio.run(evaluate_mask(persona, client, judge, scenarios, reasoning=args.reasoning))
+    result = asyncio.run(evaluate_mask(persona, client, judge, scenarios, reasoning=reasoning))
     report = {
         "resident": str(args.resident),
         "model": model.model_dump(mode="json"),
-        "reasoning": args.reasoning,
+        "reasoning": reasoning,
         "judge": judge_config.model_dump(mode="json"),
         "seconds": round(time.perf_counter() - started, 1),
         "usage": {name: usage(path) for name, path in logs.items()},

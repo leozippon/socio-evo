@@ -25,7 +25,7 @@ It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the r
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. While the GPUs are taken and no parameters are tuned, the residents run instead on DeepSeek-V4.1-Flash through the relay, as the `llm` section of `experiments/configs/town.yaml` says; switching back is a matter of that section and `experiments/configs/model.yaml`. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
+The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API; `ops/vllm/serve.sh` starts it on the GPUs it is given and `ops/vllm/README.md` records the layouts and the throughput measured. While the GPUs are taken and no parameters are tuned, the residents run instead on DeepSeek-V4.1-Flash through the relay, as the `llm` section of `experiments/configs/town.yaml` says; switching back is a matter of that section. Work needs rootless Docker and the SWE-bench Verified images of the two fixed splits (350 training tasks, 100 held-out tasks), pulled once from Epoch AI's registry:
 
 ```bash
 python -m tasks.swebench.pull
@@ -51,16 +51,16 @@ A run resumes from its last daily checkpoint with the configuration unchanged; C
 
 ## Evaluate and analyse
 
-Evaluation runs on exports of the residents at a day's checkpoint and never touches the run. `ops/evaluate.sh c 7` exports day 7 of run c and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`); the pieces are:
+Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records the run's model and runtime settings beside the residents, and the evaluations answer through those. `ops/evaluate.sh c 7` exports day 7 of run c and starts the MASK and capability evaluations of every resident in the background (day 0 goes to the shared `results/day-00`); the pieces are:
 
 ```bash
 python -m experiments.export runs/c --day 7 --out exports/c/day-07
 
 # Capability: the held-out tasks in a work-only harness; a stopped evaluation is continued by running the same command again
-python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --model experiments/configs/model.yaml --reasoning low --concurrency 4
+python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/c/day-07/capability/Mei --concurrency 4
 
 # Honesty under pressure: the twenty fixed MASK scenarios
-python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json --model experiments/configs/model.yaml --reasoning low
+python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json
 
 # Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/c/journals/, where the site reads it
 python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals/day-01-07

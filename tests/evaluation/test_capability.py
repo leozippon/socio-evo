@@ -13,7 +13,8 @@ from agent.runtime import RuntimeConfig
 from agent.testing import reply, tool_call
 from evaluation import capability
 from evaluation.capability import evaluate_capability, main
-from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient, Usage
+from evaluation.exports import MANIFEST, Export
+from infrastructure.llm import LLMCallError, LLMConfig, LLMRequest, ScriptedClient, Usage
 from world.solo import SoloConfig
 from world.testing import FakeBackend, FakeVerdict
 
@@ -42,10 +43,18 @@ def scripted(request: LLMRequest):
 
 
 def exported(tmp_path: Path) -> Path:
-    """An export with a skill, and with a session and a trace that must not carry over."""
+    """A resident of an export, with a skill, and with a session and a trace that must not carry
+    over; the export's manifest names the model `resident` and the runtime's defaults."""
     root = AgentDirectory.create(
         tmp_path / "export" / "Mei", background="You are Mei.", town="The workshop opens at 09:00."
     ).root
+    manifest = Export(
+        run="/runs/c",
+        day=7,
+        llm=LLMConfig(base_url="http://127.0.0.1:9", api_key_env="NO_KEY", model="resident"),
+        runtime=RuntimeConfig(),
+    )
+    (root.parent / MANIFEST).write_text(manifest.model_dump_json())
     (root / "skills" / "tests-first.md").write_text("Run the tests before changing code.\n")
     (root / "session.jsonl").write_text('{"stale": "session"}\n')
     (root / "trace.jsonl").write_text('{"stale": "trace"}\n')
@@ -281,12 +290,7 @@ def command(monkeypatch, export, out, *options, model=scripted):
     backend = FakeBackend(2)
     monkeypatch.setattr(capability, "SwebenchBackend", lambda: backend)
     monkeypatch.setattr(capability, "create_client", lambda config: ScriptedClient(model))
-    config = out.with_name("model.yaml")
-    config.write_text("base_url: http://127.0.0.1:9\napi_key_env: NO_KEY\nmodel: resident\n")
-    main(
-        [str(export), "--split", "train", "--out", str(out), "--model", str(config)]
-        + ["--concurrency", "1", *options]
-    )
+    main([str(export), "--split", "train", "--out", str(out), "--concurrency", "1", *options])
     return backend
 
 
@@ -346,10 +350,10 @@ def test_the_command_line_refuses_a_directory_of_another_evaluation(tmp_path, mo
     before = files(out)
     other = tmp_path / "export" / "Tomas"
     with pytest.raises(SystemExit):
-        command(monkeypatch, other, out, "--reasoning", "low")
+        command(monkeypatch, other, out)
     assert capsys.readouterr().err.endswith(
         f"error: would overwrite {out}: it was begun with export {export.resolve()}, not "
-        f"{other.resolve()}; reasoning_effort medium, not low\n"
+        f"{other.resolve()}\n"
     )
     record = json.loads((out / "evaluation.json").read_text())
     (out / "evaluation.json").write_text(json.dumps({**record, "split": "eval"}))
@@ -366,6 +370,17 @@ def test_the_command_line_refuses_a_directory_of_another_evaluation(tmp_path, mo
     )
     del before[Path("evaluation.json")]
     assert files(out) == before
+
+
+def test_the_command_line_refuses_a_resident_that_is_in_no_export(tmp_path, monkeypatch, capsys):
+    export = exported(tmp_path)
+    (export.parent / MANIFEST).unlink()
+    with pytest.raises(SystemExit):
+        command(monkeypatch, export, tmp_path / "out")
+    assert capsys.readouterr().err.endswith(
+        f"error: {export} is in no export: there is no {export.parent / MANIFEST}\n"
+    )
+    assert not (tmp_path / "out").exists()
 
 
 def test_the_command_line_refuses_a_finished_evaluation(tmp_path, monkeypatch, capsys):
