@@ -128,6 +128,12 @@ class Resident:
         return self.conversation or self.base
 
     @property
+    def tools(self) -> frozenset[str]:
+        """What the resident can do now: its base event's actions, and a conversation's on
+        top of them."""
+        return self.base.tools | (Conversation.tools if self.conversation else frozenset())
+
+    @property
     def alive(self) -> bool:
         return not isinstance(self.base, Dead)
 
@@ -859,11 +865,9 @@ class World:
         def state(other: Resident) -> str:
             if not other.awake:
                 return f"{other.name} (asleep)"
-            if other.conversation is not None:
-                return self.named(other, "in a conversation")
-            if isinstance(other.base, Work):
-                return self.named(other, "working")
-            return self.named(other)
+            working = ["working"] if isinstance(other.base, Work) else []
+            talking = ["in a conversation"] if other.conversation is not None else []
+            return self.named(other, *working, *talking)
 
         people = self.company(r)
         if not people:
@@ -1248,7 +1252,6 @@ class World:
             return ENDED
         now = self.clock.now()
         parts = [f"{tell_moment(now, self.config.start_date)}."]
-        event = r.event
         if isinstance(r.base, Sleep):
             parts.append(
                 "You are asleep."
@@ -1263,21 +1266,22 @@ class World:
         else:
             assert r.place is not None
             place = self.config.place(r.place).name
+            where = (
+                f"You are at work at {place}" if isinstance(r.base, Work) else f"You are at {place}"
+            )
             if r.conversation is not None:
                 others = [
                     self.named(self.residents[name])
                     for name in sorted(r.conversation.members - {r.name})
                 ]
-                parts.append(f"You are at {place}, in a conversation with {listed(others)}.")
+                parts.append(f"{where}, in a conversation with {listed(others)}.")
                 if r.conversation.budget is not None:
                     left = r.conversation.budget[r.name]
                     parts.append(
                         f"You have {counted(left, 'turn')} left to speak; speak of your work alone."
                     )
-            elif isinstance(r.base, Work):
-                parts.append(f"You are at work at {place}.")
             else:
-                parts.append(f"You are at {place}.")
+                parts.append(f"{where}.")
             parts.append(self.people_here(r))
         parts.append(self.economy.purse(r.name))
         parts += self.body.warnings(r.living)
@@ -1297,9 +1301,9 @@ class World:
             usable = [
                 spec.name
                 for spec in self.tool_specs
-                if spec.name in event.tools and (spec.name != "message" or writes)
+                if spec.name in r.tools and (spec.name != "message" or writes)
             ]
-            files = ", and see to your files" if isinstance(event, Sleep) else ""
+            files = ", and see to your files" if isinstance(r.base, Sleep) else ""
             parts.append(f"What you can do now: {', '.join(usable)}{files}.")
         return " ".join(parts)
 
@@ -1363,8 +1367,8 @@ class World:
             return ToolResult(ENDED, ends_turn=True)
         if r.suspended:
             return ToolResult("You are asleep.", ends_turn=True)
-        event = r.event
-        if name not in event.tools:
+        event = r.base
+        if name not in r.tools:
             destination = (
                 self.config.place(event.destination).name if isinstance(event, Movement) else ""
             )

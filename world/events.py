@@ -2,10 +2,11 @@
 
 A resident is always in exactly one event. Its base event is Idle, Movement, Work or Sleep, or
 Dead once its health has run out, from which nothing brings it back; a Conversation sits on top
-of the Idle or Work it interrupted, and leaving the conversation returns the resident to that
-event as it was. One leaves by doing something else: `go` and
-`sleep` leave a conversation and work on their own, and `start_work` a conversation; waiting in
-a conversation is listening, and leaves it standing. A Conversation is shared by its members:
+of the Idle or Work it found the resident in and adds its own actions to that event's, so that
+someone spoken to at work can go on working, and leaving the conversation leaves the event
+underneath as it is. One leaves by doing something else: `go` and `sleep` leave a conversation
+and work on their own; waiting in a conversation is listening, and leaves it standing. A
+Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
 review its day, go to bed again to add to its journal entry, rate (where ratings are on) and see
@@ -13,10 +14,10 @@ to its files, and suspended, once its
 runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
 back.
 
-The tool sets are exactly the architecture's table. Every world tool the town declares is
-declared at every step (`rate` and `message` only where the town has ratings or something to
-write with); calling one the current event does not offer returns the refusal below, naming the
-condition.
+The tool sets are exactly the architecture's table; a conversation's are those it adds. Every
+world tool the town declares is declared at every step (`rate` and `message` only where the town
+has ratings or something to write with); calling one the resident cannot use now returns the
+refusal below, naming the condition.
 """
 
 from __future__ import annotations
@@ -57,28 +58,12 @@ WORK_TOOLS = frozenset(
         "abandon_task",
         "say",
         "message",
+        "buy",
         "wait",
         "leave_work",
     }
 )
-CONVERSATION_TOOLS = frozenset(
-    {
-        "help",
-        "say",
-        "message",
-        "give_money",
-        "share_skill",
-        "buy",
-        "look_around",
-        "how_am_i",
-        "go",
-        "wait",
-        "sleep",
-        "start_work",
-        "view_board",
-        "leave_conversation",
-    }
-)
+CONVERSATION_TOOLS = frozenset({"give_money", "share_skill", "leave_conversation"})
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "rate", "sleep"})
 
 
@@ -137,17 +122,16 @@ class Conversation:
 
 
 Base = Idle | Movement | Work | Sleep | Dead
-Event = Base | Conversation
 ENDED = "Your life has ended."
 """What a dead resident reads, should its runtime still ask anything."""
 
 
 def refusal(
-    event: Event, tool: str, *, workplace: str, destination: str, ratings: bool = True
+    event: Base, tool: str, *, workplace: str, destination: str, ratings: bool = True
 ) -> str:
-    """Why `tool`, which `event` does not offer, cannot be used now. `workplace` and
-    `destination` are the names of the workplace and of where a moving resident is going;
-    `ratings` whether the town has bedtime ratings."""
+    """Why `tool`, which neither the base `event` nor a conversation on top of it offers,
+    cannot be used now. `workplace` and `destination` are the names of the workplace and of
+    where a moving resident is going; `ratings` whether the town has bedtime ratings."""
     if isinstance(event, Dead):
         return ENDED
     if isinstance(event, Movement):
@@ -161,16 +145,14 @@ def refusal(
             f"of how you feel, look back over your day, add to your journal{rate}, read how the "
             "town works and see to your own files."
         )
-    if isinstance(event, Conversation):
-        return "You are in a conversation; leave it first."
+    if tool in CONVERSATION_TOOLS:
+        return "You are not in a conversation."
+    if tool in SLEEP_TOOLS:
+        return "You can do that only once you have gone to bed."
     if isinstance(event, Work):
         return (
             "You are already at work."
             if tool == "start_work"
-            else ("You are at work; leave work first.")
+            else "You are at work; leave work first."
         )
-    if tool in WORK_TOOLS:
-        return f"You are not at work; start work at {workplace} first."
-    if tool in CONVERSATION_TOOLS:
-        return "You are not in a conversation."
-    return "You can do that only once you have gone to bed."
+    return f"You are not at work; start work at {workplace} first."

@@ -13,7 +13,7 @@ import pytest
 import world
 from agent.wording import offences
 from tests.world.conftest import B_EXCHANGE, awake_at, town_config
-from world.events import Conversation, Idle, Movement, Sleep, Work, refusal
+from world.events import Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS
 
 GROUPS = {
@@ -73,7 +73,6 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
         Work(),
         Sleep(0),
         Sleep(0, True),
-        Conversation("cafe", "cafe", set(), 0),
     ]
     texts += [
         refusal(event, spec.name, workplace="the workshop", destination="the café")

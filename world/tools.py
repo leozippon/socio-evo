@@ -321,16 +321,9 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     if r.place != workplace.id:
         return ToolResult(f"You are not at {workplace.name}.")
     world.reckon(r)
-    if world.body.lowest("energy", r.living.energy) and not isinstance(r.base, Work):
+    if world.body.lowest("energy", r.living.energy):
         return ToolResult("You are too tired to sit down to work; sleep first.")
-    told = ""
-    if r.conversation is not None:
-        world.leave_conversation(r)
-        told = "You left the conversation. "
     claim = world.board.claims.get(r.name)
-    if isinstance(r.base, Work):  # the conversation was held at work, which goes on
-        held = f" You hold task {claim.task}." if claim else ""
-        return ToolResult(f"{told}You are back at work.{held} {_now(world)}")
     r.base = Work()
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} started work.", actor=r)
     if claim is None:
@@ -343,7 +336,7 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
         )
     else:
         started = f"You started work. You hold task {claim.task}."
-    return ToolResult(f"{told}{started} {_now(world)}")
+    return ToolResult(f"{started} {_now(world)}")
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:

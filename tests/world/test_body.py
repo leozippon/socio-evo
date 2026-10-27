@@ -14,7 +14,7 @@ from agent.port import ToolResult
 from tests.world.conftest import RESIDENTS, at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
-from world.events import ENDED, Dead, Idle
+from world.events import ENDED, Dead, Idle, Work
 from world.testing import FakeBackend
 from world.world import World
 
@@ -271,9 +271,10 @@ async def test_the_workplace_refuses_the_exhausted_until_they_have_slept(make_to
     await town.call("Mei", "go", place="workshop")
     await town.until("07:30")
     await town.call("Mei", "say", text="Still at it?", to=["Tomas"])
-    assert (await town.call("Tomas", "start_work")).text.startswith(
+    assert (await town.call("Tomas", "leave_conversation")).text == (
         "You left the conversation. You are back at work."
     )
+    assert isinstance(tomas.base, Work)
 
 
 async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_mends_it(make_town):
