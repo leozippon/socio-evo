@@ -93,12 +93,20 @@ def test_an_existing_run_is_not_created_again_nor_resumed_with_another_configura
     assert RunDirectory.open(root).read_manifest().status == "completed"
 
 
-async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path):
+async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monkeypatch):
     config = smoke(days=2)
     root, status = await simulation.run(config, tmp_path, until_day=1, dry_run=True)
     assert status == "interrupted"
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
     first = len(kinds(root))
+    log = (root / "run.log").read_text()
+
+    with monkeypatch.context() as patched:  # no resumption while the model does not answer
+        patched.setattr(simulation, "_client", lambda c, dry_run: ScriptedClient(unanswered))
+        with pytest.raises(LLMCallError, match="did not answer"):
+            await simulation.run(config, tmp_path, resume=True, dry_run=True)
+    assert RunDirectory.open(root).read_manifest().status == "interrupted"
+    assert (root / "run.log").read_text() == log
 
     root, status = await simulation.run(config, tmp_path, resume=True, dry_run=True)
     assert status == "completed"
@@ -141,9 +149,13 @@ async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path,
     assert "the run failed" in run.run_log_path.read_text()
 
 
+def unanswered(request: LLMRequest) -> LLMResponse:
+    raise LLMCallError("APIConnectionError: Connection error.")
+
+
 async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch):
-    def down(request: LLMRequest) -> LLMResponse:
-        raise LLMCallError("APIConnectionError: Connection error.")
+    def down(request: LLMRequest) -> LLMResponse | str:
+        return "Yes." if not request.tools else unanswered(request)  # the check before the run
 
     monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(down))
     config = smoke(runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2))
@@ -157,7 +169,9 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
     assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
 
 
-async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_path, monkeypatch):
+async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(
+    tmp_path, monkeypatch
+):
     config = smoke()
     lost = config.residents[0].model_copy(update={"background": "experiments/residents/x.md"})
     with pytest.raises(FileNotFoundError):
@@ -175,4 +189,7 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing(tmp_
     )
     with pytest.raises(LLMConfigError, match="SOCIO_EVO_NO_SUCH_KEY is not set"):
         await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
+    monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(unanswered))
+    with pytest.raises(LLMCallError, match="did not answer a test request: .*Connection error"):
+        await simulation.run(config, tmp_path, dry_run=True)
     assert list(tmp_path.iterdir()) == []

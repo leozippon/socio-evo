@@ -2,11 +2,12 @@
 resident around one model client, and lives the days until a day's checkpoint.
 
 Everything that can be checked is checked before anything is written: the backgrounds, the
-model client and its key, the task split and its images, and on resumption the configuration
-frozen in the run. A new run then freezes the configuration, creates each resident's directory
-from its background (memory/town.md seeded with the town's rules as the world tells them to that
-resident, memory/people.md with the people it knows already, work.md with a heading), makes it a
-git repository, and saves the world's starting state as day 0.
+model client and its key, that the model answers a small request, the task split and its
+images, and on resumption the configuration frozen in the run. A new run then freezes the
+configuration, creates each resident's directory from its background (memory/town.md seeded
+with the town's rules as the world tells them to that resident, memory/people.md with the people
+it knows already, work.md with a heading), makes it a git repository, and saves the world's
+starting state as day 0.
 
 Saving day N commits every agent directory at the simulated moment and tags it `day-NN`, then
 writes the world's state to `checkpoints/day-NN.json`, so that a checkpoint always has its tags.
@@ -41,7 +42,15 @@ from agent.directory import AgentDirectory
 from agent.runtime import Runtime
 from infrastructure.config import load_config
 from infrastructure.git import Repository
-from infrastructure.llm import StreamingClient, create_client
+from infrastructure.llm import (
+    LLMCallError,
+    LLMError,
+    LLMRequest,
+    Message,
+    Sampling,
+    StreamingClient,
+    create_client,
+)
 from infrastructure.storage import RunDirectory, RunStatus, day_tag, read_jsonl
 from simulation.config import PROJECT_ROOT, ExperimentConfig
 from simulation.dry_run import DryRunModel
@@ -82,6 +91,7 @@ async def run(
         for r in config.residents
     }
     client = _client(config, dry_run)
+    await _check_model(client, config)
     backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
     backend.require_images(backend.load_split(config.town.work.split))
     revision = code_revision()
@@ -167,6 +177,23 @@ def _client(config: ExperimentConfig, dry_run: bool) -> StreamingClient:
     if dry_run:
         return create_client(config.llm, DryRunModel(config.town))
     return create_client(config.llm)
+
+
+async def _check_model(client: StreamingClient, config: ExperimentConfig) -> None:
+    """Fail fast, with LLMCallError, unless the model answers one small request at the
+    residents' reasoning effort."""
+    request = LLMRequest(
+        messages=(Message(role="user", content="Say yes."),),
+        reasoning_effort=config.runtime.reasoning_effort,
+        sampling=Sampling(max_tokens=16),
+    )
+    try:
+        await client.stream(request)
+    except LLMError as error:
+        raise LLMCallError(
+            f"the model {config.llm.model} at {config.llm.base_url} did not answer a test "
+            f"request: {error}"
+        ) from error
 
 
 def _create(
