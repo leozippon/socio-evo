@@ -1106,29 +1106,27 @@ class World:
         """Whether `r` has gone to bed in the day being lived."""
         return any(kind == "sleep" for _, kind, _, _ in r.day)
 
-    def go_to_bed(self, r: Resident, wake: int, journal: str | None, day: int) -> None:
-        """`r` goes to bed, with the day's entry in its journal if it wrote one; it hears what
-        it may still do. Going to bed again the same day, it hears of ratings only if new ones
-        came."""
-        again = self.went_to_bed(r)
+    def go_to_bed(self, r: Resident, wake: int, journal: str | None, day: int) -> str:
+        """`r` goes to bed, with the day's entry in its journal if it wrote one, and returns what
+        `sleep` answers. Going to bed from elsewhere, it is told in bed what it may still do;
+        from bed, the answer alone tells the hour it will wake, so that with nothing more to read
+        it falls asleep at its next wait. Going to bed again the same day, it hears of ratings
+        only if new ones came."""
+        again, in_bed = self.went_to_bed(r), isinstance(r.base, Sleep)
         self._put_to_sleep(r, wake)
         kept = "; your journal entry for today is kept" if journal else ""
         parts = [f"You are in bed and will wake at {clock_time(wake)}{kept}."]
         ratings: list[list[int | str]] = []
         if self.ratings_on:
             ratings = self.ratings.take_unread(r.name)
-            met = sorted(self.ratings.met[r.name])
             if ratings or not again:
                 parts.append(tell_ratings(ratings))
+        if not in_bed:
+            met = sorted(self.ratings.met[r.name]) if self.ratings_on else []
             parts.append(
                 "Before you fall asleep you can look back over your day"
                 + (f", rate the people you spoke with today ({listed(met)})," if met else "")
                 + " and see to your files; you fall asleep once you have nothing more to do."
-            )
-        else:
-            parts.append(
-                "Before you fall asleep you can look back over your day and see to your files; "
-                "you fall asleep once you have nothing more to do."
             )
         told = " ".join(parts)
         wrote = " and wrote in the journal" if journal else ""
@@ -1136,9 +1134,10 @@ class World:
             "sleep",
             lambda w: told if w == r.name else f"{r.name} went to bed{wrote}.",
             actor=r,
-            audience=[r],
+            audience=[] if in_bed else [r],
             payload={"journal": journal, "day": day, "wake": wake, "ratings_read": ratings},
         )
+        return told if in_bed else "You went to bed."
 
     def fall_asleep(self, r: Resident) -> None:
         """`r`, in bed, has nothing more to do: it falls asleep until its wake-up."""

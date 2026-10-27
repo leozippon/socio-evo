@@ -374,12 +374,21 @@ async def test_going_to_bed_again_from_bed_adds_to_the_journal_and_sets_the_hour
     await town.until("21:00")
     await town.call("Mei", "sleep", until="07:00", journal="A quiet day.")
     assert (await town.call("Mei", "review_day")).text.startswith("Your day, as it went:")
+    town.take("Mei")
     added = await town.call("Mei", "sleep", until="08:00", journal="Looking back: no shopping.")
-    assert added.ends_turn and added.text == "You went to bed."
+    assert added.ends_turn and added.text == (  # its result alone, without the bedtime again
+        "You are in bed and will wake at 08:00; your journal entry for today is kept."
+    )
+    assert town.take("Mei") == []
     journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
     assert journal.read_text() == "A quiet day.\n\nLooking back: no shopping.\n"
     assert mei.base.wake == at("08:00", day=2) and not mei.base.suspended
+    again = await town.call("Mei", "sleep", until="08:00")
+    assert again.text == "You are in bed and will wake at 08:00."
+    assert journal.read_text() == "A quiet day.\n\nLooking back: no shopping.\n"
     town.rest()
+    await town.until("21:01")
+    assert mei.suspended  # nothing left to read: asleep at her next wait
     await town.until("08:00", day=2)
     entries = town.world.log.entries()
     wakes = [e["sim_time"] for e in entries if e["kind"] == "wake" and e["actor"] == "Mei"]

@@ -318,8 +318,8 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         with path.open("a", encoding="utf-8") as file:
             file.write(entry)
     told = world.break_off(r)
-    world.go_to_bed(r, world.wake_time(hour), journal, day)
-    return ToolResult(f"{told}You went to bed.", ends_turn=True)
+    went = world.go_to_bed(r, world.wake_time(hour), journal, day)
+    return ToolResult(f"{told}{went}", ends_turn=True)
 
 
 async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
