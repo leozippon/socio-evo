@@ -23,10 +23,15 @@
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
-# nine helpings of a third of it, eaten three a day as the owner gets hungry, so a stock keeps a
-# resident fed round the clock. Satiety falls 90 a day, so a meal a day, at whatever hour, never
-# leaves a resident starving (below 10) at midnight, and a resident that eats nothing is starving
-# from about twenty-four hours after its last meal. Every midnight found starving takes 15 of its
+# nine helpings of a third of it, kept at home: a helping is a meal cooked in one's own kitchen,
+# eaten there as one gets hungry, on waking or on coming home, three a day at most, while the
+# café and the Anchor feed whoever is out. Satiety falls 90 a day, so a meal a day, or three
+# helpings, at whatever hour, never leaves a resident starving (below 10) at midnight, and a
+# resident that eats nothing is starving from about twenty-four hours after its last meal. One
+# that eats only on waking (two helpings, from an empty stomach) and stays out until the forced
+# sleep is hungry by mid-afternoon and starving by half past ten, so a day out needs a meal out
+# or an evening at home; never eating more, it starves as one that never eats does. Every
+# midnight found starving takes 15 of its
 # 100 health (17 in a shared house), so one that never eats is starving from the second midnight
 # after its last meal and dead at the eighth, or the seventh in a shared house, with "run down"
 # told on the fourth day and "looking unwell" seen by others from the sixth; one that eats a meal

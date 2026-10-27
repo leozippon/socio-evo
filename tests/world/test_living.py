@@ -75,6 +75,12 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
         "You bought groceries for $12. You have groceries (9 helpings). Your purse holds $168."
     )
     assert world.nourishment(tomas) == 0 and tomas.living.things == {"groceries": 9}
+    tomas.living.satiety = 30  # hungry, but groceries are a meal cooked at home
+    await town.until("08:00")
+    assert tomas.living.eaten == {} and tomas.living.things == {"groceries": 9}
+    await town.call("Tomas", "go", place="college-flat")
+    await town.until("08:10")
+    assert tomas.living.eaten == {"groceries": 2}  # in his kitchen as he came in
     for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
@@ -84,9 +90,9 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
         "room at the shared house on Mill Street $20. You ate today: a meal at the café. You are "
         "a little hungry. You are fresh. You are in good health. Your purse holds $90."
     )
-    assert statements["Tomas"] == (  # helpings of the stock, eaten as he could eat
+    assert statements["Tomas"] == (  # helpings of the stock, eaten at home as he could eat
         "Your statement for Monday 1 January: bought groceries for $12; rent for your room at "
-        "the flat by the college gates $30. You ate today: 2 helpings of groceries. You are "
+        "the flat by the college gates $30. You ate today: 3 helpings of groceries. You are "
         "well fed. You are fresh. You are in good health. Your purse holds $138."
     )
     assert statements["Aisha"] == (
@@ -94,12 +100,12 @@ async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
         "Street $20. You had nothing to eat today. You are hungry. You are fresh. You are in "
         "good health. Your purse holds $10."
     )
-    # The day's record starts afresh; the stock went down by the two helpings Tomas ate when
-    # he could eat, at 12:00 and 21:00. Aisha, full when the town began, is hungry but not yet
-    # starving at the first midnight.
-    assert world.nourishment(mei) == 0 and tomas.living.things == {"groceries": 7}
+    # The day's record starts afresh; the stock went down by the three helpings Tomas ate at
+    # home, two as he came in and one when he could eat again, the most a day allows. Aisha,
+    # full when the town began, is hungry but not yet starving at the first midnight.
+    assert world.nourishment(mei) == 0 and tomas.living.things == {"groceries": 6}
     settled = [e for e in world.log.entries() if e["kind"] == "settlement"]
-    assert [e["payload"]["nourishment"] for e in settled] == [100, 68, 0]
+    assert [e["payload"]["nourishment"] for e in settled] == [100, 102, 0]
     assert [e["payload"]["purse"] for e in settled] == [90, 138, 10]
     assert settled[2]["payload"]["night"] == {"poor_home": -2, "recovery": 5}
 

@@ -30,8 +30,9 @@ it. The body (`Body`) is reckoned lazily and exactly: `reckon` brings a resident
 at the rates of what it has been doing since it was last reckoned, and is called every hour on
 the hour, before every change of activity (sitting down to work, setting off, arriving, going
 to bed, falling asleep, waking) and at the checkpoint, so that a checkpoint carries the body as
-of its moment. A resident awake and able to eat eats from its stock of food as it is reckoned;
-food bought on the spot is eaten as it is bought. A need that crosses into another band is
+of its moment. A resident awake at home and able to eat eats from its stock of food as it is
+reckoned, a helping being a meal cooked in its kitchen, so that a stock feeds nobody away from
+home; food bought on the spot is eaten as it is bought. A need that crosses into another band is
 logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
 purchase's result tell it otherwise); the situation names the needs in their lowest band. At
 midnight health moves by the day, and a resident whose health has run out dies: it leaves what
@@ -560,9 +561,10 @@ class World:
         return "awake"
 
     def feed(self, r: Resident) -> None:
-        """Awake and able to eat, `r` eats from its stock of food, a unit at a time and at most
-        the good's units a day, until it could eat no more."""
-        if not r.awake:
+        """Awake at home and able to eat, `r` eats from its stock of food, a helping (a meal
+        cooked in its kitchen) at a time and at most the good's helpings a day, until it could
+        eat no more; away from home a stock feeds nobody."""
+        if not r.awake or r.place != r.home:
             return
         living = r.living
         for good in self.config.goods:
@@ -985,6 +987,8 @@ class World:
             audience=[r, *others],
             payload={"place": place},
         )
+        if place == r.home:
+            self.reckon(r)  # home, it eats from its kitchen if it could eat
         exchange = self.config.social.exchange
         partner = self.residents.get(r.partner) if r.partner else None
         if (
