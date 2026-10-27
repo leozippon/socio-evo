@@ -71,7 +71,7 @@ async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round
     board = make_board(10, 4)
     board.post(1)
     number = board.posted[0]
-    board.finish("Mei", await board.claim("Mei", number, day=1))
+    board.finish(await board.claim("Mei", number, day=1))
     assert number not in board.posted and board.done["Mei"] == {number}
     assert board.claim_refusal("Tomas", number) == f"There is no task {number} on the board."
     listed = board.text("Tomas", "08:00").splitlines()[1:]
@@ -97,7 +97,7 @@ async def test_an_empty_board_says_when_the_next_goes_up_and_still_shows_the_tas
     (held,) = board.posted
     await board.claim("Mei", held, day=1)
     board.post(2)
-    board.finish("Tomas", await board.claim("Tomas", board.posted[0], day=2))
+    board.finish(await board.claim("Tomas", board.posted[0], day=2))
     assert board.posted == [] and board.text("Mei", "08:00") == (
         "Nothing is posted on the board now; the next board goes up at 08:00.\n\n"
         f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
@@ -109,7 +109,7 @@ async def test_a_task_paid_for_stays_on_an_isolated_board():
     board = make_board(10, 4, shared=False)
     board.post(1)
     number = board.posted[0]
-    board.finish("Mei", await board.claim("Mei", number, day=1))
+    board.finish(await board.claim("Mei", number, day=1))
     assert number in board.posted and board.claim_refusal("Tomas", number) is None
     assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
 

@@ -68,7 +68,7 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         async with asyncio.timeout(300):  # the checkpoint closes the container in real time
             while not town.checkpoints:
                 await asyncio.sleep(0.2)
-        assert town.world.board.workspaces == {}
+        assert town.world.board.claims["Mei"].workspace is None
         assert "+kept" in town.world.board.claims["Mei"].diff
 
         await town.until("09:00", day=2)  # at home: the workspace opens again where she is
@@ -79,5 +79,6 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         assert "test_" not in verdict.text and "::" not in verdict.text
     finally:
         await town.close()
-        for workspace in [*town.world.board.workspaces.values(), *town.world.board.orphans]:
+        opened = [claim.workspace for claim in town.world.board.claims.values()]
+        for workspace in [*filter(None, opened), *town.world.board.orphans]:
             await workspace.close()

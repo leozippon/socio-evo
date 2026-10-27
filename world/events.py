@@ -141,6 +141,9 @@ ENDED = "Your life has ended."
 EXHAUSTED = "You are exhausted and cannot work until you have slept."
 """Why one in the lowest band of energy cannot claim a task or act in its workspace, and what
 it is told when its work stops for it."""
+UNTIL_JOINED = "you can work on it once someone else claims it with you"
+"""When one who holds a task for two alone can work on it: told on claiming it first, on being
+left with it and whenever it reaches for its workspace meanwhile."""
 
 
 def refusal(event: Base, tool: str, *, destination: str, ratings: bool = True) -> str:

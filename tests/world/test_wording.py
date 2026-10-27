@@ -16,11 +16,12 @@ from tests.world.conftest import B_EXCHANGE, awake_at, town_config
 from world.events import Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS
 
+PAIRS = {"for_two": 0.25, "payment_for_two": 30}  # told, though none of the three tasks is for two
 GROUPS = {
     "A": town_config("isolated"),
     "B": town_config("isolated", exchange=B_EXCHANGE),
-    "C": town_config("town"),
-    "D": town_config("town", shareable=False),
+    "C": town_config("town", **PAIRS),
+    "D": town_config("town", shareable=False, **PAIRS),
 }
 DAY_NUMBER = re.compile(r"\b[Dd]ay[ -]?\d")
 

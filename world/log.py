@@ -4,7 +4,8 @@ Each entry has a sequence number (consecutive from 1 across the whole run, resum
 included), its kind (one of `KINDS`), the simulated and the real time, the actor and the place
 where there is one, the audience (the residents who perceived it), the text for nobody in
 particular, the wording for each resident it concerns where that differs (naming the resident
-"you"), and a payload of the facts for analysis. Residents never read the log.
+"you"), and a payload of the facts for analysis; an entry about a task held by two names the
+other holder in its payload as `with`. Residents never read the log.
 
 A log is reopened on resumption and its sequence continues after the last line written. The
 entries a lost day left after the last checkpoint stay in the file; the `resume` entry that
@@ -29,11 +30,13 @@ KINDS = {
     "board_posted": "the day's board posted at the workplace in the morning",
     "start_work": "a resident sat down to work, claiming a task or acting in its workspace",
     "leave_work": "a resident stopped work, or the exchange or the forced sleep stopped it",
-    "claim": "a resident claimed a task and got a workspace",
+    "claim": "a resident claimed a task and got a workspace; the first claim of a task for two "
+    "(for_two) waits for a second, which joins it",
     "command": "a shell command run in a workspace, with its exit code and output tail",
     "file_read": "a file read in a workspace",
     "file_write": "a file written in a workspace",
-    "submission": "a resident submitted its workspace's changes",
+    "submission": "a resident submitted its workspace's changes; a task for two goes to the "
+    "checks at the second of its holders' submissions",
     "verdict": "the acceptance verdict on a submission",
     "payment": "a resident was paid for an accepted task",
     "abandon": "a resident gave up its task",

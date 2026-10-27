@@ -306,7 +306,7 @@ async def test_exhaustion_stops_work_and_bars_it_until_one_has_slept(make_town):
         ("submit", {}),
     ):
         assert (await town.call("Tomas", tool, **args)).text == EXHAUSTED, tool
-    workspace = world.board.workspaces["Tomas"]
+    workspace = world.board.claims["Tomas"].workspace
     assert workspace.commands == [] and workspace.changed == {}  # nothing ran, nothing written
     # At the hour, the body's reckoning finds Mei, who sat down tired, exhausted and stops her.
     mei.living.energy = 20

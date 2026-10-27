@@ -193,6 +193,14 @@ class Rules:
             if social.mode == "town"
             else " The board is yours alone."
         )
+        if c.work.for_two:
+            assert c.work.payment_for_two is not None
+            work += (
+                " Some clients want two people on a task: the board marks it for two, and it pays "
+                f"{money(c.work.payment_for_two)} to each of the two. Whoever claims it first "
+                "waits until someone else claims it too; the two then share one workspace, and "
+                "their fix goes to the client's checks once both have handed it in."
+            )
 
         assert my_home.rent is not None
         fees = any(good.fee_per_day for good in for_sale)

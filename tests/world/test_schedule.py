@@ -311,6 +311,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "task": 2,
         "day": 1,
         "diff": json.dumps({"b.py": "half\n"}),
+        "handed": None,
     }
     assert state["residents"]["Mei"]["done"] == [1]
     assert state["residents"]["Mei"]["unread_ratings"] == [[3, "Busy all day."]]

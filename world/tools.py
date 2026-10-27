@@ -24,10 +24,10 @@ from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
 from world.backend import ExecResult, Workspace
-from world.board import Claim, failure
+from world.board import Claim, failure, with_partner
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
-from world.events import ENDED, EXHAUSTED, Work
+from world.events import ENDED, EXHAUSTED, UNTIL_JOINED, Work
 from world.rules import TOPICS, bare
 from world.telling import cap, counted, listed, you
 
@@ -82,6 +82,11 @@ def specs(config: TownConfig) -> list[ToolSpec]:
     writing = listed([bare(g.name) for g in for_sale if g.effect == "messaging"], "or")
     kept = [g.id for g in for_sale if g.kind != "immediate"]  # what can be owned and given
     rate = ", rate people" if config.social.ratings else ""
+    pairs = config.work.for_two > 0  # some tasks are for two: the clauses that tell of them
+    for_two = "whether it is for two and who waits for a partner on it, " if pairs else ""
+    joined = " A task for two can be worked on once a second person claims it too." if pairs else ""
+    both = " A task for two goes to the checks once both of you have handed it in." if pairs else ""
+    stays = " A task you hold with someone else stays theirs, changes and all." if pairs else ""
     return [
         spec("help", f"Read how the town works, on one point: {listed(list(TOPICS))}.",
              topic={"type": "string", "enum": list(TOPICS)}),
@@ -100,19 +105,19 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
         spec("view_board", f"Read the board at {workplace}: each task's number, repository, the "
-             "first line of its problem and its pay, and whether it is held or already paid to "
-             "you. If you hold a task, its whole problem is shown too."),
+             f"first line of its problem and its pay, {for_two}and whether it is held or already "
+             "paid to you. If you hold a task, its whole problem is shown too."),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
              "it. You get a workspace with its repository and read the whole problem; you can "
-             "work in it wherever you are.", ("task",),
+             f"work in it wherever you are.{joined}", ("task",),
              task=_number("the task's number on the board", 1)),
         *WORKSPACE_SPECS,
         spec("submit", "Hand in your fix for the task you hold. The client's checks run on it "
              "in a clean copy of the repository; you are told whether it was accepted, and if "
              "so you are paid at once, and if not, what went wrong and how many checks failed. "
-             "Each task can be handed in only a few times a day."),
+             f"Each task can be handed in only a few times a day.{both}"),
         spec("abandon_task", "Give up the task you hold. Its changes are thrown away and you "
-             "are not paid."),
+             f"are not paid.{stays}"),
         spec("leave_work", "Stop working for now. You stay where you are and keep your task and "
              "its changes."),
         spec("say", "Speak where you are. Without `to`, everyone awake here hears you; with "
@@ -341,44 +346,81 @@ async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
 
 
 async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    workplace, number = world.config.workplace, args["task"]
+    workplace, number, board = world.config.workplace, args["task"], world.board
     if r.place != workplace.id:
         return ToolResult(f"The board is at {workplace.name}; you can claim a task only there.")
-    refusal = world.board.claim_refusal(r.name, number)
+    refusal = board.claim_refusal(r.name, number)
     if refusal:
         return ToolResult(refusal)
-    sat = _sit_down(world, r)
-    if isinstance(sat, ToolResult):
-        return sat
-    await world.board.claim(r.name, number, calendar_day(world.clock.now()))
-    task = world.board.task(number)
+    for_two = number in board.for_two
+    if for_two and board.taken(r.name, number) is None:  # the first of two: nothing to work on
+        world.reckon(r)
+        if world.body.lowest("energy", r.living.energy):
+            return ToolResult(EXHAUSTED)
+        sat: str | ToolResult = ""
+    else:
+        sat = _sit_down(world, r)
+        if isinstance(sat, ToolResult):
+            return sat
+    claim = await board.claim(r.name, number, calendar_day(world.clock.now()))
+    task = board.task(number)
+    partner = board.partner(r.name)
+
+    def tell(w: str | None) -> str:
+        told = f"{cap(you(r.name, w))} claimed task {number} ({task.repo})"
+        if partner is None:
+            return f"{told}, which is for two." if for_two else f"{told}."
+        ready = "; your workspace is ready" if w == partner else ""
+        return f"{told} with {you(partner, w)}{ready}."
+
     world.record(
         "claim",
-        lambda w: f"{cap(you(r.name, w))} claimed task {number} ({task.repo}).",
+        tell,
         actor=r,
-        payload={"task": number, "instance_id": task.instance_id},
+        audience=[world.residents[partner]] if partner else [],
+        payload={
+            "task": number,
+            "instance_id": task.instance_id,
+            **({"for_two": True} if for_two else {}),
+            **with_partner(partner),
+        },
     )
     sat = "sat down to work and " if sat else ""
-    return ToolResult(
-        f"You {sat}claimed task {number}, in {task.repo}; your workspace is ready. {_now(world)} "
-        f"The problem:\n\n{task.problem_statement}"
-    )
+    if not board.ready(claim):
+        claimed = f"You claimed task {number}, in {task.repo}, which is for two; {UNTIL_JOINED}."
+    else:
+        joined = f", with {partner}" if partner else ""
+        claimed = (
+            f"You {sat}claimed task {number}, in {task.repo}{joined}; your workspace is ready."
+        )
+    return ToolResult(f"{claimed} {_now(world)} The problem:\n\n{task.problem_statement}")
+
+
+def _unready(world: World, r: Resident) -> str | None:
+    """Why `r` cannot work on a task now: it holds none, or holds a task for two alone."""
+    claim = world.board.claims.get(r.name)
+    if claim is None:
+        return "You hold no task; claim one from the board first."
+    if not world.board.ready(claim):
+        return f"Task {claim.task} is for two; {UNTIL_JOINED}."
+    return None
 
 
 async def _workspace(world: World, r: Resident) -> tuple[Claim, Workspace, str] | ToolResult:
     """The task `r` holds and its workspace, reopened if the night closed it, with `r` sat down
     to work if it was not, and what it is told of sitting down, or nothing."""
-    claim = world.board.claims.get(r.name)
-    if claim is None:
-        return ToolResult("You hold no task; claim one from the board first.")
+    refusal = _unready(world, r)
+    if refusal:
+        return ToolResult(refusal)
     sat = _sit_down(world, r)
     if isinstance(sat, ToolResult):
         return sat
-    if r.name not in world.board.workspaces:
-        await world.board.reopen(r.name)
-    if world.board.claims.get(r.name) is not claim:  # it ran out while the workspace opened
-        return ToolResult(f"{sat}You hold no task; claim one from the board first.")
-    return claim, world.board.workspaces[r.name], sat
+    claim = world.board.claims[r.name]
+    workspace = await world.board.workspace(claim)
+    refusal = _unready(world, r)  # the claim ran out, or the partner left, while it opened
+    if refusal:
+        return ToolResult(f"{sat}{refusal}")
+    return claim, workspace, sat
 
 
 async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -468,36 +510,78 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
 
 
 async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace) -> ToolResult:
-    """`r` hands in the task it holds, `claim`, from `workspace`: what `submit` tells."""
+    """`r` hands in the task it holds, `claim`, from `workspace`: what `submit` tells. A task
+    for two goes to the checks at the second of its two holders' hand-ins, which count for
+    both; the first is recorded and the partner told."""
     board = world.board
     number = claim.task
+    partner = board.partner(r.name)
+    by = [r.name, *([partner] if partner else [])]
+    if claim.checking:  # the partner's hand-in of it is being checked
+        return ToolResult(f"Task {number} is with the client's checks; you are told the verdict.")
     if board.runs_left(r.name, number) <= 0:
         return ToolResult(
             f"You have handed in task {number} {counted(world.config.work.acceptance_runs, 'time')}"
             " today, as often as a day allows; you can hand it in again tomorrow."
         )
+    if partner is not None and board.runs_left(partner, number) <= 0:
+        return ToolResult(
+            f"{partner} has handed in task {number} as often as a day allows; the two of you "
+            "can hand it in again tomorrow."
+        )
+    if partner is not None and claim.handed == r.name:
+        return ToolResult(
+            f"You have handed in task {number} already; it goes to the client's checks once "
+            f"{partner} hands it in too."
+        )
     patch = await workspace.diff()
     if not patch.strip():
         return ToolResult("Your workspace has no changes to hand in.")
     task = board.task(number)
+    first = partner is not None and claim.handed is None
+
+    def handed(w: str | None) -> str:
+        if partner is not None and w == partner:
+            if first:
+                return (
+                    f"{r.name} handed in task {number}; it goes to the client's checks once you "
+                    "hand it in too."
+                )
+            return f"{r.name} handed in task {number} too; the client's checks are running on it."
+        return f"{cap(you(r.name, w))} handed in task {number}."
+
     world.record(
         "submission",
-        lambda w: f"{cap(you(r.name, w))} handed in task {number}.",
+        handed,
         actor=r,
-        payload={"task": number, "patch": patch},
+        audience=[world.residents[partner]] if partner else [],
+        payload={"task": number, "patch": patch, **with_partner(partner)},
     )
-    verdict = await board.backend.accept(task, patch, world.config.work.acceptance_timeout_s)
+    if first:
+        claim.handed = r.name
+        return ToolResult(
+            f"You handed in task {number}; it goes to the client's checks once {partner} hands it "
+            f"in too. {_now(world)}"
+        )
+    claim.handed, claim.checking = None, True
+    try:
+        verdict = await board.backend.accept(task, patch, world.config.work.acceptance_timeout_s)
+    finally:
+        claim.checking = False
     if verdict.status != "error":  # checks that could not be run use up no hand-in
-        board.count_run(r.name, number)
-    left = board.runs_left(r.name, number)
+        for name in by:
+            board.count_run(name, number)
+    left = min(board.runs_left(name, number) for name in by)
     holds = board.claims.get(r.name) is claim  # a claim can run out at midnight during the checks
+    others = [world.residents[name] for name in by[1:] if world.residents[name].alive]
     world.record(
         "verdict",
         lambda w: (
-            f"Task {number}, handed in by {you(r.name, w)}, was "
+            f"Task {number}, handed in by {listed([you(name, w) for name in by])}, was "
             + ("accepted." if verdict.resolved else f"not accepted: {failure(verdict)}.")
         ),
         actor=r,
+        audience=others,
         payload={
             "task": number,
             "status": verdict.status,
@@ -505,6 +589,7 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
             "fail_to_pass": list(verdict.fail_to_pass),
             "pass_to_pass": list(verdict.pass_to_pass),
             "held": holds,
+            **with_partner(partner),
         },
     )
     if not r.alive:  # died at midnight while the checks ran: the verdict stands, nobody is paid
@@ -527,38 +612,61 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
         else:
             told = f"Not accepted: {failure(verdict)}."
         return ToolResult(f"{told} {again} {_now(world)}")
-    finished = board.finish(r.name, claim)
+    paid = board.holders(claim)  # both of a pair, unless one left it while the checks ran
+    finished = board.finish(claim)
     if finished is not None:
         await finished.close()
-    payment = world.config.work.payment
-    world.economy.pay(r.name, payment, number)
-    world.record(
-        "payment",
-        lambda w: (
-            f"{cap(you(r.name, w))} received {world.economy.money(payment)} for task {number}."
-        ),
-        actor=r,
-        payload={"task": number, "amount": payment, "purse": world.economy.purses[r.name]},
-    )
+    work, economy = world.config.work, world.economy
+    payment = work.payment_for_two if number in board.for_two else work.payment
+    assert payment is not None
+    for name in paid:
+        economy.pay(name, payment, number)
+        payee = world.residents[name]
+        world.record(
+            "payment",
+            lambda w, name=name: (
+                f"{cap(you(name, w))} received {economy.money(payment)} for task {number}."
+            ),
+            actor=payee,
+            audience=[] if payee is r else [payee],
+            payload={
+                "task": number,
+                "amount": payment,
+                "purse": economy.purses[name],
+                **with_partner(next((other for other in paid if other != name), None)),
+            },
+        )
     return ToolResult(
-        f"Accepted. You were paid {world.economy.money(payment)}. {world.economy.purse(r.name)} "
-        f"{_now(world)}"
+        f"Accepted. You were paid {economy.money(payment)}. {economy.purse(r.name)} {_now(world)}"
     )
 
 
 async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    claim = world.board.claims.get(r.name)
+    board = world.board
+    claim = board.claims.get(r.name)
     if claim is None:
         return ToolResult("You hold no task.")
-    workspace = world.board.drop(r.name)
+    partner = board.partner(r.name)
+    workspace = board.drop(r.name)
     if workspace is not None:
         await workspace.close()
+
+    def tell(w: str | None) -> str:
+        if partner is not None and w == partner:
+            return f"{r.name} gave up task {claim.task}, which you now hold alone; {UNTIL_JOINED}."
+        return f"{cap(you(r.name, w))} gave up task {claim.task}."
+
     world.record(
         "abandon",
-        lambda w: f"{cap(you(r.name, w))} gave up task {claim.task}.",
+        tell,
         actor=r,
-        payload={"task": claim.task},
+        audience=[world.residents[partner]] if partner else [],
+        payload={"task": claim.task, **with_partner(partner)},
     )
+    if partner is not None:
+        return ToolResult(
+            f"You gave up task {claim.task}; {partner} keeps it and its changes. {_now(world)}"
+        )
     return ToolResult(f"You gave up task {claim.task}; its changes are gone. {_now(world)}")
 
 

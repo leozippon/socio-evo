@@ -363,7 +363,7 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
     first = backend.opened[0]
     town.rest()
     await town.until("02:30", day=2)
-    assert first.closed and town.world.board.workspaces == {}
+    assert first.closed and town.world.board.claims["Mei"].workspace is None
     assert town.world.board.claims["Mei"].diff == json.dumps({"a.py": "half done\n"})
     closed = [e for e in town.world.log.entries() if e["kind"] == "workspace_closed"]
     assert closed[0]["payload"] == {"task": 2, "diff": json.dumps({"a.py": "half done\n"})}
@@ -371,6 +371,7 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
         "task": 2,
         "day": 1,
         "diff": json.dumps({"a.py": "half done\n"}),
+        "handed": None,
     }
 
     await town.until("09:20", day=2)  # at home: the workspace opens again where she is

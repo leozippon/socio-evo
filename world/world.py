@@ -77,7 +77,7 @@ from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.storage import RunDirectory
 from world import tools
 from world.backend import Backend
-from world.board import Board, Claim
+from world.board import Board, with_partner
 from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
 from world.config import Band, Good, TownConfig
@@ -86,6 +86,7 @@ from world.events import (
     ENDED,
     EXHAUSTED,
     TASK_TOOLS,
+    UNTIL_JOINED,
     Base,
     Conversation,
     Dead,
@@ -326,11 +327,12 @@ class World:
         self._expire(day)
 
     def _expire(self, day: int) -> None:
-        for name in self.board.expired(day):
-            claim = self.board.claims[name]
-            workspace = self.board.drop(name)
+        board = self.board
+        ending = [(name, board.claims[name], board.partner(name)) for name in board.expired(day)]
+        for name, claim, partner in ending:
+            workspace = board.drop(name)
             if workspace is not None:
-                self.board.orphans.append(workspace)
+                board.orphans.append(workspace)
             r = self.residents[name]
             self.record(
                 "expiry",
@@ -341,7 +343,7 @@ class World:
                 actor=r,
                 place=None,
                 audience=[r],
-                payload={"task": claim.task},
+                payload={"task": claim.task, **with_partner(partner)},
             )
 
     def _pair(self, day: int) -> None:
@@ -534,6 +536,7 @@ class World:
         self.disarm_tick(r)
         r.partner = None
         claim = self.board.claims.get(r.name)
+        partner = self.board.partner(r.name)  # who holds its task for two with it, left alone
         if claim is not None:
             workspace = self.board.drop(r.name)
             if workspace is not None:
@@ -546,13 +549,25 @@ class World:
             for other in self.residents.values()
             if other is not r and other.alive and self.config.social.mode == "town"
         ]
+
+        def tell(w: str | None) -> str:
+            died = f"{r.name} died in the night"
+            if partner is not None and w == partner:
+                return f"{died}; you hold task {claim.task} alone now, and {UNTIL_JOINED}."
+            return f"{died}."
+
         self.record(
             "death",
-            lambda w: f"{r.name} died in the night.",
+            tell,
             actor=r,
             place=None,
             audience=others,
-            payload={"day": day, "home": r.home, "task": claim.task if claim else None},
+            payload={
+                "day": day,
+                "home": r.home,
+                "task": claim.task if claim else None,
+                **with_partner(partner),
+            },
         )
         self.rest_changed()
 
@@ -692,15 +707,20 @@ class World:
         assert self._on_checkpoint is not None
         with self.clock.hold():
             for name, claim in await self.board.close_all():
+                holders = self.board.holders(claim)
                 self.record(
                     "workspace_closed",
-                    lambda w, name=name, claim=claim: (
-                        f"The workspace of task {claim.task} "
-                        f"closed for the night, its changes kept for {you(name, w)}."
+                    lambda w, holders=holders, claim=claim: (
+                        f"The workspace of task {claim.task} closed for the night, its changes "
+                        f"kept for {listed([you(holder, w) for holder in holders])}."
                     ),
                     actor=self.residents[name],
                     place=None,
-                    payload={"task": claim.task, "diff": claim.diff},
+                    payload={
+                        "task": claim.task,
+                        "diff": claim.diff,
+                        **with_partner(self.board.partner(name)),
+                    },
                 )
             self.ratings.end_day()
             for name in self.board.runs:
@@ -739,7 +759,7 @@ class World:
         ]
         if (
             unsettled
-            or self.board.workspaces
+            or any(claim.workspace for claim in self.board.claims.values())
             or self.board.orphans
             or self._rooms
             or any(self.ratings.tonight.values())
@@ -759,7 +779,7 @@ class World:
                 "longest": isinstance(r.base, Sleep) and r.base.longest,
                 "purse": self.economy.purses[name],
                 "ledger": copy.deepcopy(self.economy.ledger[name]),
-                "claim": asdict(claim) if claim else None,
+                "claim": claim.saved() if claim else None,
                 "done": sorted(self.board.done[name]),
                 "unread_ratings": copy.deepcopy(self.ratings.unread[name]),
                 "held": [asdict(percept) for percept in r.port.held],
@@ -792,7 +812,7 @@ class World:
             self.economy.purses[name] = saved["purse"]
             self.economy.ledger[name] = copy.deepcopy(saved["ledger"])
             if saved["claim"] is not None:
-                self.board.claims[name] = Claim(**saved["claim"])
+                self.board.hold(name, saved["claim"])
             self.board.done[name] = set(saved["done"])
             self.ratings.unread[name] = copy.deepcopy(saved["unread_ratings"])
             r.port.held = [Percept(**percept) for percept in saved["held"]]
@@ -1325,7 +1345,12 @@ class World:
             parts.append(self.things_told(r))
         claim = self.board.claims.get(r.name)
         if claim is not None:
-            parts.append(f"You hold task {claim.task} ({self.board.task(claim.task).repo}).")
+            held = f"You hold task {claim.task} ({self.board.task(claim.task).repo})"
+            if (partner := self.board.partner(r.name)) is not None:
+                held += f" with {partner}"
+            elif not self.board.ready(claim):
+                held += f", which is for two; {UNTIL_JOINED}"
+            parts.append(f"{held}.")
         if r.suspended:
             pass
         elif isinstance(r.base, Movement):
@@ -1338,8 +1363,10 @@ class World:
                 useless.add("message")  # nothing to write with
             if r.place != self.config.workplace.id:
                 useless |= {"view_board", "claim_task"}  # the board hangs at the workplace
-            if r.name not in self.board.claims:
+            if claim is None:
                 useless |= TASK_TOOLS
+            elif not self.board.ready(claim):
+                useless |= TASK_TOOLS - {"abandon_task"}  # nothing to work on until a partner comes
             usable = [spec.name for spec in self.tool_specs if spec.name in r.tools - useless]
             files = ", and see to your files" if isinstance(r.base, Sleep) else ""
             parts.append(f"What you can do now: {', '.join(usable)}{files}.")

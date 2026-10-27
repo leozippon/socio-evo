@@ -3,9 +3,10 @@ social life, its clock and the few fixed hours of its day.
 
 The four groups of the design differ only here: `social.mode` is `isolated` in A and B (each
 resident lives in a town of its own and has a board of its own) and `town` in C and D (one town,
-one shared board); `social.exchange` is set in B alone (the evening pairing); and
-`social.skills_shareable` is false in D. Every check that the world relies on is made when the
-configuration is validated, so that a bad configuration stops a run before anything is written.
+one shared board, part of which may be posted for two, `work.for_two`); `social.exchange` is set
+in B alone (the evening pairing); and `social.skills_shareable` is false in D. Every check that
+the world relies on is made when the configuration is validated, so that a bad configuration
+stops a run before anything is written.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -258,7 +259,10 @@ class Work(StrictModel):
     """The work at the workplace. `split` names the task pool, of which the board posts
     `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
     pool; a claim made on a calendar day runs out at the midnight that ends the day
-    `claim_expiry_days` days later."""
+    `claim_expiry_days` days later. A share `for_two` of the rotation, spread evenly through
+    it, is posted for two, held by two residents together, each of whom is paid
+    `payment_for_two` when it is accepted; a shared board alone can have them, and runs frozen
+    before they existed name neither field and had none."""
 
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
@@ -267,6 +271,14 @@ class Work(StrictModel):
     claim_expiry_days: int = Field(ge=0)
     shell_timeout_s: int = Field(ge=1)
     acceptance_timeout_s: int = Field(ge=1)
+    for_two: float = Field(0, ge=0, le=1, description="the share of the rotation posted for two")
+    payment_for_two: int | None = Field(None, ge=1, description="paid to each of the two")
+
+    @model_validator(mode="after")
+    def _paid_for_two(self) -> Work:
+        if self.for_two and self.payment_for_two is None:
+            raise ValueError("tasks posted for two need payment_for_two")
+        return self
 
 
 class Exchange(StrictModel):
@@ -403,6 +415,8 @@ class TownConfig(StrictModel):
             )
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
+        if self.work.for_two and self.social.mode != "town":
+            raise ValueError("tasks for two need a shared board: work.for_two is 0 in isolation")
         exchange = self.social.exchange
         if exchange is not None:
             if self.social.mode != "isolated":
