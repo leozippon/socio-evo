@@ -1,11 +1,12 @@
 """The standing rules of the town, as one resident is told them, and `help` by topic.
 
-The rules are derived from the configuration once and never change during a run; they are part
-of the system prompt and the seed of the resident's notes on the town, and the ties they tell in
-the town mode seed its notes on people. They describe what can be done and what follows from it,
-in plain words, and nothing else: not the length of the run, not the machinery, not how anyone
-ought to behave. `help` tells the same paragraphs with what has changed since: who lives where
-and which rooms are free, as the world passes it in.
+The rules are derived from the configuration and from who lives where, which the world passes
+in as it stands: a move or a death changes the homes, the free rooms and one's own rent, and
+nothing else in them changes during a run. They are part of the system prompt and the seed of
+the resident's notes on the town, and the ties they tell in the town mode seed its notes on
+people. They describe what can be done and what follows from it, in plain words, and nothing
+else: not the length of the run, not the machinery, not how anyone ought to behave. `help` tells
+the same paragraphs on one topic.
 """
 
 from __future__ import annotations
@@ -74,9 +75,10 @@ class Rules:
     def __init__(self, config: TownConfig) -> None:
         self.config = config
 
-    def text(self, name: str) -> str:
-        """The whole of the rules told to `name`."""
-        sections = self.sections(name)
+    def text(self, name: str, homes: Homes | None = None) -> str:
+        """The whole of the rules told to `name`, with `homes` as they stand (at the start if not
+        given)."""
+        sections = self.sections(name, homes)
         body = "\n\n".join(f"{_HEADINGS[topic]}. {sections[topic]}" for topic in TOPICS)
         return f"How the town works.\n\n{body}"
 

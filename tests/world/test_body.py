@@ -393,6 +393,8 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     assert (
         "Mei" not in (await town.call("Tomas", "help", topic="places")).text.split("Your home")[0]
     )
+    assert "Mei (" not in world.ports["Tomas"].rules()  # no longer among the living
+    assert world.ports["Mei"].rules() == ENDED
 
     # The run goes on: the checkpoint is taken with her dead, and a restored world keeps her so.
     town.rest("Mei")

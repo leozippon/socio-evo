@@ -821,7 +821,7 @@ class World:
         ]
 
     def homes(self, viewer: Resident) -> dict[str, list[str]]:
-        """Who lives where now, as `viewer` knows it, for the rules' `help`."""
+        """Who lives where now, as `viewer` knows it, for the rules and `help`."""
         return {
             place.id: [other.name for other in self.occupants(place.id, viewer)]
             for place in self.config.places
@@ -1353,7 +1353,11 @@ class ResidentPort:
         self.waiting = False
 
     def rules(self) -> str:
-        return self._world.rules.text(self._resident.name)
+        """The rules as they stand: who lives where now, and so one's own home and rent."""
+        r = self._resident
+        if not r.alive:
+            return ENDED
+        return self._world.rules.text(r.name, self._world.homes(r))
 
     def tool_specs(self) -> list[ToolSpec]:
         return list(self._world.tool_specs)

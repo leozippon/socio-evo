@@ -268,6 +268,11 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
     assert "the shared house on Mill Street $20 (3 rooms, 2 free, little comfort)" in places
     assert "the flat by the college gates $30 (6 rooms, 4 free)" in places
     assert "Your home is the flat by the college gates." in places
+    rules = world.ports["Mei"].rules()  # the standing rules in her prompt move with her
+    assert "Your home is the flat by the college gates." in rules
+    assert "Your room at the flat by the college gates costs $30 a day" in rules
+    assert "Mill Street costs" not in rules
+    assert "Mei (the flat by the college gates)" in world.ports["Tomas"].rules()
     assert "It is your home" in (await town.call("Mei", "look_around")).text
     await town.until("21:00")
     assert (await town.call("Mei", "sleep", until="07:00", journal="A new room.")).text == (
