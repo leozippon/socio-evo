@@ -190,7 +190,9 @@ async def _attempt(
     solo_config: SoloConfig,
     backend: Backend,
 ) -> TaskResult:
-    """One task worked from a fresh copy of the resident; any exception is the row's error."""
+    """One task worked from a fresh copy of the resident; any exception is the row's error,
+    except one in closing the workspace, which comes after the task has ended and so leaves its
+    ending as it was: it is reported on stderr."""
     port: SoloPort | None = None
     failure: str | None = None
     seconds = 0.0
@@ -202,7 +204,14 @@ async def _attempt(
             await _live(Runtime(directory, port, metered, runtime_config), port)  # type: ignore[arg-type]
         finally:
             seconds = port.elapsed()
-            await port.close()
+            try:
+                await port.close()
+            except Exception as error:
+                print(
+                    f"{task.instance_id}: the workspace was not closed: "
+                    f"{type(error).__name__}: {error}",
+                    file=sys.stderr,
+                )
         for number, submission in enumerate(port.submissions, start=1):
             (task_dir / f"submission-{number}.patch").write_text(submission.patch, encoding="utf-8")
     except Exception as error:

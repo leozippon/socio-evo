@@ -185,6 +185,40 @@ async def test_failures_of_the_machinery_are_errors_and_not_the_residents(tmp_pa
     assert result.endings == ENDINGS | {"error": 2}
 
 
+class Unclosable(FakeBackend):
+    """A backend whose workspaces fail when they are closed."""
+
+    async def open(self, task, name):
+        workspace = await super().open(task, name)
+
+        async def close():
+            raise RuntimeError("the container would not stop")
+
+        workspace.close = close
+        return workspace
+
+
+async def test_a_workspace_that_fails_to_close_leaves_the_ending_as_it_was(tmp_path, capsys):
+    backend = Unclosable(1)
+    result = await evaluate_capability(
+        exported(tmp_path),
+        backend.tasks,
+        ScriptedClient(scripted),
+        RuntimeConfig(),
+        SoloConfig(),
+        concurrency=1,
+        out_dir=tmp_path / "out",
+        backend=backend,
+    )
+
+    [row] = result.tasks
+    assert (row.status, row.resolved, row.error) == ("accepted", True, None)
+    assert (result.evaluated, result.errors, result.resolved_rate) == (1, 0, 1.0)
+    assert capsys.readouterr().err == (
+        "org__repo-1: the workspace was not closed: RuntimeError: the container would not stop\n"
+    )
+
+
 def submitting(request: LLMRequest):
     """A model that hands in a change at every step."""
     change = tool_call("write_repo_file", path="fix.py", content="FIX\n")
