@@ -216,7 +216,7 @@ export function describeMarker(m, by, who) {
       return [`went to bed until ${hhmm(secondOfDay(m.wake))} and wrote the journal of day ${m.day}`, m.text + read];
     }
     case "forced_sleep":
-      return [`fell asleep at the forced hour without a journal entry, to wake at ${hhmm(secondOfDay(m.wake))}`];
+      return [`fell asleep at the forced hour without going to bed, to wake at ${hhmm(secondOfDay(m.wake))}`];
     case "condition":
       return [`is ${m.band}`];
     case "death":
