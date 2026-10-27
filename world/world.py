@@ -3,20 +3,20 @@
 `World` is created from a configuration, a run directory and a work backend; creating it loads
 the task split, checks that every task's image is present and that every agent directory exists,
 and writes nothing. A new world stands at the checkpoint hour of day 1 with every resident asleep
-at home, to wake at the forced waking hour, and posts day 1's board as it starts; `restore` puts
-it instead in the state of a saved checkpoint. `run` then drives the town until a given day's
-checkpoint.
+at home, to wake at the forced waking hour, before any board is posted; `restore` puts it instead
+in the state of a saved checkpoint, whose board is what was left of the last one posted. `run`
+then drives the town until a given day's checkpoint.
 
 Everything that happens at a moment of simulated time is a timer in one queue, run by `run` in
 the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
 tells a waiting resident the time, and the day's schedule, which is all the fixed structure a day
-has. For day N (whose daytime is calendar day N): group B's pairing, which wakes whoever sleeps;
-midnight, when each resident's food and health are reckoned, its rent and fees are charged with
-a statement, expired claims run out and the next day's board is posted; the forced sleep; and
-the checkpoint. Every hour on the hour, besides, the bodies are brought up to date (see below).
-The workplace never closes, and residents go to
-bed and wake when they choose, except that one sleep lasts at most a configured span and that
-nobody wakes between the forced sleep and the checkpoint.
+has. For day N (whose daytime is calendar day N): the posting of day N's board at the workplace
+in the morning, which replaces what was left of the day before's; group B's pairing, which wakes
+whoever sleeps; midnight, when each resident's food and health are reckoned, its rent and fees
+are charged with a statement and expired claims run out; the forced sleep; and the checkpoint.
+Every hour on the hour, besides, the bodies are brought up to date (see below). The workplace
+never closes, and residents go to bed and wake when they choose, except that one sleep lasts at
+most a configured span and that nobody wakes between the forced sleep and the checkpoint.
 At the checkpoint the world waits until every resident is asleep and its runtime waits on its
 port, holds the clock, closes every workspace keeping its changes, takes the snapshot and awaits
 `on_checkpoint(day, snapshot)`, through which the composition layer writes the checkpoint and
@@ -162,6 +162,7 @@ class World:
         self.config = config
         self._forced = parse_hour(config.day.forced_sleep)
         self._forced_wake = parse_hour(config.day.forced_wake)
+        self._board_posted = parse_hour(config.day.board_posted)
         self._checkpoint_hour = parse_hour(config.day.checkpoint)
         start = self._checkpoint_hour
         self.clock = clock or Clock(
@@ -259,8 +260,10 @@ class World:
             pushed.cancel()
 
     def _schedule_day(self, day: int) -> None:
-        if day == 1:  # only a new world lives day 1: its board is posted as it starts
-            self._at(self.clock.now(), partial(self._post_board, 1))
+        """Arm the fixed hours of lived day `day`, from its opening checkpoint hour (where a new
+        world starts and a restored one stands), which the configuration puts before all of
+        them."""
+        self._at((day - 1) * DAY + self._board_posted, partial(self._post_board, day))
         exchange = self.config.social.exchange
         if exchange is not None:
             evening = (day - 1) * DAY + self.config.day.of_day(exchange.at)
@@ -270,7 +273,8 @@ class World:
         self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
 
     def _post_board(self, day: int) -> None:
-        """Post the board of calendar day `day` and tell those at the workplace."""
+        """Post the board of calendar day `day`, in place of what was left of the day before's,
+        and tell those at the workplace."""
         self.board.post(day)
         workplace = self.config.workplace
         here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
@@ -294,10 +298,9 @@ class World:
 
     def _midnight(self, day: int) -> None:
         """The end of calendar day `day`: its food and its health reckoned and charges taken,
-        the claims that run out with it, and the next day's board."""
+        and the claims that run out with it."""
         self._settle(day)
         self._expire(day)
-        self._post_board(day + 1)
 
     def _expire(self, day: int) -> None:
         for name in self.board.expired(day):
@@ -721,7 +724,7 @@ class World:
         if set(state["residents"]) != set(self.residents):
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
-        self.board.posted = list(state["posted"])  # the day's board, less what was paid for
+        self.board.posted = list(state["posted"])  # the last board, less what was paid for
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None

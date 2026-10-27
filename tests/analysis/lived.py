@@ -4,17 +4,17 @@ directory it leaves (frozen configuration, world log, agent directories, Mei's t
 the analysis reads.
 
 Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way out, waits until
-09:00, claims task 1 (and is refused task 2, as she holds one), runs two commands, writes the
-fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas, who claimed task 2,
-asks her privately how she runs the tests; she answers privately and passes him her skill. He
-tells Aisha something privately in her presence and gives Mei $5; Mei leaves for home at 09:20,
-waits there until 20:00 (her body speaks twice, at 12:00 and 20:00, and she waits on), goes to
-bed with her journal, reads the record of her day, rates Tomas 4, writes her notes on people and
-fails to read a file she does not have. Tomas works until
-18:00, goes home, goes to bed at 20:00 with a journal that claims he fixed task 2, and rates Mei
-5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so everyone is hungry by
-the first midnight and starving by the second, which costs health; rent is $20 a day on Mill
-Street and $30 at the flat.
+09:00 (the board, posted at 08:00, is told to her and she waits on), claims task 1 (and is
+refused task 2, as she holds one), runs two commands, writes the fix, hands it in (accepted, paid
+$20) and writes a skill. At 09:20 Tomas, who claimed task 2, asks her privately how she runs the
+tests; she answers privately and passes him her skill. He tells Aisha something privately in her
+presence and gives Mei $5; Mei leaves for home at 09:20, waits there until 20:00 (her body speaks
+twice, at 12:00 and 20:00, and she waits on), goes to bed with her journal, reads the record of
+her day, rates Tomas 4, writes her notes on people and fails to read a file she does not have.
+Tomas works until 18:00, goes home, goes to bed at 20:00 with a journal that claims he fixed task
+2, and rates Mei 5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so
+everyone is hungry by the first midnight and starving by the second, which costs health; rent is
+$20 a day on Mill Street and $30 at the flat.
 
 Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00), goes back to bed
 with a second journal entry and reads Tomas's rating; Tomas's claim runs out at midnight; Tomas
@@ -62,6 +62,8 @@ MEI_STEPS = (
     step(tool_call("read_file", path="memory/work.md"), tool_call("go", place="workshop")),
     # 07:10, arrived with the others.
     step(tool_call("wait", minutes=110)),
+    # 08:00, the board posted.
+    step(tool_call("wait", minutes=60)),
     # 09:00, the board.
     step(
         tool_call("start_work"),

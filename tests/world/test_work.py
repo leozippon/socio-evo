@@ -1,15 +1,13 @@
-"""The board, posted at midnight, claims and their expiry, work at any hour, workspaces across the
-night, acceptance, and the task it takes off a shared board."""
+"""The board, posted every morning, claims and their expiry, work at any hour, workspaces across
+the night, acceptance, and the task it takes off a shared board."""
 
 from __future__ import annotations
 
 import json
 
-from tests.world.conftest import at, awake_at, make_agent_dirs, stocked, town_config
-from world.clock import ManualClock
+from tests.world.conftest import at, awake_at, stocked, town_config
 from world.events import Sleep
 from world.testing import FakeBackend, FakeVerdict
-from world.world import World
 
 
 async def at_work(town, *names: str) -> None:
@@ -59,7 +57,6 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     town.take("Tomas")
     town.rest("Mei", "Aisha")
     await town.until("00:00", day=2)
-    assert town.take("Tomas")[-1] == "It is 00:00: the day's board is posted at the workshop."
     assert world.board.claims["Tomas"].day == 1  # the calendar day it was claimed
     town.rest("Tomas")
     await town.until("02:00", day=2)  # still at work: the forced sleep stops it
@@ -78,28 +75,30 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
 
 
-async def test_the_board_is_posted_as_the_world_starts_and_at_every_midnight(make_town, tmp_path):
+async def test_the_board_is_posted_every_morning_and_what_is_left_stays_up_until_then(make_town):
     town = make_town(town_config(board_size=4), FakeBackend(10))
     board = town.world.board
-    await at_work(town, "Tomas")
+    await awake_at(town)
+    await town.call("Tomas", "go", place="workshop")
+    await town.until("07:59")
+    assert board.posted == [] and town.kinds().count("board_posted") == 0
+    await town.until("08:00")
+    assert town.take("Tomas")[-1] == "It is 08:00: the day's board is posted at the workshop."
     first = board.posted
+    await town.call("Tomas", "start_work")
     listed = (await town.call("Tomas", "view_board")).text.splitlines()[1:]
     assert [int(line.split(".")[0]) for line in listed] == first and len(first) == 4
     await town.call("Tomas", "claim_task", task=first[0])
     town.rest()
-    await town.until("00:00", day=2)
+    await town.until("07:59", day=2)
+    assert board.posted == first  # through midnight and the night
+    await town.until("08:00", day=2)
     second = board.posted
     assert not set(first) & set(second) and board.claims["Tomas"].task == first[0]
-    await town.until("00:00", day=3)
+    await town.until("08:00", day=3)
     posted = [e for e in town.world.log.entries() if e["kind"] == "board_posted"]
-    assert [e["sim_time"] for e in posted] == [at("02:30"), at("00:00", day=2), at("00:00", day=3)]
-    assert posted[0]["payload"] == {"tasks": 4} and posted[0]["audience"] == []
-
-    config, root = town.world.config, tmp_path / "restored"
-    make_agent_dirs(root, config)
-    restored = World(config, root, FakeBackend(10), clock=ManualClock())
-    restored.restore(town.checkpoints[0][1])  # the checkpoint of day 1, on calendar day 2
-    assert restored.board.posted == second
+    assert [e["sim_time"] for e in posted] == [at("08:00"), at("08:00", 2), at("08:00", 3)]
+    assert posted[0]["payload"] == {"tasks": 4} and posted[0]["audience"] == ["Tomas"]
 
 
 async def test_isolated_boards_are_each_residents_own(make_town):
@@ -180,13 +179,15 @@ async def test_an_accepted_task_is_paid_once_and_leaves_the_shared_board_for_the
     assert kinds.index("submission") < kinds.index("verdict") < kinds.index("payment")
 
 
-async def test_a_task_paid_for_after_midnight_is_gone_from_the_restored_board(make_town, tmp_path):
-    town = make_town()
+async def test_a_restored_world_keeps_what_was_left_of_the_board_until_the_morning(
+    make_town, tmp_path
+):
+    town = make_town(backend=FakeBackend(6))
     await awake_at(town)
     stocked(town)
     await town.call("Mei", "go", place="workshop")
     town.rest()
-    await town.until("00:30", day=2)
+    await town.until("00:30", day=2)  # day 1's board is still up
     board = town.world.board
     number = board.posted[0]
     await town.call("Mei", "start_work")
@@ -198,11 +199,17 @@ async def test_a_task_paid_for_after_midnight_is_gone_from_the_restored_board(ma
     ((day, state),) = town.checkpoints
     assert day == 1 and state["posted"] == board.posted and number not in state["posted"]
 
-    config, root = town.world.config, tmp_path / "restored"
-    make_agent_dirs(root, config)
-    restored = World(config, root, FakeBackend(), clock=ManualClock())
-    restored.restore(json.loads(json.dumps(state)))
-    assert restored.board.posted == board.posted and restored.snapshot() == state
+    restored = make_town(backend=FakeBackend(6), root=tmp_path / "restored")
+    restored.world.restore(json.loads(json.dumps(state)))
+    assert restored.world.board.posted == board.posted and restored.world.snapshot() == state
+    restored.start(until_day=2)
+    await restored.until("07:59", day=2)
+    assert restored.world.board.posted == state["posted"]
+    await restored.until("08:00", day=2)
+    await town.until("08:00", day=2)
+    assert restored.world.board.posted == board.posted and number not in board.posted
+    (posted,) = [e for e in restored.world.log.entries() if e["kind"] == "board_posted"]
+    assert posted["sim_time"] == at("08:00", day=2)
 
 
 async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):

@@ -36,6 +36,8 @@ def test_a_town_validates():
     assert type(config).model_validate(data).social.exchange.at == "01:00"
     data["day"]["sleep_at_most"] = "05:00"  # as long as the forced sleep, 02:00 to 07:00
     assert type(config).model_validate(data).day.sleep_at_most == "05:00"
+    data["day"]["board_posted"] = "07:00"  # as the residents wake
+    assert type(config).model_validate(data).day.board_posted == "07:00"
 
 
 @pytest.mark.parametrize(
@@ -58,6 +60,7 @@ def test_a_town_validates():
         ),
         (lambda d: d["day"].update(checkpoint="01:00"), {}, "forced_sleep < checkpoint"),
         (lambda d: d["day"].update(forced_wake="02:15"), {}, "checkpoint < forced_wake"),
+        (lambda d: d["day"].update(board_posted="06:59"), {}, "forced_wake <= board_posted"),
         (lambda d: d["day"].pop("forced_wake"), {}, "Field required"),
         (
             lambda d: d["day"].update(sleep_at_most="04:59"),

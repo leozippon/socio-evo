@@ -67,10 +67,10 @@ def test_ratings_sleep_and_the_runtime(rows):
     assert (rows["Tomas", 2]["forced_sleep"], aisha["forced_sleep"], mei["forced_sleep"]) == (
         1, 1, 0,
     )  # fmt: skip
-    # Mei's fourteen steps of day 1 and four of day 2, each reporting 1000 prompt tokens (600
+    # Mei's fifteen steps of day 1 and four of day 2, each reporting 1000 prompt tokens (600
     # cached) and 100 completion tokens; Tomas has an empty trace.
     assert [mei[k] for k in ("requests", "prompt_tokens", "completion_tokens")] == [
-        14, 14000, 1400,
+        15, 15000, 1500,
     ]  # fmt: skip
     assert mei["cached_share"] == 0.6 and rows["Mei", 2]["requests"] == 4
     assert (mei["lapses"], mei["interruptions"], mei["compactions"]) == (0, 0, 0)

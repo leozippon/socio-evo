@@ -1,12 +1,12 @@
 """A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing a
 plausible day from what each request shows, so that the whole pipeline runs without a model.
 
-The day it plays: go to the workplace, start work, read the board, claim a free task, run a
-command, read a file, write a fix, submit and leave; go to a shop, if the town has one, and buy
-a stock of food; go to a social place, eat there if it sells a meal and, if anyone is there, say
-something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's forced
-waking hour; in bed, review the day, rate whoever it may rate (where the town has ratings), note
-the day in memory/work.md and fall asleep.
+The day it plays: wait at home until the day's board is posted, go to the workplace, start work,
+read the board, claim a free task, run a command, read a file, write a fix, submit and leave; go
+to a shop, if the town has one, and buy a stock of food; go to a social place, eat there if it
+sells a meal and, if anyone is there, say something once; at 20:00 go home and go to bed with a
+journal entry, to wake at the town's forced waking hour; in bed, review the day, rate whoever it
+may rate (where the town has ratings), note the day in memory/work.md and fall asleep.
 Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
 resident's name comes from the system prompt, and the day so far from the messages since the
 last wake-up, so it continues a resumed run as it would have continued the run.
@@ -111,9 +111,12 @@ class _Day:
         place = self._place()
         town = self.model._town
         if place == self.home:
-            if not self._did("go"):
-                return reply("", tool_call("go", place=town.workplace.id))
-            return reply("", self._sleep())
+            if self._did("go"):
+                return reply("", self._sleep())
+            board = parse_hour(town.day.board_posted)
+            if self.hour < board:
+                return reply("", tool_call("wait", minutes=(board - self.hour) // 60))
+            return reply("", tool_call("go", place=town.workplace.id))
         if place == town.workplace.id:
             if self._did("start_work", "You started work"):
                 return reply("", tool_call("go", place=self.after_work))

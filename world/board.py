@@ -1,11 +1,12 @@
 """The workplace's board, the claims on its tasks and their workspaces, and acceptance.
 
 The tasks of the pool are numbered from 1 in the split's order and shuffled once, by the run's
-seed, into a rotation. The board of calendar day N, posted at the midnight that begins it (day
-1's as a new world starts), holds the next `board_size` tasks of the rotation after day N - 1's,
-wrapping round to its start, so that every task comes round about every pool / `board_size`
-days; a pool no larger than `board_size` is posted whole every day. Only posted tasks can be
-claimed, and a claim does not change what is posted: a held task that leaves the board stays held.
+seed, into a rotation. The board of calendar day N is posted that morning at the configured hour,
+in place of what is left of the day before's, and holds the next `board_size` tasks of the
+rotation after day N - 1's, wrapping round to its start, so that every task comes round about
+every pool / `board_size` days; a pool no larger than `board_size` is posted whole every day.
+Only posted tasks can be claimed, and a claim does not change what is posted: a held task that
+leaves the board stays held.
 
 In the town mode one board is shared: a task someone holds is shown as held and cannot be claimed
 by another, and a task that has been paid for leaves the day's board for everyone, since a client

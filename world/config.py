@@ -1,5 +1,5 @@
 """The configuration of a town: its places, its residents, its work, the goods for sale, its
-social life, its clock and the few fixed hours of its night.
+social life, its clock and the few fixed hours of its day.
 
 The four groups of the design differ only here: `social.mode` is `isolated` in A and B (each
 resident lives in a town of its own and has a board of its own) and `town` in C and D (one town,
@@ -249,8 +249,9 @@ class Resident(StrictModel):
 
 class Work(StrictModel):
     """The work at the workplace. `split` names the task pool, of which the board posts
-    `board_size` tasks at every midnight, in a rotation through the whole pool; a claim made on
-    a calendar day runs out at the midnight that ends the day `claim_expiry_days` days later."""
+    `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
+    pool; a claim made on a calendar day runs out at the midnight that ends the day
+    `claim_expiry_days` days later."""
 
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
@@ -304,13 +305,15 @@ class ClockSettings(StrictModel):
 class DayHours(StrictModel):
     """The only fixed hours of a day, all after midnight: at `forced_sleep` whoever is still up
     falls asleep, to wake at `forced_wake`; at `checkpoint`, between the two, the day's state is
-    saved. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour but
-    the longest one sleep may last, written the same way and so less than a day; it is at least
-    the forced sleep's span."""
+    saved; at `board_posted`, no earlier than the waking, the day's board goes up at the
+    workplace. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour
+    but the longest one sleep may last, written the same way and so less than a day; it is at
+    least the forced sleep's span."""
 
     forced_sleep: Hour
     checkpoint: Hour
     forced_wake: Hour
+    board_posted: Hour
     sleep_at_most: Hour
 
     def of_day(self, hour: str) -> int:
@@ -384,11 +387,13 @@ class TownConfig(StrictModel):
                 if not how.strip():
                     raise ValueError(f"{resident.name}'s tie to {other} says nothing")
         day = self.day
-        forced, checkpoint, wake, longest = map(
-            parse_hour, (day.forced_sleep, day.checkpoint, day.forced_wake, day.sleep_at_most)
-        )
-        if not forced < checkpoint < wake:
-            raise ValueError("the hours must run forced_sleep < checkpoint < forced_wake")
+        hours = (day.forced_sleep, day.checkpoint, day.forced_wake, day.board_posted)
+        forced, checkpoint, wake, posted = map(parse_hour, hours)
+        longest = parse_hour(day.sleep_at_most)
+        if not forced < checkpoint < wake <= posted:
+            raise ValueError(
+                "the hours must run forced_sleep < checkpoint < forced_wake <= board_posted"
+            )
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         exchange = self.social.exchange

@@ -30,12 +30,11 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     for name in town.world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert town.take("Mei")[-2:] == [
+    assert town.take("Mei")[-1] == (  # still at the workshop, where no board is posted at night
         "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; rent for "
         "your room at the shared house on Mill Street $20. You had nothing to eat today. You are "
-        "hungry. You are fresh. You are in good health. Your purse holds $105.",
-        "It is 00:00: the day's board is posted at the workshop.",  # she is still there
-    ]
+        "hungry. You are fresh. You are in good health. Your purse holds $105."
+    )
     assert town.take("Aisha")[-1] == (
         "Your statement for Monday 1 January: received $15 from Mei; bought a coat for $30; rent "
         "for your room at the shared house on Mill Street $20. You had nothing to eat today. You "

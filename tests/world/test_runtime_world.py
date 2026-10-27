@@ -132,7 +132,7 @@ async def test_a_remark_to_everyone_reaches_a_working_resident_with_its_next_res
     await town.until("07:00")
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
-    await town.until("07:10")
+    await town.until("08:10")
     await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     async with running(Runtime(directory, port, model)):

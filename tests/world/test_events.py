@@ -309,7 +309,7 @@ async def test_a_remark_to_everyone_leaves_those_at_work_to_their_work(make_town
     ports, mei = town.world.ports, town.world.residents["Mei"]
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
-    await town.until("07:10")
+    await town.until("08:10")
     await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     town.take("Mei")

@@ -153,6 +153,7 @@ def town_config(
                 "forced_sleep": "02:00",
                 "checkpoint": "02:30",
                 "forced_wake": "07:00",
+                "board_posted": "08:00",
                 "sleep_at_most": "12:00",
             },
         }

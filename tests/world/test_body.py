@@ -373,7 +373,6 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
         ("death", "Mei"),
         ("settlement", "Tomas"),
         ("settlement", "Aisha"),
-        ("board_posted", None),
     ]
     death = [e for e in world.log.entries() if e["kind"] == "death"][0]
     assert death["text"] == "Mei died in the night." and death["personal"] == {}

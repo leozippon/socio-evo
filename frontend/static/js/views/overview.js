@@ -137,7 +137,7 @@ export function mountOverview(root, ctx) {
   }
 
   /** The fixed hours of the day as a reader says them; `sleep_at_most` is a length, not an hour. */
-  const DAY_HOURS = { forced_sleep: "forced asleep at", checkpoint: "checkpoint at", forced_wake: "forced awake at", sleep_at_most: "a sleep lasts at most" };
+  const DAY_HOURS = { forced_sleep: "forced asleep at", checkpoint: "checkpoint at", forced_wake: "forced awake at", board_posted: "board posted at", sleep_at_most: "a sleep lasts at most" };
   const dayHour = (name, clock) => (name === "sleep_at_most" ? duration(parseHHMM(clock)) : clock);
 
   function rules() {
@@ -291,7 +291,7 @@ export function mountOverview(root, ctx) {
       const { daily, rows } = measures;
       const notAccepted = new Map(dailyPoints(daily, "submitted", "total").map(([day, total]) => [day, total - (dailyValues(daily, "accepted", "total").get(day) ?? 0)]));
       return [
-        h("p", { class: "note section-note" }, `Work is SWE-bench Verified: the board posts the same training pool every midnight, a resident holds one task at a time, and acceptance runs the hidden tests in a fresh container. ${fmt.int(sum(rows, "claimed"))} claims, ${fmt.int(sum(rows, "submitted"))} hand-ins and ${fmt.int(sum(rows, "accepted"))} accepted over the closed days.`),
+        h("p", { class: "note section-note" }, `Work is SWE-bench Verified: the board posts tasks of the same training pool every day, a resident holds one task at a time, and acceptance runs the hidden tests in a fresh container. ${fmt.int(sum(rows, "claimed"))} claims, ${fmt.int(sum(rows, "submitted"))} hand-ins and ${fmt.int(sum(rows, "accepted"))} accepted over the closed days.`),
         h(
           "div",
           { class: "figures" },

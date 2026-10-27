@@ -5,8 +5,8 @@
 #
 # The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
 # 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk,
-# the Store and the clinic. The only fixed hours are the night's below, together with the longest
-# one sleep may last.
+# the Store and the clinic. The only fixed hours are the night's below and the morning hour the
+# Workshop's board goes up, together with the longest one sleep may last.
 #
 # Calibration of a life. A task pays 30. Rent runs from 30 a day for a room in a shared house to
 # 70 for the cottage, and a day's food from 12 (groceries, 36 for three days) to 20 (supper at the
@@ -270,4 +270,5 @@ town:
     forced_sleep: "02:00"
     checkpoint: "02:30"
     forced_wake: "07:00"
+    board_posted: "08:00" # the day's board goes up at the Workshop, replacing what is left of yesterday's
     sleep_at_most: "12:00" # hours and minutes, not an hour of the day

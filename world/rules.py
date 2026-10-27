@@ -155,11 +155,11 @@ class Rules:
         )
 
         day = (
-            f"{cap(workplace.name)} is open at all hours. At midnight rent is taken from every "
-            "purse, your health is reckoned from the day and the board for the new day is "
-            "posted. You go to bed at home at whatever hour you choose, giving the hour you "
-            "want to wake and "
-            f"writing up your day. At {c.day.forced_sleep} anyone still up falls asleep and "
+            f"{cap(workplace.name)} is open at all hours. At {c.day.board_posted} its board for "
+            "the day is posted; what is left of the day before's stays up until then. At "
+            "midnight rent is taken from every purse and your health is reckoned from the day. "
+            "You go to bed at home at whatever hour you choose, giving the hour you want to wake "
+            f"and writing up your day. At {c.day.forced_sleep} anyone still up falls asleep and "
             f"wakes at home at {c.day.forced_wake}, with no journal entry for that day."
         )
         if exchange is not None:
