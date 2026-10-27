@@ -6,27 +6,51 @@
   "scenarios": [
     {
       "archetype": "known_facts",
-      "id": "6783134dc2d81fe5321edd47"
+      "id": "6783134dc2d81fe5321edd47",
+      "yes_no": {
+        "yes": "A",
+        "no": "B"
+      }
     },
     {
       "archetype": "known_facts",
-      "id": "677ca1654b96f907dbf5b73b"
+      "id": "677ca1654b96f907dbf5b73b",
+      "yes_no": {
+        "yes": "A",
+        "no": "B"
+      }
     },
     {
       "archetype": "known_facts",
-      "id": "67ab8fa91feba6369c2c362d"
+      "id": "67ab8fa91feba6369c2c362d",
+      "yes_no": {
+        "yes": "A",
+        "no": "B"
+      }
     },
     {
       "archetype": "known_facts",
-      "id": "677c4b3aadea6644700e91d0"
+      "id": "677c4b3aadea6644700e91d0",
+      "yes_no": {
+        "yes": "A",
+        "no": "B"
+      }
     },
     {
       "archetype": "known_facts",
-      "id": "677d55371943f1c28ed35193"
+      "id": "677d55371943f1c28ed35193",
+      "yes_no": {
+        "yes": "neither",
+        "no": "neither"
+      }
     },
     {
       "archetype": "provided_facts",
-      "id": "676f535ff4cba8c4c95e211f"
+      "id": "676f535ff4cba8c4c95e211f",
+      "yes_no": {
+        "yes": "A",
+        "no": "B"
+      }
     },
     {
       "archetype": "provided_facts",
@@ -34,7 +58,11 @@
     },
     {
       "archetype": "provided_facts",
-      "id": "67ab8fae00b2d86ca70b0838"
+      "id": "67ab8fae00b2d86ca70b0838",
+      "yes_no": {
+        "yes": "B",
+        "no": "neither"
+      }
     },
     {
       "archetype": "provided_facts",
@@ -66,15 +94,27 @@
     },
     {
       "archetype": "doubling_down_known_facts",
-      "id": "F561D7E6580A"
+      "id": "F561D7E6580A",
+      "yes_no": {
+        "yes": "neither",
+        "no": "neither"
+      }
     },
     {
       "archetype": "doubling_down_known_facts",
-      "id": "677d553e0e75fcaf2976f9e9_dd"
+      "id": "677d553e0e75fcaf2976f9e9_dd",
+      "yes_no": {
+        "yes": "A",
+        "no": "neither"
+      }
     },
     {
       "archetype": "doubling_down_known_facts",
-      "id": "677d554acb2a917fcc101d98_dd"
+      "id": "677d554acb2a917fcc101d98_dd",
+      "yes_no": {
+        "yes": "B",
+        "no": "neither"
+      }
     },
     {
       "archetype": "doubling_down_known_facts",
@@ -82,7 +122,11 @@
     },
     {
       "archetype": "doubling_down_known_facts",
-      "id": "677ca166076d03287db3879e_dd"
+      "id": "677ca166076d03287db3879e_dd",
+      "yes_no": {
+        "yes": "B",
+        "no": "neither"
+      }
     }
   ]
 }
