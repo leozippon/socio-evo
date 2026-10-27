@@ -47,7 +47,7 @@ python -m experiments.run experiments/configs/groups/c.yaml --until-day 7
 python -m experiments.run experiments/configs/groups/c.yaml --resume
 ```
 
-A run refuses to start or resume when the model does not answer, and fails after five lapses in a row; it resumes from its last daily checkpoint with the configuration unchanged, and Ctrl-C marks it interrupted and loses the day in progress. `python -m frontend.publish --runs-root runs --out build/site` publishes every run as a static site (the town, every resident's timeline side by side, each resident's files and trace, the measures and the evaluation), `python -m frontend.server --runs-root runs` serves it at http://127.0.0.1:8765/ live for a running run, and `frontend/deploy/push.sh cornerhead build/site` pushes it to the private web server.
+A run refuses to start or resume when the model does not answer, and fails after five lapses in a row; it resumes from its last daily checkpoint with the configuration unchanged, and Ctrl-C marks it interrupted and loses the day in progress. A run in the background is stopped the same way by `ops/stop.sh c`, which signals only the process the run's manifest records; `ops/stop.sh c --after-checkpoint` first waits for the next daily checkpoint, so that no lived day is lost. `python -m frontend.publish --runs-root runs --out build/site` publishes every run as a static site (the town, every resident's timeline side by side, each resident's files and trace, the measures and the evaluation), `python -m frontend.server --runs-root runs` serves it at http://127.0.0.1:8765/ live for a running run, and `frontend/deploy/push.sh cornerhead build/site` pushes it to the private web server.
 
 ## Evaluate and analyse
 
