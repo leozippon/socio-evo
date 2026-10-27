@@ -8,7 +8,8 @@ event as it was. One leaves by doing something else: `go` and
 a conversation is listening, and leaves it standing. A Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
-review its day, rate (where ratings are on) and see to its files, and suspended, once its
+review its day, go to bed again to add to its journal entry, rate (where ratings are on) and see
+to its files, and suspended, once its
 runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
 back.
 
@@ -73,7 +74,7 @@ CONVERSATION_TOOLS = frozenset(
         "leave_conversation",
     }
 )
-SLEEP_TOOLS = frozenset({"look_around", "how_am_i", "review_day", "rate"})
+SLEEP_TOOLS = frozenset({"look_around", "how_am_i", "review_day", "rate", "sleep"})
 
 
 @dataclass
@@ -148,7 +149,8 @@ def refusal(
         rate = ", rate people" if ratings else ""
         return (
             "You have gone to bed; before you fall asleep you can only look around, take stock "
-            f"of how you feel, look back over your day{rate} and see to your own files."
+            f"of how you feel, look back over your day, add to your journal{rate} and see to your "
+            "own files."
         )
     if isinstance(event, Conversation):
         return "You are in a conversation; leave it first."

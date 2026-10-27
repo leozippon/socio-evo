@@ -1085,7 +1085,10 @@ class World:
     # Sleep, waking and waiting --------------------------------------------------------------
 
     def _put_to_sleep(self, r: Resident, wake: int, suspended: bool = False) -> None:
+        """`r` sleeps until `wake`, which replaces any hour it was to wake at before."""
         self.reckon(r)
+        if r.timer is not None:
+            r.timer.cancel()
         r.base = Sleep(wake, suspended)
         r.timer = self._at(wake, partial(self._wake_up, r))
 

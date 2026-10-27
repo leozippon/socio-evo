@@ -63,7 +63,7 @@ ARCHITECTURE_TABLE = {
         "start_work",
         "leave_conversation",
     },
-    "sleep": {"look_around", "review_day", "rate"},
+    "sleep": {"look_around", "review_day", "rate", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
     if _event != "movement":
@@ -358,6 +358,27 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     assert [e["payload"]["day"] for e in sleeps] == [1, 1]
 
 
+async def test_going_to_bed_again_from_bed_adds_to_the_journal_and_sets_the_hour(
+    make_town, tmp_path
+):
+    town = make_town()
+    await awake_at(town)
+    mei = town.world.residents["Mei"]
+    await town.until("21:00")
+    await town.call("Mei", "sleep", until="07:00", journal="A quiet day.")
+    assert (await town.call("Mei", "review_day")).text.startswith("Your day, as it went:")
+    added = await town.call("Mei", "sleep", until="08:00", journal="Looking back: no shopping.")
+    assert added.ends_turn and added.text == "You went to bed."
+    journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
+    assert journal.read_text() == "A quiet day.\n\nLooking back: no shopping.\n"
+    assert mei.base.wake == at("08:00", day=2) and not mei.base.suspended
+    town.rest()
+    await town.until("08:00", day=2)
+    entries = town.world.log.entries()
+    wakes = [e["sim_time"] for e in entries if e["kind"] == "wake" and e["actor"] == "Mei"]
+    assert wakes == [at("07:00"), at("08:00", day=2)]  # the hour first given wakes her no more
+
+
 async def test_one_sleep_lasts_at_most_twelve_hours_and_the_forced_sleep_is_unchanged(make_town):
     town = make_town()
     await awake_at(town)
@@ -435,7 +456,8 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
     assert in_bed_refusals["go"] == (
         "You have gone to bed; before you fall asleep you can only look around, take stock of "
-        "how you feel, look back over your day, rate people and see to your own files."
+        "how you feel, look back over your day, add to your journal, rate people and see to your "
+        "own files."
     )
     review = await town.call("Mei", "review_day")
     assert "07:00 You woke up at home." in review.text
