@@ -278,6 +278,9 @@ def publish_run(
         return site.put(target, build())
 
     data = timeline(root)
+    owned = bundle.things(run, config.town, data)
+    lanes = [{**lane, "things": owned[lane["name"]]} for lane in data["residents"]]
+    data = {**data, "residents": lanes}
     entries = list(read_jsonl(run.world_log_path)) if run.world_log_path.exists() else []
     days = bundle.cut_days(entries)
     closed = set(bundle.closed(days))

@@ -272,6 +272,7 @@ def test_every_file_has_exactly_the_documented_fields(published):
             "rating",
             "journal",
             "forced_sleep",
+            "settlement",
             "condition",
             "death",
         )
@@ -293,7 +294,10 @@ def test_every_file_has_exactly_the_documented_fields(published):
         "journal",
         "forced_sleep",
         "expiry",
+        "settlement",
+        "condition",
     } <= seen
+    assert all(lane["things"] == [[timeline["start"], {}]] for lane in timeline["residents"])
 
     measures = read(site, f"{RUN}/measures.json")
     for row in measures["rows"]:
@@ -672,6 +676,64 @@ async def test_push_uploads_only_what_changed_and_switches_the_site_at_once(tmp_
     assert sorted(path.name for path in (server / "releases").iterdir()) == sorted(
         [old.name, new.name]
     )
+
+
+def test_things_follow_the_purchases_and_the_checkpoints(tmp_path):
+    """Mei buys groceries and a phone on day 1 and eats from the stock unseen; the checkpoint
+    of day 1 counts what is left, and day 2's purchase adds to that. Tomas buys a meal, which
+    is used up as it is bought, and the checkpoint of day 2 is not written yet."""
+    run, _ = new_town(tmp_path)
+    town = town_config()
+    start, end1, end2 = at("02:30"), at("02:30", day=2), at("02:30", day=3)
+
+    def purchase(t: int, item: str, quantity: int = 1) -> dict:
+        return {
+            "seq": 0,
+            "t": t,
+            "kind": "purchase",
+            "place": "store",
+            "item": item,
+            "quantity": quantity,
+        }
+
+    data = {
+        "start": start,
+        "days": [{"day": 1, "end": end1}, {"day": 2, "end": end2}, {"day": 3, "end": None}],
+        "residents": [
+            {
+                "name": "Mei",
+                "markers": [
+                    purchase(at("13:00"), "groceries", 2),
+                    purchase(at("14:00"), "phone"),
+                    purchase(at("09:00", day=2), "groceries"),
+                ],
+            },
+            {"name": "Tomas", "markers": [purchase(at("12:00"), "meal")]},
+            {"name": "Aisha", "markers": []},
+        ],
+    }
+    living = lambda things: {"living": {"things": things}}  # noqa: E731
+    run.checkpoint_path(1).write_text(
+        json.dumps(
+            {
+                "time": end1,
+                "residents": {
+                    "Mei": living({"groceries": 15, "phone": 1}),
+                    "Tomas": living({}),
+                    "Aisha": living({}),
+                },
+            }
+        )
+    )
+    found = bundle.things(run, town, data)
+    assert found["Mei"] == [
+        [start, {}],
+        [at("13:00"), {"groceries": 18}],
+        [at("14:00"), {"groceries": 18, "phone": 1}],
+        [end1, {"groceries": 15, "phone": 1}],
+        [at("09:00", day=2), {"groceries": 24, "phone": 1}],
+    ]
+    assert found["Tomas"] == [[start, {}]] and found["Aisha"] == [[start, {}]]
 
 
 def test_encoding_is_deterministic_and_compact():

@@ -50,7 +50,11 @@ The markers, each on the lane of the resident who acted, with their own fields:
     rating        rated, score, reason
     journal       text, day, wake, ratings_read   going to bed with the day's journal entry
     forced_sleep  wake
-    condition     need, band, lowest     a need of the body crossed into another band
+    settlement    rent, fees, nourishment, satiety, energy, health, night
+                  midnight: the rent and the daily charges taken, the day's food as a share of
+                  a day's need, the body's numbers after the night's reckoning and how health
+                  moved, by cause (the purse after the charges is a point of "purse")
+    condition     need, band, value, lowest   a need of the body crossed into another band
     death                                the resident's health ran out; its lane is dead from here
 
 The log is the only source. A running run's clock may be ahead of its last entry; the open
@@ -376,12 +380,24 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             )
         elif kind == "settlement":
             lane.purse.append([t, payload["purse"]])
+            lane.mark(
+                entry,
+                "settlement",
+                rent=payload["rent"],
+                fees=payload["fees"],
+                nourishment=payload["nourishment"],
+                satiety=payload["satiety"],
+                energy=payload["energy"],
+                health=payload["health"],
+                night=payload["night"],
+            )
         elif kind == "condition":
             lane.mark(
                 entry,
                 "condition",
                 need=payload["need"],
                 band=payload["band"],
+                value=payload["value"],
                 lowest=payload["lowest"],
             )
         elif kind == "death":

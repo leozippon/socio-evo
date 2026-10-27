@@ -267,7 +267,7 @@ A closed day ends with its `checkpoint` entry. The entries a lost day left befor
 
 ### `runs/{run}/timeline.json`
 
-Every resident's events side by side over the run, as `frontend.timeline` computes them from the world log; its docstring is the definition. Times are simulated seconds.
+Every resident's events side by side over the run, as `frontend.timeline` computes them from the world log; its docstring is the definition. What each resident owns (`things`) is added by `frontend.bundle` from the purchases and the checkpoints. Times are simulated seconds.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -299,6 +299,7 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `residents[].conversations[].with` | array of strings | Whom the resident spoke to or heard from in it. |
 | `residents[].markers` | array | What the resident did, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
 | `residents[].purse` | array | `[time, purse]` after each change, from the start. |
+| `residents[].things` | array | `[time, {good id: units}]` of what the resident owns, from the start and after each change: a durable counted 1, a consumable by the units left. Purchases add; what is eaten leaves no entry in the log, so at each checkpoint whose file is written the stock is read from the checkpoint, exact as of that moment, and between checkpoints it is as last counted plus what was bought since. |
 
 | Marker | Fields |
 | --- | --- |
@@ -316,7 +317,8 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `rating` | `rated`, `score`, `reason` |
 | `journal` | `text`, `day`, `wake`, `ratings_read`: going to bed with the day's journal entry, once per bedtime |
 | `forced_sleep` | `wake` |
-| `condition` | `need`, `band`, `lowest`: a need of the body crossed into another band, named as the resident reads it; `lowest` where that band is the need's lowest |
+| `settlement` | `rent`, `fees`, `nourishment`, `satiety`, `energy`, `health`, `night`: midnight, when the rent and the daily charges on what is owned are taken (the purse after them is a point of `purse`), with the day's food as a share of a day's need, the body's three needs after the night's reckoning, and how health moved, by cause (`starving`, `exhausted`, `poor_home`, `recovery`) |
+| `condition` | `need`, `band`, `value`, `lowest`: a need of the body crossed into another band, named as the resident reads it, with its value then; `lowest` where that band is the need's lowest |
 | `death` | the resident's health ran out at midnight; its claim, if any, is dropped and its lane is dead from here |
 
 ### `runs/{run}/progress.json`
@@ -468,7 +470,7 @@ The groups of a set of runs compared, as `analysis.compare` computes it: one run
 
 - The code residents wrote: a submission's patch and a workspace's diff are left out of the published entries, and the tasks' repositories and hidden tests are nowhere in it.
 - The residents' sessions as files; what a request's context held is published only through the trace, resolved from the resident's own session.
-- Checkpoints: the state of the world at each checkpoint. Where everyone is and what each holds and has at any moment follows from the timeline.
+- Checkpoints: the state of the world at each checkpoint. Where everyone is and what each holds and owns at any moment follows from the timeline, which reads only the stock of goods from the checkpoints.
 - The evaluation results themselves (the transcripts of capability tasks, MASK answers and the judge's calls): only the rates and counts above.
 - How the model is reached (endpoint, key variable, request options, timeouts).
 - Anything about when or where the bundle was published, so publishing the same runs twice gives the same bytes.

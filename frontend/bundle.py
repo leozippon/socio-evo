@@ -4,8 +4,9 @@ Every document is a plain JSON value; `frontend/README.md` is its contract. The 
 `frontend.timeline`, `frontend.progress`, `analysis.measures`, `analysis.tables` and
 `analysis.compare`, which define them; this module only arranges them and adds what the viewer
 needs of the run itself: the town laid out on a map, the world log cut into lived days, the
-social graph, and the agents' files as their git repositories hold them. Agent files are read
-through git plumbing, which never touches an index or a work tree.
+social graph, what each resident owns as its purchases and the checkpoints give it, and the
+agents' files as their git repositories hold them. Agent files are read through git plumbing,
+which never touches an index or a work tree.
 """
 
 from __future__ import annotations
@@ -24,9 +25,10 @@ from analysis import compare as comparison
 from analysis.measures import MEASURES
 from analysis.tables import tables
 from infrastructure.git import FileChange, Repository
-from infrastructure.storage import read_jsonl
+from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
 from world.clock import DAY
+from world.config import TownConfig
 from world.rules import Rules
 
 Entry = dict[str, Any]
@@ -263,6 +265,52 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
     ]
+
+
+def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict[str, list]:
+    """What each resident owns over the run, by name: `[time, {good id: units}]` from the
+    start and after each change, a durable counted 1 and a consumable by the units left of it.
+    The purchases are the timeline's markers: a durable is owned from then on, a consumable
+    adds its units a purchase, an immediate good is used up as it is bought. What is eaten
+    leaves no entry in the log, so at every checkpoint whose file the run has written the
+    stock is read from the checkpoint instead, exact as of that moment; between checkpoints
+    it is as last counted plus what was bought since."""
+    goods = {good.id: good for good in town.goods}
+    snapshots: dict[int, dict[str, dict[str, int]]] = {}
+    for day in [{"day": 0, "end": data["start"]}, *data["days"]]:
+        path = run.checkpoint_path(day["day"])
+        if day["end"] is None or not path.is_file():
+            continue
+        state = json.loads(path.read_text(encoding="utf-8"))
+        snapshots[day["end"]] = {
+            name: dict(found["living"]["things"]) for name, found in state["residents"].items()
+        }
+    found = {}
+    for lane in data["residents"]:
+        changes: list[tuple[int, int, Any]] = [
+            (t, 0, snapshot[lane["name"]])
+            for t, snapshot in snapshots.items()
+            if lane["name"] in snapshot
+        ]
+        changes += [(m["t"], 1, m) for m in lane["markers"] if m["kind"] == "purchase"]
+        held: dict[str, int] = {}
+        series: list[list[Any]] = [[data["start"], {}]]
+        for t, kind, change in sorted(changes, key=lambda found: found[:2]):
+            if kind == 0:
+                held = dict(change)
+            else:
+                good = goods[change["item"]]
+                if good.kind == "durable":
+                    held[good.id] = 1
+                elif good.kind == "consumable":
+                    assert good.uses is not None
+                    held[good.id] = held.get(good.id, 0) + good.uses * change["quantity"]
+            if t == series[-1][0]:
+                series[-1][1] = dict(held)
+            elif held != series[-1][1]:
+                series.append([t, dict(held)])
+        found[lane["name"]] = series
+    return found
 
 
 def headline(progress: Mapping[str, Any]) -> dict[str, Any]:

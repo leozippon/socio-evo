@@ -93,6 +93,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("payment", at("10:00")),
         ("journal", at("22:00")),
         ("rating", at("22:00")),
+        ("settlement", DAY),
     ]
     mei = {m["kind"]: m for m in lane(data, "Mei")["markers"]}
     assert mei["speech"]["text"] == "Nearly done." and mei["speech"]["to"] == ["Tomas"]
@@ -103,13 +104,21 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert tomas["submission"]["status"] == "failed_tests"
     assert tomas["submission"]["fail_to_pass"] == [1, 3]
     assert tomas["expiry"]["t"] == DAY and tomas["expiry"]["task"] == 2  # the first midnight
-    assert markers("Aisha") == [("forced_sleep", at("02:00", day=2))]
+    assert markers("Aisha") == [("settlement", DAY), ("forced_sleep", at("02:00", day=2))]
     felt = [m for m in lane(data, "Aisha")["markers"] if m["kind"] == "condition"]
     assert [(m["need"], m["band"], m["lowest"]) for m in felt][:3] == [
         ("satiety", "a little hungry", False),
         ("satiety", "hungry", False),
         ("satiety", "starving", True),
     ]
+    assert all(0 <= m["value"] <= 100 for m in felt)
+    assert felt[0]["value"] < 65 and felt[2]["value"] < 10
+    # Aisha ate nothing all day and is hungry, not yet starving, at midnight; her home on Mill
+    # Street has little comfort.
+    midnight = next(m for m in lane(data, "Aisha")["markers"] if m["kind"] == "settlement")
+    assert midnight["rent"] == 20 and midnight["fees"] == 0 and midnight["nourishment"] == 0
+    assert 10 <= midnight["satiety"] < 35 and midnight["energy"] < 100
+    assert midnight["health"] == 100 and midnight["night"] == {"poor_home": -2, "recovery": 5}
 
     assert lane(data, "Mei")["purse"] == [
         [start, 120],

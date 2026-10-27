@@ -36,6 +36,20 @@ def write(run: RunDirectory, lines: list[tuple]) -> None:
             log.write(entry(seq, kind, t, actor, real_time=real_time, **payload) + "\n")
 
 
+def settlement(purse: int) -> dict:
+    """The midnight statement's payload: rent taken, nothing eaten, the body as it stood."""
+    return {
+        "rent": 20,
+        "fees": 0,
+        "nourishment": 0,
+        "purse": purse,
+        "satiety": 20.0,
+        "energy": 70.0,
+        "health": 100.0,
+        "night": {"poor_home": -2.0, "recovery": 5.0},
+    }
+
+
 def verdict(task: int, resolved: bool) -> dict:
     return {
         "task": task,
@@ -83,9 +97,9 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
                 {"journal": "j", "day": 1, "wake": 0, "ratings_read": []},
             ),
             ("rating", at("22:00"), "Mei", 1013.0, {"rated": "Tomas", "score": 4, "reason": "r"}),
-            ("settlement", DAY, "Mei", 1014.0, {"purse": 105}),
-            ("settlement", DAY, "Tomas", 1015.0, {"purse": 155}),
-            ("settlement", DAY, "Aisha", 1016.0, {"purse": 0}),
+            ("settlement", DAY, "Mei", 1014.0, settlement(105)),
+            ("settlement", DAY, "Tomas", 1015.0, settlement(155)),
+            ("settlement", DAY, "Aisha", 1016.0, settlement(0)),
             # Past midnight, but still the first lived day: it ends at its checkpoint.
             ("forced_sleep", at("02:00", day=2), "Aisha", 1017.0, {"wake": at("07:00", day=2)}),
             ("checkpoint", at("02:30", day=2), None, 1000.0 + 2.5 * HOUR, {"day": 1}),
