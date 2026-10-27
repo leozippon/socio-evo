@@ -3,6 +3,8 @@
 import asyncio
 import contextlib
 
+import pytest
+
 from agent import texts
 from agent.compaction import INSTRUCTION
 from agent.port import ToolResult, ToolSpec
@@ -250,11 +252,45 @@ async def test_model_errors_end_in_a_lapse_and_the_runtime_lives_on(directory):
         port.deliver("Ben says hi.")
         await settle(port)
         assert context(directory)[-1] == Message(role="assistant", content="Back.")
-        port.deliver("Ben says bye.")  # the script has no reply left: the step raises
-        await settle(port)
 
-    lapses = [r for r in trace(directory) if r["kind"] == "lapse"]
-    assert len(lapses) == 2 and "LookupError" in lapses[1]["traceback"]
+
+async def test_any_other_error_in_a_step_ends_the_runtime(directory):
+    model = ScriptedModel(reply("Hm."))  # the script has no reply left for the second step
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    runtime = Runtime(directory, port, model)
+    task = asyncio.create_task(runtime.run())
+    await settle(port)
+    port.deliver("Ben says hi.")
+    with pytest.raises(LookupError, match="no reply left"):
+        await asyncio.wait_for(task, 5)
+    assert not [r for r in trace(directory) if r["kind"] == "lapse"]
+    assert port.busy[-1] is False
+
+
+async def test_a_call_is_never_in_the_session_without_its_result(directory):
+    calls = 0
+
+    def pending_fails_on_the_second_call(args):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            port.pending = broken
+        return ToolResult("A quiet street.")
+
+    def broken():
+        raise OSError("the inbox is gone")
+
+    port = FakePort(tools=[LOOK], results={"look_around": pending_fails_on_the_second_call})
+    model = ScriptedModel(
+        reply("", tool_call("look_around")),
+        reply("", tool_call("look_around"), tool_call("look_around")),
+    )
+    port.deliver("Your alarm rings.")
+    with pytest.raises(OSError, match="the inbox is gone"):
+        await asyncio.wait_for(Runtime(directory, port, model).run(), 5)
+    roles = [m.role for m in context(directory)]
+    assert roles == ["user", "assistant", "tool"]  # the second reply and its calls are not kept
 
 
 async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_result(directory):

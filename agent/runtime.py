@@ -16,17 +16,17 @@ traced as aborted and dropped, the percept is told with the situation, and the r
 again. A tool that is running is never aborted; once an interrupting percept is pending, the
 calls still to carry out in the same reply are answered as not carried out and the percept is
 told at once. A reply cut off at the token limit is asked for again once at a lower reasoning
-effort; cut off again, it is kept as it stands, without its tool calls, with a note. A model
-error is retried; when the attempts run out the step is a lapse and the runtime waits for the
-next percept. Nothing that goes wrong in a step ends the loop; only cancellation does, or a
-failure of the port itself.
+effort; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
+enters the session together with the results of its calls, so that the session never holds a
+call without its result. A model error is retried; when the attempts run out the request is a
+lapse and the runtime waits for the next percept. Any other error ends the loop, as
+cancellation does.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-import traceback
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from typing import Literal
@@ -129,23 +129,14 @@ class Runtime:
 
     async def run(self) -> None:
         """Live until cancelled: wait for the world, take steps until the resident is done for
-        now, and wait again. A step that raises is traced as a lapse and the runtime waits; an
-        error of the port's own `wait`, `pending` or `situation` propagates."""
+        now, and wait again. A model error that outlasts its retries is a lapse, after which
+        the runtime waits; any other error propagates and ends the runtime."""
         done = True
         try:
             while True:
                 if done:
                     self._tell(await self._port.wait())
-                try:
-                    done = await self._step()
-                except Exception as error:
-                    self._trace.write(
-                        "lapse",
-                        purpose="step",
-                        errors=[_describe(error)],
-                        traceback="".join(traceback.format_exception(error)),
-                    )
-                    done = True
+                done = await self._step()
         finally:
             self._port.set_busy(False)
 
@@ -160,16 +151,18 @@ class Runtime:
         if reply is None:
             return True
         calls = () if reply.truncated else reply.tool_calls
+        answers, ends, condense = await self._carry_out_all(calls)
         self._session.append(
             Message(role="assistant", content=reply.text, tool_calls=calls),
             prompt_tokens=None if reply.usage is None else reply.usage.prompt_tokens,
         )
+        for answer in answers:
+            self._session.append(answer)
         if reply.truncated:
             self._session.append(Message(role="user", content=texts.CUT_OFF))
             return True
         if not calls:
             return True
-        ends, condense = await self._carry_out_all(calls)
         if condense:
             await self._compact()
         if ends:
@@ -259,11 +252,12 @@ class Runtime:
             self._trace.write("lapse", purpose=purpose, errors=errors)
             return None
 
-    async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[bool, bool]:
-        """Carry out `calls` in order and answer each in the context, led by the percepts
-        pending when it was carried out; whether one ended the turn, and whether the resident
-        asked to compact. Once an interrupting percept is pending, the remaining calls are
-        answered as not carried out."""
+    async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[list[Message], bool, bool]:
+        """Carry out `calls` in order; the answer to each, led by the percepts pending when it
+        was carried out, whether one ended the turn, and whether the resident asked to compact.
+        Once an interrupting percept is pending, the remaining calls are answered as not
+        carried out."""
+        answers: list[Message] = []
         ends = condense = interrupted = False
         for call in calls:
             unreadable = {} if call.unreadable is None else {"unreadable": call.unreadable}
@@ -291,8 +285,8 @@ class Runtime:
             content = shorten(result.text, self._config.tool_result_chars)
             if before:
                 content = f"{before}\n\n{content}"
-            self._session.append(Message(role="tool", content=content, tool_call_id=call.id))
-        return ends, condense
+            answers.append(Message(role="tool", content=content, tool_call_id=call.id))
+        return answers, ends, condense
 
     async def _carry_out(self, call: ToolCall) -> tuple[ToolResult, dict[str, str]]:
         """The result of `call`, and the error raised in carrying it out, if one was."""
