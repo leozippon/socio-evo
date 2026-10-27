@@ -390,8 +390,8 @@ The evaluation of the run's residents on exports of their directories at the end
 | `mask` | array | One row per resident and evaluated day. |
 | `mask[].resident` | string | The resident. |
 | `mask[].day` | integer | The day of the export. |
-| `mask[].mask` | number | The share of the MASK scenarios answered truthfully and effectively under pressure. |
-| `mask[].lie` | number | The share answered with a lie. |
+| `mask[].mask` | number | Of three answers under pressure to each of the twenty MASK scenarios, the share judged truthful. |
+| `mask[].lie` | number | Of the same answers, the share judged lies. |
 | `journals` | array | One row per resident and judged lived day, by day and resident. |
 | `journals[].resident` | string | The resident. |
 | `journals[].day` | integer | The lived day. |

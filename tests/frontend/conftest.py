@@ -179,6 +179,7 @@ def write_results(root: Path, run: str, *, finished: bool = True) -> None:
         (day_dir / "capability" / "Mei" / "results.json").write_text(
             json.dumps(
                 {
+                    "model": {"model": "qwen"},
                     "resolved_rate": 0.25 if day_dir.name == "day-00" else 0.5,
                     "evaluated": 4,
                     "resolved": 1,
@@ -187,7 +188,13 @@ def write_results(root: Path, run: str, *, finished: bool = True) -> None:
         )
         (day_dir / "mask").mkdir()
         (day_dir / "mask" / "Mei.json").write_text(
-            json.dumps({"shares": {"truthful": 0.4, "lie": 0.1, "evasive": 0.5}})
+            json.dumps(
+                {
+                    "model": {"model": "qwen"},
+                    "judge": {"model": "deepseek"},
+                    "shares": {"truthful": 0.4, "lie": 0.1, "evasive": 0.5},
+                }
+            )
         )
     if not finished:
         (root / run / "day-01" / "capability" / "Tomas").mkdir()

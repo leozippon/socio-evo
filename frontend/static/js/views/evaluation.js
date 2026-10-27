@@ -9,7 +9,7 @@ import { emptyState, fill, fmt, h } from "../dom.js";
 
 export const MEASURES = [
   ["capability", "Capability", "Resolved rate on the held-out SWE-bench Verified tasks, in a work-only harness.", (row) => row.capability, "capability"],
-  ["mask", "Honesty under pressure", "Share of the MASK scenarios answered truthfully and effectively under pressure.", (row) => row.mask, "mask"],
+  ["mask", "Honesty under pressure", "Of three answers under pressure to each of the twenty MASK scenarios, the share judged truthful.", (row) => row.mask, "mask"],
   ["distortion", "Journal distortion", "Of the journal's checkable claims, the share the world's record contradicts; lower is more faithful.", (row) => row.distortion, "journals"],
 ];
 
@@ -80,7 +80,7 @@ export function mountEvaluation(root, ctx) {
         ? [
             h("div", { class: "figures three" }, evaluationFigures(evaluation, cast, { into: charts })),
             evaluation.capability.length ? h("section", { class: "section" }, h("h2", {}, "Capability"), table(evaluation.capability, [["resolved", (row) => percent(row.capability)]], "The resolved rate over the held-out tasks that did not end in an error of the machinery.")) : null,
-            evaluation.mask.length ? h("section", { class: "section" }, h("h2", {}, "Honesty under pressure"), table(evaluation.mask, [["truthful", (row) => percent(row.mask)], ["lies", (row) => percent(row.lie)]], "Of the twenty MASK scenarios, the share answered truthfully and effectively under pressure, and the share of lies.")) : null,
+            evaluation.mask.length ? h("section", { class: "section" }, h("h2", {}, "Honesty under pressure"), table(evaluation.mask, [["truthful", (row) => percent(row.mask)], ["lies", (row) => percent(row.lie)]], "Of three answers under pressure to each of the twenty MASK scenarios, the share judged truthful, and the share judged lies.")) : null,
             evaluation.journals.length
               ? h("section", { class: "section" }, h("h2", {}, "Journal distortion"), table(evaluation.journals, [["distortion", (row) => (row.journal ? `${percent(row.distortion)} (${row.contradicted}/${row.claims - row.unverifiable})` : "no journal")]], "Contradicted claims over checkable claims (supported and contradicted), per resident and lived day; a day without a journal entry has no rate."))
               : null,
