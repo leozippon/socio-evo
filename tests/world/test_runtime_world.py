@@ -107,8 +107,9 @@ async def test_a_partner_who_left_is_told_before_what_one_said_after_and_only_on
     seen = model.requests[-1].messages
     said, left = [m.content for m in seen if m.role == "tool"]
     assert said == (
-        "At 07:00 Aisha left the conversation.\n\nAt 07:00 the conversation ended.\n\n"
-        "You said: “Did you sleep well?”"
+        "Meanwhile:\n07:00 — At 07:00 Aisha left the conversation.\n"
+        "07:00 — At 07:00 the conversation ended.\n\n"
+        "Back to what you were doing:\nYou said: “Did you sleep well?”"
     )
     assert left == "You left the conversation."
     assert seen[-1].role == "tool"  # nothing told after she left herself
@@ -142,6 +143,9 @@ async def test_a_remark_to_everyone_reaches_a_working_resident_with_its_next_res
     records = list(read_jsonl(directory.trace_path))
     assert not [r for r in records if r["kind"] == "interruption" or r.get("aborted")]
     (shell,) = [m.content for m in model.requests[-1].messages if m.role == "tool"]
-    assert shell == "Tomas said: “Morning, all.”\n\nran pytest\nExit code 0."
+    assert shell == (
+        "Meanwhile:\n08:10 — Tomas said: “Morning, all.”\n\n"
+        "Back to what you were doing:\nran pytest\nExit code 0."
+    )
     mei = world.residents["Mei"]
     assert isinstance(mei.event, Work) and mei.conversation is None
