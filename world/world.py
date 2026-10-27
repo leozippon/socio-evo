@@ -1204,6 +1204,19 @@ class World:
             r.tick.cancel()
             r.tick = None
 
+    def end_wait(self, r: Resident, began: int) -> None:
+        """`r`'s wait for the minutes it asked, begun at `began`, was ended sooner by what it
+        has just been told: it is told so, and the time, after that."""
+        now = self.clock.now()
+        text = f"That ended the wait you began at {clock_time(began)}; it is now {clock_time(now)}."
+        self.record(
+            "time",
+            lambda w: text,
+            actor=r,
+            audience=[r],
+            payload={"waited_minutes": (now - began) // 60, "cut_short": True},
+        )
+
     def _tick(self, r: Resident, asked: int | None) -> None:
         r.tick = None
         hour = clock_time(self.clock.now())
@@ -1362,9 +1375,9 @@ class ResidentPort:
 
     `wait` returns as soon as a percept is pending. While the resident is awake it is told
     something within the idle interval of simulated time (or within the minutes it asked to
-    wait); while it sleeps nothing reaches it until it wakes, and what was told to it meanwhile
-    is held and delivered with the wake-up. A resident in bed whose runtime waits with nothing
-    pending falls asleep."""
+    wait, and if something else ends that wait sooner, that it did); while it sleeps nothing
+    reaches it until it wakes, and what was told to it meanwhile is held and delivered with the
+    wake-up. A resident in bed whose runtime waits with nothing pending falls asleep."""
 
     def __init__(self, world: World, resident: Resident) -> None:
         self._world = world
@@ -1406,17 +1419,22 @@ class ResidentPort:
     async def wait(self) -> list[Percept]:
         world, r = self._world, self._resident
         self.waiting = True
+        asked, began, armed = r.wait_minutes, world.clock.now(), False
         try:
             if not self._inbox:
                 if isinstance(r.base, Sleep) and not r.base.suspended:
                     world.fall_asleep(r)
                 if not r.suspended:
                     world.arm_tick(r)
+                    armed = True
             world.rest_changed()
             await self._arrived.wait()
+            if asked and (not armed or r.tick is not None):  # news came before the minutes
+                world.end_wait(r, began)
             return self.pending()
         finally:
             self.waiting = False
+            r.wait_minutes = None
             world.disarm_tick(r)
             world.rest_changed()
 

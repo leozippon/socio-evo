@@ -49,6 +49,7 @@ ARCHITECTURE_TABLE = {
         "abandon_task",
         "say",
         "message",
+        "wait",
         "leave_work",
     },
     "conversation": {
@@ -118,7 +119,7 @@ async def test_each_event_refuses_what_it_does_not_offer_naming_the_condition(ma
     started = await town.call("Mei", "start_work")
     assert started.text.startswith("You started work.") and isinstance(mei.base, Work)
     working = await _refusals(town, "Mei")
-    assert working["wait"] == "You are at work; leave work first."
+    assert working["buy"] == "You are at work; leave work first."
     assert working["start_work"] == "You are already at work."
     assert set(working) == {spec.name for spec in world.tool_specs} - WORK_TOOLS
 
@@ -224,14 +225,18 @@ async def test_waiting_in_a_conversation_listens_until_the_reply_or_the_silence(
     await town.until("07:02")
     assert not listening.done() and mei.conversation is not None
     await town.call("Aisha", "say", text="Like a log.")
-    assert [p.text for p in listening.result()] == ["Aisha said: “Like a log.”"]
+    assert [p.text for p in listening.result()] == [
+        "Aisha said: “Like a log.”",
+        "That ended the wait you began at 07:00; it is now 07:02.",
+    ]
     assert mei.conversation is town.world.residents["Aisha"].conversation is not None
 
     await town.call("Mei", "wait", minutes=30)
     listening = asyncio.create_task(port.wait())
     await town.until("07:12")
     assert [p.text for p in listening.result()] == [
-        "Nobody spoke for 10 minutes; at 07:12 the conversation ended."
+        "Nobody spoke for 10 minutes; at 07:12 the conversation ended.",
+        "That ended the wait you began at 07:02; it is now 07:12.",
     ]
     assert "leave_conversation" not in town.kinds()
 

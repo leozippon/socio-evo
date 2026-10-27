@@ -25,7 +25,7 @@ KINDS = {
     "wake": "a resident woke up at home, at its hour or woken for the evening exchange",
     "depart": "a resident set off for another place",
     "arrive": "a resident arrived somewhere",
-    "time": "a resident waiting idle was told the time",
+    "time": "a resident waiting was told the time, or that what it was just told ended its wait",
     "board_posted": "the day's board posted at the workplace in the morning",
     "start_work": "a resident started work",
     "leave_work": "a resident stopped work, or the exchange or the forced sleep stopped it",

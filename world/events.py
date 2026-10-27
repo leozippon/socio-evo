@@ -56,6 +56,7 @@ WORK_TOOLS = frozenset(
         "abandon_task",
         "say",
         "message",
+        "wait",
         "leave_work",
     }
 )

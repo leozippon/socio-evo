@@ -20,7 +20,7 @@ from tests.world.conftest import (
     town_config,
 )
 from world.clock import ManualClock, settle
-from world.events import Movement, Sleep
+from world.events import Movement, Sleep, Work
 from world.log import KINDS
 from world.world import World
 
@@ -207,6 +207,41 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
     await town.until("08:30")
     assert [p.text for p in waiting.result()] == ["Mei arrived at the flat by the college gates."]
     assert town.world.residents["Tomas"].tick is None
+
+    # A wait for minutes asked that something ends sooner says so, after what ended it.
+    await town.call("Tomas", "wait", minutes=60)
+    waiting = asyncio.create_task(port.wait())
+    await town.until("08:35")
+    await town.call("Mei", "say", text="Morning, Tomas.")
+    assert [p.text for p in waiting.result()] == [
+        "Mei said: “Morning, Tomas.”",
+        "That ended the wait you began at 08:30; it is now 08:35.",
+    ]
+    ended = [e for e in town.world.log.entries() if e["kind"] == "time"][-1]
+    assert ended["payload"] == {"waited_minutes": 5, "cut_short": True}
+    waiting = asyncio.create_task(port.wait())  # an idle wait has no minutes to cut short
+    await town.until("08:45")
+    assert [p.text for p in waiting.result()] == [
+        "Nobody spoke for 10 minutes; at 08:45 the conversation ended."
+    ]
+
+
+async def test_one_can_wait_at_work_for_the_board(make_town):
+    town = make_town()
+    await awake_at(town)
+    port = town.world.ports["Tomas"]
+    await town.call("Tomas", "go", place="workshop")
+    await town.until("07:30")
+    await town.call("Tomas", "start_work")
+    town.take("Tomas")
+    assert (await town.call("Tomas", "wait", minutes=60)).ends_turn
+    waiting = asyncio.create_task(port.wait())
+    await town.until("08:00")
+    assert [p.text for p in waiting.result()] == [
+        "It is 08:00: the day's board is posted at the workshop.",
+        "That ended the wait you began at 07:30; it is now 08:00.",
+    ]
+    assert isinstance(town.world.residents["Tomas"].base, Work)
 
 
 async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
