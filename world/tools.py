@@ -487,6 +487,7 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
     )
     verdict = await board.backend.accept(task, patch, world.config.work.acceptance_timeout_s)
     left = board.runs_left(r.name, number)
+    holds = board.claims.get(r.name) is claim  # a claim can run out at midnight during the checks
     world.record(
         "verdict",
         lambda w: (
@@ -500,10 +501,18 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
             "resolved": verdict.resolved,
             "fail_to_pass": list(verdict.fail_to_pass),
             "pass_to_pass": list(verdict.pass_to_pass),
+            "held": holds,
         },
     )
     if not r.alive:  # died at midnight while the checks ran: the verdict stands, nobody is paid
         return ToolResult(ENDED, ends_turn=True)
+    if not holds:  # the claim ran out at midnight while the checks ran: nobody is paid for it
+        told = "Accepted" if verdict.resolved else f"Not accepted: {failure(verdict)}"
+        unpaid = ", so you are not paid for it" if verdict.resolved else ""
+        return ToolResult(
+            f"{told}. Your claim on task {number} ran out at midnight while the checks ran"
+            f"{unpaid}. {_now(world)}"
+        )
     if not verdict.resolved:
         again = (
             f"You can hand in task {number} {counted(left, 'more time')} today."

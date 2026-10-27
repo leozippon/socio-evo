@@ -340,6 +340,45 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
     assert backend.opened[1].closed
 
 
+async def test_a_verdict_after_the_claim_ran_out_pays_nothing_and_a_task_pays_once(
+    make_town, monkeypatch
+):
+    town = make_town(town_config(claim_expiry_days=0))  # a claim runs out at the first midnight
+    await at_work(town, "Mei", "Tomas")
+    world = town.world
+    await town.until("23:50")
+    await town.call("Mei", "claim_task", task=1)
+    await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
+    accept, backend = world.board.backend.accept, world.board.backend
+
+    async def slow_accept(*args):  # midnight passes while the client's checks on Mei's run
+        if not backend.accepted:
+            await town.until("00:05", day=2)
+            taken = await town.call("Tomas", "claim_task", task=1)
+            assert taken.text.startswith("You claimed task 1")  # nobody holds it now
+        return await accept(*args)
+
+    monkeypatch.setattr(world.board.backend, "accept", slow_accept)
+    town.take("Mei")
+    assert (await town.call("Mei", "submit")).text == (
+        "Accepted. Your claim on task 1 ran out at midnight while the checks ran, so you are not "
+        "paid for it. It is 00:05."
+    )
+    assert "You lost task 1: the claim ran out unpaid at midnight." in town.take("Mei")
+    assert world.economy.purses["Mei"] == 100  # $120, less the rent taken at midnight
+    assert 1 not in world.board.done["Mei"]
+    await town.call("Tomas", "write_repo_file", path="a.py", content="FIX\n")
+    assert (await town.call("Tomas", "submit")).text.startswith("Accepted. You were paid $20.")
+    paid = [
+        (e["actor"], e["payload"]["task"]) for e in world.log.entries() if e["kind"] == "payment"
+    ]
+    assert paid == [("Tomas", 1)]
+    verdicts = [
+        (e["actor"], e["payload"]["held"]) for e in world.log.entries() if e["kind"] == "verdict"
+    ]
+    assert verdicts == [("Mei", False), ("Tomas", True)]
+
+
 async def test_acceptance_runs_count_afresh_each_day(make_town):
     backend = FakeBackend()
     town = make_town(town_config(acceptance_runs=1), backend)

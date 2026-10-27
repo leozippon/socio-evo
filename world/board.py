@@ -14,8 +14,9 @@ pays once; it comes round again with the rotation, and may then be done by a res
 paid for it. In the isolated mode every resident has a board of its own, which here means that
 no claim or payment of another counts. A resident holds at most one task, keeps it when it leaves
 the workplace, and loses it unpaid at the midnight that ends the calendar day `claim_expiry_days`
-days after the day of the claim. A task a resident has been paid for is done for that resident
-and cannot be claimed by it again.
+days after the day of the claim, even while a submission of it is being checked; only a held
+claim is paid, so that a task is paid once. A task a resident has been paid for is done for that
+resident and cannot be claimed by it again.
 
 A claim opens a workspace. When a claim ends by acceptance or abandonment its workspace is
 closed at once; when it runs out, its workspace may be in use by a command still running, so it
@@ -167,13 +168,11 @@ class Board:
         self.runs[name][number] = self.runs[name].get(number, 0) + 1
 
     def finish(self, name: str, claim: Claim) -> Workspace | None:
-        """Mark the claim's task done for `name`, take it off a shared board, and release it;
-        returns its workspace."""
+        """Mark the task of `name`'s claim, which it still holds, done for it, take it off a
+        shared board, and release it; returns its workspace."""
         self.done[name].add(claim.task)
         if self.shared and claim.task in self.posted:
             self.posted.remove(claim.task)
-        if self.claims.get(name) is not claim:  # it ran out while being checked
-            return None
         return self.drop(name)
 
     def drop(self, name: str) -> Workspace | None:
