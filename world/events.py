@@ -4,8 +4,9 @@ A resident is always in exactly one event. Its base event is Idle, Movement, Wor
 Dead once its health has run out, from which nothing brings it back; a Conversation sits on top
 of the Idle or Work it found the resident in and adds its own actions to that event's, so that
 someone spoken to at work can go on working, and leaving the conversation leaves the event
-underneath as it is. One leaves by doing something else: `go` and `sleep` leave a conversation
-and work on their own; waiting in a conversation is listening, and leaves it standing. A
+underneath as it is. Work is entered by claiming a task or acting in its workspace at the
+workplace. One leaves by doing something else: `go` and `sleep` leave a conversation and work
+on their own; waiting in a conversation is listening, and leaves it standing. A
 Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
@@ -31,8 +32,14 @@ IDLE_TOOLS = frozenset(
         "look_around",
         "how_am_i",
         "go",
-        "start_work",
         "view_board",
+        "claim_task",
+        "shell",
+        "read_repo_file",
+        "write_repo_file",
+        "edit_repo_file",
+        "submit",
+        "abandon_task",
         "say",
         "message",
         "buy",
@@ -64,6 +71,10 @@ WORK_TOOLS = frozenset(
     }
 )
 CONVERSATION_TOOLS = frozenset({"give_money", "share_skill", "leave_conversation"})
+TASK_TOOLS = frozenset(
+    {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
+)
+"""What acts on the task one holds, of use only to one who holds a task."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "rate", "sleep"})
 
 
@@ -126,12 +137,10 @@ ENDED = "Your life has ended."
 """What a dead resident reads, should its runtime still ask anything."""
 
 
-def refusal(
-    event: Base, tool: str, *, workplace: str, destination: str, ratings: bool = True
-) -> str:
+def refusal(event: Base, tool: str, *, destination: str, ratings: bool = True) -> str:
     """Why `tool`, which neither the base `event` nor a conversation on top of it offers,
-    cannot be used now. `workplace` and `destination` are the names of the workplace and of
-    where a moving resident is going; `ratings` whether the town has bedtime ratings."""
+    cannot be used now. `destination` is the name of where a moving resident is going;
+    `ratings` whether the town has bedtime ratings."""
     if isinstance(event, Dead):
         return ENDED
     if isinstance(event, Movement):
@@ -150,9 +159,5 @@ def refusal(
     if tool in SLEEP_TOOLS:
         return "You can do that only once you have gone to bed."
     if isinstance(event, Work):
-        return (
-            "You are already at work."
-            if tool == "start_work"
-            else "You are at work; leave work first."
-        )
-    return f"You are not at work; start work at {workplace} first."
+        return "You are at work; leave work first."
+    return "You are not at work."

@@ -55,7 +55,6 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     await town.until("09:30")
@@ -69,7 +68,6 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     midway()
     await town.until("10:00")
     await town.call("Mei", "submit")
-    await town.call("Tomas", "start_work")
     await town.call("Tomas", "claim_task", task=2)
     await town.call("Tomas", "write_repo_file", path="a.py", content="half\n")
     await town.call("Tomas", "submit")

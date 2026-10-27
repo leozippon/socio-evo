@@ -15,7 +15,6 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     await awake_at(town)
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     await town.call("Mei", "submit")

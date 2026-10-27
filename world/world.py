@@ -79,7 +79,18 @@ from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
 from world.config import Band, Good, TownConfig
 from world.economy import Economy
-from world.events import ENDED, Base, Conversation, Dead, Idle, Movement, Sleep, Work, refusal
+from world.events import (
+    ENDED,
+    TASK_TOOLS,
+    Base,
+    Conversation,
+    Dead,
+    Idle,
+    Movement,
+    Sleep,
+    Work,
+    refusal,
+)
 from world.log import Entry, WorldLog
 from world.ratings import Ratings, tell_ratings
 from world.rules import Rules, bare, longest_sleep
@@ -1295,14 +1306,16 @@ class World:
         elif isinstance(r.base, Movement):
             parts.append("There is nothing to do until you arrive.")
         else:
-            writes = any(
+            useless: set[str] = set()  # what the resident could do but to no purpose
+            if not any(
                 r.living.things.get(good.id) for good in self.for_sale if good.effect == "messaging"
-            )  # message is of use only to one who has something to write with
-            usable = [
-                spec.name
-                for spec in self.tool_specs
-                if spec.name in r.tools and (spec.name != "message" or writes)
-            ]
+            ):
+                useless.add("message")  # nothing to write with
+            if r.place != self.config.workplace.id:  # the board and the work are there
+                useless |= {"view_board", "claim_task", *TASK_TOOLS}
+            if r.name not in self.board.claims:
+                useless |= TASK_TOOLS
+            usable = [spec.name for spec in self.tool_specs if spec.name in r.tools - useless]
             files = ", and see to your files" if isinstance(r.base, Sleep) else ""
             parts.append(f"What you can do now: {', '.join(usable)}{files}.")
         return " ".join(parts)
@@ -1372,13 +1385,7 @@ class World:
             destination = (
                 self.config.place(event.destination).name if isinstance(event, Movement) else ""
             )
-            text = refusal(
-                event,
-                name,
-                workplace=self.config.workplace.name,
-                destination=destination,
-                ratings=self.ratings_on,
-            )
+            text = refusal(event, name, destination=destination, ratings=self.ratings_on)
             return ToolResult(text, ends_turn=isinstance(event, Movement))
         problem = tools.check(self._specs[name], args)
         if problem:

@@ -66,7 +66,6 @@ MEI_STEPS = (
     step(tool_call("wait", minutes=60)),
     # 09:00, the board.
     step(
-        tool_call("start_work"),
         tool_call("view_board"),
         tool_call("claim_task", task=1),
         tool_call("claim_task", task=2),
@@ -163,7 +162,6 @@ async def live(root: Path) -> None:
         await harness.call("Aisha", "go", place="workshop")
         await settled("07:10")
         await settled("09:00")
-        await tomas("start_work")
         await tomas("claim_task", task=2)
         await tomas("shell", command="false")
         await settled("09:20")

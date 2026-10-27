@@ -56,9 +56,8 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         await town.until("07:00")
         await town.call("Mei", "go", place="workshop")
         await town.until("09:00")
-        await town.call("Mei", "start_work")
         claimed = await town.call("Mei", "claim_task", task=1)
-        assert claimed.text.startswith("You claimed task 1, in django/django")
+        assert claimed.text.startswith("You sat down to work and claimed task 1, in django/django")
         status = await town.call("Mei", "shell", command="git status --short && echo done")
         assert status.text.endswith("done\nExit code 0.")
         await town.call("Mei", "write_repo_file", path="probe_note.txt", content="kept\n")
@@ -75,9 +74,8 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         await town.until("09:00", day=2)
         await town.call("Mei", "go", place="workshop")
         await town.until("09:10", day=2)
-        started = await town.call("Mei", "start_work")
-        assert "set up again with your changes" in started.text
-        assert (await town.call("Mei", "read_repo_file", path="probe_note.txt")).text == "kept\n"
+        reopened = await town.call("Mei", "read_repo_file", path="probe_note.txt")
+        assert reopened.text == "You sat down to work. It is 09:10.\nkept\n"
         verdict = await town.call("Mei", "submit")
         assert verdict.text.startswith("Not accepted: ")
         assert "test_" not in verdict.text and "::" not in verdict.text

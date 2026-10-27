@@ -117,9 +117,9 @@ class _Day:
                 return reply("", tool_call("wait", minutes=(board - self.hour) // 60))
             return reply("", tool_call("go", place=town.workplace.id))
         if place == town.workplace.id:
-            if self._did("start_work", "You started work"):
+            if self._did("view_board"):
                 return reply("", tool_call("go", place=self.after_work))
-            return reply("", tool_call("start_work"), tool_call("view_board"))
+            return reply("", tool_call("view_board"))
         if place == self.model._shop and place != self.social:
             calls = [] if self._did("buy", "You bought") else [self._buy(self.model._stock)]
             return reply("", *calls, tool_call("go", place=self.social))
@@ -159,7 +159,7 @@ class _Day:
             task = min(free, key=lambda number: (number - 1 - start) % len(lines))
             calls.append(tool_call("claim_task", task=task))
         else:
-            return reply("", tool_call("leave_work"), tool_call("go", place=self.social))
+            return reply("", tool_call("go", place=self.social))
         return reply(
             f"I will work on task {task}.",
             *calls,

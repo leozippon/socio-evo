@@ -156,7 +156,7 @@ async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking
     )
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
+    await town.call("Mei", "claim_task", task=1)
     town.take("Mei")
     await town.until("23:00")
     assert town.take("Mei") == [
@@ -259,17 +259,27 @@ async def test_the_workplace_refuses_the_exhausted_until_they_have_slept(make_to
     world = town.world
     tomas = world.residents["Tomas"]
     await town.call("Tomas", "go", place="workshop")
-    await town.until("07:10")
+    await town.until("08:00")
     tomas.living.energy = 14
-    assert (await town.call("Tomas", "start_work")).text == (
+    assert (await town.call("Tomas", "claim_task", task=1)).text == (
         "You are too tired to sit down to work; sleep first."
     )
+    assert "Tomas" not in world.board.claims and isinstance(tomas.base, Idle)
     assert "You are exhausted." in world.ports["Tomas"].situation()
     tomas.living.energy = 15
-    assert (await town.call("Tomas", "start_work")).text.startswith("You started work.")
+    claimed = await town.call("Tomas", "claim_task", task=1)
+    assert claimed.text.startswith("You sat down to work and claimed task 1")
     tomas.living.energy = 5  # at work, the exhausted may go on; a conversation does not bar it
+    assert (await town.call("Tomas", "shell", command="ls")).text == "ran ls\nExit code 0."
+    await town.call("Tomas", "leave_work")
+    assert (await town.call("Tomas", "shell", command="ls")).text == (
+        "You are too tired to sit down to work; sleep first."
+    )  # but up, the exhausted cannot sit down again
+    tomas.living.energy = 15
+    await town.call("Tomas", "shell", command="ls")
+    tomas.living.energy = 5
     await town.call("Mei", "go", place="workshop")
-    await town.until("07:30")
+    await town.until("08:10")
     await town.call("Mei", "say", text="Still at it?", to=["Tomas"])
     assert (await town.call("Tomas", "leave_conversation")).text == (
         "You left the conversation. You are back at work."
@@ -362,7 +372,6 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     mei.living.health = 10  # her last day, out of food
     mei.living.satiety = 0
@@ -429,7 +438,6 @@ async def test_a_resident_that_dies_while_its_checks_run_is_not_paid(make_town, 
     mei = world.residents["Mei"]
     await town.call("Mei", "go", place="workshop")
     await town.until("23:50")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     mei.living.health, mei.living.satiety = 10, 0

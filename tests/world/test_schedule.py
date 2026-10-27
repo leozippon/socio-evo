@@ -96,8 +96,8 @@ async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
     await awake_at(town)
     world = town.world
     await town.call("Kofi", "go", place="workshop")
-    await town.until("07:10")
-    await town.call("Kofi", "start_work")
+    await town.until("08:00")
+    await town.call("Kofi", "claim_task", task=1)
     await town.until("18:00")
     for name in ("Jonas", "Lucia"):
         await town.call(name, "sleep", until="06:00", journal="An early night.")
@@ -226,13 +226,12 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
     ]
 
 
-async def test_one_can_wait_at_work_for_the_board(make_town):
+async def test_one_can_wait_at_the_workplace_for_the_board(make_town):
     town = make_town()
     await awake_at(town)
     port = town.world.ports["Tomas"]
     await town.call("Tomas", "go", place="workshop")
     await town.until("07:30")
-    await town.call("Tomas", "start_work")
     town.take("Tomas")
     assert (await town.call("Tomas", "wait", minutes=60)).ends_turn
     waiting = asyncio.create_task(port.wait())
@@ -241,6 +240,9 @@ async def test_one_can_wait_at_work_for_the_board(make_town):
         "It is 08:00: the day's board is posted at the workshop.",
         "That ended the wait you began at 07:30; it is now 08:00.",
     ]
+    assert (await town.call("Tomas", "claim_task", task=1)).text.startswith(
+        "You sat down to work and claimed task 1"
+    )
     assert isinstance(town.world.residents["Tomas"].base, Work)
 
 
@@ -288,7 +290,6 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "buy", item="coat")
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     await town.call("Mei", "submit")
@@ -344,7 +345,6 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     stocked(town)
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.until("22:00")
@@ -369,8 +369,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
     assert later.residents["Mei"].living.things == {"groceries": 6}  # the stock came back
-    await again.call("Mei", "start_work")
-    assert (await again.call("Mei", "read_repo_file", path="b.py")).text == "half\n"
+    assert (await again.call("Mei", "read_repo_file", path="b.py")).text.endswith("\nhalf\n")
     await again.close()
 
 
@@ -400,8 +399,6 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     tick = asyncio.create_task(town.world.ports["Aisha"].wait())
     await town.until("09:00")
     await tick
-    for name in ("Mei", "Tomas"):
-        await town.call(name, "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "shell", command="pytest")
     await town.call("Mei", "read_repo_file", path="README")

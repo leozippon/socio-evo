@@ -75,7 +75,7 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
         Sleep(0, True),
     ]
     texts += [
-        refusal(event, spec.name, workplace="the workshop", destination="the café")
+        refusal(event, spec.name, destination="the café")
         for event in events
         for spec in world_.tool_specs
     ]
@@ -92,13 +92,14 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
     texts.append(world_.ports["Mei"].situation())
     await town.until("09:00")
     texts.append((await town.call("Mei", "look_around")).text)
-    await town.call("Mei", "start_work")
     texts.append((await town.call("Mei", "view_board")).text)
     await town.call("Mei", "claim_task", task=1)
     texts.append(world_.ports["Mei"].situation())
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
     texts.append((await town.call("Mei", "submit")).text)
     await town.call("Mei", "leave_work")
+    texts.append((await town.call("Mei", "shell", command="ls")).text)  # sitting down again
+    texts.append((await town.call("Mei", "leave_work")).text)
     texts.append((await town.call("Mei", "sleep", until="07:00", journal="Tired.")).text)
     await town.until("19:30")
     await town.call("Mei", "go", place="mill-street-house")

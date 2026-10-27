@@ -34,7 +34,6 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
         reply("", tool_call("wait", minutes=110)),
         reply(
             "",
-            tool_call("start_work"),
             tool_call("claim_task", task=1),
             tool_call("write_repo_file", path="fix.py", content="FIX\n"),
             tool_call("submit"),
@@ -134,7 +133,6 @@ async def test_a_remark_to_everyone_reaches_a_working_resident_with_its_next_res
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("08:10")
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=1)
     async with running(Runtime(directory, port, model)):
         await resting(port)

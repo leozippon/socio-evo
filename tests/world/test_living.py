@@ -221,15 +221,15 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
 
 async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conversation(make_town):
     town = make_town()
-    await awake_at(town)
+    await awake_at(town, "08:00")
     await town.call("Mei", "go", place="store")
     await town.call("Tomas", "go", place="workshop")
-    await town.until("07:10")
+    await town.until("08:10")
     await town.call("Mei", "buy", item="coat")
     for name in ("Mei", "Tomas"):
         town.take(name)
     await town.call("Mei", "go", place="workshop")
-    await town.until("07:20")
+    await town.until("08:20")
     assert town.take("Tomas") == ["Mei arrived at the workshop, in a new coat."]
     assert town.take("Mei") == ["You arrived at the workshop. Also here: Tomas."]
     assert (await town.call("Tomas", "look_around")).text.endswith(
@@ -238,7 +238,7 @@ async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conver
     await town.call("Tomas", "say", text="New coat?", to=["Mei"])
     assert "in a conversation with Mei (in a new coat)." in town.world.ports["Tomas"].situation()
     assert "in a conversation with Tomas." in town.world.ports["Mei"].situation()
-    await town.call("Tomas", "start_work")  # sitting down to work while they talk
+    await town.call("Tomas", "claim_task", task=1)  # sitting down to work while they talk
     assert (await town.call("Mei", "look_around")).text.endswith(
         "Also here: Tomas (working, in a conversation)."
     )

@@ -6,25 +6,27 @@ from __future__ import annotations
 import json
 
 from tests.world.conftest import at, awake_at, stocked, town_config
-from world.events import Sleep
+from world.events import Sleep, Work
 from world.testing import FakeBackend, FakeVerdict
 
 
-async def at_work(town, *names: str) -> None:
+async def at_the_workshop(town, *names: str) -> None:
     await awake_at(town)
     for name in names:
         await town.call(name, "go", place="workshop")
     await town.until("09:00")
     for name in names:
-        await town.call(name, "start_work")
         town.take(name)
 
 
 async def test_a_shared_board_lets_one_resident_hold_a_task(make_town):
     town = make_town()
-    await at_work(town, "Mei", "Tomas")
+    await at_the_workshop(town, "Mei", "Tomas")
     claimed = await town.call("Mei", "claim_task", task=1)
-    assert claimed.text.startswith("You claimed task 1, in org/repo1; your workspace is ready.")
+    assert claimed.text.startswith(
+        "You sat down to work and claimed task 1, in org/repo1; your workspace is ready. It is "
+        "09:00. The problem:"
+    )
     assert "Problem 1 goes wrong.\nDetails of 1." in claimed.text
     board = (await town.call("Tomas", "view_board")).text
     assert "1. org/repo1: Problem 1 goes wrong. Pays $20. Held." in board
@@ -52,8 +54,8 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     await town.call("Mei", "sleep", until="04:30", journal="To bed early, to work early.")
     await town.call("Tomas", "go", place="workshop")
     await town.until("23:00")
-    assert (await town.call("Tomas", "start_work")).text.startswith("You started work.")
-    assert (await town.call("Tomas", "claim_task", task=1)).text.startswith("You claimed task 1")
+    claimed = await town.call("Tomas", "claim_task", task=1)
+    assert claimed.text.startswith("You sat down to work and claimed task 1")
     town.take("Tomas")
     town.rest("Mei", "Aisha")
     await town.until("00:00", day=2)
@@ -67,9 +69,10 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     await town.until("04:30", day=2)
     await town.call("Mei", "go", place="workshop")
     await town.until("05:00", day=2)
-    assert (await town.call("Mei", "start_work")).text.startswith("You started work.")
     assert (await town.call("Mei", "claim_task", task=1)).text == "Task 1 is held by someone else."
-    assert (await town.call("Mei", "claim_task", task=2)).text.startswith("You claimed task 2")
+    assert not isinstance(world.residents["Mei"].base, Work)  # a refused claim sits nobody down
+    claimed = await town.call("Mei", "claim_task", task=2)
+    assert claimed.text.startswith("You sat down to work and claimed task 2")
     assert world.board.claims["Mei"].day == 2
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
@@ -82,7 +85,6 @@ async def test_the_board_is_posted_every_morning_and_what_is_left_stays_up_until
     await town.call("Tomas", "go", place="workshop")
     await town.until("07:59")
     assert board.posted == [] and town.kinds().count("board_posted") == 0
-    await town.call("Tomas", "start_work")
     assert (await town.call("Tomas", "view_board")).text == (
         "Nothing is posted on the board now; the next board goes up at 08:00."
     )
@@ -118,18 +120,47 @@ async def test_the_board_is_read_by_whoever_is_at_the_workshop(make_town):
     assert (await town.call("Mei", "view_board")).text == board  # nor leaving the conversation
 
 
+async def test_claiming_or_working_on_a_task_sits_one_down_to_work(make_town):
+    town = make_town()
+    await at_the_workshop(town, "Mei")
+    mei, port = town.world.residents["Mei"], town.world.ports["Mei"]
+    assert "view_board, claim_task, say" in port.situation()  # no task held: nothing to work on
+    assert (await town.call("Mei", "shell", command="ls")).text == (
+        "You hold no task; claim one from the board first."
+    )
+    await town.call("Mei", "claim_task", task=1)
+    assert isinstance(mei.base, Work)
+    await town.call("Mei", "leave_work")
+    assert "edit_repo_file, submit, abandon_task" in port.situation()
+    assert (await town.call("Mei", "shell", command="ls")).text == (
+        "You sat down to work. It is 09:00.\nran ls\nExit code 0."
+    )
+    went = await town.call("Mei", "go", place="cafe")
+    assert went.text.startswith("You stopped work. You set off for the café on the square")
+    await town.until("09:05")
+    situation = port.situation()
+    assert "claim_task" not in situation and "shell" not in situation
+    assert (await town.call("Mei", "shell", command="ls")).text == (
+        "You can work only at the workshop."
+    )
+    assert (await town.call("Mei", "claim_task", task=2)).text == (
+        "The board is at the workshop; you can claim a task only there."
+    )
+
+
 async def test_isolated_boards_are_each_residents_own(make_town):
     town = make_town(town_config("isolated"))
-    await at_work(town, "Mei", "Tomas")
+    await at_the_workshop(town, "Mei", "Tomas")
     await town.call("Mei", "claim_task", task=1)
-    assert (await town.call("Tomas", "claim_task", task=1)).text.startswith("You claimed task 1")
+    claimed = await town.call("Tomas", "claim_task", task=1)
+    assert claimed.text.startswith("You sat down to work and claimed task 1")
     assert "Held" not in (await town.call("Tomas", "view_board")).text
 
 
 async def test_acceptance_is_limited_per_task_per_day_and_never_names_the_checks(make_town):
     backend = FakeBackend()
     town = make_town(backend=backend)
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     await town.call("Mei", "claim_task", task=1)
     empty = await town.call("Mei", "submit")
     assert empty.text == "Your workspace has no changes to hand in." and not backend.accepted
@@ -159,7 +190,7 @@ async def test_acceptance_is_limited_per_task_per_day_and_never_names_the_checks
 async def test_other_failures_are_told_by_their_kind(make_town):
     backend = FakeBackend()
     town = make_town(town_config(acceptance_runs=5), backend)
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
     backend.verdicts += [
@@ -182,7 +213,7 @@ async def test_other_failures_are_told_by_their_kind(make_town):
 async def test_an_accepted_task_is_paid_once_and_leaves_the_shared_board_for_the_day(make_town):
     backend = FakeBackend()
     town = make_town(backend=backend)
-    await at_work(town, "Mei", "Tomas")
+    await at_the_workshop(town, "Mei", "Tomas")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     accepted = await town.call("Mei", "submit")
@@ -211,7 +242,6 @@ async def test_a_restored_world_keeps_what_was_left_of_the_board_until_the_morni
     await town.until("00:30", day=2)  # day 1's board is still up
     board = town.world.board
     number = board.posted[0]
-    await town.call("Mei", "start_work")
     await town.call("Mei", "claim_task", task=number)
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     assert (await town.call("Mei", "submit")).text.startswith("Accepted.")
@@ -235,7 +265,7 @@ async def test_a_restored_world_keeps_what_was_left_of_the_board_until_the_morni
 
 async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):
     town = make_town()
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     assert (await town.call("Mei", "shell", command="ls")).text == (
         "You hold no task; claim one from the board first."
     )
@@ -263,7 +293,7 @@ async def test_shell_and_file_tools_pass_outputs_through_whole(make_town):
 
 async def test_repository_files_are_read_in_part_and_changed_in_place(make_town):
     town = make_town()
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="one\ntwo\nthree\ntwo\n")
 
@@ -303,7 +333,7 @@ async def test_repository_files_are_read_in_part_and_changed_in_place(make_town)
 async def test_giving_up_a_task_throws_its_changes_away(make_town):
     backend = FakeBackend()
     town = make_town(backend=backend)
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     assert (await town.call("Mei", "abandon_task")).text == "You hold no task."
     await town.call("Mei", "claim_task", task=3)
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
@@ -311,7 +341,8 @@ async def test_giving_up_a_task_throws_its_changes_away(make_town):
         await town.call("Mei", "abandon_task")
     ).text == "You gave up task 3; its changes are gone. It is 09:00."
     assert backend.opened[0].closed and "Mei" not in town.world.board.claims
-    assert (await town.call("Mei", "claim_task", task=3)).text.startswith("You claimed task 3")
+    claimed = await town.call("Mei", "claim_task", task=3)  # still at work: no sitting down
+    assert claimed.text.startswith("You claimed task 3")
     assert backend.opened[1].changed == {}
 
 
@@ -320,12 +351,14 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
 ):
     backend = FakeBackend()
     town = make_town(backend=backend)
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     stocked(town)
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="a.py", content="half done\n")
     await town.call("Mei", "leave_work")
-    await town.call("Mei", "start_work")
+    assert (await town.call("Mei", "read_repo_file", path="a.py")).text == (
+        "You sat down to work. It is 09:00.\nhalf done\n"
+    )
     assert len(backend.opened) == 1  # still open the same day
     first = backend.opened[0]
     town.rest()
@@ -343,12 +376,10 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
     await town.until("09:00", day=2)
     await town.call("Mei", "go", place="workshop")
     await town.until("09:20", day=2)
-    started = await town.call("Mei", "start_work")
-    assert started.text == (
-        "You started work. The workspace of task 2, which you hold, is set up again with your "
-        "changes. It is 09:20."
-    )
-    assert (await town.call("Mei", "read_repo_file", path="a.py")).text == "half done\n"
+    assert (await town.call("Mei", "read_repo_file", path="a.py")).text == (
+        "You sat down to work. It is 09:20.\nhalf done\n"
+    )  # the workspace opened again
+    assert len(backend.opened) == 2
     await town.until("23:59", day=2)
     assert "Mei" in town.world.board.claims
     await town.until("00:00", day=3)
@@ -365,7 +396,7 @@ async def test_a_verdict_after_the_claim_ran_out_pays_nothing_and_a_task_pays_on
     make_town, monkeypatch
 ):
     town = make_town(town_config(claim_expiry_days=0))  # a claim runs out at the first midnight
-    await at_work(town, "Mei", "Tomas")
+    await at_the_workshop(town, "Mei", "Tomas")
     world = town.world
     await town.until("23:50")
     await town.call("Mei", "claim_task", task=1)
@@ -376,7 +407,7 @@ async def test_a_verdict_after_the_claim_ran_out_pays_nothing_and_a_task_pays_on
         if not backend.accepted:
             await town.until("00:05", day=2)
             taken = await town.call("Tomas", "claim_task", task=1)
-            assert taken.text.startswith("You claimed task 1")  # nobody holds it now
+            assert taken.text.startswith("You sat down to work and claimed task 1")  # free now
         return await accept(*args)
 
     monkeypatch.setattr(world.board.backend, "accept", slow_accept)
@@ -403,7 +434,7 @@ async def test_a_verdict_after_the_claim_ran_out_pays_nothing_and_a_task_pays_on
 async def test_acceptance_runs_count_afresh_each_day(make_town):
     backend = FakeBackend()
     town = make_town(town_config(acceptance_runs=1), backend)
-    await at_work(town, "Mei")
+    await at_the_workshop(town, "Mei")
     stocked(town)
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="x\n")
@@ -413,5 +444,6 @@ async def test_acceptance_runs_count_afresh_each_day(make_town):
     await town.until("09:30", day=2)
     await town.call("Mei", "go", place="workshop")
     await town.until("09:40", day=2)
-    await town.call("Mei", "start_work")
-    assert (await town.call("Mei", "submit")).text.startswith("Not accepted")
+    assert (await town.call("Mei", "submit")).text.startswith(
+        "You sat down to work. It is 09:40.\nNot accepted"
+    )

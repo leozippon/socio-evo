@@ -99,13 +99,11 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              ("until",),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
-        spec("start_work", f"Sit down to work at {workplace}. If you hold a task, your "
-             "workspace is set up again as you left it."),
-        spec("view_board", "Read the board: each task's number, repository, the first line of "
-             "its problem and its pay, and whether it is held or already paid to you. If you "
-             "hold a task, its whole problem is shown too."),
-        spec("claim_task", "Claim a task from the board. You get a workspace with its "
-             "repository and read the whole problem.", ("task",),
+        spec("view_board", f"Read the board at {workplace}: each task's number, repository, the "
+             "first line of its problem and its pay, and whether it is held or already paid to "
+             "you. If you hold a task, its whole problem is shown too."),
+        spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
+             "it. You get a workspace with its repository and read the whole problem.", ("task",),
              task=_number("the task's number on the board", 1)),
         *WORKSPACE_SPECS,
         spec("submit", "Hand in your fix for the task you hold. The client's checks run on it "
@@ -316,27 +314,20 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(f"{told}{went}", ends_turn=True)
 
 
-async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+def _sit_down(world: World, r: Resident) -> str | ToolResult:
+    """`r` sits down to work at the workplace, unless it is at work already: what it is told
+    of it, with the hour, or nothing; or the refusal of one elsewhere or too tired to work."""
+    if isinstance(r.base, Work):
+        return ""
     workplace = world.config.workplace
     if r.place != workplace.id:
-        return ToolResult(f"You are not at {workplace.name}.")
+        return ToolResult(f"You can work only at {workplace.name}.")
     world.reckon(r)
     if world.body.lowest("energy", r.living.energy):
         return ToolResult("You are too tired to sit down to work; sleep first.")
-    claim = world.board.claims.get(r.name)
     r.base = Work()
-    world.record("start_work", lambda w: f"{cap(you(r.name, w))} started work.", actor=r)
-    if claim is None:
-        started = "You started work. You hold no task; the board shows what there is."
-    elif r.name not in world.board.workspaces:
-        await world.board.reopen(r.name)
-        started = (
-            f"You started work. The workspace of task {claim.task}, which you hold, is set up "
-            "again with your changes."
-        )
-    else:
-        started = f"You started work. You hold task {claim.task}."
-    return ToolResult(f"{started} {_now(world)}")
+    world.record("start_work", lambda w: f"{cap(you(r.name, w))} sat down to work.", actor=r)
+    return f"You sat down to work. {_now(world)}\n"
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -347,10 +338,15 @@ async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
 
 
 async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    number = args["task"]
+    workplace, number = world.config.workplace, args["task"]
+    if r.place != workplace.id:
+        return ToolResult(f"The board is at {workplace.name}; you can claim a task only there.")
     refusal = world.board.claim_refusal(r.name, number)
     if refusal:
         return ToolResult(refusal)
+    sat = _sit_down(world, r)
+    if isinstance(sat, ToolResult):
+        return sat
     await world.board.claim(r.name, number, calendar_day(world.clock.now()))
     task = world.board.task(number)
     world.record(
@@ -359,27 +355,34 @@ async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
         actor=r,
         payload={"task": number, "instance_id": task.instance_id},
     )
+    sat = "sat down to work and " if sat else ""
     return ToolResult(
-        f"You claimed task {number}, in {task.repo}; your workspace is ready. {_now(world)} "
+        f"You {sat}claimed task {number}, in {task.repo}; your workspace is ready. {_now(world)} "
         f"The problem:\n\n{task.problem_statement}"
     )
 
 
-async def _workspace(world: World, r: Resident) -> tuple[Claim, Workspace] | ToolResult:
-    """The task `r` holds and its workspace, reopened if the night closed it."""
+async def _workspace(world: World, r: Resident) -> tuple[Claim, Workspace, str] | ToolResult:
+    """The task `r` holds and its workspace, reopened if the night closed it, with `r` sat down
+    to work if it was not, and what it is told of sitting down, or nothing."""
     claim = world.board.claims.get(r.name)
-    if claim is not None and r.name not in world.board.workspaces:
-        await world.board.reopen(r.name)
-    if claim is None or world.board.claims.get(r.name) is not claim:
+    if claim is None:
         return ToolResult("You hold no task; claim one from the board first.")
-    return claim, world.board.workspaces[r.name]
+    sat = _sit_down(world, r)
+    if isinstance(sat, ToolResult):
+        return sat
+    if r.name not in world.board.workspaces:
+        await world.board.reopen(r.name)
+    if world.board.claims.get(r.name) is not claim:  # it ran out while the workspace opened
+        return ToolResult(f"{sat}You hold no task; claim one from the board first.")
+    return claim, world.board.workspaces[r.name], sat
 
 
 async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     held = await _workspace(world, r)
     if isinstance(held, ToolResult):
         return held
-    claim, workspace = held
+    claim, workspace, sat = held
     number = claim.task
     result = await workspace.exec(args["command"], world.config.work.shell_timeout_s)
     command = args["command"]
@@ -400,7 +403,7 @@ async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     )
     # The limit is of real time, which the town's clock outruns: told in the town's hours.
     return ToolResult(
-        told_command(result, f"The command ran too long and was stopped. {_now(world)}")
+        sat + told_command(result, f"The command ran too long and was stopped. {_now(world)}")
     )
 
 
@@ -408,7 +411,7 @@ async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> To
     held = await _workspace(world, r)
     if isinstance(held, ToolResult):
         return held
-    claim, workspace = held
+    claim, workspace, sat = held
     number, path = claim.task, args["path"]
     told, ok = await read_repo(workspace, args)
     world.record(
@@ -417,14 +420,14 @@ async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> To
         actor=r,
         payload={"task": number, "path": path, "ok": ok},
     )
-    return ToolResult(told)
+    return ToolResult(sat + told)
 
 
 async def _write_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     held = await _workspace(world, r)
     if isinstance(held, ToolResult):
         return held
-    claim, workspace = held
+    claim, workspace, sat = held
     number, path = claim.task, args["path"]
     told, ok = await write_repo(workspace, args)
     world.record(
@@ -433,14 +436,14 @@ async def _write_repo_file(world: World, r: Resident, args: dict[str, Any]) -> T
         actor=r,
         payload={"task": number, "path": path, "characters": len(args["content"]), "ok": ok},
     )
-    return ToolResult(told)
+    return ToolResult(sat + told)
 
 
 async def _edit_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     held = await _workspace(world, r)
     if isinstance(held, ToolResult):
         return held
-    claim, workspace = held
+    claim, workspace, sat = held
     number, path = claim.task, args["path"]
     told, ok = await edit_repo(workspace, args)
     world.record(
@@ -449,15 +452,21 @@ async def _edit_repo_file(world: World, r: Resident, args: dict[str, Any]) -> To
         actor=r,
         payload={"task": number, "path": path, "edit": True, "ok": ok},
     )
-    return ToolResult(told)
+    return ToolResult(sat + told)
 
 
 async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    board = world.board
     held = await _workspace(world, r)
     if isinstance(held, ToolResult):
         return held
-    claim, workspace = held
+    claim, workspace, sat = held
+    result = await _hand_in(world, r, claim, workspace)
+    return ToolResult(sat + result.text, result.ends_turn)
+
+
+async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace) -> ToolResult:
+    """`r` hands in the task it holds, `claim`, from `workspace`: what `submit` tells."""
+    board = world.board
     number = claim.task
     if board.runs_left(r.name, number) <= 0:
         return ToolResult(
@@ -819,7 +828,6 @@ HANDLERS: dict[str, Handler] = {
     "go": _go,
     "wait": _wait,
     "sleep": _sleep,
-    "start_work": _start_work,
     "view_board": _view_board,
     "claim_task": _claim_task,
     "shell": _shell,
