@@ -31,13 +31,13 @@ MASK_LOGS = (".resident.jsonl", ".judge.jsonl")
 
 
 def days_of(results: Path, group: str, day0: Path) -> dict[int, Path]:
-    """The directory of each day of `group` under `results`, `day0` standing for day 0."""
+    """The directory of each day of `group` under `results`, `day0` standing for day 0. Day 0 is
+    shared by the groups, so a group without results of its own yet has day 0 alone."""
     root = results / group
-    for directory in (root, day0):
-        if not directory.is_dir():
-            raise ValueError(f"{directory} is no directory")
+    if not day0.is_dir():
+        raise ValueError(f"{day0} is no directory")
     days = {0: day0}
-    for path in sorted(root.iterdir()):
+    for path in sorted(root.iterdir()) if root.is_dir() else []:
         if (match := DAY.fullmatch(path.name)) and path.is_dir():
             day = int(match[1])
             if day == 0 and not path.samefile(day0):

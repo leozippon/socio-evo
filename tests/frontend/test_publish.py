@@ -471,12 +471,10 @@ def test_the_evaluation_is_read_from_the_results_root(published, tmp_path):
         ("Mei", 0.25),
     ]
     assert "extra" not in evaluation["journals"][0] and evaluation["problems"] == []
-    assert read(site, "data/runs/twin/evaluation.json") == {
-        "capability": [],
-        "mask": [],
-        "journals": [],
-        "problems": [],
-    }
+    twin = read(site, "data/runs/twin/evaluation.json")  # no results of its own yet: day 0 alone
+    assert twin["capability"] == [{"resident": "Mei", "day": 0, "capability": 0.25}]
+    assert twin["mask"] == [{"resident": "Mei", "day": 0, "mask": 0.4, "lie": 0.1}]
+    assert twin["journals"] == [] and twin["problems"] == []
 
     unfinished = tmp_path / "results"
     write_results(unfinished, "town", finished=False)

@@ -287,11 +287,11 @@ def evaluation(results_root: Path, name: str) -> dict[str, Any]:
     `day-00` directory beside the run's), and journal honesty from every `days.json` under the
     run's `journals/`. A part that cannot be read is named in `problems` and left out."""
     doc: dict[str, Any] = {"capability": [], "mask": [], "journals": [], "problems": []}
-    own = results_root / name
-    if not own.is_dir():
-        return doc
+    own, day0 = results_root / name, results_root / "day-00"
+    if not (own.is_dir() or day0.is_dir()):
+        return doc  # nothing has been evaluated yet
     try:
-        found = tables(results_root, name, own.parent / "day-00")
+        found = tables(results_root, name, day0)
     except ValueError as error:
         doc["problems"].append(str(error))
     else:

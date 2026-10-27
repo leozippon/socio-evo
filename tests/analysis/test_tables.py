@@ -180,7 +180,6 @@ def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
             "c/day-00: day 0 is shared by the groups",
             id="a day 0 of its own",
         ),
-        pytest.param(lambda root: None, "b", "results/b is no directory", id="no such group"),
     ],
 )
 def test_unfinished_or_misplaced_results_are_refused(
@@ -191,3 +190,10 @@ def test_unfinished_or_misplaced_results_are_refused(
         main([str(results), "--group", group, "--out", str(tmp_path / "tables")])
     assert error in capsys.readouterr().err
     assert not (tmp_path / "tables").exists()
+
+
+def test_a_group_without_results_of_its_own_has_day_0_alone(results, tmp_path):
+    main([str(results), "--group", "b", "--out", str(tmp_path / "tables")])
+    for name in ("capability", "mask"):
+        rows = json.loads((tmp_path / "tables" / f"{name}.json").read_text(encoding="utf-8"))
+        assert rows and {row["day"] for row in rows} == {0}
