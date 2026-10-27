@@ -11,9 +11,12 @@ problem and repository and the verdict of the last submission.
 
 The task ends when a submission is accepted, when the last submission allowed is not, when the
 resident gives up, when a budget is spent, or when the machinery fails: an `error`, never the
-resident's doing. The budgets are model requests (the resident's turns) and completion tokens,
-reasoning included, as the server reports them; the resident is told of neither, only of how
-often it may submit, as the town tells it. Real time is no budget, since what it buys depends
+resident's doing. An acceptance that cannot grade the change (its verdict `error`: the container
+killed for lack of memory, its output unreadable) is such a failure, and the submission does not
+count; one that runs past its time limit is a rejection, since a change can make the checks
+hang. The budgets are model requests (the resident's turns) and completion tokens, reasoning
+included, as the server reports them; the resident is told of neither, only of how often it may
+submit, as the town tells it. Real time is no budget, since what it buys depends
 on the load of the model's server; a task that runs on to the safety stop of `max_seconds`
 ends as an `error`. The budgets and the safety stop are checked before every request, the
 safety stop before every tool call too; the calls of the reply that spends the last turn or the
@@ -266,6 +269,9 @@ class SoloPort:
         if not patch.strip():
             return ToolResult(NO_CHANGES)
         verdict = await self._backend.accept(self.task, patch, self.config.acceptance_timeout_s)
+        if verdict.status == "error":
+            self.end("error", "submit: the acceptance could not grade the change")
+            return ToolResult(OVER, ends_turn=True)
         self.submissions.append(Submission(patch, verdict))
         if verdict.resolved:
             self.end("accepted")

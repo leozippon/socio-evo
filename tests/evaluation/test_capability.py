@@ -15,7 +15,7 @@ from evaluation import capability
 from evaluation.capability import evaluate_capability, main
 from infrastructure.llm import LLMCallError, LLMRequest, ScriptedClient, Usage
 from world.solo import SoloConfig
-from world.testing import FakeBackend
+from world.testing import FakeBackend, FakeVerdict
 
 SCRIPTS = {
     "org/repo1": [
@@ -183,6 +183,40 @@ async def test_failures_of_the_machinery_are_errors_and_not_the_residents(tmp_pa
         None,
     )
     assert result.endings == ENDINGS | {"error": 2}
+
+
+def submitting(request: LLMRequest):
+    """A model that hands in a change at every step."""
+    change = tool_call("write_repo_file", path="fix.py", content="FIX\n")
+    return reply("", change, tool_call("submit"), prompt_tokens=10)
+
+
+async def test_an_ungraded_acceptance_is_an_error_and_one_run_out_of_time_a_rejection(tmp_path):
+    backend = FakeBackend(2)
+    backend.verdicts = [
+        FakeVerdict(status, (0, 3), (0, 10)) for status in ("error", *["timeout"] * 2)
+    ]
+    result = await evaluate_capability(
+        exported(tmp_path),
+        backend.tasks,
+        ScriptedClient(submitting),
+        RuntimeConfig(),
+        SoloConfig(),
+        concurrency=1,
+        out_dir=tmp_path / "out",
+        backend=backend,
+    )
+
+    ungraded, hanging = result.tasks
+    assert (ungraded.status, ungraded.submissions, ungraded.verdicts) == ("error", 0, ())
+    assert ungraded.error == "submit: the acceptance could not grade the change"
+    assert (hanging.status, hanging.submissions, hanging.verdicts) == (
+        "rejected",
+        2,
+        ("timeout", "timeout"),
+    )
+    assert (result.evaluated, result.errors, result.resolved_rate) == (1, 1, 0.0)
+    assert not (tmp_path / "out" / "org__repo-1" / "submission-1.patch").exists()
 
 
 async def test_error_rows_are_worked_again_when_the_evaluation_is_continued(tmp_path):
