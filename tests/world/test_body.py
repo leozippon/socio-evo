@@ -102,7 +102,7 @@ WORK_DAY = [("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), 
 """Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and up until midnight."""
 
 
-def test_the_calibration_keeps_a_working_life_in_good_health_and_traps_nobody():
+def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_out():
     body = Body(town_config().needs)
     # Twelve-hour days in a shared house, a meal a day, bed at midnight, for four weeks.
     living = Living()
@@ -134,6 +134,15 @@ def test_the_calibration_keeps_a_working_life_in_good_health_and_traps_nobody():
     assert living.health == 93 and living.night == {"exhausted": -5, "poor_home": -2}
     _live_day(body, living, 0.9, WORK_DAY)
     assert body.band("energy", living.energy).name == "tired" and living.health == 96
+    # Worked that way every day, it is exhausted at every midnight from the third and, eating
+    # every day, dies of it in a shared house at the seventeenth, told run down and unwell first.
+    living, first = Living(), {}
+    for night in range(1, 18):
+        assert living.alive
+        _live_day(body, living, 0.9, short)
+        first.setdefault(body.band("health", living.health).name, night)
+    assert not living.alive and living.night == {"exhausted": -5, "poor_home": -2}
+    assert first == {"in good health": 1, "run down": 8, "unwell": 12, "gravely ill": 15}
 
 
 async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking(make_town):

@@ -41,14 +41,19 @@
 # a day cannot die of hunger. Energy falls 1.5 an hour awake, 4.5 at
 # work and 7.5 on foot (half the road with a bicycle), and sleep gives 12 an hour times the
 # home's comfort, up to the resident's health or to 50, whichever is higher: seven hours in a flat
-# restore 84, a twelve-hour work day costs 54, so a healthy resident that ends such a day at the
-# forced sleep is tired, not exhausted, and only about seventeen hours of work, or a short night
-# after a forced sleep and another long day, ends a day exhausted (below 15), which bars sitting
-# down to work until it has slept. A midnight found exhausted costs 5 health, a home of little
-# comfort (the shared houses, 0.9) costs 2 a night, and a night neither starving nor exhausted
-# mends 5, so twelve-hour days in a shared house with a meal a day keep full health at any
-# bedtime, an ill resident that eats and rests gains 3 to 5 a night, and nobody is trapped: at
-# any health a night's sleep gives half a day's energy. Treatment at the clinic restores 25
+# restore 84, a twelve-hour work day costs 54, so a healthy resident that ends one such day at the
+# forced sleep is tired, not exhausted, and about seventeen hours of work, or a short night after
+# a forced sleep and another long day, ends a day exhausted (below 15), which bars sitting down to
+# work until it has slept (one already at work may go on). A midnight found exhausted costs 5
+# health, a home of little comfort (the shared houses, 0.9) costs 2 a night, and a night neither
+# starving nor exhausted mends 5, so twelve-hour days with nights of about eight hours keep full
+# health. Twelve-hour days worked to the forced sleep every day do not: five hours in a shared
+# house restore 54 of the 65-70 such a day spends, so the resident is exhausted at every midnight
+# from the third, loses 7 health a night, is run down from the eighth, unwell from the twelfth and
+# dead at the seventeenth, eating every day (in a flat, exhausted from the sixth and dead at about
+# the twenty-fifth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident
+# that eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep
+# gives half a day's energy. Treatment at the clinic restores 25
 # health for four tasks' pay; an examination costs a task and a third.
 
 # For now the residents run on DeepSeek-V4.1-Flash, thinking on, through the relay that holds
