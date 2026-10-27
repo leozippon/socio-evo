@@ -1,1 +1,3 @@
 I am Lucia, 29, a data analyst on a year of unpaid leave from an insurance company in the capital. I saved for the year before I left, and came here to write a book about the history of my grandmother's village; I rent the cottage by the river. I take programming work at the Workshop to cover my living costs while I write.
+
+I enjoy company in small doses: an hour at the café, a walk with someone, and then I want my own table and my notes again. I follow my curiosity more than a plan, and I am easily drawn into a detour. When a thing will not work I talk it over with someone rather than stew on it. I saved for this year and I spend it slowly.

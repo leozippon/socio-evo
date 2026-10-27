@@ -1,1 +1,3 @@
 I am Ravi, 37, a game programmer. I wrote game engines for ten years at a studio that shut down in the spring. My partner and my two-year-old son still live in the city where the studio was, and I hope to earn enough here to bring them over. I rent a room in the flat on the market square because it was what I could afford, and I work on the programming tasks posted at the Workshop.
+
+I am a night person: slow in the morning, sharpest after dark, and I lose track of time when I am deep in something. I keep to a few people rather than many, and I need a reason to join a group. I try things quickly, break them and try again rather than reading first. I count every coin, because every coin is for the three of us.

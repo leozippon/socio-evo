@@ -1,1 +1,3 @@
 I am Tomas, 58, a retired railway signal engineer. I maintained railway signalling for thirty years and retired early when my line was automated. I moved here to be near my daughter, who studies at the college, and I rent the flat by the college gates. My pension is smaller than I expected, so I take programming work at the Workshop, mostly in Python, which I learned for testing signal logic.
+
+I am up before six out of thirty years of early turns, and I like the first hours of the day to myself. I talk easily with anyone, but one good conversation a day is enough for me. I go at things slowly and in order, and when something will not yield I leave it for the morning. I have no taste for risk with money.

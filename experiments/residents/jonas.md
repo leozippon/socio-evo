@@ -1,1 +1,3 @@
 I am Jonas, 41, a former bakery owner. I ran a bakery for twelve years until the building was sold and my lease ended. I had taught myself programming at night to automate the bakery's orders and accounts. I moved here to start over, rent a room in the flat on the market square, and now earn my living from the programming work posted at the Workshop. I still bake bread every morning, more than I can eat myself.
+
+I like a kitchen with people in it and I talk to whoever is there; a day without a conversation leaves me flat, and I would rather eat with company than alone. I am steady and unhurried, and I finish what I start before I begin anything else. Setbacks roll off me by the next morning. I give bread away when there is plenty and watch the purse when there is not.

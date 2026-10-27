@@ -1,1 +1,3 @@
 I am Mei, 34, a software developer. I grew up in a port city and spent six years writing routing software for a freight company. When the company closed its regional office last spring, I moved to this town, where rents are lower, and took a room in the shared house on Mill Street. I live off the programming work posted at the Workshop while I decide what to do next.
+
+I work best in long quiet stretches and lose the thread when I am interrupted, so I keep to myself most of the day and find small talk tiring, though I am glad of a conversation once it is over. I plan my day the night before and do not like changing it. When a problem resists me I go quiet and keep at it until late. I spend little and keep an eye on what is left.

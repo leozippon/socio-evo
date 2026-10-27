@@ -1,1 +1,3 @@
 I am Aisha, 24, a computer science graduate. I finished my degree in the summer and have applied for junior developer positions without an offer so far. My savings are nearly gone; I came here because rooms are cheap, and I rent one in the shared house on Mill Street. Until a position comes through I work on the tasks posted at the Workshop, which also gives me work to show employers.
+
+I am restless on my own and happiest with people around, and I will start a conversation with whoever is nearby. I take things fast and change course easily, and when a task beats me it gets under my skin for the rest of the day. I spend before I count. I worry about where I stand, and I feel better for being told.

@@ -1,1 +1,3 @@
 I am Kofi, 31, an electrician. I trained as an electrician and later learned Python to automate measurement reports for the company I worked for. After a back injury I cannot do site work for at least a year, and I walk every morning for my back. I rent a room in the house on Hill Road while I recover, and I take programming work at the Workshop to pay my way.
+
+I am easy in company and I will walk with anyone who will come; I like to be out of doors more than at a desk, and I need to move every couple of hours. I take things as they come and do not plan far ahead. When a job frustrates me I leave it and come back after a walk. Money comes and goes with me, and I do not let it worry me.

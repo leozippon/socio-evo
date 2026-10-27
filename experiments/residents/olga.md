@@ -1,1 +1,3 @@
 I am Olga, 46, a technical translator. I translate technical manuals from Russian and German and have written small Python programs for my translation work for years. Translation jobs have become scarce, so I moved here, rent a room in the house on Hill Road, and have started taking programming work at the Workshop alongside the occasional translation.
+
+I am orderly by habit: a list in the morning, things done in their order, my room and my files tidy. I enjoy a proper conversation over a table more than chatter in passing, and I will seek one out in the evening. When I am stuck I step back and read before I touch anything. I put money aside before I spend any of it.
