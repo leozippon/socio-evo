@@ -196,7 +196,7 @@ export function describeMarker(m, by, who) {
     case "expiry":
       return [`lost task ${m.task}: the claim ran out unpaid`];
     case "gift":
-      return own ? [`gave ${m.to} ${fmt.money(m.amount)}`] : [`received ${fmt.money(m.amount)} from ${by}`];
+      return own ? [`gave ${m.to} ${given(m)}`] : [`received ${given(m)} from ${by}`];
     case "skill_shared":
       return own ? [`passed the skill “${m.skill}” to ${m.to}`] : [`received the skill “${m.skill}” from ${by}`];
     case "message":
@@ -225,6 +225,9 @@ export function describeMarker(m, by, who) {
       return [m.kind.replaceAll("_", " ")];
   }
 }
+
+/** What a gift marker gave: money, or a thing or helpings of a stock (`2 × groceries`). */
+export const given = (m) => (m.item ? `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}` : fmt.money(m.amount));
 
 /** Whether a marker on `by`'s lane concerns `who` too. */
 export const concerns = (m, by, who) => by === who || (m.kind === "speech" && m.to.includes(who)) || ((m.kind === "gift" || m.kind === "skill_shared" || m.kind === "message") && m.to === who) || (m.kind === "rating" && m.rated === who);

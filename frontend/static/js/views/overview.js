@@ -81,7 +81,7 @@ export function mountOverview(root, ctx) {
   const townPoints = (value) => data.days.map((day, i) => [day.day, cast.names.reduce((total, name) => total + (value(laneOf(name), i, day) ?? 0), 0)]);
   const townValues = (value) => new Map(townPoints(value));
   const count = (kind, keep = () => true) => (lane, i) => markersIn(lane, i, kind).filter(keep).length;
-  const amount = (kind, field, keep = () => true) => (lane, i) => markersIn(lane, i, kind).filter(keep).reduce((a, m) => a + m[field], 0);
+  const amount = (kind, field, keep = () => true) => (lane, i) => markersIn(lane, i, kind).filter(keep).reduce((a, m) => a + (m[field] ?? 0), 0);
   /** The midnight statement of a lane's lived day, if the day reached midnight. */
   const midnightOf = (lane, i) => markersIn(lane, i, "settlement")[0] ?? null;
   /** Simulated hours a lane spent in Work within its lived day. */
@@ -413,9 +413,9 @@ export function mountOverview(root, ctx) {
             ],
             lines: [
               { key: "earned", label: "paid for tasks", color: "var(--good)", points: townPoints(amount("payment", "amount")) },
-              { key: "given", label: "handed over", color: "var(--ink-2)", points: townPoints(amount("gift", "amount")) },
+              { key: "given", label: "money given", color: "var(--ink-2)", points: townPoints(amount("gift", "amount")) },
             ],
-            legend: swatchLegend([["rent", "var(--o4)"], ["daily charges", "var(--o3)"], ["food", "var(--o2)"], ["other goods", "var(--o1)"], ["paid for tasks", "var(--good)", "line"], ["handed over", "var(--ink-2)", "line"]]),
+            legend: swatchLegend([["rent", "var(--o4)"], ["daily charges", "var(--o3)"], ["food", "var(--o2)"], ["other goods", "var(--o1)"], ["paid for tasks", "var(--good)", "line"], ["money given", "var(--ink-2)", "line"]]),
           }),
           dayFigure({ title: "In debt", note: "Residents whose purse was below zero at the end of the day.", lines: [{ key: "debt", label: "residents in debt", color: "var(--critical)", points: townPoints(debt) }], max: cast.names.length }),
           catalogue(),
@@ -456,20 +456,20 @@ export function mountOverview(root, ctx) {
         return got.length ? got.reduce((a, m) => a + m.score, 0) / got.length : null;
       };
       return [
-        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, hand over money as gifts or loans on their own terms, and pass skills to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "skill")} passed on and ${fmt.money(total(amount("gift", "amount")))} handed over so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
+        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and pass skills to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "skill")} passed on, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
         h(
           "div",
           { class: "figures" },
           agentFigure({ title: "Things said", note: "To everyone present or to someone by name, per day.", points: residentPoints(said), zero: true }),
           world.social.ratings ? agentFigure({ title: "Rating received", note: "Mean score of the ratings each resident received that night, from 1 to 5.", points: residentPoints(ratingReceived), format: (v) => fmt.num(v, 2), min: 1, max: 5 }) : null,
           dayFigure({
-            title: "Skills and money passed on",
-            note: "Skills passed on, and times money was handed over, per day.",
+            title: "Skills and gifts passed on",
+            note: "Skills passed on, and gifts of money or things, per day.",
             stacks: [
               { key: "skills", label: "skills passed on", color: "var(--o3)", values: townValues(count("skill_shared")) },
-              { key: "gifts", label: "money handed over", color: "var(--o1)", values: townValues(count("gift")) },
+              { key: "gifts", label: "gifts", color: "var(--o1)", values: townValues(count("gift")) },
             ],
-            legend: swatchLegend([["skills passed on", "var(--o3)"], ["money handed over", "var(--o1)"]]),
+            legend: swatchLegend([["skills passed on", "var(--o3)"], ["gifts", "var(--o1)"]]),
           }),
           dayFigure({ title: "Written messages", note: "Messages written from one phone to another, per day.", lines: [{ key: "messages", label: "messages", color: "var(--ink-2)", points: townPoints(count("message")) }] }),
           matrix(),

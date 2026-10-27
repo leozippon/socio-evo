@@ -26,8 +26,9 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert sections["money"].endswith(
         "A purse can go below zero when rent is taken; you are then in debt, and can still be "
         "paid, pay your rent and receive money, but can buy nothing until your purse covers the "
-        "price. You can hand money to someone you are talking with, as a gift or a loan, on "
-        "terms you agree between you; the town keeps no account of it."
+        "price. With give you can hand money, a thing you own (with any daily charge on it) or "
+        "helpings of a stock to anyone awake where you are, as a gift or on terms you agree "
+        "between you; the town keeps no account of it."
     )
     assert "Your home is the shared house on Mill Street." in sections["places"]
     assert (

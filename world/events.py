@@ -43,6 +43,7 @@ IDLE_TOOLS = frozenset(
         "say",
         "message",
         "buy",
+        "give",
         "move_in",
         "sleep",
         "wait",
@@ -66,11 +67,12 @@ WORK_TOOLS = frozenset(
         "say",
         "message",
         "buy",
+        "give",
         "wait",
         "leave_work",
     }
 )
-CONVERSATION_TOOLS = frozenset({"give_money", "share_skill", "leave_conversation"})
+CONVERSATION_TOOLS = frozenset({"share_skill", "leave_conversation"})
 TASK_TOOLS = frozenset(
     {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
 )

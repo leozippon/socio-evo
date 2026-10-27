@@ -61,7 +61,7 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Tomas", "say", text="How is it going?")
     await town.until("09:32")
     await town.call("Mei", "say", text="Nearly done.", to=["Tomas"])
-    await town.call("Mei", "give_money", to="Tomas", amount=5)
+    await town.call("Mei", "give", to="Tomas", what="money", amount=5)
     await town.call("Mei", "share_skill", to="Tomas", skill="triage")
     await town.until("09:35")
     await town.call("Mei", "leave_conversation")

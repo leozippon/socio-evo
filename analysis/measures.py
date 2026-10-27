@@ -147,8 +147,8 @@ def world_measures(day: Day, name: str) -> Row:
         "messages_received": len(got),
         "skills_given": len(mine("skill_shared")),
         "skills_received": len(to_me("skill_shared", "to")),
-        "money_given": sum(e["payload"]["amount"] for e in mine("gift")),
-        "money_received": sum(e["payload"]["amount"] for e in to_me("gift", "to")),
+        "money_given": sum(e["payload"].get("amount", 0) for e in mine("gift")),  # 0: a thing
+        "money_received": sum(e["payload"].get("amount", 0) for e in to_me("gift", "to")),
         "ratings_given": len(given),
         "rating_given_mean": _mean(e["payload"]["score"] for e in given),
         "ratings_received": len(received),

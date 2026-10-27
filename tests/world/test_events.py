@@ -36,6 +36,7 @@ ARCHITECTURE_TABLE = {
         "say",
         "message",
         "buy",
+        "give",
         "move_in",
         "sleep",
         "wait",
@@ -56,10 +57,11 @@ ARCHITECTURE_TABLE = {
         "say",
         "message",
         "buy",
+        "give",
         "wait",
         "leave_work",
     },
-    "conversation": {"give_money", "share_skill", "leave_conversation"},  # on top of the event
+    "conversation": {"share_skill", "leave_conversation"},  # on top of the event
     "sleep": {"look_around", "review_day", "rate", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
@@ -95,7 +97,7 @@ async def test_each_event_refuses_what_it_does_not_offer_naming_the_condition(ma
 
     idle = await _refusals(town, "Mei")
     assert idle["leave_work"] == "You are not at work."
-    assert idle["give_money"] == "You are not in a conversation."
+    assert idle["leave_conversation"] == "You are not in a conversation."
     assert idle["rate"] == "You can do that only once you have gone to bed."
     assert set(idle) == {spec.name for spec in world.tool_specs} - IDLE_TOOLS
 
@@ -600,10 +602,11 @@ async def test_situation_says_what_applies_now(make_town):
     assert "Also here: Aisha." in situation and "Your purse holds $120." in situation
     assert "You have nothing of your own yet." in situation  # told at home
     assert situation.endswith(
-        "What you can do now: help, look_around, how_am_i, go, wait, sleep, say, buy, move_in."
+        "What you can do now: help, look_around, how_am_i, go, wait, sleep, say, buy, move_in, "
+        "give."
     )  # nothing to write with, no board here and no task held: no message, board or task
     town.world.residents["Mei"].living.things["phone"] = 1
-    assert port.situation().endswith("say, buy, move_in, message.")
+    assert port.situation().endswith("say, buy, move_in, message, give.")
     await town.call("Mei", "go", place="park")
     assert "on your way to the park and will arrive at 07:10" in port.situation()
     assert port.sim_time() == at("07:00")

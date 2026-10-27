@@ -255,7 +255,7 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
                 add(day, actor, payload["to"], "messages", 1)
             elif kind == "gift":
                 add(day, actor, payload["to"], "gifts", 1)
-                add(day, actor, payload["to"], "money", payload["amount"])
+                add(day, actor, payload["to"], "money", payload.get("amount", 0))  # 0: a thing
             elif kind == "skill_shared":
                 add(day, actor, payload["to"], "skills", 1)
             elif kind == "rating":
@@ -270,11 +270,12 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
 def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict[str, list]:
     """What each resident owns over the run, by name: `[time, {good id: units}]` from the
     start and after each change, a durable counted 1 and a consumable by the units left of it.
-    The purchases are the timeline's markers: a durable is owned from then on, a consumable
-    adds its units a purchase, an immediate good is used up as it is bought. What is eaten
-    leaves no entry in the log, so at every checkpoint whose file the run has written the
-    stock is read from the checkpoint instead, exact as of that moment; between checkpoints
-    it is as last counted plus what was bought since."""
+    The purchases and the gifts of things are the timeline's markers: a durable is owned from
+    then on, a consumable adds its units a purchase, an immediate good is used up as it is
+    bought, and what is given goes from the giver to the receiver. What is eaten leaves no
+    entry in the log, so at every checkpoint whose file the run has written the stock is read
+    from the checkpoint instead, exact as of that moment; between checkpoints it is as last
+    counted plus what was bought and given since."""
     goods = {good.id: good for good in town.goods}
     snapshots: dict[int, dict[str, dict[str, int]]] = {}
     for day in [{"day": 0, "end": data["start"]}, *data["days"]]:
@@ -293,11 +294,20 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
             if lane["name"] in snapshot
         ]
         changes += [(m["t"], 1, m) for m in lane["markers"] if m["kind"] == "purchase"]
+        for other in data["residents"]:  # things given away and received
+            for m in other["markers"]:
+                if m["kind"] == "gift" and "item" in m and lane["name"] in (other["name"], m["to"]):
+                    units = -m["quantity"] if other is lane else m["quantity"]
+                    changes.append((m["t"], 1, m | {"units": units}))
         held: dict[str, int] = {}
         series: list[list[Any]] = [[data["start"], {}]]
         for t, kind, change in sorted(changes, key=lambda found: found[:2]):
             if kind == 0:
                 held = dict(change)
+            elif change["kind"] == "gift":
+                held[change["item"]] = held.get(change["item"], 0) + change["units"]
+                if not held[change["item"]]:
+                    del held[change["item"]]
             else:
                 good = goods[change["item"]]
                 if good.kind == "durable":

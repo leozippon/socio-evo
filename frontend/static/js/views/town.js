@@ -13,7 +13,7 @@ import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { bodyAt, lowerBound, markersBetween, moment as momentOf, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { textFor } from "../town/events.js";
+import { given, textFor } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
 import { BoardPanel, ChroniclePanel, FeedPanel, PeoplePanel, doing, whereabouts } from "../town/panels.js";
@@ -276,7 +276,7 @@ export function mountTown(root, ctx) {
       case "expiry":
         return { icon: "clock", text: `task ${mk.task} ran out`, tone: "critical" };
       case "gift":
-        return { icon: "coin", text: `hands ${mk.to} ${fmt.money(mk.amount)}` };
+        return { icon: "coin", text: `hands ${mk.to} ${given(mk)}` };
       case "message":
         return { icon: "speech", text: `writes to ${mk.to}` };
       case "purchase":
@@ -545,7 +545,7 @@ export function mountTown(root, ctx) {
     for (const lane of data.residents)
       for (const mk of markersBetween(lane, before, time)) {
         if (mk.kind === "payment") effects.push({ agent: lane.name, text: `+${mk.amount}`, tone: "good" });
-        if (mk.kind === "gift") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" }, { agent: mk.to, text: `+${mk.amount}`, tone: "good" });
+        if (mk.kind === "gift" && !mk.item) effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" }, { agent: mk.to, text: `+${mk.amount}`, tone: "good" });
         if (mk.kind === "purchase") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" });
         if (mk.kind === "settlement") effects.push({ agent: lane.name, text: `−${mk.rent + mk.fees}`, tone: "muted" });
       }

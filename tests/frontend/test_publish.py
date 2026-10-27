@@ -678,10 +678,11 @@ async def test_push_uploads_only_what_changed_and_switches_the_site_at_once(tmp_
     )
 
 
-def test_things_follow_the_purchases_and_the_checkpoints(tmp_path):
+def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
     """Mei buys groceries and a phone on day 1 and eats from the stock unseen; the checkpoint
-    of day 1 counts what is left, and day 2's purchase adds to that. Tomas buys a meal, which
-    is used up as it is bought, and the checkpoint of day 2 is not written yet."""
+    of day 1 counts what is left, and day 2's purchase adds to that, until she gives Aisha the
+    phone and Tomas four helpings. Tomas buys a meal, which is used up as it is bought, and the
+    checkpoint of day 2 is not written yet."""
     run, _ = new_town(tmp_path)
     town = town_config()
     start, end1, end2 = at("02:30"), at("02:30", day=2), at("02:30", day=3)
@@ -696,6 +697,9 @@ def test_things_follow_the_purchases_and_the_checkpoints(tmp_path):
             "quantity": quantity,
         }
 
+    def gift(t: int, to: str, item: str, quantity: int) -> dict:
+        return {"seq": 0, "t": t, "kind": "gift", "to": to, "item": item, "quantity": quantity}
+
     data = {
         "start": start,
         "days": [{"day": 1, "end": end1}, {"day": 2, "end": end2}, {"day": 3, "end": None}],
@@ -706,6 +710,9 @@ def test_things_follow_the_purchases_and_the_checkpoints(tmp_path):
                     purchase(at("13:00"), "groceries", 2),
                     purchase(at("14:00"), "phone"),
                     purchase(at("09:00", day=2), "groceries"),
+                    gift(at("10:00", day=2), "Aisha", "phone", 1),
+                    gift(at("11:00", day=2), "Tomas", "groceries", 4),
+                    {"seq": 0, "t": at("12:00", day=2), "kind": "gift", "to": "Tomas", "amount": 5},
                 ],
             },
             {"name": "Tomas", "markers": [purchase(at("12:00"), "meal")]},
@@ -732,8 +739,11 @@ def test_things_follow_the_purchases_and_the_checkpoints(tmp_path):
         [at("14:00"), {"groceries": 18, "phone": 1}],
         [end1, {"groceries": 15, "phone": 1}],
         [at("09:00", day=2), {"groceries": 24, "phone": 1}],
-    ]
-    assert found["Tomas"] == [[start, {}]] and found["Aisha"] == [[start, {}]]
+        [at("10:00", day=2), {"groceries": 24}],
+        [at("11:00", day=2), {"groceries": 20}],
+    ]  # money given changes nothing owned
+    assert found["Tomas"] == [[start, {}], [at("11:00", day=2), {"groceries": 4}]]
+    assert found["Aisha"] == [[start, {}], [at("10:00", day=2), {"phone": 1}]]
 
 
 def test_encoding_is_deterministic_and_compact():

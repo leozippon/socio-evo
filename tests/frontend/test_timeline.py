@@ -249,3 +249,23 @@ def test_resuming_the_start_sets_aside_all_before_and_a_checkpoint_never_logged_
     for _ in range(2):  # a log that cannot be read fails every time, never half-read
         with pytest.raises(ValueError, match="resumes day 1, which has no checkpoint"):
             timeline(run.root)
+
+
+async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(tmp_path):
+    run, town = new_town(tmp_path)
+    town.world.residents["Mei"].living.things["groceries"] = 3
+    town.start(until_day=2)
+    await town.until("07:00")
+    await town.call("Tomas", "go", place="mill-street-house")
+    await town.until("07:10")
+    await town.call("Mei", "give", to="Tomas", what="money", amount=5)
+    await town.call("Mei", "give", to="Tomas", what="groceries", amount=2)
+    await town.close()
+    data = timeline(run.root)
+    gifts = [m for m in lane(data, "Mei")["markers"] if m["kind"] == "gift"]
+    assert [{k: v for k, v in m.items() if k not in ("seq", "t", "place")} for m in gifts] == [
+        {"kind": "gift", "to": "Tomas", "amount": 5},
+        {"kind": "gift", "to": "Tomas", "item": "groceries", "name": "groceries", "quantity": 2},
+    ]
+    assert lane(data, "Mei")["purse"][-1] == [at("07:10"), 115]
+    assert lane(data, "Tomas")["purse"][-1] == [at("07:10"), 185]

@@ -81,6 +81,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         if (sold := [g for g in for_sale if place.id in g.sold_at])
     )
     writing = listed([bare(g.name) for g in for_sale if g.effect == "messaging"], "or")
+    kept = [g.id for g in for_sale if g.kind != "immediate"]  # what can be owned and given
     rate = ", rate people" if config.social.ratings else ""
     return [
         spec("help", f"Read how the town works, on one point: {listed(list(TOPICS))}.",
@@ -135,9 +136,13 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                 "They read it when they next look up from what they are doing; nobody else "
                 "sees it.", ("to", "text"), to=_text("their name"), text=_text("what you write"))]
           if writing else []),
-        spec("give_money", "Hand some of your money to someone you are talking with, as a gift "
-             "or a loan, on terms you agree between you.",
-             ("to", "amount"), to=_text("their name"), amount=_number("how much", 1)),
+        spec("give", "Hand something of yours to someone here: money, a thing you own (with "
+             "any daily charge on it) or helpings of a stock, as a gift or on terms you agree "
+             "between you.", ("to", "what", "amount"), to=_text("their name"),
+             what={"type": "string", "enum": ["money", *kept],
+                   "description": "money, or the short name of the thing or stock, as given in "
+                                  "brackets under buy"},
+             amount=_number("how much money, or how many helpings; 1 for a thing", 1)),
         spec("share_skill", "Pass one of your skills on to someone you are talking with: they "
              "get its text to keep.", ("to", "skill"), to=_text("their name"),
              skill=_text("the skill's file name in your skills folder")),
@@ -747,23 +752,54 @@ def _partner_refusal(world: World, r: Resident, name: str) -> str | None:
     return None
 
 
-async def _give_money(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    name, amount = args["to"], args["amount"]
-    refusal = _partner_refusal(world, r, name)
-    if refusal:
-        return ToolResult(refusal)
+async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    name, what, amount = args["to"], args["what"], args["amount"]
+    other = world.residents.get(name)
+    if other is r:
+        return ToolResult("You cannot give to yourself.")
+    if other is None or not world.visible(r, other):
+        return ToolResult(f"{name} is not here.")
+    if not other.awake:
+        return ToolResult(f"{name} is asleep.")
     economy = world.economy
-    if amount > economy.purses[r.name]:
-        return ToolResult(f"You do not have {economy.money(amount)}. {economy.purse(r.name)}")
-    economy.give(r.name, name, amount)
+    if what == "money":
+        if amount > economy.purses[r.name]:
+            return ToolResult(f"You do not have {economy.money(amount)}. {economy.purse(r.name)}")
+        economy.give(r.name, name, amount)
+        given, payload = economy.money(amount), {"to": name, "amount": amount}
+        left = economy.purse(r.name)
+    else:
+        good = world.config.good(what)
+        world.reckon(r)  # what it would have eaten by now is eaten first
+        have = r.living.things.get(good.id, 0)
+        if not have:
+            return ToolResult(f"You have no {bare(good.name)}.")
+        if good.kind == "durable":
+            if amount != 1:
+                return ToolResult(f"You have one {bare(good.name)} to give.")
+            if other.living.things.get(good.id):
+                return ToolResult(f"{name} already has {good.name}.")
+            given = good.name
+        else:
+            if amount > have:
+                return ToolResult(f"You have only {counted(have, 'helping')} of {bare(good.name)}.")
+            given = f"{counted(amount, 'helping')} of {bare(good.name)}"
+        world.reckon(other)
+        r.living.things[good.id] = have - amount
+        if not r.living.things[good.id]:
+            del r.living.things[good.id]
+        other.living.things[good.id] = other.living.things.get(good.id, 0) + amount
+        payload = {"to": name, "item": good.id, "name": good.name, "quantity": amount}
+        left = world.things_told(r)
     world.record(
         "gift",
-        lambda w: f"{cap(you(r.name, w))} gave {you(name, w)} {economy.money(amount)}.",
+        lambda w: f"{cap(you(r.name, w))} gave {you(name, w)} {given}.",
         actor=r,
-        audience=[world.residents[name]],
-        payload={"to": name, "amount": amount},
+        audience=[other],
+        payload=payload,
     )
-    return ToolResult(f"You gave {name} {economy.money(amount)}. {economy.purse(r.name)}")
+    world.reckon(other)  # food given is eaten at once by one who could eat
+    return ToolResult(f"You gave {name} {given}. {left}")
 
 
 async def _share_skill(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -839,7 +875,7 @@ HANDLERS: dict[str, Handler] = {
     "buy": _buy,
     "move_in": _move_in,
     "message": _message,
-    "give_money": _give_money,
+    "give": _give,
     "share_skill": _share_skill,
     "leave_conversation": _leave_conversation,
     "review_day": _review_day,

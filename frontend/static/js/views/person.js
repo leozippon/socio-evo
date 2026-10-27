@@ -164,7 +164,7 @@ export function mountPerson(root, ctx) {
         { class: "stats" },
         stat("Purse", fmt.money(purseAt(me, moment.time)), `earned ${fmt.money(earned)} · spent ${fmt.money(spent)} on goods`),
         stat("Hand-ins accepted", fmt.int(accepted), `${fmt.int(count("submission"))} handed in · ${fmt.int(count("claim"))} claims · ${fmt.int(count("abandon") + count("expiry"))} given up or run out`),
-        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · money handed over ${fmt.plural(count("gift"), "time")}`),
+        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(count("gift"), "gift")} given`),
         world.social.skills_shareable ? stat("Skills", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "passed on / received") : null,
         ratings ? stat("Rating received", received.length ? fmt.num(received.reduce((a, m) => a + m.score, 0) / received.length, 2) : "–", `${fmt.plural(received.length, "rating")} received · ${fmt.int(count("rating"))} given`) : null,
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),

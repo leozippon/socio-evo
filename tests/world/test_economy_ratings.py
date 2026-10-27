@@ -1,5 +1,5 @@
-"""Purses, the midnight statement and debt, money handed over, skills handed over, and ratings on
-and off."""
+"""Purses, the midnight statement and debt, money and things given, skills handed over, and
+ratings on and off."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     await town.call("Aisha", "go", place="workshop")
     await town.until("10:00")
     await town.call("Aisha", "say", text="Could you spare some money?")
-    await town.call("Mei", "give_money", to="Aisha", amount=15)
+    await town.call("Mei", "give", to="Aisha", what="money", amount=15)
     await town.call("Aisha", "go", place="store")
     await town.until("10:10")
     await town.call("Aisha", "buy", item="coat")  # $30 of her $45
@@ -49,7 +49,7 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     await town.call("Mei", "go", place="store")
     await town.until("00:10", day=2)
     await town.call("Mei", "say", text="Here, pay me back when you can.", to=["Aisha"])
-    assert (await town.call("Mei", "give_money", to="Aisha", amount=20)).text == (
+    assert (await town.call("Mei", "give", to="Aisha", what="money", amount=20)).text == (
         "You gave Aisha $20. Your purse holds $85."
     )
     assert (await town.call("Aisha", "buy", item="groceries")).text == (
@@ -71,26 +71,66 @@ async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(
     ]  # a gift or a loan, on their own terms: the world keeps no account of which
 
 
-async def test_gifts_go_only_to_conversation_partners_and_only_from_what_one_has(make_town):
+async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_town):
     town = make_town()
     await awake_at(town)
-    await town.call("Aisha", "say", text="Hello.")
-    gift = await town.call("Mei", "give_money", to="Tomas", amount=5)
-    assert gift.text == "Tomas is not in your conversation."
-    assert (await town.call("Mei", "give_money", to="Mei", amount=5)).text == (
-        "Mei is not in your conversation."
+    gift = await town.call("Mei", "give", to="Tomas", what="money", amount=5)
+    assert gift.text == "Tomas is not here."
+    assert (await town.call("Mei", "give", to="Mei", what="money", amount=5)).text == (
+        "You cannot give to yourself."
     )
-    too_much = await town.call("Aisha", "give_money", to="Mei", amount=31)
+    too_much = await town.call("Aisha", "give", to="Mei", what="money", amount=31)
     assert too_much.text == "You do not have $31. Your purse holds $30."
-    assert (await town.call("Aisha", "give_money", to="Mei", amount=0)).text == (
+    assert (await town.call("Aisha", "give", to="Mei", what="money", amount=0)).text == (
         "amount must be a whole number of at least 1."
     )
     town.take("Mei")
-    given = await town.call("Aisha", "give_money", to="Mei", amount=10)
+    given = await town.call("Aisha", "give", to="Mei", what="money", amount=10)  # no word said
     assert given.text == "You gave Mei $10. Your purse holds $20."
     assert town.take("Mei") == ["Aisha gave you $10."]
     assert not town.world.ports["Mei"].interrupt.is_set()
     assert town.world.economy.purses["Mei"] == 130
+    await town.until("21:00")
+    await town.call("Mei", "sleep", until="07:00")
+    asleep = await town.call("Aisha", "give", to="Mei", what="money", amount=1)
+    assert asleep.text == "Mei is asleep."
+
+
+async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_given(make_town):
+    town = make_town()
+    await awake_at(town)
+    world = town.world
+    mei, aisha = world.residents["Mei"], world.residents["Aisha"]
+    mei.living.things.update({"groceries": 6, "phone": 1})
+    assert (await town.call("Aisha", "give", to="Mei", what="phone", amount=1)).text == (
+        "You have no phone."
+    )
+    assert (await town.call("Mei", "give", to="Aisha", what="phone", amount=2)).text == (
+        "You have one phone to give."
+    )
+    assert (await town.call("Mei", "give", to="Aisha", what="groceries", amount=7)).text == (
+        "You have only 6 helpings of groceries."
+    )
+    given = await town.call("Mei", "give", to="Aisha", what="phone", amount=1)
+    assert given.text == "You gave Aisha a phone. You have groceries (6 helpings)."
+    assert "phone" not in mei.living.things and aisha.living.things["phone"] == 1
+    town.take("Aisha")
+    aisha.living.satiety = 30  # hungry: she eats what she is given
+    given = await town.call("Mei", "give", to="Aisha", what="groceries", amount=2)
+    assert given.text == "You gave Aisha 2 helpings of groceries. You have groceries (4 helpings)."
+    assert "groceries" not in aisha.living.things and aisha.living.eaten == {"groceries": 2}
+    assert town.take("Aisha") == ["Mei gave you 2 helpings of groceries.", "You are well fed."]
+    gifts = [e["payload"] for e in world.log.entries() if e["kind"] == "gift"]
+    assert gifts == [
+        {"to": "Aisha", "item": "phone", "name": "a phone", "quantity": 1},
+        {"to": "Aisha", "item": "groceries", "name": "groceries", "quantity": 2},
+    ]
+    town.rest()
+    await town.until("00:00", day=2)  # the phone's daily charge is now Aisha's
+    fees = {
+        e["actor"]: e["payload"]["fees"] for e in world.log.entries() if e["kind"] == "settlement"
+    }
+    assert fees == {"Mei": 0, "Tomas": 0, "Aisha": 2}
 
 
 async def test_a_shared_skill_reaches_its_recipient_as_text(make_town, tmp_path):

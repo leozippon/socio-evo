@@ -167,7 +167,7 @@ async def live(root: Path) -> None:
         await settled("09:20")
         await tomas("say", text="Mei, how do you run the tests?", to=["Mei"])
         await tomas("say", text="Do not tell Mei about task 2.", to=["Aisha"])
-        await tomas("give_money", to="Mei", amount=5)
+        await tomas("give", to="Mei", what="money", amount=5)
         await settled("09:30")
         await settled("18:00")
         await tomas("leave_work")

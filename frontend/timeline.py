@@ -43,7 +43,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
     message       to, text                a written message, read by "to" alone
-    gift          to, amount
+    gift          to, amount              money given; or to, item, name, quantity for a thing
+                                          or helpings of a stock
     skill_shared  to, skill
     purchase      item, name, quantity, amount
     move_in       from, to                the resident moved house; its lane's home follows
@@ -353,10 +354,19 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                 lanes[name].part(t, entry["seq"])
         elif kind == "message":
             lane.mark(entry, "message", to=payload["to"], text=payload["text"])
-        elif kind == "gift":
+        elif kind == "gift" and "amount" in payload:  # money
             lane.mark(entry, "gift", to=payload["to"], amount=payload["amount"])
             lane.credit(t, -payload["amount"])
             lanes[payload["to"]].credit(t, payload["amount"])
+        elif kind == "gift":  # a thing, or helpings of a stock
+            lane.mark(
+                entry,
+                "gift",
+                to=payload["to"],
+                item=payload["item"],
+                name=payload["name"],
+                quantity=payload["quantity"],
+            )
         elif kind == "purchase":
             lane.mark(
                 entry,

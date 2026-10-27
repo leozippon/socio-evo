@@ -208,8 +208,9 @@ class Rules:
         )
         if contact:
             money_rules += (
-                " You can hand money to someone you are talking with, as a gift or a loan, on "
-                "terms you agree between you; the town keeps no account of it."
+                " With give you can hand money, a thing you own (with any daily charge on it) or "
+                "helpings of a stock to anyone awake where you are, as a gift or on terms you "
+                "agree between you; the town keeps no account of it."
             )
 
         shopping = self._shopping(for_sale, money)

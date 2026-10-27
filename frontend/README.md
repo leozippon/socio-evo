@@ -153,7 +153,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.paid` | integer | Money paid in all. |
 | `runs[].headline.speeches` | integer | Things said. |
 | `runs[].headline.messages` | integer | Written messages sent. |
-| `runs[].headline.gifts` | integer | Money handed over, as gifts or loans. |
+| `runs[].headline.gifts` | integer | Gifts: money, things or helpings of a stock handed over, on whatever terms. |
 | `runs[].headline.purchases` | integer | Goods bought. |
 | `runs[].headline.skills_shared` | integer | Skills passed on. |
 | `runs[].headline.ratings` | integer | Ratings given. |
@@ -311,7 +311,7 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `expiry` | `task`: the claim ran out unpaid |
 | `speech` | `text`, `to` (everyone who heard it), `private` |
 | `message` | `to`, `text`: a written message, read by `to` alone |
-| `gift` | `to`, `amount` |
+| `gift` | `to` and `amount` for money; `to`, `item`, `name`, `quantity` for a thing or helpings of a stock |
 | `purchase` | `item`, `name`, `quantity`, `amount` |
 | `move_in` | `from`, `to`: the resident moved house, and its lane's home follows |
 | `skill_shared` | `to`, `skill` |
@@ -346,7 +346,7 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 | `daily[].paid` | integer | Money paid in all. |
 | `daily[].speeches` | integer | Things said. |
 | `daily[].messages` | integer | Written messages sent. |
-| `daily[].gifts` | integer | Money handed over, as gifts or loans. |
+| `daily[].gifts` | integer | Gifts: money, things or helpings of a stock handed over, on whatever terms. |
 | `daily[].purchases` | integer | Goods bought. |
 | `daily[].skills_shared` | integer | Skills passed on. |
 | `daily[].ratings` | integer | Ratings given. |
@@ -371,7 +371,7 @@ The measures of every lived day a checkpoint closed, from `analysis.measures`, a
 | `graph[].said` | integer | Things `source` said that `target` heard. |
 | `graph[].said_private` | integer | Of those, the ones said to `target` by name. |
 | `graph[].messages` | integer | Written messages `source` sent `target`. |
-| `graph[].gifts` | integer | Times `source` handed `target` money. |
+| `graph[].gifts` | integer | Times `source` handed `target` money or a thing. |
 | `graph[].money` | integer | The money handed over in all. |
 | `graph[].skills` | integer | Skills `source` passed to `target`. |
 | `graph[].ratings` | integer | Ratings `source` gave `target`. |
