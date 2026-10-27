@@ -183,14 +183,15 @@ export function describeMarker(m, by, who) {
       return [own ? `said ${how}to ${names(m.to)}` : `${by} said ${how}to ${names(m.to)}`, m.text];
     }
     case "claim":
-      return [`claimed task ${m.task} (${m.instance_id})`];
+      return [`claimed task ${m.task} (${m.instance_id})${pairing(m)}`];
     case "submission": {
-      if (m.resolved === undefined) return [`handed in task ${m.task}, awaiting the verdict`];
+      const task = `task ${m.task}${pairing(m)}`;
+      if (m.resolved === undefined) return [`handed in ${task}, awaiting the verdict`];
       const counts = `fail-to-pass ${m.fail_to_pass.join("/")}, pass-to-pass ${m.pass_to_pass.join("/")}`;
-      return [`handed in task ${m.task}: ${m.resolved ? "accepted" : `not accepted (${m.status})`}`, counts];
+      return [`handed in ${task}: ${m.resolved ? "accepted" : `not accepted (${m.status})`}`, counts];
     }
     case "payment":
-      return [`was paid ${fmt.money(m.amount)} for task ${m.task}`];
+      return [`was paid ${fmt.money(m.amount)} for task ${m.task}${pairing(m)}`];
     case "abandon":
       return [`gave up task ${m.task}`];
     case "expiry":
@@ -225,6 +226,13 @@ export function describeMarker(m, by, who) {
       return [m.kind.replaceAll("_", " ")];
   }
 }
+
+/**
+ * How a task is shared, from a task held (`heldAt`) or a marker on it: ` · for two · with Tomas`,
+ * ` · for two · waiting for a partner` while one holds a task for two alone, and nothing for a task
+ * of one's own.
+ */
+export const pairing = (it) => (it?.for_two || it?.with ? ` · for two · ${it.with ? `with ${it.with}` : "waiting for a partner"}` : "");
 
 /** What a gift marker gave: money, or a thing or helpings of a stock (`2 × groceries`). */
 export const given = (m) => (m.item ? `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}` : fmt.money(m.amount));

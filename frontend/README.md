@@ -237,7 +237,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `residents[].home` | string | The id of its home. |
 | `residents[].purse` | integer | The money it started with. |
 | `residents[].rules` | string | The standing rules of the town as this resident was told them, which also seeded its `memory/town.md`. |
-| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day, and `claim_expiry_days`. |
+| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day, `claim_expiry_days`, and `for_two`, the share of the board posted for two, with `payment_for_two` to each of the two (0 and null where there are none). |
 | `goods` | array | The catalogue of goods for sale as configured, each with `id`, `name`, `price`, `sold_at` (place ids), `kind` (`consumable`, `immediate` or `durable`), `effect` (`food`, `travel`, `messaging`, `appearance`, `examination` or `treatment`) and the fields of its kind and effect (`uses`, `per_day`, `fee_per_day`, `nourishment`, `factor`, `phrase`, `restores`), null where they do not apply. |
 | `needs` | object | The residents' bodies as configured: `satiety`, `energy` and `health`, each with its rates and its `bands` from the top down, each band with `floor`, `name` (what follows "you are") and `seen` (what others see, or null). |
 | `social` | object | The social rules as configured: `mode` (`isolated`, each resident in a town of its own, or `town`), `exchange` (group B's evening pairing, or null), `skills_shareable`, `ratings` (whether the bedtime ratings are on) and `silence_minutes`. |
@@ -300,13 +300,14 @@ Every resident's events side by side over the run, as `frontend.timeline` comput
 | `residents[].conversations[].with` | array of strings | Whom the resident spoke to or heard from in it. |
 | `residents[].markers` | array | What the resident did, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
 | `residents[].purse` | array | `[time, purse]` after each change, from the start. |
+| `residents[].partners` | array | `[time, name or null]`: who holds a task for two with the resident, from each claim of one (null when it claimed the task first and waits) and each change, a partner joining it, giving it up or dying; empty for a resident that never held a task for two. |
 | `residents[].things` | array | `[time, {good id: units}]` of what the resident owns, from the start and after each change: a durable counted 1, a consumable by the units left. Purchases add; what is eaten leaves no entry in the log, so at each checkpoint whose file is written the stock is read from the checkpoint, exact as of that moment, and between checkpoints it is as last counted plus what was bought since. |
 
 | Marker | Fields |
 | --- | --- |
-| `claim` | `task`, `instance_id` |
-| `submission` | `task`; once the verdict is in, `resolved`, `status`, `fail_to_pass` and `pass_to_pass` (passed and total counts) |
-| `payment` | `task`, `amount` |
+| `claim` | `task`, `instance_id`; of a task for two, `for_two` (true) and `with`, the partner it joined, or null when it claimed the task first |
+| `submission` | `task`; once the verdict is in, `resolved`, `status`, `fail_to_pass` and `pass_to_pass` (passed and total counts); of a task held by two, `with`, the partner, the verdict on the second of their hand-ins being the first's too |
+| `payment` | `task`, `amount`; of a task held by two, `with`, the partner |
 | `abandon` | `task`: the resident gave its task up |
 | `expiry` | `task`: the claim ran out unpaid |
 | `speech` | `text`, `to` (everyone who heard it), `private` |

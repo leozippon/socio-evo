@@ -30,15 +30,20 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
               from in it
           "markers": [{"seq", "t", "kind", "place", ...}, ...],
           "purse": [[9000, 120], [36000, 140], ...]   the purse after each change
+          "partners": [[32400, null], [33000, "Tomas"], ...]
+              who holds a task for two with the resident, from each claim of one (null when it
+              claimed it first and waits) and each change: a partner joining, giving up, dying
       }, ...]
     }
 
 The markers, each on the lane of the resident who acted, with their own fields:
 
-    claim         task, instance_id
+    claim         task, instance_id; of a task for two, for_two (true) and with (the partner
+                  it joined, or null when it claimed it first)
     submission    task; and once the verdict is in: resolved, status, fail_to_pass, pass_to_pass
-                  (passed and total counts)
-    payment       task, amount
+                  (passed and total counts); with, the partner, of a task held by two, the
+                  verdict on the second of the two hand-ins being the first's too
+    payment       task, amount; with, the partner, of a task held by two
     abandon       task                    the resident gave its task up
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
@@ -177,7 +182,7 @@ def _read(cache: _Cache, path: Path) -> bool:
         if kind in _FOLDED:
             payload = entry["payload"]
             if kind == "submission":
-                payload = {"task": payload["task"]}  # not the patch
+                payload = {key: value for key, value in payload.items() if key != "patch"}
             cache.entries.append({key: entry[key] for key in _KEPT} | {"payload": payload})
     cache.offset += len(whole)
     return bool(whole)
@@ -210,6 +215,7 @@ class _Lane:
         self.conversations: list[dict[str, Any]] = []
         self.markers: list[dict[str, Any]] = []
         self.purse: list[list[int]] = [[start, purse]]
+        self.partners: list[list[Any]] = []
         self.task: int | None = None
         self.talk: dict[str, Any] | None = None
         self.submitted: dict[str, Any] | None = None
@@ -270,6 +276,10 @@ class _Lane:
     def credit(self, t: int, amount: int) -> None:
         self.purse.append([t, self.purse[-1][1] + amount])
 
+    def pair(self, t: int, partner: str | None) -> None:
+        """Who holds the task for two this resident holds is now `partner`."""
+        self.partners.append([t, partner])
+
     def data(self, now: int) -> dict[str, Any]:
         for span in (self.segments[-1], self.talk):
             if span is not None:
@@ -281,6 +291,7 @@ class _Lane:
             "conversations": self.conversations,
             "markers": self.markers,
             "purse": self.purse,
+            "partners": self.partners,
         }
 
 
@@ -293,6 +304,8 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
+        partner = payload.get("with")  # who holds the actor's task for two with it
+        paired = {"with": partner} if partner is not None else {}
         if kind in ("wake", "start_work", "leave_work"):
             lane.enter(t, "work" if kind == "start_work" else "idle", place)
         elif kind == "depart":
@@ -315,26 +328,39 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.mark(entry, "forced_sleep", wake=payload["wake"])
         elif kind == "claim":
             lane.hold(t, payload["task"])
-            lane.mark(entry, "claim", task=payload["task"], instance_id=payload["instance_id"])
+            two = {"for_two": True, "with": partner} if payload.get("for_two") else {}
+            instance = payload["instance_id"]
+            lane.mark(entry, "claim", task=payload["task"], instance_id=instance, **two)
+            if two:
+                lane.pair(t, partner)
+                if partner is not None:
+                    lanes[partner].pair(t, lane.name)
         elif kind == "submission":
-            lane.submitted = lane.mark(entry, "submission", task=payload["task"])
+            lane.submitted = lane.mark(entry, "submission", task=payload["task"], **paired)
         elif kind == "verdict":
             if lane.submitted is None or lane.submitted["task"] != payload["task"]:
                 raise ValueError(f"entry {entry['seq']}: a verdict on no submission")
-            lane.submitted.update(
-                resolved=payload["resolved"],
-                status=payload["status"],
-                fail_to_pass=payload["fail_to_pass"],
-                pass_to_pass=payload["pass_to_pass"],
-            )
-            lane.submitted = None
+            handed = [lane]
+            other = lanes[partner].submitted if partner is not None else None
+            if other is not None and other["task"] == payload["task"]:
+                handed.append(lanes[partner])  # the first of the pair's two hand-ins
+            for one in handed:
+                one.submitted.update(
+                    resolved=payload["resolved"],
+                    status=payload["status"],
+                    fail_to_pass=payload["fail_to_pass"],
+                    pass_to_pass=payload["pass_to_pass"],
+                )
+                one.submitted = None
         elif kind == "payment":
             lane.hold(t, None)
-            lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"])
+            lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"], **paired)
             lane.purse.append([t, payload["purse"]])
         elif kind in ("abandon", "expiry"):
             lane.hold(t, None)
             lane.mark(entry, kind, task=payload["task"])
+            if kind == "abandon" and partner is not None:  # left holding it alone
+                lanes[partner].pair(t, None)
         elif kind == "speech":
             heard = payload["to"]
             # Those in the conversation: the log says who since a remark stopped drawing in
@@ -417,6 +443,8 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.hold(t, None)
             lane.enter(t, "dead", None)
             lane.mark(entry, "death")
+            if partner is not None:  # left holding its task for two alone
+                lanes[partner].pair(t, None)
         elif kind == "checkpoint":
             days.append(
                 {

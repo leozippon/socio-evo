@@ -8,7 +8,7 @@ import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { bodyAt, markersBetween, thingsAt } from "../replay.js";
 import { shortName } from "../world.js";
-import { STRUCTURE, clockOf, detail, feedItems, glyph, involved, line, textFor, witnessed } from "./events.js";
+import { STRUCTURE, clockOf, detail, feedItems, glyph, involved, line, pairing, textFor, witnessed } from "./events.js";
 
 /** A resident's doing in a few words: at work on a task, talking, on the way, asleep, idle. */
 export function doing(found, places) {
@@ -17,11 +17,11 @@ export function doing(found, places) {
   if (moving) return `on the way to ${places.get(moving.to) ? shortName(places.get(moving.to)) : moving.to}`;
   const bits = [];
   if (conversation) bits.push(`talking with ${conversation.with.join(", ")}`);
-  if (segment.kind === "work") bits.push(held ? `at work on task ${held.task}` : "at work, no task");
+  if (segment.kind === "work") bits.push(held ? `at work on task ${held.task}${pairing(held)}` : "at work, no task");
   else if (segment.kind === "sleep") bits.push("asleep");
   else if (segment.kind === "dead") bits.push("dead");
   else if (!conversation) bits.push("idle");
-  if (segment.kind !== "work" && held) bits.push(`holds task ${held.task}`);
+  if (segment.kind !== "work" && held) bits.push(`holds task ${held.task}${pairing(held)}`);
   return bits.join(" · ");
 }
 
@@ -205,7 +205,7 @@ export class BoardPanel {
             "span",
             { class: "task-title" },
             h("button", { type: "button", class: "linkish", onclick: () => m.select(name) }, m.cast.badge(name, 16), h("b", {}, name)),
-            h("span", { class: "task-meta" }, found.held ? h("span", { class: "muted" }, `holds task ${found.held.task} (${found.held.instance_id}) since ${hhmm(secondOfDay(found.held.since))}`) : h("span", { class: "muted" }, "holds no task")),
+            h("span", { class: "task-meta" }, found.held ? h("span", { class: "muted" }, `holds task ${found.held.task} (${found.held.instance_id}) since ${hhmm(secondOfDay(found.held.since))}${pairing(found.held)}`) : h("span", { class: "muted" }, "holds no task")),
             handed.length || lost.length
               ? h(
                   "span",
@@ -220,7 +220,7 @@ export class BoardPanel {
     });
     fill(
       this.el,
-      h("p", { class: "note" }, `The Workshop posts a board of tasks each morning; a resident holds one at a time, hands it in, and is paid ${fmt.money(m.world.work.payment)} if the client's checks pass. Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}.`),
+      h("p", { class: "note" }, `The Workshop posts a board of tasks each morning; a resident holds one at a time, hands it in, and is paid ${fmt.money(m.world.work.payment)} if the client's checks pass${m.world.work.for_two ? `, or ${fmt.money(m.world.work.payment_for_two)} each for a task for two, which two hold and hand in together` : ""}. Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}: ${fmt.plural(totals.claims, "claim")}, ${totals.accepted} accepted, ${totals.rejected} not accepted, ${fmt.money(totals.paid)} paid${totals.abandoned ? `, ${totals.abandoned} given up` : ""}${totals.expired ? `, ${totals.expired} ran out` : ""}.`),
       h("ul", { class: "tasks" }, rows),
     );
   }

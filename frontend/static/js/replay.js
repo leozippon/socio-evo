@@ -57,13 +57,24 @@ export function markersBetween(lane, from, to) {
   return lane.markers.slice(first, last);
 }
 
-/** The task a lane holds at `t`: its last claim not yet paid, given up, run out or dropped by death; null for none. */
+/** Who holds the task for two a lane holds with it at `t`: as of its last change at or before `t`; null for nobody. */
+export function partnerAt(lane, t) {
+  const i = lowerBound(lane.partners, after(t), (point) => point[0]) - 1;
+  return i < 0 ? null : lane.partners[i][1];
+}
+
+/**
+ * The task a lane holds at `t`: its last claim not yet paid, given up, run out or dropped by
+ * death; null for none. A task for two says so (`for_two`) and with whom it is held (`with`, null
+ * while the lane waits for a partner).
+ */
 export function heldAt(lane, t) {
   let held = null;
   for (const m of markersBetween(lane, null, t)) {
-    if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t };
+    if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t, for_two: Boolean(m.for_two) };
     else if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry" || m.kind === "death") held = null;
   }
+  if (held?.for_two) held.with = partnerAt(lane, t);
   return held;
 }
 
