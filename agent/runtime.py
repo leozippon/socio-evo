@@ -76,18 +76,26 @@ COMPACT = ToolSpec(
     parameters={"type": "object", "properties": {}},
 )
 
+GROWTH_MARGIN = 8_192
+"""The tokens the context may gain past the compaction threshold, beyond a reply, before the
+notes are asked for: the results of the reply's calls (one at its full `tool_result_chars`,
+16,000 characters, is 5,334 tokens as the session estimates them), the news told with them and
+the request for the notes. It holds one full result with room to spare; a reply whose many calls
+each return a long result can outgrow it."""
+
 
 class RuntimeConfig(StrictModel):
     """The numbers of the loop, with defaults for a context of 128k tokens.
 
     The context is compacted when it exceeds `compaction_threshold` tokens, keeping the last
     `kept_exchanges` exchanges whole; a reply may run to `reply_max_tokens` (reasoning
-    included) and a summary to `summary_max_tokens`, which with the threshold stays within the
-    context. A tool result enters the context cut to `tool_result_chars` characters (its middle
-    left out). A request is made at `reasoning_effort`; a model error, after the client's own
-    retries, is retried until `model_attempts` attempts were made, waiting `retry_wait` seconds
-    and then twice as long each time; after `max_consecutive_lapses` requests in a row found no
-    reply, the runtime gives up with an error.
+    included) and the notes to `summary_max_tokens`, and `ceiling` is the highest threshold a
+    model's context window allows with them. A tool result enters the context cut to
+    `tool_result_chars` characters (its middle left out). A request is made at
+    `reasoning_effort`; a model error, after the client's own retries, is retried until
+    `model_attempts` attempts were made, waiting `retry_wait` seconds and then twice as long each
+    time; after `max_consecutive_lapses` requests in a row found no reply, the runtime gives up
+    with an error.
     """
 
     compaction_threshold: PositiveInt = 90_000
@@ -99,6 +107,12 @@ class RuntimeConfig(StrictModel):
     model_attempts: PositiveInt = 3
     retry_wait: PositiveFloat = 10.0
     max_consecutive_lapses: PositiveInt = 5
+
+    def ceiling(self, window: int) -> int:
+        """The highest compaction threshold a context window of `window` tokens allows: a
+        context just past it, grown by a reply and `GROWTH_MARGIN`, still leaves the notes their
+        full token limit."""
+        return window - self.reply_max_tokens - self.summary_max_tokens - GROWTH_MARGIN
 
 
 class Runtime:

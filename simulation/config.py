@@ -5,7 +5,8 @@ The groups differ in `town.social` (mode, evening exchange, whether skills can b
 in `skills_writable` (false in group D, whose residents can neither write nor receive skills).
 `town.seed` is the run's one seed. `llm.base_url` may name an environment variable as
 `${NAME}`; it is expanded when the client is built, so that the frozen configuration does not
-depend on where the server runs.
+depend on where the server runs. `llm.context_window`, when it is given, bounds
+`runtime.compaction_threshold` (`RuntimeConfig.ceiling`).
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from pathlib import Path
 
 from pydantic import Field, PositiveInt, model_validator
 
-from agent.runtime import RuntimeConfig
+from agent.runtime import GROWTH_MARGIN, RuntimeConfig
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig
 from world.config import Name, TownConfig
@@ -51,4 +52,12 @@ class ExperimentConfig(StrictModel):
             raise ValueError(f"residents {names} are not exactly the town's residents {town}")
         if not self.skills_writable and self.town.social.skills_shareable:
             raise ValueError("residents who cannot write skills cannot be passed skills either")
+        window, threshold = self.llm.context_window, self.runtime.compaction_threshold
+        if window is not None and threshold > (ceiling := self.runtime.ceiling(window)):
+            raise ValueError(
+                f"runtime.compaction_threshold {threshold} is above {ceiling}, the most that "
+                f"llm.context_window {window} allows: a context just past the threshold must "
+                f"still hold a reply (runtime.reply_max_tokens), the notes "
+                f"(runtime.summary_max_tokens) and a margin of {GROWTH_MARGIN} tokens"
+            )
         return self

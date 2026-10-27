@@ -26,6 +26,9 @@ class LLMConfig(StrictModel):
     runs: above one, a request that names its replica is sent there (vLLM's
     `X-data-parallel-rank` header), instead of where the server's balancing by load would
     send it, which is seldom the replica that has the conversation's prefix cached.
+    `context_window` is the most tokens one request may hold, prompt and reply together, as
+    the server serves the model (vLLM's `--max-model-len`); an experiment's runtime is bounded
+    by it, and None, as for a judge, leaves it unknown.
     `backend: scripted` keeps these settings but replaces the endpoint with a responder
     supplied in code, for dry runs; the endpoint fields are then unused.
 
@@ -49,6 +52,7 @@ class LLMConfig(StrictModel):
     backoff: PositiveFloat = 2.0
     max_concurrency: PositiveInt = 8
     replicas: PositiveInt = 1
+    context_window: PositiveInt | None = None
     structured_output: StructuredMode = "json_schema"
     structured_retry: StructuredMode | None = None
     extra_body: dict[str, JsonValue] = Field(default_factory=dict)

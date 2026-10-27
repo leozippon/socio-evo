@@ -64,10 +64,18 @@ llm:
   max_concurrency: 8 # one request in flight per resident
   replicas: 2 # the server's data-parallel replicas; a resident keeps to one
   max_retries: 1 # vLLM never asks for a retry; one covers a dropped connection without holding a stalled step for hours
+  context_window: 262144 # tokens a request may hold, prompt and reply, as ops/vllm/serve.sh serves the model (--max-model-len)
 
+# A resident's context is compacted past compaction_threshold tokens, which the window bounds: a
+# context just past it must still hold a reply, the notes and a step's growth, so at most
+# 262,144 - 16,384 - 8,192 - 8,192 = 229,376. What sets the value under that bound is the server's
+# cache: a replica holds 1,535,199 tokens of it, four residents at 160k take 42% and at 240k 63%,
+# and the sixteen evaluation tasks that share the server reach up to 90k each. So 160,000 while
+# evaluations run, and about 225,000 once the residents have the replicas to themselves (at 240k
+# the model kept its recall, its use of tools and its notes, measured on 27 October 2026).
 runtime:
   reasoning_effort: low
-  compaction_threshold: 160000 # tokens; the server holds 262k, and a longer context costs decode time and cache memory
+  compaction_threshold: 160000
 
 days: 28
 skills_writable: true

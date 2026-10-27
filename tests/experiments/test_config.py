@@ -77,6 +77,20 @@ def test_bad_configurations_are_refused_naming_the_file(tmp_path):
         load_experiment(CONFIGS / "town.yaml")
 
 
+def test_the_compaction_threshold_is_bounded_by_the_models_context_window(tmp_path):
+    c = group("c")
+    # A context just past the threshold, grown by a reply and a margin, leaves the notes room.
+    assert (c.llm.context_window, c.runtime.ceiling(c.llm.context_window)) == (262_144, 229_376)
+    assert c.runtime.compaction_threshold == 160_000
+    at, above = tmp_path / "at.yaml", tmp_path / "above.yaml"
+    for path, threshold in ((at, 229_376), (above, 229_377)):
+        base = CONFIGS / "groups" / "c.yaml"
+        path.write_text(f"base: {base}\nruntime: {{compaction_threshold: {threshold}}}\n")
+    assert load_experiment(at).runtime.compaction_threshold == 229_376
+    with pytest.raises(ConfigError, match="229377 is above 229376, the most that"):
+        load_experiment(above)
+
+
 def test_backgrounds_are_first_person_circumstances_without_trait_words():
     config = group("c")
     assert len(config.residents) == 8
