@@ -26,13 +26,14 @@ class LLMConfig(StrictModel):
     endpoint with a responder supplied in code, for dry runs; the endpoint fields are then
     unused.
 
-    The defaults suit a shared server that is sometimes saturated: a call may take `timeout`
-    seconds, long enough for a reply of 16,384 tokens while the server decodes at 10 tokens a
-    second, and a call the server rejects as rate-limited, or that times out, is retried up
-    to `max_retries` times, after `backoff` seconds and then twice as long each time (at most
-    a minute), before it counts as one failed attempt at a reply. A call that cannot connect
-    or meets a server error is retried twice; that and every other failure of the call is
-    final.
+    The defaults suit a shared server that is sometimes saturated: a call may wait `timeout`
+    seconds for the server (a whole reply, or each piece of a stream), long enough for the
+    first token of a full context (about two minutes on the local server) and for a reply of
+    16,384 tokens at the local server's 25 tokens a second, and a call the server rejects as
+    rate-limited, or that times out, is retried up to `max_retries` times, after `backoff`
+    seconds and then twice as long each time (at most a minute), before it counts as one
+    failed attempt at a reply. A call that cannot connect or meets a server error is retried
+    twice; that and every other failure of the call is final.
     """
 
     backend: Literal["openai_compatible", "scripted"] = "openai_compatible"
@@ -40,7 +41,7 @@ class LLMConfig(StrictModel):
     api_key_env: str
     model: str
     sampling: Sampling = Sampling()
-    timeout: PositiveFloat = 1800.0
+    timeout: PositiveFloat = 900.0
     max_retries: NonNegativeInt = 6
     backoff: PositiveFloat = 2.0
     max_concurrency: PositiveInt = 8
