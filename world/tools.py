@@ -355,7 +355,7 @@ async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
 
 
 async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    return ToolResult(world.board.text(r.name))
+    return ToolResult(world.board.text(r.name, world.config.day.board_posted))
 
 
 async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:

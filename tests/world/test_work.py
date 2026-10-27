@@ -82,10 +82,13 @@ async def test_the_board_is_posted_every_morning_and_what_is_left_stays_up_until
     await town.call("Tomas", "go", place="workshop")
     await town.until("07:59")
     assert board.posted == [] and town.kinds().count("board_posted") == 0
+    await town.call("Tomas", "start_work")
+    assert (await town.call("Tomas", "view_board")).text == (
+        "Nothing is posted on the board now; the next board goes up at 08:00."
+    )
     await town.until("08:00")
     assert town.take("Tomas")[-1] == "It is 08:00: the day's board is posted at the workshop."
     first = board.posted
-    await town.call("Tomas", "start_work")
     listed = (await town.call("Tomas", "view_board")).text.splitlines()[1:]
     assert [int(line.split(".")[0]) for line in listed] == first and len(first) == 4
     await town.call("Tomas", "claim_task", task=first[0])

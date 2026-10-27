@@ -56,7 +56,7 @@ async def test_only_posted_tasks_are_claimed_and_a_held_task_stays_held_off_the_
     await board.claim("Mei", held, day=1)
     board.post(2)
     assert held not in board.posted and board.claims["Mei"].task == held
-    text = board.text("Mei")
+    text = board.text("Mei", "08:00")
     assert text.splitlines()[1:5] == [
         f"{n}. org/repo{n}: Problem {n} goes wrong. Pays 20." for n in board.posted
     ]
@@ -74,7 +74,7 @@ async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round
     board.finish("Mei", await board.claim("Mei", number, day=1))
     assert number not in board.posted and board.done["Mei"] == {number}
     assert board.claim_refusal("Tomas", number) == f"There is no task {number} on the board."
-    listed = board.text("Tomas").splitlines()[1:]
+    listed = board.text("Tomas", "08:00").splitlines()[1:]
     assert [int(line.split(".")[0]) for line in listed] == board.posted and len(listed) == 3
     for day in range(2, 5):  # a pool of 10 on a board of 4 comes round whole by day 4
         board.post(day)
@@ -84,7 +84,24 @@ async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round
     assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
     assert (
         f"{number}. org/repo{number}: Problem {number} goes wrong. Pays 20. You have been paid "
-        in (board.text("Mei"))
+        in (board.text("Mei", "08:00"))
+    )
+
+
+async def test_an_empty_board_says_when_the_next_goes_up_and_still_shows_the_task_held():
+    board = make_board(10, 1)
+    assert board.text("Mei", "08:00") == (
+        "Nothing is posted on the board now; the next board goes up at 08:00."
+    )
+    board.post(1)
+    (held,) = board.posted
+    await board.claim("Mei", held, day=1)
+    board.post(2)
+    board.finish("Tomas", await board.claim("Tomas", board.posted[0], day=2))
+    assert board.posted == [] and board.text("Mei", "08:00") == (
+        "Nothing is posted on the board now; the next board goes up at 08:00.\n\n"
+        f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
+        f"Details of {held}."
     )
 
 

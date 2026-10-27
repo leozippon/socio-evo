@@ -91,8 +91,9 @@ class Board:
             claim.task == number for holder, claim in self.claims.items() if holder != name
         )
 
-    def text(self, name: str) -> str:
-        """The posted tasks as `name` reads them, with the problem of the task it holds."""
+    def text(self, name: str, posting: str) -> str:
+        """The posted tasks as `name` reads them, with the problem of the task it holds; with
+        nothing posted, when the next board goes up, at the hour `posting`."""
         mine = self.claims.get(name)
         lines = []
         for number in self.posted:
@@ -106,7 +107,11 @@ class Board:
             elif self.held_by_other(name, number):
                 line += " Held."
             lines.append(line)
-        text = "The board:\n" + "\n".join(lines)
+        text = (
+            "The board:\n" + "\n".join(lines)
+            if lines
+            else f"Nothing is posted on the board now; the next board goes up at {posting}."
+        )
         if mine is not None:
             problem = self.task(mine.task).problem_statement
             text += f"\n\nThe problem of task {mine.task}, which you hold:\n\n{problem}"
