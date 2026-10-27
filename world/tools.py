@@ -477,7 +477,6 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
     patch = await workspace.diff()
     if not patch.strip():
         return ToolResult("Your workspace has no changes to hand in.")
-    board.count_run(r.name, number)
     task = board.task(number)
     world.record(
         "submission",
@@ -486,6 +485,8 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
         payload={"task": number, "patch": patch},
     )
     verdict = await board.backend.accept(task, patch, world.config.work.acceptance_timeout_s)
+    if verdict.status != "error":  # checks that could not be run use up no hand-in
+        board.count_run(r.name, number)
     left = board.runs_left(r.name, number)
     holds = board.claims.get(r.name) is claim  # a claim can run out at midnight during the checks
     world.record(
@@ -519,7 +520,11 @@ async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
             if left > 0
             else f"You cannot hand in task {number} again today."
         )
-        return ToolResult(f"Not accepted: {failure(verdict)}. {again} {_now(world)}")
+        if verdict.status == "error":
+            told = f"{cap(failure(verdict))}, so this hand-in does not count."
+        else:
+            told = f"Not accepted: {failure(verdict)}."
+        return ToolResult(f"{told} {again} {_now(world)}")
     finished = board.finish(r.name, claim)
     if finished is not None:
         await finished.close()

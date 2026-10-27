@@ -150,12 +150,16 @@ async def test_other_failures_are_told_by_their_kind(make_town):
         FakeVerdict("error", (0, 3), (0, 10)),
         FakeVerdict("failed_tests", (3, 3), (8, 10)),
     ]
-    told = [(await town.call("Mei", "submit")).text.split(". You can")[0] for _ in range(3)]
+    told = [(await town.call("Mei", "submit")).text for _ in range(3)]
     assert told == [
-        "Not accepted: checking your changes took too long and was stopped",
-        "Not accepted: the checks could not be run on your changes",
-        "Not accepted: 2 of the 10 checks that passed before failed",
+        "Not accepted: checking your changes took too long and was stopped. You can hand in "
+        "task 1 4 more times today. It is 09:00.",
+        "The checks could not be run on your changes, so this hand-in does not count. You can "
+        "hand in task 1 4 more times today. It is 09:00.",  # the machinery failed, not the change
+        "Not accepted: 2 of the 10 checks that passed before failed. You can hand in task 1 3 "
+        "more times today. It is 09:00.",
     ]
+    assert len(backend.accepted) == 3 and town.world.board.runs["Mei"] == {1: 2}
 
 
 async def test_an_accepted_task_is_paid_once_and_leaves_the_shared_board_for_the_day(make_town):

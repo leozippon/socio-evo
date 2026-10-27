@@ -23,7 +23,8 @@ closed at once; when it runs out, its workspace may be in use by a command still
 is set aside and closed at the checkpoint. At the checkpoint every workspace is closed and the
 changes of each held task are kept; the next `reopen` starts a fresh workspace and reapplies
 them. Acceptance runs on the submitted diff in a fresh container, at most `acceptance_runs` a
-day for each resident and task; the count starts again at every checkpoint.
+day for each resident and task; a run whose checks could not be run at all (an `error`, the
+machinery's failing) is not counted, and the count starts again at every checkpoint.
 """
 
 from __future__ import annotations
