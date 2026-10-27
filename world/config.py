@@ -197,14 +197,21 @@ class Energy(Need):
     """Falls `awake_per_hour` awake, `work_per_hour` more at work, `walk_per_minute` more on the
     road; rises `sleep_per_hour` times the home's comfort asleep, up to the resident's health or
     to `rested_at_least`, whichever is higher, so that an ill resident still wakes with some of
-    a day's energy. In its lowest band the workplace refuses to let the resident sit down to
-    work."""
+    a day's energy. In its lowest band the resident cannot work: its work stops and it cannot
+    sit down to work again until it has slept, so `rested_at_least` must reach the band above,
+    or an ill resident could never work again."""
 
     awake_per_hour: float = Field(ge=0)
     work_per_hour: float = Field(ge=0)
     walk_per_minute: float = Field(ge=0)
     sleep_per_hour: float = Field(gt=0)
     rested_at_least: float = Field(ge=0, le=100)
+
+    @model_validator(mode="after")
+    def _untrapped(self) -> Energy:
+        if self.rested_at_least < self.bands[-2].floor:
+            raise ValueError("sleep must restore energy out of its lowest band at any health")
+        return self
 
 
 class Health(Need):

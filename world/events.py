@@ -5,8 +5,9 @@ Dead once its health has run out, from which nothing brings it back; a Conversat
 of the Idle or Work it found the resident in and adds its own actions to that event's, so that
 someone spoken to at work can go on working, and leaving the conversation leaves the event
 underneath as it is. Work is entered by claiming a task or acting in its workspace, wherever the
-resident is. One leaves by doing something else: `go` and `sleep` leave a conversation and work
-on their own; waiting in a conversation is listening, and leaves it standing. A
+resident is, except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`).
+One leaves by doing something else: `go` and `sleep` leave a conversation and work on their
+own; waiting in a conversation is listening, and leaves it standing. A
 Conversation is shared by its members:
 the residents at one place (in the isolated mode, the paired residents) who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
@@ -137,6 +138,9 @@ class Conversation:
 Base = Idle | Movement | Work | Sleep | Dead
 ENDED = "Your life has ended."
 """What a dead resident reads, should its runtime still ask anything."""
+EXHAUSTED = "You are exhausted and cannot work until you have slept."
+"""Why one in the lowest band of energy cannot claim a task or act in its workspace, and what
+it is told when its work stops for it."""
 
 
 def refusal(event: Base, tool: str, *, destination: str, ratings: bool = True) -> str:

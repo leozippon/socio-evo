@@ -301,8 +301,8 @@ class Rules:
             "Through the day you get hungry, and what you eat restores you: a meal"
             + (f", or {listed(stocks, 'or')}," if stocks else "")
             + " is about a day's need. You tire with the hours awake, faster at work and on the "
-            "road, and sleep restores you, the more the better your home; too tired, you cannot "
-            "sit down to work. A day that ends with "
+            "road, and sleep restores you, the more the better your home; exhausted, you stop "
+            "work and cannot work again until you have slept. A day that ends with "
             "you starving or exhausted, or lived in a home of little comfort, wears your health "
             "down; a day in which you have eaten and rested mends it. When your health is gone, "
             "you die. You can take stock of how you feel at any time with how_am_i"

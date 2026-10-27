@@ -122,6 +122,11 @@ def test_a_town_validates():
         (lambda d: d.pop("needs"), {}, "needs\n  Field required"),
         (lambda d: d["needs"]["satiety"].update(per_hour=0), {}, "greater than 0"),
         (lambda d: d["needs"]["energy"].pop("sleep_per_hour"), {}, "Field required"),
+        (
+            lambda d: d["needs"]["energy"].update(rested_at_least=14),
+            {},
+            "out of its lowest band at any health",
+        ),
         (lambda d: d["needs"]["health"].update(starving=-1), {}, "greater than or equal to 0"),
         (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=70), {}, "from the top down"),
         (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=65), {}, "from the top down"),

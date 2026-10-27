@@ -40,20 +40,20 @@
 # resident's health or to 50, whichever is higher: seven hours in a flat restore 84, the five
 # hours the forced sleep leaves 54 in a shared house. A twelve-hour work day costs 78, so a
 # resident fresh at 07:00 is tired (below 35) after ten hours of work and exhausted (below 15)
-# after thirteen, which bars sitting down to work until it has slept (one already at work may go
-# on); twelve hours of work in a day leave one still up at midnight exhausted (14.5), eleven
-# tired (19.5), and after a night the forced sleep cut short six to eight hours of work exhaust
-# one. A midnight found exhausted costs 5 health, a home of little comfort (the shared houses,
-# 0.9) costs 2 a night, and a night neither starving nor exhausted mends 5, so twelve-hour days
-# with nights of about eight hours, in bed by 23:00, keep full health. Twelve-hour days with bed at
-# midnight or later do not: the resident is exhausted at every midnight from the first (worked to
-# the forced sleep, a day spends 88.5 and five hours in a shared house restore 54), loses 7 health
+# after thirteen, when its work stops and it cannot work again until it has slept; twelve hours
+# of work in a day leave one still up at midnight exhausted (14.5), eleven tired (19.5), and
+# after a night the forced sleep cut short six to eight hours of work exhaust one. A midnight
+# found exhausted costs 5 health, a home of little comfort (the shared houses, 0.9) costs 2 a
+# night, and a night neither starving nor exhausted mends 5, so twelve-hour days with nights of
+# about eight hours, in bed by 23:00, keep full health. Working until exhausted and staying up to
+# midnight or later every day does not: the resident is exhausted at every midnight (kept up to
+# the forced sleep, it wakes in a shared house with 54, about six hours of work), loses 7 health
 # a night, is run down from the sixth, unwell from the tenth and dead at the fifteenth, eating
 # every day (in a flat or the cottage, 5 a night, run down from the eighth and dead at the
 # twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
 # eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives
-# half a day's energy. Treatment at the clinic restores 25 health for two tasks' pay; an
-# examination costs two thirds of one.
+# half a day's energy, well out of exhaustion. Treatment at the clinic restores 25 health for two
+# tasks' pay; an examination costs two thirds of one.
 
 # The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
 # tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
@@ -237,8 +237,8 @@ town:
     - {id: treatment, name: treatment, price: 60, sold_at: [clinic], kind: immediate, effect: treatment, restores: 25}
   # The body: three needs from 0 to 100, each read in bands from the top down (a band's name
   # follows "you are"; `seen` is what others see on a resident in that band). The lowest band is
-  # where the consequences lie: starving and exhausted wear health at midnight, exhausted bars
-  # sitting down to work, and health at 0 is death. See the calibration above.
+  # where the consequences lie: starving and exhausted wear health at midnight, exhausted stops
+  # work until one has slept, and health at 0 is death. See the calibration above.
   needs:
     satiety:
       per_hour: 3.75 # 90 a day: a day's food, 100, at whatever hour, lasts to the next midnight

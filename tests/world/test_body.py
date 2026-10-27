@@ -1,8 +1,9 @@
 """The residents' bodies: needs that fall by the hour and are read in bands, told as they cross
 one; food and a stock that restore satiety; sleep that restores energy by the home's comfort and
-never above health; the workplace closed to the exhausted; health worn at midnight by starving,
-exhaustion and a poor home, mended by rest and by the clinic; the examination's words; and
-death, which stops a life, is told to the others, and is kept by a checkpoint."""
+never above health; work stopped by exhaustion and barred until one has slept; health worn at
+midnight by starving, exhaustion and a poor home, mended by rest and by the clinic; the
+examination's words; and death, which stops a life, is told to the others, and is kept by a
+checkpoint."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from agent.port import ToolResult
 from tests.world.conftest import RESIDENTS, at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
-from world.events import ENDED, Dead, Idle, Work
+from world.events import ENDED, EXHAUSTED, Dead, Idle, Work
 from world.testing import FakeBackend
 from world.world import World
 
@@ -89,10 +90,15 @@ def test_health_moves_at_midnight_by_the_days_wear_and_recovery():
 
 def _live_day(body: Body, living: Living, comfort: float, hours: list[tuple[str, float]]) -> None:
     """A day from one midnight to the next as a list of (activity, hours), "eat" meaning a
-    day's food, then the night's reckoning."""
+    day's food, then the night's reckoning. Work stops, as the world stops it at the hour, once
+    the resident is exhausted, and its hours left are spent awake."""
     for activity, span in hours:
         if activity == "eat":
             body.eat(living, 100)
+        elif activity == "work":
+            for _ in range(round(span)):
+                spent = body.lowest("energy", living.energy)
+                body.elapse(living, 3600, "awake" if spent else "work", comfort)
         else:
             body.elapse(living, round(span * 3600), activity, comfort)  # type: ignore[arg-type]
     body.night(living, comfort)
@@ -102,9 +108,9 @@ WORK_DAY = [
     ("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), ("awake", 2), ("sleep", 1),
 ]  # fmt: skip
 """Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and in bed at 23:00."""
-LATE_DAY = [("awake", 2), ("sleep", 5), ("awake", 2), ("eat", 0), ("work", 12), ("awake", 3)]
-"""Up until the forced sleep at 02:00, asleep to 07:00, a meal and twelve hours of work from
-09:00, and still up at midnight."""
+LATE_DAY = [("awake", 2), ("sleep", 5), ("awake", 2), ("eat", 0), ("work", 15)]
+"""Up until the forced sleep at 02:00, asleep to 07:00, a meal at 09:00 and work from then for
+as long as the body allows, still up at midnight."""
 
 
 def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_out():
@@ -140,7 +146,8 @@ def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_
         for night in range(1, nights + 1):
             _live_day(body, living, comfort, [("sleep", 7), ("awake", 17)])
             assert living.alive == (night < nights), (comfort, night)
-    # One such day up to the forced sleep ends exhausted, and a rested day after it mends it.
+    # One such day, worked to exhaustion and up past midnight, ends exhausted even after a full
+    # night's rest, and a rested day after it mends it.
     living = Living()
     _live_day(body, living, 0.9, LATE_DAY)
     assert body.band("energy", living.energy).name == "exhausted"
@@ -270,36 +277,61 @@ async def test_sleep_restores_energy_by_the_homes_comfort_and_never_above_health
     )
 
 
-async def test_the_workplace_refuses_the_exhausted_until_they_have_slept(make_town):
+async def test_exhaustion_stops_work_and_bars_it_until_one_has_slept(make_town):
     town = make_town()
     await awake_at(town)
     world = town.world
-    tomas = world.residents["Tomas"]
-    await town.call("Tomas", "go", place="workshop")
-    await town.until("08:00")
+    mei, tomas = world.residents["Mei"], world.residents["Tomas"]
+    for name in ("Mei", "Tomas"):
+        await town.call(name, "go", place="workshop")
+    await town.until("08:10")
     tomas.living.energy = 14
-    assert (await town.call("Tomas", "claim_task", task=1)).text == (
-        "You are too tired to sit down to work; sleep first."
-    )
+    assert (await town.call("Tomas", "claim_task", task=1)).text == EXHAUSTED
     assert "Tomas" not in world.board.claims and isinstance(tomas.base, Idle)
     assert "You are exhausted." in world.ports["Tomas"].situation()
     tomas.living.energy = 15
     claimed = await town.call("Tomas", "claim_task", task=1)
     assert claimed.text.startswith("You sat down to work and claimed task 1")
-    tomas.living.energy = 5  # at work, the exhausted may go on; a conversation does not bar it
-    assert (await town.call("Tomas", "shell", command="ls")).text == "ran ls\nExit code 0."
-    await town.call("Tomas", "leave_work")
-    assert (await town.call("Tomas", "shell", command="ls")).text == (
-        "You are too tired to sit down to work; sleep first."
-    )  # but up, the exhausted cannot sit down again
-    tomas.living.energy = 15
-    await town.call("Tomas", "shell", command="ls")
+    town.take("Tomas")
+    # Exhausted at work, an action in the workspace finds it so: work stops, the task is kept,
+    # and nothing more is done in the workspace until one has slept.
     tomas.living.energy = 5
-    await town.call("Mei", "go", place="workshop")
-    await town.until("08:10")
-    await town.call("Mei", "say", text="Still at it?", to=["Tomas"])
-    assert (await town.call("Tomas", "leave_conversation")).text == (
-        "You left the conversation. You are back at work."
+    assert (await town.call("Tomas", "shell", command="ls")).text == EXHAUSTED
+    assert isinstance(tomas.base, Idle) and world.board.claims["Tomas"].task == 1
+    assert town.take("Tomas") == [f"You stopped work. {EXHAUSTED} You still hold task 1."]
+    for tool, args in (
+        ("read_repo_file", {"path": "a.py"}),
+        ("write_repo_file", {"path": "a.py", "content": "x"}),
+        ("edit_repo_file", {"path": "a.py", "old_text": "x", "new_text": "y"}),
+        ("submit", {}),
+    ):
+        assert (await town.call("Tomas", tool, **args)).text == EXHAUSTED, tool
+    workspace = world.board.workspaces["Tomas"]
+    assert workspace.commands == [] and workspace.changed == {}  # nothing ran, nothing written
+    # At the hour, the body's reckoning finds Mei, who sat down tired, exhausted and stops her.
+    mei.living.energy = 20
+    await town.call("Mei", "claim_task", task=2)
+    town.take("Mei")
+    await town.until("09:00")  # 20 less 6.5 an hour for 50 minutes
+    assert isinstance(mei.base, Idle) and world.board.claims["Mei"].task == 2
+    assert town.take("Mei") == [
+        "You are exhausted.",
+        f"You stopped work. {EXHAUSTED} You still hold task 2.",
+    ]
+    stopped = [e for e in world.log.entries() if e["kind"] == "leave_work"]
+    assert [(e["actor"], e["text"], e["audience"]) for e in stopped] == [
+        ("Tomas", "Tomas stopped work, exhausted.", ["Tomas"]),
+        ("Mei", "Mei stopped work, exhausted.", ["Mei"]),
+    ]
+    assert stopped[-1]["sim_time"] == at("09:00")
+    # Asleep, energy comes back, and with it work.
+    await town.call("Tomas", "go", place="college-flat")
+    await town.until("09:10")
+    await town.call("Tomas", "sleep", until="12:00")
+    town.rest("Tomas")
+    await town.until("12:00")
+    assert (await town.call("Tomas", "shell", command="ls")).text.startswith(
+        "You sat down to work. It is 12:00."
     )
     assert isinstance(tomas.base, Work)
 
@@ -388,8 +420,8 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     mei, tomas, aisha = (world.residents[name] for name in ("Mei", "Tomas", "Aisha"))
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
-    await town.until("09:00")
-    await town.call("Mei", "claim_task", task=1)
+    await town.until("15:00")
+    await town.call("Mei", "claim_task", task=1)  # at work at midnight, not yet exhausted
     mei.living.health = 10  # her last day, out of food
     mei.living.satiety = 0
     for name in world.residents:

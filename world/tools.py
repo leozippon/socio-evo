@@ -27,7 +27,7 @@ from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
-from world.events import ENDED, Work
+from world.events import ENDED, EXHAUSTED, Work
 from world.rules import TOPICS, bare
 from world.telling import cap, counted, listed, you
 
@@ -321,12 +321,13 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 def _sit_down(world: World, r: Resident) -> str | ToolResult:
     """`r` sits down to work where it is, unless it is at work already: what it is told of
-    it, with the hour, or nothing; or the refusal of one too tired to work."""
+    it, with the hour, or nothing; or the refusal of one exhausted, whose work the reckoning of
+    its body stops if it was at work."""
+    world.reckon(r)
     if isinstance(r.base, Work):
         return ""
-    world.reckon(r)
     if world.body.lowest("energy", r.living.energy):
-        return ToolResult("You are too tired to sit down to work; sleep first.")
+        return ToolResult(EXHAUSTED)
     r.base = Work()
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} sat down to work.", actor=r)
     return f"You sat down to work. {_now(world)}\n"

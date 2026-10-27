@@ -31,7 +31,10 @@ at the rates of what it has been doing since it was last reckoned, and is called
 the hour, before every change of activity (sitting down to work, setting off, arriving, going
 to bed, falling asleep, waking) and at the checkpoint, so that a checkpoint carries the body as
 of its moment. A resident awake and able to eat eats from its stock of food as it is reckoned;
-food bought on the spot is eaten as it is bought. A need that crosses into another band is
+food bought on the spot is eaten as it is bought. A resident the reckoning finds at work in the
+lowest band of energy stops work, as `leave_work` stops it, keeping its task, and is told that
+it cannot work until it has slept; before an action in its workspace the body is reckoned too,
+so that the exhausted are refused it (`tools`). A need that crosses into another band is
 logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
 purchase's result tell it otherwise); the situation names the needs in their lowest band. At
 midnight health moves by the day, and a resident whose health has run out dies: it leaves what
@@ -81,6 +84,7 @@ from world.config import Band, Good, TownConfig
 from world.economy import Economy
 from world.events import (
     ENDED,
+    EXHAUSTED,
     TASK_TOOLS,
     Base,
     Conversation,
@@ -557,7 +561,8 @@ class World:
     def reckon(self, r: Resident) -> None:
         """Bring `r`'s body up to the moment at the rates of what it has been doing since it was
         last reckoned, let it eat from its stock if it is awake and could eat, and note each
-        need that crossed into another band, telling `r` if it is awake at a place."""
+        need that crossed into another band, telling `r` if it is awake at a place; if `r` is at
+        work and exhausted, its work stops."""
         now = self.clock.now()
         before = self.body.bands(r.living)
         home = self.config.place(r.home)
@@ -566,6 +571,25 @@ class World:
         r.reckoned = now
         self.feed(r)
         self.note_bands(r, before, tell=r.awake and r.place is not None)
+        if isinstance(r.base, Work) and self.body.lowest("energy", r.living.energy):
+            self._exhausted(r)
+
+    def _exhausted(self, r: Resident) -> None:
+        """`r`, found exhausted at work, stops work as `leave_work` stops it and is told that it
+        cannot work until it has slept, and which task it still holds."""
+        r.base = Idle()
+        claim = self.board.claims.get(r.name)
+        held = f" You still hold task {claim.task}." if claim else ""
+        self.record(
+            "leave_work",
+            lambda w: (
+                f"You stopped work. {EXHAUSTED}{held}"
+                if w == r.name
+                else f"{r.name} stopped work, exhausted."
+            ),
+            actor=r,
+            audience=[r],
+        )
 
     def activity(self, r: Resident) -> Activity:
         """What `r`'s body is doing now, for the rates of the hours."""
@@ -947,10 +971,11 @@ class World:
     def stop_work(self, r: Resident) -> None:
         """`r` stops work: by its own `leave_work`, by going elsewhere or to bed, or because the
         town takes it elsewhere (the evening exchange, the forced sleep), so that every stretch of
-        work in the log ends."""
+        work in the log ends. The body is reckoned first, and may have stopped it already."""
         self.reckon(r)
-        r.base = Idle()
-        self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
+        if isinstance(r.base, Work):
+            r.base = Idle()
+            self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
 
     def break_off(self, r: Resident) -> str:
         """`r` leaves its conversation and stops work, if it is in them, as going elsewhere or

@@ -100,6 +100,10 @@ async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
     await town.call("Mei", "leave_work")
     texts.append((await town.call("Mei", "shell", command="ls")).text)  # sitting down again
     texts.append((await town.call("Mei", "leave_work")).text)
+    await town.call("Mei", "shell", command="ls")
+    world_.residents["Mei"].living.energy = 5
+    texts.append((await town.call("Mei", "shell", command="ls")).text)  # exhausted: work stops
+    world_.residents["Mei"].living.energy = 50
     texts.append((await town.call("Mei", "sleep", until="07:00", journal="Tired.")).text)
     await town.until("19:30")
     await town.call("Mei", "go", place="mill-street-house")
