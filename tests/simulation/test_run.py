@@ -47,7 +47,8 @@ def frozen_as_before(root) -> None:
     added since (`simulation.ADDED`) existed would have frozen it."""
     path = RunDirectory(root).config_path
     frozen = yaml.safe_load(path.read_text(encoding="utf-8"))
-    del frozen["llm"]["context_window"]
+    del frozen["llm"]["context_window"], frozen["runtime"]["kept_tokens"]
+    frozen["runtime"]["kept_exchanges"] = 6  # the count kept_tokens replaced
     path.write_text(yaml.safe_dump(frozen, sort_keys=False), encoding="utf-8")
 
 
@@ -128,7 +129,8 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     frozen_as_before(root)  # a run frozen before the settings added since resumes with them
     root, status = await simulation.run(config, tmp_path, resume=True, dry_run=True)
     assert status == "completed"
-    assert "frozen before llm.context_window existed" in (root / "run.log").read_text()
+    adopted = "frozen before llm.context_window, runtime.kept_tokens existed"
+    assert adopted in (root / "run.log").read_text()
     entries = list(read_jsonl(root / "world.jsonl"))
     assert [entry["seq"] for entry in entries] == list(range(1, len(entries) + 1))
     resume = entries[first]

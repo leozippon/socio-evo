@@ -76,6 +76,7 @@ llm:
 runtime:
   reasoning_effort: low
   compaction_threshold: 160000
+  kept_tokens: 20000 # kept whole after a compaction: the most recent exchanges within this many tokens, at least one
 
 days: 28
 skills_writable: true

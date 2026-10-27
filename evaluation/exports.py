@@ -7,7 +7,8 @@ each resident's tag of that day, and the run's frozen `llm` and `runtime` sectio
 residents' model and the runtime's settings as the run used them. An evaluation of an exported
 resident answers through that model with those settings, never through a configuration of its
 own, so that it measures the resident the run made, and records the resident's commit with its
-results.
+results. A manifest is read as a record (`infrastructure.config.RECORD`), so that an export, or a
+run, made by an earlier version of the code can still be evaluated.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from agent.runtime import RuntimeConfig
-from infrastructure.config import StrictModel
+from infrastructure.config import RECORD, StrictModel
 from infrastructure.llm import LLMConfig
 
 MANIFEST = "export.json"
@@ -38,10 +39,15 @@ class Export(StrictModel):
         path = resident.resolve().parent / MANIFEST
         if not path.is_file():
             raise FileNotFoundError(f"{resident} is in no export: there is no {path}")
-        export = cls.model_validate_json(path.read_text(encoding="utf-8"))
+        export = cls.read(path)
         if resident.resolve().name not in export.commits:
             raise ValueError(f"{path} lists no resident {resident.resolve().name}")
         return export
+
+    @classmethod
+    def read(cls, path: Path) -> Export:
+        """The manifest written at `path`, read as a record."""
+        return cls.model_validate_json(path.read_text(encoding="utf-8"), context=RECORD)
 
     def commit(self, resident: Path) -> str:
         """The commit the agent directory `resident` of this export was exported from."""

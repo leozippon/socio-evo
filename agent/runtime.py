@@ -35,9 +35,9 @@ import logging
 import re
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import PositiveFloat, PositiveInt
+from pydantic import PositiveFloat, PositiveInt, ValidationInfo, model_validator
 
 from agent import files, texts
 from agent.compaction import INSTRUCTION, flaw, kept
@@ -45,7 +45,7 @@ from agent.directory import AgentDirectory
 from agent.port import Percept, ToolResult, ToolSpec, WorldPort
 from agent.session import Session
 from agent.trace import Trace
-from infrastructure.config import StrictModel
+from infrastructure.config import StrictModel, is_record
 from infrastructure.llm import (
     LLMError,
     LLMRequest,
@@ -87,10 +87,11 @@ each return a long result can outgrow it."""
 class RuntimeConfig(StrictModel):
     """The numbers of the loop, with defaults for a context of 128k tokens.
 
-    The context is compacted when it exceeds `compaction_threshold` tokens, keeping the last
-    `kept_exchanges` exchanges whole; a reply may run to `reply_max_tokens` (reasoning
-    included) and the notes to `summary_max_tokens`, and `ceiling` is the highest threshold a
-    model's context window allows with them. A tool result enters the context cut to
+    The context is compacted when it exceeds `compaction_threshold` tokens, keeping whole the
+    most recent exchanges that fit in `kept_tokens` tokens, as the session estimates them, and
+    at least one; a reply may run to `reply_max_tokens` (reasoning included) and the notes to
+    `summary_max_tokens`, and `ceiling` is the highest threshold a model's context window
+    allows with them. A tool result enters the context cut to
     `tool_result_chars` characters (its middle left out). A request is made at
     `reasoning_effort`; a model error, after the client's own retries, is retried until
     `model_attempts` attempts were made, waiting `retry_wait` seconds and then twice as long each
@@ -99,7 +100,7 @@ class RuntimeConfig(StrictModel):
     """
 
     compaction_threshold: PositiveInt = 90_000
-    kept_exchanges: PositiveInt = 6
+    kept_tokens: PositiveInt = 20_000
     tool_result_chars: PositiveInt = 16_000
     reply_max_tokens: PositiveInt = 16_384
     summary_max_tokens: PositiveInt = 8_192
@@ -107,6 +108,22 @@ class RuntimeConfig(StrictModel):
     model_attempts: PositiveInt = 3
     retry_wait: PositiveFloat = 10.0
     max_consecutive_lapses: PositiveInt = 5
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_count_of_exchanges(cls, data: Any, info: ValidationInfo) -> Any:
+        """`kept_exchanges`, the count of exchanges kept that `kept_tokens` replaced, is refused
+        in a new configuration. A record made before (`infrastructure.config.RECORD`) names it:
+        there it is set aside, and `kept_tokens` takes its default, or, on resumption, the
+        value given (`simulation.run.ADDED`)."""
+        if isinstance(data, dict) and "kept_exchanges" in data:
+            if not is_record(info):
+                raise ValueError(
+                    "kept_exchanges is no longer a setting: kept_tokens replaced it, and a "
+                    "compaction keeps whole the most recent exchanges within that many tokens"
+                )
+            data = {key: value for key, value in data.items() if key != "kept_exchanges"}
+        return data
 
     def ceiling(self, window: int) -> int:
         """The highest compaction threshold a context window of `window` tokens allows: a
@@ -252,7 +269,7 @@ class Runtime:
             self._lapse("compaction", failures)
             return
         summary = reply.text.strip()
-        keep = kept(self._session.context(), self._config.kept_exchanges)
+        keep = kept(self._session.context(), self._config.kept_tokens)
         record = self._session.compact(summary, keep)
         self._trace.write(
             "compaction", id=record.id, replaced=list(record.replaced), kept=keep, summary=summary

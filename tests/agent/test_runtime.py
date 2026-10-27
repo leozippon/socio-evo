@@ -349,7 +349,7 @@ async def test_the_context_is_compacted_past_the_threshold_keeping_call_and_resu
         reply("Enough.", prompt_tokens=2_000),
     )
     port.deliver("Your alarm rings.")
-    config = RuntimeConfig(compaction_threshold=90_000, kept_exchanges=1)
+    config = RuntimeConfig(compaction_threshold=90_000, kept_tokens=1)
     async with running(Runtime(directory, port, model, config, replica=3)):
         await settle(port)
 
@@ -376,7 +376,7 @@ async def test_the_resident_can_compact_on_its_own(directory):
         reply("", tool_call("look_around")), reply("", compact), reply(NOTES), reply("Fresh.")
     )
     port.deliver("Your alarm rings.")
-    async with running(Runtime(directory, port, model, RuntimeConfig(kept_exchanges=1))):
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
         await settle(port)
 
     assert model.requests[2].messages[-1] == INSTRUCTION
@@ -399,7 +399,7 @@ async def test_notes_that_are_empty_hold_a_call_or_lack_a_heading_are_never_kept
     )
     port = FakePort()
     port.deliver("Your alarm rings.")
-    async with running(Runtime(directory, port, model, RuntimeConfig(kept_exchanges=1))):
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
         await settle(port)
         (lapse,) = [r for r in trace(directory) if r["kind"] == "lapse"]
         assert lapse["purpose"] == "compaction"

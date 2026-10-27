@@ -4,9 +4,19 @@ from pathlib import Path
 from typing import TypeVar
 
 import yaml
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError, ValidationInfo
 
 M = TypeVar("M", bound=BaseModel)
+
+RECORD = {"record": True}
+"""The validation context of a configuration read back from a run or an export, which an earlier
+version of the code may have written, rather than one being made: a model may accept in a record
+a setting it no longer takes, and says what becomes of it."""
+
+
+def is_record(info: ValidationInfo) -> bool:
+    """Whether what `info` belongs to is being validated as a record (`RECORD`)."""
+    return info.context is not None and info.context.get("record") is True
 
 
 class StrictModel(BaseModel):
@@ -19,14 +29,15 @@ class ConfigError(ValueError):
     """A config file is unreadable YAML or does not match its model."""
 
 
-def load_config(path: Path, model: type[M]) -> M:
-    """Load `path` as YAML and validate it as `model`; errors name the offending key paths."""
+def load_config(path: Path, model: type[M], *, record: bool = False) -> M:
+    """Load `path` as YAML and validate it as `model`, as a record (`RECORD`) if `record` says
+    it is one; errors name the offending key paths."""
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:
         raise ConfigError(f"{path}: invalid YAML: {exc}") from exc
     try:
-        return model.model_validate(data)
+        return model.model_validate(data, context=RECORD if record else None)
     except ValidationError as exc:
         raise ConfigError(f"{path}: {describe_validation_error(exc)}") from exc
 

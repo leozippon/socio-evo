@@ -15,7 +15,6 @@ under the same name, say) is replaced, and anything else in DIR's place is refus
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 from collections.abc import Sequence
 from pathlib import Path
@@ -23,6 +22,7 @@ from pathlib import Path
 import yaml
 
 from evaluation.exports import MANIFEST, Export
+from infrastructure.config import RECORD
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag
 
@@ -34,15 +34,19 @@ def manifest(run_dir: Path, day: int) -> Export:
     if not run.checkpoint_path(day).is_file():
         raise ValueError(f"{run_dir} has no checkpoint of day {day}")
     frozen = yaml.safe_load(run.config_path.read_text(encoding="utf-8"))
-    return Export(
-        run=str(run.root.resolve()),
-        day=day,
-        commits={
-            agent.name: Repository(agent).log(day_tag(day))[0].id
-            for agent in sorted(path for path in run.agents_dir.iterdir() if path.is_dir())
+    commits = {
+        agent.name: Repository(agent).log(day_tag(day))[0].id
+        for agent in sorted(path for path in run.agents_dir.iterdir() if path.is_dir())
+    }
+    return Export.model_validate(
+        {
+            "run": str(run.root.resolve()),
+            "day": day,
+            "commits": commits,
+            "llm": frozen["llm"],
+            "runtime": frozen["runtime"],
         },
-        llm=frozen["llm"],
-        runtime=frozen["runtime"],
+        context=RECORD,
     )
 
 
@@ -76,8 +80,11 @@ def main(argv: Sequence[str] | None = None) -> None:
     except ValueError as error:
         parser.error(str(error))
     if (args.out / MANIFEST).is_file():
-        held = json.loads((args.out / MANIFEST).read_text(encoding="utf-8"))
-        if held == expected.model_dump(mode="json"):
+        try:
+            held: Export | None = Export.read(args.out / MANIFEST)
+        except ValueError:  # a manifest the code cannot read is of other settings
+            held = None
+        if held == expected:
             print(f"{args.out} holds this export already")
             return
         shutil.rmtree(args.out)

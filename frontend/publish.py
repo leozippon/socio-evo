@@ -201,7 +201,7 @@ class Publisher:
         is missing or cannot be read by the current code, or publishing it failed, in which case
         the files written for it so far are left for `prune` and the error is printed."""
         try:
-            config = load_config(root / "config.yaml", ExperimentConfig)
+            config = load_config(root / "config.yaml", ExperimentConfig, record=True)
         except (ConfigError, OSError) as error:
             site.skipped.append(_skipped(name, root, UNREADABLE_CONFIG, error))
             return None

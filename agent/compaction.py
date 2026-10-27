@@ -4,9 +4,10 @@ The runtime compacts when the context exceeds its threshold or the resident call
 It asks the model, in the same session (same system prompt, tools and messages, so that the
 cached prefix serves) but with `tool_choice` "none", for notes under fixed headings, then
 records in the session the notes and the ids of every message they replace. The context is
-rebuilt as the system prompt, the notes as a user message and the last few exchanges kept
-whole. Only notes without a `flaw` are kept: a model asked for text may still answer with an
-empty reply, which is what vLLM leaves of a tool call it strips, or write a call out as text.
+rebuilt as the system prompt, the notes as a user message and the most recent exchanges kept
+whole, as many as a budget of tokens holds and at least one. Only notes without a `flaw` are
+kept: a model asked for text may still answer with an empty reply, which is what vLLM leaves of
+a tool call it strips, or write a call out as text.
 """
 
 from __future__ import annotations
@@ -14,7 +15,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agent import texts
-from agent.session import Entry
+from agent.session import Entry, estimate_message
 from infrastructure.llm import Message
 
 INSTRUCTION = Message(role="user", content=texts.COMPACTION_REQUEST)
@@ -53,6 +54,14 @@ def exchanges(entries: Sequence[Entry]) -> list[list[Entry]]:
     return cut
 
 
-def kept(entries: Sequence[Entry], count: int) -> list[int]:
-    """The ids of the messages of the last `count` exchanges of `entries`."""
-    return [entry.id for exchange in exchanges(entries)[-count:] for entry in exchange]
+def kept(entries: Sequence[Entry], budget: int) -> list[int]:
+    """The ids of the messages of the most recent exchanges of `entries` whose estimated tokens
+    add up to at most `budget`, and of the last exchange at least, however long it is."""
+    chosen: list[list[Entry]] = []
+    total = 0
+    for exchange in reversed(exchanges(entries)):
+        total += sum(estimate_message(entry.message) for entry in exchange)
+        if chosen and total > budget:
+            break
+        chosen.append(exchange)
+    return [entry.id for exchange in reversed(chosen) for entry in exchange]

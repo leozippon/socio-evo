@@ -100,9 +100,9 @@ class Session:
         appended since; with no such report, an estimate of `prefix` (what precedes the
         messages: the system prompt and the tools declared) and of every message."""
         if self._measured is None:
-            return estimate(prefix) + sum(_estimate(entry.message) for entry in self._entries)
+            return estimate(prefix) + sum(estimate_message(e.message) for e in self._entries)
         tokens, position = self._measured
-        return tokens + sum(_estimate(entry.message) for entry in self._entries[position:])
+        return tokens + sum(estimate_message(e.message) for e in self._entries[position:])
 
     def _write(self, record: MessageRecord | CompactionRecord) -> None:
         self._apply(record)
@@ -132,7 +132,8 @@ def estimate(text: str) -> int:
     return len(text) // CHARS_PER_TOKEN + 1
 
 
-def _estimate(message: Message) -> int:
+def estimate_message(message: Message) -> int:
+    """An estimate of the tokens of `message` in a request, on the safe side."""
     calls = "".join(
         call.name + json.dumps(call.arguments, ensure_ascii=False) for call in message.tool_calls
     )

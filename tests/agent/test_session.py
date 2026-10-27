@@ -2,7 +2,7 @@ import pytest
 
 from agent import texts
 from agent.compaction import exchanges, kept
-from agent.session import Session, estimate
+from agent.session import Session, estimate, estimate_message
 from infrastructure.llm import Message, ToolCall
 
 
@@ -63,7 +63,11 @@ def test_compaction_keeps_tool_calls_with_their_results_and_records_what_it_repl
         [7],
         [8, 9, 10, 11],
     ]
-    keep = kept(session.context(), 2)
+    tokens = [sum(estimate_message(entry.message) for entry in exchange) for exchange in cut]
+    last_two = tokens[2] + tokens[3]
+    assert kept(session.context(), last_two - 1) == [8, 9, 10, 11]
+    assert kept(session.context(), 1) == [8, 9, 10, 11]  # the last exchange, however long
+    keep = kept(session.context(), last_two)
     assert keep == [7, 8, 9, 10, 11]
 
     record = session.compact("I looked around twice.", keep)

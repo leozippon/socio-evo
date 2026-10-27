@@ -73,7 +73,7 @@ DRY_RUN_TASKS = 56
 """The tasks of a dry run's pool: more than one board, so the rotation is exercised."""
 DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
-ADDED = {"llm": ("context_window",)}
+ADDED = {"llm": ("context_window",), "runtime": ("kept_tokens",)}
 """The settings, by section, added after runs were frozen without them: a frozen configuration
 that does not name one was frozen before it existed, and its run, resumed, takes it from the
 configuration given, with a warning."""
@@ -108,7 +108,8 @@ async def run(
     adopted: list[str] = []
     if resume:
         directory = RunDirectory.open(runs_root / config.name)
-        frozen, adopted = _adopting(load_config(directory.config_path, ExperimentConfig), config)
+        frozen = load_config(directory.config_path, ExperimentConfig, record=True)
+        frozen, adopted = _adopting(frozen, config)
         if frozen != config:
             raise ValueError(f"the configuration differs from the one frozen in {directory.root}")
         day = directory.latest_checkpoint()

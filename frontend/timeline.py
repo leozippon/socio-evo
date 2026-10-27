@@ -147,7 +147,7 @@ def timeline(run_dir: Path) -> dict[str, Any]:
         size = path.stat().st_size if path.exists() else 0
         cache = _caches.get(key)
         if cache is None or size < cache.offset:  # new, or a log written afresh
-            town = load_config(run.config_path, ExperimentConfig).town
+            town = load_config(run.config_path, ExperimentConfig, record=True).town
             cache = _caches[key] = _Cache(town)
             cache.data = _build(cache.town, cache.entries, cache.now)
         try:

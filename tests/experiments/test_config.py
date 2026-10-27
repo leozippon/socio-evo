@@ -6,10 +6,11 @@ from __future__ import annotations
 import re
 
 import pytest
+import yaml
 
 from agent.wording import offences
-from experiments.config import PROJECT_ROOT, load_experiment, overlay
-from infrastructure.config import ConfigError
+from experiments.config import PROJECT_ROOT, ExperimentConfig, load_experiment, overlay
+from infrastructure.config import ConfigError, load_config
 from world.rules import Rules
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
@@ -89,6 +90,23 @@ def test_the_compaction_threshold_is_bounded_by_the_models_context_window(tmp_pa
     assert load_experiment(at).runtime.compaction_threshold == 229_376
     with pytest.raises(ConfigError, match="229377 is above 229376, the most that"):
         load_experiment(above)
+
+
+def test_a_count_of_exchanges_kept_is_refused_and_set_aside_only_in_a_record_made_before(tmp_path):
+    counted = tmp_path / "counted.yaml"
+    counted.write_text(f"base: {CONFIGS / 'groups' / 'c.yaml'}\nruntime: {{kept_exchanges: 6}}\n")
+    refusal = "kept_exchanges is no longer a setting: kept_tokens replaced it"
+    with pytest.raises(ConfigError, match=refusal):
+        load_experiment(counted)
+    # A run frozen before kept_tokens named the count, and no kept_tokens.
+    frozen = group("c").model_dump(mode="json")
+    del frozen["runtime"]["kept_tokens"]
+    frozen["runtime"]["kept_exchanges"] = 6
+    path = tmp_path / "config.yaml"
+    path.write_text(yaml.safe_dump(frozen))
+    with pytest.raises(ConfigError, match=refusal):
+        load_config(path, ExperimentConfig)
+    assert load_config(path, ExperimentConfig, record=True) == group("c")
 
 
 def test_backgrounds_are_first_person_circumstances_without_trait_words():

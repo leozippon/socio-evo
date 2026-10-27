@@ -100,7 +100,7 @@ class Day:
 
 def town(run_dir: Path) -> TownConfig:
     """The town of the run's frozen configuration."""
-    return load_config(RunDirectory(run_dir).config_path, ExperimentConfig).town
+    return load_config(RunDirectory(run_dir).config_path, ExperimentConfig, record=True).town
 
 
 def agent_dir(run_dir: Path, config: TownConfig, resident: str) -> Path:
