@@ -56,7 +56,7 @@ NEEDS = {
     },
     "energy": {
         "awake_per_hour": 1.5,
-        "work_per_hour": 3,
+        "work_per_hour": 5,
         "walk_per_minute": 0.1,
         "sleep_per_hour": 12,
         "rested_at_least": 50,

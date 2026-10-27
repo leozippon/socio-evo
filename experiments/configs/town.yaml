@@ -35,23 +35,25 @@
 # 100 health (17 in a shared house), so one that never eats is starving from the second midnight
 # after its last meal and dead at the eighth, or the seventh in a shared house, with "run down"
 # told on the fourth day and "looking unwell" seen by others from the sixth; one that eats a meal
-# a day cannot die of hunger. Energy falls 1.5 an hour awake, 4.5 at
-# work and 7.5 on foot (half the road with a bicycle), and sleep gives 12 an hour times the
-# home's comfort, up to the resident's health or to 50, whichever is higher: seven hours in a flat
-# restore 84, a twelve-hour work day costs 54, so a healthy resident that ends one such day at the
-# forced sleep is tired, not exhausted, and about seventeen hours of work, or a short night after
-# a forced sleep and another long day, ends a day exhausted (below 15), which bars sitting down to
-# work until it has slept (one already at work may go on). A midnight found exhausted costs 5
-# health, a home of little comfort (the shared houses, 0.9) costs 2 a night, and a night neither
-# starving nor exhausted mends 5, so twelve-hour days with nights of about eight hours keep full
-# health. Twelve-hour days worked to the forced sleep every day do not: five hours in a shared
-# house restore 54 of the 65-70 such a day spends, so the resident is exhausted at every midnight
-# from the third, loses 7 health a night, is run down from the eighth, unwell from the twelfth and
-# dead at the seventeenth, eating every day (in a flat, exhausted from the sixth and dead at about
-# the twenty-fifth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident
-# that eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep
-# gives half a day's energy. Treatment at the clinic restores 25
-# health for four tasks' pay; an examination costs a task and a third.
+# a day cannot die of hunger. Energy falls 1.5 an hour awake, 6.5 at work and 7.5 on foot (half
+# the road with a bicycle), and sleep gives 12 an hour times the home's comfort, up to the
+# resident's health or to 50, whichever is higher: seven hours in a flat restore 84, the five
+# hours the forced sleep leaves 54 in a shared house. A twelve-hour work day costs 78, so a
+# resident fresh at 07:00 is tired (below 35) after ten hours of work and exhausted (below 15)
+# after thirteen, which bars sitting down to work until it has slept (one already at work may go
+# on); twelve hours of work in a day leave one still up at midnight exhausted (14.5), eleven
+# tired (19.5), and after a night the forced sleep cut short six to eight hours of work exhaust
+# one. A midnight found exhausted costs 5 health, a home of little comfort (the shared houses,
+# 0.9) costs 2 a night, and a night neither starving nor exhausted mends 5, so twelve-hour days
+# with nights of about eight hours, in bed by 23:00, keep full health. Twelve-hour days with bed at
+# midnight or later do not: the resident is exhausted at every midnight from the first (worked to
+# the forced sleep, a day spends 88.5 and five hours in a shared house restore 54), loses 7 health
+# a night, is run down from the sixth, unwell from the tenth and dead at the fifteenth, eating
+# every day (in a flat or the cottage, 5 a night, run down from the eighth and dead at the
+# twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
+# eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives
+# half a day's energy. Treatment at the clinic restores 25 health for two tasks' pay; an
+# examination costs two thirds of one.
 
 # The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
 # tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
@@ -247,7 +249,7 @@ town:
         - {floor: 0, name: starving}
     energy:
       awake_per_hour: 1.5
-      work_per_hour: 3 # on top of the hour awake
+      work_per_hour: 5 # on top of the hour awake
       walk_per_minute: 0.1 # on top of the hour awake
       sleep_per_hour: 12 # times the home's comfort, up to the resident's health or rested_at_least
       rested_at_least: 50 # sleep restores at least this much energy, whatever the health

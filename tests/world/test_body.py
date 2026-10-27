@@ -25,9 +25,9 @@ def test_the_arithmetic_of_the_needs():
     body.elapse(living, 10 * 3600, "awake", 1.0)
     assert (living.satiety, living.energy) == (62.5, 85)  # 3.75 and 1.5 an hour
     body.elapse(living, 3600, "work", 1.0)
-    assert living.energy == pytest.approx(80.5)  # 1.5 + 3 an hour at work
+    assert living.energy == pytest.approx(78.5)  # 1.5 + 5 an hour at work
     body.elapse(living, 1800, "walk", 1.0)
-    assert living.energy == pytest.approx(76.75)  # 1.5 an hour and 0.1 a minute on the road
+    assert living.energy == pytest.approx(74.75)  # 1.5 an hour and 0.1 a minute on the road
     body.eat(living, 65)
     assert living.satiety == 100  # capped
     body.elapse(living, 5 * 3600, "sleep", 0.9)
@@ -98,18 +98,36 @@ def _live_day(body: Body, living: Living, comfort: float, hours: list[tuple[str,
     body.night(living, comfort)
 
 
-WORK_DAY = [("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), ("awake", 3)]
-"""Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and up until midnight."""
+WORK_DAY = [
+    ("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), ("awake", 2), ("sleep", 1),
+]  # fmt: skip
+"""Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and in bed at 23:00."""
+LATE_DAY = [("awake", 2), ("sleep", 5), ("awake", 2), ("eat", 0), ("work", 12), ("awake", 3)]
+"""Up until the forced sleep at 02:00, asleep to 07:00, a meal and twelve hours of work from
+09:00, and still up at midnight."""
 
 
 def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_out():
     body = Body(town_config().needs)
-    # Twelve-hour days in a shared house, a meal a day, bed at midnight, for four weeks.
+    # Fresh in the morning, a resident is tired after ten hours of work and exhausted after
+    # thirteen: in the eleventh hour and in the fourteenth.
+    living, bands = Living(), []
+    for _ in range(14):
+        body.elapse(living, 3600, "work", 1.0)
+        bands.append(body.band("energy", living.energy).name)
+    assert bands.index("tired") == 10 and bands.index("exhausted") == 13
+    # Twelve-hour days in a shared house, a meal a day, in bed at 23:00, for four weeks: tired at
+    # bedtime, never exhausted, in full health.
     living = Living()
     for _ in range(28):
         _live_day(body, living, 0.9, WORK_DAY)
-        assert living.health >= 65 and not body.lowest("energy", living.energy)
-    assert living.health == 100 and body.band("energy", living.energy).name == "a little tired"
+        assert living.health == 100 and not body.lowest("energy", living.energy)
+    assert body.band("energy", living.energy).name == "tired"
+    # Still up at midnight, eleven hours of work leave a fresh resident tired, twelve exhausted.
+    for work, band in ((11, "tired"), (12, "exhausted")):
+        living = Living()
+        _live_day(body, living, 1.0, [("sleep", 7), ("work", work), ("awake", 17 - work)])
+        assert body.band("energy", living.energy).name == band, work
     # Ill, a resident that eats and rests recovers: it wakes with half a day's energy.
     living = Living(health=10)
     for day in range(1, 5):
@@ -122,27 +140,26 @@ def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_
         for night in range(1, nights + 1):
             _live_day(body, living, comfort, [("sleep", 7), ("awake", 17)])
             assert living.alive == (night < nights), (comfort, night)
-    # Twelve-hour days up to the forced sleep, on five-hour nights: tired, not exhausted, at
-    # first; the third such day ends exhausted, once, and a full night after it mends it.
-    short = [("sleep", 5), ("awake", 2), ("eat", 0), ("work", 12), ("awake", 5)]
+    # One such day up to the forced sleep ends exhausted, and a rested day after it mends it.
     living = Living()
-    bands = []
-    for _ in range(3):
-        _live_day(body, living, 0.9, short)
-        bands.append(body.band("energy", living.energy).name)
-    assert bands == ["a little tired", "tired", "exhausted"]
+    _live_day(body, living, 0.9, LATE_DAY)
+    assert body.band("energy", living.energy).name == "exhausted"
     assert living.health == 93 and living.night == {"exhausted": -5, "poor_home": -2}
     _live_day(body, living, 0.9, WORK_DAY)
     assert body.band("energy", living.energy).name == "tired" and living.health == 96
-    # Worked that way every day, it is exhausted at every midnight from the third and, eating
-    # every day, dies of it in a shared house at the seventeenth, told run down and unwell first.
-    living, first = Living(), {}
-    for night in range(1, 18):
-        assert living.alive
-        _live_day(body, living, 0.9, short)
-        first.setdefault(body.band("health", living.health).name, night)
-    assert not living.alive and living.night == {"exhausted": -5, "poor_home": -2}
-    assert first == {"in good health": 1, "run down": 8, "unwell": 12, "gravely ill": 15}
+    # Lived so every day, it is exhausted at every midnight and, eating every day, dies of it at
+    # the fifteenth in a shared house and the twentieth in a flat, told run down and unwell first.
+    for comfort, nights, first_told in (
+        (0.9, 15, {"in good health": 1, "run down": 6, "unwell": 10, "gravely ill": 13}),
+        (1.0, 20, {"in good health": 1, "run down": 8, "unwell": 14, "gravely ill": 19}),
+    ):
+        living, first = Living(), {}
+        for night in range(1, nights + 1):
+            assert living.alive
+            _live_day(body, living, comfort, LATE_DAY)
+            assert body.lowest("energy", living.energy)
+            first.setdefault(body.band("health", living.health).name, night)
+        assert not living.alive and first == first_told
 
 
 async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking(make_town):
@@ -158,12 +175,12 @@ async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking
     await town.until("09:00")
     await town.call("Mei", "claim_task", task=1)
     town.take("Mei")
-    await town.until("23:00")
+    await town.until("20:00")
     assert town.take("Mei") == [
         "You are a little hungry.",  # 12:00
-        "You are a little tired.",  # 16:00
+        "You are a little tired.",  # 14:00
+        "You are tired.",  # 19:00, after ten hours at work
         "You are hungry.",  # 20:00
-        "You are tired.",  # 23:00, after fourteen hours at work
     ]
     assert (await town.call("Mei", "how_am_i")).text == (
         "You are hungry. You are tired. You are in good health."
@@ -173,12 +190,12 @@ async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking
     told = [e for e in world.log.entries() if e["kind"] == "condition" and e["actor"] == "Mei"]
     assert [(e["sim_time"], e["text"]) for e in told][:2] == [
         (at("12:00"), "Mei is a little hungry."),
-        (at("16:00"), "Mei is a little tired."),
+        (at("14:00"), "Mei is a little tired."),
     ]
-    assert told[-1]["payload"] == {
-        "need": "energy", "band": "tired", "value": 33.0, "lowest": False,
+    assert told[-2]["payload"] == {
+        "need": "energy", "band": "tired", "value": 31.0, "lowest": False,
     }  # fmt: skip
-    assert told[-1]["audience"] == ["Mei"] and told[-1]["personal"] == {"Mei": "You are tired."}
+    assert told[-2]["audience"] == ["Mei"] and told[-2]["personal"] == {"Mei": "You are tired."}
     mei.living.energy = 5
     assert "You are exhausted." in world.ports["Mei"].situation()
     # Asleep, the body is reckoned and logged but nothing is told until the wake-up.
