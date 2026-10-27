@@ -69,8 +69,8 @@ ARCHITECTURE_TABLE = {
     "sleep": {"look_around", "review_day", "rate", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
-    if _event != "movement":
-        _tools.add("how_am_i")  # taking stock of oneself is free in every event but a walk
+    if _event != "movement":  # taking stock and asking how the town works: every waking event
+        _tools |= {"how_am_i", "help"}
 
 
 def test_the_tool_sets_are_the_architecture_table():
@@ -463,8 +463,8 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
     assert in_bed_refusals["go"] == (
         "You have gone to bed; before you fall asleep you can only look around, take stock of "
-        "how you feel, look back over your day, add to your journal, rate people and see to your "
-        "own files."
+        "how you feel, look back over your day, add to your journal, rate people, read how the "
+        "town works and see to your own files."
     )
     review = await town.call("Mei", "review_day")
     assert "07:00 You woke up at home." in review.text

@@ -42,6 +42,7 @@ IDLE_TOOLS = frozenset(
 )
 WORK_TOOLS = frozenset(
     {
+        "help",
         "look_around",
         "how_am_i",
         "go",
@@ -62,6 +63,7 @@ WORK_TOOLS = frozenset(
 )
 CONVERSATION_TOOLS = frozenset(
     {
+        "help",
         "say",
         "message",
         "give_money",
@@ -77,7 +79,7 @@ CONVERSATION_TOOLS = frozenset(
         "leave_conversation",
     }
 )
-SLEEP_TOOLS = frozenset({"look_around", "how_am_i", "review_day", "rate", "sleep"})
+SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "rate", "sleep"})
 
 
 @dataclass
@@ -152,8 +154,8 @@ def refusal(
         rate = ", rate people" if ratings else ""
         return (
             "You have gone to bed; before you fall asleep you can only look around, take stock "
-            f"of how you feel, look back over your day, add to your journal{rate} and see to your "
-            "own files."
+            f"of how you feel, look back over your day, add to your journal{rate}, read how the "
+            "town works and see to your own files."
         )
     if isinstance(event, Conversation):
         return "You are in a conversation; leave it first."
