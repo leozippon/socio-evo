@@ -68,13 +68,15 @@ def test_a_residents_statistics():
 
 
 def write_json(path, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(rows))
     return path
 
 
 def test_the_declared_contrasts_of_distortion(tmp_path, capsys):
     """Distortion by day for A, C and D: in C it falls, in A it rises; one A resident never
-    wrote a checkable journal."""
+    wrote a checkable journal. C's days were judged in two judgings, read together from its
+    journals directory."""
     tables = {}
     for group, start, step in (("A", 0.2, 0.05), ("C", 0.4, -0.1), ("D", 0.3, 0.0)):
         rows = [
@@ -85,6 +87,11 @@ def test_the_declared_contrasts_of_distortion(tmp_path, capsys):
         if group == "A":
             rows = [row | {"distortion": None} if row["resident"] == "R8" else row for row in rows]
         tables[group] = write_json(tmp_path / f"{group}.json", rows)
+    journals = tmp_path / "results" / "c" / "journals"
+    for judging, days in (("day-01-02", (1, 2)), ("day-03", (3,))):
+        rows = json.loads(tables["C"].read_text())
+        write_json(journals / judging / "days.json", [row for row in rows if row["day"] in days])
+    tables["C"] = journals
     out = tmp_path / "compare" / "distortion.json"
     groups = [arg for group, path in tables.items() for arg in ("--group", f"{group}={path}")]
     main(["--measure", "distortion", "--days", "1", "3", "--out", str(out), *groups])
@@ -147,4 +154,11 @@ def test_unreadable_groups_are_refused(tmp_path, capsys):
     twice = write_json(tmp_path / "twice.json", [{"resident": "R1", "day": 1, "x": 1}] * 2)
     with pytest.raises(SystemExit):
         main(["--group", f"A={twice}", "--measure", "x"])
+    assert "two values of R1 on day 1" in capsys.readouterr().err
+    for judging in ("day-01", "again"):  # a resident-day judged in two judgings
+        write_json(
+            tmp_path / "journals" / judging / "days.json", [{"resident": "R1", "day": 1, "x": 1}]
+        )
+    with pytest.raises(SystemExit):
+        main(["--group", f"A={tmp_path / 'journals'}", "--measure", "x"])
     assert "two values of R1 on day 1" in capsys.readouterr().err

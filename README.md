@@ -62,13 +62,15 @@ python -m evaluation.capability exports/c/day-07/Mei --split eval --out results/
 # Honesty under pressure: the twenty fixed MASK scenarios
 python -m evaluation.mask exports/c/day-07/Mei --out results/c/day-07/mask/Mei.json
 
-# Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/c/journals/, where the site reads it
+# Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/c/journals/, where the site and the comparison read them all
 python -m evaluation.journals runs/c --days 1 2 3 4 5 6 7 --out results/c/journals/day-01-07
 
-# Measures of a run, a group's evaluation results as tables (day 0 from results/day-00), and the comparison of groups
+# Measures of a run, a group's evaluation results as tables (day 0 from results/day-00), and the comparison of groups on a town measure, on an evaluation table, and on the journals' distortion
 python -m analysis.measures runs/c --out results/c/measures
 python -m analysis.tables results --group c --out results/c/tables
 python -m analysis.compare --group A=runs/a --group C=runs/c --measure accepted --out results/compare-accepted.json
+python -m analysis.compare --group A=results/a/tables/mask.json --group C=results/c/tables/mask.json --measure mask
+python -m analysis.compare --group A=results/a/journals --group C=results/c/journals --measure distortion
 ```
 
 ## Layout

@@ -7,9 +7,12 @@ design declares.
 A group's SOURCE is a run directory, whose town measures (`analysis.measures`) are taken from it,
 or a table: a CSV file, or a JSON file holding a list of rows, with the columns `resident`, `day`
 and NAME, empty or null where there is no value, and any others, which are ignored. The journals'
-`days.json` (`evaluation.journals`) is such a table for `distortion`, and `analysis.tables` builds
-them for capability, with a `capability` column (the resolved rate), and MASK, with a `mask`
-column (the share of truthful answers), day 0 standing for the export before the first day.
+`days.json` (`evaluation.journals`) is such a table for `distortion`, and the group's directory of
+journal judgings (`results/<run>/journals/`, one directory with its `days.json` per judging) is
+read as the table of all its judgings together; `analysis.tables` builds tables for capability,
+with a `capability` column (the resolved rate), and MASK, with a `mask` column (the share of
+truthful answers), day 0 standing for the export before the first day. A resident with two
+values on one day, in one table or across judgings, is an error.
 
 Each resident's values by day are reduced to one number, the statistic, and the groups are
 compared on it. The design declares, for its three outcomes, with FIRST and LAST the days 0 and
@@ -206,9 +209,14 @@ def _slope(points: dict[int, float]) -> float:
 
 
 def values_of(source: Path, name: str) -> Values:
-    """Measure `name` by resident and day from `source`, a run directory or a table."""
-    if source.is_dir():
-        rows: list[dict[str, Any]] = town_measures(source)
+    """Measure `name` by resident and day from `source`, a run directory, a directory of journal
+    judgings or a table."""
+    if source.is_dir() and (judgings := sorted(source.glob("*/days.json"))):
+        rows: list[dict[str, Any]] = [
+            row for path in judgings for row in json.loads(path.read_text(encoding="utf-8"))
+        ]
+    elif source.is_dir():
+        rows = town_measures(source)
     elif source.suffix == ".csv":
         with source.open(encoding="utf-8", newline="") as file:
             rows = list(csv.DictReader(file))
@@ -334,7 +342,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         action="append",
         required=True,
         metavar="NAME=SOURCE",
-        help="a group and its run directory or table (repeatable)",
+        help="a group and its run directory, journal judgings or table (repeatable)",
     )
     parser.add_argument("--measure", required=True, help="the measure's column")
     parser.add_argument("--days", type=int, nargs=2, default=DAYS, metavar=("FIRST", "LAST"))
