@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import UTC, datetime
 
 import pytest
 
@@ -107,6 +108,11 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
             await simulation.run(config, tmp_path, resume=True, dry_run=True)
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
     assert (root / "run.log").read_text() == log
+    lost = {}  # a save of day 2 killed after its tags and before its checkpoint
+    for name in ("Mei", "Tomas"):
+        repository = Repository(RunDirectory(root).agent_dir(name))
+        lost[name] = repository.commit("day-02", date=datetime.now(UTC), allow_empty=True)
+        repository.tag("day-02")
 
     root, status = await simulation.run(config, tmp_path, resume=True, dry_run=True)
     assert status == "completed"
@@ -117,7 +123,9 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     assert [entry["kind"] for entry in entries].count("checkpoint") == 2
     for name in ("Mei", "Tomas"):
         agent = RunDirectory(root).agent_dir(name)
-        assert Repository(agent).tree("day-02")
+        repository = Repository(agent)
+        assert repository.tree("day-02") and lost[name] not in {c.id for c in repository.log()}
+        assert repository.log("day-02")[0].id == repository.head() != lost[name]
         assert sorted(path.name for path in (agent / "memory" / "journal").iterdir()) == [
             "2026-03-02.md",
             "2026-03-03.md",

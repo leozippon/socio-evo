@@ -11,6 +11,7 @@ starting state as day 0.
 
 Saving day N commits every agent directory at the simulated moment and tags it `day-NN`, then
 writes the world's state to `checkpoints/day-NN.json`, so that a checkpoint always has its tags.
+A tag left by a save that was killed before its checkpoint is moved when the day is lived again.
 The world hands over its state at each daily checkpoint, with every resident asleep and the
 clock held. Resuming restores the latest checkpoint into a new world, whose log continues, and
 resets every agent directory to that day's tag: what the lost day added to the files, the
@@ -234,7 +235,7 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
     for resident in town.residents:
         repository = Repository(directory.agent_dir(resident.name))
         repository.commit(message, date=moment, allow_empty=True)
-        repository.tag(day_tag(day))
+        repository.tag(day_tag(day), force=True)
     path = directory.checkpoint_path(day)
     staging = path.with_suffix(".json.tmp")
     staging.write_text(json.dumps(state, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")

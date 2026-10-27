@@ -129,6 +129,8 @@ def test_tag_and_export_a_frozen_snapshot(repo, tmp_path):
         repo.export("day-0001", snapshot)
     with pytest.raises(GitError):
         repo.tag("day-0001")
+    repo.tag("day-0001", force=True)
+    assert repo.read_file("day-0001", "policy.md") == "v2\n"
 
 
 def test_failures_raise_git_error(repo):

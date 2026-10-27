@@ -188,8 +188,10 @@ class Repository:
         """Content of `path` (relative to the work tree) at `revision`."""
         return self._git("show", f"{revision}:{path}")
 
-    def tag(self, name: str, revision: str = "HEAD") -> None:
-        self._git("tag", name, revision)
+    def tag(self, name: str, revision: str = "HEAD", *, force: bool = False) -> None:
+        """Tag `revision` as `name`; a tag of that name already there raises GitError, or, with
+        `force`, is moved."""
+        self._git("tag", *(["--force"] if force else []), name, revision)
 
     def reset_hard(self, revision: str) -> None:
         """Make HEAD, index and work tree exactly `revision`, deleting untracked files."""
