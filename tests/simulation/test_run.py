@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import re
+import signal
 from datetime import UTC, datetime
 
 import pytest
@@ -58,6 +60,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     run = RunDirectory.open(root)
     manifest = run.read_manifest()
     assert manifest.status == "completed" and manifest.ended_at is not None
+    assert manifest.pid is None
     assert load_experiment(run.config_path) == simulation.as_dry_run(smoke())
     assert sorted(path.name for path in run.checkpoints_dir.iterdir()) == [
         "day-00.json",
@@ -147,6 +150,21 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
         ]
 
 
+async def test_a_run_records_its_process_until_sigterm_to_it_interrupts_the_run(tmp_path):
+    """What stopping a run relies on: while the run runs, its manifest names the process, and
+    SIGTERM to that process ends the run interrupted, with the id cleared."""
+    living = asyncio.create_task(simulation.run(smoke(), tmp_path, dry_run=True))
+    manifest = tmp_path / "smoke-dry-run" / "manifest.json"
+    async with asyncio.timeout(60):
+        while not manifest.exists() or json.loads(manifest.read_text())["pid"] is None:
+            await asyncio.sleep(0.01)
+    assert json.loads(manifest.read_text())["pid"] == os.getpid()
+    os.kill(os.getpid(), signal.SIGTERM)
+    root, status = await living
+    ended = RunDirectory.open(root).read_manifest()
+    assert (status, ended.status, ended.pid) == ("interrupted", "interrupted", None)
+
+
 async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path, monkeypatch):
     class SecondDies(Runtime):
         built = 0
@@ -168,7 +186,7 @@ async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path,
             await simulation.run(smoke(), tmp_path, dry_run=True)
     assert isinstance(raised.value.__cause__, OSError)
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
-    assert run.read_manifest().status == "failed"
+    assert (run.read_manifest().status, run.read_manifest().pid) == ("failed", None)
     assert "the run failed" in run.run_log_path.read_text()
 
 

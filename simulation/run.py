@@ -26,7 +26,8 @@ A run ends completed after its last day; interrupted after `until_day` short of 
 SIGINT or SIGTERM; failed on any error, which is raised. A resident's runtime that ends fails
 the run, since the checkpoint would wait for it forever; so does a model that stops answering,
 since the runtime gives up after a run of lapses, each of which `run.log` records as a warning.
-Every way out writes the status.
+While the run runs, its manifest records the id of its process, the one a stop signals; every
+way out writes the status and clears the id.
 """
 
 from __future__ import annotations
@@ -130,9 +131,11 @@ async def run(
         try:
             for sign in (signal.SIGINT, signal.SIGTERM):
                 loop.add_signal_handler(sign, task.cancel)
+            running = directory.update_manifest(
+                status=RunStatus.RUNNING, ended_at=None, pid=os.getpid()
+            )
             if resume:
-                directory.update_manifest(status=RunStatus.RUNNING, ended_at=None)
-                created = directory.read_manifest().code_revision
+                created = running.code_revision
                 log.info("resuming %s from day %d at %s", directory.root, day, revision)
                 if created != revision:
                     log.warning("the run was created at %s", created)
@@ -167,7 +170,7 @@ async def run(
         finally:
             for sign in (signal.SIGINT, signal.SIGTERM):
                 loop.remove_signal_handler(sign)
-            directory.update_manifest(status=status, ended_at=datetime.now(UTC))
+            directory.update_manifest(status=status, ended_at=datetime.now(UTC), pid=None)
             log.info("%s %s", directory.root, status.value)
     return directory.root, status
 

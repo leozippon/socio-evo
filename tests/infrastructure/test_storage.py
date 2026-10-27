@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -56,6 +57,14 @@ def test_manifest_updates_are_validated_and_persisted(tmp_path):
             run.update_manifest(**bad)
     manifest = RunDirectory.open(run.root).read_manifest()
     assert (manifest.status, manifest.ended_at) == (RunStatus.COMPLETED, ended)
+
+
+def test_a_manifest_written_before_the_process_was_recorded_still_reads(tmp_path):
+    run = _create(tmp_path)
+    old = json.loads(run.manifest_path.read_text())
+    del old["pid"]
+    run.manifest_path.write_text(json.dumps(old))
+    assert run.read_manifest().pid is None
 
 
 def test_latest_checkpoint_is_the_highest_day(tmp_path):

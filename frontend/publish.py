@@ -258,7 +258,7 @@ def publish_run(
     """Write every file of the run `name` at `root` into `site`; returns its entry in the index
     and the run as the comparison of groups reads it."""
     run = RunDirectory(root)
-    manifest = run.read_manifest().model_dump(mode="json")
+    manifest = run.read_manifest().model_dump(mode="json", exclude={"pid"})  # pid: local only
     base = f"data/runs/{name}"
     previous = site.root / base / "run.json"
     final = -1

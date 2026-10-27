@@ -1,7 +1,7 @@
 """The on-disk layout of a run; the single source of every path inside it.
 
 runs/<experiment>/
-├── manifest.json               status, code revision, start and end
+├── manifest.json               status, code revision, start and end, the running process
 ├── config.yaml                 the frozen configuration
 ├── world.jsonl                 the world log
 ├── checkpoints/day-NN.json     the world at each daily checkpoint; day-00 before day 1
@@ -31,12 +31,14 @@ class RunStatus(StrEnum):
 
 class Manifest(StrictModel):
     """Run bookkeeping; times are wall-clock UTC; `code_revision` is the code the run was
-    created with."""
+    created with; `pid` is the id of the process running the run, None when none is (and in a
+    manifest written before it was recorded)."""
 
     status: RunStatus
     code_revision: str
     started_at: AwareDatetime
     ended_at: AwareDatetime | None = None
+    pid: int | None = None
 
 
 def day_tag(day: int) -> str:

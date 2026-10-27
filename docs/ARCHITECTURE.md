@@ -180,7 +180,7 @@ The judge reads free text only and answers one factual question per reply at tem
 
 ```text
 runs/<experiment>/
-├── manifest.json               status (running, completed, interrupted, failed), code revision, times
+├── manifest.json               status (running, completed, interrupted, failed), code revision, times, the id of the running process
 ├── config.yaml                 frozen configuration
 ├── world.jsonl                 the world log
 ├── checkpoints/day-NN.json     world state at each daily checkpoint; day-00 is the state before day 1
