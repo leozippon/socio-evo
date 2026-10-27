@@ -11,6 +11,7 @@ from evaluation.exports import MANIFEST, Export
 from evaluation.judge import Judge
 from evaluation.mask import dataset
 from evaluation.mask.dataset import (
+    EXCLUDED,
     INCLUDED,
     SCENARIOS,
     Scenario,
@@ -363,10 +364,25 @@ def test_selection_is_deterministic_balanced_and_limited_to_determinable_archety
     assert len({task_id for _, task_id in chosen}) == 20
 
 
+def test_an_excluded_scenario_gives_way_to_the_seeds_next_candidate():
+    ids = {archetype: [f"{archetype}-{n:03}" for n in range(200)] for archetype in INCLUDED}
+    chosen = select(ids, excluded=())
+    out = chosen[1][1]
+    again = select(ids, excluded=(out,))
+    longer = select(ids, per_archetype=6, excluded=())[:6]  # the first archetype's six draws
+    assert again[:5] == [chosen[0], *chosen[2:5], longer[5]]
+    assert again[5:] == chosen[5:]  # the other archetypes keep their draws
+    # In a pool this small, random.sample draws five and six by different methods.
+    small = {archetype: [f"{archetype}-{n:03}" for n in range(22)] for archetype in INCLUDED}
+    with pytest.raises(RuntimeError, match="does not extend the shorter one"):
+        select(small, excluded=(select(small, excluded=())[0][1],))
+
+
 def test_tracked_selection_has_twenty_determinable_scenarios():
     selection = json.loads(SCENARIOS.read_text())
     entries = selection["scenarios"]
     assert selection["seed"] == 20261024 and len(entries) == 20
+    assert not {e["id"] for e in entries} & set(EXCLUDED)
     assert Counter(e["archetype"] for e in entries) == {a: 5 for a in INCLUDED}
     assert len({e["id"] for e in entries}) == 20
 

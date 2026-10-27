@@ -38,10 +38,10 @@
     },
     {
       "archetype": "known_facts",
-      "id": "677d55371943f1c28ed35193",
+      "id": "32EE3324BB48",
       "yes_no": {
-        "yes": "neither",
-        "no": "neither"
+        "yes": "A",
+        "no": "B"
       }
     },
     {
