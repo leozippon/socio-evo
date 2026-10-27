@@ -394,6 +394,23 @@ async def test_a_stream_that_breaks_off_is_retried_from_its_start(monkeypatch):
     assert response.text == "Writing now." and response.reasoning == "I should write it."
 
 
+@pytest.mark.parametrize("done", [True, False], ids=["closed", "cut"])
+async def test_a_stream_that_ends_without_a_finish_reason_is_a_failed_call(monkeypatch, done):
+    async def wait(seconds: float) -> None:
+        pass
+
+    monkeypatch.setattr(asyncio, "sleep", wait)
+    received: list[httpx2.Request] = []
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        received.append(request)
+        return _sse(STREAM[:4], done=done)  # text, then the end, with no finish reason
+
+    with pytest.raises(LLMCallError, match="without a finish reason"):
+        await _client(monkeypatch, handler).stream(_request())
+    assert len(received) == 3
+
+
 @pytest.mark.parametrize("streamed", [False, True], ids=["complete", "stream"])
 async def test_a_reply_the_server_aborted_is_retried_like_a_dropped_connection(
     monkeypatch, streamed

@@ -42,12 +42,12 @@ class OpenAICompatibleClient:
     A call the server rejects as rate-limited (HTTP 429), or that times out, is retried with
     exponential backoff as the configuration says, waiting outside the concurrency limit;
     when the retries run out, LLMBusyError says that no reply came in time. A call that
-    cannot connect, meets a server error or gets a reply the server aborted (finish reason
-    `abort`, as vLLM sends when it shuts down mid-request) is retried TRANSPORT_RETRIES times,
-    after the same waits, and then raises LLMCallError, as does at once any other failure (the
-    credentials or the request refused). A reply cut off by the token limit is returned marked
-    `truncated`, and an empty one as empty, for the caller to judge, each with the token limit
-    it was given.
+    cannot connect, meets a server error or gets a reply that did not finish (finish reason
+    `abort`, as vLLM sends when it shuts down mid-request, or none at all, as when a stream is
+    closed early) is retried TRANSPORT_RETRIES times, after the same waits, and then raises
+    LLMCallError, as does at once any other failure (the credentials or the request refused).
+    A reply cut off by the token limit is returned marked `truncated`, and an empty one as
+    empty, for the caller to judge, each with the token limit it was given.
     Separated reasoning text (`reasoning_content`, or `reasoning`) is captured when the server
     sends it, and so are cached prompt tokens and reasoning tokens when it reports them.
 
@@ -78,7 +78,7 @@ class OpenAICompatibleClient:
         async def call() -> tuple[Any, float]:
             started = time.perf_counter()
             completion = await self._client.chat.completions.create(**arguments)
-            _refuse_aborted(completion.choices[0].finish_reason)
+            _refuse_unfinished(completion.choices[0].finish_reason)
             return completion, time.perf_counter() - started
 
         completion, latency = await self._retrying(call)
@@ -117,7 +117,7 @@ class OpenAICompatibleClient:
                     received[0].add(chunk)
             finally:
                 await stream.close()
-            _refuse_aborted(received[0].finish_reason)
+            _refuse_unfinished(received[0].finish_reason)
 
         started = time.perf_counter()
         finished = await _unless_aborted(self._retrying(call), abort)
@@ -184,12 +184,14 @@ class OpenAICompatibleClient:
 
 
 class _ServerAborted(Exception):
-    """A reply the server aborted instead of finishing it."""
+    """A reply the server aborted, or ended without finishing it."""
 
 
-def _refuse_aborted(finish_reason: str | None) -> None:
+def _refuse_unfinished(finish_reason: str | None) -> None:
     if finish_reason == "abort":
         raise _ServerAborted("the server aborted the reply")
+    if finish_reason is None:
+        raise _ServerAborted("the reply ended without a finish reason")
 
 
 class _Received:
