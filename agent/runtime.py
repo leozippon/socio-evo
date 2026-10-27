@@ -16,17 +16,19 @@ traced as aborted and dropped, the percept is told with the situation, and the r
 again. A tool that is running is never aborted; once an interrupting percept is pending, the
 calls still to carry out in the same reply are answered as not carried out and the percept is
 told at once. A reply cut off at the token limit is asked for again once at a lower reasoning
-effort; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
-enters the session together with the results of its calls, so that the session never holds a
-call without its result. A model error is retried; when the attempts run out the request is a
-lapse, logged as a warning, and the runtime waits for the next percept. A run of lapses ends
-the loop with an error, so that a model that has gone away stops the run instead of letting
-the town live on without its residents; any other error ends it at once, as cancellation does.
+effort, or, at the lowest, with twice the token limit; cut off again, it is kept as it stands,
+without its tool calls, with a note. A reply enters the session together with the results of
+its calls, so that the session never holds a call without its result. A model error is
+retried; when the attempts run out the request is a lapse, logged as a warning, and the
+runtime waits for the next percept. A run of lapses ends the loop with an error, so that a
+model that has gone away stops the run instead of letting the town live on without its
+residents; any other error ends it at once, as cancellation does.
 """
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 import json
 import logging
 from collections.abc import Iterator, Sequence
@@ -56,8 +58,8 @@ log = logging.getLogger(__name__)
 
 Effort = Literal["low", "medium", "xhigh"]
 """The reasoning efforts the served model takes."""
-LOWER: dict[Effort, Effort] = {"xhigh": "medium", "medium": "low", "low": "low"}
-"""The effort a cut-off reply is asked for again at."""
+LOWER: dict[Effort, Effort] = {"xhigh": "medium", "medium": "low"}
+"""The effort a cut-off reply is asked for again at; at the lowest, see `again`."""
 
 COMPACT = ToolSpec(
     name="compact",
@@ -180,21 +182,26 @@ class Runtime:
     async def _reply(self) -> LLMResponse | None:
         """The reply to the context as it stands, after any interruptions and at most one
         cut-off; None after a lapse."""
-        effort = self._config.reasoning_effort
+        effort, limit = self._config.reasoning_effort, self._config.reply_max_tokens
+        attempts = itertools.count(1)
         retried = False
         while True:
             messages, ids = self._context()
-            request = self._request(messages, effort, self._config.reply_max_tokens)
-            reply = await self._ask(request, ids, purpose="step", abort=self._port.interrupt)
+            request = self._request(messages, effort, limit)
+            reply = await self._ask(
+                request, ids, attempts, purpose="step", abort=self._port.interrupt
+            )
             if reply is None:
                 return None
             if reply.aborted:
                 percepts = self._port.pending()
                 self._trace.write("interruption", events=[p.event_id for p in percepts])
                 self._tell(percepts)
+                attempts = itertools.count(1)
                 continue
             if reply.truncated and not retried:
-                retried, effort = True, LOWER[effort]
+                retried = True
+                effort, limit = again(effort, limit)
                 continue
             return reply
 
@@ -202,17 +209,16 @@ class Runtime:
         """Replace the context by a summary and the last exchanges; on failure, traced as a
         lapse, the context stays as it is."""
         messages, ids = self._context()
-        effort = self._config.reasoning_effort
+        effort, limit = self._config.reasoning_effort, self._config.summary_max_tokens
+        attempts = itertools.count(1)
         for _ in range(2):
-            request = self._request(
-                (*messages, INSTRUCTION), effort, self._config.summary_max_tokens, tools=False
-            )
-            reply = await self._ask(request, ids, purpose="compaction")
+            request = self._request((*messages, INSTRUCTION), effort, limit, tools=False)
+            reply = await self._ask(request, ids, attempts, purpose="compaction")
             if reply is None:
                 return
             if not reply.truncated:
                 break
-            effort = LOWER[effort]
+            effort, limit = again(effort, limit)
         summary = reply.text.strip()
         if reply.truncated or not summary:
             failure = "cut off twice" if reply.truncated else "empty summary"
@@ -228,18 +234,20 @@ class Runtime:
         self,
         request: LLMRequest,
         ids: list[int],
+        attempts: Iterator[int],
         *,
         purpose: str,
         abort: asyncio.Event | None = None,
     ) -> LLMResponse | None:
         """The model's reply to `request`, traced with it, or None, after a lapse, when every
-        attempt failed. The resident is busy throughout, the waits between attempts included,
-        so that the world's clock does not idle while the model is down."""
+        attempt failed; `attempts` numbers the requests made for one reply in the trace. The
+        resident is busy throughout, the waits between attempts included, so that the world's
+        clock does not idle while the model is down."""
         errors = []
         with self._busy():
-            for attempt in range(1, self._config.model_attempts + 1):
-                if attempt > 1:
-                    await asyncio.sleep(self._config.retry_wait * 2 ** (attempt - 2))
+            for tried in range(self._config.model_attempts):
+                if tried:
+                    await asyncio.sleep(self._config.retry_wait * 2 ** (tried - 1))
                 self._trace.write(
                     "request",
                     purpose=purpose,
@@ -247,7 +255,7 @@ class Runtime:
                     tools=[tool["function"]["name"] for tool in request.tools],
                     reasoning_effort=request.reasoning_effort,
                     max_tokens=request.sampling.max_tokens,
-                    attempt=attempt,
+                    attempt=next(attempts),
                 )
                 try:
                     reply = await self._client.stream(request, abort=abort)
@@ -382,6 +390,12 @@ class Runtime:
             yield
         finally:
             self._port.set_busy(False)
+
+
+def again(effort: Effort, limit: int) -> tuple[Effort, int]:
+    """The reasoning effort and token limit a reply cut off at `effort` and `limit` is asked for
+    again with: a lower effort where there is one, else twice the limit."""
+    return (LOWER[effort], limit) if effort in LOWER else (effort, 2 * limit)
 
 
 def shorten(text: str, limit: int) -> str:

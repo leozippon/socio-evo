@@ -235,6 +235,25 @@ async def test_a_cut_off_reply_is_asked_again_once_at_lower_effort(directory):
     assert len(cut) == 3
 
 
+async def test_at_the_lowest_effort_a_cut_off_reply_is_asked_again_with_twice_the_tokens(
+    directory,
+):
+    model = ScriptedModel(
+        LLMBusyError("no reply in time"), reply("I was going to", cut_off=True), reply("Done.")
+    )
+    port = FakePort()
+    port.deliver("Your alarm rings.")
+    config = RuntimeConfig(reasoning_effort="low", reply_max_tokens=1000, retry_wait=0.001)
+    async with running(Runtime(directory, port, model, config)):
+        await settle(port)
+
+    asked = [(r.reasoning_effort, r.sampling.max_tokens) for r in model.requests]
+    assert asked == [("low", 1000), ("low", 1000), ("low", 2000)]
+    requests = [r for r in trace(directory) if r["kind"] == "request"]
+    assert [(r["attempt"], r["max_tokens"]) for r in requests] == [(1, 1000), (2, 1000), (3, 2000)]
+    assert context(directory)[-1] == Message(role="assistant", content="Done.")
+
+
 async def test_model_errors_end_in_a_lapse_and_the_runtime_lives_on(directory):
     model = ScriptedModel(
         LLMBusyError("no reply in time"),

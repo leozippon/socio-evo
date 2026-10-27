@@ -5,7 +5,8 @@ Kinds and their fields:
 - `prompt`: `text`, the system prompt, whenever it is assembled anew;
 - `request`: `purpose` (`step` or `compaction`), `messages` (the session ids of the messages
   after the system prompt; a compaction request adds its instruction after them), `tools` (the
-  names declared), `reasoning_effort`, `max_tokens`, `attempt`;
+  names declared), `reasoning_effort`, `max_tokens`, `attempt` (the request's number among those
+  made for one reply, retries after a model error or a cut-off counting on);
 - `reply`: the response in full (text, reasoning, tool calls, finish reason, whether cut off
   or aborted, usage, latency), with `purpose`;
 - `tool_call`: `id`, `name`, `arguments`, and `unreadable` when the arguments could not be read;
