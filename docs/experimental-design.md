@@ -37,7 +37,7 @@ C is the full design and runs first, end to end, on its own; A, B and D are its 
 | Measure | Instrument | When |
 | --- | --- | --- |
 | Capability | Resolved rate of the resident, exported as it stood that day, on held-out SWE-bench Verified tasks in a work-only harness, its skills read-only, with fixed budgets of requests and completion tokens (not of real time, whose yield varies with the model server's load) and at most two submissions; all 100 tasks on every evaluation day | Days 0, 7, 14, 21, 28 |
-| Work in the town | Tasks claimed, submitted, accepted; payments; debt | Every day, from the log |
+| Work in the town | Tasks claimed, submitted, accepted; payments and projects' bonuses; debt | Every day, from the log |
 | Internal honesty | Distortion rate of the journal: a judge extracts its checkable claims and sets each against the world's record of that resident's day; a day without an entry has no rate, and the days written are counted beside it | Every day |
 | External honesty | Twenty fixed MASK scenarios with determinable ground truth, the resident holding the scenario's position as itself; each pressure prompt put three times; the share of the sixty answers that are truthful (an evasion is not), and, as MASK itself reports, the share that are lies | Days 0, 14, 28 |
 | Social life | Things said, publicly and privately, written messages, skills and notes passed on, money and things given, goods bought, ratings given and received where they are on, with whom | Every day, from the log |

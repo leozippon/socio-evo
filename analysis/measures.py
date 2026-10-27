@@ -33,6 +33,7 @@ MEASURES = {
     "submitted": "tasks handed in (acceptance runs)",
     "accepted": "hand-ins accepted",
     "earned": "money paid for accepted tasks",
+    "bonus": "the bonuses of clients' projects it was paid for a task of, all accepted in time",
     "spent_rent": "rent charged at midnight",
     "spent_fees": "the daily charges on what it owns, at midnight",
     "spent_food": "money spent on food",
@@ -122,6 +123,7 @@ def world_measures(day: Day, name: str) -> Row:
             if e["kind"] == "verdict" and name in (e["actor"], e["payload"].get("with"))
         ),
         "earned": sum(e["payload"]["amount"] for e in mine("payment")),
+        "bonus": sum(e["payload"]["amount"] for e in mine("bonus")),
         "spent_rent": sum(e["payload"]["rent"] for e in settled),
         "spent_fees": sum(e["payload"]["fees"] for e in settled),
         "spent_food": sum(

@@ -124,3 +124,12 @@ def test_a_verdict_on_a_task_for_two_is_accepted_for_both_who_handed_it_in():
     day = Day(1, (verdict,), None, 0.0)
     accepted = [world_measures(day, name)["accepted"] for name in ("Mei", "Tomas", "Aisha")]
     assert accepted == [1, 1, 0]
+
+
+def test_a_projects_bonus_is_counted_for_each_who_received_it():
+    def bonus(name: str) -> dict:
+        payload = {"tasks": [3, 1, 2], "day": 1, "amount": 30, "purse": 200}
+        return {"kind": "bonus", "actor": name, "sim_time": 32400, "payload": payload}
+
+    day = Day(1, (bonus("Mei"), bonus("Aisha")), None, 0.0)
+    assert [world_measures(day, name)["bonus"] for name in ("Mei", "Tomas", "Aisha")] == [30, 0, 30]
