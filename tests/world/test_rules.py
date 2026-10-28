@@ -1,10 +1,9 @@
 """The rules as one resident is told them: the money it starts with, its rent and what is for
-sale, where people live and meet and which rooms are free, the people it knows already in the
-town mode and nowhere else, and the seed of its notes on people."""
+sale, where people live and meet and which rooms are free, and the people it knows already."""
 
 from __future__ import annotations
 
-from tests.world.conftest import B_EXCHANGE, RESIDENTS, town_config
+from tests.world.conftest import RESIDENTS, town_config
 from world.rules import TOPICS, Rules
 
 TIES = (
@@ -58,12 +57,12 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
         "stock of how you feel at any time with how_am_i, and at the clinic an examination tells "
         "you exactly how you stand and treatment restores your health."
     )
-    assert "phone" not in Rules(town_config("isolated")).sections("Mei")["shopping"]
     moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha"]}
     assert "(3 rooms, 2 free, little comfort)" in rules.help("Mei", "places", moved)
     assert "Aisha (the flat by the college gates)" in rules.help("Mei", "people", moved)
-    assert "rate" not in Rules(town_config(ratings=False)).sections("Mei")["sleep"]
-    assert "rate each person you spoke with" in sections["sleep"]
+    assert sections["sleep"].endswith(
+        "In bed, before you fall asleep, you can look back over your day and see to your files."
+    )
     people = sections["people"]
     assert "Tomas (the flat by the college gates) and Aisha (the shared house on Mill Street)" in (
         people
@@ -82,24 +81,11 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert "\n\nHealth. Through the day you get hungry" in text
 
 
-def test_ties_are_told_in_the_town_mode_and_seed_the_notes_on_people():
+def test_ties_are_told_in_the_rules_to_those_who_have_them():
     town = Rules(town_config(residents=TIES))
     assert town.sections("Mei")["people"].endswith(
         "Some of them you know already. Aisha has the room next to yours and shares the "
         "kitchen. With share_file you can pass a copy of any of your files but your journal to "
         "people you are talking with; they receive its text."
     )
-    assert town.people_notes("Mei") == (
-        "# People\n\nAisha has the room next to yours and shares the kitchen.\n"
-    )
     assert "know already" not in town.sections("Tomas")["people"]
-    assert town.people_notes("Tomas") == "# People\n"
-    for config in (
-        town_config("isolated", residents=TIES),
-        town_config("isolated", exchange=B_EXCHANGE, residents=TIES),
-    ):
-        alone = Rules(config)
-        assert "Aisha" not in alone.sections("Mei")["people"]
-        assert alone.people_notes("Mei") == "# People\n"
-    paired = Rules(town_config("isolated", exchange=B_EXCHANGE, residents=TIES))
-    assert "each with 3 turns to speak" in paired.sections("Mei")["day"]

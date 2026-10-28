@@ -10,15 +10,15 @@ $20) and writes a skill. At 09:20 Tomas, who claimed task 2, asks her privately 
 tests; she answers privately and passes him her skill. He tells Aisha something privately in her
 presence and gives Mei $5; Mei leaves for home at 09:20, waits there until 20:00 (her body speaks
 twice, at 12:00 and 20:00, and she waits on), goes to bed with her journal, reads the record of
-her day, rates Tomas 4, writes her notes on people and fails to read a file she does not have.
-Tomas works until 18:00, goes home, goes to bed at 20:00 with a journal that claims he fixed task
-2, and rates Mei 5. Aisha never goes to bed and is put to sleep at 02:00. Nobody eats, so
+her day, writes her notes on people and fails to read a file she does not have. Tomas works until
+18:00, goes home and goes to bed at 20:00 with a journal that claims he fixed task 2. Aisha never
+goes to bed and is put to sleep at 02:00. Nobody eats, so
 everyone is hungry by the first midnight and starving by the second, which costs health; rent is
 $20 a day on Mill Street and $30 at the flat.
 
-Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00), goes back to bed
-with a second journal entry and reads Tomas's rating; Tomas's claim runs out at midnight; Tomas
-and Aisha are put to sleep at 02:00.
+Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00) and goes back to
+bed with a second journal entry; Tomas's claim runs out at midnight; Tomas and Aisha are put to
+sleep at 02:00.
 """
 
 from __future__ import annotations
@@ -98,7 +98,6 @@ MEI_STEPS = (
     step(tool_call("sleep", until="07:00", journal=MEI_JOURNAL)),
     step(
         tool_call("review_day"),
-        tool_call("rate", resident="Tomas", score=4, reason="He asked good questions."),
         tool_call("write_file", path="memory/people.md", content="Tomas asks good questions.\n"),
         tool_call("read_file", path="memory/missing.md"),
     ),
@@ -130,13 +129,11 @@ async def live(root: Path) -> None:
             Resident(name=r.name, background=Path(f"experiments/residents/{r.name.lower()}.md"))
             for r in town.residents
         ),
-        skills_writable=True,
         days=2,
     )
     run = RunDirectory.create(root.parent, root.name, config=config, code_revision="test")
-    mei = AgentDirectory.create(
-        run.agent_dir("Mei"), background="You are Mei.", town="", work="Notes on my work.\n"
-    )
+    mei = AgentDirectory.create(run.agent_dir("Mei"), background="You are Mei.")
+    (mei.root / "memory" / "work.md").write_text("Notes on my work.\n", encoding="utf-8")
     for name in ("Tomas", "Aisha"):
         for folder in ("memory", "skills"):
             (run.agent_dir(name) / folder).mkdir(parents=True)
@@ -176,7 +173,6 @@ async def live(root: Path) -> None:
         await settled("19:30")
         await settled("20:00")
         await tomas("sleep", until="07:30", journal=TOMAS_JOURNAL)
-        await tomas("rate", resident="Mei", score=5, reason="She shared her testing skill.")
         harness.rest("Tomas", "Aisha")
         await settled("02:30", day=2)
         await settled("07:00", day=2)

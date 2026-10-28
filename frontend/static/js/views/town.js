@@ -255,9 +255,9 @@ export function mountTown(root, ctx) {
       if (Object.values(bodyAt(lane, m.time)).some((need) => need.lowest)) ailing.add(lane.name);
     }
     const notices = m.dayEntries
-      .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "death", "exchange_pairing", "meeting", "board_posted"].includes(e.kind))
+      .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "death", "board_posted"].includes(e.kind))
       .slice(-3)
-      .map((e) => ({ icon: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "alert" : e.kind === "board_posted" ? "board" : "pair", tone: ["forced_sleep", "expiry", "death"].includes(e.kind) ? "critical" : null, text: textFor(e, m.reader) }));
+      .map((e) => ({ icon: e.kind === "board_posted" ? "board" : "alert", tone: e.kind === "board_posted" ? null : "critical", text: textFor(e, m.reader) }));
     const key = `${m.time}|${m.dayEntries.length}|${m.reader}`;
     return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, ailing, notices, effects, key };
   }
@@ -287,8 +287,6 @@ export function mountTown(root, ctx) {
         return { icon: "home", text: `moves into ${data.places[mk.to] ?? mk.to}` };
       case "skill_shared":
         return { icon: "spark", text: `passes ${mk.to} a copy of ${mk.file}` };
-      case "rating":
-        return { icon: "star", text: `rates ${mk.rated} ${mk.score} of 5` };
       case "journal":
         return { icon: "book", text: "to bed, journal written" };
       case "forced_sleep":

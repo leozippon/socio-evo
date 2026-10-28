@@ -1,7 +1,7 @@
 // Every run and how far it has come: status, the day reached, who lives there, a few headline
 // numbers, and the ways in: the town to watch, the people to read, the dashboard for the
 // numbers. Runs of one directory stand together, each set leading to the comparison of its
-// groups. Runs the publisher could not read are named with the reason.
+// runs. Runs the publisher could not read are named with the reason.
 
 import { dateOf } from "../clock.js";
 import { readProgress } from "../data.js";
@@ -9,7 +9,6 @@ import { emptyState, fill, fmt, h, money } from "../dom.js";
 import { icon } from "../icons.js";
 import { Cast } from "../identity.js";
 import { href } from "../router.js";
-import { groupLabel } from "../world.js";
 
 export function progress(entry) {
   const settled = (entry.settled_day / entry.days) * 100;
@@ -29,8 +28,6 @@ export const statusPill = (entry) =>
     h("span", { class: "dot" }),
     entry.status === "running" ? "Live" : entry.status[0].toUpperCase() + entry.status.slice(1),
   );
-
-export const groupPill = (group) => (group ? h("span", { class: "pill group", title: groupLabel(group) }, `Group ${group}`) : null);
 
 const figure = (label, value, title = null) => h("div", { class: "run-stat", title }, h("span", { class: "run-stat-value" }, value), h("span", { class: "run-stat-label" }, label));
 
@@ -63,7 +60,6 @@ export function progressTable(doc, status = "running") {
     ["Said", "Things said", (d) => d.speeches],
     ["Gifts", "Times money or a thing was given", (d) => d.gifts],
     ["Files", "Copies of files passed on: skills, notes, drafts", (d) => d.skills_shared],
-    ["Ratings", "Ratings given", (d) => d.ratings],
     ["Journals", "Residents gone to bed with the day's journal", (d) => d.journals],
     ["Forced asleep", "Residents fallen asleep at the forced hour, without going to bed", (d) => d.forced_sleeps],
     ["Purses low · median · high", "The residents' purses at the end of the day, or at its latest moment for the day in progress", (d) => [d.purse.min, d.purse.median, d.purse.max].map((n) => money(n, currency)).join(" · ")],
@@ -117,7 +113,7 @@ function runRow(entry, index) {
       "div",
       { class: "run-id" },
       h("a", { class: "run-name", href: href(open) }, entry.name),
-      h("div", { class: "row" }, statusPill(entry), groupPill(entry.group), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null),
+      h("div", { class: "row" }, statusPill(entry), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null),
       h("span", { class: "muted small-text" }, `${reached(entry)} · ${pace}`),
       h("div", { class: "run-cast", "aria-label": "The residents" }, entry.residents.map((name) => h("a", { class: "chip", href: href({ view: "person", run: entry.name, agent: name, query: {} }), title: name }, cast.badge(name, 18), h("span", { class: "sr" }, name)))),
     ),
@@ -154,7 +150,7 @@ export function mountLanding(root, ctx) {
           "header",
           { class: "spread experiment-head" },
           h("div", {}, h("h2", {}, title), h("p", { class: "note" }, `${fmt.plural(runs.length, "run")}${runs[0] ? ` · ${fmt.plural(runs[0].residents.length, "resident")} · ${fmt.plural(runs[0].days, "day")} planned · ${runs[0].model}` : ""}`)),
-          compare ? h("a", { class: "btn small", href: href({ view: "compare", comparison: compare }) }, "Compare the groups", icon("chevron", 15)) : null,
+          compare ? h("a", { class: "btn small", href: href({ view: "compare", comparison: compare }) }, "Compare the runs", icon("chevron", 15)) : null,
         ),
         h("ul", { class: "runs card" }, runs.map((entry) => runRow(entry, index))),
       );

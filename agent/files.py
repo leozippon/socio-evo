@@ -30,7 +30,7 @@ SPECS = (
         parameters={
             "type": "object",
             "properties": {
-                "path": _path("The file, such as memory/people.md."),
+                "path": _path("The file, such as memory/notes.md."),
                 "offset": {"type": "integer", "description": "The first line to read, from 1."},
                 "limit": {"type": "integer", "description": "How many lines to read."},
             },
@@ -61,7 +61,7 @@ SPECS = (
         parameters={
             "type": "object",
             "properties": {
-                "path": _path("The file, such as memory/work.md."),
+                "path": _path("The file, such as memory/notes.md."),
                 "old_text": {"type": "string", "description": "The passage as it stands."},
                 "new_text": {"type": "string", "description": "What replaces it."},
             },

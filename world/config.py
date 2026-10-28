@@ -1,12 +1,7 @@
 """The configuration of a town: its places, its residents, its work, the goods for sale, its
-social life, its clock and the few fixed hours of its day.
-
-The four groups of the design differ only here: `social.mode` is `isolated` in A and B (each
-resident lives in a town of its own and has a board of its own) and `town` in C and D (one town,
-one shared board, part of which may be posted for two, `work.for_two`); `social.exchange` is set
-in B alone (the evening pairing); and `social.skills_shareable` is false in D. Every check that
-the world relies on is made when the configuration is validated, so that a bad configuration
-stops a run before anything is written.
+social life, its clock and the few fixed hours of its day. Every check that the world relies on
+is made when the configuration is validated, so that a bad configuration stops a run before
+anything is written.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -243,10 +238,9 @@ class Route(StrictModel):
 
 class Resident(StrictModel):
     """A resident: its name, its home, the money it starts with, the people it knows already
-    (`ties`: for each, a sentence or two in the second person on how, which the rules tell it in
-    the town mode and which seed its notes on people; every tie is mutual), and its agent
-    directory, which the composition layer sets; without one it is `agents/<name>` in the run
-    directory."""
+    (`ties`: for each, a sentence or two in the second person on how, which the rules tell it;
+    every tie is mutual), and its agent directory, which the composition layer sets; without one
+    it is `agents/<name>` in the run directory."""
 
     name: Name
     home: Id
@@ -259,13 +253,7 @@ class Work(StrictModel):
     """The work at the workplace. `split` names the task pool, of which the board posts
     `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
     pool; a claim made on a calendar day runs out at the midnight that ends the day
-    `claim_expiry_days` days later. A share `for_two` of the rotation, spread evenly through
-    it, is posted for two, held by two residents together, each of whom is paid
-    `payment_for_two` when it is accepted. Up to `projects_a_day` sets of `project_size` tasks
-    of one repository on each day's board are a client's project: once all of them are paid by
-    the midnight a claim made the day it was posted runs out at, each resident paid for one of
-    them is paid `project_bonus` besides. A shared board alone can have tasks for two and
-    projects, and runs frozen before they existed name none of their fields and had none."""
+    `claim_expiry_days` days later."""
 
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
@@ -274,39 +262,10 @@ class Work(StrictModel):
     claim_expiry_days: int = Field(ge=0)
     shell_timeout_s: int = Field(ge=1)
     acceptance_timeout_s: int = Field(ge=1)
-    for_two: float = Field(0, ge=0, le=1, description="the share of the rotation posted for two")
-    payment_for_two: int | None = Field(None, ge=1, description="paid to each of the two")
-    projects_a_day: int = Field(0, ge=0, description="clients' projects formed on a day's board")
-    project_size: int | None = Field(None, ge=2, description="the tasks of a project")
-    project_bonus: int | None = Field(None, ge=1, description="to each paid for its tasks")
-
-    @model_validator(mode="after")
-    def _paid(self) -> Work:
-        if self.for_two and self.payment_for_two is None:
-            raise ValueError("tasks posted for two need payment_for_two")
-        if self.projects_a_day and (self.project_size is None or self.project_bonus is None):
-            raise ValueError("clients' projects need project_size and project_bonus")
-        return self
-
-
-class Exchange(StrictModel):
-    """Group B's evening: at `at` every resident is paired by lot (whoever is asleep is woken
-    for it), walks to `place` and talks about its work, `messages` messages each."""
-
-    at: Hour
-    place: Id
-    messages: int = Field(ge=1)
 
 
 class Social(StrictModel):
-    """`ratings` turns the bedtime ratings on: whether a resident may rate those it spoke with
-    and reads the ratings it received; off, nothing a resident reads mentions them."""
-
-    mode: Literal["isolated", "town"]
     silence_minutes: int = Field(ge=1, description="a conversation ends after this much silence")
-    skills_shareable: bool
-    ratings: bool
-    exchange: Exchange | None = None
 
 
 class ClockSettings(StrictModel):
@@ -353,7 +312,7 @@ class DayHours(StrictModel):
 class TownConfig(StrictModel):
     currency: str = Field(min_length=1, description="the symbol money is written with")
     start_date: date = Field(description="the date of day 1")
-    seed: int = Field(description="seeds the board's rotation and the evening pairing of group B")
+    seed: int = Field(description="seeds the board's rotation")
     places: tuple[Place, ...] = Field(min_length=1)
     travel_minutes: int = Field(ge=1, description="walking time between places without a route")
     routes: tuple[Route, ...] = ()
@@ -423,20 +382,6 @@ class TownConfig(StrictModel):
             )
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
-        if self.work.for_two and self.social.mode != "town":
-            raise ValueError("tasks for two need a shared board: work.for_two is 0 in isolation")
-        if self.work.projects_a_day and self.social.mode != "town":
-            raise ValueError(
-                "clients' projects need a shared board: work.projects_a_day is 0 in isolation"
-            )
-        exchange = self.social.exchange
-        if exchange is not None:
-            if self.social.mode != "isolated":
-                raise ValueError("the evening exchange belongs to the isolated mode")
-            if places.get(exchange.place, None) is None or places[exchange.place].kind != "social":
-                raise ValueError(f"the exchange place {exchange.place} is not a social place")
-            if day.of_day(exchange.at) >= day.of_day(day.forced_sleep):
-                raise ValueError("the evening exchange must come before the forced sleep")
         return self
 
     @property
@@ -448,13 +393,6 @@ class TownConfig(StrictModel):
 
     def good(self, good_id: str) -> Good:
         return next(good for good in self.goods if good.id == good_id)
-
-    def for_sale(self) -> list[Good]:
-        """The goods a resident of this town can buy: all of them, except that in the isolated
-        mode, where nobody else is in the town to write to, nothing for messaging is sold."""
-        return [
-            good for good in self.goods if good.effect != "messaging" or self.social.mode == "town"
-        ]
 
     def travel(self, a: str, b: str) -> int:
         """Walking minutes from place `a` to place `b`; zero from a place to itself."""

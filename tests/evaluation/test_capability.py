@@ -51,9 +51,7 @@ def exported(tmp_path: Path) -> Path:
     """A resident of an export, with a skill, and with a session and a trace that must not carry
     over; the export's manifest names the model `resident`, its context window of 262,144
     tokens and the run's `RUNTIME`, and gives Mei and Tomas commits of their own."""
-    root = AgentDirectory.create(
-        tmp_path / "export" / "Mei", background="You are Mei.", town="The workshop opens at 09:00."
-    ).root
+    root = AgentDirectory.create(tmp_path / "export" / "Mei", background="You are Mei.").root
     manifest = Export(
         run="/runs/c",
         day=7,

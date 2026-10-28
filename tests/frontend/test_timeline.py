@@ -92,13 +92,12 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("submission", at("10:00")),
         ("payment", at("10:00")),
         ("journal", at("22:00")),
-        ("rating", at("22:00")),
         ("settlement", DAY),
     ]
     mei = {m["kind"]: m for m in lane(data, "Mei")["markers"]}
     assert mei["speech"]["text"] == "Nearly done." and mei["speech"]["to"] == ["Tomas"]
     assert mei["submission"]["resolved"] is True and mei["payment"]["amount"] == 20
-    assert mei["journal"]["text"] == "I fixed task 1." and mei["rating"]["score"] == 4
+    assert mei["journal"]["text"] == "I fixed task 1."
     tomas = {m["kind"]: m for m in lane(data, "Tomas")["markers"]}
     assert tomas["submission"]["resolved"] is False
     assert tomas["submission"]["status"] == "failed_tests"
@@ -280,111 +279,3 @@ def test_a_skill_shared_in_an_older_log_is_told_as_its_file(tmp_path):
     run.world_log_path.write_text("\n".join(lines) + "\n")
     shared = [m for m in lane(timeline(run.root), "Mei")["markers"] if m["kind"] == "skill_shared"]
     assert [m["file"] for m in shared] == ["skills/triage.md", "memory/notes.md"]
-
-
-def test_a_task_for_two_names_the_partner_and_its_verdict_reaches_both_hand_ins(tmp_path):
-    run, _ = new_town(tmp_path)
-
-    def two(partner: str | None = None, **payload: Any) -> dict[str, Any]:
-        return payload | ({"with": partner} if partner else {})
-
-    claim = {"for_two": True}
-    checked = {
-        "status": "resolved",
-        "resolved": True,
-        "fail_to_pass": [3, 3],
-        "pass_to_pass": [9, 9],
-    }
-    lines = [
-        entry(1, "claim", at("09:00"), "Mei", **two(task=2, instance_id="org__repo-2", **claim)),
-        entry(
-            2,
-            "claim",
-            at("09:10"),
-            "Tomas",
-            **two("Mei", task=2, instance_id="org__repo-2", **claim),
-        ),
-        entry(3, "submission", at("10:00"), "Mei", **two("Tomas", task=2, patch="p")),
-        entry(4, "submission", at("10:05"), "Tomas", **two("Mei", task=2, patch="p")),
-        entry(5, "verdict", at("10:06"), "Tomas", **two("Mei", task=2, held=True, **checked)),
-        entry(6, "payment", at("10:06"), "Mei", **two("Tomas", task=2, amount=30, purse=150)),
-        entry(7, "payment", at("10:06"), "Tomas", **two("Mei", task=2, amount=30, purse=210)),
-        entry(8, "claim", at("11:00"), "Aisha", **two(task=3, instance_id="org__repo-3", **claim)),
-        entry(
-            9,
-            "claim",
-            at("11:10"),
-            "Mei",
-            **two("Aisha", task=3, instance_id="org__repo-3", **claim),
-        ),
-        entry(10, "abandon", at("11:20"), "Mei", **two("Aisha", task=3)),
-    ]
-    run.world_log_path.write_text("\n".join(lines) + "\n")
-    data = timeline(run.root)
-
-    def marks(name: str) -> list[dict[str, Any]]:
-        return [
-            {k: v for k, v in m.items() if k not in ("seq", "t", "place")}
-            for m in lane(data, name)["markers"]
-        ]
-
-    assert marks("Mei")[:3] == [
-        {"kind": "claim", "task": 2, "instance_id": "org__repo-2", "for_two": True, "with": None},
-        {"kind": "submission", "task": 2, "with": "Tomas", **checked},  # the verdict was Tomas's
-        {"kind": "payment", "task": 2, "amount": 30, "with": "Tomas"},
-    ]
-    assert marks("Tomas")[1] == {"kind": "submission", "task": 2, "with": "Mei", **checked}
-    assert lane(data, "Mei")["partners"] == [
-        [at("09:00"), None],
-        [at("09:10"), "Tomas"],
-        [at("11:10"), "Aisha"],
-    ]
-    assert lane(data, "Aisha")["partners"] == [
-        [at("11:00"), None],
-        [at("11:10"), "Mei"],
-        [at("11:20"), None],  # Mei gave it up
-    ]
-
-
-def test_a_clients_project_is_kept_as_posted_and_its_bonus_marked_with_the_purse(tmp_path):
-    run, _ = new_town(tmp_path)  # claims, and so projects, run out at the first midnight
-    tasks = [3, 1, 2]
-    bonus = {"tasks": tasks, "day": 1, "amount": 10}
-    lines = [
-        entry(
-            1, "board_posted", at("08:00"), tasks=3, projects=[{"repo": "org/big", "tasks": tasks}]
-        ),
-        entry(2, "payment", at("10:00"), "Mei", task=3, amount=20, purse=140),
-        entry(3, "payment", at("11:00"), "Tomas", task=1, amount=20, purse=200),
-        entry(4, "payment", at("12:00"), "Aisha", task=2, amount=20, purse=50),
-        entry(5, "bonus", at("12:00"), "Aisha", **bonus, purse=60),
-        entry(6, "bonus", at("12:00"), "Mei", **bonus, purse=150),
-        entry(7, "bonus", at("12:00"), "Tomas", **bonus, purse=210),
-    ]
-    run.world_log_path.write_text("\n".join(lines) + "\n")
-    data = timeline(run.root)
-    assert data["projects"] == [
-        {
-            "day": 1,
-            "repo": "org/big",
-            "tasks": tasks,
-            "posted": at("08:00"),
-            "ends": DAY,
-            "done": at("12:00"),
-        }
-    ]
-    mei = lane(data, "Mei")
-    assert {k: v for k, v in mei["markers"][-1].items() if k not in ("seq", "place")} == {
-        "t": at("12:00"),
-        "kind": "bonus",
-        "tasks": tasks,
-        "amount": 10,
-    }
-    assert mei["purse"][-2:] == [[at("10:00"), 140], [at("12:00"), 150]]
-
-    run.world_log_path.write_text(
-        "\n".join([entry(1, "board_posted", at("08:00"), tasks=3, projects=[]), *lines[1:]]) + "\n"
-    )
-    module._caches.clear()
-    with pytest.raises(ValueError, match="the bonus of a project never posted"):
-        timeline(run.root)

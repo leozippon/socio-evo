@@ -396,7 +396,7 @@ def agent_directory(tmp_path):
     agent = tmp_path / "mei"
     (agent / "memory" / "journal").mkdir(parents=True)
     (agent / "background.md").write_text("I am Mei, 34. I write routing software.\n")
-    (agent / "memory" / "town.md").write_text("The workshop opens at nine.\n")
+    (agent / "memory" / "notes.md").write_text("The workshop opens at nine.\n")
     (agent / "memory" / "journal" / "day-01.md").write_text("I fixed task 3.\n")
     (agent / "memory" / "people.md").write_text("\n")
     return agent
@@ -409,7 +409,7 @@ def test_persona_is_the_residents_own_account_and_the_memory_files(tmp_path):
         "# About me, in my own words\n\nI am Mei, 34. I write routing software.\n\n"
         "# What you know\n\n"
         "## memory/journal/day-01.md\n\nI fixed task 3.\n\n"
-        "## memory/town.md\n\nThe workshop opens at nine."
+        "## memory/notes.md\n\nThe workshop opens at nine."
     )
     assert offences(system_prompt(persona, "You keep the shop.")) == []
     with pytest.raises(FileNotFoundError):

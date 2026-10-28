@@ -55,23 +55,12 @@ COUNTED = (
     "gifts",
     "purchases",
     "skills_shared",
-    "ratings",
     "journals",
     "forced_sleeps",
     "deaths",
 )
 """The counts of `frontend.progress` summed into a run's headline."""
-GRAPH = (
-    "minutes",
-    "said",
-    "said_private",
-    "messages",
-    "gifts",
-    "money",
-    "skills",
-    "ratings",
-    "ratings_sum",
-)
+GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "skills")
 """What one resident had to do with another on a day, by field."""
 JOURNAL_FIELDS = (
     "resident",
@@ -91,7 +80,7 @@ DECLARED = {
     "mask": ("mask", "mask", "share of truthful answers under pressure"),
     "distortion": ("journals", "distortion", "distortion rate of the journal"),
 }
-"""The declared outcomes compared across groups: the table of `evaluation.json` and the column
+"""The declared outcomes compared across runs: the table of `evaluation.json` and the column
 each is read from, and what it is called."""
 EXPLORED = (
     "claimed",
@@ -103,26 +92,14 @@ EXPLORED = (
     "said_private",
     "skills_given",
     "money_given",
-    "ratings_given",
-    "rating_received_mean",
     "journal",
     "forced_sleep",
     "health",
 )
-"""The town measures compared across groups, as exploration."""
+"""The town measures compared across runs, as exploration."""
 
 
 # The world ------------------------------------------------------------------------------------
-
-
-def group_of(config: ExperimentConfig) -> str | None:
-    """The group of the design the run belongs to, A to D, or None for none of them."""
-    social = config.town.social
-    if social.mode == "isolated" and config.skills_writable:
-        return "A" if social.exchange is None else "B"
-    if social.mode == "town":
-        return "C" if config.skills_writable else "D"
-    return None
 
 
 def layout(places: Sequence[Any]) -> dict[str, tuple[float, float]]:
@@ -147,7 +124,6 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
     rules = Rules(town)
     return {
         "name": config.name,
-        "group": group_of(config),
         "days": config.days,
         "currency": town.currency,
         "start_date": town.start_date.isoformat(),
@@ -176,7 +152,6 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         "goods": [good.model_dump(mode="json") for good in town.goods],
         "needs": town.needs.model_dump(mode="json"),
         "social": town.social.model_dump(mode="json"),
-        "skills_writable": config.skills_writable,
         "day": town.day.model_dump(mode="json"),
         "model": {"backend": config.llm.backend, "name": config.llm.model},
     }
@@ -223,8 +198,7 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     spent in conversations `target` took part in (from the timeline's conversations, each on
     the day it began); the rest counts the day's entries: things `source` said that `target`
     heard (`said`, of which `said_private` to it by name), messages written to it, gifts
-    (`gifts` times, `money` the money among them), copies of files passed on, and ratings given with
-    the sum of their scores."""
+    (`gifts` times, `money` the money among them) and copies of files passed on."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 
@@ -258,9 +232,6 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
                 add(day, actor, payload["to"], "money", payload.get("amount", 0))  # 0: a thing
             elif kind == "skill_shared":
                 add(day, actor, payload["to"], "skills", 1)
-            elif kind == "rating":
-                add(day, actor, payload["rated"], "ratings", 1)
-                add(day, actor, payload["rated"], "ratings_sum", payload["score"])
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
@@ -523,48 +494,34 @@ def trace_days(
     return {day: doc for day, doc in found.items() if doc["records"]}
 
 
-# Groups compared ------------------------------------------------------------------------------
+# Runs compared --------------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class Analysed:
-    """A published run as the comparison of groups reads it."""
+    """A published run as the comparison of runs reads it."""
 
     name: str
-    group: str | None
     measures: Sequence[Row]
     evaluation: Mapping[str, Any]
 
 
 def compared(name: str, runs: Sequence[Analysed]) -> dict[str, Any]:
-    """The groups among `runs` compared, one run standing for each group, on the declared
-    outcomes and the explored town measures that any of them has values for
-    (`analysis.compare`), each from day 0 (day 1 for a town measure) to the latest day with a
-    value; a run that is none of the groups, or a second run of a group, is named in
-    `problems` and left out."""
-    groups: dict[str, Analysed] = {}
-    problems = []
-    for run in runs:
-        if run.group is None:
-            problems.append(f"{run.name} is none of the groups A to D")
-        elif run.group in groups:
-            problems.append(
-                f"{run.name} is a second run of group {run.group}, like {groups[run.group].name}"
-            )
-        else:
-            groups[run.group] = run
+    """The `runs` compared, by name, on the declared outcomes and the explored town measures
+    that any of them has values for (`analysis.compare`), each from day 0 (day 1 for a town
+    measure) to the latest day with a value."""
+    by_name = {run.name: run for run in runs}
     measures = []
     for measure, (table, column, label) in DECLARED.items():
-        values = {group: _values(run.evaluation[table], column) for group, run in groups.items()}
+        values = {found: _values(run.evaluation[table], column) for found, run in by_name.items()}
         measures.append(_compared(measure, label, True, values, 0))
     for measure in EXPLORED:
-        values = {group: _values(run.measures, measure) for group, run in groups.items()}
+        values = {found: _values(run.measures, measure) for found, run in by_name.items()}
         measures.append(_compared(measure, MEASURES[measure], False, values, 1))
     return {
         "name": name,
-        "groups": {group: run.name for group, run in sorted(groups.items())},
+        "runs": sorted(by_name),
         "measures": [found for found in measures if found is not None],
-        "problems": problems,
     }
 
 

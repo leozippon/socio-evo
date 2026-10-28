@@ -78,7 +78,7 @@ export async function readIndex() {
 /** The comparison of the index whose runs include `run`, if any. */
 export const comparisonOf = (index, run) => index?.comparisons.find((found) => found.runs.includes(run)) ?? null;
 
-/** A comparison of groups; a 404 means the index has moved on, so it is read again once. */
+/** A comparison of runs; a 404 means the index has moved on, so it is read again once. */
 export async function readComparison(name) {
   const attempt = async () => {
     const index = await readIndex();

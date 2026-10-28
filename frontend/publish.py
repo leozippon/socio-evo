@@ -256,7 +256,7 @@ def publish_run(
     site: Site, name: str, root: Path, config: ExperimentConfig, results_root: Path
 ) -> tuple[dict[str, Any], bundle.Analysed]:
     """Write every file of the run `name` at `root` into `site`; returns its entry in the index
-    and the run as the comparison of groups reads it."""
+    and the run as the comparison of runs reads it."""
     run = RunDirectory(root)
     manifest = run.read_manifest().model_dump(mode="json", exclude={"pid"})  # pid: local only
     base = f"data/runs/{name}"
@@ -354,7 +354,6 @@ def publish_run(
     }
     document = {
         "name": name,
-        "group": world["group"],
         **manifest,
         "days": config.days,
         "settled_day": settled_day,
@@ -368,7 +367,6 @@ def publish_run(
     digest = put("run.json", lambda: document)
     entry = {
         "name": name,
-        "group": world["group"],
         "url": ref(f"runs/{name}/run.json", digest, False),
         "status": manifest["status"],
         "started_at": manifest["started_at"],
@@ -381,7 +379,7 @@ def publish_run(
         "dry_run": world["model"]["backend"] == "scripted",
         "headline": bundle.headline(headline),
     }
-    return entry, bundle.Analysed(name, world["group"], rows, evaluation)
+    return entry, bundle.Analysed(name, rows, evaluation)
 
 
 UNREADABLE_CONFIG = (

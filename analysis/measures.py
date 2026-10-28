@@ -11,8 +11,8 @@ there; DIR is given explicitly (by convention `results/<run>/measures`), since a
 nothing under the run. The days are those the world log has closed (`evaluation.records`), so a
 day lost to an interruption counts once, as it was lived again.
 
-A measure is None where it has no value: the mean of no ratings, or a cached share that no
-reply reported.
+A measure is None where it has no value: a cached share that no reply reported, or the purse
+and the health of a day without a midnight statement.
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ MEASURES = {
     "submitted": "tasks handed in (acceptance runs)",
     "accepted": "hand-ins accepted",
     "earned": "money paid for accepted tasks",
-    "bonus": "the bonuses of clients' projects it was paid for a task of, all accepted in time",
     "spent_rent": "rent charged at midnight",
     "spent_fees": "the daily charges on what it owns, at midnight",
     "spent_food": "money spent on food",
@@ -56,10 +55,6 @@ MEASURES = {
     "skills_received": "copies of others' files received, skills or notes",
     "money_given": "money handed to others",
     "money_received": "money received from others",
-    "ratings_given": "ratings it gave that night",
-    "rating_given_mean": "the mean score of those ratings",
-    "ratings_received": "ratings others gave it that night",
-    "rating_received_mean": "the mean score of those ratings",
     "journal": "1 if it wrote a journal entry, going to bed",
     "forced_sleep": "1 if it was put to sleep at the forced hour",
     "requests": "model requests, retries and compactions included",
@@ -71,7 +66,7 @@ MEASURES = {
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
-LEVELS = frozenset({"health", "purse", "rating_given_mean", "rating_received_mean", "cached_share"})
+LEVELS = frozenset({"health", "purse", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
 
 Row = dict[str, Any]
@@ -113,17 +108,11 @@ def world_measures(day: Day, name: str) -> Row:
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
     sent, got = mine("message"), to_me("message", "to")
-    given, received = mine("rating"), to_me("rating", "rated")
     return {
         "claimed": len(mine("claim")),
         "submitted": len(mine("submission")),
-        "accepted": sum(  # a task for two's verdict is on both of its hand-ins
-            e["payload"]["resolved"]
-            for e in day.entries
-            if e["kind"] == "verdict" and name in (e["actor"], e["payload"].get("with"))
-        ),
+        "accepted": sum(e["payload"]["resolved"] for e in mine("verdict")),
         "earned": sum(e["payload"]["amount"] for e in mine("payment")),
-        "bonus": sum(e["payload"]["amount"] for e in mine("bonus")),
         "spent_rent": sum(e["payload"]["rent"] for e in settled),
         "spent_fees": sum(e["payload"]["fees"] for e in settled),
         "spent_food": sum(
@@ -155,10 +144,6 @@ def world_measures(day: Day, name: str) -> Row:
         "skills_received": len(to_me("skill_shared", "to")),
         "money_given": sum(e["payload"].get("amount", 0) for e in mine("gift")),  # 0: a thing
         "money_received": sum(e["payload"].get("amount", 0) for e in to_me("gift", "to")),
-        "ratings_given": len(given),
-        "rating_given_mean": _mean(e["payload"]["score"] for e in given),
-        "ratings_received": len(received),
-        "rating_received_mean": _mean(e["payload"]["score"] for e in received),
         "journal": int(any(e["payload"]["journal"] for e in mine("sleep"))),
         "forced_sleep": len(mine("forced_sleep")),
     }

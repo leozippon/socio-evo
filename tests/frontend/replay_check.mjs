@@ -38,7 +38,7 @@ const median = (values) => {
 };
 
 // Every lived day: the purses at its end and the markers it counted.
-const COUNTED = { claim: "claims", submission: "submissions", payment: "payments", speech: "speeches", gift: "gifts", skill_shared: "skills_shared", rating: "ratings", journal: "journals", forced_sleep: "forced_sleeps" };
+const COUNTED = { claim: "claims", submission: "submissions", payment: "payments", speech: "speeches", gift: "gifts", skill_shared: "skills_shared", journal: "journals", forced_sleep: "forced_sleeps" };
 for (const [i, row] of progress.daily.entries()) {
   const day = timeline.days[i];
   check(`day ${row.day} of the timeline`, day.day, row.day);

@@ -8,7 +8,7 @@ import { Cast } from "./identity.js";
 import { href, navigate, parse, remember, sibling } from "./router.js";
 import { mountCompare } from "./views/compare.js";
 import { mountEvaluation } from "./views/evaluation.js";
-import { groupPill, mountLanding, statusPill } from "./views/landing.js";
+import { mountLanding, statusPill } from "./views/landing.js";
 import { mountLanes } from "./views/lanes.js";
 import { mountOverview } from "./views/overview.js";
 import { mountPerson } from "./views/person.js";
@@ -64,7 +64,7 @@ function header() {
   if (r.run && entry) {
     const tab = (view, label, glyph) => h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));
     fill($("tabs"), tab("town", "Town", "map"), tab("person", "People", "people"), tab("lanes", "Timeline", "lines"), tab("overview", "Dashboard", "chart"), tab("evaluation", "Evaluation", "scale"));
-    fill($("status"), statusPill(entry), groupPill(entry.group), h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null);
+    fill($("status"), statusPill(entry), h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null);
   } else {
     fill($("tabs"));
     fill($("status"), app.index ? h("span", {}, fmt.plural(app.index.runs.length, "run")) : null);

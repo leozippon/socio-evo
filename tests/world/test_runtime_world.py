@@ -26,7 +26,7 @@ async def resting(port) -> None:
 async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
     config = town_config()
     background = "You are Mei, thirty-four, a programmer who came to town last spring."
-    directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background, town="")
+    directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background)
     make_agent_dirs(tmp_path, config)
     world = World(config, tmp_path, FakeBackend(), clock=ManualClock())
     model = ScriptedModel(
@@ -78,7 +78,7 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
 def _mei(tmp_path) -> tuple[AgentDirectory, World, Town]:
     config = town_config()
     background = "You are Mei, thirty-four, a programmer who came to town last spring."
-    directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background, town="")
+    directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background)
     make_agent_dirs(tmp_path, config)
     world = World(config, tmp_path, FakeBackend(), clock=ManualClock())
     return directory, world, Town(world, FakeBackend())

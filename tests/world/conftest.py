@@ -1,8 +1,7 @@
 """A small town for the world's tests: three residents (backgrounds from the old town), two homes,
 a shop and a clinic with a good of every kind and effect, the real town's needs, the fake work
 backend of `world.testing`, and a harness that runs the world on a manual clock and stands in for
-the residents' runtimes. The test town has ratings on unless a test turns them off, so that the
-rating tests keep their setting; the real town has them off."""
+the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -84,11 +83,7 @@ NEEDS = {
 
 
 def town_config(
-    mode: str = "town",
     *,
-    exchange: dict[str, Any] | None = None,
-    shareable: bool = True,
-    ratings: bool = True,
     residents: tuple[dict[str, Any], ...] = RESIDENTS,
     goods: tuple[dict[str, Any], ...] = GOODS,
     **work: Any,
@@ -136,13 +131,7 @@ def town_config(
             | work,
             "goods": list(goods),
             "needs": NEEDS,
-            "social": {
-                "mode": mode,
-                "silence_minutes": 10,
-                "skills_shareable": shareable,
-                "ratings": ratings,
-                "exchange": exchange,
-            },
+            "social": {"silence_minutes": 10},
             "clock": {
                 "speed_idle": 100,
                 "speed_busy_one": 20,
@@ -158,9 +147,6 @@ def town_config(
             },
         }
     )
-
-
-B_EXCHANGE = {"at": "19:00", "place": "cafe", "messages": 3}
 
 
 def backend_of(repos: dict[str, int]) -> FakeBackend:

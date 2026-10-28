@@ -12,7 +12,7 @@ import json
 import pytest
 
 from agent.port import ToolResult
-from tests.world.conftest import RESIDENTS, at, awake_at, stocked, town_config
+from tests.world.conftest import at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
 from world.events import ENDED, EXHAUSTED, Dead, Idle, Work
@@ -454,7 +454,7 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     await town.until("00:30", day=2)
     assert town.take("Mei") == [] and world.ports["Mei"].situation() == ENDED
     assert (await town.call("Mei", "look_around")) == ToolResult(ENDED, ends_turn=True)
-    assert world.company(tomas) == [] and world.homes(tomas)["mill-street-house"] == ["Aisha"]
+    assert world.company(tomas) == [] and world.homes()["mill-street-house"] == ["Aisha"]
     assert (await town.call("Tomas", "say", text="Mei?", to=["Mei"])).text == "Mei is not here."
     tomas.living.things["phone"] = mei.living.things["phone"] = 1
     assert (await town.call("Tomas", "message", to="Mei", text="Mei?")).text == "Mei is dead."
@@ -502,16 +502,3 @@ async def test_a_resident_that_dies_while_its_checks_run_is_not_paid(make_town, 
     kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
     assert "verdict" in kinds and "payment" not in kinds
     assert kinds.index("death") < kinds.index("verdict")  # the check ended after her life
-
-
-async def test_in_a_town_of_ones_own_nobody_is_told_of_a_death(make_town):
-    town = make_town(town_config("isolated", residents=RESIDENTS[:2]))
-    await awake_at(town)
-    world = town.world
-    world.residents["Mei"].living.health = 1
-    world.residents["Mei"].living.satiety = 0
-    town.rest()
-    await town.until("00:00", day=2)
-    death = [e for e in world.log.entries() if e["kind"] == "death"][0]
-    assert death["audience"] == [] and not world.residents["Mei"].alive
-    assert [p.kind for p in town.heard["Tomas"] if p.kind == "death"] == []

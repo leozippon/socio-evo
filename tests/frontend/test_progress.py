@@ -23,7 +23,6 @@ NOTHING = {
     "gifts": 0,
     "purchases": 0,
     "skills_shared": 0,
-    "ratings": 0,
     "journals": 0,
     "forced_sleeps": 0,
     "deaths": 0,
@@ -94,15 +93,14 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
                 at("22:00"),
                 "Mei",
                 1012.0,
-                {"journal": "j", "day": 1, "wake": 0, "ratings_read": []},
+                {"journal": "j", "day": 1, "wake": 0},
             ),
-            ("rating", at("22:00"), "Mei", 1013.0, {"rated": "Tomas", "score": 4, "reason": "r"}),
             (  # to bed without a journal entry: no journal counted
                 "sleep",
                 at("22:10"),
                 "Tomas",
                 1013.5,
-                {"journal": None, "day": 1, "wake": 0, "ratings_read": []},
+                {"journal": None, "day": 1, "wake": 0},
             ),
             ("settlement", DAY, "Mei", 1014.0, settlement(105)),
             ("settlement", DAY, "Tomas", 1015.0, settlement(155)),
@@ -127,7 +125,7 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
             | NOTHING
             | {"claims": 2, "submissions": 2, "accepted": 1, "rejected": 1}
             | {"payments": 1, "paid": 20, "speeches": 2, "gifts": 1, "skills_shared": 1}
-            | {"ratings": 1, "journals": 1, "forced_sleeps": 1}
+            | {"journals": 1, "forced_sleeps": 1}
             | {"purse": {"min": 0, "median": 105, "max": 155}},
             {"day": 2, "date": "2001-01-02", "in_progress": True, "hours": None}
             | NOTHING

@@ -1,7 +1,6 @@
-# The town every group lives in: eight residents in five homes, the Workshop, Café Linde, the
-# Anchor, the river walk, the Store and the clinic, for 28 days. Not a complete configuration by
-# itself: each file of groups/ overlays it with the group's name and social rules (see
-# experiments/config.py for how an overlay merges).
+# The town: eight residents in five homes, the Workshop, Café Linde, the Anchor, the river walk,
+# the Store and the clinic, for 28 days. A run's configuration under runs/ overlays it with the
+# run's name and what differs (see experiments/config.py for how an overlay merges).
 #
 # The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
 # 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk,
@@ -13,9 +12,8 @@
 # the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 60: one keeps
 # the cheapest life but not the dearest, which takes a task and a half, and a day without work
 # costs something without threatening, since starting purses of 180-300 are three to six days of
-# the resident's own life. The pay is set against the town's pot, not a resident's: in C and D
-# the eight share one board of 56 tasks a day, and what the pot comes to depends on the model's
-# pace. The local model clears about a quarter of the board on the pool of 1,912 tasks (12 and 13
+# the resident's own life. The pay is set against the town's pot, not a resident's: the eight
+# share one board of 56 tasks a day, and what the pot comes to depends on the model's pace. The local model clears about a quarter of the board on the pool of 1,912 tasks (12 and 13
 # of 56 accepted on the fourth start's first two days), though it cleared about half on the 350
 # Verified tasks alone (29 on the third start's first day), so the town earns about 840 a day
 # against 451-515 of rent and food, 1.6 to 1.9 times its costs: an average share, a task and
@@ -26,35 +24,8 @@
 # the whole board, had purses on course for 1,000 by day 7 at 30, where money stops mattering.
 # The things to save for are priced against an average earner's savings: the bicycle (360), more
 # than any purse at the start, takes about nine days, the phone (240, then 5 a day) about six,
-# the coat (150) four, the book (40) one.
-# In A and B each resident has the whole board to itself, so there its pace is its only limit.
-#
-# Tasks for two. In C and D a quarter of the board, every fourth task of the rotation (14 of 56),
-# is posted for two, a client's requirement: two people hold the task and share one workspace,
-# and it goes to the client's checks only once both have handed it in. It pays 80 to each, 160
-# for the task against 120 for two tasks done alone: two who could each clear a task of their own
-# in some time earn more together only while the shared task takes them less than four thirds of
-# that time, which a second pair of eyes may buy and the talk it needs may cost; at 60 each they
-# would have to be quicker together outright. A full board pays 14 tasks for two at 160 and 42 at
-# 60, 4,760 against 3,360 without them. A task held stays on the board, beside the next day's 56
-# and not counted among them, until its claim runs out, so that one left alone with a task for two
-# can still be joined. In A and B, where each resident has a board of its own and nobody to share
-# a task with, nothing is posted for two and nothing held is carried over.
-#
-# Clients' projects. In C and D each day's board also makes two clients' projects of three tasks
-# of one repository: of the repositories with three tasks not for two on it, the two whose third
-# comes round first in the rotation (on the training pool two every day of the four weeks, most
-# of them in django and sympy, whose tasks are the most numerous). Each task is claimed and paid
-# as any other, but the client wants a different person on each: one paid for a task of a
-# project cannot claim another of it. A project's unpaid tasks stay on the board, beside the next
-# day's 56, until it is done or lapses. Once all three are accepted by the second midnight after
-# the board went up, the midnight a claim of that day runs out at, each of the three paid for
-# them receives a bonus of 60, so a project pays 180 in bonuses and the two add at most 360 to a
-# day's pot: 5,120 for a cleared board against 4,760, and at most about two fifths more than the
-# 840 the town earns at the local model's pace; a project whose last task is not accepted in
-# time adds nothing. To each of the three the bonus doubles the pay of its own task, but only if
-# the other two are accepted in time, which none of them decides alone. A and B, where each
-# resident has a board of its own, have no projects.
+# the coat (150) four, the book (40) one. A task held stays on the board, beside the next day's
+# 56 and not counted among them, until its claim runs out.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
@@ -109,8 +80,8 @@ runtime:
   compaction_threshold: 225000
   kept_tokens: 20000 # kept whole after a compaction: the most recent exchanges within this many tokens, at least one
 
+name: town
 days: 28
-skills_writable: true
 
 residents:
   - {name: Mei, background: experiments/residents/mei.md}
@@ -161,9 +132,8 @@ town:
     - {between: [river-walk, clinic], minutes: 10}
     - {between: [store, clinic], minutes: 10}
   # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
-  # whose savings are nearly gone. Ties
-  # are the people each resident knows already, told to it in the town mode (groups C and D) and seeding its notes on people; each is
-  # written to its owner and must be mutual.
+  # whose savings are nearly gone. Ties are the people each resident knows already, told to it in
+  # the rules; each is written to its owner and must be mutual.
   residents:
     - name: Mei
       home: mill-street-house
@@ -255,15 +225,10 @@ town:
           talking.
   work:
     split: train
-    board_size: 56 # new a day, shared by the eight in C and D, each its own in A and B; in turn
+    board_size: 56 # new a day, shared by the eight; in turn through the pool
     payment: 60
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
-    for_two: 0.25 # every fourth task of the rotation is posted for two (none in A and B)
-    payment_for_two: 80 # to each of the two, as calibrated above
-    projects_a_day: 2 # clients' projects formed on each day's board (none in A and B)
-    project_size: 3 # tasks of one repository in a project
-    project_bonus: 60 # to each paid for one of a project's tasks once all are, as calibrated above
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The goods for sale (see world/config.py for the kinds and effects). Every good does something
@@ -315,8 +280,6 @@ town:
         - {floor: 0, name: gravely ill, seen: looking gravely ill}
   social:
     silence_minutes: 15 # counted while nobody in the conversation is still thinking
-    skills_shareable: true
-    ratings: false # the bedtime ratings are off for now; true turns them back on
   clock:
     speed_idle: 240 # a sleeping town passes 8 hours in 2 minutes
     speed_busy_one: 32 # one thinker's minute is half a simulated hour

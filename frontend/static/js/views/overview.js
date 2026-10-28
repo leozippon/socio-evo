@@ -11,9 +11,8 @@ import { goodName, inventory, itemCard, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { bodyAt, markersBetween, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { groupLabel } from "../world.js";
 import { evaluationFigures } from "./evaluation.js";
-import { groupPill, progress, progressTable, reached } from "./landing.js";
+import { progress, progressTable, reached } from "./landing.js";
 
 const SECTIONS = [
   ["work", "Work"],
@@ -145,9 +144,9 @@ export function mountOverview(root, ctx) {
         "div",
         { class: "run-title" },
         h("p", { class: "eyebrow" }, "Run"),
-        h("h1", {}, doc.name, groupPill(doc.group)),
+        h("h1", {}, doc.name),
         h("p", { class: "lede" }, `${fmt.plural(world.residents.length, "resident")} live in a small town for ${fmt.plural(world.days, "day")}: they take programming tasks from the board at ${workplace?.name ?? "the workplace"}, pay rent and buy food and things, meet and talk, and rewrite their own notes and skills as they go. Nobody tells them how to behave. This page has the numbers; the town shows it happening, and each resident's story holds its journal, files and raw trace.`),
-        h("p", { class: "run-meta" }, `${groupLabel(doc.group) ?? "No group of the design"} · ${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
+        h("p", { class: "run-meta" }, `${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
         h(
           "p",
           { class: "run-meta quiet-meta" },
@@ -181,9 +180,7 @@ export function mountOverview(root, ctx) {
         h(
           "ul",
           { class: "cond-list" },
-          h("li", {}, h("span", { class: "muted" }, "social life"), " ", h("b", {}, world.social.mode === "town" ? "one town, free conversation" : world.social.exchange ? `each alone; paired at ${world.social.exchange.at} at ${world.places.find((p) => p.id === world.social.exchange.place)?.name ?? world.social.exchange.place}` : "each in a town of its own")),
-          h("li", {}, h("span", { class: "muted" }, "skills"), " ", h("b", {}, world.skills_writable ? (world.social.skills_shareable ? "written and passed on" : "written, not passed on") : "neither written nor passed on")),
-          h("li", {}, h("span", { class: "muted" }, "bedtime ratings"), " ", h("b", {}, world.social.ratings ? "on" : "off")),
+          h("li", {}, h("span", { class: "muted" }, "a conversation ends"), " ", h("b", {}, `after ${world.social.silence_minutes} minutes of silence`)),
           h("li", {}, h("span", { class: "muted" }, "a task pays"), " ", h("b", {}, fmt.money(world.work.payment))),
           h("li", {}, h("span", { class: "muted" }, "rent for a room"), " ", h("b", {}, `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day`)),
           h("li", {}, h("span", { class: "muted" }, "for sale"), " ", h("b", {}, `${fmt.plural(world.goods.length, "good")}, ${range(world.goods.map((g) => g.price))}`)),
@@ -209,7 +206,7 @@ export function mountOverview(root, ctx) {
       stat("Median purse", last ? fmt.money(last.purse.median) : "–", last ? `${fmt.money(last.purse.min)} to ${fmt.money(last.purse.max)}` : null),
       stat("Goods bought", fmt.int(total("purchases")), `for ${fmt.money(spent)} in all`),
       stat("Things said", fmt.int(total("speeches")), `${fmt.int(total("gifts"))} gifts · ${fmt.int(total("skills_shared"))} files passed on`),
-      stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps${world.social.ratings ? ` · ${fmt.int(total("ratings"))} ratings given` : ""}`),
+      stat("Journals written", fmt.int(total("journals")), `at bedtime · ${fmt.int(total("forced_sleeps"))} forced sleeps`),
       total("deaths") ? stat("Deaths", fmt.int(total("deaths")), "health run out at midnight", "critical") : null,
     );
   }
@@ -253,7 +250,6 @@ export function mountOverview(root, ctx) {
     const options = {
       said: ["Things said", (e) => e.said || null, fmt.int, null],
       minutes: ["Minutes together", (e) => (e.minutes ? Math.round(e.minutes) : null), fmt.int, null],
-      ...(world.social.ratings ? { ratings: ["Mean rating", (e) => (e.ratings ? e.ratings_sum / e.ratings : null), (v) => fmt.num(v, 1), [1, 5]] } : {}),
       money: ["Money handed over", (e) => e.money || null, fmt.int, null],
       skills: ["Files passed on", (e) => e.skills || null, fmt.int, null],
     };
@@ -261,7 +257,7 @@ export function mountOverview(root, ctx) {
     const totals = new Map();
     for (const edge of measures.graph) {
       const key = `${edge.source}>${edge.target}`;
-      const t = totals.get(key) ?? { minutes: 0, said: 0, said_private: 0, gifts: 0, money: 0, skills: 0, ratings: 0, ratings_sum: 0 };
+      const t = totals.get(key) ?? { minutes: 0, said: 0, said_private: 0, gifts: 0, money: 0, skills: 0 };
       for (const field of Object.keys(t)) t[field] += edge[field];
       totals.set(key, t);
     }
@@ -284,7 +280,7 @@ export function mountOverview(root, ctx) {
               if (from === to) return h("td", { class: "self" }, "");
               const edge = totals.get(`${from}>${to}`);
               const v = edge ? value(edge) : null;
-              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately)${world.social.ratings ? `, ${edge.ratings} ratings${edge.ratings ? ` averaging ${fmt.num(edge.ratings_sum / edge.ratings, 2)}` : ""}` : ""}, ${fmt.money(edge.money)} handed over, ${edge.skills} skills passed on` : `${from} had nothing to do with ${to}`;
+              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately), ${fmt.money(edge.money)} handed over, ${edge.skills} skills passed on` : `${from} had nothing to do with ${to}`;
               return h("td", { class: v === null ? "none" : `heat-${level(v)}`, title: detail }, v === null ? "" : format(v));
             }),
           ),
@@ -312,7 +308,7 @@ export function mountOverview(root, ctx) {
     return h(
       "figure",
       { class: "figure wide" },
-      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, `Rows act on columns${world.social.ratings ? "; ratings are anonymous to the rated" : ""}. Darker cells hold more.`)),
+      h("figcaption", {}, h("div", { class: "figure-head" }, h("h3", {}, "Who to whom, over the run so far"), seg), h("p", { class: "note" }, "Rows act on columns. Darker cells hold more.")),
       h("div", { class: "table-wrap" }, table),
     );
   }
@@ -451,17 +447,12 @@ export function mountOverview(root, ctx) {
     },
     social() {
       const said = count("speech");
-      const ratingReceived = (lane, i) => {
-        const got = cast.names.flatMap((name) => markersIn(laneOf(name), i, "rating").filter((m) => m.rated === lane.name));
-        return got.length ? got.reduce((a, m) => a + m.score, 0) / got.length : null;
-      };
       return [
-        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and pass copies of their files, skills or notes, to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "file")} passed on, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them so far.${world.social.ratings ? " The bedtime ratings have no effect in the world; whatever weight they carry comes from the residents." : ""}`),
+        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and pass copies of their files, skills or notes, to those they talk with. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("skill_shared")), "file")} passed on, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them so far.`),
         h(
           "div",
           { class: "figures" },
           agentFigure({ title: "Things said", note: "To everyone present or to someone by name, per day.", points: residentPoints(said), zero: true }),
-          world.social.ratings ? agentFigure({ title: "Rating received", note: "Mean score of the ratings each resident received that night, from 1 to 5.", points: residentPoints(ratingReceived), format: (v) => fmt.num(v, 2), min: 1, max: 5 }) : null,
           dayFigure({
             title: "Files and gifts passed on",
             note: "Copies of files passed on, and gifts of money or things, per day.",
@@ -480,7 +471,7 @@ export function mountOverview(root, ctx) {
       const steps = histories.flatMap((history) => history.versions.filter((v) => v.day >= 1));
       const notable = steps.filter((v) => [...areasOf(v)].some((area) => area !== "journal")).length;
       return [
-        h("p", { class: "note section-note" }, `Residents rewrite their own files whenever they decide to: their notes on the town, the people and their work, their skills, their journal and the account of themselves. The checkpoint of each day commits what changed. ${fmt.plural(steps.length, "night")} committed so far, ${fmt.int(notable)} of them with a change beyond the journal. ${world.skills_writable ? "Skills may be written." : "Skills cannot be written in this group."}`),
+        h("p", { class: "note section-note" }, `Residents rewrite their own files whenever they decide to: their notes, their skills, their journal and the account of themselves. The checkpoint of each day commits what changed. ${fmt.plural(steps.length, "night")} committed so far, ${fmt.int(notable)} of them with a change beyond the journal.`),
         steps.length
           ? h("div", { class: "figures" }, evolutionGrid())
           : h("div", { class: "card" }, emptyState("No night has been committed yet.", running() ? `The checkpoint at ${world.day.checkpoint} commits what each resident changed in its files during the day; the first marks appear after it.` : "The run stopped before its first checkpoint, so no night's changes were committed.")),

@@ -34,7 +34,6 @@ def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirecto
                     {"name": r.name, "background": f"experiments/residents/{r.name.lower()}.md"}
                     for r in config.residents
                 ],
-                "skills_writable": True,
                 "days": 2,
             }
         )
@@ -79,7 +78,6 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.until("22:00")
     await town.call("Tomas", "go", place="college-flat")
     await town.call("Mei", "sleep", until="07:00", journal="I fixed task 1.")
-    await town.call("Mei", "rate", resident="Tomas", score=4, reason="Good company.")
     await town.until("23:00")
     await town.call("Tomas", "sleep", until="08:00", journal="Task 2 is hard.")
     town.rest()
@@ -113,22 +111,19 @@ def moment_of(config: TownConfig, t: int) -> datetime:
 
 def commit_agents(run: RunDirectory, config: TownConfig, day: int) -> dict[str, str]:
     """Commit every resident's directory as the simulation does at the checkpoint of `day`
-    (0 as created): a repository is made at day 0 with the resident's background and memory
-    files, a note goes into its work memory on later days, and a session and trace line of the
-    day are written, as the runtime leaves them; returns the commit of each resident."""
+    (0 as created): a repository is made at day 0 with the resident's background, a note goes
+    into its memory on later days, and a session and trace line of the day are written, as the
+    runtime leaves them; returns the commit of each resident."""
     commits = {}
     for resident in config.residents:
         path = run.agent_dir(resident.name)
         if day == 0:
             (path / "background.md").write_text(f"You are {resident.name}.\n")
-            (path / "memory" / "town.md").write_text("How the town works.\n")
-            (path / "memory" / "people.md").write_text("# People\n")
-            (path / "memory" / "work.md").write_text("# Work\n")
             (path / "memory" / "journal").mkdir(exist_ok=True)
             (path / "trace.jsonl").touch()  # every runtime writes one as it starts
             Repository.init(path, user_name=resident.name, user_email="r@town.invalid")
         else:
-            with (path / "memory" / "work.md").open("a") as file:
+            with (path / "memory" / "notes.md").open("a") as file:
                 file.write(f"Day {day}: a note on the work.\n")
         with (path / "session.jsonl").open("a") as file:
             file.write(

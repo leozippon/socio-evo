@@ -57,12 +57,8 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert (tomas["money_given"], mei["money_received"]) == (5, 5)
 
 
-def test_ratings_sleep_and_the_runtime(rows):
+def test_sleep_and_the_runtime(rows):
     mei, tomas, aisha = rows["Mei", 1], rows["Tomas", 1], rows["Aisha", 1]
-    assert (mei["ratings_given"], mei["rating_given_mean"]) == (1, 4.0)
-    assert (mei["ratings_received"], mei["rating_received_mean"]) == (1, 5.0)
-    assert (tomas["ratings_given"], tomas["rating_received_mean"]) == (1, 4.0)
-    assert aisha["ratings_received"] == 0 and aisha["rating_received_mean"] is None
     assert (mei["journal"], tomas["journal"], aisha["journal"]) == (1, 1, 0)
     assert (rows["Tomas", 2]["forced_sleep"], aisha["forced_sleep"], mei["forced_sleep"]) == (
         1, 1, 0,
@@ -88,8 +84,7 @@ def test_daily_totals_and_means(rows):
     assert found[2, "died"]["total"] == 0 and found[1, "health"]["total"] is None
     assert found[2, "health"]["mean"] == pytest.approx((83 + 85 + 83) / 3)
     assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 280 / 3
-    assert found[1, "rating_received_mean"]["mean"] == 4.5
-    assert found[1, "rating_received_mean"]["residents"] == 2
+    assert found[1, "health"]["residents"] == 3
 
 
 def test_work_still_open_when_the_day_closed_is_an_error():
@@ -108,28 +103,7 @@ def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run
     with (out / "measures.csv").open() as file:
         table = list(csv.DictReader(file))
     assert len(table) == 6 and table[0]["resident"] == "Mei" and table[0]["earned"] == "20"
-    assert table[1]["rating_given_mean"] == ""  # Mei rated nobody on day 2
+    assert table[1]["cached_share"] == "0.6" and table[3]["cached_share"] == ""  # Tomas: no trace
     assert json.loads((out / "measures.json").read_text())[0]["purse"] == 125
     assert len(json.loads((out / "daily.json").read_text())) == 2 * len(MEASURES)
     assert (out / "daily.csv").read_text().startswith("day,measure,total,mean,residents\n")
-
-
-def test_a_verdict_on_a_task_for_two_is_accepted_for_both_who_handed_it_in():
-    verdict = {
-        "kind": "verdict",
-        "actor": "Tomas",
-        "sim_time": 32400,
-        "payload": {"task": 3, "resolved": True, "with": "Mei"},
-    }
-    day = Day(1, (verdict,), None, 0.0)
-    accepted = [world_measures(day, name)["accepted"] for name in ("Mei", "Tomas", "Aisha")]
-    assert accepted == [1, 1, 0]
-
-
-def test_a_projects_bonus_is_counted_for_each_who_received_it():
-    def bonus(name: str) -> dict:
-        payload = {"tasks": [3, 1, 2], "day": 1, "amount": 30, "purse": 200}
-        return {"kind": "bonus", "actor": name, "sim_time": 32400, "payload": payload}
-
-    day = Day(1, (bonus("Mei"), bonus("Aisha")), None, 0.0)
-    assert [world_measures(day, name)["bonus"] for name in ("Mei", "Tomas", "Aisha")] == [30, 0, 30]

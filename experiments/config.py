@@ -2,9 +2,8 @@
 
 A file that names `base:` (a path relative to the file) is read as an overlay on that base:
 mappings are merged key by key, recursively, and every other value (a list, a scalar, null)
-replaces the base's. Bases may chain. The four groups overlay one shared town
-(`configs/town.yaml`), which is not a complete configuration by itself; the smoke town overlays
-group C.
+replaces the base's. Bases may chain. The run configurations and the smoke town overlay the town
+(`configs/town.yaml`).
 """
 
 from __future__ import annotations

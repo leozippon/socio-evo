@@ -13,12 +13,12 @@ def test_the_system_prompt_opens_with_the_residents_own_account_and_follows_the_
     first = directory.system_prompt(rules)
     assert first == directory.system_prompt(rules)
     assert first.startswith(f"{texts.ABOUT_ME}\n\n{BACKGROUND}\n\n{rules}\n\n")
-    assert "- background.md: your account of yourself, in your own words" in first
-    assert "- memory/people.md: the people you know" in first
+    assert first.endswith("- background.md: your account of yourself, in your own words\n")
 
-    (directory.root / "memory" / "people.md").write_text("Ben fixes printers.", encoding="utf-8")
     directory.session_path.write_text("{}\n", encoding="utf-8")
     assert directory.system_prompt(rules) == first
+    (directory.root / "memory" / "people.md").write_text("Ben fixes printers.", encoding="utf-8")
+    assert directory.system_prompt(rules).endswith("- memory/people.md\n")
 
     FileTools(directory).call(
         "write_file", {"path": "skills/bisect.md", "content": "# Finding a bad commit\n\nSteps."}
@@ -49,4 +49,4 @@ def test_an_export_without_empty_folders_loads_and_a_missing_one_is_refused(dire
     with pytest.raises(FileNotFoundError):
         AgentDirectory(directory.root / "memory")
     with pytest.raises(FileExistsError):
-        AgentDirectory.create(directory.root, background="", town="")
+        AgentDirectory.create(directory.root, background="")

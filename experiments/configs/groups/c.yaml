@@ -1,5 +1,0 @@
-# Group C, social learning: all eight live in one town and share one board.
-base: ../town.yaml
-name: c
-town:
-  social: {mode: town}

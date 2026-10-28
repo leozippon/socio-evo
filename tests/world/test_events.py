@@ -64,7 +64,7 @@ ARCHITECTURE_TABLE = {
         "leave_work",
     },
     "conversation": {"share_file", "leave_conversation"},  # on top of the event
-    "sleep": {"look_around", "review_day", "rate", "sleep"},
+    "sleep": {"look_around", "review_day", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
     if _event not in ("movement", "conversation"):  # taking stock and asking: every waking event
@@ -100,7 +100,7 @@ async def test_each_event_refuses_what_it_does_not_offer_naming_the_condition(ma
     idle = await _refusals(town, "Mei")
     assert idle["leave_work"] == "You are not at work."
     assert idle["leave_conversation"] == "You are not in a conversation."
-    assert idle["rate"] == "You can do that only once you have gone to bed."
+    assert idle["review_day"] == "You can do that only once you have gone to bed."
     assert set(idle) == {spec.name for spec in world.tool_specs} - IDLE_TOOLS
 
     go = await town.call("Mei", "go", place="workshop")
@@ -325,11 +325,9 @@ async def test_a_remark_to_everyone_leaves_those_at_work_to_their_work(make_town
     assert town.world.residents["Tomas"].conversation is None  # nobody was drawn in
     assert (await town.call("Mei", "shell", command="pytest")).text == "ran pytest\nExit code 0."
     assert town.take("Mei") == ["Tomas said: “Morning, all.”"]  # waiting for her next step
-    assert town.world.ratings.met["Tomas"] == set()
 
     await town.call("Tomas", "say", text="Mei, a minute?", to=["Mei"])
     assert ports["Mei"].interrupt.is_set() and isinstance(mei.event, Conversation)
-    assert town.world.ratings.met["Tomas"] == {"Mei"}
 
 
 async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_town, tmp_path):
@@ -339,8 +337,8 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     await town.until("10:00")
     await town.call("Mei", "sleep", until="15:00", journal="Up all night with the bug.")
     assert town.take("Mei")[0].startswith(
-        "You are in bed and will wake at 15:00; your journal entry for today is kept. Nobody "
-        "rated you last night."
+        "You are in bed and will wake at 15:00; your journal entry for today is kept. Before "
+        "you fall asleep"
     )
     assert mei.base.wake == at("15:00")  # the same day
     town.rest("Mei")
@@ -354,7 +352,7 @@ async def test_bed_at_any_hour_and_waking_at_the_next_time_the_hour_comes(make_t
     await town.call("Mei", "sleep", until="09:00", journal="A short afternoon after the nap.")
     assert mei.base.wake == at("09:00", day=2)  # an hour already past: tomorrow
     told = [p.text for p in town.heard["Mei"] if p.kind == "sleep"][-1]
-    assert "rated you" not in told  # its ratings were read at the first bedtime of the day
+    assert told.startswith("You are in bed and will wake at 09:00; your journal entry for today")
     journal = tmp_path / "agents" / "Mei" / "memory" / "journal" / "2001-01-01.md"
     assert journal.read_text() == (
         "Up all night with the bug.\n\nA short afternoon after the nap.\n"
@@ -470,13 +468,12 @@ async def test_sleep_ends_the_day_with_a_journal_and_waking_comes_at_the_hour(ma
     assert isinstance(mei.base, Sleep) and not mei.base.suspended
     in_bed = town.take("Mei")
     assert len(in_bed) == 1 and in_bed[0].startswith("You are in bed and will wake at 08:00")
-    assert "Aisha" in in_bed[0]  # whom it may rate
     in_bed_refusals = await _refusals(town, "Mei")
     assert set(in_bed_refusals) == {spec.name for spec in town.world.tool_specs} - SLEEP_TOOLS
     assert in_bed_refusals["go"] == (
         "You have gone to bed; before you fall asleep you can only look around, take stock of "
-        "how you feel, look back over your day, add to your journal, rate people, read how the "
-        "town works and see to your own files."
+        "how you feel, look back over your day, add to your journal, read how the town works "
+        "and see to your own files."
     )
     review = await town.call("Mei", "review_day")
     assert "07:00 You woke up at home." in review.text
@@ -504,7 +501,7 @@ async def test_going_to_bed_without_a_journal_entry_writes_none(make_town, tmp_p
     await town.until("21:00")
     slept = await town.call("Mei", "sleep", until="07:00")
     assert slept.ends_turn and slept.text == "You went to bed."
-    assert town.take("Mei")[-1].startswith("You are in bed and will wake at 07:00. Nobody rated")
+    assert town.take("Mei")[-1].startswith("You are in bed and will wake at 07:00. Before you")
     assert (await town.call("Aisha", "sleep", until="07:00", journal="  ")).ends_turn
     assert not (tmp_path / "agents" / "Mei" / "memory" / "journal").exists()
     assert not (tmp_path / "agents" / "Aisha" / "memory" / "journal").exists()

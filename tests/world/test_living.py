@@ -190,7 +190,6 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
     assert town.take("Tomas") == ["Mei wrote to you: “Lunch at one?”"]
     assert not world.ports["Tomas"].interrupt.is_set()  # read when he next looks up
     assert town.take("Aisha") == []  # nobody else sees it
-    assert world.ratings.met["Tomas"] == {"Mei"}
     written = [e for e in world.log.entries() if e["kind"] == "message"]
     assert written[-1]["payload"] == {"to": "Tomas", "text": "Lunch at one?"}
     assert written[-1]["audience"] == ["Tomas"]
@@ -210,13 +209,6 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
         "You woke up at home. It is Monday 1 January, 12:00. You are a little hungry. You are "
         "fresh. You are in good health.",
     ]
-
-    # In the isolated mode nobody else is in the town to write to: nothing to write with is sold.
-    alone = make_town(town_config("isolated"), root=tmp_path / "alone")
-    assert "message" not in [spec.name for spec in alone.world.tool_specs]
-    assert [good.id for good in alone.world.for_sale] == [
-        "groceries", "meal", "bicycle", "coat", "examination", "treatment",
-    ]  # fmt: skip
 
 
 async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conversation(make_town):
@@ -286,8 +278,7 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
         "gates $30."
     )
 
-    # A home with no free room cannot be moved into; in the isolated mode, where each resident
-    # lives in a town of its own, another resident's room is no obstacle.
+    # A home with no free room cannot be moved into.
     data = town_config().model_dump(mode="json")
     data["places"][1]["rooms"] = 1  # the flat: Tomas's
     full = make_town(TownConfig.model_validate(data), root=tmp_path / "full")
@@ -296,12 +287,4 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
     await full.until("07:10")
     assert (await full.call("Mei", "move_in")).text == (
         "There is no free room at the flat by the college gates."
-    )
-    data["social"]["mode"] = "isolated"
-    alone = make_town(TownConfig.model_validate(data), root=tmp_path / "alone")
-    await awake_at(alone)
-    await alone.call("Mei", "go", place="college-flat")
-    await alone.until("07:10")
-    assert (await alone.call("Mei", "move_in")).text.startswith(
-        "You moved into the flat by the college gates;"
     )

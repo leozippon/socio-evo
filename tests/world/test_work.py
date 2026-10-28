@@ -170,15 +170,6 @@ async def test_a_task_is_claimed_at_the_board_and_worked_on_anywhere(make_town):
     )
 
 
-async def test_isolated_boards_are_each_residents_own(make_town):
-    town = make_town(town_config("isolated"))
-    await at_the_workshop(town, "Mei", "Tomas")
-    await town.call("Mei", "claim_task", task=1)
-    claimed = await town.call("Tomas", "claim_task", task=1)
-    assert claimed.text.startswith("You sat down to work and claimed task 1")
-    assert "Held" not in (await town.call("Tomas", "view_board")).text
-
-
 async def test_acceptance_is_limited_per_task_per_day_and_never_names_the_checks(make_town):
     backend = FakeBackend()
     town = make_town(backend=backend)
@@ -393,7 +384,6 @@ async def test_a_held_task_keeps_its_changes_overnight_and_runs_out_at_the_secon
         "task": 2,
         "day": 1,
         "diff": json.dumps({"a.py": "half done\n"}),
-        "handed": None,
     }
 
     await town.until("09:20", day=2)  # at home: the workspace opens again where she is

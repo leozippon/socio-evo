@@ -91,8 +91,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         ]
         assert repository.tree("day-01") and not repository.has_changes()
         assert (agent / "memory" / "journal" / "2026-03-02.md").read_text().strip()
-        assert repository.read_file("day-00", "memory/town.md").startswith("How the town works.")
-        assert repository.read_file("day-00", "memory/people.md") == "# People\n"
+        assert set(repository.tree("day-00")) == {"background.md"}  # memory and skills empty
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert "saved day 1" in run.run_log_path.read_text()

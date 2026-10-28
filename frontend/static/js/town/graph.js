@@ -1,6 +1,6 @@
 // The social fabric as a graph that changes over time: who spent time in conversation with
-// whom, who spoke to whom, who rated whom and how, who handed whom money, who passed on a
-// skill. Counts come from the published measures' graph, by lived day, through the day shown.
+// whom, who spoke to whom, who handed whom money, who passed on a skill. Counts come from the
+// published measures' graph, by lived day, through the day shown.
 
 import { emptyState, fill, fmt, h, onWidth, s } from "../dom.js";
 
@@ -8,12 +8,11 @@ import { emptyState, fill, fmt, h, onWidth, s } from "../dom.js";
 const MEASURES = {
   together: { label: "Together", note: "Line width: minutes spent in conversations the other took part in.", field: "minutes", pointed: false },
   talk: { label: "Talk", note: "Arrows: things said that the other heard; width counts them.", field: "said", pointed: true },
-  ratings: { label: "Ratings", note: "Arrows: ratings given at night; width counts them, darker means a higher mean score.", field: "ratings", pointed: true },
   money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", field: "money", pointed: true },
   skills: { label: "Files", note: "Arrows: copies of files passed on; width counts them.", field: "skills", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
-const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "skills", "ratings", "ratings_sum"];
+const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "skills"];
 
 export class TiesPanel {
   constructor({ cast, onSelect }) {
@@ -122,7 +121,6 @@ export class TiesPanel {
       const say = (t) =>
         ({
           said: () => `${fmt.plural(t.said, "thing")} said${t.said_private ? `, ${fmt.int(t.said_private)} privately` : ""}`,
-          ratings: () => `${fmt.plural(t.ratings, "rating")}, mean ${fmt.num(t.ratings_sum / t.ratings, 1)}`,
           money: () => `${fmt.money(t.money)} handed over, ${fmt.plural(t.gifts, "time")}`,
           skills: () => fmt.plural(t.skills, "file"),
         })[measure.field]();
@@ -138,13 +136,10 @@ export class TiesPanel {
         const end = { x: b.x - ux * 19, y: b.y - uy * 19 };
         const bend = 0.14;
         const c = { x: (start.x + end.x) / 2 + -uy * len * bend, y: (start.y + end.y) / 2 + ux * len * bend };
-        const mean = t.ratings ? t.ratings_sum / t.ratings : null;
-        const level = mean === null ? 3 : Math.max(1, Math.min(5, Math.round(mean)));
         const w = (1 + (4 * value(t)) / most).toFixed(1);
         const angle = Math.atan2(end.y - c.y, end.x - c.x);
         const wing = (turn) => `${(end.x - 8 * Math.cos(angle + turn)).toFixed(1)},${(end.y - 8 * Math.sin(angle + turn)).toFixed(1)}`;
         const head = `M${end.x.toFixed(1)},${end.y.toFixed(1)}L${wing(-0.45)}L${wing(0.45)}Z`;
-        const color = measure.field === "ratings" ? `var(--o${level})` : null;
         edges.push(
           s(
             "g",

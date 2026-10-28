@@ -1,6 +1,6 @@
 """Nothing a resident reads names a trait, speaks of the machinery, tells a day's number or the
-length of the run: every string the world's code holds, and every text it renders for the four
-groups, passes the guard."""
+length of the run: every string the world's code holds, and every text it renders, passes the
+guard."""
 
 from __future__ import annotations
 
@@ -12,18 +12,10 @@ import pytest
 
 import world
 from agent.wording import offences
-from tests.world.conftest import B_EXCHANGE, awake_at, backend_of, town_config
+from tests.world.conftest import awake_at, backend_of, town_config
 from world.events import Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS
 
-PAIRS = {"for_two": 0.25, "payment_for_two": 30}  # told, though none of the three tasks is for two
-PROJECTS = {"projects_a_day": 1, "project_size": 3, "project_bonus": 10}  # the three tasks are one
-GROUPS = {
-    "A": town_config("isolated"),
-    "B": town_config("isolated", exchange=B_EXCHANGE),
-    "C": town_config("town", **PAIRS, **PROJECTS),
-    "D": town_config("town", shareable=False, **PAIRS, **PROJECTS),
-}
 DAY_NUMBER = re.compile(r"\b[Dd]ay[ -]?\d")
 
 
@@ -58,12 +50,10 @@ def _check(texts: list[str]) -> None:
     assert [text for text in texts if DAY_NUMBER.search(text)] == []
 
 
-@pytest.mark.parametrize("group", sorted(GROUPS))
-async def test_every_rendered_text_passes_the_guard(group, make_town, tmp_path):
-    town = make_town(GROUPS[group], backend_of({"org/repo": 3}), root=tmp_path / group)
+async def test_every_rendered_text_passes_the_guard(make_town):
+    town = make_town(town_config(), backend_of({"org/repo": 3}))
     world_ = town.world
     texts = [world_.rules.text(name) for name in world_.residents]
-    texts += [world_.rules.people_notes(name) for name in world_.residents]
     texts += [world_.rules.help("Mei", topic) for topic in (*TOPICS, "anything")]
     for spec in world_.tool_specs:
         texts.append(spec.description)

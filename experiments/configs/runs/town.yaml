@@ -1,6 +1,6 @@
-# The town: group C's full design as one named run, its calendar starting on the day it starts
-# (the containers' clocks show the real date).
-base: ../groups/c.yaml
+# The town as one named run, its calendar starting on the day it starts (the containers' clocks
+# show the real date).
+base: ../town.yaml
 name: town
 town:
   start_date: 2026-10-27

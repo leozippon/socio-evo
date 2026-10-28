@@ -15,10 +15,8 @@ import pytest
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
 from agent.testing import FakePort, running
-from experiments.config import load_experiment
 from infrastructure.llm import LLMConfig, OpenAICompatibleClient
 from infrastructure.storage import read_jsonl
-from world.rules import Rules
 
 REPO = Path(__file__).resolve().parents[2]
 
@@ -40,18 +38,16 @@ def _served() -> LLMConfig:
 
 async def test_a_real_session_writes_a_file_then_replies(tmp_path):
     config = _served()
-    town = load_experiment(REPO / "experiments" / "configs" / "groups" / "a.yaml").town
     directory = AgentDirectory.create(
         tmp_path / "mei",
         background=(REPO / "experiments" / "residents" / "mei.md").read_text(encoding="utf-8"),
-        town=Rules(town).text("Mei"),
     )
     port = FakePort(
         situation="It is 18:30 on Monday. You are at home. Only your files are at hand."
     )
     port.deliver(
         "You remember that today you fixed task 3, a crash when a settings file was empty. "
-        "Add one line about it to memory/work.md, then stop for the evening."
+        "Add one line about it to memory/notes.md, then stop for the evening."
     )
     runtime = Runtime(
         directory,
@@ -68,8 +64,8 @@ async def test_a_real_session_writes_a_file_then_replies(tmp_path):
     writes = [
         r for r in records if r["kind"] == "tool_call" and r["name"] in ("write_file", "edit_file")
     ]
-    assert writes and all(r["arguments"]["path"] == "memory/work.md" for r in writes)
-    assert "3" in (directory.root / "memory" / "work.md").read_text()
+    assert writes and all(r["arguments"]["path"] == "memory/notes.md" for r in writes)
+    assert "3" in (directory.root / "memory" / "notes.md").read_text()
     assert replies[-1]["tool_calls"] == [] and replies[-1]["finish_reason"] == "stop"
     assert len(replies) >= 2
     assert all(r["usage"]["cached_prompt_tokens"] is not None for r in replies)

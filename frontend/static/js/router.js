@@ -2,7 +2,7 @@
 // run is named by its path under the runs root, URL-encoded as one segment (`pilot%2Fa`).
 //
 //   #/                                  every run, with its progress day by day
-//   #/compare/<comparison>              the groups of a set of runs compared
+//   #/compare/<comparison>              the runs of a set compared
 //   #/run/<run>                         the run's dashboard; ?section=
 //   #/run/<run>/town                    the town; ?t=<day>-<HH:MM>&agent=&as=1&only=1&panel=&speed=
 //   #/run/<run>/timeline                every resident's events side by side; ?t=&agent=&from=&to=

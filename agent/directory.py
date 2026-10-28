@@ -20,10 +20,11 @@ class AgentDirectory:
     """The directory of one resident:
 
     background.md, the resident's account of itself in the first person, given at the start and
-    rewritten by the resident as it likes; memory/ (town.md, people.md, work.md and journal/),
-    what it keeps; skills/, one file per method, whose first line describes it; session.jsonl
-    and trace.jsonl, which the runtime writes. The resident reaches background.md, memory/ and
-    skills/ only, and skills/ only for reading when `skills_writable` is False (group D).
+    rewritten by the resident as it likes; memory/, whatever it keeps, its journal under
+    journal/; skills/, one file per method, whose first line describes it; session.jsonl and
+    trace.jsonl, which the runtime writes. The resident reaches background.md, memory/ and
+    skills/ only, and skills/ only for reading when `skills_writable` is False (the capability
+    evaluation's harness).
 
     Folders that git does not keep when empty (memory/journal/, skills/) may be missing, as in
     an export of a tagged day; they are created when a file is written into them.
@@ -36,30 +37,15 @@ class AgentDirectory:
         self.skills_writable = skills_writable
 
     @classmethod
-    def create(
-        cls,
-        root: Path,
-        *,
-        background: str,
-        town: str,
-        people: str = "",
-        work: str = "",
-        skills_writable: bool = True,
-    ) -> AgentDirectory:
-        """Create the directory at `root`, which must not exist, from the resident's background
-        and the first contents of its memory files (`town` is usually the town's rules)."""
+    def create(cls, root: Path, *, background: str) -> AgentDirectory:
+        """Create the directory at `root`, which must not exist, from the resident's
+        background, with memory/ and skills/ empty."""
         root.mkdir(parents=True)
         (root / MEMORY).mkdir()
         (root / JOURNAL).mkdir()
         (root / SKILLS).mkdir()
-        for name, text in (
-            (BACKGROUND, background),
-            ("memory/town.md", town),
-            ("memory/people.md", people),
-            ("memory/work.md", work),
-        ):
-            (root / name).write_text(text, encoding="utf-8")
-        return cls(root, skills_writable=skills_writable)
+        (root / BACKGROUND).write_text(background, encoding="utf-8")
+        return cls(root)
 
     @property
     def session_path(self) -> Path:

@@ -1,5 +1,5 @@
-"""The world of a town: clock, places, events and their tools, board, purses, ratings and the
-world log. It knows nothing of the model; each resident reaches it through a `ResidentPort`,
+"""The world of a town: clock, places, events and their tools, board, purses and the world
+log. It knows nothing of the model; each resident reaches it through a `ResidentPort`,
 which implements `agent.port.WorldPort`."""
 
 from world.backend import Backend, SwebenchBackend

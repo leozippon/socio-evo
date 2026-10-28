@@ -5,8 +5,8 @@ The day it plays: wait at home until the day's board is posted, go to the workpl
 read the board, claim a free task, run a command, read a file, write a fix, submit and leave; go
 to a shop, if the town has one, and buy a stock of food; go to a social place, eat there if it
 sells a meal and, if anyone is there, say something once; at 20:00 go home and go to bed with a
-journal entry, to wake at the town's forced waking hour; in bed, review the day, rate whoever it
-may rate (where the town has ratings), note the day in memory/work.md and fall asleep.
+journal entry, to wake at the town's forced waking hour; in bed, review the day, note it in
+memory/notes.md and fall asleep.
 Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
 resident's name comes from the system prompt, and the day so far from the messages since the
 last wake-up, so it continues a resumed run as it would have continued the run.
@@ -27,7 +27,6 @@ from world.config import TownConfig
 EVENING = parse_hour("20:00")
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* Pays \S+\.(.*)$", re.MULTILINE)
-_RATE = re.compile(r"rate the people you spoke with today \(([^)]*)\)")
 
 
 @dataclass(frozen=True)
@@ -45,10 +44,8 @@ class DryRunModel:
         self._index = {resident.name: i for i, resident in enumerate(town.residents)}
         self._homes = {resident.name: resident.home for resident in town.residents}
         self._places = {place.name: place.id for place in town.places}
-        exchange = town.social.exchange
-        social = [place.id for place in town.places if place.kind == "social"]
-        self._social = exchange.place if exchange else social[0]
-        for_sale = town.for_sale()
+        self._social = next(place.id for place in town.places if place.kind == "social")
+        for_sale = town.goods
         stocks = [g for g in for_sale if g.kind == "consumable" and g.effect == "food"]
         self._stock = stocks[0] if stocks else None
         self._shop = self._stock.sold_at[0] if self._stock else None
@@ -181,21 +178,10 @@ class _Day:
         )
         if reviewed:
             return reply("")
-        rated = _RATE.search(self.messages[bed].content) if self.messages else None
-        names = re.split(r", | and ", rated[1]) if rated else []
         return reply(
             "",
             tool_call("review_day"),
-            *(
-                tool_call("rate", resident=n, score=4, reason="We talked in the evening.")
-                for n in names
-            ),
-            tool_call(
-                "edit_file",
-                path="memory/work.md",
-                old_text="# Work\n",
-                new_text=f"# Work\n\n- {self._account()}\n",
-            ),
+            tool_call("write_file", path="memory/notes.md", content=f"- {self._account()}\n"),
         )
 
     def _sleep(self) -> ToolCall:

@@ -1,9 +1,7 @@
 """The board's daily posting: the next tasks of a rotation through the pool, seeded by the run,
-and on a shared board the tasks still held carried over; a task paid for leaves a shared board
-for the day."""
+and the tasks still held carried over; a task paid for leaves the board for the day."""
 
 from collections import Counter
-from datetime import date
 from itertools import pairwise
 
 import pytest
@@ -14,20 +12,10 @@ from world.board import Board
 from world.testing import FakeBackend
 
 
-def make_board(pool: int, size: int, seed: int = 7, *, shared: bool = True) -> Board:
+def make_board(pool: int, size: int, seed: int = 7) -> Board:
     backend = FakeBackend(pool)
     work = town_config(board_size=size).work
-    names = ["Mei", "Tomas"]
-    return Board(
-        backend.tasks,
-        backend,
-        work,
-        seed=seed,
-        shared=shared,
-        names=names,
-        money=str,
-        start=date(2001, 1, 1),
-    )
+    return Board(backend.tasks, backend, work, seed=seed, names=["Mei", "Tomas"], money=str)
 
 
 def postings(board: Board, days: int) -> list[list[int]]:
@@ -57,7 +45,7 @@ def test_a_pool_no_larger_than_the_board_is_posted_whole_every_day():
         assert postings(make_board(3, size), 4) == [[1, 2, 3]] * 4
 
 
-async def test_a_shared_board_keeps_a_held_task_until_its_claim_ends_and_ones_own_does_not():
+async def test_the_board_keeps_a_held_task_until_its_claim_ends():
     # A pool of 20 on a board of 4, as the town's 1,912 on 56: each day's four are new.
     board = make_board(20, 4)
     board.post(1)
@@ -79,24 +67,16 @@ async def test_a_shared_board_keeps_a_held_task_until_its_claim_ends_and_ones_ow
     assert board.claim_refusal("Tomas", held) is None
     board.post(3)  # held by nobody, it is not carried over again
     assert board.posted == sorted(board.rotation[8:12])
-
-    own = make_board(20, 4, shared=False)
-    own.post(1)
-    held = own.posted[0]
-    await own.claim("Mei", held, day=1)
-    own.post(2)  # a board of one's own carries nothing over; the task stays held off it
-    assert own.posted == sorted(own.rotation[4:8]) and own.claims["Mei"].task == held
-    assert own.text("Mei", "08:00").splitlines()[1:5] == [
-        f"{n}. org/repo{n}: Problem {n} goes wrong. Pays 20." for n in own.posted
-    ]
-    assert (own.expired(1), own.expired(2)) == ([], ["Mei"])
+    await board.claim("Mei", board.posted[0], day=3)
+    assert (board.expired(3), board.expired(4)) == ([], ["Mei"])
 
 
-async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round_again():
+async def test_a_task_paid_for_leaves_the_board_for_the_day_and_comes_round_again():
     board = make_board(10, 4)
     board.post(1)
     number = board.posted[0]
-    board.finish(await board.claim("Mei", number, day=1))
+    await board.claim("Mei", number, day=1)
+    board.finish("Mei")
     assert number not in board.posted and board.done["Mei"] == {number}
     assert board.claim_refusal("Tomas", number) == f"There is no task {number} on the board."
     listed = board.text("Tomas", "08:00").splitlines()[1:]
@@ -118,17 +98,9 @@ async def test_an_empty_board_says_when_the_next_goes_up():
     empty = "Nothing is posted on the board now; the next board goes up at 08:00."
     assert board.text("Mei", "08:00") == empty  # before the first board
     board.post(1)
-    board.finish(await board.claim("Tomas", board.posted[0], day=1))
+    await board.claim("Tomas", board.posted[0], day=1)
+    board.finish("Tomas")
     assert board.posted == [] and board.text("Mei", "08:00") == empty  # once it is cleared
-
-
-async def test_a_task_paid_for_stays_on_an_isolated_board():
-    board = make_board(10, 4, shared=False)
-    board.post(1)
-    number = board.posted[0]
-    board.finish(await board.claim("Mei", number, day=1))
-    assert number in board.posted and board.claim_refusal("Tomas", number) is None
-    assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
 
 
 def test_the_board_posts_at_least_one_task():

@@ -216,7 +216,7 @@ function routes() {
     const stamp = `${Math.floor(moment / 86400) + 1}-${String(Math.floor((moment % 86400) / 3600)).padStart(2, "0")}:${String(Math.floor((moment % 3600) / 60)).padStart(2, "0")}`;
     found.push(["timeline-hour", `${base}/timeline?agent=${encodeURIComponent(agent)}&t=${stamp}&from=${from}&to=${from + 3600}`]);
     found.push(["person", `${base}/people/${encodeURIComponent(agent)}?${when.slice(1)}`]);
-    for (const tab of ["day", "journal", "ratings", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}${when}`]);
+    for (const tab of ["day", "journal", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}${when}`]);
   } else found.push(["timeline", `${base}/timeline`]);
   found.push(["evaluation", `${base}/evaluation`]);
   return found;

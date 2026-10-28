@@ -29,7 +29,6 @@
 .progress-bar .partial { background: repeating-linear-gradient(135deg, var(--o2) 0 3px, transparent 3px 6px); }
 .progress-bar .partial.live { background: repeating-linear-gradient(135deg, var(--good) 0 3px, transparent 3px 6px); }
 .progress-text { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-.pill.group { background: var(--accent-soft); color: var(--ink); }
 .pill.declared { background: var(--accent-soft); color: var(--ink); }
 .skipped { list-style: none; margin: 0; padding: 0; }
 .skipped li { padding: var(--s4) var(--s5); }
@@ -132,10 +131,10 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
 .score-card .note { margin: 0 0 var(--s2); }
 .problems ul { margin: var(--s2) 0 0; padding-left: 1.2em; }
 .problems li { overflow-wrap: anywhere; margin: 4px 0; }
-.group-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); font-size: 13.5px; }
-.group-list li { display: inline-flex; align-items: center; gap: 8px; }
-.group-list a { text-decoration: none; }
-.group-list a:hover { text-decoration: underline; }
+.run-list { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); font-size: 13.5px; }
+.run-list li { display: inline-flex; align-items: center; gap: 8px; }
+.run-list a { text-decoration: none; }
+.run-list a:hover { text-decoration: underline; }
 .measure-cards { display: flex; flex-direction: column; gap: var(--s4); }
 .measure-card .table-wrap { margin-top: var(--s3); }
 .measure-card h2 { font-size: var(--fs-l); }

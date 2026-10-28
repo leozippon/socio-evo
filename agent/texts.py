@@ -26,25 +26,20 @@ last few things that happened; you can do so yourself at any time with compact."
 FILES = """\
 ## Your files
 
-You keep files of your own: your account of yourself, what you know of the town, the people you \
-know, your work, your journal, and your skills, each a method written down so that you can \
-reread it or pass it on. You can keep whatever else you like under memory/ as well: notes, \
-drafts, lists. Your files stay with you from day to day, and no one else in town reads them. \
-Your account of yourself is background.md, the words about you that open all this; they are \
-yours: change them as you change, and what you write there is before you from then on.
+You keep files of your own: your account of yourself, your journal, whatever you want to keep \
+under memory/ (notes, drafts, lists), and your skills under skills/, each a method written down \
+so that you can reread it or pass it on. Your files stay with you from day to day, and no one \
+else in town reads them. Your account of yourself is background.md, the words about you that \
+open all this; they are yours: change them as you change, and what you write there is before \
+you from then on.
 
 Read one with read_file, change it with write_file or edit_file, and see what you have with \
-list_files. Paths are written like memory/people.md. The first line of each file in skills/ says \
+list_files. Paths are written like memory/notes.md. The first line of each file in skills/ says \
 what it is for."""
 
 SKILLS_READ_ONLY = "You can read the files in skills/ but not change them."
 
-KNOWN_FILES = {
-    "background.md": "your account of yourself, in your own words",
-    "memory/town.md": "what you know of the town and how it works",
-    "memory/people.md": "the people you know",
-    "memory/work.md": "your work",
-}
+KNOWN_FILES = {"background.md": "your account of yourself, in your own words"}
 """What the files every resident has are for, as the index of files says."""
 
 # Refusals and results of the file tools.

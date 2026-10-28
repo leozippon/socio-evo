@@ -26,7 +26,7 @@ export function involved(entry) {
   const names = new Set();
   if (entry.actor) names.add(entry.actor);
   for (const name of entry.audience) names.add(name);
-  for (const key of ["to", "rated", "pair", "sent_out"]) {
+  for (const key of ["to", "sent_out"]) {
     const value = p[key];
     if (typeof value === "string") names.add(value);
     else if (Array.isArray(value)) for (const name of value) if (typeof name === "string") names.add(name);
@@ -54,7 +54,6 @@ const ICONS = {
   submission: "check",
   verdict: "eye",
   payment: "coin",
-  bonus: "coin",
   abandon: "cross",
   expiry: "clock",
   workspace_closed: "lock",
@@ -66,13 +65,10 @@ const ICONS = {
   message: "speech",
   purchase: "coin",
   move_in: "home",
-  exchange_pairing: "pair",
-  meeting: "pair",
   settlement: "coin",
   condition: "eye",
   death: "alert",
   sleep: "book",
-  rating: "star",
   fell_asleep: "clock",
   forced_sleep: "alert",
   checkpoint: "flag",
@@ -87,7 +83,6 @@ export function tone(entry) {
     case "verdict":
       return p.resolved ? "good" : "serious";
     case "payment":
-    case "bonus":
     case "gift":
     case "skill_shared":
       return "good";
@@ -185,17 +180,15 @@ export function describeMarker(m, by, who) {
       return [own ? `said ${how}to ${names(m.to)}` : `${by} said ${how}to ${names(m.to)}`, m.text];
     }
     case "claim":
-      return [`claimed task ${m.task} (${m.instance_id})${pairing(m)}`];
+      return [`claimed task ${m.task} (${m.instance_id})`];
     case "submission": {
-      const task = `task ${m.task}${pairing(m)}`;
+      const task = `task ${m.task}`;
       if (m.resolved === undefined) return [`handed in ${task}, awaiting the verdict`];
       const counts = `fail-to-pass ${m.fail_to_pass.join("/")}, pass-to-pass ${m.pass_to_pass.join("/")}`;
       return [`handed in ${task}: ${m.resolved ? "accepted" : `not accepted (${m.status})`}`, counts];
     }
     case "payment":
-      return [`was paid ${fmt.money(m.amount)} for task ${m.task}${pairing(m)}`];
-    case "bonus":
-      return [`received a bonus of ${fmt.money(m.amount)} for a client's project, tasks ${m.tasks.join(", ")}`];
+      return [`was paid ${fmt.money(m.amount)} for task ${m.task}`];
     case "abandon":
       return [`gave up task ${m.task}`];
     case "expiry":
@@ -214,12 +207,8 @@ export function describeMarker(m, by, who) {
     }
     case "move_in":
       return [`moved house, into ${m.to.replaceAll("-", " ")}`];
-    case "rating":
-      return own ? [`rated ${m.rated} ${m.score} of 5`, m.reason] : [`was rated ${m.score} of 5 by ${by}`, m.reason];
-    case "journal": {
-      const read = m.ratings_read?.length ? `\n\nRatings read: ${m.ratings_read.map(([score, why]) => `${score} of 5, “${why}”`).join("; ")}` : "";
-      return [`went to bed until ${hhmm(secondOfDay(m.wake))} and wrote the journal of day ${m.day}`, m.text + read];
-    }
+    case "journal":
+      return [`went to bed until ${hhmm(secondOfDay(m.wake))} and wrote the journal of day ${m.day}`, m.text];
     case "forced_sleep":
       return [`fell asleep at the forced hour without going to bed, to wake at ${hhmm(secondOfDay(m.wake))}`];
     case "condition":
@@ -231,15 +220,8 @@ export function describeMarker(m, by, who) {
   }
 }
 
-/**
- * How a task is shared, from a task held (`heldAt`) or a marker on it: ` · for two · with Tomas`,
- * ` · for two · waiting for a partner` while one holds a task for two alone, and nothing for a task
- * of one's own.
- */
-export const pairing = (it) => (it?.for_two || it?.with ? ` · for two · ${it.with ? `with ${it.with}` : "waiting for a partner"}` : "");
-
 /** What a gift marker gave: money, or a thing or helpings of a stock (`2 × groceries`). */
 export const given = (m) => (m.item ? `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}` : fmt.money(m.amount));
 
 /** Whether a marker on `by`'s lane concerns `who` too. */
-export const concerns = (m, by, who) => by === who || (m.kind === "speech" && m.to.includes(who)) || ((m.kind === "gift" || m.kind === "skill_shared" || m.kind === "message") && m.to === who) || (m.kind === "rating" && m.rated === who);
+export const concerns = (m, by, who) => by === who || (m.kind === "speech" && m.to.includes(who)) || ((m.kind === "gift" || m.kind === "skill_shared" || m.kind === "message") && m.to === who);

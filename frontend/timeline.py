@@ -16,11 +16,6 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           checkpointed: it was begun at the checkpoint before it, at the resumption that went
           back to that checkpoint, or, for day 1, at the first entry of the log, the board
           posted as the world began; null with no entries at all
-      "projects": [{"day": 1, "repo": "django/django", "tasks": [12, 40, 77],
-                    "posted": 28800, "ends": 172800, "done": 51300}, ...],
-          the clients' projects, as the boards that formed them were posted: the calendar day
-          and time of the posting, the midnight by which all their tasks were to be accepted,
-          and when the bonus was paid, null for a project not (or not yet) done
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
@@ -35,22 +30,15 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
               from in it
           "markers": [{"seq", "t", "kind", "place", ...}, ...],
           "purse": [[9000, 120], [36000, 140], ...]   the purse after each change
-          "partners": [[32400, null], [33000, "Tomas"], ...]
-              who holds a task for two with the resident, from each claim of one (null when it
-              claimed it first and waits) and each change: a partner joining, giving up, dying
       }, ...]
     }
 
 The markers, each on the lane of the resident who acted, with their own fields:
 
-    claim         task, instance_id; of a task for two, for_two (true) and with (the partner
-                  it joined, or null when it claimed it first)
+    claim         task, instance_id
     submission    task; and once the verdict is in: resolved, status, fail_to_pass, pass_to_pass
-                  (passed and total counts); with, the partner, of a task held by two, the
-                  verdict on the second of the two hand-ins being the first's too
-    payment       task, amount; with, the partner, of a task held by two
-    bonus         tasks, amount           a client's project's bonus (the purse after it is a
-                                          point of "purse")
+                  (passed and total counts)
+    payment       task, amount
     abandon       task                    the resident gave its task up
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
@@ -60,9 +48,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     skill_shared  to, file                a copy of one of the resident's files passed on
     purchase      item, name, quantity, amount
     move_in       from, to                the resident moved house; its lane's home follows
-    rating        rated, score, reason
-    journal       text, day, wake, ratings_read   going to bed with the day's journal entry (a
-                  bedtime without one has no marker)
+    journal       text, day, wake         going to bed with the day's journal entry (a bedtime
+                                          without one has no marker)
     forced_sleep  wake
     settlement    rent, fees, nourishment, satiety, energy, health, night
                   midnight: the rent and the daily charges taken, the day's food as a share of
@@ -92,7 +79,7 @@ from typing import Any
 from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
-from world.clock import DAY, calendar_day, parse_hour
+from world.clock import parse_hour
 from world.config import TownConfig
 
 _FOLDED = frozenset(
@@ -109,19 +96,16 @@ _FOLDED = frozenset(
         "submission",
         "verdict",
         "payment",
-        "bonus",
         "abandon",
         "expiry",
         "speech",
         "message",
-        "meeting",
         "leave_conversation",
         "conversation_end",
         "gift",
         "skill_shared",
         "purchase",
         "move_in",
-        "rating",
         "settlement",
         "condition",
         "death",
@@ -223,7 +207,6 @@ class _Lane:
         self.conversations: list[dict[str, Any]] = []
         self.markers: list[dict[str, Any]] = []
         self.purse: list[list[int]] = [[start, purse]]
-        self.partners: list[list[Any]] = []
         self.task: int | None = None
         self.talk: dict[str, Any] | None = None
         self.submitted: dict[str, Any] | None = None
@@ -284,10 +267,6 @@ class _Lane:
     def credit(self, t: int, amount: int) -> None:
         self.purse.append([t, self.purse[-1][1] + amount])
 
-    def pair(self, t: int, partner: str | None) -> None:
-        """Who holds the task for two this resident holds is now `partner`."""
-        self.partners.append([t, partner])
-
     def data(self, now: int) -> dict[str, Any]:
         for span in (self.segments[-1], self.talk):
             if span is not None:
@@ -299,7 +278,6 @@ class _Lane:
             "conversations": self.conversations,
             "markers": self.markers,
             "purse": self.purse,
-            "partners": self.partners,
         }
 
 
@@ -307,14 +285,11 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     start = parse_hour(town.day.checkpoint)
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
     days: list[dict[str, Any]] = []
-    projects: list[dict[str, Any]] = []
     begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
-        partner = payload.get("with")  # who holds the actor's task for two with it
-        paired = {"with": partner} if partner is not None else {}
         if kind in ("wake", "start_work", "leave_work"):
             lane.enter(t, "work" if kind == "start_work" else "idle", place)
         elif kind == "depart":
@@ -324,78 +299,34 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "sleep":
             lane.enter(t, "sleep", place)
             if payload["journal"]:
-                lane.mark(
-                    entry,
-                    "journal",
-                    text=payload["journal"],
-                    day=payload["day"],
-                    wake=payload["wake"],
-                    ratings_read=payload["ratings_read"],
-                )
+                journal = payload["journal"]
+                lane.mark(entry, "journal", text=journal, day=payload["day"], wake=payload["wake"])
         elif kind == "forced_sleep":
             lane.enter(t, "sleep", lane.home)
             lane.mark(entry, "forced_sleep", wake=payload["wake"])
         elif kind == "claim":
             lane.hold(t, payload["task"])
-            two = {"for_two": True, "with": partner} if payload.get("for_two") else {}
             instance = payload["instance_id"]
-            lane.mark(entry, "claim", task=payload["task"], instance_id=instance, **two)
-            if two:
-                lane.pair(t, partner)
-                if partner is not None:
-                    lanes[partner].pair(t, lane.name)
+            lane.mark(entry, "claim", task=payload["task"], instance_id=instance)
         elif kind == "submission":
-            lane.submitted = lane.mark(entry, "submission", task=payload["task"], **paired)
+            lane.submitted = lane.mark(entry, "submission", task=payload["task"])
         elif kind == "verdict":
             if lane.submitted is None or lane.submitted["task"] != payload["task"]:
                 raise ValueError(f"entry {entry['seq']}: a verdict on no submission")
-            handed = [lane]
-            other = lanes[partner].submitted if partner is not None else None
-            if other is not None and other["task"] == payload["task"]:
-                handed.append(lanes[partner])  # the first of the pair's two hand-ins
-            for one in handed:
-                one.submitted.update(
-                    resolved=payload["resolved"],
-                    status=payload["status"],
-                    fail_to_pass=payload["fail_to_pass"],
-                    pass_to_pass=payload["pass_to_pass"],
-                )
-                one.submitted = None
-        elif kind == "board_posted":
-            day = calendar_day(t)
-            ends = (day + town.work.claim_expiry_days) * DAY
-            projects += [
-                {
-                    "day": day,
-                    "repo": project["repo"],
-                    "tasks": project["tasks"],
-                    "posted": t,
-                    "ends": ends,
-                    "done": None,
-                }
-                for project in payload.get("projects", [])  # absent in a town without projects
-            ]
+            lane.submitted.update(
+                resolved=payload["resolved"],
+                status=payload["status"],
+                fail_to_pass=payload["fail_to_pass"],
+                pass_to_pass=payload["pass_to_pass"],
+            )
+            lane.submitted = None
         elif kind == "payment":
             lane.hold(t, None)
-            lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"], **paired)
+            lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"])
             lane.purse.append([t, payload["purse"]])
-        elif kind == "bonus":
-            lane.mark(entry, "bonus", tasks=payload["tasks"], amount=payload["amount"])
-            lane.purse.append([t, payload["purse"]])
-            done = [
-                project
-                for project in projects
-                if (project["day"], project["tasks"]) == (payload["day"], payload["tasks"])
-            ]
-            if not done:
-                raise ValueError(f"entry {entry['seq']}: the bonus of a project never posted")
-            if done[0]["done"] is None:  # the first of its bonuses, all paid at one moment
-                done[0]["done"] = t
         elif kind in ("abandon", "expiry"):
             lane.hold(t, None)
             lane.mark(entry, kind, task=payload["task"])
-            if kind == "abandon" and partner is not None:  # left holding it alone
-                lanes[partner].pair(t, None)
         elif kind == "speech":
             heard = payload["to"]
             # Those in the conversation: the log says who since a remark stopped drawing in
@@ -404,10 +335,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             for name in people:
                 lanes[name].join(t, place, [other for other in people if other != name])
             lane.mark(entry, "speech", text=payload["text"], to=heard, private=payload["private"])
-        elif kind == "meeting":
-            a, b = payload["pair"]
-            lanes[a].join(t, place, [b])
-            lanes[b].join(t, place, [a])
         elif kind == "leave_conversation":
             lane.part(t, entry["seq"])
         elif kind == "conversation_end":
@@ -444,14 +371,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "skill_shared":  # a log from before any file was shared names a skill
             file = payload["file"] if "file" in payload else f"skills/{payload['skill']}.md"
             lane.mark(entry, "skill_shared", to=payload["to"], file=file)
-        elif kind == "rating":
-            lane.mark(
-                entry,
-                "rating",
-                rated=payload["rated"],
-                score=payload["score"],
-                reason=payload["reason"],
-            )
         elif kind == "settlement":
             lane.purse.append([t, payload["purse"]])
             lane.mark(
@@ -478,8 +397,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             lane.hold(t, None)
             lane.enter(t, "dead", None)
             lane.mark(entry, "death")
-            if partner is not None:  # left holding its task for two alone
-                lanes[partner].pair(t, None)
         elif kind == "checkpoint":
             days.append(
                 {
@@ -511,6 +428,5 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         "now": end,
         "places": {place.id: place.name for place in town.places},
         "days": days,
-        "projects": projects,
         "residents": [lane.data(end) for lane in lanes.values()],
     }

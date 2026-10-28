@@ -1,5 +1,5 @@
-"""The daily schedule: group B's evening, which wakes whoever sleeps, waiting, the checkpoint
-hand-off, snapshot and restore, and the completeness of the world log."""
+"""The daily schedule: waiting, the checkpoint hand-off, snapshot and restore, and the
+completeness of the world log."""
 
 from __future__ import annotations
 
@@ -9,180 +9,19 @@ import json
 import pytest
 
 from tests.world.conftest import (
-    B_EXCHANGE,
     RESIDENTS,
     FakeBackend,
     Town,
     at,
     awake_at,
-    backend_of,
     make_agent_dirs,
     stocked,
     town_config,
 )
 from world.clock import ManualClock, settle
-from world.events import Movement, Sleep, Work
+from world.events import Work
 from world.log import KINDS
 from world.world import World
-
-FOUR = RESIDENTS + ({"name": "Jonas", "home": "college-flat", "purse": 60},)
-EIGHT = FOUR + tuple(
-    {"name": name, "home": "college-flat", "purse": 60}
-    for name in ("Lucia", "Ravi", "Olga", "Kofi")
-)
-
-
-async def test_group_b_pairs_by_lot_and_meets_at_the_cafe_on_work_alone(make_town):
-    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FOUR))
-    await awake_at(town)
-    world = town.world
-    await town.until("18:55")
-    await town.call("Tomas", "go", place="park")
-    for name in world.residents:
-        town.take(name)
-    await town.until("19:00")
-
-    pairings = [e for e in world.log.entries() if e["kind"] == "exchange_pairing"]
-    pairs = [tuple(e["payload"]["pair"]) for e in pairings]
-    assert sorted(len(pair) for pair in pairs) == [2, 2]
-    assert sorted(sum(pairs, ())) == sorted(world.residents)  # Jonas among them
-    (a, b), (c, d) = pairs
-    assert town.take(a) == [
-        f"It is 19:00: by lot, you are to meet {b} at the café on the square "
-        "and talk about your work."
-    ]
-    tomas = world.residents["Tomas"]
-    assert isinstance(tomas.base, Movement) and tomas.base.destination == "cafe"
-    assert tomas.base.arrival == at("19:15")  # the park first, then on to the café
-    rerun = World(world.config, world.log.path.parent, FakeBackend(), clock=ManualClock())
-    assert [tuple(e["payload"]["pair"]) for e in pairings] == pairs  # the lot is the seed's
-    del rerun
-
-    await town.until("19:15")
-    for x, y in pairs:
-        assert world.residents[x].conversation is world.residents[y].conversation is not None
-        conversation = world.residents[x].conversation
-        assert conversation.budget == {x: 3, y: 3}
-    told = town.take(a)[-1]
-    assert (
-        told == f"You met {b} at the café on the square. You each have 3 turns to speak; speak "
-        "of your work alone."
-    )
-    assert "speak of your work alone" in world.ports[a].situation()
-
-    town.take(c)
-    for _ in range(3):
-        await town.call(a, "say", text="I used git bisect today.")
-    assert world.ports[b].interrupt.is_set()
-    assert [p.kind for p in world.ports[c].pending()] == []  # the other pair hears nothing
-    assert (await town.call(a, "say", text="One more thing.")).text == (
-        "You have no turns left to speak at this meeting."
-    )
-    assert (await town.call(b, "say", text="Hi", to=[c])).text == f"{c} is not here."
-    await town.call(b, "leave_conversation")
-    assert world.residents[a].partner is None and world.residents[a].conversation is None
-    assert (await town.call(a, "say", text="Still here?")).text == (
-        "There is nobody here to hear you."
-    )
-    await town.call(a, "go", place=world.residents[a].home)
-    await town.until("21:00")
-    await town.call(a, "sleep", until="07:00", journal="Met someone.")
-    assert f"spoke with today ({b})" in town.take(a)[-1]
-    refused = await town.call(a, "rate", resident=c, score=3, reason="x")
-    assert refused.text == f"You did not speak with {c} today."
-
-
-async def test_group_b_wakes_whoever_sleeps_and_pairs_all_eight(make_town):
-    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=EIGHT))
-    await awake_at(town)
-    world = town.world
-    await town.call("Kofi", "go", place="workshop")
-    await town.until("08:00")
-    await town.call("Kofi", "claim_task", task=1)
-    await town.until("18:00")
-    for name in ("Jonas", "Lucia"):
-        await town.call(name, "sleep", until="06:00", journal="An early night.")
-    town.rest("Jonas")  # Jonas falls asleep; Lucia is still in bed
-    await settle()
-    assert world.residents["Jonas"].suspended and not world.residents["Lucia"].suspended
-    for name in world.residents:
-        town.take(name)
-    await town.until("19:00")
-
-    pairs = [
-        tuple(e["payload"]["pair"]) for e in world.log.entries() if e["kind"] == "exchange_pairing"
-    ]
-    assert sorted(len(pair) for pair in pairs) == [2, 2, 2, 2]
-    assert sorted(sum(pairs, ())) == sorted(world.residents)
-    partner = {a: b for pair in pairs for a, b in (pair, pair[::-1])}
-    woken = [
-        e["actor"]
-        for e in world.log.entries()
-        if e["kind"] == "wake" and e["sim_time"] == at("19:00")
-    ]
-    assert sorted(woken) == ["Jonas", "Lucia"]
-
-    def woken_and_paired(name: str) -> list[str]:
-        return [
-            "It is 19:00: you were woken at home for the evening meeting. You are a little "
-            "hungry. You are fresh. You are in good health.",
-            f"It is 19:00: by lot, you are to meet {partner[name]} at the café on the square "
-            "and talk about your work.",
-        ]
-
-    assert town.take("Lucia") == woken_and_paired("Lucia")  # from bed, before falling asleep
-    heard = [p.text for p in town.heard["Jonas"] if p.kind in ("wake", "exchange_pairing")]
-    assert heard == woken_and_paired("Jonas")  # from sleep
-    kofi = [e["kind"] for e in world.log.entries() if e["actor"] == "Kofi"]
-    assert kofi[-2:] == ["leave_work", "depart"]  # taken from work to the café
-
-    await town.until("19:10")
-    assert all(not isinstance(r.base, (Sleep, Movement)) for r in world.residents.values())
-    for a, b in pairs:
-        conversation = world.residents[a].conversation
-        assert conversation is not None and conversation is world.residents[b].conversation
-        assert conversation.place == "cafe" and conversation.budget == {a: 3, b: 3}
-    meetings = [e for e in world.log.entries() if e["kind"] == "meeting"]
-    assert sorted(sorted(e["payload"]["pair"]) for e in meetings) == sorted(map(sorted, pairs))
-
-
-async def test_a_pair_that_never_meets_meets_nowhere_else_and_parts_at_the_forced_sleep(
-    make_town,
-):
-    town = make_town(town_config("isolated", exchange=B_EXCHANGE, residents=FOUR))
-    town.start(until_day=2)
-    town.rest()
-    world = town.world
-    mei = world.residents["Mei"]
-    await town.until("18:40")
-    await town.call("Mei", "go", place="cafe")
-    await town.until("19:00")
-    other = world.residents[mei.partner]
-    assert mei.place == "cafe" and isinstance(other.base, Movement)
-    await town.call("Mei", "go", place="workshop")  # gone before her partner comes
-    await town.until("19:30")
-    await town.call(other.name, "go", place="workshop")
-    await town.until("20:00")
-    assert mei.place == other.place == "workshop"
-    assert mei.conversation is other.conversation is None  # they meet only at the café
-    meetings = [e["payload"]["pair"] for e in world.log.entries() if e["kind"] == "meeting"]
-    assert not [pair for pair in meetings if "Mei" in pair]
-    await town.call("Mei", "go", place=mei.home)
-    await town.until("20:30")
-    await town.call("Mei", "sleep", until="08:00", journal="A walk across town.")
-    await town.until("03:00", day=2)  # her partner is still up at the forced sleep
-    assert mei.partner is other.partner is None
-    assert [day for day, _ in town.checkpoints] == [1]
-
-
-async def test_an_odd_one_out_is_told_nobody_is_free(make_town):
-    town = make_town(town_config("isolated", exchange=B_EXCHANGE))
-    await awake_at(town)
-    await town.until("19:00")
-    alone = [e for e in town.world.log.entries() if e["kind"] == "exchange_pairing"][-1]
-    (name,) = alone["payload"]["pair"]
-    assert town.take(name)[-1] == "It is 19:00: nobody is free to meet you this evening."
-    assert town.world.residents[name].partner is None
 
 
 async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
@@ -299,7 +138,6 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "leave_work")
     await town.until("22:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy morning.")
-    await town.call("Aisha", "rate", resident="Mei", score=3, reason="Busy all day.")
     town.rest()
     await town.until("00:30", day=2)
     await town.call("Mei", "go", place="mill-street-house")
@@ -312,10 +150,8 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "task": 2,
         "day": 1,
         "diff": json.dumps({"b.py": "half\n"}),
-        "handed": None,
     }
     assert state["residents"]["Mei"]["done"] == [1]
-    assert state["residents"]["Mei"]["unread_ratings"] == [[3, "Busy all day."]]
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
     mei_living = state["residents"]["Mei"]["living"]
     # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today.
@@ -390,8 +226,7 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
 
 
 async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
-    projects = {"projects_a_day": 1, "project_size": 2, "project_bonus": 5}  # tasks 1 and 2
-    town = make_town(town_config(**projects), backend_of({"org/pair": 2, "org/one": 1}))
+    town = make_town()
     await awake_at(town)
     skill = tmp_path / "agents" / "Mei" / "skills" / "triage.md"
     skill.write_text("Read the traceback first.\n")
@@ -409,7 +244,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "submit")
     await town.call("Tomas", "claim_task", task=2)
     await town.call("Tomas", "write_repo_file", path="fix.py", content="FIX\n")
-    await town.call("Tomas", "submit")  # the project's bonus, to Mei and Tomas
+    await town.call("Tomas", "submit")
     await town.call("Mei", "claim_task", task=3)
     await town.call("Mei", "abandon_task")
     await town.call("Tomas", "claim_task", task=3)
@@ -432,25 +267,18 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "move_in")
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
-    await town.call("Mei", "rate", resident="Tomas", score=4, reason="Good company.")
     town.rest()
     town.world.residents["Aisha"].living.health = 1  # her last night
     await town.until("00:00", day=3)  # Tomas's claim runs out; Aisha dies
 
-    b_town = make_town(
-        town_config("isolated", exchange=B_EXCHANGE, residents=RESIDENTS[:2]), root=tmp_path / "b"
-    )
-    await awake_at(b_town)
-    await b_town.until("19:30")
     make_agent_dirs(tmp_path / "r", town.world.config)
     restored = World(town.world.config, tmp_path / "r", FakeBackend(), clock=ManualClock())
     restored.restore(town.checkpoints[0][1])
 
-    entries = [*town.world.log.entries(), *b_town.world.log.entries(), *restored.log.entries()]
+    entries = [*town.world.log.entries(), *restored.log.entries()]
     assert {entry["kind"] for entry in entries} == set(KINDS)
-    for log in (town.world.log, b_town.world.log):
-        seqs = [entry["seq"] for entry in log.entries()]
-        assert seqs == list(range(1, len(seqs) + 1))
+    seqs = [entry["seq"] for entry in town.world.log.entries()]
+    assert seqs == list(range(1, len(seqs) + 1))
     for entry in entries:
         assert set(entry) == {
             "seq",

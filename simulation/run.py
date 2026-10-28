@@ -5,10 +5,8 @@ Everything that can be checked is checked before anything is written: the backgr
 model client and its key, that the model answers a small request, the task split and its
 images, and on resumption the configuration frozen in the run, which must be the one given but
 for the settings added since it was frozen (`ADDED`). A new run then freezes the
-configuration, creates each resident's directory from its background (memory/town.md seeded
-with the town's rules as the world tells them to that resident, memory/people.md with the people
-it knows already, work.md with a heading), makes it a git repository, and saves the world's
-starting state as day 0.
+configuration, creates each resident's directory from its background, with its memory and
+skills empty, makes it a git repository, and saves the world's starting state as day 0.
 
 Every runtime shares the one client. A resident's requests name, as their replica, its place in
 the configuration's list of residents, which is frozen with the run: on a server of several
@@ -64,7 +62,6 @@ from simulation.dry_run import DryRunModel
 from world.backend import Backend, SwebenchBackend
 from world.clock import tell_moment
 from world.config import TownConfig
-from world.rules import Rules
 from world.testing import FakeBackend
 from world.world import OnCheckpoint, World
 
@@ -152,9 +149,7 @@ async def run(
                 world = _create(directory, config, backend, backgrounds)
             runtimes = {
                 r.name: Runtime(
-                    AgentDirectory(
-                        directory.agent_dir(r.name), skills_writable=config.skills_writable
-                    ),
+                    AgentDirectory(directory.agent_dir(r.name)),
                     world.ports[r.name],
                     client,
                     config.runtime,
@@ -242,17 +237,9 @@ def _create(
     directory: RunDirectory, config: ExperimentConfig, backend: Backend, backgrounds: dict[str, str]
 ) -> World:
     """The world of a new run, with every agent directory created and day 0 saved."""
-    rules = Rules(config.town)
     for name, background in backgrounds.items():
         path = directory.agent_dir(name)
-        AgentDirectory.create(
-            path,
-            background=background,
-            town=rules.text(name) + "\n",
-            people=rules.people_notes(name),
-            work="# Work\n",
-            skills_writable=config.skills_writable,
-        )
+        AgentDirectory.create(path, background=background)
         Repository.init(path, user_name=name, user_email=f"{name.lower()}@town.invalid")
     world = World(config.town, directory.root, backend)
     _save(directory, config.town, 0, world.snapshot())

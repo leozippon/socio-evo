@@ -42,7 +42,7 @@
   --a6: #008300; --a6-ink: #ffffff; --a6-shade: #0d6708;
   --a7: #4a3aa7; --a7-ink: #ffffff; --a7-shade: #41337d;
   --a8: #e34948; --a8-ink: #1b1712; --a8-shade: #ac3e3b;
-  /* The five events on the timeline's lanes, and the marks of skills and ratings. */
+  /* The five events on the timeline's lanes, and the marks of skills. */
   --lane-idle: #e4e3dc;
   --lane-sleep: #a9a79f;
   --lane-movement: #1baf7a;
@@ -50,7 +50,6 @@
   --lane-dead: #3a3732;
   --lane-conversation: #eb6834;
   --lane-skill: #6250d6;
-  --lane-rating: #eda100;
 
   /* Type: one system stack, a short scale, two weights that matter. */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -120,7 +119,6 @@
     --lane-dead: #171614;
     --lane-conversation: #d95926;
     --lane-skill: #9085e9;
-    --lane-rating: #c98500;
   }
 }
 

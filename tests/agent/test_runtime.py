@@ -68,10 +68,9 @@ async def test_a_round_trip_of_tool_calls_ends_in_waiting(directory):
     )
     assert context(directory)[-1] == Message(role="assistant", content="Done.")
     kinds = [record["kind"] for record in trace(directory)]
-    assert kinds == ["percept", "prompt"] + ["request", "reply", "tool_call", "tool_result"] * 2 + [
-        "request",
-        "reply",
-    ]
+    step = ["request", "reply", "tool_call", "tool_result"]
+    # The file written is new, so the index of files, and with it the prompt, changes once.
+    assert kinds == ["percept", "prompt", *step, "prompt", *step, "request", "reply"]
     assert port.busy == [True, False] * 5 + [False]
 
 

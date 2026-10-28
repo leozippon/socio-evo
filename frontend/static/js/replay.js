@@ -57,24 +57,16 @@ export function markersBetween(lane, from, to) {
   return lane.markers.slice(first, last);
 }
 
-/** Who holds the task for two a lane holds with it at `t`: as of its last change at or before `t`; null for nobody. */
-export function partnerAt(lane, t) {
-  const i = lowerBound(lane.partners, after(t), (point) => point[0]) - 1;
-  return i < 0 ? null : lane.partners[i][1];
-}
-
 /**
  * The task a lane holds at `t`: its last claim not yet paid, given up, run out or dropped by
- * death; null for none. A task for two says so (`for_two`) and with whom it is held (`with`, null
- * while the lane waits for a partner).
+ * death; null for none.
  */
 export function heldAt(lane, t) {
   let held = null;
   for (const m of markersBetween(lane, null, t)) {
-    if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t, for_two: Boolean(m.for_two) };
+    if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t };
     else if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry" || m.kind === "death") held = null;
   }
-  if (held?.for_two) held.with = partnerAt(lane, t);
   return held;
 }
 
@@ -113,22 +105,9 @@ export function originOf(lane, segment) {
 }
 
 /**
- * The clients' projects running at `t`, posted and their midnight not yet come, with `residents`
- * as `moment` finds them: each task with who holds it and who was paid for it since the posting
- * (null for nobody), and `done`, the time its bonus was paid if that was by `t`, else null.
- */
-export function projectsAt(timeline, t, residents) {
-  const holder = (task) => Object.keys(residents).find((name) => residents[name].held?.task === task) ?? null;
-  const payee = (task, posted) => timeline.residents.find((lane) => markersBetween(lane, posted, t).some((m) => m.kind === "payment" && m.task === task))?.name ?? null;
-  return timeline.projects
-    .filter((p) => p.posted <= t && t < p.ends)
-    .map((p) => ({ ...p, done: p.done !== null && p.done <= t ? p.done : null, tasks: p.tasks.map((task) => ({ task, holder: holder(task), paid: payee(task, p.posted) })) }));
-}
-
-/**
  * The moment `t` of a timeline: its lived day, for each resident its segment, its conversation,
  * its purse, the task it holds and, on the way somewhere, where from, where to and how far along
- * (0 to 1), and the clients' projects then running (`projectsAt`).
+ * (0 to 1).
  */
 export function moment(timeline, t) {
   const residents = {};
@@ -141,5 +120,5 @@ export function moment(timeline, t) {
     }
     residents[lane.name] = { lane, segment, conversation: conversationAt(lane, t), purse: purseAt(lane, t), held: heldAt(lane, t), moving };
   }
-  return { time: t, day: livedDay(timeline.days, t), residents, projects: projectsAt(timeline, t, residents) };
+  return { time: t, day: livedDay(timeline.days, t), residents };
 }

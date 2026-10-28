@@ -2,11 +2,10 @@
 
 The rules are derived from the configuration and from who lives where, which the world passes
 in as it stands: a move or a death changes the homes, the free rooms and one's own rent, and
-nothing else in them changes during a run. They are part of the system prompt and the seed of
-the resident's notes on the town, and the ties they tell in the town mode seed its notes on
-people. They describe what can be done and what follows from it, in plain words, and nothing
-else: not the length of the run, not the machinery, not how anyone ought to behave. `help` tells
-the same paragraphs on one topic.
+nothing else in them changes during a run. They are part of the system prompt. They describe
+what can be done and what follows from it, in plain words, and nothing else: not the length of
+the run, not the machinery, not how anyone ought to behave. `help` tells the same paragraphs on
+one topic.
 """
 
 from __future__ import annotations
@@ -84,44 +83,26 @@ class Rules:
             return sections[key]
         return f"You can ask about: {', '.join(TOPICS)}."
 
-    def homes(self, name: str) -> dict[str, list[str]]:
-        """Who lives where as `name` knows it at the start: in the isolated mode, only itself."""
+    def homes(self) -> dict[str, list[str]]:
+        """Who lives where at the start."""
         c = self.config
         return {
-            place.id: [
-                r.name
-                for r in c.residents
-                if r.home == place.id and (c.social.mode == "town" or r.name == name)
-            ]
+            place.id: [r.name for r in c.residents if r.home == place.id]
             for place in c.places
             if place.kind == "home"
         }
-
-    def ties(self, name: str) -> list[str]:
-        """What `name` is told of the people it knows already: its ties, in the town mode."""
-        if self.config.social.mode != "town":
-            return []
-        me = next(resident for resident in self.config.residents if resident.name == name)
-        return list(me.ties.values())
-
-    def people_notes(self, name: str) -> str:
-        """The first contents of `name`'s notes on people: the heading, and under it the people
-        it knows already, as the rules tell them."""
-        return "# People\n" + "".join(f"\n{tie}\n" for tie in self.ties(name))
 
     def sections(self, name: str, homes: Homes | None = None) -> dict[str, str]:
         """The rules by topic, told to `name`, with `homes` as they stand (at the start if not
         given)."""
         c = self.config
         me = next(resident for resident in c.residents if resident.name == name)
-        homes = homes if homes is not None else self.homes(name)
+        homes = homes if homes is not None else self.homes()
         home_of = {who: place for place, people in homes.items() for who in people}
         my_home = c.place(home_of[name])
         workplace = c.workplace
         social = c.social
-        exchange = social.exchange
-        contact = social.mode == "town" or exchange is not None
-        for_sale = c.for_sale()
+        for_sale = list(c.goods)
 
         def money(amount: int) -> str:
             return f"-{c.currency}{-amount}" if amount < 0 else f"{c.currency}{amount}"
@@ -158,16 +139,9 @@ class Rules:
             f"wake. At {c.day.forced_sleep} anyone still up falls asleep and wakes at home at "
             f"{c.day.forced_wake}."
         )
-        if exchange is not None:
-            day += (
-                f" Every evening at {exchange.at} you are paired by lot with another worker of "
-                "the town, and woken for it if you are asleep; you both walk to "
-                f"{c.place(exchange.place).name} and talk about your work, each with "
-                f"{counted(exchange.messages, 'turn')} to speak."
-            )
 
-        # A claim runs out, and a project lapses, at the midnight that ends the day this many
-        # days after the day it was made or posted.
+        # A claim runs out at the midnight that ends the day this many days after the day it
+        # was made.
         days = c.work.claim_expiry_days
         nth = {0: "first", 1: "second"}.get(days)
         expiry = (
@@ -188,38 +162,11 @@ class Rules:
             f"paid at once. You can hand in each task at most {c.work.acceptance_runs} times a "
             "day. You hold at most one task at a time. You keep it wherever you go, and your "
             f"changes are kept overnight, but a claim runs out unpaid {expiry}. You cannot claim "
-            "again a task you have been paid for."
+            "again a task you have been paid for. Everyone works from the same board; a task "
+            "someone holds is shown as held, stays on the board from day to day while it is "
+            "held, and nobody else can claim it; a task someone has been paid for leaves the "
+            "board for the day."
         )
-        work += (
-            " Everyone works from the same board; a task someone holds is shown as held, stays "
-            "on the board from day to day while it is held, and nobody else can claim it; a "
-            "task someone has been paid for leaves the board for the day."
-            if social.mode == "town"
-            else " The board is yours alone."
-        )
-        if c.work.for_two:
-            assert c.work.payment_for_two is not None
-            work += (
-                " Some clients want two people on a task: the board marks it for two, and it pays "
-                f"{money(c.work.payment_for_two)} to each of the two. Whoever claims it first "
-                "waits until someone else claims it too; the two then share one workspace, and "
-                "their fix goes to the client's checks once both have handed it in."
-            )
-        if c.work.projects_a_day:
-            assert c.work.project_size is not None and c.work.project_bonus is not None
-            by = (
-                f"by the {nth} midnight after the project was posted"
-                if nth
-                else f"before {days + 1} midnights have passed since the project was posted"
-            )
-            work += (
-                f" Some clients bring a project of {counted(c.work.project_size, 'task')} in one "
-                "repository, listed together on the board until the project is done or its time "
-                "is up, and want a different person on each, who claims, hands in and is paid for "
-                f"it like any other task. If all {c.work.project_size} are accepted {by}, each of "
-                f"the {c.work.project_size} people paid for them also receives a bonus of "
-                f"{money(c.work.project_bonus)}."
-            )
 
         assert my_home.rent is not None
         fees = any(good.fee_per_day for good in for_sale)
@@ -231,72 +178,48 @@ class Rules:
             "You pay for everything in cash. A purse can go below zero when rent is taken; you "
             "are then in "
             "debt, and can still be paid, pay your rent and receive money, but can buy nothing "
-            "until your purse covers the price."
+            "until your purse covers the price. With give you can hand money, a thing you own "
+            "(with any daily charge on it) or helpings of a stock to anyone awake where you are, "
+            "as a gift or on terms you agree between you; the town keeps no account of it."
         )
-        if contact:
-            money_rules += (
-                " With give you can hand money, a thing you own (with any daily charge on it) or "
-                "helpings of a stock to anyone awake where you are, as a gift or on terms you "
-                "agree between you; the town keeps no account of it."
-            )
 
         shopping = self._shopping(for_sale, money)
         health = self._health(for_sale)
 
-        conversation = (
-            f"A conversation lasts until its people leave it or nobody speaks for "
-            f"{social.silence_minutes} minutes."
+        others = listed(
+            [
+                f"{r.name} ({c.place(home_of[r.name]).name})"
+                for r in c.residents
+                if r.name != name and r.name in home_of  # the dead live nowhere
+            ]
         )
-        if social.mode == "town":
-            others = listed(
-                [
-                    f"{r.name} ({c.place(home_of[r.name]).name})"
-                    for r in c.residents
-                    if r.name != name and r.name in home_of  # the dead live nowhere
-                ]
-            )
-            meeting = listed([place.name for place in c.places if place.kind in ("social", "shop")])
-            people = f"The others who live in the town, with their homes: {others}. "
-            if meeting:
-                people += f"People run into one another at {meeting}; you can also "
-            else:
-                people += "You can "
-            people += (
-                f"call on someone at home, or find them at {workplace.name}. "
-                "You can speak to anyone awake at the same place as you: to everyone there at "
-                "once, or only to the people you name, and then the others notice that you said "
-                f"something but not what. {conversation}"
-            )
-            if me.ties:
-                people += " Some of them you know already. " + " ".join(me.ties.values())
-        elif exchange is not None:
-            people = (
-                "During the day you live and work on your own and meet nobody. At the evening "
-                f"meeting you talk with the person you are paired with. {conversation}"
-            )
+        meeting = listed([place.name for place in c.places if place.kind in ("social", "shop")])
+        people = f"The others who live in the town, with their homes: {others}. "
+        if meeting:
+            people += f"People run into one another at {meeting}; you can also "
         else:
-            people = "You live and work on your own here and meet nobody."
-        if contact:
-            people += (
-                " With share_file you can pass a copy of any of your files but your journal to "
-                "people you are talking with; they receive its text."
-            )
+            people += "You can "
+        people += (
+            f"call on someone at home, or find them at {workplace.name}. "
+            "You can speak to anyone awake at the same place as you: to everyone there at "
+            "once, or only to the people you name, and then the others notice that you said "
+            "something but not what. A conversation lasts until its people leave it or nobody "
+            f"speaks for {social.silence_minutes} minutes."
+        )
+        if me.ties:
+            people += " Some of them you know already. " + " ".join(me.ties.values())
+        people += (
+            " With share_file you can pass a copy of any of your files but your journal to "
+            "people you are talking with; they receive its text."
+        )
 
         sleep = (
             "Go to bed at home at any hour with sleep, giving the hour you want to wake and, if "
             "you write one, the day's entry in your own journal, which is kept in your journal "
             "folder; an entry given at a later bedtime the same day, or again from bed, is added "
             f"to that day's. You cannot sleep longer than {longest_sleep(c.day)} at a stretch: "
-            "by then you wake, whatever hour you gave."
-        )
-        sleep += (
-            " In bed, before you fall asleep, you read the ratings others gave you the night "
-            "before, without their names; you can look back over your day; you can rate each "
-            "person you spoke with that day from 1 to 5, with a reason, which they read "
-            "the next night without your name; and you can see to your files."
-            if contact and social.ratings
-            else " In bed, before you fall asleep, you can look back over your day and see to "
-            "your files."
+            "by then you wake, whatever hour you gave. In bed, before you fall asleep, you can "
+            "look back over your day and see to your files."
         )
         return {
             "places": places,

@@ -42,7 +42,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "board_posted", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
-        "leave_conversation", "leave_work", "sleep", "rating", "fell_asleep", "settlement",
+        "leave_conversation", "leave_work", "sleep", "fell_asleep", "settlement",
         "condition",
     }  # fmt: skip
 
@@ -65,7 +65,6 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
-    assert "20:00 You rated Tomas 4 of 5: “He asked good questions.”" in lines
     assert lines[-2:] == [
         "20:00 You fell asleep.",
         "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
@@ -114,8 +113,8 @@ def test_others_private_speech_their_days_and_the_journal_stay_out(run_dir):
     assert "09:20 Tomas said something to Aisha that you could not hear." in record
     assert "Do not tell Mei" not in record
     assert "Tomas claimed" not in record and "Tomas ran" not in record
-    assert "Tomas rated" not in record and "Tomas stopped work" not in record
-    assert not any(f"Mei {verb}" in record for verb in ("claimed", "said", "ran", "rated"))
+    assert "Tomas stopped work" not in record
+    assert not any(f"Mei {verb}" in record for verb in ("claimed", "said", "ran"))
     assert MEI_JOURNAL not in record and "I fixed task 1" not in record
     tomas = day_record(run_dir, "Tomas", 1)
     assert "You said to Aisha: “Do not tell Mei about task 2.”" in tomas
@@ -133,10 +132,9 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "17:00 You waited 600 minutes; it is now 17:00.",
         "17:00 You called wait(minutes=180): You wait for up to 180 minutes.",
         "20:00 You waited 180 minutes; it is now 20:00.",
-        "20:00 You are in bed and will wake at 07:00; your journal entry for today is kept. Last "
-        "night others rated you, without their names: 5 of 5, saying “She shared her testing "
-        "skill.”. Before you fall asleep you can look back over your day and see to your "
-        "files; you fall asleep once you have nothing more to do.",  # she spoke with nobody
+        "20:00 You are in bed and will wake at 07:00; your journal entry for today is kept. "
+        "Before you fall asleep you can look back over your day and see to your files; you fall "
+        "asleep once you have nothing more to do.",
         "20:00 You fell asleep.",
         "00:00 Your statement for Tuesday 2 January: rent for your room at the shared house on "
         "Mill Street $20. You had nothing to eat today. You are starving. You are fresh. You are "

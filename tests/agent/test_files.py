@@ -19,8 +19,8 @@ def test_reading_writing_editing_and_listing_your_files(directory):
     assert (directory.root / "memory/notes/ben.md").read_text() == "a\nb\nC\nd\n"
     repeated = tools.call("edit_file", {"path": "background.md", "old_text": "a", "new_text": "x"})
     assert "times" in repeated.text
-    missing = tools.call("edit_file", {"path": "memory/work.md", "old_text": "zz", "new_text": ""})
-    assert missing.text == texts.PASSAGE_MISSING.format(path="memory/work.md")
+    missing = tools.call("edit_file", {"path": "background.md", "old_text": "zz", "new_text": ""})
+    assert missing.text == texts.PASSAGE_MISSING.format(path="background.md")
     listing = tools.call("list_files", {}).text.splitlines()
     assert listing[0] == "background.md" and "memory/notes/ben.md" in listing
     assert not any(name.endswith(".jsonl") for name in listing)
@@ -72,6 +72,6 @@ def test_skills_cannot_be_written_by_any_path_when_read_only(directory):
         assert tools.call(name, args).text == texts.SKILLS_READ_ONLY
     assert tools.call("read_file", {"path": "skills/bisect.md"}).text == "Finding a bad commit."
     assert sorted(p.name for p in (directory.root / "skills").iterdir()) == ["bisect.md"]
-    assert tools.call("write_file", {"path": "memory/work.md", "content": "x"}).text.startswith(
+    assert tools.call("write_file", {"path": "memory/notes.md", "content": "x"}).text.startswith(
         "Wrote"
     )

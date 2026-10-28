@@ -12,8 +12,8 @@ around them. For each task the agent directory's background, memory and skills (
 session or trace) are copied into OUT_DIR/<instance id>/agent, so the export is never written to
 and every task starts with a fresh session; the trace written there is the record of the
 attempt, and every change handed in is kept beside it as submission-N.patch. Skills are
-read-only in the harness, for every group: the evaluation measures the resident as it stands,
-and within one task nothing written there could be read back anyway. Tasks run concurrently,
+read-only in the harness: the evaluation measures the resident as it stands, and within one
+task nothing written there could be read back anyway. Tasks run concurrently,
 `concurrency` at a time.
 
 A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions

@@ -63,7 +63,6 @@ def evaluate_capability(out, endings, finished=True, model="qwen"):
             "commit": "c0ffee",
             "split": "eval",
             "model": {"model": model},
-            "skills_writable": True,
             "concurrency": 2,
             "seconds": 120.0,
             **CapabilityResult.of(rows).model_dump(mode="json"),

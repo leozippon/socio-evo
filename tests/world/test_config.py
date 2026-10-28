@@ -6,7 +6,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from tests.world.conftest import B_EXCHANGE, FakeBackend, make_agent_dirs, town_config
+from tests.world.conftest import FakeBackend, make_agent_dirs, town_config
 from world.clock import ManualClock
 from world.world import World
 
@@ -21,19 +21,13 @@ def broken(change, **options) -> str:
 
 
 def test_a_town_validates():
-    config = town_config("isolated", exchange=B_EXCHANGE)
+    config = town_config()
     assert config.workplace.id == "workshop"
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
     assert config.good("groceries").days == 3 and config.place("college-flat").comfort == 1.0
-    alone = ["groceries", "meal", "bicycle", "coat", "examination", "treatment"]
-    assert [g.id for g in config.for_sale()] == alone  # nothing to write with
-    everything = ["groceries", "meal", "bicycle", "phone", "coat", "examination", "treatment"]
-    assert [g.id for g in town_config().for_sale()] == everything
     assert config.needs.satiety.lowest.name == "starving"
     data = config.model_dump(mode="json")
-    data["social"]["exchange"]["at"] = "01:00"  # after midnight, before the forced sleep
-    assert type(config).model_validate(data).social.exchange.at == "01:00"
     data["day"]["sleep_at_most"] = "05:00"  # as long as the forced sleep, 02:00 to 07:00
     assert type(config).model_validate(data).day.sleep_at_most == "05:00"
     data["day"]["board_posted"] = "07:00"  # as the residents wake
@@ -68,17 +62,6 @@ def test_a_town_validates():
             "sleep_at_most must last at least from forced_sleep to forced_wake",
         ),
         (lambda d: d["day"].update(sleep_at_most="24:00"), {}, "HH:MM"),
-        (lambda d: d["social"].update(exchange=B_EXCHANGE), {}, "isolated mode"),
-        (
-            lambda d: d["social"]["exchange"].update(at="02:15"),
-            {"mode": "isolated", "exchange": B_EXCHANGE},
-            "must come before the forced sleep",
-        ),
-        (
-            lambda d: d["social"]["exchange"].update(place="workshop"),
-            {"mode": "isolated", "exchange": B_EXCHANGE},
-            "not a social place",
-        ),
         (
             lambda d: d["residents"][0].update(ties={"Tomas": "Tomas lives up the hill."}),
             {},

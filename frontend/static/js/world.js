@@ -1,15 +1,5 @@
-// Facts about a run's world that several views show: its places, its group, and what the five
-// events of the timeline are called.
-
-export const GROUPS = {
-  A: ["A", "independent learning", "Each resident lives in a town of its own: it never perceives another."],
-  B: ["B", "technical experience sharing", "As A, with an evening exchange of work experience between residents paired by lot."],
-  C: ["C", "social learning", "One town: free conversation, a shared board, money, skills and ratings."],
-  D: ["D", "social life without self-modification", "As C, but skills can be neither written nor passed on."],
-};
-
-/** A group's short label, "Group C · social learning"; a run of no group has none. */
-export const groupLabel = (group) => (GROUPS[group] ? `Group ${GROUPS[group][0]} · ${GROUPS[group][1]}` : null);
+// Facts about a run's world that several views show: its places, and what the five events of
+// the timeline are called.
 
 /** The events a resident is always in one of (dead to the end, once its health ran out), and the conversation layered over them. */
 export const EVENTS = { idle: "Idle", movement: "Movement", work: "Work", sleep: "Sleep", dead: "Dead", conversation: "Conversation" };

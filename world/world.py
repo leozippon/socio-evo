@@ -11,19 +11,17 @@ Everything that happens at a moment of simulated time is a timer in one queue, r
 the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
 tells a waiting resident the time, and the day's schedule, which is all the fixed structure a day
 has. For day N (whose daytime is calendar day N): the posting of day N's board at the workplace
-in the morning, which replaces what was left of the day before's; group B's pairing, which wakes
-whoever sleeps; midnight, when each resident's food and health are reckoned, its rent and fees
-are charged with a statement, expired claims run out and clients' projects not done in time
-lapse; the forced sleep; and the checkpoint.
-Every hour on the hour, besides, the bodies are brought up to date (see below). The workplace
-never closes, and residents go to bed and wake when they choose, except that one sleep lasts at
-most a configured span and that nobody wakes between the forced sleep and the checkpoint.
-At the checkpoint the world waits until every resident is asleep and its runtime waits on its
-port, holds the clock, closes every workspace keeping its changes, takes the snapshot and awaits
-`on_checkpoint(day, snapshot)`, through which the composition layer writes the checkpoint and
-commits the agent directories. A lived day N runs from the checkpoint on calendar day N to the
-one on calendar day N + 1; the journal, the ratings, the acceptance runs and the record
-`review_day` tells belong to it.
+in the morning, which replaces what was left of the day before's; midnight, when each resident's
+food and health are reckoned, its rent and fees are charged with a statement and expired claims
+run out; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
+brought up to date (see below). The workplace never closes, and residents go to bed and wake
+when they choose, except that one sleep lasts at most a configured span and that nobody wakes
+between the forced sleep and the checkpoint. At the checkpoint the world waits until every
+resident is asleep and its runtime waits on its port, holds the clock, closes every workspace
+keeping its changes, takes the snapshot and awaits `on_checkpoint(day, snapshot)`, through which
+the composition layer writes the checkpoint and commits the agent directories. A lived day N
+runs from the checkpoint on calendar day N to the one on calendar day N + 1; the journal, the
+acceptance runs and the record `review_day` tells belong to it.
 
 A resident's living (`Living`, of `world.body`) is what it owns and keeps in stock, what it has
 eaten since the last midnight, and its body's three needs: the goods of the catalogue act through
@@ -52,10 +50,7 @@ residents it is addressed to, at their place and awake; it draws into the conver
 conversation. A resident at work outside it hears a remark to everyone without being drawn in or
 interrupted, and reads it, like everything else, with its runtime's next tool result or when it
 next waits. A resident in transit is at no place and perceives nothing there; an asleep resident
-cannot be addressed, and what is told to it while suspended is held until it wakes. In the
-isolated mode a resident perceives nobody, except its partner in group B's evening exchange
-from the pairing until their conversation ends or, if they never meet at the exchange's place,
-until the forced sleep.
+cannot be addressed, and what is told to it while suspended is held until it wakes.
 """
 
 from __future__ import annotations
@@ -66,7 +61,6 @@ import heapq
 import inspect
 import itertools
 import math
-import random
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
 from functools import partial
@@ -78,7 +72,7 @@ from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.storage import RunDirectory
 from world import tools
 from world.backend import Backend
-from world.board import Board, Project, with_partner
+from world.board import Board
 from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
 from world.config import Band, Good, TownConfig
@@ -87,7 +81,6 @@ from world.events import (
     ENDED,
     EXHAUSTED,
     TASK_TOOLS,
-    UNTIL_JOINED,
     Base,
     Conversation,
     Dead,
@@ -98,7 +91,6 @@ from world.events import (
     refusal,
 )
 from world.log import Entry, WorldLog
-from world.ratings import Ratings, tell_ratings
 from world.rules import Rules, bare, longest_sleep
 from world.telling import cap, counted, listed, you
 
@@ -133,7 +125,6 @@ class Resident:
     living: Living = field(default_factory=Living)
     reckoned: int = 0
     conversation: Conversation | None = None
-    partner: str | None = None
     wait_minutes: int | None = None
     timer: _Timer | None = None
     tick: _Timer | None = None
@@ -202,23 +193,12 @@ class World:
         names = [r.name for r in config.residents]
         self.economy = Economy(config.currency, {r.name: r.purse for r in config.residents})
         self.board = Board(
-            tasks,
-            backend,
-            config.work,
-            seed=config.seed,
-            shared=config.social.mode == "town",
-            names=names,
-            money=self.economy.money,
-            start=config.start_date,
+            tasks, backend, config.work, seed=config.seed, names=names, money=self.economy.money
         )
-        self.ratings = Ratings(names)
         self.body = Body(config.needs)
         self.rules = Rules(config)
         self.tool_specs: list[ToolSpec] = tools.specs(config)
         self._specs = {spec.name: spec for spec in self.tool_specs}
-        self.social_contact = config.social.mode == "town" or config.social.exchange is not None
-        self.ratings_on = self.social_contact and config.social.ratings
-        self.for_sale = config.for_sale()
         self._timers: list[_Timer] = []
         self._order = itertools.count()
         self._pushed = asyncio.Event()
@@ -290,35 +270,23 @@ class World:
         world starts and a restored one stands), which the configuration puts before all of
         them."""
         self._at((day - 1) * DAY + self._board_posted, partial(self._post_board, day))
-        exchange = self.config.social.exchange
-        if exchange is not None:
-            evening = (day - 1) * DAY + self.config.day.of_day(exchange.at)
-            self._at(evening, partial(self._pair, day))
         self._at(day * DAY, partial(self._midnight, day))
         self._at(day * DAY + self._forced, partial(self._force_sleep, day))
         self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
 
     def _post_board(self, day: int) -> None:
         """Post the board of calendar day `day`, in place of what was left of the day before's,
-        and tell those at the workplace; the log names the projects formed on it, where the town
-        has projects."""
-        formed = self.board.post(day)
+        and tell those at the workplace."""
+        self.board.post(day)
         workplace = self.config.workplace
         here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
         hour = clock_time(self.clock.now())
-        projects = [
-            {"repo": self.board.task(project.tasks[0]).repo, "tasks": list(project.tasks)}
-            for project in formed
-        ]
         self.record(
             "board_posted",
             lambda w: f"It is {hour}: the day's board is posted at {workplace.name}.",
             place=workplace.id,
             audience=here,
-            payload={
-                "tasks": len(self.board.posted),
-                **({"projects": projects} if self.config.work.projects_a_day else {}),
-            },
+            payload={"tasks": len(self.board.posted)},
         )
 
     def _hourly(self) -> None:
@@ -332,16 +300,14 @@ class World:
 
     def _midnight(self, day: int) -> None:
         """The end of calendar day `day`: its food and its health reckoned and charges taken,
-        the claims that run out with it, and the projects that lapse with it unpaid of their
-        bonus (each paid task having paid as usual)."""
+        and the claims that run out with it."""
         self._settle(day)
         self._expire(day)
-        self.board.lapse(day)
 
     def _expire(self, day: int) -> None:
         board = self.board
-        ending = [(name, board.claims[name], board.partner(name)) for name in board.expired(day)]
-        for name, claim, partner in ending:
+        ending = [(name, board.claims[name]) for name in board.expired(day)]
+        for name, claim in ending:
             workspace = board.drop(name)
             if workspace is not None:
                 board.orphans.append(workspace)
@@ -355,110 +321,8 @@ class World:
                 actor=r,
                 place=None,
                 audience=[r],
-                payload={"task": claim.task, **with_partner(partner)},
+                payload={"task": claim.task},
             )
-
-    def _pair(self, day: int) -> None:
-        exchange = self.config.social.exchange
-        assert exchange is not None
-        everyone = [r for r in self.residents.values() if r.alive]
-        random.Random(f"{self.config.seed}:{day}").shuffle(everyone)
-        pairs = list(zip(everyone[::2], everyone[1::2], strict=False))
-        hour = clock_time(self.clock.now())
-        place = self.config.place(exchange.place).name
-        for a, b in pairs:
-            for r in (a, b):
-                if not r.awake:
-                    assert r.timer is not None
-                    r.timer.cancel()
-                    self._wake_up(
-                        r,
-                        lambda w, r=r: (
-                            f"It is {hour}: you were woken at home for the evening meeting."
-                            if w == r.name
-                            else f"It is {hour}: {r.name} was woken for the evening meeting."
-                        ),
-                    )
-            a.partner, b.partner = b.name, a.name
-
-            def tell(w: str | None, a: Resident = a, b: Resident = b) -> str:
-                if w is None:
-                    return f"It is {hour}: {a.name} and {b.name} are to meet at {place}."
-                other = b.name if w == a.name else a.name
-                return (
-                    f"It is {hour}: by lot, you are to meet {other} at {place} and talk about "
-                    "your work."
-                )
-
-            self.record(
-                "exchange_pairing", tell, audience=[a, b], payload={"pair": [a.name, b.name]}
-            )
-        if len(everyone) % 2:
-            last = everyone[-1]
-            self.record(
-                "exchange_pairing",
-                lambda w: f"It is {hour}: nobody is free to meet {you(last.name, w)} this evening.",
-                audience=[last],
-                payload={"pair": [last.name]},
-            )
-        for a, b in pairs:
-            for r in (a, b):
-                self._send(r, exchange.place)
-            if a.place == b.place == exchange.place:
-                self._meet(a, b)
-
-    def _send(self, r: Resident, place: str) -> None:
-        """Send `r` to `place`, from its conversation and its work if it is in them, turning it
-        there if it is on its way elsewhere."""
-        if r.place == place:
-            return
-        self.break_off(r)
-        if isinstance(r.base, Movement):
-            assert r.timer is not None
-            r.timer.cancel()
-            arrival = r.base.arrival + self.travel_minutes(r, r.base.destination, place) * 60
-            r.base = Movement(place, arrival)
-            r.timer = self._at(arrival, partial(self._arrive, r))
-            name = self.config.place(place).name
-            self.record(
-                "depart",
-                lambda w: f"{cap(you(r.name, w))} turned towards {name}.",
-                actor=r,
-                place=None,
-                payload={"from": None, "to": place, "arrival": arrival},
-            )
-        else:
-            self.depart(r, place)
-
-    def _meet(self, a: Resident, b: Resident) -> None:
-        exchange = self.config.social.exchange
-        assert exchange is not None and a.place is not None
-        room = self._room(a)
-        conversation = Conversation(
-            room,
-            a.place,
-            {a.name, b.name},
-            self.clock.now(),
-            budget={a.name: exchange.messages, b.name: exchange.messages},
-            pair=(a.name, b.name),
-        )
-        self._rooms[room] = a.conversation = b.conversation = conversation
-        self._arm_silence(conversation)
-        place = self.config.place(a.place).name
-        n = exchange.messages
-
-        def tell(w: str | None) -> str:
-            if w is None:
-                return f"{a.name} and {b.name} met at {place} to talk about their work."
-            other = b if w == a.name else a
-            return (
-                f"You met {self.named(other)} at {place}. You each have {counted(n, 'turn')} to "
-                "speak; speak of your work alone."
-            )
-
-        self.record(
-            "meeting", tell, place=a.place, audience=[a, b], payload={"pair": [a.name, b.name]}
-        )
 
     def _settle(self, day: int) -> None:
         """Midnight for every living resident: its body is brought up to the hour and its health
@@ -546,9 +410,7 @@ class World:
             r.timer.cancel()
             r.timer = None
         self.disarm_tick(r)
-        r.partner = None
         claim = self.board.claims.get(r.name)
-        partner = self.board.partner(r.name)  # who holds its task for two with it, left alone
         if claim is not None:
             workspace = self.board.drop(r.name)
             if workspace is not None:
@@ -556,30 +418,14 @@ class World:
         r.base, r.place = Dead(), None
         r.port.held = []
         r.port.pending()  # nothing told before is read now
-        others = [
-            other
-            for other in self.residents.values()
-            if other is not r and other.alive and self.config.social.mode == "town"
-        ]
-
-        def tell(w: str | None) -> str:
-            died = f"{r.name} died in the night"
-            if partner is not None and w == partner:
-                return f"{died}; you hold task {claim.task} alone now, and {UNTIL_JOINED}."
-            return f"{died}."
-
+        others = [other for other in self.residents.values() if other is not r and other.alive]
         self.record(
             "death",
-            tell,
+            lambda w: f"{r.name} died in the night.",
             actor=r,
             place=None,
             audience=others,
-            payload={
-                "day": day,
-                "home": r.home,
-                "task": claim.task if claim else None,
-                **with_partner(partner),
-            },
+            payload={"day": day, "home": r.home, "task": claim.task if claim else None},
         )
         self.rest_changed()
 
@@ -690,7 +536,6 @@ class World:
         for r in self.residents.values():
             if not r.alive:
                 continue
-            r.partner = None  # an evening's pair that has not met parts here
             if isinstance(r.base, Sleep):
                 if not r.base.suspended:
                     self._fall_asleep(r, f"It is {hour}: you fell asleep.")
@@ -719,22 +564,16 @@ class World:
         assert self._on_checkpoint is not None
         with self.clock.hold():
             for name, claim in await self.board.close_all():
-                holders = self.board.holders(claim)
                 self.record(
                     "workspace_closed",
-                    lambda w, holders=holders, claim=claim: (
+                    lambda w, name=name, claim=claim: (
                         f"The workspace of task {claim.task} closed for the night, its changes "
-                        f"kept for {listed([you(holder, w) for holder in holders])}."
+                        f"kept for {you(name, w)}."
                     ),
                     actor=self.residents[name],
                     place=None,
-                    payload={
-                        "task": claim.task,
-                        "diff": claim.diff,
-                        **with_partner(self.board.partner(name)),
-                    },
+                    payload={"task": claim.task, "diff": claim.diff},
                 )
-            self.ratings.end_day()
             for name in self.board.runs:
                 self.board.runs[name] = {}
             for r in self.residents.values():
@@ -767,15 +606,13 @@ class World:
         unsettled = [
             r.name
             for r in self.residents.values()
-            if not r.suspended or r.conversation or r.partner or r.port.has_pending
+            if not r.suspended or r.conversation or r.port.has_pending
         ]
         if (
             unsettled
             or any(claim.workspace for claim in self.board.claims.values())
             or self.board.orphans
             or self._rooms
-            or any(self.ratings.tonight.values())
-            or any(self.ratings.met.values())
             or any(self.board.runs.values())
         ):
             raise RuntimeError(f"no checkpoint state: unsettled {unsettled or 'world state'}")
@@ -793,15 +630,9 @@ class World:
                 "ledger": copy.deepcopy(self.economy.ledger[name]),
                 "claim": claim.saved() if claim else None,
                 "done": sorted(self.board.done[name]),
-                "unread_ratings": copy.deepcopy(self.ratings.unread[name]),
                 "held": [asdict(percept) for percept in r.port.held],
             }
-        return {
-            "time": self.clock.now(),
-            "posted": list(self.board.posted),
-            "projects": [project.saved() for project in self.board.projects],
-            "residents": residents,
-        }
+        return {"time": self.clock.now(), "posted": list(self.board.posted), "residents": residents}
 
     def restore(self, state: dict[str, Any]) -> None:
         """Put a new world in the state `snapshot` returned, and log the resumption."""
@@ -811,8 +642,6 @@ class World:
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
         self.board.posted = list(state["posted"])  # the last board, less what was paid for
-        # A checkpoint from before the clients' projects has none.
-        self.board.projects = [Project.restored(saved) for saved in state.get("projects", [])]
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -833,7 +662,6 @@ class World:
             if saved["claim"] is not None:
                 self.board.hold(name, saved["claim"])
             self.board.done[name] = set(saved["done"])
-            self.ratings.unread[name] = copy.deepcopy(saved["unread_ratings"])
             r.port.held = [Percept(**percept) for percept in saved["held"]]
         moment = tell_moment(state["time"], self.config.start_date)
         self.record(
@@ -885,13 +713,8 @@ class World:
     # Places and people ----------------------------------------------------------------------
 
     def visible(self, a: Resident, b: Resident) -> bool:
-        """Whether `a` perceives `b`: both at the same place, in the same town."""
-        return (
-            a is not b
-            and a.place is not None
-            and a.place == b.place
-            and (self.config.social.mode == "town" or a.partner == b.name)
-        )
+        """Whether `a` perceives `b`: both at the same place."""
+        return a is not b and a.place is not None and a.place == b.place
 
     def company(self, r: Resident) -> list[Resident]:
         return [other for other in self.residents.values() if self.visible(r, other)]
@@ -899,20 +722,14 @@ class World:
     def addressable(self, r: Resident) -> list[Resident]:
         return [other for other in self.company(r) if other.awake]
 
-    def occupants(self, place_id: str, viewer: Resident) -> list[Resident]:
-        """Who lives at `place_id`, as `viewer` knows it: in the isolated mode, only itself."""
-        return [
-            other
-            for other in self.residents.values()
-            if other.alive
-            and other.home == place_id
-            and (self.config.social.mode == "town" or other is viewer)
-        ]
+    def occupants(self, place_id: str) -> list[Resident]:
+        """Who lives at `place_id` now."""
+        return [r for r in self.residents.values() if r.alive and r.home == place_id]
 
-    def homes(self, viewer: Resident) -> dict[str, list[str]]:
-        """Who lives where now, as `viewer` knows it, for the rules and `help`."""
+    def homes(self) -> dict[str, list[str]]:
+        """Who lives where now, for the rules and `help`."""
         return {
-            place.id: [other.name for other in self.occupants(place.id, viewer)]
+            place.id: [other.name for other in self.occupants(place.id)]
             for place in self.config.places
             if place.kind == "home"
         }
@@ -978,7 +795,7 @@ class World:
         place = self.config.place(r.place)
         text = f"It is {clock_time(self.clock.now())}. You are at {place.name}."
         if place.kind == "home":
-            homes = [other.name for other in self.occupants(place.id, r)]
+            homes = [other.name for other in self.occupants(place.id)]
             others = [name for name in homes if name != r.name]
             if r.name in homes:
                 text += " It is your home" + (
@@ -1009,8 +826,8 @@ class World:
 
     def stop_work(self, r: Resident) -> None:
         """`r` stops work: by its own `leave_work`, by going elsewhere or to bed, or because the
-        town takes it elsewhere (the evening exchange, the forced sleep), so that every stretch of
-        work in the log ends. The body is reckoned first, and may have stopped it already."""
+        forced sleep takes it, so that every stretch of work in the log ends. The body is
+        reckoned first, and may have stopped it already."""
         self.reckon(r)
         if isinstance(r.base, Work):
             r.base = Idle()
@@ -1069,29 +886,14 @@ class World:
             audience=[r, *others],
             payload={"place": place},
         )
-        exchange = self.config.social.exchange
-        partner = self.residents.get(r.partner) if r.partner else None
-        if (
-            partner is not None
-            and exchange is not None
-            and place == exchange.place == partner.place
-            and r.conversation is None
-        ):
-            self._meet(r, partner)
 
     # Conversations --------------------------------------------------------------------------
 
-    def _room(self, r: Resident) -> str:
-        """Where a conversation of `r` is held: its place, and in the isolated mode, its
-        town (its own, or the one it shares with its partner)."""
-        if self.config.social.mode == "town":
-            return str(r.place)
-        return f"{r.place}:{'+'.join(sorted({r.name, r.partner or r.name}))}"
-
     def converse(self, speaker: Resident, recipients: list[Resident]) -> Conversation:
-        """The conversation `speaker` speaks in, with it and `recipients` in it."""
+        """The conversation `speaker` speaks in, with it and `recipients` in it: the one held
+        at its place."""
         assert speaker.place is not None
-        room = self._room(speaker)
+        room = speaker.place
         conversation = self._rooms.get(room)
         if conversation is None:
             conversation = Conversation(room, speaker.place, set(), self.clock.now())
@@ -1150,8 +952,6 @@ class World:
         if conversation.silence is not None:
             conversation.silence.cancel()
         del self._rooms[conversation.room]
-        for name in conversation.pair or ():
-            self.residents[name].partner = None
         if members:
             self.record(
                 "conversation_end",
@@ -1200,9 +1000,8 @@ class World:
         ends, with the day's entry in its journal if it wrote one, and returns what `sleep`
         answers. Going to bed from elsewhere, it is told in bed what it may still do; from bed,
         the answer alone tells the hour it will wake, so that with nothing more to read it falls
-        asleep at its next wait. Going to bed again the same day, it hears of ratings only if
-        new ones came."""
-        again, in_bed = self.went_to_bed(r), isinstance(r.base, Sleep)
+        asleep at its next wait."""
+        in_bed = isinstance(r.base, Sleep)
         wake, longest = self.wake_time(hour)
         self._put_to_sleep(r, wake, longest=longest)
         until = f"You are in bed and will wake at {clock_time(wake)}"
@@ -1210,17 +1009,10 @@ class World:
             until += f", since you cannot sleep longer than {longest_sleep(self.config.day)}"
         kept = "; your journal entry for today is kept" if journal else ""
         parts = [f"{until}{kept}."]
-        ratings: list[list[int | str]] = []
-        if self.ratings_on:
-            ratings = self.ratings.take_unread(r.name)
-            if ratings or not again:
-                parts.append(tell_ratings(ratings))
         if not in_bed:
-            met = sorted(self.ratings.met[r.name]) if self.ratings_on else []
             parts.append(
-                "Before you fall asleep you can look back over your day"
-                + (f", rate the people you spoke with today ({listed(met)})," if met else "")
-                + " and see to your files; you fall asleep once you have nothing more to do."
+                "Before you fall asleep you can look back over your day and see to your files; "
+                "you fall asleep once you have nothing more to do."
             )
         told = " ".join(parts)
         wrote = " and wrote in the journal" if journal else ""
@@ -1229,7 +1021,7 @@ class World:
             lambda w: told if w == r.name else f"{r.name} went to bed{wrote}.",
             actor=r,
             audience=[] if in_bed else [r],
-            payload={"journal": journal, "day": day, "wake": wake, "ratings_read": ratings},
+            payload={"journal": journal, "day": day, "wake": wake},
         )
         return told if in_bed else "You went to bed."
 
@@ -1350,11 +1142,6 @@ class World:
                     for name in sorted(r.conversation.members - {r.name})
                 ]
                 parts.append(f"{where}, in a conversation with {listed(others)}.")
-                if r.conversation.budget is not None:
-                    left = r.conversation.budget[r.name]
-                    parts.append(
-                        f"You have {counted(left, 'turn')} left to speak; speak of your work alone."
-                    )
             else:
                 parts.append(f"{where}.")
             parts.append(self.people_here(r))
@@ -1364,18 +1151,7 @@ class World:
             parts.append(self.things_told(r))
         claim = self.board.claims.get(r.name)
         if claim is not None:
-            held = f"You hold task {claim.task} ({self.board.task(claim.task).repo})"
-            if (partner := self.board.partner(r.name)) is not None:
-                held += f" with {partner}"
-            elif not self.board.ready(claim):
-                held += f", which is for two; {UNTIL_JOINED}"
-            elif (project := self.board.project(claim.task)) is not None:
-                held += (
-                    ", part of a client's project due by the end of "
-                    f"{self.board.deadline(project)}, with "
-                    f"{self.board.standing(r.name, claim.task)}"
-                )
-            parts.append(f"{held}.")
+            parts.append(f"You hold task {claim.task} ({self.board.task(claim.task).repo}).")
         if r.suspended:
             pass
         elif isinstance(r.base, Movement):
@@ -1383,15 +1159,15 @@ class World:
         else:
             useless: set[str] = set()  # what the resident could do but to no purpose
             if not any(
-                r.living.things.get(good.id) for good in self.for_sale if good.effect == "messaging"
+                r.living.things.get(good.id)
+                for good in self.config.goods
+                if good.effect == "messaging"
             ):
                 useless.add("message")  # nothing to write with
             if r.place != self.config.workplace.id:
                 useless |= {"view_board", "read_task", "claim_task"}  # the board hangs there
             if claim is None:
                 useless |= TASK_TOOLS
-            elif not self.board.ready(claim):
-                useless |= TASK_TOOLS - {"abandon_task"}  # nothing to work on until a partner comes
             usable = [spec.name for spec in self.tool_specs if spec.name in r.tools - useless]
             files = ", and see to your files" if isinstance(r.base, Sleep) else ""
             parts.append(f"What you can do now: {', '.join(usable)}{files}.")
@@ -1462,7 +1238,7 @@ class World:
             destination = (
                 self.config.place(event.destination).name if isinstance(event, Movement) else ""
             )
-            text = refusal(event, name, destination=destination, ratings=self.ratings_on)
+            text = refusal(event, name, destination=destination)
             return ToolResult(text, ends_turn=isinstance(event, Movement))
         problem = tools.check(self._specs[name], args)
         if problem:
@@ -1493,7 +1269,7 @@ class ResidentPort:
         r = self._resident
         if not r.alive:
             return ENDED
-        return self._world.rules.text(r.name, self._world.homes(r))
+        return self._world.rules.text(r.name, self._world.homes())
 
     def tool_specs(self) -> list[ToolSpec]:
         return list(self._world.tool_specs)

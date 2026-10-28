@@ -31,7 +31,7 @@ def solo(**config) -> tuple[SoloPort, FakeBackend]:
 
 async def work(port: SoloPort, model: ScriptedModel, tmp_path) -> list[str]:
     """Run the resident on `port` until its task is over; the results of its tool calls."""
-    directory = AgentDirectory.create(tmp_path / "Mei", background="You are Mei.", town="")
+    directory = AgentDirectory.create(tmp_path / "Mei", background="You are Mei.")
     async with running(Runtime(directory, port, model)):
         async with asyncio.timeout(5):
             await port.done.wait()
@@ -137,7 +137,7 @@ async def test_the_safety_stop_of_real_time_ends_the_task_as_an_error():
 
 
 async def test_commands_and_acceptances_have_the_towns_time_limits():
-    work = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "groups" / "c.yaml").town.work
+    work = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "town.yaml").town.work
     config = SoloConfig()
     assert (config.shell_timeout_s, config.acceptance_timeout_s) == (
         work.shell_timeout_s,

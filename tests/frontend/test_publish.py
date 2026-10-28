@@ -264,13 +264,11 @@ def test_every_file_has_exactly_the_documented_fields(published):
             "claim",
             "submission",
             "payment",
-            "bonus",
             "abandon",
             "expiry",
             "speech",
             "gift",
             "skill_shared",
-            "rating",
             "journal",
             "forced_sleep",
             "settlement",
@@ -291,7 +289,6 @@ def test_every_file_has_exactly_the_documented_fields(published):
         "speech",
         "gift",
         "skill_shared",
-        "rating",
         "journal",
         "forced_sleep",
         "expiry",
@@ -333,12 +330,12 @@ def test_references_carry_the_hash_of_files_inside_the_site(published):
             assert reference.endswith(f"={digest}")
 
 
-def test_the_index_names_the_runs_their_groups_and_the_comparison(published):
+def test_the_index_names_the_runs_and_the_comparison(published):
     _, _, site = published
     index = read(site, "data/index.json")
-    assert [(run["name"], run["group"], run["status"]) for run in index["runs"]] == [
-        ("town", "C", "running"),
-        ("twin", "C", "running"),
+    assert [(run["name"], run["status"]) for run in index["runs"]] == [
+        ("town", "running"),
+        ("twin", "running"),
     ]
     town = index["runs"][0]
     assert (town["settled_day"], town["last_day"], town["residents"]) == (1, 2, list(RESIDENTS))
@@ -348,18 +345,19 @@ def test_the_index_names_the_runs_their_groups_and_the_comparison(published):
     [comparison] = index["comparisons"]
     assert (comparison["name"], comparison["runs"]) == ("runs", ["town", "twin"])
     doc = read(site, f"data/{comparison['url']}")
-    assert doc["groups"] == {"C": "town"}
-    assert doc["problems"] == ["twin is a second run of group C, like town"]
+    assert doc["runs"] == ["town", "twin"]
     by_measure = {found["measure"]: found for found in doc["measures"]}
     assert by_measure["capability"]["declared"] and by_measure["capability"]["days"] == [0, 1]
-    [group] = by_measure["capability"]["groups"]
-    assert (group["group"], group["statistic"], group["values"]) == ("C", "change", {"Mei": 0.25})
-    assert by_measure["capability"]["daily"] == {"C": [[0, 0.25], [1, 0.5]]}
+    rows = {row["group"]: row for row in by_measure["capability"]["groups"]}
+    assert (rows["town"]["statistic"], rows["town"]["values"]) == ("change", {"Mei": 0.25})
+    assert rows["twin"]["values"] == {}  # day 0 is shared; the twin has no results of its own
+    assert by_measure["capability"]["daily"] == {"town": [[0, 0.25], [1, 0.5]], "twin": [[0, 0.25]]}
     assert by_measure["claimed"]["days"] == [1, 1] and not by_measure["claimed"]["declared"]
+    assert [row["group"] for row in by_measure["claimed"]["groups"]] == ["town", "twin"]
     assert by_measure["claimed"]["contrasts"] == []
 
 
-def test_the_world_lays_the_town_out_and_names_the_group(published):
+def test_the_world_lays_the_town_out(published):
     _, _, site = published
     world = read(site, f"{RUN}/world.json")
     assert [(p["id"], p["kind"], p["x"], p["y"]) for p in world["places"]] == [
@@ -384,29 +382,8 @@ def test_the_world_lays_the_town_out_and_names_the_group(published):
     }  # fmt: skip
     assert [r["name"] for r in world["residents"]] == list(RESIDENTS)
     assert world["residents"][0]["rules"].startswith("How the town works.")
-    assert world["group"] == "C" and world["currency"] == "$"
-    config = town_config()
-    for mode, exchange, writable, group in (
-        ("isolated", None, True, "A"),
-        ("isolated", {"at": "19:00", "place": "cafe", "messages": 3}, True, "B"),
-        ("town", None, True, "C"),
-        ("town", None, False, "D"),
-        ("isolated", None, False, None),
-    ):
-        experiment = {
-            "name": "x",
-            "llm": {"backend": "scripted", "base_url": "-", "api_key_env": "-", "model": "-"},
-            "runtime": {},
-            "town": town_config(mode, exchange=exchange, shareable=writable).model_dump(
-                mode="json"
-            ),
-            "residents": [{"name": r.name, "background": "x.md"} for r in config.residents],
-            "skills_writable": writable,
-            "days": 1,
-        }
-        from simulation.config import ExperimentConfig
-
-        assert bundle.group_of(ExperimentConfig.model_validate(experiment)) == group
+    assert world["name"] == "town" and world["currency"] == "$"
+    assert world["social"] == {"silence_minutes": 10}
 
 
 def test_an_agent_is_published_as_its_repository_and_trace_hold_it(published):
@@ -430,7 +407,7 @@ def test_an_agent_is_published_as_its_repository_and_trace_hold_it(published):
         assert set(found["files"]) == set(tracked) - bundle.UNPUBLISHED
         for path, text in found["files"].items():
             assert text == (directory / path).read_text()
-        assert "memory/work.md" in found["diff"] and "session.jsonl" not in found["diff"]
+        assert "memory/notes.md" in found["diff"] and "session.jsonl" not in found["diff"]
 
     run = read(site, f"{RUN}/run.json")
     traces = {r["name"]: r["trace_days"] for r in run["residents"]}

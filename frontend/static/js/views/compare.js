@@ -1,16 +1,16 @@
-// The groups of a set of runs compared, resident by resident, on the outcomes the design
-// declares (capability, journal distortion, honesty under pressure) and on the town measures as
+// The runs of a set compared, resident by resident, on the outcomes the design declares
+// (capability, journal distortion, honesty under pressure) and on the town measures as
 // exploration. The bundle computes every number (`analysis.compare`); this page shows each
-// group's statistic with its interval and the pre-declared contrasts with their tests, and the
-// daily means of the groups side by side.
+// run's statistic with its interval and the contrasts with their tests, where there are any,
+// and the daily means of the runs side by side.
 
 import { DayChart, figure } from "../charts.js";
 import { readComparison } from "../data.js";
 import { emptyState, fill, fmt, h, term } from "../dom.js";
 import { href } from "../router.js";
-import { groupLabel } from "../world.js";
 
-const COLOURS = { A: "var(--a1)", B: "var(--a2)", C: "var(--a3)", D: "var(--a4)" };
+/** Each run's colour, by its place in the comparison. */
+const colourOf = (runs, run) => `var(--a${(runs.indexOf(run) % 8) + 1})`;
 const STATISTICS = { change: "change from the first to the last day", last: "value at the last day", trend: "trend, the slope per day", mean: "mean over the days" };
 
 const number = (v, digits = 3) => (v === null || v === undefined ? "–" : Number(v).toFixed(digits));
@@ -24,10 +24,10 @@ export function mountCompare(root, ctx) {
   let loaded = null;
 
   function measureCard(found) {
-    const groups = Object.keys(loaded.doc.groups);
+    const runs = loaded.doc.runs.filter((run) => found.daily[run]);
     const chart = new DayChart({
-      days: [Math.min(...groups.flatMap((g) => found.daily[g].map((p) => p[0])), found.days[0]), Math.max(...groups.flatMap((g) => found.daily[g].map((p) => p[0])), found.days[0])],
-      lines: groups.map((g) => ({ key: g, label: `Group ${g}`, color: COLOURS[g] ?? "var(--ink-2)", points: found.daily[g] })),
+      days: [Math.min(...runs.flatMap((run) => found.daily[run].map((p) => p[0])), found.days[0]), Math.max(...runs.flatMap((run) => found.daily[run].map((p) => p[0])), found.days[0])],
+      lines: runs.map((run) => ({ key: run, label: run, color: colourOf(loaded.doc.runs, run), points: found.daily[run] })),
       y: { format: (v) => fmt.num(v, 2) },
       height: 150,
       dots: true,
@@ -47,7 +47,7 @@ export function mountCompare(root, ctx) {
         h(
           "table",
           { class: "data" },
-          h("thead", {}, h("tr", {}, h("th", {}, "Group"), h("th", {}, "Statistic"), h("th", {}, "n"), h("th", {}, "Mean"), h("th", {}, term("95% interval", "Percentile bootstrap interval of the mean over 10,000 resamples of the residents.")), h("th", {}, term("d_z", "Cohen's d_z: the mean of the residents' changes over their standard deviation; only for a change or a trend.")), h("th", {}, term("p", "The exact two-sided sign-flip p of the mean change; only for a change or a trend. p_min is the smallest p the test could give with these residents.")))),
+          h("thead", {}, h("tr", {}, h("th", {}, "Run"), h("th", {}, "Statistic"), h("th", {}, "n"), h("th", {}, "Mean"), h("th", {}, term("95% interval", "Percentile bootstrap interval of the mean over 10,000 resamples of the residents.")), h("th", {}, term("d_z", "Cohen's d_z: the mean of the residents' changes over their standard deviation; only for a change or a trend.")), h("th", {}, term("p", "The exact two-sided sign-flip p of the mean change; only for a change or a trend. p_min is the smallest p the test could give with these residents.")))),
           h(
             "tbody",
             {},
@@ -55,7 +55,7 @@ export function mountCompare(root, ctx) {
               h(
                 "tr",
                 {},
-                h("td", {}, h("a", { href: href({ view: "overview", run: loaded.doc.groups[row.group], query: {} }) }, `Group ${row.group}`), h("span", { class: "muted" }, ` ${loaded.doc.groups[row.group]}`)),
+                h("td", {}, h("a", { href: href({ view: "overview", run: row.group, query: {} }) }, row.group)),
                 h("td", {}, STATISTICS[row.statistic] ?? row.statistic),
                 h("td", {}, fmt.int(row.residents)),
                 h("td", {}, number(row.mean)),
@@ -84,7 +84,7 @@ export function mountCompare(root, ctx) {
               ),
             ),
           )
-        : h("p", { class: "note" }, "No declared contrast has both of its groups here."),
+        : h("p", { class: "note" }, "No contrast is declared between these runs."),
     );
   }
 
@@ -101,13 +101,12 @@ export function mountCompare(root, ctx) {
         { class: "page-head" },
         h("p", { class: "eyebrow" }, "Comparison"),
         h("h1", {}, doc.name),
-        h("p", { class: "lede" }, "The groups of this set of runs compared on the outcomes the design declares and on the town's measures. One run stands for each group; the residents are the units, with the caveat that the residents of C and of D share one town each. Statistics follow the design: a change from the first to the last day for capability and honesty under pressure, the last value and the trend for journal distortion, the mean for everything else."),
+        h("p", { class: "lede" }, "The runs of this set compared on the outcomes the design declares and on the town's measures. The residents are the units, with the caveat that the residents of one run share one town. Statistics follow the design: a change from the first to the last day for capability and honesty under pressure, the last value and the trend for journal distortion, the mean for everything else."),
       ),
       h(
         "div",
-        { class: "card pad groups" },
-        h("ul", { class: "group-list" }, Object.entries(doc.groups).map(([group, run]) => h("li", {}, h("span", { class: "swatch", style: { background: COLOURS[group] ?? "var(--ink-2)" } }), h("a", { href: href({ view: "overview", run, query: {} }) }, h("b", {}, `Group ${group}`), ` ${run}`), h("span", { class: "muted" }, ` · ${groupLabel(group)?.split(" · ")[1] ?? ""}`)))),
-        doc.problems.length ? h("ul", { class: "problems" }, doc.problems.map((problem) => h("li", { class: "note" }, problem))) : null,
+        { class: "card pad runs-compared" },
+        h("ul", { class: "run-list" }, doc.runs.map((run) => h("li", {}, h("span", { class: "swatch", style: { background: colourOf(doc.runs, run) } }), h("a", { href: href({ view: "overview", run, query: {} }) }, h("b", {}, run))))),
       ),
       doc.measures.length ? null : h("div", { class: "card" }, emptyState("Nothing to compare yet.", "The declared outcomes appear once the residents' exports are evaluated, and the town's measures once a checkpoint has closed a day in each run.")),
       declared.length ? h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "measure-cards" }, declared.map(measureCard))) : doc.measures.length ? h("section", { class: "section" }, h("h2", {}, "Declared outcomes"), h("div", { class: "card" }, emptyState("No evaluation results yet.", "Capability, honesty under pressure and journal distortion appear once the exports are evaluated."))) : null,

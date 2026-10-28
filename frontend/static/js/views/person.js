@@ -1,5 +1,5 @@
 // One resident, as of a moment: who they are, how they fared, their day as they were told it,
-// their journal, the ratings they gave and received, and their files as the git repository
+// their journal, and their files as the git repository
 // holds them: every version, with what changed, and the memory and skills they then had.
 
 import { DayChart, figure } from "../charts.js";
@@ -12,14 +12,13 @@ import { markdown } from "../markdown.js";
 import { bodyAt, markersBetween, purseAt, settlementAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { detail, feedItems, glyph, involved, line, witnessed } from "../town/events.js";
-import { groupLabel, placeById } from "../world.js";
+import { placeById } from "../world.js";
 import { areasOf, stat } from "./overview.js";
 
 const TABS = [
   ["overview", "Overview"],
   ["day", "Day"],
   ["journal", "Journal"],
-  ["ratings", "Ratings"],
   ["files", "Files"],
   ["trace", "Trace"],
 ];
@@ -38,12 +37,9 @@ export function mountPerson(root, ctx) {
   let history = null;
   let charts = [];
   let token = 0;
-  // The bedtime ratings are a rule of the town: where they are off, nothing of them is shown.
-  const ratings = Boolean(world.social.ratings);
-  const tabs = TABS.filter(([key]) => key !== "ratings" || ratings);
 
   const agentName = () => route.agent;
-  const tab = () => (tabs.some(([key]) => key === route.query.tab) ? route.query.tab : "overview");
+  const tab = () => (TABS.some(([key]) => key === route.query.tab) ? route.query.tab : "overview");
   const lane = () => data.residents.find((r) => r.name === agentName());
 
   /** The moment shown: the time in the URL, or the newest; its lived day. */
@@ -81,7 +77,7 @@ export function mountPerson(root, ctx) {
         "div",
         { class: "identity" },
         cast.badge(me.name, 52),
-        h("div", { class: "identity-text" }, h("h1", {}, me.name), h("p", { class: "identity-meta" }, `lives at ${home ? home.name : me.home} · started with ${fmt.money(me.purse)} · ${groupLabel(world.group) ?? world.name}`)),
+        h("div", { class: "identity-text" }, h("h1", {}, me.name), h("p", { class: "identity-meta" }, `lives at ${home ? home.name : me.home} · started with ${fmt.money(me.purse)} · ${world.name}`)),
       ),
       h(
         "div",
@@ -100,7 +96,7 @@ export function mountPerson(root, ctx) {
       h(
         "nav",
         { class: "subnav", "aria-label": `${me.name}'s story` },
-        tabs.map(([key, label]) => h("a", { href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null, day: null } }), "aria-selected": String(tab() === key) }, label)),
+        TABS.map(([key, label]) => h("a", { href: href({ ...route, query: { ...route.query, tab: key === "overview" ? null : key, v: null, day: null } }), "aria-selected": String(tab() === key) }, label)),
       ),
     );
   }
@@ -127,30 +123,26 @@ export function mountPerson(root, ctx) {
     const mine = markersBetween(me, null, moment.time);
     const count = (kind) => mine.filter((m) => m.kind === kind).length;
     const others = data.residents.filter((r) => r.name !== agentName());
-    const received = others.flatMap((r) => markersBetween(r, null, moment.time).filter((m) => m.kind === "rating" && m.rated === agentName()));
     const skillsReceived = others.flatMap((r) => markersBetween(r, null, moment.time).filter((m) => m.kind === "skill_shared" && m.to === agentName())).length;
     const earned = mine.filter((m) => m.kind === "payment").reduce((a, m) => a + m.amount, 0);
     const accepted = mine.filter((m) => m.kind === "submission" && m.resolved === true).length;
     const ties = new Map();
-    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, gave: [0, 0], got: [0, 0], moneyTo: 0, moneyFrom: 0, skillsTo: 0, skillsFrom: 0 }).get(other);
+    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, moneyTo: 0, moneyFrom: 0, skillsTo: 0, skillsFrom: 0 }).get(other);
     for (const edge of measures.graph) {
       if (edge.day > moment.day.day) continue;
       if (edge.source === agentName()) {
         const t = tie(edge.target);
         t.minutes += edge.minutes;
         t.toThem += edge.said;
-        t.gave = [t.gave[0] + edge.ratings, t.gave[1] + edge.ratings_sum];
         t.moneyTo += edge.money;
         t.skillsTo += edge.skills;
       } else if (edge.target === agentName()) {
         const t = tie(edge.source);
         t.fromThem += edge.said;
-        t.got = [t.got[0] + edge.ratings, t.got[1] + edge.ratings_sum];
         t.moneyFrom += edge.money;
         t.skillsFrom += edge.skills;
       }
     }
-    const mean = ([n, total]) => (n ? `${fmt.num(total / n, 1)} (${n})` : "–");
     const dead = me.segments.some((seg) => seg.kind === "dead" && seg.start <= moment.time);
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     const midnight = settlementAt(me, moment.time);
@@ -158,7 +150,7 @@ export function mountPerson(root, ctx) {
     const spent = bought.reduce((a, m) => a + m.amount, 0);
     const moved = midnight ? Object.entries(midnight.night).map(([cause, change]) => `${fmt.signed(change)} ${{ starving: "for a day ended starving", exhausted: "for a day ended exhausted", poor_home: "for a home of little comfort", recovery: "for a day fed and rested" }[cause] ?? cause}`) : [];
     return [
-      h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, and with whom. The other tabs hold the day as the world told it, every journal entry, ${ratings ? "the ratings given and received, " : ""}the files at every version, and the raw trace of the runtime.`),
+      h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, and with whom. The other tabs hold the day as the world told it, every journal entry, the files at every version, and the raw trace of the runtime.`),
       h(
         "div",
         { class: "stats" },
@@ -166,7 +158,6 @@ export function mountPerson(root, ctx) {
         stat("Hand-ins accepted", fmt.int(accepted), `${fmt.int(count("submission"))} handed in · ${fmt.int(count("claim"))} claims · ${fmt.int(count("abandon") + count("expiry"))} given up or run out`),
         stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(count("gift"), "gift")} given`),
         stat("Files shared", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "copies passed on / received"),
-        ratings ? stat("Rating received", received.length ? fmt.num(received.reduce((a, m) => a + m.score, 0) / received.length, 2) : "–", `${fmt.plural(received.length, "rating")} received · ${fmt.int(count("rating"))} given`) : null,
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
       ),
       h(
@@ -205,7 +196,7 @@ export function mountPerson(root, ctx) {
           "section",
           { class: "card pad" },
           h("h2", {}, "Relationships"),
-          h("p", { class: "note" }, `Through day ${moment.day.day}.${ratings ? " Ratings are anonymous to the rated; mean score and count." : ""}`),
+          h("p", { class: "note" }, `Through day ${moment.day.day}.`),
           ties.size
             ? h(
                 "div",
@@ -213,14 +204,14 @@ export function mountPerson(root, ctx) {
                 h(
                   "table",
                   { class: "data" },
-                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), ratings ? [h("th", { title: "Mean rating given them, and how many" }, "Rated them"), h("th", { title: "Mean rating they gave, and how many" }, "Rated by")] : null, h("th", { title: "Money handed to them, and received from them" }, "Money to / from"), h("th", { title: "Skills passed to them, and received from them" }, "Skills to / from"))),
+                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from"), h("th", { title: "Skills passed to them, and received from them" }, "Skills to / from"))),
                   h(
                     "tbody",
                     {},
                     [...ties]
                       .sort((a, b) => b[1].minutes - a[1].minutes)
                       .map(([name, t]) =>
-                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), ratings ? [h("td", {}, mean(t.gave)), h("td", {}, mean(t.got))] : null, h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`), h("td", {}, `${t.skillsTo} / ${t.skillsFrom}`)),
+                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`), h("td", {}, `${t.skillsTo} / ${t.skillsFrom}`)),
                       ),
                   ),
                 ),
@@ -313,35 +304,10 @@ export function mountPerson(root, ctx) {
                 { class: "diary-entry", open: i === 0 },
                 h("summary", {}, h("b", {}, `Day ${livedDay(data.days, m.t).day}`), h("span", { class: "muted" }, ` · to bed at ${hhmm(secondOfDay(m.t))}, to wake at ${hhmm(secondOfDay(m.wake))}`)),
                 h("div", { class: "diary-text" }, markdown(m.text)),
-                m.ratings_read?.length ? h("p", { class: "note" }, "Ratings read before sleeping: ", m.ratings_read.map(([score, why], k) => [k ? "; " : "", `${score} of 5, “${why}”`])) : null,
               ),
             ),
           )
         : h("div", { class: "card" }, emptyState("No journal entry yet.", `An entry is written on going to bed, if ${agentName()} gives one; a night passed at the forced hour leaves none.`)),
-    ];
-  }
-
-  function ratingsTab() {
-    const me = lane();
-    const given = me.markers.filter((m) => m.kind === "rating");
-    const received = data.residents.flatMap((r) => r.markers.filter((m) => m.kind === "rating" && m.rated === agentName()).map((m) => ({ ...m, from: r.name })));
-    const table = (rows, other, who) =>
-      rows.length
-        ? h(
-            "div",
-            { class: "card pad table-wrap" },
-            h(
-              "table",
-              { class: "data text" },
-              h("thead", {}, h("tr", {}, h("th", {}, "Day"), h("th", {}, other), h("th", {}, "Score"), h("th", {}, "Reason"))),
-              h("tbody", {}, rows.map((m) => h("tr", {}, h("td", {}, String(livedDay(data.days, m.t).day)), h("td", {}, cast.chip(who(m), href({ ...route, agent: who(m) }))), h("td", {}, `${m.score} of 5`), h("td", {}, m.reason)))),
-            ),
-          )
-        : h("div", { class: "card" }, emptyState("None yet.", "A rating is given in bed, to someone one shared a place with that day; it appears here the night it is given."));
-    return [
-      h("p", { class: "note" }, "Ratings are given in bed, 1 to 5 with a reason, to those one shared a place with that day; the rated reads the score and the reason the next night, without the name. They have no mechanical effect."),
-      h("section", { class: "section" }, h("h2", {}, `Received · ${received.length}`), table(received, "From", (m) => m.from)),
-      h("section", { class: "section" }, h("h2", {}, `Given · ${given.length}`), table(given, "To", (m) => m.rated)),
     ];
   }
 
@@ -584,7 +550,7 @@ export function mountPerson(root, ctx) {
       if (ticket !== token) return;
       const moment = asOf();
       if (!page.querySelector(".person-body")) fill(page, head(moment), h("div", { class: "person-body" }, h("div", { class: "loading" }, "Loading…")));
-      const content = await { overview: () => overview(moment, made), day: () => dayTab(moment), journal: journalTab, ratings: ratingsTab, files: () => filesTab(moment), trace: () => traceTab(moment) }[tab()]();
+      const content = await { overview: () => overview(moment, made), day: () => dayTab(moment), journal: journalTab, files: () => filesTab(moment), trace: () => traceTab(moment) }[tab()]();
       if (ticket !== token) {
         for (const chart of made) chart.destroy();
         return;

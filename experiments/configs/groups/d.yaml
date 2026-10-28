@@ -1,7 +1,0 @@
-# Group D, social life without explicit self-modification: as C, but skills can be neither
-# written nor passed on.
-base: ../town.yaml
-name: d
-skills_writable: false
-town:
-  social: {mode: town, skills_shareable: false}

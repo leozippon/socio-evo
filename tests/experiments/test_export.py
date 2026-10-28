@@ -43,7 +43,7 @@ def make_run(runs: Path, start: str = "You are {name}") -> RunDirectory:
         for day in (0, 1):
             (agent / "background.md").write_text(f"{start.format(name=name)}, as of day {day}.\n")
             (agent / "memory").mkdir(exist_ok=True)
-            (agent / "memory" / "work.md").write_text("Notes.\n")
+            (agent / "memory" / "notes.md").write_text("Notes.\n")
             (agent / "skills").mkdir(exist_ok=True)
             (agent / "skills" / "bake.md").write_text("Bake bread.\n")
             (agent / "session.jsonl").write_text("{}\n")
@@ -70,7 +70,7 @@ def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
     assert not (exports["Mei"] / ".git").exists()
     for path in exports.values():
         assert not (path / "session.jsonl").exists() and not (path / "trace.jsonl").exists()
-        assert (path / "memory" / "work.md").is_file() and (path / "skills" / "bake.md").is_file()
+        assert (path / "memory" / "notes.md").is_file() and (path / "skills" / "bake.md").is_file()
     export = Export.of(exports["Mei"])
     assert export == Export(
         run=str(run.root.resolve()), day=0, commits=tagged(run, 0), llm=LLM, runtime=RUNTIME
