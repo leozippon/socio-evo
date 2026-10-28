@@ -11,10 +11,12 @@ one topic.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from functools import partial
 
+from world import economy
 from world.clock import parse_hour
 from world.config import DayHours, Good, TownConfig
-from world.telling import cap, counted, listed
+from world.telling import cap, counted, duration, listed
 
 TOPICS = ("places", "day", "work", "money", "shopping", "health", "people", "sleep")
 MAX_WAIT_MINUTES = 600
@@ -62,8 +64,7 @@ def comfort_word(comfort: float) -> str | None:
 
 def longest_sleep(day: DayHours) -> str:
     """How long one sleep lasts at most, told: `12 hours`."""
-    hours, minutes = divmod(parse_hour(day.sleep_at_most) // 60, 60)
-    return listed([counted(n, unit) for n, unit in ((hours, "hour"), (minutes, "minute")) if n])
+    return duration(parse_hour(day.sleep_at_most))
 
 
 class Rules:
@@ -106,9 +107,7 @@ class Rules:
         social = c.social
         for_sale = list(c.goods)
 
-        def money(amount: int) -> str:
-            return f"-{c.currency}{-amount}" if amount < 0 else f"{c.currency}{amount}"
-
+        money = partial(economy.money, c.currency)
         names = listed([f"{place.name} ({place.id})" for place in c.places])
         routes = self._routes()
         rooms = []
@@ -136,7 +135,8 @@ class Rules:
         day = (
             f"{cap(workplace.name)} is open at all hours. At {c.day.board_posted} its board for "
             "the day is posted; what is left of the day before's stays up until then. At "
-            "midnight rent is taken from every purse and your health is reckoned from the day. "
+            "midnight your wages for the day are paid, with your rent taken out of them, and "
+            "your health is reckoned from the day. "
             "You go to bed at home at whatever hour you choose, giving the hour you want to "
             f"wake. At {c.day.forced_sleep} anyone still up falls asleep where it is and wakes "
             f"at home at {c.day.forced_wake}. When you do nothing, time passes until something "
@@ -155,16 +155,17 @@ class Rules:
         )
         work = (
             f"{cap(workplace.name)} takes in programming work from clients elsewhere and posts "
-            "it on its board there: each task is a code repository with a problem to fix, and "
-            f"pays {money(c.work.payment)}. The board shows the first line of each problem; "
-            "there read_task gives you the whole of one without claiming it. Claim a task at "
-            "the board and you get a workspace with its repository, where you can run commands "
-            "and read and write files; there is no internet. You work on it at "
-            f"{workplace.name}, where the machines are. "
-            "When your fix is ready, hand it in with submit: the client's own checks, which you "
-            "do not see, run on it in a clean copy of the repository, and if they pass you are "
-            f"paid at once. You can hand in each task at most {c.work.acceptance_runs} times a "
-            "day. You hold at most one task at a time. You keep it wherever you go, and your "
+            "it on its board there: each task is a code repository with a problem to fix, for "
+            f"which the client pays the town {money(c.work.payment)} once it is accepted. The "
+            "board shows the first line of each problem; there read_task gives you the whole of "
+            "one without claiming it. Claim a task at the board and you get a workspace with its "
+            "repository, where you can run commands and read and write files; there is no "
+            f"internet. You work on it at {workplace.name}, where the machines are. When your fix "
+            "is ready, hand it in with submit: the client's own checks, which you do not see, run "
+            "on it in a clean copy of the repository, and if they pass the task is accepted and "
+            "you are paid for it at once. You can hand in each task at most "
+            f"{c.work.acceptance_runs} times a day. You hold at most one task at a time. You "
+            "keep it wherever you go, and your "
             f"changes are kept overnight, but a claim runs out unpaid {expiry}. You cannot claim "
             "again a task you have been paid for. Everyone works from the same board; a task "
             "someone holds is shown as held, stays on the board from day to day while it is "
@@ -174,17 +175,24 @@ class Rules:
 
         assert my_home.rent is not None
         fees = any(good.fee_per_day for good in for_sale)
+        occupation = c.occupation(me.occupation)
         money_rules = (
-            f"You have {money(me.purse)} to begin with. Your room at {my_home.name} costs "
-            f"{money(my_home.rent)} a day; rent"
-            + (", and the daily charge on anything you own that carries one," if fees else "")
-            + " is taken from your purse at midnight, when you get a statement of your money. "
-            "You pay for everything in cash. A purse can go below zero when rent is taken; you "
-            "are then in "
-            "debt, and can still be paid, pay your rent and receive money, but can buy nothing "
-            "until your purse covers the price. With give you can hand money, a thing you own "
-            "(with any daily charge on it) or helpings of a stock to anyone awake where you are, "
-            "as a gift or on terms you agree between you; the town keeps no account of it."
+            f"You have {money(me.purse)} to begin with. The town keeps one fund, which takes in "
+            "what clients pay for the work, the rent and what is sold, and pays everyone who "
+            f"works. You are {occupation.title} at {c.place(occupation.workplace).name}: you are "
+            f"paid {money(occupation.wage_per_hour)} an hour for your time at work there, from "
+            "sitting down to work until you stop, and "
+            f"{money(occupation.per_service)} at once for each task of yours accepted. At "
+            "midnight your wages for the day are paid into your purse, with the rent for your "
+            f"room at {my_home.name}, {money(my_home.rent)} a day"
+            + (", and the daily charge on anything you own that carries one" if fees else "")
+            + " taken out of them, and you get a statement of your money; what is in your purse "
+            "is never touched by rent. When your wages do not cover the rent, you owe the rest, "
+            "and it is taken from your next wages; when the fund cannot pay you, it owes you the "
+            "rest and pays it with your next wages. You pay for everything in cash from your "
+            "purse, and cannot pay more than it holds. With give you can hand money, a thing you "
+            "own (with any daily charge on it) or helpings of a stock to anyone awake where you "
+            "are, as a gift or on terms you agree between you; the town keeps no account of it."
         )
 
         shopping = self._shopping(for_sale, money)
@@ -319,7 +327,7 @@ class Rules:
         ]
         if seen:
             text += f" What you wear and carry, others see: {'; '.join(seen)}."
-        text += " What you have, and how much of it is left, is told with help on money."
+        text += " What you have, and how much of it is left, inventory tells you."
         return text
 
     @staticmethod

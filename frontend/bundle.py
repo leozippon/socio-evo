@@ -252,7 +252,7 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
             continue
         state = json.loads(path.read_text(encoding="utf-8"))
         snapshots[day["end"]] = {
-            name: dict(found["living"]["things"]) for name, found in state["residents"].items()
+            name: dict(found["inventory"]["items"]) for name, found in state["residents"].items()
         }
     found = {}
     for lane in data["residents"]:

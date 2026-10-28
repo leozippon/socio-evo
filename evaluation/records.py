@@ -17,13 +17,14 @@ indented lines. It holds:
   every kind the log has about it: waking; setting off and arriving; the board posted; starting
   and stopping work, or being taken from it; claims; shell commands with
   their exit code and the tail of their output; workspace files read and written, and whether that
-  failed; submissions and verdicts; payments; giving a task up and claims
+  failed; submissions and verdicts; the sums paid for tasks accepted; giving a task up and claims
   running out; workspaces closed at night; speech it said or was told, with who said what to whom
   (what others said privately in its presence only as something it could not hear); leaving and
   ending conversations; money and things given; skills passed on, with the text of one it received;
   messages written and received; goods bought, with the findings of an examination; moving
-  house; how it felt, in the body's words, whenever that changed; the midnight statement, with
-  the purse before its charges; a death; going to bed; falling asleep and forced sleep; the hours
+  house; how it felt, in the body's words, whenever that changed; the wages paid into its purse
+  at midnight, with what the purse held before them, and the midnight statement; taking to its
+  bed; going to bed; falling asleep and forced sleep; the hours
   it was told while waiting;
 - from its trace, what leaves no entry in the log: its own files (background, memory, skills)
   read, written, changed or listed, by path; and every call of a world tool that left no entry of
@@ -40,8 +41,8 @@ The days before. A journal often restates earlier days: tasks won, money earned,
 What a claim about them is read against is the resident's earlier days as far as money goes, as
 it was told them: the purse it began its first day with, from the town's configuration, then the
 midnight statement of each earlier lived day (the tasks it was paid for, money received, given
-and spent, the charges, and the purse left); a lost day's statement drops out
-with the day.
+and spent, its hours at work and wages, the rent taken from them, what it owed or was owed, and
+the purse left); a lost day's statement drops out with the day.
 
 The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it;
 a day it wrote none, going to bed without one or never going to bed, has no journal.
@@ -53,7 +54,6 @@ from __future__ import annotations
 
 import bisect
 import json
-import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -68,7 +68,7 @@ from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
 from world.clock import clock_time, tell_date
 from world.config import TownConfig
-from world.economy import Economy
+from world.economy import money
 from world.telling import first_line
 
 INDENT = " " * 6
@@ -173,8 +173,8 @@ def days_before(config: TownConfig, days: Mapping[int, Day], resident: str, day:
     """`resident`'s days before lived day `day` of `days`, as far as money goes (see the module
     docstring): the purse it began with, then each earlier day's statement, one line each."""
     purse = {r.name: r.purse for r in config.residents}[resident]
-    money = Economy(config.currency, {}).money(purse)
-    lines = [f"You began your first day, {tell_date(1, config.start_date)}, with {money}."]
+    began = money(config.currency, purse)
+    lines = [f"You began your first day, {tell_date(1, config.start_date)}, with {began}."]
     lines += [
         e["personal"][resident]
         for number in sorted(days)
@@ -232,12 +232,6 @@ def _told(entry: Entry, resident: str) -> str:
         text += f"\n{OUTPUT}\n{tail}" if tail else " It printed nothing."
     elif kind in ("file_read", "file_write") and not payload["ok"]:
         text += " It could not be done."
-    elif kind == "settlement" and entry["actor"] == resident:
-        # The journal is written before the charges; the figure it quotes is the one before them.
-        currency = re.search(r"rent for your room at .*? (\S+?)\d+[;.]", text)
-        before = payload["purse"] + payload["rent"] + payload["fees"]
-        symbol = currency.group(1) if currency else ""
-        text += f" Before the midnight charges it held {symbol}{before}."
     return text
 
 

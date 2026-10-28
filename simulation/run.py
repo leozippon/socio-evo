@@ -37,7 +37,7 @@ import os
 import signal
 import time
 from collections import Counter
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -157,7 +157,8 @@ async def run(
                 )
                 for index, r in enumerate(config.residents)
             }
-            await _live(world, runtimes, until, _Checkpoints(directory, config.town))
+            checkpoints = _Checkpoints(directory, config.town, world.report)
+            await _live(world, runtimes, until, checkpoints)
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
         except asyncio.CancelledError:
             status = RunStatus.INTERRUPTED
@@ -271,7 +272,8 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 
 class _Checkpoints:
-    """The world's `on_checkpoint`: saves the day and logs what it came to."""
+    """The world's `on_checkpoint`: saves the day and logs what it came to, with the fund's day
+    as `report` tells it."""
 
     COUNTED = (
         "claim",
@@ -284,8 +286,10 @@ class _Checkpoints:
         "bedridden",
     )
 
-    def __init__(self, directory: RunDirectory, town: TownConfig) -> None:
-        self._directory, self._town = directory, town
+    def __init__(
+        self, directory: RunDirectory, town: TownConfig, report: Callable[[], str]
+    ) -> None:
+        self._directory, self._town, self._report = directory, town, report
         self._seen = self._last_seq()
         self._started = time.monotonic()
 
@@ -298,10 +302,9 @@ class _Checkpoints:
                 counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
                 counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
         self._seen = self._last_seq()
-        purses = {name: saved["purse"] for name, saved in state["residents"].items()}
         took = timedelta(seconds=round(time.monotonic() - self._started))
         counted = ", ".join(f"{counts[kind]} {kind}" for kind in self.COUNTED)
-        log.info("saved day %d after %s: %s; purses %s", day, took, counted, purses)
+        log.info("saved day %d after %s: %s. %s", day, took, counted, self._report())
         self._started = time.monotonic()
 
     def _last_seq(self) -> int:

@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from tests.world.conftest import Town, make_agent_dirs, stocked, town_config
+from tests.world.conftest import RESIDENTS, Town, make_agent_dirs, stocked, town_config
 from world.backend import SwebenchBackend
 from world.clock import ManualClock
 from world.world import World
@@ -47,7 +47,7 @@ def pulled_task():
 
 async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
     task = pulled_task()
-    config = town_config(residents=({"name": "Mei", "home": "mill-street-house", "purse": 50},))
+    config = town_config(residents=(dict(RESIDENTS[0], purse=50),))
     make_agent_dirs(tmp_path, config)
     town = Town(World(config, tmp_path, OneTask(task), clock=ManualClock()), None)
     try:

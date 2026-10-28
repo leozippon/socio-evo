@@ -236,19 +236,19 @@ async def test_eating_restores_satiety_and_a_stock_is_drawn_on_as_one_gets_hungr
     stocked(town, days=1)  # three helpings
     tomas.living.satiety = 30
     await town.until("08:00")  # the hour's reckoning: he eats until he could eat no more
-    assert tomas.living.things == {"groceries": 1} and tomas.living.eaten == {"groceries": 2}
+    assert tomas.inventory.items == {"groceries": 1} and tomas.living.eaten == {"groceries": 2}
     assert tomas.living.satiety == pytest.approx(30 - 3.75 + 68)
     assert town.take("Tomas")[-1] == "You are well fed."
     tomas.living.satiety = 30
     await town.until("09:00")
-    assert tomas.living.things == {} and tomas.living.eaten == {"groceries": 3}  # the third
-    tomas.living.things["groceries"] = 3
+    assert tomas.inventory.items == {} and tomas.living.eaten == {"groceries": 3}  # the third
+    tomas.inventory.items["groceries"] = 3
     tomas.living.satiety = 30
     await town.until("10:00")
-    assert tomas.living.things == {"groceries": 3}  # three helpings a day, no more
+    assert tomas.inventory.items == {"groceries": 3}  # three helpings a day, no more
     town.rest("Tomas")
     await town.until("07:00", day=2)
-    assert tomas.living.things == {} and tomas.living.eaten == {"groceries": 3}  # at waking
+    assert tomas.inventory.items == {} and tomas.living.eaten == {"groceries": 3}  # at waking
 
 
 async def test_sleep_restores_energy_by_the_homes_comfort_and_never_above_health(make_town):
@@ -378,7 +378,7 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
     assert (await town.call("Mei", "buy", item="treatment")).text == (
         "The doctor finds nothing to treat."
     )
-    assert world.economy.purses["Mei"] == 85
+    assert mei.inventory.money == 85
 
     # The night's reckoning: Mei (Mill Street, 0.9) ends the day starving and exhausted; Tomas
     # (the flat) has eaten and rested.
@@ -408,7 +408,7 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
     assert (await town.call("Mei", "buy", item="examination")).text.endswith(
         "Health: 28 of 100, you are unwell. Last night your health fell by 22: you were starving "
         "at midnight, you were exhausted at midnight and your home has little comfort. Your "
-        "purse holds $55."
+        "purse holds $75."  # the rent is owed from her wages, not taken from her purse
     )
 
 
@@ -441,8 +441,11 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     assert midnight == [
         ("leave_work", "Mei"),
         ("bedridden", "Mei"),
+        ("wage", "Mei"),
         ("settlement", "Mei"),
+        ("wage", "Tomas"),
         ("settlement", "Tomas"),
+        ("wage", "Aisha"),
         ("settlement", "Aisha"),
     ]
     bed = [e for e in world.log.entries() if e["kind"] == "bedridden"][0]
@@ -465,7 +468,7 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
         "Tuesday 2 January, 00:00. You are in bed at home, too ill to get up. Also here: Aisha."
     )
     assert [spec.name for spec in port.tool_specs()] == [
-        "help", "look_around", "how_am_i", "sleep", "say",
+        "help", "look_around", "how_am_i", "inventory", "sleep", "say",
     ]  # fmt: skip
     refused = await town.call("Mei", "go", place="workshop")
     assert refused.text == BEDRIDDEN and not refused.ends_turn
@@ -479,10 +482,10 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     )
     await town.call("Mei", "leave_conversation")
     assert isinstance(mei.event, Bedridden)
-    aisha.living.things["groceries"] = 3
+    aisha.inventory.items["groceries"] = 3
     given = await town.call("Aisha", "give", to="Mei", what="groceries", amount=1)
     assert given.text.startswith("You gave Mei 1 helping of groceries.")
-    assert mei.living.eaten == {"groceries": 1} and mei.living.things == {}  # eaten at once
+    assert mei.living.eaten == {"groceries": 1} and mei.inventory.items == {}  # eaten at once
     # Still up at the forced hour, she falls asleep in her bed; the checkpoint keeps her there,
     # and so does a restored world; she wakes in it.
     town.take("Mei")
@@ -534,7 +537,9 @@ async def test_a_resident_taken_to_bed_while_its_checks_run_is_still_paid(make_t
 
     monkeypatch.setattr(world.board.backend, "accept", slow_accept)
     paid = await town.call("Mei", "submit")
-    assert paid.text == "Accepted. You were paid $20. Your purse holds $120. It is 00:05."
+    assert paid.text == (
+        "Accepted. You received $20 for task 1. Your purse holds $140. It is 00:05."
+    )
     assert mei.living.bedridden and mei.place == "mill-street-house"
     kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
-    assert kinds.index("bedridden") < kinds.index("verdict") < kinds.index("payment")
+    assert kinds.index("bedridden") < kinds.index("verdict") < kinds.index("service")

@@ -333,7 +333,7 @@ def test_the_index_names_the_runs_and_the_comparison(published):
     town = index["runs"][0]
     assert (town["settled_day"], town["last_day"], town["residents"]) == (1, 2, list(RESIDENTS))
     assert town["headline"]["accepted"] == 1 and town["headline"]["paid"] == 20
-    assert town["headline"]["day"] == 2 and town["headline"]["purse"]["median"] == 115
+    assert town["headline"]["day"] == 2 and town["headline"]["purse"]["median"] == 135
     assert index["skipped"] == []
     [comparison] = index["comparisons"]
     assert (comparison["name"], comparison["runs"]) == ("runs", ["town", "twin"])
@@ -689,15 +689,15 @@ def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
             {"name": "Aisha", "markers": []},
         ],
     }
-    living = lambda things: {"living": {"things": things}}  # noqa: E731
+    kept = lambda items: {"inventory": {"items": items}}  # noqa: E731
     run.checkpoint_path(1).write_text(
         json.dumps(
             {
                 "time": end1,
                 "residents": {
-                    "Mei": living({"groceries": 15, "phone": 1}),
-                    "Tomas": living({}),
-                    "Aisha": living({}),
+                    "Mei": kept({"groceries": 15, "phone": 1}),
+                    "Tomas": kept({}),
+                    "Aisha": kept({}),
                 },
             }
         )

@@ -118,14 +118,16 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert 10 <= midnight["satiety"] < 35 and midnight["energy"] < 100
     assert midnight["health"] == 100 and midnight["night"] == {"poor_home": -2, "recovery": 5}
 
+    # The rent is taken from the wages at midnight: Mei's ninety minutes at work leave her
+    # purse as it was, and Tomas's eight hours pay him $56 less his $30.
     assert lane(data, "Mei")["purse"] == [
         [start, 120],
         [at("09:32"), 115],
         [at("10:00"), 135],
-        [DAY, 115],  # rent on Mill Street is $20
+        [DAY, 135],
     ]
-    assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 155]]
-    assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 10]]
+    assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 211]]
+    assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 30]]
     entries = list(town.world.log.entries())
     first = next(e for e in entries if e["kind"] in module._FOLDED)["real_time"]  # the viewer's
     (closed,) = [e["real_time"] for e in entries if e["kind"] == "checkpoint"]
@@ -251,7 +253,7 @@ def test_resuming_the_start_sets_aside_all_before_and_a_checkpoint_never_logged_
 
 async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(tmp_path):
     run, town = new_town(tmp_path)
-    town.world.residents["Mei"].living.things["groceries"] = 3
+    town.world.residents["Mei"].inventory.items["groceries"] = 3
     town.start(until_day=2)
     await town.until("07:00")
     await town.call("Tomas", "go", place="mill-street-house")

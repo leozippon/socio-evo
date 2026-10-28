@@ -36,3 +36,9 @@ def first_line(text: str, limit: int = 100) -> str:
     """The first non-blank line of `text`, cut to `limit` characters."""
     line = next((line.strip() for line in text.splitlines() if line.strip()), "")
     return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
+def duration(seconds: int) -> str:
+    """`8 hours`, `7 hours and 30 minutes`, `45 minutes`, in whole minutes; empty under one."""
+    hours, minutes = divmod(seconds // 60, 60)
+    return listed([counted(n, unit) for n, unit in ((hours, "hour"), (minutes, "minute")) if n])

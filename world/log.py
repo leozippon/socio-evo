@@ -35,7 +35,8 @@ KINDS = {
     "file_write": "a file written in a workspace",
     "submission": "a resident submitted its workspace's changes",
     "verdict": "the acceptance verdict on a submission",
-    "payment": "a resident was paid for an accepted task",
+    "service": "a resident was paid its occupation's sum for a service, a task of its own "
+    "accepted, at once as far as the fund had it (payload: task, amount, paid, owed, money)",
     "abandon": "a resident gave up its task",
     "expiry": "a claim ran out unpaid at midnight",
     "workspace_closed": "a workspace closed at the checkpoint, its changes kept",
@@ -47,8 +48,11 @@ KINDS = {
     "message": "a written message from one resident to another, read wherever the other is",
     "purchase": "a good bought, with its price, and consumed at once if it is immediate",
     "move_in": "a resident moved into another home",
-    "settlement": "the rent and fees charged at midnight, with the statement, the day's food and "
-    "the body's numbers after the night's reckoning of health",
+    "wage": "a resident's wages paid at midnight for its hours at work, with its rent and daily "
+    "charges taken out of them (payload: hours, wages, owed_before, rent, charges, "
+    "arrears_before, remainder, paid, owed, arrears, money)",
+    "settlement": "the midnight statement, with the day's food and the body's numbers after the "
+    "night's reckoning of health",
     "condition": "a need of a resident's body crossed into another band; told to it if awake",
     "bedridden": "a resident's health ran out at midnight: it took to its bed at home, carried "
     "there if it was elsewhere, until treated",

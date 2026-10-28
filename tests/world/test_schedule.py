@@ -138,11 +138,14 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "leave_work")
     await town.until("22:00")
     await town.call("Aisha", "sleep", until="10:00", journal="Lazy morning.")
+    await town.call("Tomas", "go", place="workshop")
     town.rest()
     await town.until("00:30", day=2)
     await town.call("Mei", "go", place="mill-street-house")
     await town.until("00:40", day=2)
     await town.call("Mei", "say", text="Still up?", to=["Tomas"])  # refused: not here
+    await town.until("01:00", day=2)
+    await town.call("Tomas", "claim_task", task=3)  # at work until the forced sleep stops him
     await town.until("03:00", day=2)
     ((day, state),) = town.checkpoints
     assert day == 1
@@ -154,11 +157,24 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["residents"]["Mei"]["done"] == [1]
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
     mei_living = state["residents"]["Mei"]["living"]
-    # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today.
-    assert mei_living["things"] == {"groceries": 7, "coat": 1} and mei_living["eaten"] == {}
-    assert set(mei_living) == {
-        "things", "eaten", "satiety", "energy", "health", "night", "bedridden",
+    # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today;
+    # she paid $42 at the store and was paid $20 for task 1, and the rent was not taken from
+    # her purse but is owed from her wages, as Tomas's and Aisha's are.
+    assert state["residents"]["Mei"]["inventory"] == {
+        "money": 120 - 12 - 30 + 20, "items": {"groceries": 7, "coat": 1}, "moves": [],
     }  # fmt: skip
+    assert mei_living["eaten"] == {}
+    assert set(mei_living) == {"eaten", "satiety", "energy", "health", "night", "bedridden"}
+    assert state["fund"] == {
+        "balance": 1000 + 42 + 50 - 20,
+        "ledger": {},
+        "yesterday": {"sale": 42, "client": 50, "service": 20},
+        "owed": {},
+        "arrears": {"Mei": 20, "Tomas": 30, "Aisha": 20},
+    }
+    # Tomas's hour at work after midnight counts towards the coming day's wages.
+    assert state["residents"]["Tomas"]["worked"] == 3600
+    assert state["residents"]["Mei"]["worked"] == 0
     assert mei_living["bedridden"] is False
     assert mei_living["health"] == 100 and mei_living["night"] == {
         "poor_home": -2,
@@ -209,7 +225,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     )
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
-    assert later.residents["Mei"].living.things == {"groceries": 6}  # the stock came back
+    assert later.residents["Mei"].inventory.items == {"groceries": 6}  # the stock came back
     assert (await again.call("Mei", "read_repo_file", path="b.py")).text.endswith("\nhalf\n")
     await again.close()
 

@@ -1,15 +1,16 @@
-"""A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing a
-plausible day from what each request shows, so that the whole pipeline runs without a model.
+"""A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing
+a plausible day from what each request shows, so that the whole pipeline runs without a model.
 
 The day it plays: wait at home until the day's board is posted, go to the workplace, read the
 board, claim a free task and then, the task's actions offered once it is held, run a command,
-read a file, write a fix, submit and leave; go to a shop, if the town has one, and buy a stock
-of food; go to a social place, eat there if it sells a meal and, if anyone is there, say
-something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's
-forced waking hour; in bed, review the day, note it in memory/notes.md and fall asleep.
-Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
-resident's name comes from the system prompt, and the day so far from the messages since the
-last wake-up, so it continues a resumed run as it would have continued the run.
+read a file, write a fix and submit, and stay at work until 17:00; go to a shop, if the town has
+one, buy a stock of food and look at what it has; go to a social place, eat there if it sells a
+meal and, if anyone is there, say something once; at 20:00 go home and go to bed with a journal
+entry, to wake at the town's forced waking hour; in bed, review the day, note it in
+memory/notes.md and fall asleep. Spoken to, it answers once a day and leaves the conversation.
+It keeps no state of its own: the resident's name comes from the system prompt, and the day so
+far from the messages since the last wake-up, so it continues a resumed run as it would have
+continued the run.
 """
 
 from __future__ import annotations
@@ -24,9 +25,10 @@ from infrastructure.llm import LLMRequest, LLMResponse, Message, ToolCall
 from world.clock import parse_hour
 from world.config import TownConfig
 
+WORK_ENDS = parse_hour("17:00")
 EVENING = parse_hour("20:00")
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
-_BOARD_LINE = re.compile(r"^(\d+)\. .* Pays \S+\.(.*)$", re.MULTILINE)
+_BOARD_LINE = re.compile(r"^(\d+)\. .* The client pays \S+\.(.*)$", re.MULTILINE)
 
 
 @dataclass(frozen=True)
@@ -101,9 +103,11 @@ class _Day:
             calls = [] if self._said() else [tool_call("say", text=self._greeting())]
             return reply("", *calls, tool_call("leave_conversation"))
         if "You are at work at" in s:
-            if self._did("submit"):
-                return reply("", tool_call("leave_work"), tool_call("go", place=self.after_work))
-            return reply("", tool_call("view_board"))
+            if not self._did("submit"):
+                return reply("", tool_call("view_board"))
+            if self.hour < WORK_ENDS:
+                return reply("", tool_call("wait", minutes=(WORK_ENDS - self.hour) // 60))
+            return reply("", tool_call("leave_work"), tool_call("go", place=self.after_work))
         place = self._place()
         town = self.model._town
         if place == self.home:
@@ -118,7 +122,8 @@ class _Day:
                 return reply("", tool_call("go", place=self.after_work))
             return reply("", tool_call("view_board"))
         if place == self.model._shop and place != self.social:
-            calls = [] if self._did("buy", "You bought") else [self._buy(self.model._stock)]
+            bought = self._did("buy", "You bought")
+            calls = [] if bought else [self._buy(self.model._stock), tool_call("inventory")]
             return reply("", *calls, tool_call("go", place=self.social))
         if place == self.social and self.hour < EVENING:
             calls = []
@@ -167,8 +172,6 @@ class _Day:
             tool_call("read_repo_file", path="README"),
             tool_call("write_repo_file", path="fix.py", content="FIX\n"),
             tool_call("submit"),
-            tool_call("leave_work"),
-            tool_call("go", place=self.after_work),
         )
 
     def _in_bed(self) -> LLMResponse:

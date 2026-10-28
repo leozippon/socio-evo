@@ -38,7 +38,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     claim         task, instance_id
     submission    task; and once the verdict is in: resolved, status, fail_to_pass, pass_to_pass
                   (passed and total counts)
-    payment       task, amount
+    payment       task, amount            the sum paid at once for a task accepted (a `service`
+                                          entry of the log)
     abandon       task                    the resident gave its task up
     expiry        task                    the claim ran out unpaid
     speech        text, to, private       "to" is everyone who heard it
@@ -52,9 +53,10 @@ The markers, each on the lane of the resident who acted, with their own fields:
                                           without one has no marker)
     forced_sleep  wake
     settlement    rent, fees, nourishment, satiety, energy, health, night
-                  midnight: the rent and the daily charges taken, the day's food as a share of
-                  a day's need, the body's numbers after the night's reckoning and how health
-                  moved, by cause (the purse after the charges is a point of "purse")
+                  midnight: the rent and the daily charges taken from the day's wages (as the
+                  `wage` entry before it gives them), the day's food as a share of a day's need,
+                  the body's numbers after the night's reckoning and how health moved, by cause
+                  (the purse after the wages is a point of "purse")
     condition     need, band, value, lowest   a need of the body crossed into another band
     death                                the resident's health ran out; its lane is dead from here
 
@@ -95,7 +97,7 @@ _FOLDED = frozenset(
         "claim",
         "submission",
         "verdict",
-        "payment",
+        "service",
         "abandon",
         "expiry",
         "speech",
@@ -106,6 +108,7 @@ _FOLDED = frozenset(
         "skill_shared",
         "purchase",
         "move_in",
+        "wage",
         "settlement",
         "condition",
         "death",
@@ -210,6 +213,7 @@ class _Lane:
         self.task: int | None = None
         self.talk: dict[str, Any] | None = None
         self.submitted: dict[str, Any] | None = None
+        self.wage: dict[str, Any] | None = None  # the last midnight's, for its statement
         self.segments.append(
             {"kind": "sleep", "start": start, "end": None, "place": home, "task": None}
         )
@@ -320,10 +324,10 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                 pass_to_pass=payload["pass_to_pass"],
             )
             lane.submitted = None
-        elif kind == "payment":
+        elif kind == "service":
             lane.hold(t, None)
-            lane.mark(entry, "payment", task=payload["task"], amount=payload["amount"])
-            lane.purse.append([t, payload["purse"]])
+            lane.mark(entry, "payment", task=payload["task"], amount=payload["paid"])
+            lane.purse.append([t, payload["money"]])
         elif kind in ("abandon", "expiry"):
             lane.hold(t, None)
             lane.mark(entry, kind, task=payload["task"])
@@ -371,13 +375,17 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "skill_shared":  # a log from before any file was shared names a skill
             file = payload["file"] if "file" in payload else f"skills/{payload['skill']}.md"
             lane.mark(entry, "skill_shared", to=payload["to"], file=file)
+        elif kind == "wage":
+            lane.purse.append([t, payload["money"]])
+            lane.wage = payload
         elif kind == "settlement":
-            lane.purse.append([t, payload["purse"]])
+            if lane.wage is None:
+                raise ValueError(f"entry {entry['seq']}: a statement without its wages")
             lane.mark(
                 entry,
                 "settlement",
-                rent=payload["rent"],
-                fees=payload["fees"],
+                rent=lane.wage["rent"],
+                fees=lane.wage["charges"],
                 nourishment=payload["nourishment"],
                 satiety=payload["satiety"],
                 energy=payload["energy"],

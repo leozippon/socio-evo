@@ -32,11 +32,14 @@ def test_the_days_work_money_and_talk_as_the_town_lived_them(rows):
     assert {k: mei[k] for k in ("claimed", "submitted", "accepted", "earned")} == {
         "claimed": 1, "submitted": 1, "accepted": 1, "earned": 20,
     }  # fmt: skip
-    # Purses after the rent ($20 on Mill Street, $30 at the flat): 120 + 20 + 5, 180 - 5, 30.
-    assert (mei["purse"], tomas["purse"], aisha["purse"]) == (125, 145, 10)
-    assert (mei["in_debt"], tomas["in_debt"], aisha["in_debt"]) == (0, 0, 0)
-    assert rows["Aisha", 2]["purse"] == -10 and rows["Mei", 2]["purse"] == 105
-    assert rows["Aisha", 2]["in_debt"] == 1
+    # Wages at $7 an hour, the rent ($20 on Mill Street, $30 at the flat) taken out of them:
+    # Mei's twenty minutes earn 2 and leave 18 of rent owed, Tomas's nine hours 63 and pay him
+    # 33, and Aisha, who did not work, owes her rent; no purse pays rent.
+    assert (mei["wages"], tomas["wages"], aisha["wages"]) == (2, 63, 0)
+    assert (mei["purse"], tomas["purse"], aisha["purse"]) == (120 + 20 + 5, 180 - 5 + 33, 30)
+    assert (mei["arrears"], tomas["arrears"], aisha["arrears"]) == (18, 0, 20)
+    assert (rows["Mei", 2]["arrears"], rows["Aisha", 2]["arrears"]) == (38, 40)
+    assert rows["Aisha", 2]["purse"] == 30 and rows["Mei", 2]["purse"] == 145
     assert (mei["spent_rent"], tomas["spent_rent"], aisha["spent_rent"]) == (20, 30, 20)
     assert (mei["spent_fees"], mei["spent_food"], mei["spent_goods"], mei["hungry"]) == (0, 0, 0, 1)
     # Nobody ate: full when the town began, everyone is hungry at the first midnight and
@@ -77,12 +80,13 @@ def test_daily_totals_and_means(rows):
     assert found[1, "earned"] == {
         "day": 1, "measure": "earned", "total": 20, "mean": 20 / 3, "residents": 3,
     }  # fmt: skip
-    assert found[1, "in_debt"]["total"] == 0 and found[2, "in_debt"]["total"] == 1
+    assert found[1, "arrears"]["total"] is None and found[1, "arrears"]["mean"] == 38 / 3
+    assert found[2, "arrears"]["mean"] == (38 + 30 + 40) / 3
     assert found[2, "forced_sleep"]["total"] == 2 and found[1, "hungry"]["total"] == 3
     assert found[2, "starving"]["total"] == 3 and found[1, "starving"]["total"] == 0
     assert found[2, "died"]["total"] == 0 and found[1, "health"]["total"] is None
     assert found[2, "health"]["mean"] == pytest.approx((83 + 85 + 83) / 3)
-    assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == 280 / 3
+    assert found[1, "purse"]["total"] is None and found[1, "purse"]["mean"] == (145 + 208 + 30) / 3
     assert found[1, "health"]["residents"] == 3
 
 
@@ -103,6 +107,6 @@ def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run
         table = list(csv.DictReader(file))
     assert len(table) == 6 and table[0]["resident"] == "Mei" and table[0]["earned"] == "20"
     assert table[1]["cached_share"] == "0.6" and table[3]["cached_share"] == ""  # Tomas: no trace
-    assert json.loads((out / "measures.json").read_text())[0]["purse"] == 125
+    assert json.loads((out / "measures.json").read_text())[0]["purse"] == 145
     assert len(json.loads((out / "daily.json").read_text())) == 2 * len(MEASURES)
     assert (out / "daily.csv").read_text().startswith("day,measure,total,mean,residents\n")

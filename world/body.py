@@ -45,13 +45,12 @@ def clamp(value: float) -> float:
 
 @dataclass
 class Living:
-    """A resident's living, checkpointed whole: `things` is what it owns, by the good's id (1
-    for a durable, the units left of a consumable); `eaten` the units of each food good it has
+    """A resident's living, checkpointed whole: `eaten` the units of each food good it has
     eaten since the last midnight, the day's record of nourishment; the three needs; `night`,
     how health moved at the last midnight, by cause; and `bedridden`, set when health reaches
-    its floor at midnight and cleared by treatment. A new resident is full in every need."""
+    its floor at midnight and cleared by treatment. A new resident is full in every need. What
+    it has to eat is in its inventory (`world.economy`)."""
 
-    things: dict[str, int] = field(default_factory=dict)
     eaten: dict[str, int] = field(default_factory=dict)
     satiety: float = 100.0
     energy: float = 100.0

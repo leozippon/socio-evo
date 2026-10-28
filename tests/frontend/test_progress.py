@@ -35,18 +35,31 @@ def write(run: RunDirectory, lines: list[tuple]) -> None:
             log.write(entry(seq, kind, t, actor, real_time=real_time, **payload) + "\n")
 
 
-def settlement(purse: int) -> dict:
-    """The midnight statement's payload: rent taken, nothing eaten, the body as it stood."""
+def wage(money: int) -> dict:
+    """The midnight's wages: no time at work, the rent owed, the purse as it stood."""
     return {
+        "hours": 0.0,
+        "wages": 0,
+        "owed_before": 0,
         "rent": 20,
-        "fees": 0,
-        "nourishment": 0,
-        "purse": purse,
-        "satiety": 20.0,
-        "energy": 70.0,
-        "health": 100.0,
-        "night": {"poor_home": -2.0, "recovery": 5.0},
+        "charges": 0,
+        "arrears_before": 0,
+        "remainder": -20,
+        "paid": 0,
+        "owed": 0,
+        "arrears": 20,
+        "money": money,
     }
+
+
+SETTLEMENT = {
+    "nourishment": 0,
+    "satiety": 20.0,
+    "energy": 70.0,
+    "health": 100.0,
+    "night": {"poor_home": -2.0, "recovery": 5.0},
+}
+"""The midnight statement's payload: nothing eaten, the body as it stood."""
 
 
 def verdict(task: int, resolved: bool) -> dict:
@@ -85,7 +98,13 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
             ("skill_shared", at("09:33"), "Mei", 1006.0, {"to": "Tomas", "skill": "triage"}),
             ("submission", at("10:00"), "Mei", 1007.0, {"task": 1}),
             ("verdict", at("10:00"), "Mei", 1008.0, verdict(1, True)),
-            ("payment", at("10:00"), "Mei", 1009.0, {"task": 1, "amount": 20, "purse": 135}),
+            (
+                "service",
+                at("10:00"),
+                "Mei",
+                1009.0,
+                {"task": 1, "amount": 20, "paid": 20, "owed": 0, "money": 135},
+            ),
             ("submission", at("11:00"), "Tomas", 1010.0, {"task": 2}),
             ("verdict", at("11:00"), "Tomas", 1011.0, verdict(2, False)),
             (
@@ -102,9 +121,12 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
                 1013.5,
                 {"journal": None, "day": 1, "wake": 0},
             ),
-            ("settlement", DAY, "Mei", 1014.0, settlement(105)),
-            ("settlement", DAY, "Tomas", 1015.0, settlement(155)),
-            ("settlement", DAY, "Aisha", 1016.0, settlement(0)),
+            ("wage", DAY, "Mei", 1014.0, wage(135)),
+            ("settlement", DAY, "Mei", 1014.1, SETTLEMENT),
+            ("wage", DAY, "Tomas", 1015.0, wage(185)),
+            ("settlement", DAY, "Tomas", 1015.1, SETTLEMENT),
+            ("wage", DAY, "Aisha", 1016.0, wage(30)),
+            ("settlement", DAY, "Aisha", 1016.1, SETTLEMENT),
             # Past midnight, but still the first lived day: it ends at its checkpoint.
             ("forced_sleep", at("02:00", day=2), "Aisha", 1017.0, {"wake": at("07:00", day=2)}),
             ("checkpoint", at("02:30", day=2), None, 1000.0 + 2.5 * HOUR, {"day": 1}),
@@ -126,11 +148,11 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_purses_then(t
             | {"claims": 2, "submissions": 2, "accepted": 1, "rejected": 1}
             | {"payments": 1, "paid": 20, "speeches": 2, "gifts": 1, "skills_shared": 1}
             | {"journals": 1, "forced_sleeps": 1}
-            | {"purse": {"min": 0, "median": 105, "max": 155}},
+            | {"purse": {"min": 30, "median": 135, "max": 185}},
             {"day": 2, "date": "2001-01-02", "in_progress": True, "hours": None}
             | NOTHING
             | {"claims": 1, "submissions": 1, "gifts": 1}
-            | {"purse": {"min": 10, "median": 105, "max": 145}},
+            | {"purse": {"min": 40, "median": 135, "max": 175}},
         ],
     }
 

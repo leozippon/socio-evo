@@ -9,35 +9,41 @@ then drives the town until a given day's checkpoint.
 
 Everything that happens at a moment of simulated time is a timer in one queue, run by `run` in
 the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
-tells a waiting resident the time, and the day's schedule, which is all the fixed structure a day
-has. For day N (whose daytime is calendar day N): the posting of day N's board at the workplace
-in the morning, which replaces what was left of the day before's; midnight, when each resident's
-food and health are reckoned, its rent and fees are charged with a statement and expired claims
-run out; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
-brought up to date (see below). The workplace never closes, and residents go to bed and wake
-when they choose, except that one sleep lasts at most a configured span and that nobody wakes
-between the forced sleep and the checkpoint. At the checkpoint the world waits until every
-resident is asleep and its runtime waits on its port, holds the clock, closes every workspace
-keeping its changes, takes the snapshot and awaits `on_checkpoint(day, snapshot)`, through which
-the composition layer writes the checkpoint and commits the agent directories. A lived day N
-runs from the checkpoint on calendar day N to the one on calendar day N + 1; the journal, the
-acceptance runs and the record `review_day` tells belong to it.
+tells a waiting resident the time, and the day's schedule, which is all the fixed structure a
+day has. For day N (whose daytime is calendar day N): the posting of day N's board at the
+workplace in the morning, which replaces what was left of the day before's; midnight, when each
+resident's food and health are reckoned, its wages are paid with its rent and daily charges
+taken out of them, with a statement, and expired claims run out; the forced sleep; and the
+checkpoint. Every hour on the hour, besides, the bodies are brought up to date (see below). The
+workplace never closes, and residents go to bed and wake when they choose, except that one sleep
+lasts at most a configured span and that nobody wakes between the forced sleep and the
+checkpoint. At the checkpoint the world waits until every resident is asleep and its runtime
+waits on its port, holds the clock, closes every workspace keeping its changes, takes the
+snapshot and awaits `on_checkpoint(day, snapshot)`, through which the composition layer writes
+the checkpoint and commits the agent directories. A lived day N runs from the checkpoint on
+calendar day N to the one on calendar day N + 1; the journal, the acceptance runs and the record
+`review_day` tells belong to it.
 
-A resident's living (`Living`, of `world.body`) is what it owns and keeps in stock, what it has
-eaten since the last midnight, and its body's three needs: the goods of the catalogue act through
-it. The body (`Body`) is reckoned lazily and exactly: `reckon` brings a resident up to the moment
-at the rates of what it has been doing since it was last reckoned, and is called every hour on
-the hour, before every change of activity (sitting down to work, setting off, arriving, going
-to bed, falling asleep, waking) and at the checkpoint, so that a checkpoint carries the body as
-of its moment. A resident awake and able to eat eats from its stock of food as it is reckoned;
+A resident's living (`Living`, of `world.body`) is what it has eaten since the last midnight and
+its body's three needs; its inventory (`Inventory`, of `world.economy`) is its money and what it
+keeps of the goods of the catalogue, which act through it. The town's fund (`Fund`) takes in
+what clients pay for tasks accepted, the rent and the sales, and pays each resident at once its
+occupation's sum for a service and, at midnight, its wages for the time it spent at work at its
+workplace (`Resident.worked`, counted as the body is reckoned and cleared at midnight), with its
+rent and daily charges taken out of them; `report` tells the fund's day. The body (`Body`) is
+reckoned lazily and exactly: `reckon` brings a resident up to the moment at the rates of what it
+has been doing since it was last reckoned, and is called every hour on the hour, before every
+change of activity (sitting down to work, setting off, arriving, going to bed, falling asleep,
+waking) and at the checkpoint, so that a checkpoint carries the body as of its moment. A
+resident awake and able to eat eats from the stock of food in its inventory as it is reckoned;
 food bought on the spot is eaten as it is bought. A resident the reckoning finds at work in the
 lowest band of energy stops work, as `leave_work` stops it, keeping its task, and is told that
 it cannot work until it has slept; before an action in its workspace the body is reckoned too,
-so that the exhausted are refused it (`tools`). A need that crosses into another band is
-logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
+so that the exhausted are refused it (`tools`). A need that crosses into another band is logged,
+and told to the resident when it is awake at a place (the wake-up, the statement and a
 purchase's result tell it otherwise); the situation names the needs in their lowest band. At
-midnight health moves by the day, and a resident whose health has reached its floor takes to
-its bed: it leaves what it was in, is carried home if it was elsewhere, and is in the event
+midnight health moves by the day, and a resident whose health has reached its floor takes to its
+bed: it leaves what it was in, is carried home if it was elsewhere, and is in the event
 Bedridden, where it can do little but speak to whoever comes and eat what it is given, until
 treatment (`treat`) lets it up; those where it was and at its home are told, and a checkpoint
 keeps it so. A durable with the effect travel shortens the owner's journeys, one with messaging
@@ -78,8 +84,8 @@ from world.backend import Backend
 from world.board import Board
 from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
-from world.config import Band, Good, TownConfig
-from world.economy import Economy
+from world.config import Band, Good, Occupation, Place, TownConfig
+from world.economy import PAID, TAKEN, Fund, Inventory, Settled, money
 from world.events import (
     BOARD_TOOLS,
     EXHAUSTED,
@@ -95,11 +101,18 @@ from world.events import (
 )
 from world.log import Entry, WorldLog
 from world.rules import Rules, bare, longest_sleep
-from world.telling import cap, counted, listed, you
+from world.telling import cap, counted, duration, listed, you
 
 Tell = Callable[[str | None], str]
 """A text as told to a witness (None: to nobody in particular)."""
 OnCheckpoint = Callable[[int, dict[str, Any]], Awaitable[None]]
+MOVES = {
+    "service": "received {money} for {about}",
+    "received": "received {money} from {about}",
+    "gave": "gave {money} to {about}",
+    "bought": "bought {about} for {money}",
+}
+"""How the statement tells each kind of movement of an inventory's money (`Inventory.moves`)."""
 
 
 @dataclass(order=True)
@@ -117,16 +130,21 @@ class _Timer:
 class Resident:
     """A resident's state in the world. `home` is where it lives now; `timer` is its arrival or
     its wake-up; `tick` the percept that will tell it the time while its runtime waits;
-    `reckoned` the simulated time its body was last brought up to; `day` the record of its
-    lived day: (simulated time, kind, its wording, payload) of every entry that concerns it."""
+    `reckoned` the simulated time its body was last brought up to; `worked` the seconds it has
+    spent at work at its occupation's workplace since the last midnight, which its wages are
+    paid for; `day` the record of its lived day: (simulated time, kind, its wording, payload) of
+    every entry that concerns it."""
 
     name: str
     home: str
     agent_dir: Path
     place: str | None
     base: Base
+    occupation: Occupation
     living: Living = field(default_factory=Living)
+    inventory: Inventory = field(default_factory=Inventory)
     reckoned: int = 0
+    worked: int = 0
     conversation: Conversation | None = None
     wait_minutes: int | None = None
     timer: _Timer | None = None
@@ -190,9 +208,10 @@ class World:
         self.clock.set(start)
         self.log = WorldLog(run.world_log_path)
         names = [r.name for r in config.residents]
-        self.economy = Economy(config.currency, {r.name: r.purse for r in config.residents})
+        self.money: Callable[[int], str] = partial(money, config.currency)
+        self.fund = Fund(config.fund.start)
         self.board = Board(
-            tasks, backend, config.work, seed=config.seed, names=names, money=self.economy.money
+            tasks, backend, config.work, seed=config.seed, names=names, money=self.money
         )
         self.body = Body(config.needs)
         self.rules = Rules(config)
@@ -210,7 +229,14 @@ class World:
         self.residents: dict[str, Resident] = {}
         for rc in config.residents:
             r = Resident(
-                rc.name, rc.home, directories[rc.name], rc.home, Sleep(0, True), reckoned=start
+                rc.name,
+                rc.home,
+                directories[rc.name],
+                rc.home,
+                Sleep(0, True),
+                config.occupation(rc.occupation),
+                inventory=Inventory(rc.purse),
+                reckoned=start,
             )
             r.port = ResidentPort(self, r)
             self.residents[rc.name] = r
@@ -297,8 +323,8 @@ class World:
         self._at(now - now % 3600 + 3600, self._hourly)
 
     def _midnight(self, day: int) -> None:
-        """The end of calendar day `day`: its food and its health reckoned and charges taken,
-        and the claims that run out with it."""
+        """The end of calendar day `day`: its food and its health reckoned, its wages paid with
+        the rent and charges taken out of them, and the claims that run out with it."""
         self._settle(day)
         self._expire(day)
 
@@ -323,14 +349,16 @@ class World:
             )
 
     def _settle(self, day: int) -> None:
-        """Midnight for every resident: its body is brought up to the hour and its health moves
-        by the day (a resident whose health has reached its floor takes to its bed here), the
-        day's food is reckoned, rent and the fees of what it owns are taken, and the statement
-        is told."""
+        """Midnight for every resident, in the configuration's order: its body is brought up to
+        the hour and its health moves by the day (a resident whose health has reached its floor
+        takes to its bed here), the day's food is reckoned, its wages for its time at work are
+        paid with its rent and daily charges taken out of them (`Fund.settle`: when the fund runs
+        short, those settled first are paid first), and the statement is told; then the fund's
+        day is closed."""
         date = tell_date(day, self.config.start_date)
         for r in self.residents.values():
             self.reckon(r)
-            living = r.living
+            living, inventory = r.living, r.inventory
             home = self.config.place(r.home)
             assert home.rent is not None and home.comfort is not None
             before = self.body.bands(living)
@@ -343,18 +371,37 @@ class World:
                 if good.kind != "consumable" or not living.eaten.get(good.id):
                     continue
                 assert good.per_day is not None
-                left = living.things.get(good.id, 0)
+                left = inventory.units(good.id)
                 if not left:
                     stock.append(f"You have used up your {bare(good.name)}.")
                 elif left <= good.per_day:
                     stock.append(f"You have {counted(left, 'helping')} of {bare(good.name)} left.")
-            charges = [(f"rent for your room at {home.name}", home.rent)]
-            charges += [
-                (f"the daily charge on {good.name}", good.fee_per_day)
-                for good in self.config.goods
-                if good.fee_per_day and living.things.get(good.id)
-            ]
-            fees = sum(amount for _, amount in charges[1:])
+            charged = [g for g in self.config.goods if g.fee_per_day and inventory.units(g.id)]
+            wages = r.worked * r.occupation.wage_per_hour // 3600
+            charges = sum(good.fee_per_day for good in charged)
+            settled = self.fund.settle(r.name, wages, home.rent, charges)
+            held = inventory.money
+            inventory.money += settled.paid
+            self.record(
+                "wage",
+                lambda w, r=r, held=held, paid=settled.paid: (
+                    f"At midnight your purse held {self.money(held)}"
+                    + (
+                        f", and {self.money(paid)} of your wages went into it."
+                        if paid
+                        else "; none of your wages went into it."
+                    )
+                    if w == r.name
+                    else f"{r.name} was paid {self.money(paid) if paid else 'nothing'} at midnight."
+                ),
+                actor=r,
+                place=None,
+                payload={
+                    "hours": round(r.worked / 3600, 2),
+                    **asdict(settled),
+                    "money": inventory.money,
+                },
+            )
             nourishment = self.nourishment(r)
             eaten = [
                 f"{counted(units, 'helping')} of {bare(good.name)}"
@@ -370,31 +417,71 @@ class World:
                 if nourishment
                 else "You had nothing to eat today."
             )
-            items = self.economy.settle(r.name, charges)
+            moves = [
+                MOVES[str(kind)].format(money=self.money(int(amount)), about=about)
+                for kind, amount, about in inventory.moves
+            ]
+            items = moves + self._wages_told(r, settled, home, charged)
             statement = " ".join(
                 [f"Your statement for {date}: {'; '.join(items)}.", food, *stock]
-                + [self.body.condition(living), self.economy.purse(r.name)]
+                + [self.body.condition(living), self.purse(r)]
             )
             self.record(
                 "settlement",
                 lambda w, r=r, statement=statement: (
-                    statement if w == r.name else f"{r.name} was charged rent at midnight."
+                    statement if w == r.name else f"{r.name} had its statement at midnight."
                 ),
                 actor=r,
                 place=None,
                 audience=[r],
                 payload={
-                    "rent": home.rent,
-                    "fees": fees,
                     "nourishment": nourishment,
-                    "purse": self.economy.purses[r.name],
                     "satiety": round(living.satiety, 1),
                     "energy": round(living.energy, 1),
                     "health": round(living.health, 1),
                     "night": night,
                 },
             )
-            living.eaten = {}
+            living.eaten, inventory.moves, r.worked = {}, [], 0
+        self.fund.close_day()
+
+    def _wages_told(
+        self, r: Resident, settled: Settled, home: Place, charged: list[Good]
+    ) -> list[str]:
+        """The statement's items on `r`'s wages as `settled` at midnight: its time at work and
+        what it earned, what the fund owed it, the rent for its room at `home`, the daily
+        charges on the goods `charged` and the rent it owed, and what came of them."""
+        worked = duration(r.worked)
+        money = self.money
+        items = [
+            f"{worked} at work, {money(settled.wages)} in wages" if worked else "no time at work"
+        ]
+        if settled.owed_before:
+            items.append(f"{money(settled.owed_before)} the fund owed you")
+        items.append(f"rent for your room at {home.name} {money(settled.rent)}")
+        items += [f"the daily charge on {good.name} {money(good.fee_per_day)}" for good in charged]
+        if settled.arrears_before:
+            items.append(f"{money(settled.arrears_before)} of rent you owed")
+        left, paid = settled.remainder, settled.paid
+        if left < 0:
+            items.append(
+                f"your wages fell {money(-left)} short of that; you owe it, and it is taken from "
+                "your next wages"
+            )
+        elif not left:
+            items.append("nothing left of your wages")
+        elif paid == left:
+            items.append(f"{money(left)} left of your wages, paid into your purse")
+        elif paid:
+            items.append(
+                f"{money(left)} left of your wages, of which {money(paid)} paid into your purse; "
+                f"the fund could not pay the other {money(settled.owed)} and owes it to you"
+            )
+        else:
+            items.append(
+                f"{money(left)} left of your wages, which the fund could not pay and owes you"
+            )
+        return items
 
     def _take_to_bed(self, r: Resident, day: int) -> None:
         """`r`'s health has reached its floor at the midnight that ends calendar day `day`: it
@@ -466,14 +553,18 @@ class World:
 
     def reckon(self, r: Resident) -> None:
         """Bring `r`'s body up to the moment at the rates of what it has been doing since it was
-        last reckoned, let it eat from its stock if it is awake and could eat, and note each
-        need that crossed into another band, telling `r` if it is awake at a place; if `r` is at
-        work and exhausted, its work stops."""
+        last reckoned, counting the time at work at its workplace towards its wages, let it eat
+        from its stock if it is awake and could eat, and note each need that crossed into another
+        band, telling `r` if it is awake at a place; if `r` is at work and exhausted, its work
+        stops."""
         now = self.clock.now()
         before = self.body.bands(r.living)
         home = self.config.place(r.home)
         assert home.comfort is not None
-        self.body.elapse(r.living, now - r.reckoned, self.activity(r), home.comfort)
+        activity = self.activity(r)
+        self.body.elapse(r.living, now - r.reckoned, activity, home.comfort)
+        if activity == "work" and r.place == r.occupation.workplace:
+            r.worked += now - r.reckoned
         r.reckoned = now
         self.feed(r)
         self.note_bands(r, before, tell=r.awake and r.place is not None)
@@ -508,8 +599,8 @@ class World:
         return "awake"
 
     def feed(self, r: Resident) -> None:
-        """Awake and able to eat, `r` eats from its stock of food, a unit at a time and at most
-        the good's units a day, until it could eat no more."""
+        """Awake and able to eat, `r` eats from the stock of food in its inventory, a unit at a
+        time and at most the good's units a day, until it could eat no more."""
         if not r.awake:
             return
         living = r.living
@@ -519,12 +610,10 @@ class World:
             assert good.per_day is not None
             while (
                 self.body.hungry(living)
-                and living.things.get(good.id, 0)
+                and r.inventory.units(good.id)
                 and living.eaten.get(good.id, 0) < good.per_day
             ):
-                living.things[good.id] -= 1
-                if not living.things[good.id]:
-                    del living.things[good.id]
+                r.inventory.remove(good.id, 1)
                 self.eat(r, good, 1)
 
     def note_bands(self, r: Resident, before: dict[str, Band], *, tell: bool) -> None:
@@ -659,15 +748,20 @@ class World:
                 "place": r.place,
                 "home": r.home,
                 "living": asdict(r.living),
+                "inventory": asdict(r.inventory),
+                "worked": r.worked,
                 "wake": r.base.wake,
                 "longest": r.base.longest,
-                "purse": self.economy.purses[name],
-                "ledger": copy.deepcopy(self.economy.ledger[name]),
                 "claim": claim.saved() if claim else None,
                 "done": sorted(self.board.done[name]),
                 "held": [asdict(percept) for percept in r.port.held],
             }
-        return {"time": self.clock.now(), "posted": list(self.board.posted), "residents": residents}
+        return {
+            "time": self.clock.now(),
+            "posted": list(self.board.posted),
+            "fund": asdict(self.fund),
+            "residents": residents,
+        }
 
     def restore(self, state: dict[str, Any]) -> None:
         """Put a new world in the state `snapshot` returned, and log the resumption."""
@@ -677,6 +771,7 @@ class World:
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
         self.board.posted = list(state["posted"])  # the last board, less what was paid for
+        self.fund = Fund(**copy.deepcopy(state["fund"]))
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -684,12 +779,12 @@ class World:
             r.place = saved["place"]
             r.home = saved["home"]
             r.living = Living(**copy.deepcopy(saved["living"]))
+            r.inventory = Inventory(**copy.deepcopy(saved["inventory"]))
+            r.worked = saved["worked"]
             r.reckoned = state["time"]
             # A checkpoint from before the body woke anyone early has no `longest`.
             longest = saved.get("longest", False)
             self._put_to_sleep(r, saved["wake"], suspended=True, longest=longest)
-            self.economy.purses[name] = saved["purse"]
-            self.economy.ledger[name] = copy.deepcopy(saved["ledger"])
             if saved["claim"] is not None:
                 self.board.hold(name, saved["claim"])
             self.board.done[name] = set(saved["done"])
@@ -771,7 +866,7 @@ class World:
         phrases = [
             good.phrase
             for good in self.config.goods
-            if good.phrase is not None and r.living.things.get(good.id)
+            if good.phrase is not None and r.inventory.units(good.id)
         ]
         if (seen := self.body.seen(r.living)) is not None:
             phrases.append(seen)
@@ -805,7 +900,7 @@ class World:
         """What `r` owns and has in stock, in its own words."""
         things = []
         for good in self.config.goods:
-            left = r.living.things.get(good.id, 0)
+            left = r.inventory.units(good.id)
             if not left:
                 continue
             if good.kind == "consumable":
@@ -814,13 +909,94 @@ class World:
                 things.append(good.name)
         return f"You have {listed(things)}." if things else "You have nothing of your own yet."
 
+    def purse(self, r: Resident) -> str:
+        """The money `r` has, in its own words."""
+        return f"Your purse holds {self.money(r.inventory.money)}."
+
+    def cannot_pay(self, r: Resident, amount: int) -> str | None:
+        """Why `r` cannot pay `amount` now, or None if it can."""
+        if amount > r.inventory.money:
+            return f"You do not have {self.money(amount)}. {self.purse(r)}"
+        return None
+
+    def inventory_told(self, r: Resident) -> str:
+        """What `r` has, as `inventory` tells it: its money, then each thing it keeps, a line
+        each, with how much is left of a stock and any daily charge."""
+        lines = [f"Money: {self.money(r.inventory.money)}."]
+        for good in self.config.goods:
+            units = r.inventory.units(good.id)
+            if not units:
+                continue
+            if good.kind == "consumable":
+                lines.append(f"{cap(bare(good.name))}: {counted(units, 'helping')}.")
+            elif good.fee_per_day:
+                charge = self.money(good.fee_per_day)
+                lines.append(f"{cap(good.name)}, with a daily charge of {charge}.")
+            else:
+                lines.append(f"{cap(good.name)}.")
+        return "\n".join(lines)
+
+    def pay_service(self, r: Resident, task: int) -> str:
+        """`r` is paid its occupation's sum for a service, task `task` of its own accepted: into
+        its inventory as far as the fund has it, the rest owed. Returns what it is told."""
+        amount = r.occupation.per_service
+        paid = self.fund.service(r.name, amount)
+        r.inventory.money += paid
+        if paid:
+            r.inventory.moves.append(["service", paid, f"task {task}"])
+        owed = amount - paid
+
+        def told(w: str | None) -> str:
+            who = cap(you(r.name, w))
+            if not owed:
+                return f"{who} received {self.money(paid)} for task {task}."
+            return (
+                f"{who} received {self.money(paid)} of the {self.money(amount)} for task {task}; "
+                f"the fund owes {you(r.name, w)} the rest."
+            )
+
+        self.record(
+            "service",
+            told,
+            actor=r,
+            payload={
+                "task": task,
+                "amount": amount,
+                "paid": paid,
+                "owed": owed,
+                "money": r.inventory.money,
+            },
+        )
+        return told(r.name)
+
+    def report(self) -> str:
+        """The fund's day, as the town tells it: what the fund holds, what it took in and paid
+        out by kind on the day the last midnight closed, what it owes in wages and who owes it
+        rent."""
+        fund, money = self.fund, self.money
+        day = fund.yesterday
+        took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
+        paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
+        parts = [
+            f"The fund holds {money(fund.balance)}.",
+            f"Yesterday it took in {listed(took) or 'nothing'} and paid out "
+            f"{listed(paid) or 'nothing'}.",
+        ]
+        if fund.owed:
+            owed = listed([f"{name} {money(amount)}" for name, amount in fund.owed.items()])
+            parts.append(f"It owes in wages it could not pay: {owed}.")
+        if fund.arrears:
+            owing = listed([f"{name} {money(amount)}" for name, amount in fund.arrears.items()])
+            parts.append(f"Owing rent the wages did not cover: {owing}.")
+        return " ".join(parts)
+
     def travel_minutes(self, r: Resident, a: str, b: str) -> int:
         """How long `r` takes from `a` to `b`: the walk, shortened by what it owns for travel."""
         factor = min(
             (
                 good.factor
                 for good in self.config.goods
-                if good.factor is not None and r.living.things.get(good.id)
+                if good.factor is not None and r.inventory.units(good.id)
             ),
             default=1.0,
         )
@@ -857,7 +1033,7 @@ class World:
         )
         return (
             f"You moved into {home.name}; your room at {old.name} is given up. From the next "
-            f"midnight your rent is {self.economy.money(home.rent)} a day."
+            f"midnight your rent is {self.money(home.rent)} a day."
         )
 
     def stop_work(self, r: Resident) -> None:
@@ -1182,7 +1358,7 @@ class World:
             else:
                 parts.append(f"{where}.")
             parts.append(self.people_here(r))
-        parts.append(self.economy.purse(r.name))
+        parts.append(self.purse(r))
         parts += self.body.warnings(r.living)
         if r.place == r.home:
             parts.append(self.things_told(r))
@@ -1200,7 +1376,7 @@ class World:
             return []
         useless: set[str] = set()
         if not any(
-            r.living.things.get(good.id) for good in self.config.goods if good.effect == "messaging"
+            r.inventory.units(good.id) for good in self.config.goods if good.effect == "messaging"
         ):
             useless.add("message")
         if r.place != self.config.workplace.id:

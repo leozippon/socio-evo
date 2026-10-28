@@ -64,12 +64,14 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
                 await asyncio.sleep(0.01)
     await town.close()
 
-    assert not model._replies and world.economy.purses["Mei"] == 120 + 20 - 20  # the rent
+    mei = world.residents["Mei"]
+    assert not model._replies and mei.inventory.money == 120 + 20  # the rent is owed from wages
+    assert world.fund.arrears == {"Mei": 20, "Tomas": 30, "Aisha": 20}
     assert (directory.root / "memory" / "journal" / "2001-01-01.md").read_text() == (
         "I fixed task 1 and was paid.\n"
     )
     seen = "\n".join(str(message.content) for message in model.requests[-1].messages)
-    assert "Accepted. You were paid $20." in seen
+    assert "Accepted. You received $20 for task 1." in seen
     assert "For task 1 you wrote 1 file." in seen  # what review_day told
     assert "You are in bed and will wake at 07:00" in seen
     trace = directory.trace_path.read_text()

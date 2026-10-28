@@ -12,7 +12,7 @@ nothing under the run. The days are those the world log has closed (`evaluation.
 day lost to an interruption counts once, as it was lived again.
 
 A measure is None where it has no value: a cached share that no reply reported, or the purse
-and the health of a day without a midnight statement.
+and the health of a day without a midnight.
 """
 
 from __future__ import annotations
@@ -32,17 +32,18 @@ MEASURES = {
     "claimed": "tasks claimed",
     "submitted": "tasks handed in (acceptance runs)",
     "accepted": "hand-ins accepted",
-    "earned": "money paid for accepted tasks",
-    "spent_rent": "rent charged at midnight",
-    "spent_fees": "the daily charges on what it owns, at midnight",
+    "earned": "the sums paid for its tasks accepted",
+    "wages": "its wages for its hours at work, settled at midnight",
+    "spent_rent": "rent taken from its wages at midnight",
+    "spent_fees": "the daily charges on what it owns, taken from its wages at midnight",
     "spent_food": "money spent on food",
     "spent_goods": "money spent on other goods",
     "hungry": "1 if it had nothing to eat that day",
     "starving": "1 if it was starving at midnight, which wore its health",
     "health": "its health at midnight, after the night's reckoning, 0 to 100",
     "died": "1 if its health ran out that midnight",
-    "purse": "the purse after the midnight charges",
-    "in_debt": "1 if that purse is below zero",
+    "purse": "the purse after the midnight wages",
+    "arrears": "the rent its wages did not cover, owed after the midnight",
     "work_hours": "simulated hours at work, from starting work to stopping it or being taken away",
     "said_public": "things said to everyone present",
     "said_private": "things said to named residents",
@@ -63,7 +64,7 @@ MEASURES = {
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
-LEVELS = frozenset({"health", "purse", "cached_share"})
+LEVELS = frozenset({"health", "purse", "arrears", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
 
 Row = dict[str, Any]
@@ -98,8 +99,7 @@ def world_measures(day: Day, name: str) -> Row:
     def to_me(kind: str, key: str) -> list[Entry]:
         return [e for e in day.entries if e["kind"] == kind and e["payload"][key] == name]
 
-    settled = mine("settlement")
-    purse = settled[-1]["payload"]["purse"] if settled else None
+    settled, paid = mine("settlement"), mine("wage")
     bought = mine("purchase")
     speech = [e for e in day.entries if e["kind"] == "speech"]
     said = [e for e in speech if e["actor"] == name]
@@ -109,9 +109,10 @@ def world_measures(day: Day, name: str) -> Row:
         "claimed": len(mine("claim")),
         "submitted": len(mine("submission")),
         "accepted": sum(e["payload"]["resolved"] for e in mine("verdict")),
-        "earned": sum(e["payload"]["amount"] for e in mine("payment")),
-        "spent_rent": sum(e["payload"]["rent"] for e in settled),
-        "spent_fees": sum(e["payload"]["fees"] for e in settled),
+        "earned": sum(e["payload"]["amount"] for e in mine("service")),
+        "wages": sum(e["payload"]["wages"] for e in paid),
+        "spent_rent": sum(e["payload"]["rent"] for e in paid),
+        "spent_fees": sum(e["payload"]["charges"] for e in paid),
         "spent_food": sum(
             e["payload"]["amount"] for e in bought if e["payload"]["effect"] == "food"
         ),
@@ -122,8 +123,8 @@ def world_measures(day: Day, name: str) -> Row:
         "starving": int(bool(settled) and "starving" in settled[-1]["payload"]["night"]),
         "health": settled[-1]["payload"]["health"] if settled else None,
         "died": int(bool(mine("death"))),
-        "purse": purse,
-        "in_debt": None if purse is None else int(purse < 0),
+        "purse": paid[-1]["payload"]["money"] if paid else None,
+        "arrears": paid[-1]["payload"]["arrears"] if paid else None,
         "work_hours": _work_seconds(day, name) / 3600,
         "said_public": sum(not e["payload"]["private"] for e in said),
         "said_private": sum(e["payload"]["private"] for e in said),

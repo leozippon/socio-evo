@@ -68,17 +68,29 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
     assert set(saved["residents"]) == {"Mei", "Tomas"}
-    # Each was paid for a task, bought groceries and a meal and paid its rent: Mei 240 + 60 - 36
-    # - 15 - 30, Tomas 260 + 60 - 36 - 15 - 55.
-    purses = {name: r["purse"] for name, r in saved["residents"].items()}
-    assert purses == {"Mei": 219, "Tomas": 214}
+    # Each was paid 40 for its task, of the 150 its client paid the fund, bought groceries and a
+    # meal, worked until 17:00 and was paid its wages at midnight, its rent taken out of them.
+    wages = {
+        e["actor"]: e["payload"] for e in read_jsonl(root / "world.jsonl") if e["kind"] == "wage"
+    }
+    for name, purse, rent in (("Mei", 240, 30), ("Tomas", 260, 55)):
+        paid = wages[name]
+        assert 8 < paid["hours"] < 9 and abs(paid["wages"] - paid["hours"] * 7) < 1
+        assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - rent)
+        assert saved["residents"][name]["inventory"] == {
+            "money": purse + 40 - 36 - 15 + paid["paid"], "items": {"groceries": 8}, "moves": [],
+        }  # fmt: skip
+    fund = saved["fund"]
+    money = sum(r["inventory"]["money"] for r in saved["residents"].values())
+    assert fund["balance"] + money == 1500 + 240 + 260 + 2 * 150  # only the clients' money came in
+    assert fund["owed"] == fund["arrears"] == {} and fund["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]
     # Fed by the café's meal and a helping of the stock in the evening, rested, in good health.
-    assert living["things"] == {"groceries": 8} and living["eaten"] == {}
+    assert living["eaten"] == {}
     assert living["health"] == 100 and living["satiety"] > 35 and living["energy"] > 65
     assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
-    lived = ("wake", "claim", "verdict", "payment", "purchase", "speech", "sleep", "settlement")
+    lived = ("wake", "claim", "verdict", "service", "purchase", "speech", "sleep", "wage")
     for kind in lived:
         assert kind in log, kind
     assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log
@@ -94,7 +106,10 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert set(repository.tree("day-00")) == {"background.md"}  # memory and skills empty
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
-    assert "saved day 1" in run.run_log_path.read_text()
+    assert re.search(  # the saved day names the fund
+        rf"saved day 1 after .*\. The fund holds \${fund['balance']}\. Yesterday it took in",
+        run.run_log_path.read_text(),
+    )
 
 
 def test_an_existing_run_is_not_created_again_nor_resumed_with_another_configuration(smoke_run):

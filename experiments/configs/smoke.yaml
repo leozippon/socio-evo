@@ -8,5 +8,5 @@ residents:
   - {name: Tomas, background: experiments/residents/tomas.md}
 town:
   residents:
-    - {name: Mei, home: mill-street-house, purse: 240}
-    - {name: Tomas, home: college-flat, purse: 260}
+    - {name: Mei, home: mill-street-house, occupation: programmer, purse: 240}
+    - {name: Tomas, home: college-flat, occupation: programmer, purse: 260}

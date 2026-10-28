@@ -1,5 +1,6 @@
-"""The rules as one resident is told them: the money it starts with, its rent and what is for
-sale, where people live and meet and which rooms are free, and the people it knows already."""
+"""The rules as one resident is told them: the money it starts with, its occupation, wages and
+rent, what is for sale, where people live and meet and which rooms are free, and the people it
+knows already."""
 
 from __future__ import annotations
 
@@ -13,21 +14,28 @@ TIES = (
 )
 
 
-def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_meet():
+def test_the_rules_tell_the_purse_the_wages_the_rent_the_shops_and_where_people_live_and_meet():
     rules = Rules(town_config(residents=TIES))
     sections = rules.sections("Mei")
-    assert sections["money"].startswith(
-        "You have $120 to begin with. Your room at the shared house on Mill Street costs $20 a "
-        "day; rent, and the daily charge on anything you own that carries one, is taken from "
-        "your purse at midnight, when you get a statement of your money. You pay for everything "
-        "in cash."
+    assert sections["money"] == (
+        "You have $120 to begin with. The town keeps one fund, which takes in what clients pay "
+        "for the work, the rent and what is sold, and pays everyone who works. You are a "
+        "programmer at the workshop: you are paid $7 an hour for your time at work there, from "
+        "sitting down to work until you stop, and $20 at once for each task of yours accepted. "
+        "At midnight your wages for the day are paid into your purse, with the rent for your "
+        "room at the shared house on Mill Street, $20 a day, and the daily charge on anything "
+        "you own that carries one taken out of them, and you get a statement of your money; "
+        "what is in your purse is never touched by rent. When your wages do not cover the rent, "
+        "you owe the rest, and it is taken from your next wages; when the fund cannot pay you, "
+        "it owes you the rest and pays it with your next wages. You pay for everything in cash "
+        "from your purse, and cannot pay more than it holds. With give you can hand money, a "
+        "thing you own (with any daily charge on it) or helpings of a stock to anyone awake "
+        "where you are, as a gift or on terms you agree between you; the town keeps no account "
+        "of it."
     )
-    assert sections["money"].endswith(
-        "A purse can go below zero when rent is taken; you are then in debt, and can still be "
-        "paid, pay your rent and receive money, but can buy nothing until your purse covers the "
-        "price. With give you can hand money, a thing you own (with any daily charge on it) or "
-        "helpings of a stock to anyone awake where you are, as a gift or on terms you agree "
-        "between you; the town keeps no account of it."
+    assert (
+        "At midnight your wages for the day are paid, with your rent taken out of them"
+        in (sections["day"])
     )
     assert "Your home is the shared house on Mill Street." in sections["places"]
     assert (
@@ -45,7 +53,7 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
         "they are, with message; they read it when they next look up from what they are doing. "
         "What you wear "
         "and carry, others see: with a coat, in a new coat. What you have, and how much of it is "
-        "left, is told with help on money."
+        "left, inventory tells you."
     )
     assert sections["health"] == (
         "Through the day you get hungry, and what you eat restores you: a meal, or 3 helpings of "
@@ -77,7 +85,8 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
         "People run into one another at the café on the square, the park, the store and the clinic"
     ) in people
     assert "call on someone at home, or find them at the workshop." in people
-    assert "pays $20" in sections["work"] and "the client's own checks" in sections["work"]
+    assert "the client pays the town $50 once it is accepted" in sections["work"]
+    assert "the client's own checks" in sections["work"]
     assert "posts it on its board there" in sections["work"]
     assert "You work on it at the workshop, where the machines are." in sections["work"]
     assert "wherever you are" not in sections["work"]

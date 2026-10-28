@@ -1,7 +1,12 @@
-"""The configuration of a town: its places, its residents, its work, the goods for sale, its
-social life, its clock and the few fixed hours of its day. Every check that the world relies on
-is made when the configuration is validated, so that a bad configuration stops a run before
-anything is written.
+"""The configuration of a town: its places, its residents and their occupations, its fund, its
+work, the goods for sale, its social life, its clock and the few fixed hours of its day. Every
+check that the world relies on is made when the configuration is validated, so that a bad
+configuration stops a run before anything is written.
+
+Each resident has an `occupation`, which says where it works and what the town pays it: a wage
+for each hour at work at the occupation's workplace and a sum for each service rendered, both
+from the town's one fund, which starts at `fund.start` and takes in what clients pay for the work
+(`work.payment`), the rent and what the shops sell.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -236,15 +241,33 @@ class Route(StrictModel):
     minutes: int = Field(ge=1)
 
 
+class Occupation(StrictModel):
+    """What a resident does for a living. `title` is how a sentence names it ("a programmer");
+    `workplace` the place where its work is done and its hours at work are counted; it is paid
+    `wage_per_hour` for each hour at work there and `per_service` at once for each service
+    rendered (for a programmer, a task of its own accepted)."""
+
+    id: Id
+    title: str = Field(min_length=1)
+    workplace: Id
+    wage_per_hour: int = Field(ge=1)
+    per_service: int = Field(ge=0)
+
+
+class FundSettings(StrictModel):
+    start: int = Field(ge=0, description="the balance the town's fund starts with")
+
+
 class Resident(StrictModel):
-    """A resident: its name, its home, the money it starts with, the people it knows already
-    (`ties`: for each, a sentence or two in the second person on how, which the rules tell it;
-    every tie is mutual), and its agent directory, which the composition layer sets; without one
-    it is `agents/<name>` in the run directory."""
+    """A resident: its name, its home, its occupation, the money it starts with (`purse`), the
+    people it knows already (`ties`: for each, a sentence or two in the second person on how,
+    which the rules tell it; every tie is mutual), and its agent directory, which the
+    composition layer sets; without one it is `agents/<name>` in the run directory."""
 
     name: Name
     home: Id
-    purse: int
+    occupation: Id
+    purse: int = Field(ge=0)
     ties: dict[Name, str] = Field(default_factory=dict)
     agent_dir: Path | None = None
 
@@ -253,7 +276,7 @@ class Work(StrictModel):
     """The work at the workplace. `split` names the task pool, of which the board posts
     `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
     pool; a claim made on a calendar day runs out at the midnight that ends the day
-    `claim_expiry_days` days later."""
+    `claim_expiry_days` days later. A task accepted pays the fund `payment`."""
 
     split: str = Field(min_length=1)
     board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
@@ -317,6 +340,8 @@ class TownConfig(StrictModel):
     travel_minutes: int = Field(ge=1, description="walking time between places without a route")
     routes: tuple[Route, ...] = ()
     residents: tuple[Resident, ...] = Field(min_length=1)
+    occupations: tuple[Occupation, ...] = Field(min_length=1)
+    fund: FundSettings
     work: Work
     goods: tuple[Good, ...] = Field(min_length=1)
     needs: Needs
@@ -350,10 +375,21 @@ class TownConfig(StrictModel):
         workplaces = [place for place in self.places if place.kind == "workplace"]
         if len(workplaces) != 1:
             raise ValueError(f"a town has exactly one workplace, not {len(workplaces)}")
+        _unique("occupation id", [occupation.id for occupation in self.occupations])
+        for occupation in self.occupations:
+            workplace = places.get(occupation.workplace)
+            if workplace is None or workplace.kind != "workplace":
+                raise ValueError(
+                    f"the occupation {occupation.id}'s workplace {occupation.workplace} is not a "
+                    "workplace"
+                )
+        occupations = {occupation.id for occupation in self.occupations}
         residents = {resident.name: resident for resident in self.residents}
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
+            if resident.occupation not in occupations:
+                raise ValueError(f"{resident.name}'s occupation {resident.occupation} is not known")
         for place in self.places:
             if place.kind == "home":
                 living = [resident.name for resident in self.residents if resident.home == place.id]
@@ -393,6 +429,9 @@ class TownConfig(StrictModel):
 
     def good(self, good_id: str) -> Good:
         return next(good for good in self.goods if good.id == good_id)
+
+    def occupation(self, occupation_id: str) -> Occupation:
+        return next(o for o in self.occupations if o.id == occupation_id)
 
     def travel(self, a: str, b: str) -> int:
         """Walking minutes from place `a` to place `b`; zero from a place to itself."""

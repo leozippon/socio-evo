@@ -1,70 +1,189 @@
-"""Purses, the midnight statement and debt, money and things given, and files handed over."""
+"""Money: the inventory and the fund. Hours at work and the sum per task paid by the fund, wages
+at midnight with the rent taken out of them, what the wages do not cover owed to the fund and what
+the fund cannot pay owed to the resident, the statement and the fund's report, a purse that never
+goes below zero, and money and things handed over."""
 
 from __future__ import annotations
 
 from tests.world.conftest import awake_at
+from world.economy import Fund
+
+OWED = "you owe it, and it is taken from your next wages"
 
 
-async def test_the_midnight_statement_tells_the_days_money_and_debt_bars_buying(make_town):
+def statements(town, name: str) -> list[str]:
+    """The statements `name` was told while its runtime rested."""
+    return [p.text for p in town.heard[name] if p.kind == "settlement"]
+
+
+def total(world) -> int:
+    """The town's money: the fund and every purse."""
+    return world.fund.balance + sum(r.inventory.money for r in world.residents.values())
+
+
+async def test_wages_for_the_hours_at_work_are_paid_at_midnight_with_the_rent_taken_out(
+    make_town,
+):
     town = make_town()
     await awake_at(town)
-    await town.call("Mei", "go", place="workshop")
+    world = town.world
+    mei = world.residents["Mei"]
+    before = total(world)
+    for name in ("Mei", "Tomas", "Aisha"):
+        await town.call(name, "go", place="workshop")
     await town.until("09:00")
-    await town.call("Mei", "claim_task", task=1)
+    await town.call("Mei", "claim_task", task=1)  # she sits down to work at 09:00
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
-    await town.call("Mei", "submit")
-    await town.call("Mei", "leave_work")
-    await town.call("Aisha", "go", place="workshop")
-    await town.until("10:00")
-    await town.call("Aisha", "say", text="Could you spare some money?")
+    assert (await town.call("Mei", "submit")).text == (
+        "Accepted. You received $20 for task 1. Your purse holds $140. It is 09:00."
+    )
+    await town.call("Aisha", "say", text="Could you spare some money?")  # Mei works on
     await town.call("Mei", "give", to="Aisha", what="money", amount=15)
     await town.call("Aisha", "go", place="store")
-    await town.until("10:10")
+    await town.until("09:10")
     await town.call("Aisha", "buy", item="coat")  # $30 of her $45
-    for name in town.world.residents:
+    assert (await town.call("Aisha", "buy", item="bicycle")).text == (
+        "You do not have $50. Your purse holds $15."  # a purse never goes below zero
+    )
+    await town.until("12:00")
+    await town.call("Tomas", "say", text="Lunch?", to=["Mei"])  # a talk at her desk...
+    await town.until("12:30")
+    await town.call("Mei", "leave_conversation")  # ...counts as her time at work
+    await town.until("17:00")
+    await town.call("Mei", "leave_work")
+    assert mei.worked == 8 * 3600
+    for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert town.take("Mei")[-1] == (  # still at the workshop, where no board is posted at night
-        "Your statement for Monday 1 January: paid $20 for task 1; gave $15 to Aisha; rent for "
-        "your room at the shared house on Mill Street $20. You had nothing to eat today. You are "
-        "hungry. You are fresh. You are in good health. Your purse holds $105."
+    assert town.take("Mei")[-1] == (
+        "Your statement for Monday 1 January: received $20 for task 1; gave $15 to Aisha; 8 hours "
+        "at work, $56 in wages; rent for your room at the shared house on Mill Street $20; $36 "
+        "left of your wages, paid into your purse. You had nothing to eat today. You are hungry. "
+        "You are tired. You are in good health. Your purse holds $161."
     )
     assert town.take("Aisha")[-1] == (
-        "Your statement for Monday 1 January: received $15 from Mei; bought a coat for $30; rent "
-        "for your room at the shared house on Mill Street $20. You had nothing to eat today. You "
-        "are hungry. You are fresh. You are in good health. You are $5 in debt."
+        "Your statement for Monday 1 January: received $15 from Mei; bought a coat for $30; no "
+        "time at work; rent for your room at the shared house on Mill Street $20; your wages "
+        f"fell $20 short of that; {OWED}. You had nothing to eat today. You are hungry. You are "
+        "fresh. You are in good health. Your purse holds $15."
     )
-    assert town.world.economy.purses == {"Mei": 105, "Tomas": 150, "Aisha": -5}
-    assert "You are $5 in debt." in town.world.ports["Aisha"].situation()
-    # In debt one is still paid and still owes rent, and can still be given money, but can buy
-    # nothing until the purse covers the price: cash only.
-    assert (await town.call("Aisha", "buy", item="groceries")).text == (
-        "You do not have $12. You are $5 in debt."
+    paid = {e["actor"]: e for e in world.log.entries() if e["kind"] == "wage"}
+    assert paid["Mei"]["payload"] == {
+        "hours": 8.0, "wages": 56, "owed_before": 0, "rent": 20, "charges": 0,
+        "arrears_before": 0, "remainder": 36, "paid": 36, "owed": 0, "arrears": 0, "money": 161,
+    }  # fmt: skip
+    assert paid["Mei"]["text"] == "Mei was paid $36 at midnight."
+    assert paid["Mei"]["personal"] == {
+        "Mei": "At midnight your purse held $125, and $36 of your wages went into it."
+    }
+    assert paid["Mei"]["audience"] == []  # the statement tells it
+    assert paid["Tomas"]["payload"]["arrears"] == 30 and mei.worked == 0
+    # The client's payment is the only money that came into the town; the rest moved between
+    # the fund and the residents.
+    assert total(world) == before + 50
+    assert world.fund.balance == 1000 + 50 - 20 + 30 - 36
+    assert world.fund.ledger == {}
+    assert world.fund.yesterday == {"client": 50, "service": 20, "sale": 30, "rent": 20, "wage": 56}
+    assert world.fund.arrears == {"Tomas": 30, "Aisha": 20} and world.fund.owed == {}
+    assert world.report() == (
+        "The fund holds $1024. Yesterday it took in $50 from clients, $20 in rent and daily "
+        "charges and $30 in sales and paid out $56 in wages and $20 in sums for services. Owing "
+        "rent the wages did not cover: Tomas $30 and Aisha $20."
     )
-    await town.call("Mei", "go", place="store")
-    await town.until("00:10", day=2)
-    await town.call("Mei", "say", text="Here, pay me back when you can.", to=["Aisha"])
-    assert (await town.call("Mei", "give", to="Aisha", what="money", amount=20)).text == (
-        "You gave Aisha $20. Your purse holds $85."
-    )
-    await town.call("Aisha", "leave_conversation")  # buying is not done in a conversation
-    assert (await town.call("Aisha", "buy", item="groceries")).text == (
-        "You bought groceries for $12. You have groceries (7 helpings) and a coat. Your purse "
-        "holds $3."  # she ate two helpings as she bought them
-    )
+
+    # The next day Aisha works, and the rent she owed is taken from her wages with the day's.
     town.rest()
+    await town.until("07:00", day=2)
+    await town.call("Aisha", "go", place="workshop")
+    await town.until("09:00", day=2)
+    await town.call("Aisha", "claim_task", task=2)
+    await town.until("17:00", day=2)
+    await town.call("Aisha", "leave_work")
     await town.until("00:00", day=3)
-    assert [p.text for p in town.heard["Aisha"] if p.kind == "settlement"][-1] == (
-        "Your statement for Tuesday 2 January: received $20 from Mei; bought groceries for $12; "
-        "rent for your room at the shared house on Mill Street $20. You ate today: 3 helpings of "
-        "groceries. You are hungry. You are fresh. You are in good health. You are $17 in debt."
+    assert statements(town, "Aisha")[-1].startswith(
+        "Your statement for Tuesday 2 January: 8 hours at work, $56 in wages; rent for your room "
+        "at the shared house on Mill Street $20; $20 of rent you owed; $16 left of your wages, "
+        "paid into your purse."
     )
-    assert town.world.economy.purses == {"Mei": 65, "Tomas": 120, "Aisha": -17}
-    gifts = [e for e in town.world.log.entries() if e["kind"] == "gift"]
-    assert [(e["actor"], e["payload"]) for e in gifts] == [
-        ("Mei", {"to": "Aisha", "amount": 15}),
-        ("Mei", {"to": "Aisha", "amount": 20}),
-    ]  # a gift or a loan, on their own terms: the world keeps no account of which
+    assert world.residents["Aisha"].inventory.money == 15 + 16
+    assert world.fund.arrears == {"Mei": 20, "Tomas": 60}
+
+
+async def test_a_fund_that_runs_short_pays_what_it_has_and_owes_the_rest(make_town):
+    town = make_town()
+    await awake_at(town)
+    world = town.world
+    for name in ("Mei", "Aisha"):
+        await town.call(name, "go", place="workshop")
+    await town.until("09:00")
+    for task, name in enumerate(("Mei", "Aisha"), 1):
+        await town.call(name, "claim_task", task=task)
+    await town.until("17:00")
+    for name in ("Mei", "Aisha"):
+        await town.call(name, "leave_work")
+        town.take(name)
+    world.fund.balance = 20
+    await town.until("00:00", day=2)
+    # Mei is settled first and paid what the fund has; Aisha's wages are owed to her whole.
+    assert town.take("Mei")[-1].startswith(
+        "Your statement for Monday 1 January: 8 hours at work, $56 in wages; rent for your room "
+        "at the shared house on Mill Street $20; $36 left of your wages, of which $20 paid into "
+        "your purse; the fund could not pay the other $16 and owes it to you."
+    )
+    assert town.take("Aisha")[-1].startswith(
+        "Your statement for Monday 1 January: 8 hours at work, $56 in wages; rent for your room "
+        "at the shared house on Mill Street $20; $36 left of your wages, which the fund could "
+        "not pay and owes you."
+    )
+    assert world.fund.balance == 0
+    assert world.report() == (
+        "The fund holds $0. Yesterday it took in $40 in rent and daily charges and paid out $60 "
+        "in wages. It owes in wages it could not pay: Mei $16 and Aisha $36. Owing rent the "
+        "wages did not cover: Tomas $30."
+    )
+    # What the fund owes is paid with the next wages, as far as it has the money then.
+    town.rest()
+    await town.until("07:00", day=2)
+    await town.call("Tomas", "go", place="store")
+    await town.until("07:10", day=2)
+    await town.call("Tomas", "buy", item="groceries")
+    await town.until("00:00", day=3)
+    assert statements(town, "Mei")[-1].startswith(
+        "Your statement for Tuesday 2 January: no time at work; $16 the fund owed you; rent for "
+        "your room at the shared house on Mill Street $20; your wages fell $4 short of that; "
+        f"{OWED}."
+    )
+    assert statements(town, "Aisha")[-1].startswith(
+        "Your statement for Tuesday 2 January: no time at work; $36 the fund owed you; rent for "
+        "your room at the shared house on Mill Street $20; $16 left of your wages, of which $12 "
+        "paid into your purse; the fund could not pay the other $4 and owes it to you."
+    )
+    assert world.fund.balance == 0
+    assert world.fund.owed == {"Aisha": 4} and world.fund.arrears == {"Tomas": 60, "Mei": 4}
+
+
+def test_the_fund_pays_what_it_has_and_keeps_its_ledger_by_kind():
+    fund = Fund(30)
+    fund.take("client", 50)
+    assert fund.service("Mei", 20) == 20 and fund.balance == 60
+    assert fund.service("Mei", 100) == 60 and fund.owed == {"Mei": 40} and fund.balance == 0
+    settled = fund.settle("Mei", wages=56, rent=20, charges=5)  # 40 owed + 56 - 25: 71 owed
+    assert (settled.owed_before, settled.remainder, settled.paid, settled.owed) == (40, 71, 0, 71)
+    assert fund.ledger == {"client": 50, "service": 80, "rent": 25, "wage": 25}
+    settled = fund.settle("Tomas", wages=0, rent=30, charges=0)
+    assert (settled.remainder, settled.arrears) == (-30, 30) and fund.arrears == {"Tomas": 30}
+    fund.take("sale", 12)
+    settled = fund.settle("Tomas", wages=70, rent=30, charges=0)
+    assert (settled.arrears_before, settled.remainder, settled.paid) == (30, 10, 10)
+    assert fund.arrears == {} and fund.balance == 2
+    fund.close_day()
+    assert fund.ledger == {} and fund.yesterday["rent"] == 25 + 60
+    for refused in (lambda: fund.take("wage", 1), lambda: fund.pay("rent", 1)):
+        try:
+            refused()
+        except ValueError:
+            continue
+        raise AssertionError("a movement of the wrong kind was taken")
 
 
 async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_town):
@@ -85,7 +204,7 @@ async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_t
     assert given.text == "You gave Mei $10. Your purse holds $20."
     assert town.take("Mei") == ["Aisha gave you $10."]
     assert not town.world.ports["Mei"].interrupt.is_set()
-    assert town.world.economy.purses["Mei"] == 130
+    assert town.world.residents["Mei"].inventory.money == 130
     await town.until("21:00")
     await town.call("Mei", "sleep", until="07:00")
     asleep = await town.call("Aisha", "give", to="Mei", what="money", amount=1)
@@ -97,7 +216,7 @@ async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_g
     await awake_at(town)
     world = town.world
     mei, aisha = world.residents["Mei"], world.residents["Aisha"]
-    mei.living.things.update({"groceries": 6, "phone": 1})
+    mei.inventory.items.update({"groceries": 6, "phone": 1})
     assert (await town.call("Aisha", "give", to="Mei", what="phone", amount=1)).text == (
         "You have no phone."
     )
@@ -109,12 +228,12 @@ async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_g
     )
     given = await town.call("Mei", "give", to="Aisha", what="phone", amount=1)
     assert given.text == "You gave Aisha a phone. You have groceries (6 helpings)."
-    assert "phone" not in mei.living.things and aisha.living.things["phone"] == 1
+    assert "phone" not in mei.inventory.items and aisha.inventory.items["phone"] == 1
     town.take("Aisha")
     aisha.living.satiety = 30  # hungry: she eats what she is given
     given = await town.call("Mei", "give", to="Aisha", what="groceries", amount=2)
     assert given.text == "You gave Aisha 2 helpings of groceries. You have groceries (4 helpings)."
-    assert "groceries" not in aisha.living.things and aisha.living.eaten == {"groceries": 2}
+    assert "groceries" not in aisha.inventory.items and aisha.living.eaten == {"groceries": 2}
     assert town.take("Aisha") == ["Mei gave you 2 helpings of groceries.", "You are well fed."]
     gifts = [e["payload"] for e in world.log.entries() if e["kind"] == "gift"]
     assert gifts == [
@@ -123,7 +242,7 @@ async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_g
     ]
     town.rest()
     await town.until("00:00", day=2)  # the phone's daily charge is now Aisha's
-    fees = {
-        e["actor"]: e["payload"]["fees"] for e in world.log.entries() if e["kind"] == "settlement"
+    charges = {
+        e["actor"]: e["payload"]["charges"] for e in world.log.entries() if e["kind"] == "wage"
     }
-    assert fees == {"Mei": 0, "Tomas": 0, "Aisha": 2}
+    assert charges == {"Mei": 0, "Tomas": 0, "Aisha": 2}

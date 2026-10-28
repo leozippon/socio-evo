@@ -13,7 +13,8 @@ in by speech. Sleep has two stages: in bed, where the resident may still look ar
 day, go to bed again to add to its journal entry and see to its files, and suspended, once its
 runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
 back. Bedridden is where health at its floor puts a resident, at its home, until it is treated:
-it can only ask, look around, take stock, speak to whoever comes and sleep.
+it can only ask, look around, take stock of itself and of what it has, speak to whoever comes
+and sleep.
 
 Each event's tools are the architecture's table. The resident's request declares those of its
 event at its place now, less the ones of no use there (`World.usable`); a call that names one
@@ -31,6 +32,7 @@ IDLE_TOOLS = frozenset(
         "help",
         "look_around",
         "how_am_i",
+        "inventory",
         "go",
         "view_board",
         "read_task",
@@ -55,6 +57,7 @@ WORK_TOOLS = frozenset(
         "help",
         "look_around",
         "how_am_i",
+        "inventory",
         "go",
         "sleep",
         "view_board",
@@ -75,7 +78,17 @@ WORK_TOOLS = frozenset(
     }
 )
 CONVERSATION_TOOLS = frozenset(
-    {"help", "look_around", "how_am_i", "go", "wait", "say", "give", "leave_conversation"}
+    {
+        "help",
+        "look_around",
+        "how_am_i",
+        "inventory",
+        "go",
+        "wait",
+        "say",
+        "give",
+        "leave_conversation",
+    }
 )
 BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
 """What reads and claims from the board, which hangs at the workplace."""
@@ -84,7 +97,7 @@ TASK_TOOLS = frozenset(
 )
 """What acts on the task one holds, of use only to one who holds a task, at the workplace."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
-BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "say", "sleep"})
+BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "inventory", "say", "sleep"})
 
 
 @dataclass
@@ -148,8 +161,8 @@ IN_BED = (
     "your own files."
 )
 BEDRIDDEN = (
-    "You are in bed, too ill to get up; you can only look around, take stock of how you feel, "
-    "speak to whoever comes, read how the town works and sleep."
+    "You are in bed, too ill to get up; you can only look around, take stock of how you feel "
+    "and of what you have, speak to whoever comes, read how the town works and sleep."
 )
 
 

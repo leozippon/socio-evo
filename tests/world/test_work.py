@@ -29,8 +29,8 @@ async def test_a_shared_board_lets_one_resident_hold_a_task(make_town):
     )
     assert "Problem 1 goes wrong.\nDetails of 1." in claimed.text
     board = (await town.call("Tomas", "view_board")).text
-    assert "1. org/repo1: Problem 1 goes wrong. Pays $20. Held." in board
-    assert "2. org/repo2: Problem 2 goes wrong. Pays $20.\n" in board
+    assert "1. org/repo1: Problem 1 goes wrong. The client pays $50. Held." in board
+    assert "2. org/repo2: Problem 2 goes wrong. The client pays $50.\n" in board
     assert (await town.call("Tomas", "claim_task", task=1)).text == (
         "Task 1 is held by someone else."
     )
@@ -39,7 +39,7 @@ async def test_a_shared_board_lets_one_resident_hold_a_task(make_town):
     )
     assert (await town.call("Mei", "claim_task", task=9)).text == "There is no task 9 on the board."
     mine = (await town.call("Mei", "view_board")).text
-    assert "1. org/repo1: Problem 1 goes wrong. Pays $20. You hold it." in mine
+    assert "1. org/repo1: Problem 1 goes wrong. The client pays $50. You hold it." in mine
     assert mine.endswith(
         "The problem of task 1, which you hold:\n\nProblem 1 goes wrong.\nDetails of 1."
     )
@@ -246,18 +246,23 @@ async def test_an_accepted_task_is_paid_once_and_leaves_the_shared_board_for_the
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     accepted = await town.call("Mei", "submit")
-    assert accepted.text == "Accepted. You were paid $20. Your purse holds $140. It is 09:00."
+    assert accepted.text == (
+        "Accepted. You received $20 for task 1. Your purse holds $140. It is 09:00."
+    )
+    # The client pays the fund, which pays Mei her sum for the task at once.
+    fund = town.world.fund
+    assert fund.balance == 1000 + 50 - 20 and fund.ledger == {"client": 50, "service": 20}
     assert "Mei" not in town.world.board.claims and backend.opened[0].closed
     for name in ("Mei", "Tomas"):
         assert (await town.call(name, "claim_task", task=1)).text == (
             "There is no task 1 on the board."
         )
         assert (await town.call(name, "view_board")).text.splitlines()[1:] == [
-            "2. org/repo2: Problem 2 goes wrong. Pays $20.",
-            "3. org/repo3: Problem 3 goes wrong. Pays $20.",
+            "2. org/repo2: Problem 2 goes wrong. The client pays $50.",
+            "3. org/repo3: Problem 3 goes wrong. The client pays $50.",
         ]
     kinds = town.kinds()
-    assert kinds.index("submission") < kinds.index("verdict") < kinds.index("payment")
+    assert kinds.index("submission") < kinds.index("verdict") < kinds.index("service")
 
 
 async def test_a_restored_world_keeps_what_was_left_of_the_board_until_the_morning(
@@ -446,12 +451,15 @@ async def test_a_verdict_after_the_claim_ran_out_pays_nothing_and_a_task_pays_on
         "paid for it. It is 00:05."
     )
     assert "You lost task 1: the claim ran out unpaid at midnight." in town.take("Mei")
-    assert world.economy.purses["Mei"] == 100  # $120, less the rent taken at midnight
+    # The rent was taken from her wages for ten minutes' work, the rest owed: her purse is whole.
+    assert world.residents["Mei"].inventory.money == 120 and world.fund.arrears["Mei"] == 19
     assert 1 not in world.board.done["Mei"]
     await town.call("Tomas", "write_repo_file", path="a.py", content="FIX\n")
-    assert (await town.call("Tomas", "submit")).text.startswith("Accepted. You were paid $20.")
+    assert (await town.call("Tomas", "submit")).text.startswith(
+        "Accepted. You received $20 for task 1."
+    )
     paid = [
-        (e["actor"], e["payload"]["task"]) for e in world.log.entries() if e["kind"] == "payment"
+        (e["actor"], e["payload"]["task"]) for e in world.log.entries() if e["kind"] == "service"
     ]
     assert paid == [("Tomas", 1)]
     verdicts = [

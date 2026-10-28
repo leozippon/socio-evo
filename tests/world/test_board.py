@@ -57,7 +57,8 @@ async def test_the_board_keeps_a_held_task_until_its_claim_ends():
     board.post(2)  # the next four of the rotation, and beside them the task still held
     assert board.posted == sorted([*board.rotation[4:8], held])
     text = board.text("Mei", "08:00")
-    assert f"\n{held}. org/repo{held}: Problem {held} goes wrong. Pays 20. You hold it.\n" in text
+    line = f"{held}. org/repo{held}: Problem {held} goes wrong. The client pays 50. You hold it."
+    assert f"\n{line}\n" in text
     assert text.endswith(
         f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
         f"Details of {held}."
@@ -88,8 +89,8 @@ async def test_a_task_paid_for_leaves_the_board_for_the_day_and_comes_round_agai
     assert number in board.posted and board.claim_refusal("Tomas", number) is None
     assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
     assert (
-        f"{number}. org/repo{number}: Problem {number} goes wrong. Pays 20. You have been paid "
-        in (board.text("Mei", "08:00"))
+        f"{number}. org/repo{number}: Problem {number} goes wrong. The client pays 50. You have "
+        "been paid " in board.text("Mei", "08:00")
     )
 
 

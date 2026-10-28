@@ -133,37 +133,35 @@ def test_ties_are_mutual_pass_the_guard_and_reach_everyone():
             assert how in text
 
 
-# The share of the board paid in a day at the local model's pace: 12 and 13 of 56 on the first two
-# days of the fourth start, on the pool of 1,912 tasks.
-CLEARED = 0.25
+# The work the fund's day is set against: about three tasks arriving a day, half of them accepted.
+ARRIVING, ACCEPTED = 3, 0.5
+HOURS = 8
+"""A day's work at the workplace."""
 
 
-def test_the_pay_is_set_against_the_towns_shared_board():
+def test_wages_rent_and_the_fund_are_set_against_one_another():
     config = town().town
-    payment, n = config.work.payment, len(config.residents)
+    (occupation,) = config.occupations  # every resident a programmer, for now
+    assert {resident.occupation for resident in config.residents} == {occupation.id}
+    n = len(config.residents)
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
     food = [good for good in config.goods if good.effect == "food"]
     meals = [good.price for good in food if good.kind == "immediate"]
     a_day = min([good.price // good.days for good in food if good.kind == "consumable"] + meals)
     cheapest = min(rents.values()) + a_day
-    dearest = max(rents.values()) + max(meals + [a_day])  # the cottage and suppers at the Anchor
-    # One task keeps the cheapest life and not the dearest; a task and a half keeps the dearest.
-    assert cheapest <= payment < dearest <= 1.5 * payment
-    for resident in config.residents:  # and a purse lasts three to six days of one's own life
+    wages = HOURS * occupation.wage_per_hour
+    # A day's work keeps the cheapest life with something over, and less than half as much again.
+    assert cheapest < wages < 1.5 * cheapest
+    for resident in config.residents:  # a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
-    # The board of the day is the town's pot if it were cleared; the local model clears about a
-    # quarter of it (12 and 13 of 56 accepted on the fourth start's first two days), which pays
-    # for the town's rent and food with a margin, but less than twice its cheapest costs, so the
-    # slow fall behind.
-    pot = config.work.board_size * payment * CLEARED
+    # The fund's day, everyone at work for a day and half the tasks arriving accepted: clients
+    # and rent in, wages and sums for tasks out, within a tenth of what passes through it. What
+    # the shops sell is the fund's gain until a supplier is paid for the goods, and is left out.
+    accepted = ARRIVING * ACCEPTED
     rent = sum(rents[resident.home] for resident in config.residents)
-    assert rent + n * max(meals) < pot < 2 * (rent + n * a_day)
-    # What an average share saves over the cheapest life in one's own home buys the dearest
-    # durable, which no purse covers at the start, in about a week; daily charges are small.
-    saved = pot / n - (rent / n + a_day)
-    durables = [good for good in config.goods if good.kind == "durable"]
-    priciest = max(good.price for good in durables)
-    assert priciest > max(resident.purse for resident in config.residents)
-    assert 5 <= priciest / saved <= 10
-    assert all(good.fee_per_day <= saved / 5 for good in durables)
+    taken = accepted * config.work.payment + rent
+    paid = n * wages + accepted * occupation.per_service
+    assert abs(taken - paid) <= (taken + paid) / 10
+    # With no task accepted, the fund pays out more than it takes, and its start lasts ten days.
+    assert n * wages > rent and config.fund.start >= 10 * (n * wages - rent)

@@ -117,7 +117,8 @@ class Board:
         """Task `number` as `name` reads it on the board."""
         task = self.task(number)
         pays = self.money(self.work.payment)
-        line = f"{number}. {task.repo}: {first_line(task.problem_statement)} Pays {pays}."
+        problem = first_line(task.problem_statement)
+        line = f"{number}. {task.repo}: {problem} The client pays {pays}."
         mine = self.claims.get(name)
         if mine is not None and mine.task == number:
             line += " You hold it."

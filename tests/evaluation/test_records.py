@@ -41,16 +41,13 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     mine = [e for e in entries if e["actor"] == "Mei" or "Mei" in e["audience"]]
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "board_posted", "start_work", "claim", "command",
-        "file_write", "submission", "verdict", "payment", "speech", "gift",
-        "leave_conversation", "leave_work", "sleep", "fell_asleep", "settlement",
+        "file_write", "submission", "verdict", "service", "speech", "gift",
+        "leave_conversation", "leave_work", "sleep", "fell_asleep", "wage", "settlement",
         "condition",
     }  # fmt: skip
 
     def head(e):
         text = e["personal"].get("Mei", e["text"]).splitlines()[0]
-        if e["kind"] == "settlement":  # the record adds the purse before the charges
-            before = e["payload"]["purse"] + e["payload"]["rent"] + e["payload"]["fees"]
-            text += f" Before the midnight charges it held ${before}."
         return f"{clock_time(e['sim_time'])} {text}"
 
     told = [head(e) for e in mine]
@@ -65,12 +62,14 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
-    assert lines[-2:] == [
+    assert lines[-3:] == [  # her twenty minutes at work did not cover the rent
         "20:00 You fell asleep.",
-        "00:00 Your statement for Monday 1 January: paid $20 for task 1; received $5 from Tomas; "
-        "rent for your room at the shared house on Mill Street $20. You had nothing to eat today. "
-        "You are hungry. You are fresh. You are in good health. Your purse holds $125. Before "
-        "the midnight charges it held $145.",
+        "00:00 At midnight your purse held $145; none of your wages went into it.",
+        "00:00 Your statement for Monday 1 January: received $20 for task 1; received $5 from "
+        "Tomas; 20 minutes at work, $2 in wages; rent for your room at the shared house on Mill "
+        "Street $20; your wages fell $18 short of that; you owe it, and it is taken from your "
+        "next wages. You had nothing to eat today. You are hungry. You are fresh. You are in good "
+        "health. Your purse holds $145.",
     ]
 
 
@@ -136,9 +135,11 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "Before you fall asleep you can look back over your day and see to your files; you fall "
         "asleep once you have nothing more to do.",
         "20:00 You fell asleep.",
-        "00:00 Your statement for Tuesday 2 January: rent for your room at the shared house on "
-        "Mill Street $20. You had nothing to eat today. You are starving. You are fresh. You are "
-        "in good health. Your purse holds $105. Before the midnight charges it held $125.",
+        "00:00 At midnight your purse held $145; none of your wages went into it.",
+        "00:00 Your statement for Tuesday 2 January: no time at work; rent for your room at the "
+        "shared house on Mill Street $20; $18 of rent you owed; your wages fell $38 short of "
+        "that; you owe it, and it is taken from your next wages. You had nothing to eat today. "
+        "You are starving. You are fresh. You are in good health. Your purse holds $145.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)
@@ -151,9 +152,11 @@ def test_the_days_before_are_the_purse_begun_with_and_each_earlier_statement(run
     began = "You began your first day, Monday 1 January, with $120."
     assert days_before(config, days, "Mei", 1) == began
     assert days_before(config, days, "Mei", 2) == (
-        f"{began}\nYour statement for Monday 1 January: paid $20 for task 1; received $5 from "
-        "Tomas; rent for your room at the shared house on Mill Street $20. You had nothing to eat "
-        "today. You are hungry. You are fresh. You are in good health. Your purse holds $125."
+        f"{began}\nYour statement for Monday 1 January: received $20 for task 1; received $5 from "
+        "Tomas; 20 minutes at work, $2 in wages; rent for your room at the shared house on Mill "
+        "Street $20; your wages fell $18 short of that; you owe it, and it is taken from your "
+        "next wages. You had nothing to eat today. You are hungry. You are fresh. You are in good "
+        "health. Your purse holds $145."
     )
     tomas = days_before(config, days, "Tomas", 2).splitlines()
     assert len(tomas) == 2 and "gave $5 to Mei" in tomas[1] and "Tuesday" not in tomas[1]

@@ -72,6 +72,8 @@ ARCHITECTURE_TABLE = {
 for _event, _tools in ARCHITECTURE_TABLE.items():
     if _event != "movement":  # taking stock and asking: every waking event
         _tools |= {"how_am_i", "help"}
+    if _event not in ("movement", "sleep"):  # seeing what one has: every waking event out of bed
+        _tools.add("inventory")
 
 
 def test_the_tool_sets_are_the_architecture_table():
@@ -148,7 +150,8 @@ async def test_a_conversation_takes_the_place_of_work_and_gives_it_back_when_it_
     assert not port.interrupt.is_set()
     assert mei.tools == CONVERSATION_TOOLS and world.activity(mei) == "work"  # the hours run on
     assert [spec.name for spec in port.tool_specs()] == [
-        "help", "look_around", "how_am_i", "go", "wait", "say", "give", "leave_conversation",
+        "help", "look_around", "how_am_i", "inventory", "go", "wait", "say", "give",
+        "leave_conversation",
     ]  # fmt: skip
     refused = await _refusals(town, "Mei")
     assert refused["shell"] == "You are in a conversation; leave it first."
@@ -554,9 +557,10 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     ]
     assert mei.suspended
     assert town.take("Mei")[-2:] == [
-        "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
-        "Street $20. You had nothing to eat today. You are hungry. You are fresh. You are in "
-        "good health. Your purse holds $100.",
+        "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
+        "house on Mill Street $20; your wages fell $20 short of that; you owe it, and it is "
+        "taken from your next wages. You had nothing to eat today. You are hungry. You are "
+        "fresh. You are in good health. Your purse holds $120.",
         "It is 02:00: you fell asleep.",
     ]
     assert not (tmp_path / "agents" / "Tomas" / "memory" / "journal").exists()
@@ -628,10 +632,11 @@ async def test_the_port_offers_what_applies_now_and_the_situation_tells_the_rest
         "Your purse holds $120. You have nothing of your own yet."
     )  # what is for the resident to know; what it can do is offered, not told
     assert offered() == [
-        "help", "look_around", "how_am_i", "go", "wait", "sleep", "say", "buy", "move_in", "give",
+        "help", "look_around", "how_am_i", "inventory", "go", "wait", "sleep", "say", "buy",
+        "move_in", "give",
     ]  # fmt: skip
     # nothing to write with, no board here and no task held: no message, board or task
-    town.world.residents["Mei"].living.things["phone"] = 1
+    town.world.residents["Mei"].inventory.items["phone"] = 1
     assert offered()[-3:] == ["move_in", "message", "give"]
     await town.call("Mei", "go", place="park")
     assert port.situation().endswith(

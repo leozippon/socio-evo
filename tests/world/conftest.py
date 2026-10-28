@@ -1,7 +1,7 @@
-"""A small town for the world's tests: three residents (backgrounds from the old town), two homes,
-a shop and a clinic with a good of every kind and effect, the real town's needs, the fake work
-backend of `world.testing`, and a harness that runs the world on a manual clock and stands in for
-the residents' runtimes."""
+"""A small town for the world's tests: three residents (backgrounds from the old town), all
+programmers at the workshop, two homes, a shop and a clinic with a good of every kind and effect,
+the real town's needs, the fake work backend of `world.testing`, and a harness that runs the world
+on a manual clock and stands in for the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -19,10 +19,17 @@ from world.testing import FakeBackend, FakeTask
 from world.world import World
 
 RESIDENTS = (
-    {"name": "Mei", "home": "mill-street-house", "purse": 120},
-    {"name": "Tomas", "home": "college-flat", "purse": 180},
-    {"name": "Aisha", "home": "mill-street-house", "purse": 30},
+    {"name": "Mei", "home": "mill-street-house", "occupation": "programmer", "purse": 120},
+    {"name": "Tomas", "home": "college-flat", "occupation": "programmer", "purse": 180},
+    {"name": "Aisha", "home": "mill-street-house", "occupation": "programmer", "purse": 30},
 )
+PROGRAMMER = {
+    "id": "programmer",
+    "title": "a programmer",
+    "workplace": "workshop",
+    "wage_per_hour": 7,
+    "per_service": 20,
+}
 
 
 GOODS = (
@@ -119,10 +126,12 @@ def town_config(
             "travel_minutes": 10,
             "routes": [{"between": ["workshop", "cafe"], "minutes": 5}],
             "residents": list(residents),
+            "occupations": [PROGRAMMER],
+            "fund": {"start": 1000},
             "work": {
                 "split": "train",
                 "board_size": 3,
-                "payment": 20,
+                "payment": 50,
                 "acceptance_runs": 2,
                 "claim_expiry_days": 1,
                 "shell_timeout_s": 60,
@@ -261,4 +270,4 @@ def stocked(town: Town, days: int = 3) -> None:
     good = town.world.config.good("groceries")
     assert good.per_day is not None
     for r in town.world.residents.values():
-        r.living.things["groceries"] = days * good.per_day
+        r.inventory.items["groceries"] = days * good.per_day

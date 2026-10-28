@@ -83,6 +83,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              topic={"type": "string", "enum": list(TOPICS)}),
         spec("look_around", "See where you are, who is here and what each of them is doing."),
         spec("how_am_i", "Take stock of how you feel: how hungry, how tired and how well you are."),
+        spec("inventory", "See what you have: your money, and each thing you keep, with how "
+             "much is left of it and any daily charge on it."),
         spec("go", "Walk to another place in town. You arrive after the walk; on the way you "
              "can do nothing and nobody can speak to you.", ("place",),
              place={"type": "string", "enum": [place.id for place in config.places],
@@ -96,8 +98,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
         spec("view_board", f"Read the board at {workplace}: each task's number, repository, the "
-             "first line of its problem and its pay, and whether it is held or already paid to "
-             "you. If you hold a task, its whole problem is shown too."),
+             "first line of its problem and what the client pays, and whether it is held or "
+             "already paid to you. If you hold a task, its whole problem is shown too."),
         spec("read_task", f"Read the whole problem of a task on the board at {workplace}, "
              "without claiming it.", ("task",), task=_number("the task's number on the board", 1)),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
@@ -254,11 +256,7 @@ def _now(world: World) -> str:
 
 
 async def _help(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    topic = args.get("topic", "")
-    text = world.rules.help(r.name, topic, world.homes())
-    if topic.strip().lower() == "money":
-        text += f" {world.things_told(r)}"
-    return ToolResult(text)
+    return ToolResult(world.rules.help(r.name, args.get("topic", ""), world.homes()))
 
 
 async def _look_around(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -268,6 +266,11 @@ async def _look_around(world: World, r: Resident, args: dict[str, Any]) -> ToolR
 async def _how_am_i(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.reckon(r)
     return ToolResult(world.body.condition(r.living))
+
+
+async def _inventory(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    world.reckon(r)  # what it would have eaten by now is eaten first
+    return ToolResult(world.inventory_told(r))
 
 
 async def _go(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -533,17 +536,9 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
     finished = board.finish(r.name)
     if finished is not None:
         await finished.close()
-    economy, payment = world.economy, world.config.work.payment
-    economy.pay(r.name, payment, number)
-    world.record(
-        "payment",
-        lambda w: f"{cap(you(r.name, w))} received {economy.money(payment)} for task {number}.",
-        actor=r,
-        payload={"task": number, "amount": payment, "purse": economy.purses[r.name]},
-    )
-    return ToolResult(
-        f"Accepted. You were paid {economy.money(payment)}. {economy.purse(r.name)} {_now(world)}"
-    )
+    world.fund.take("client", world.config.work.payment)
+    paid = world.pay_service(r, number)
+    return ToolResult(f"Accepted. {paid} {world.purse(r)} {_now(world)}")
 
 
 async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -638,7 +633,7 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         where = listed([world.config.place(place).name for place in good.sold_at], "or")
         return ToolResult(f"You can buy {good.name} at {where}, not here.")
     if good.kind == "durable":
-        if r.living.things.get(good.id):
+        if r.inventory.units(good.id):
             return ToolResult(f"You already have {good.name}.")
         if quantity != 1:
             return ToolResult(f"One {bare(good.name)} is all you can have.")
@@ -647,21 +642,22 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if good.effect == "treatment" and r.living.health >= 100:
         return ToolResult("The doctor finds nothing to treat.")
     total = good.price * quantity
-    refusal = world.economy.cannot_pay(r.name, total)
+    refusal = world.cannot_pay(r, total)
     if refusal:
         return ToolResult(refusal)
     bought = f"{quantity} × {good.name}" if quantity > 1 else good.name
-    economy = world.economy
-    economy.buy(r.name, total, bought)
+    r.inventory.money -= total
+    r.inventory.moves.append(["bought", total, bought])
+    world.fund.take("sale", total)
     world.reckon(r)
     before = world.body.bands(r.living)
     findings = ""
     if good.kind == "durable":
-        r.living.things[good.id] = 1
+        r.inventory.add(good.id, 1)
         tail = world.things_told(r)
     elif good.kind == "consumable":
         assert good.uses is not None
-        r.living.things[good.id] = r.living.things.get(good.id, 0) + good.uses * quantity
+        r.inventory.add(good.id, good.uses * quantity)
         world.feed(r)
         tail = world.things_told(r)
     elif good.effect == "food":
@@ -677,7 +673,7 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.record(
         "purchase",
         lambda w: (
-            f"{cap(you(r.name, w))} bought {bought} for {economy.money(total)}."
+            f"{cap(you(r.name, w))} bought {bought} for {world.money(total)}."
             + (f" {findings}" if findings and w == r.name else "")
         ),
         actor=r,
@@ -690,9 +686,7 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             "amount": total,
         },
     )
-    return ToolResult(
-        f"You bought {bought} for {economy.money(total)}. {tail} {economy.purse(r.name)}"
-    )
+    return ToolResult(f"You bought {bought} for {world.money(total)}. {tail} {world.purse(r)}")
 
 
 async def _move_in(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -712,14 +706,14 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
     name, text = args["to"], args["text"].strip()
     writing = [good for good in world.config.goods if good.effect == "messaging"]
     names = listed([bare(good.name) for good in writing], "or")
-    if not any(r.living.things.get(good.id) for good in writing):
+    if not any(r.inventory.units(good.id) for good in writing):
         return ToolResult(f"You have no {names}.")
     other = world.residents.get(name)
     if other is None:
         return ToolResult(f"There is nobody called {name} in the town.")
     if other is r:
         return ToolResult("You cannot write to yourself.")
-    if not any(other.living.things.get(good.id) for good in writing):
+    if not any(other.inventory.units(good.id) for good in writing):
         return ToolResult(f"{name} has no {names}.")
     if not text:
         return ToolResult("You wrote nothing.")
@@ -740,23 +734,26 @@ async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         return ToolResult(f"{name} is not here.")
     if not other.awake:
         return ToolResult(f"{name} is asleep.")
-    economy = world.economy
     if what == "money":
-        if amount > economy.purses[r.name]:
-            return ToolResult(f"You do not have {economy.money(amount)}. {economy.purse(r.name)}")
-        economy.give(r.name, name, amount)
-        given, payload = economy.money(amount), {"to": name, "amount": amount}
-        left = economy.purse(r.name)
+        refusal = world.cannot_pay(r, amount)
+        if refusal:
+            return ToolResult(refusal)
+        r.inventory.money -= amount
+        other.inventory.money += amount
+        r.inventory.moves.append(["gave", amount, name])
+        other.inventory.moves.append(["received", amount, r.name])
+        given, payload = world.money(amount), {"to": name, "amount": amount}
+        left = world.purse(r)
     else:
         good = world.config.good(what)
         world.reckon(r)  # what it would have eaten by now is eaten first
-        have = r.living.things.get(good.id, 0)
+        have = r.inventory.units(good.id)
         if not have:
             return ToolResult(f"You have no {bare(good.name)}.")
         if good.kind == "durable":
             if amount != 1:
                 return ToolResult(f"You have one {bare(good.name)} to give.")
-            if other.living.things.get(good.id):
+            if other.inventory.units(good.id):
                 return ToolResult(f"{name} already has {good.name}.")
             given = good.name
         else:
@@ -764,10 +761,8 @@ async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
                 return ToolResult(f"You have only {counted(have, 'helping')} of {bare(good.name)}.")
             given = f"{counted(amount, 'helping')} of {bare(good.name)}"
         world.reckon(other)
-        r.living.things[good.id] = have - amount
-        if not r.living.things[good.id]:
-            del r.living.things[good.id]
-        other.living.things[good.id] = other.living.things.get(good.id, 0) + amount
+        r.inventory.remove(good.id, amount)
+        other.inventory.add(good.id, amount)
         payload = {"to": name, "item": good.id, "name": good.name, "quantity": amount}
         left = world.things_told(r)
     world.record(
@@ -795,6 +790,7 @@ HANDLERS: dict[str, Handler] = {
     "help": _help,
     "look_around": _look_around,
     "how_am_i": _how_am_i,
+    "inventory": _inventory,
     "go": _go,
     "wait": _wait,
     "sleep": _sleep,
