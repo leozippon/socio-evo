@@ -452,8 +452,7 @@ The runs of a set compared, as `analysis.compare` computes it, each run under it
 | `measures[].label` | string | What it is called. |
 | `measures[].declared` | boolean | Whether it is a declared outcome of the design. |
 | `measures[].days` | array of two integers | The first and last day compared. |
-| `measures[].groups` | array | One row per run and statistic, as `analysis.compare` gives it, the run's name as `group`: `group`, `statistic`, `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min` and `values`. |
-| `measures[].contrasts` | array | One row per declared contrast whose runs are both present: `contrast`, `statistic`, `residents`, `difference`, `ci`, `hedges_g`, `p_permutation` and `p_min`. |
+| `measures[].runs` | array | One row per run and statistic, as `analysis.compare` gives it: `run`, `statistic`, `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min` and `values`. |
 | `measures[].notes` | array of strings | How to read the table. |
 | `measures[].daily` | object | Run name to `[day, mean over its residents]` for every day with a value. |
 

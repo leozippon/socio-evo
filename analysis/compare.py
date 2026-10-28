@@ -1,40 +1,36 @@
-"""Comparison of groups on one measure, resident by resident, with the contrasts the experimental
+"""Runs side by side on one measure, resident by resident, with the statistics the experimental
 design declares.
 
-    python -m analysis.compare --group A=SOURCE --group C=SOURCE ... --measure NAME
+    python -m analysis.compare --run NAME=SOURCE [--run NAME=SOURCE ...] --measure NAME
         [--days FIRST LAST] [--out FILE.json]
 
-A group's SOURCE is a run directory, whose town measures (`analysis.measures`) are taken from it,
+A run's SOURCE is a run directory, whose town measures (`analysis.measures`) are taken from it,
 or a table: a CSV file, or a JSON file holding a list of rows, with the columns `resident`, `day`
 and NAME, empty or null where there is no value, and any others, which are ignored. The journals'
-`days.json` (`evaluation.journals`) is such a table for `distortion`, and the group's directory of
+`days.json` (`evaluation.journals`) is such a table for `distortion`, and the run's directory of
 journal judgings (`results/<run>/journals/`, one directory with its `days.json` per judging) is
 read as the table of all its judgings together; `analysis.tables` builds tables for capability,
 with a `capability` column (the resolved rate), and MASK, with a `mask` column (the share of
 truthful answers), day 0 standing for the export before the first day. A resident with two
 values on one day, in one table or across judgings, is an error.
 
-Each resident's values by day are reduced to one number, the statistic, and the groups are
-compared on it. The design declares, for its three outcomes, with FIRST and LAST the days 0 and
-28 unless given:
+Each resident's values by day are reduced to one number, the statistic. The design declares, for
+its three outcomes, with FIRST and LAST the days 0 and 28 unless given:
 
-| Measure | Statistic | Contrasts |
-| --- | --- | --- |
-| capability | change from FIRST to LAST | B - A, C - A, D - A, C - D |
-| distortion | value at LAST; trend (slope per day over FIRST to LAST) | C - A, C - D |
-| mask | change from FIRST to LAST | C - A, C - D |
+| Measure | Statistic |
+| --- | --- |
+| capability | change from FIRST to LAST |
+| distortion | value at LAST; trend (slope per day over FIRST to LAST) |
+| mask | change from FIRST to LAST |
 
-Any other measure is explored on its mean over FIRST to LAST in B - A, C - A, D - A and C - D.
-A contrast whose two groups are not both given is left out.
+Any other measure is explored on its mean over FIRST to LAST.
 
-For each group the table gives the residents with a value, their mean and its bootstrap
-interval, and, for a change or a trend (zero when nothing changes), Cohen's d_z and the exact
-two-sided sign-flip p of the mean. For each contrast it gives the difference of the means, its
-bootstrap interval, Hedges' g and the exact two-sided permutation p of the difference over every
-reassignment of the residents to the two groups. Intervals are 95% percentile intervals of
-10,000 resamples of the residents (of each group separately for a difference), from a fixed
-seed. `p_min` is the smallest p the test could give with those residents. The table is printed
-and, with `--out`, written as JSON.
+For each run the table gives the residents with a value, their mean and its bootstrap interval,
+and, for a change or a trend (zero when nothing changes), Cohen's d_z and the exact two-sided
+sign-flip p of the mean. Intervals are 95% percentile intervals of 10,000 resamples of the
+residents, from a fixed seed. `p_min` is the smallest p the test could give with those
+residents. Several runs are laid side by side, each on its own; none is tested against another.
+The table is printed and, with `--out`, written as JSON.
 """
 
 from __future__ import annotations
@@ -43,10 +39,8 @@ import argparse
 import csv
 import json
 import random
-from collections.abc import Callable, Sequence
-from dataclasses import dataclass
-from itertools import combinations, product
-from math import comb, sqrt
+from collections.abc import Sequence
+from itertools import product
 from pathlib import Path
 from statistics import fmean, stdev
 from typing import Any
@@ -55,34 +49,19 @@ from analysis.measures import measure as town_measures
 
 Values = dict[str, dict[int, float]]
 """A measure by resident and day."""
-Statistic = Callable[[Sequence[float], Sequence[float]], float]
 
-AGAINST_A = (("B", "A"), ("C", "A"), ("D", "A"), ("C", "D"))
-
-
-@dataclass(frozen=True)
-class Outcome:
-    statistics: tuple[str, ...]
-    contrasts: tuple[tuple[str, str], ...]
-    declared: bool = True
-
-
-DECLARED = {
-    "capability": Outcome(("change",), AGAINST_A),
-    "distortion": Outcome(("last", "trend"), (("C", "A"), ("C", "D"))),
-    "mask": Outcome(("change",), (("C", "A"), ("C", "D"))),
-}
-EXPLORED = Outcome(("mean",), AGAINST_A, declared=False)
+DECLARED = {"capability": ("change",), "distortion": ("last", "trend"), "mask": ("change",)}
+"""The statistics of the outcomes the design declares."""
+EXPLORED = ("mean",)
 WITHIN = ("change", "trend")
-"""The statistics that are zero when nothing changes, tested within each group."""
+"""The statistics that are zero when nothing changes, tested within each run."""
 DAYS = (0, 28)
 RESAMPLES = 10_000
 LEVEL = 0.95
 SEED = 0
-MAX_PERMUTATIONS = 1_000_000
 SOCIETY = (
-    "The residents of C, and those of D, live in one town each: their values are correlated, and "
-    "a difference involving C or D is the effect of one society, not of independent residents."
+    "The residents of a run share one town: their values are correlated, and an effect is the "
+    "effect of one society, not of independent residents."
 )
 READING = (
     "With so few residents the p-values cannot be small (see p_min): read the effect sizes with "
@@ -93,32 +72,8 @@ READING = (
 # The tests ---------------------------------------------------------------------------------
 
 
-def mean_difference(a: Sequence[float], b: Sequence[float]) -> float:
-    return fmean(a) - fmean(b)
-
-
 def _at_least(value: float, observed: float) -> bool:
     return value >= observed - 1e-9 * max(1.0, observed)
-
-
-def permutation_test(
-    a: Sequence[float], b: Sequence[float], statistic: Statistic = mean_difference
-) -> float:
-    """The exact two-sided p of `statistic(a, b)`: the share of all reassignments of the pooled
-    values to groups of the sizes of `a` and `b` whose statistic is at least as far from zero.
-    ValueError when there are more than `MAX_PERMUTATIONS` reassignments."""
-    pooled = [*a, *b]
-    count = comb(len(pooled), len(a))
-    if count > MAX_PERMUTATIONS:
-        raise ValueError(f"{count} reassignments are too many to enumerate")
-    observed = abs(statistic(a, b))
-    hits = 0
-    for chosen in combinations(range(len(pooled)), len(a)):
-        picked = set(chosen)
-        x = [pooled[i] for i in chosen]
-        y = [v for i, v in enumerate(pooled) if i not in picked]
-        hits += _at_least(abs(statistic(x, y)), observed)
-    return hits / count
 
 
 def sign_flip_test(differences: Sequence[float]) -> float:
@@ -145,32 +100,6 @@ def bootstrap_mean(values: Sequence[float], seed: int = SEED) -> tuple[float, fl
     """The percentile bootstrap interval of the mean of `values`."""
     rng = random.Random(seed)
     return _interval([fmean(rng.choices(values, k=len(values))) for _ in range(RESAMPLES)])
-
-
-def bootstrap_difference(
-    a: Sequence[float], b: Sequence[float], seed: int = SEED
-) -> tuple[float, float]:
-    """The percentile bootstrap interval of the difference of the means of `a` and `b`, each
-    resampled on its own."""
-    rng = random.Random(seed)
-    return _interval(
-        [
-            fmean(rng.choices(a, k=len(a))) - fmean(rng.choices(b, k=len(b)))
-            for _ in range(RESAMPLES)
-        ]
-    )
-
-
-def hedges_g(a: Sequence[float], b: Sequence[float]) -> float | None:
-    """The standardized difference of the means, corrected for small samples; None without a
-    spread to standardize by."""
-    n, m = len(a), len(b)
-    if n < 2 or m < 2:
-        return None
-    pooled = sqrt(((n - 1) * stdev(a) ** 2 + (m - 1) * stdev(b) ** 2) / (n + m - 2))
-    if pooled == 0:
-        return None
-    return mean_difference(a, b) / pooled * (1 - 3 / (4 * (n + m) - 9))
 
 
 def cohen_dz(values: Sequence[float]) -> float | None:
@@ -243,26 +172,22 @@ def values_of(source: Path, name: str) -> Values:
 # The table ---------------------------------------------------------------------------------
 
 
-def compare(groups: dict[str, Values], name: str, first: int, last: int) -> dict[str, Any]:
-    """The table comparing `groups` on measure `name` (see the module docstring)."""
-    outcome = DECLARED.get(name, EXPLORED)
+def compare(runs: dict[str, Values], name: str, first: int, last: int) -> dict[str, Any]:
+    """The table of `runs` side by side on measure `name` (see the module docstring)."""
+    declared = name in DECLARED
     rows: list[dict[str, Any]] = []
-    contrasts: list[dict[str, Any]] = []
-    for kind in outcome.statistics:
-        stats = {
-            group: {
+    for kind in DECLARED.get(name, EXPLORED):
+        for run, values in runs.items():
+            found = {
                 resident: s
                 for resident, by_day in sorted(values.items())
                 if (s := statistic(kind, by_day, first, last)) is not None
             }
-            for group, values in groups.items()
-        }
-        for group, found in stats.items():
             v = list(found.values())
             within = kind in WITHIN and bool(v)
             rows.append(
                 {
-                    "group": group,
+                    "run": run,
                     "statistic": kind,
                     "residents": len(v),
                     "mean": fmean(v) if v else None,
@@ -273,35 +198,14 @@ def compare(groups: dict[str, Values], name: str, first: int, last: int) -> dict
                     "values": found,
                 }
             )
-        for plus, minus in outcome.contrasts:
-            if plus not in stats or minus not in stats:
-                continue
-            a, b = list(stats[plus].values()), list(stats[minus].values())
-            both = bool(a) and bool(b)
-            count = comb(len(a) + len(b), len(a))
-            contrasts.append(
-                {
-                    "contrast": f"{plus} - {minus}",
-                    "statistic": kind,
-                    "residents": [len(a), len(b)],
-                    "difference": mean_difference(a, b) if both else None,
-                    "ci": list(bootstrap_difference(a, b)) if both else None,
-                    "hedges_g": hedges_g(a, b),
-                    "p_permutation": permutation_test(a, b) if both else None,
-                    "p_min": (2 if len(a) == len(b) else 1) / count if both else None,
-                }
-            )
-    notes = [READING]
-    if not outcome.declared:
+    notes = [SOCIETY, READING]
+    if not declared:
         notes.insert(0, f"{name} is no declared outcome of the design: this is exploration.")
-    if {"C", "D"} & set(groups):
-        notes.insert(0, SOCIETY)
     return {
         "measure": name,
-        "declared": outcome.declared,
+        "declared": declared,
         "days": [first, last],
-        "groups": rows,
-        "contrasts": contrasts,
+        "runs": rows,
         "notes": notes,
     }
 
@@ -314,22 +218,13 @@ def render(table: dict[str, Any]) -> str:
         return "-" if ci is None else f"[{ci[0]:.3g}, {ci[1]:.3g}]"
 
     first, last = table["days"]
-    lines = [f"{table['measure']}, days {first} to {last}", "", "Groups:"]
-    for row in table["groups"]:
+    lines = [f"{table['measure']}, days {first} to {last}", ""]
+    for row in table["runs"]:
         lines.append(
-            f"  {row['group']} {row['statistic']}: n={row['residents']} mean={number(row['mean'])} "
-            f"{interval(row['ci'])} d_z={number(row['d_z'])} p={number(row['p_sign_flip'])}"
+            f"  {row['run']} {row['statistic']}: n={row['residents']} mean={number(row['mean'])} "
+            f"{interval(row['ci'])} d_z={number(row['d_z'])} p={number(row['p_sign_flip'])} "
+            f"(p_min {number(row['p_min'])})"
         )
-    lines += ["", "Contrasts:"]
-    for row in table["contrasts"]:
-        lines.append(
-            f"  {row['contrast']} {row['statistic']}: n={row['residents'][0]}/"
-            f"{row['residents'][1]} difference={number(row['difference'])} "
-            f"{interval(row['ci'])} g={number(row['hedges_g'])} "
-            f"p={number(row['p_permutation'])} (p_min {number(row['p_min'])})"
-        )
-    if not table["contrasts"]:
-        lines.append("  none: no contrast has both its groups here")
     return "\n".join([*lines, "", *table["notes"]])
 
 
@@ -338,27 +233,27 @@ def main(argv: Sequence[str] | None = None) -> None:
         prog="python -m analysis.compare", description=__doc__.split("\n\n")[0]
     )
     parser.add_argument(
-        "--group",
+        "--run",
         action="append",
         required=True,
         metavar="NAME=SOURCE",
-        help="a group and its run directory, journal judgings or table (repeatable)",
+        help="a run's name and its run directory, journal judgings or table (repeatable)",
     )
     parser.add_argument("--measure", required=True, help="the measure's column")
     parser.add_argument("--days", type=int, nargs=2, default=DAYS, metavar=("FIRST", "LAST"))
     parser.add_argument("--out", type=Path, help="JSON file to write the table to")
     args = parser.parse_args(argv)
     sources: dict[str, Path] = {}
-    for given in args.group:
-        group, _, source = given.partition("=")
-        if not group or not source or group in sources:
-            parser.error(f"--group {given}: give each group once, as NAME=SOURCE")
-        sources[group] = Path(source)
+    for given in args.run:
+        run, _, source = given.partition("=")
+        if not run or not source or run in sources:
+            parser.error(f"--run {given}: give each run once, as NAME=SOURCE")
+        sources[run] = Path(source)
     try:
-        groups = {group: values_of(source, args.measure) for group, source in sources.items()}
+        runs = {run: values_of(source, args.measure) for run, source in sources.items()}
     except (ValueError, FileNotFoundError) as error:
         parser.error(str(error))
-    table = compare(groups, args.measure, *args.days)
+    table = compare(runs, args.measure, *args.days)
     print(render(table))
     if args.out:
         args.out.parent.mkdir(parents=True, exist_ok=True)

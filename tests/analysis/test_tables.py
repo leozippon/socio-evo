@@ -1,4 +1,4 @@
-"""The tables of a group's evaluation results, from result directories laid out as the
+"""The tables of a run's evaluation results, from result directories laid out as the
 evaluations write them, and their reading by the comparison."""
 
 from __future__ import annotations
@@ -115,10 +115,10 @@ def read(path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
+def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
     tables = tmp_path / "tables"
-    for group in ("a", "c"):
-        main([str(results), "--group", group, "--out", str(tables / group)])
+    for run in ("a", "c"):
+        main([str(results), "--run", run, "--out", str(tables / run)])
     printed = capsys.readouterr().out
     assert "capability: 3 residents, days 0, 28;" in printed
     assert "mask: 3 residents, days 0, 7, 28;" in printed
@@ -143,21 +143,23 @@ def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
         {"resident": "R3", "day": 28, "mask": 0.25, "lie": 0.0},
     ]
 
-    # Changes from day 0 to 28: capability C 0.5, 0.5, 0 and A 0.5, 0, -0.5; truthful share
-    # C 0.75, 0.25, 0.25 and A none.
-    for measure, difference in (("capability", 1 / 3), ("mask", 5 / 12)):
+    # Changes from day 0 to 28: capability c 0.5, 0.5, 0 and a 0.5, 0, -0.5; truthful share
+    # c 0.75, 0.25, 0.25 and a none.
+    for measure, means in (("capability", {"a": 0, "c": 1 / 3}), ("mask", {"a": 0, "c": 5 / 12})):
         out = tmp_path / f"{measure}.json"
-        groups = [f"{group.upper()}={tables / group / f'{measure}.json'}" for group in ("a", "c")]
-        compare(
-            ["--group", groups[0], "--group", groups[1], "--measure", measure, "--out", str(out)]
-        )
-        (contrast,) = [row for row in read(out)["contrasts"] if row["contrast"] == "C - A"]
-        assert contrast["residents"] == [3, 3]
-        assert contrast["difference"] == pytest.approx(difference)
+        runs = [
+            arg
+            for run in ("a", "c")
+            for arg in ("--run", f"{run}={tables / run / f'{measure}.json'}")
+        ]
+        compare([*runs, "--measure", measure, "--out", str(out)])
+        rows = {row["run"]: row for row in read(out)["runs"]}
+        assert {run: row["residents"] for run, row in rows.items()} == {"a": 3, "c": 3}
+        assert {run: row["mean"] for run, row in rows.items()} == pytest.approx(means)
 
 
 @pytest.mark.parametrize(
-    ("evaluated", "group", "error"),
+    ("evaluated", "run", "error"),
     [
         pytest.param(
             lambda root: evaluate_capability(root / "c/day-07/capability/R2", "+", finished=False),
@@ -180,7 +182,7 @@ def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
         pytest.param(
             lambda root: evaluate_mask(root / "c/day-00/mask/R1.json", "TTTT"),
             "c",
-            "c/day-00: day 0 is shared by the groups",
+            "c/day-00: day 0 is shared by the runs",
             id="a day 0 of its own",
         ),
         pytest.param(
@@ -200,17 +202,17 @@ def test_the_tables_of_a_group_and_their_comparison(results, tmp_path, capsys):
     ],
 )
 def test_unfinished_or_misplaced_results_are_refused(
-    results, tmp_path, capsys, evaluated, group, error
+    results, tmp_path, capsys, evaluated, run, error
 ):
     evaluated(results)
     with pytest.raises(SystemExit):
-        main([str(results), "--group", group, "--out", str(tmp_path / "tables")])
+        main([str(results), "--run", run, "--out", str(tmp_path / "tables")])
     assert error.format(root=results) in capsys.readouterr().err
     assert not (tmp_path / "tables").exists()
 
 
-def test_a_group_without_results_of_its_own_has_day_0_alone(results, tmp_path):
-    main([str(results), "--group", "b", "--out", str(tmp_path / "tables")])
+def test_a_run_without_results_of_its_own_has_day_0_alone(results, tmp_path):
+    main([str(results), "--run", "b", "--out", str(tmp_path / "tables")])
     for name in ("capability", "mask"):
         rows = json.loads((tmp_path / "tables" / f"{name}.json").read_text(encoding="utf-8"))
         assert rows and {row["day"] for row in rows} == {0}

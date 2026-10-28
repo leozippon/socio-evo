@@ -64,12 +64,12 @@ python -m evaluation.mask exports/town/day-07/Mei --out results/town/day-07/mask
 # Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/town/journals/, where the site and the comparison read them all
 python -m evaluation.journals runs/town --days 1 2 3 4 5 6 7 --out results/town/journals/day-01-07
 
-# Measures of a run, a run's evaluation results as tables (day 0 from results/day-00), and the comparison of runs on a town measure, on an evaluation table, and on the journals' distortion
+# Measures of a run, its evaluation results as tables (day 0 from results/day-00), and the within-resident statistics of a town measure, of an evaluation table and of the journals' distortion; --run again lays another run beside it
 python -m analysis.measures runs/town --out results/town/measures
-python -m analysis.tables results --group town --out results/town/tables
-python -m analysis.compare --group town=runs/town --group other=runs/other --measure accepted --out results/compare-accepted.json
-python -m analysis.compare --group town=results/town/tables/mask.json --group other=results/other/tables/mask.json --measure mask
-python -m analysis.compare --group town=results/town/journals --group other=results/other/journals --measure distortion
+python -m analysis.tables results --run town --out results/town/tables
+python -m analysis.compare --run town=runs/town --measure accepted --out results/town/compare/accepted.json
+python -m analysis.compare --run town=results/town/tables/mask.json --measure mask
+python -m analysis.compare --run town=results/town/journals --measure distortion
 ```
 
 ## Layout
@@ -81,7 +81,7 @@ python -m analysis.compare --group town=results/town/journals --group other=resu
 | `simulation/` | Running one town, checkpoints and resumption, the dry run |
 | `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
 | `evaluation/` | Judge, MASK, journal distortion, capability harness, day records |
-| `analysis/` | Measures and the statistics comparing runs |
+| `analysis/` | Measures, evaluation tables and each run's within-resident statistics |
 | `experiments/` | Configurations, resident backgrounds, run and export commands |
 | `frontend/` | The published site: the viewer and its data bundle |
 | `infrastructure/` | Model client, git-versioned directories, JSONL, configuration |

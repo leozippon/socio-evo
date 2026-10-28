@@ -348,13 +348,12 @@ def test_the_index_names_the_runs_and_the_comparison(published):
     assert doc["runs"] == ["town", "twin"]
     by_measure = {found["measure"]: found for found in doc["measures"]}
     assert by_measure["capability"]["declared"] and by_measure["capability"]["days"] == [0, 1]
-    rows = {row["group"]: row for row in by_measure["capability"]["groups"]}
+    rows = {row["run"]: row for row in by_measure["capability"]["runs"]}
     assert (rows["town"]["statistic"], rows["town"]["values"]) == ("change", {"Mei": 0.25})
     assert rows["twin"]["values"] == {}  # day 0 is shared; the twin has no results of its own
     assert by_measure["capability"]["daily"] == {"town": [[0, 0.25], [1, 0.5]], "twin": [[0, 0.25]]}
     assert by_measure["claimed"]["days"] == [1, 1] and not by_measure["claimed"]["declared"]
-    assert [row["group"] for row in by_measure["claimed"]["groups"]] == ["town", "twin"]
-    assert by_measure["claimed"]["contrasts"] == []
+    assert [row["run"] for row in by_measure["claimed"]["runs"]] == ["town", "twin"]
 
 
 def test_the_world_lays_the_town_out(published):

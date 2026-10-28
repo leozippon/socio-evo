@@ -1,10 +1,10 @@
-"""The evaluation results of a group as tables for `analysis.compare`, one row per resident and
+"""The evaluation results of a run as tables for `analysis.compare`, one row per resident and
 day.
 
-    python -m analysis.tables RESULTS_ROOT --group NAME --out DIR [--day0 DAY0]
+    python -m analysis.tables RESULTS_ROOT --run NAME --out DIR [--day0 DAY0]
 
-Day N of group NAME is read from RESULTS_ROOT/NAME/day-NN, and day 0, the export before the first
-day and the same in every group, from DAY0 (by default RESULTS_ROOT/day-00). In a day's
+Day N of run NAME is read from RESULTS_ROOT/NAME/day-NN, and day 0, the export before the first
+day and the same in every run of the town, from DAY0 (by default RESULTS_ROOT/day-00). In a day's
 directory, `capability/<resident>` is what `evaluation.capability` writes and
 `mask/<resident>.json` what `evaluation.mask` writes. DIR receives `capability.json`, rows of
 `resident`, `day` and `capability`, the resolved rate, and `mask.json`, rows of `resident`, `day`,
@@ -32,10 +32,10 @@ MASK_LOGS = (".resident.jsonl", ".judge.jsonl")
 """The model calls `evaluation.mask` records next to its result while it runs."""
 
 
-def days_of(results: Path, group: str, day0: Path) -> dict[int, Path]:
-    """The directory of each day of `group` under `results`, `day0` standing for day 0. Day 0 is
-    shared by the groups, so a group without results of its own yet has day 0 alone."""
-    root = results / group
+def days_of(results: Path, run: str, day0: Path) -> dict[int, Path]:
+    """The directory of each day of `run` under `results`, `day0` standing for day 0. Day 0 is
+    shared by the runs, so a run without results of its own yet has day 0 alone."""
+    root = results / run
     if not day0.is_dir():
         raise ValueError(f"{day0} is no directory")
     days = {0: day0}
@@ -43,7 +43,7 @@ def days_of(results: Path, group: str, day0: Path) -> dict[int, Path]:
         if (match := DAY.fullmatch(path.name)) and path.is_dir():
             day = int(match[1])
             if day == 0 and not path.samefile(day0):
-                raise ValueError(f"{path}: day 0 is shared by the groups and read from {day0}")
+                raise ValueError(f"{path}: day 0 is shared by the runs and read from {day0}")
             days[day] = path
     return days
 
@@ -82,23 +82,23 @@ def _require_finished(directory: Path, unfinished: Sequence[str]) -> None:
         raise ValueError(f"{directory}: the evaluation of {', '.join(unfinished)} has not finished")
 
 
-def _require_one(group: str, what: str, found: dict[str, list[Path]]) -> None:
-    """ValueError when the results of `group` name more than one `what`; `found` gives the
+def _require_one(run: str, what: str, found: dict[str, list[Path]]) -> None:
+    """ValueError when the results of `run` name more than one `what`; `found` gives the
     results that name each."""
     if len(found) > 1:
         named = "; ".join(
             f"{name} in {len(paths)} results, such as {paths[0]}"
             for name, paths in sorted(found.items())
         )
-        raise ValueError(f"the results of {group} disagree on the {what}: {named}")
+        raise ValueError(f"the results of {run} disagree on the {what}: {named}")
 
 
-def tables(results: Path, group: str, day0: Path) -> dict[str, list[Row]]:
-    """The rows of `capability.json` and of `mask.json` of `group` (see the module docstring)."""
+def tables(results: Path, run: str, day0: Path) -> dict[str, list[Row]]:
+    """The rows of `capability.json` and of `mask.json` of `run` (see the module docstring)."""
     found: dict[str, list[Row]] = {"capability": [], "mask": []}
     models: dict[str, list[Path]] = {}
     judges: dict[str, list[Path]] = {}
-    for day, directory in sorted(days_of(results, group, day0).items()):
+    for day, directory in sorted(days_of(results, run, day0).items()):
         if (path := directory / "capability").is_dir():
             for resident, report in capability(path).items():
                 found["capability"].append(
@@ -118,8 +118,8 @@ def tables(results: Path, group: str, day0: Path) -> dict[str, list[Row]]:
                 )
                 models.setdefault(report["model"]["model"], []).append(path / f"{resident}.json")
                 judges.setdefault(report["judge"]["model"], []).append(path / f"{resident}.json")
-    _require_one(group, "residents' model", models)
-    _require_one(group, "judge's model", judges)
+    _require_one(run, "residents' model", models)
+    _require_one(run, "judge's model", judges)
     return found
 
 
@@ -129,7 +129,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     parser.add_argument("results", type=Path, metavar="RESULTS_ROOT", help="root of the results")
     parser.add_argument(
-        "--group", required=True, metavar="NAME", help="the group's directory in RESULTS_ROOT"
+        "--run", required=True, metavar="NAME", help="the run's directory in RESULTS_ROOT"
     )
     parser.add_argument(
         "--out", type=Path, required=True, metavar="DIR", help="directory to write the tables to"
@@ -137,7 +137,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--day0", type=Path, help="day 0's results (default: RESULTS_ROOT/day-00)")
     args = parser.parse_args(argv)
     try:
-        found = tables(args.results, args.group, args.day0 or args.results / "day-00")
+        found = tables(args.results, args.run, args.day0 or args.results / "day-00")
     except ValueError as error:
         parser.error(str(error))
     args.out.mkdir(parents=True, exist_ok=True)

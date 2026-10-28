@@ -1,7 +1,7 @@
 // The runs of a set compared, resident by resident, on the outcomes the design declares
 // (capability, journal distortion, honesty under pressure) and on the town measures as
 // exploration. The bundle computes every number (`analysis.compare`); this page shows each
-// run's statistic with its interval and the contrasts with their tests, where there are any,
+// run's statistic with its interval,
 // and the daily means of the runs side by side.
 
 import { DayChart, figure } from "../charts.js";
@@ -51,11 +51,11 @@ export function mountCompare(root, ctx) {
           h(
             "tbody",
             {},
-            found.groups.map((row) =>
+            found.runs.map((row) =>
               h(
                 "tr",
                 {},
-                h("td", {}, h("a", { href: href({ view: "overview", run: row.group, query: {} }) }, row.group)),
+                h("td", {}, h("a", { href: href({ view: "overview", run: row.run, query: {} }) }, row.run)),
                 h("td", {}, STATISTICS[row.statistic] ?? row.statistic),
                 h("td", {}, fmt.int(row.residents)),
                 h("td", {}, number(row.mean)),
@@ -67,24 +67,6 @@ export function mountCompare(root, ctx) {
           ),
         ),
       ),
-      found.contrasts.length
-        ? h(
-            "div",
-            { class: "table-wrap" },
-            h(
-              "table",
-              { class: "data" },
-              h("thead", {}, h("tr", {}, h("th", {}, "Contrast"), h("th", {}, "Statistic"), h("th", {}, "n"), h("th", {}, "Difference"), h("th", {}, term("95% interval", "Percentile bootstrap interval of the difference of the means, each group resampled on its own.")), h("th", {}, term("Hedges' g", "The standardized difference of the means, corrected for small samples.")), h("th", {}, term("p", "The exact two-sided permutation p of the difference over every reassignment of the residents to the two groups; p_min is the smallest it could be.")))),
-              h(
-                "tbody",
-                {},
-                found.contrasts.map((row) =>
-                  h("tr", {}, h("td", {}, row.contrast), h("td", {}, STATISTICS[row.statistic] ?? row.statistic), h("td", {}, row.residents.join(" / ")), h("td", {}, number(row.difference)), h("td", {}, interval(row.ci)), h("td", {}, number(row.hedges_g, 2)), h("td", {}, row.p_permutation === null ? "–" : `${number(row.p_permutation)} (min ${number(row.p_min)})`)),
-                ),
-              ),
-            ),
-          )
-        : h("p", { class: "note" }, "No contrast is declared between these runs."),
     );
   }
 
