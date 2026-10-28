@@ -235,6 +235,78 @@ async def test_a_project_not_done_by_its_midnight_lapses_and_its_paid_tasks_stay
     ]
 
 
+async def test_a_projects_tasks_stay_on_the_board_until_it_is_done_or_lapses(make_town, tmp_path):
+    # Three tasks of one repository and nine of others on a board of 6, as the town's 1,912 on
+    # 56: the next day's board is new.
+    repos = {"org/big": 3, **{f"org/r{i}": 1 for i in range(9)}}
+    town_ = make_town(town_config(board_size=6, **PROJECTS), backend_of(repos))
+    a, b, c = await at_the_workshop(town_, "Mei", "Tomas", "Aisha")
+    board = town_.world.board
+    stocked(town_)
+    await town_.call("Mei", "claim_task", task=a)
+    await fix(town_, "Mei")
+    await town_.call("Tomas", "claim_task", task=b)
+    town_.rest()
+    await town_.until("09:00", day=2)
+    # The unpaid tasks, held or not, are carried over beside the day's six; the paid one stays
+    # listed with its project.
+    assert board.posted == sorted([*board.rotation[6:12], b, c])
+    for name in ("Mei", "Tomas", "Aisha"):
+        await town_.call(name, "go", place="workshop")
+    await town_.until("09:30", day=2)
+    seen = (await town_.call("Aisha", "view_board")).text
+    assert seen.endswith(
+        "Project for one client, 3 tasks in org/big: a bonus of $10 to each of those paid for "
+        "them, if all 3 are accepted by the end of Tuesday 2 January.\n"
+        f"{a}. org/big: Problem {a} goes wrong. Accepted from Mei.\n"
+        f"{b}. org/big: Problem {b} goes wrong. Pays $20. Held by Tomas.\n"
+        f"{c}. org/big: Problem {c} goes wrong. Pays $20."
+    )
+    read = (await town_.call("Aisha", "read_task", task=a)).text  # listed, if accepted already
+    assert (
+        read == f"The problem of task {a}, in org/big:\n\nProblem {a} goes wrong.\nDetails of {a}."
+    )
+
+    # A task given up on the second day may be claimed by another, and the project completed.
+    await town_.call("Tomas", "abandon_task")
+    for name, number in (("Aisha", b), ("Tomas", c)):
+        assert "your workspace is ready" in (await town_.call(name, "claim_task", task=number)).text
+    await fix(town_, "Aisha")
+    assert "each received a bonus of $10" in await fix(town_, "Tomas")
+
+    # A project that lapses unfinished, here at its first midnight, is carried over no more.
+    config = town_config(board_size=6, claim_expiry_days=0, **PROJECTS)
+    unfinished = make_town(config, backend_of(repos), root=tmp_path / "unfinished")
+    await at_the_workshop(unfinished)
+    stocked(unfinished)
+    unfinished.rest()
+    await unfinished.until("09:00", day=2)
+    other = unfinished.world.board
+    assert other.projects == [] and other.posted == sorted(other.rotation[6:12])
+
+
+async def test_a_project_task_paid_for_cannot_be_claimed_again_when_it_comes_round(make_town):
+    # A pool no larger than the board, as in a dry run: the task paid for is posted again the
+    # next day while its project still runs, and is still the first payee's.
+    town_ = make_town(town_config(**PROJECTS), backend_of({"org/big": 3}))
+    a, _, _ = await at_the_workshop(town_, "Mei")
+    board = town_.world.board
+    stocked(town_)
+    await town_.call("Mei", "claim_task", task=a)
+    await fix(town_, "Mei")
+    town_.rest()
+    await town_.until("09:00", day=2)
+    assert a in board.posted and board.projects[0].paid == {a: "Mei"}
+    await town_.call("Tomas", "go", place="workshop")
+    await town_.until("09:30", day=2)
+    refused = (await town_.call("Tomas", "claim_task", task=a)).text
+    assert refused == f"Task {a} has been accepted from Mei."
+    assert f"{a}. org/big: Problem {a} goes wrong. Accepted from Mei." in (
+        (await town_.call("Tomas", "view_board")).text
+    )
+    assert board.projects[0].paid == {a: "Mei"} and "Tomas" not in board.claims
+
+
 async def test_the_checkpoint_keeps_the_projects_and_a_resumed_town_completes_them(
     make_town, tmp_path
 ):
@@ -271,9 +343,10 @@ async def test_the_checkpoint_keeps_the_projects_and_a_resumed_town_completes_th
 def test_the_rules_and_the_board_tell_of_projects_only_where_there_are_any():
     sentences = (
         "Some clients bring a project of 3 tasks in one repository, listed together on the "
-        "board, and want a different person on each, who claims, hands in and is paid for it "
-        "like any other task. If all 3 are accepted by the second midnight after the project "
-        "was posted, each of the 3 people paid for them also receives a bonus of $10."
+        "board until the project is done or its time is up, and want a different person on "
+        "each, who claims, hands in and is paid for it like any other task. If all 3 are "
+        "accepted by the second midnight after the project was posted, each of the 3 people paid "
+        "for them also receives a bonus of $10."
     )
     assert Rules(town_config(**PROJECTS)).help("Mei", "work").endswith(sentences)
     board = {spec.name: spec.description for spec in specs(town_config(**PROJECTS))}["view_board"]

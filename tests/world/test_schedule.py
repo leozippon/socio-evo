@@ -415,7 +415,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give", to="Tomas", what="money", amount=5)
-    await town.call("Mei", "share_file", to="Tomas", path="skills/triage.md")
+    await town.call("Mei", "share_file", to=["Tomas"], path="skills/triage.md")
     await town.call("Mei", "leave_conversation")
     await town.call("Mei", "leave_work")
     await town.call("Tomas", "leave_work")

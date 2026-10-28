@@ -70,8 +70,9 @@ from world.world import OnCheckpoint, World
 
 log = logging.getLogger("simulation")
 
-DRY_RUN_TASKS = 56
-"""The tasks of a dry run's pool: more than one board, so the rotation is exercised."""
+DRY_RUN_BOARDS = 3
+"""A dry run's pool, in boards: larger than the board, as the town's is, so that each day's board
+is new and holds only what a shared board carries over from the day before."""
 DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
 ADDED = {"llm": ("context_window",), "runtime": ("kept_tokens",)}
@@ -103,7 +104,8 @@ async def run(
     }
     client = _client(config, dry_run)
     await _check_model(client, config)
-    backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
+    pool = DRY_RUN_BOARDS * config.town.work.board_size
+    backend: Backend = FakeBackend(pool) if dry_run else SwebenchBackend()
     backend.require_images(backend.load_split(config.town.work.split))
     revision = code_revision()
     adopted: list[str] = []

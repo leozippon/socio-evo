@@ -36,15 +36,18 @@
 # in some time earn more together only while the shared task takes them less than four thirds of
 # that time, which a second pair of eyes may buy and the talk it needs may cost; at 60 each they
 # would have to be quicker together outright. A full board pays 14 tasks for two at 160 and 42 at
-# 60, 4,760 against 3,360 without them. In A and B, where each resident has a board of its own
-# and nobody to share a task with, nothing is posted for two.
+# 60, 4,760 against 3,360 without them. A task held stays on the board, beside the next day's 56
+# and not counted among them, until its claim runs out, so that one left alone with a task for two
+# can still be joined. In A and B, where each resident has a board of its own and nobody to share
+# a task with, nothing is posted for two and nothing held is carried over.
 #
 # Clients' projects. In C and D each day's board also makes two clients' projects of three tasks
 # of one repository: of the repositories with three tasks not for two on it, the two whose third
 # comes round first in the rotation (on the training pool two every day of the four weeks, most
 # of them in django and sympy, whose tasks are the most numerous). Each task is claimed and paid
 # as any other, but the client wants a different person on each: one paid for a task of a
-# project cannot claim another of it. Once all three are accepted by the second midnight after
+# project cannot claim another of it. A project's unpaid tasks stay on the board, beside the next
+# day's 56, until it is done or lapses. Once all three are accepted by the second midnight after
 # the board went up, the midnight a claim of that day runs out at, each of the three paid for
 # them receives a bonus of 60, so a project pays 180 in bonuses and the two add at most 360 to a
 # day's pot: 5,120 for a cleared board against 4,760, and at most about two fifths more than the
@@ -252,7 +255,7 @@ town:
           talking.
   work:
     split: train
-    board_size: 56 # shared by the eight in C and D, each its own in A and B; comes round in turn
+    board_size: 56 # new a day, shared by the eight in C and D, each its own in A and B; in turn
     payment: 60
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made

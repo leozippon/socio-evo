@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from agent.wording import offences
 from tests.world.conftest import awake_at, stocked, town_config
 from world.board import Board
+from world.clock import settle
 from world.events import Idle, Work
 from world.rules import Rules
 from world.testing import FakeBackend
@@ -250,6 +251,72 @@ async def test_one_who_gives_up_or_dies_leaves_the_task_to_the_other_who_waits_a
     )
     assert backend.opened[0].closed and board.claims == {}
     assert [text for text in told(town) if offences(text)] == []
+
+
+async def test_nobody_joins_a_task_for_two_while_its_hand_in_is_checked(make_town):
+    backend = FakeBackend()
+    town = make_town(town_config(**PAIRS), backend)
+    number = await at_the_workshop(town, "Mei", "Tomas", "Aisha")
+    board = town.world.board
+    await town.call("Mei", "claim_task", task=number)
+    await town.call("Tomas", "claim_task", task=number)
+    await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
+    await town.call("Mei", "submit")  # the first hand-in, which waits for Tomas's
+    gate, accept = asyncio.Event(), backend.accept
+
+    async def slow_accept(*args):
+        await gate.wait()
+        return await accept(*args)
+
+    backend.accept = slow_accept
+    second = asyncio.create_task(town.world.ports["Tomas"].call("submit", {}))
+    await settle()
+    assert board.claims["Tomas"].checking
+
+    # While the checks run Mei gives up, and Aisha, who did nothing, cannot step into her place.
+    await town.call("Mei", "abandon_task")
+    refused = (await town.call("Aisha", "claim_task", task=number)).text
+    assert refused == f"Task {number} is held by someone else."
+    gate.set()
+    assert (await second).text.startswith("Accepted. You were paid $30.")
+    assert [actor for actor, _ in payloads(town, "payment")] == ["Tomas"]
+    assert board.claims == {} and board.done == {"Mei": set(), "Tomas": {number}, "Aisha": set()}
+
+
+async def test_a_task_for_two_stays_on_the_board_while_held_so_a_partner_can_join_later(make_town):
+    # A pool of 12 on a board of 3, as the town's 1,912 on 56: the next day's board is new, and
+    # every third task of the rotation, one on each board, is for two.
+    backend = FakeBackend(12)
+    town = make_town(town_config(for_two=0.34, payment_for_two=30), backend)
+    await awake_at(town)
+    for name in ("Mei", "Tomas", "Aisha"):
+        await town.call(name, "go", place="workshop")
+    await town.until("09:00")
+    board = town.world.board
+    (number,) = board.for_two & set(board.posted)
+    stocked(town)
+    await town.call("Mei", "claim_task", task=number)
+    await town.call("Tomas", "claim_task", task=number)
+    await town.call("Tomas", "write_repo_file", path="a.py", content="half FIX\n")
+    town.rest()
+    await town.until("09:00", day=2)
+    assert board.posted == sorted([*board.rotation[3:6], number])  # carried over, held
+    for name in ("Mei", "Tomas", "Aisha"):
+        await town.call(name, "go", place="workshop")
+    await town.until("09:30", day=2)
+
+    # Left alone on the second day, Mei waits for a partner, whom the board can still bring.
+    await town.call("Tomas", "abandon_task")
+    assert "Mei is waiting for a partner." in (await town.call("Aisha", "view_board")).text
+    joined = (await town.call("Aisha", "claim_task", task=number)).text
+    assert f"claimed task {number}, in org/repo{number}, with Mei; your workspace is ready." in (
+        joined
+    )
+    assert (await town.call("Aisha", "read_repo_file", path="a.py")).text.endswith("half FIX\n")
+    await town.call("Mei", "submit")
+    assert (await town.call("Aisha", "submit")).text.startswith("Accepted. You were paid $30.")
+    assert [actor for actor, _ in payloads(town, "payment")] == ["Mei", "Aisha"]
+    assert number not in board.posted and board.claims == {}
 
 
 async def test_a_pair_keeps_its_workspace_overnight_and_both_lose_it_at_one_midnight(

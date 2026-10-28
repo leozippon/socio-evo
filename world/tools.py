@@ -112,6 +112,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("view_board", f"Read the board at {workplace}: each task's number, repository, the "
              f"first line of its problem and its pay, {for_two}{projects}and whether it is held "
              "or already paid to you. If you hold a task, its whole problem is shown too."),
+        spec("read_task", f"Read the whole problem of a task on the board at {workplace}, "
+             "without claiming it.", ("task",), task=_number("the task's number on the board", 1)),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
              "it. You get a workspace with its repository and read the whole problem; you can "
              f"work in it wherever you are.{joined}", ("task",),
@@ -152,9 +154,11 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                    "description": "money, or the short name of the thing or stock, as given in "
                                   "brackets under buy"},
              amount=_number("how much money, or how many helpings; 1 for a thing", 1)),
-        spec("share_file", "Pass a copy of one of your files, any but your journal, to someone "
+        spec("share_file", "Pass a copy of one of your files, any but your journal, to people "
              "you are talking with: they get its text to keep.", ("to", "path"),
-             to=_text("their name"), path=_text("the file, such as memory/work.md")),
+             to={"type": "array", "items": {"type": "string"},
+                 "description": "the names of the people you pass it to"},
+             path=_text("the file, such as memory/work.md")),
         spec("leave_conversation", "Step out of the conversation and go back to what you "
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
@@ -348,6 +352,16 @@ async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     if r.place != workplace.id:  # the board hangs there, for whoever is there to read
         return ToolResult(f"You are not at {workplace.name}.")
     return ToolResult(world.board.text(r.name, world.config.day.board_posted))
+
+
+async def _read_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    workplace, number, board = world.config.workplace, args["task"], world.board
+    if r.place != workplace.id:  # the board hangs there, for whoever is there to read
+        return ToolResult(f"You are not at {workplace.name}.")
+    if not board.shows(number):
+        return ToolResult(f"There is no task {number} on the board.")
+    task = board.task(number)
+    return ToolResult(f"The problem of task {number}, in {task.repo}:\n\n{task.problem_statement}")
 
 
 async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -894,13 +908,6 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
     return ToolResult(tell(r.name))
 
 
-def _partner_refusal(world: World, r: Resident, name: str) -> str | None:
-    other = world.residents.get(name)
-    if other is None or other is r or other.conversation is not r.conversation:
-        return f"{name} is not in your conversation."
-    return None
-
-
 async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     name, what, amount = args["to"], args["what"], args["amount"]
     other = world.residents.get(name)
@@ -952,10 +959,15 @@ async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 
 async def _share_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    name, path = args["to"], args["path"].strip()
-    refusal = _partner_refusal(world, r, name)
-    if refusal:
-        return ToolResult(refusal)
+    names, path = list(dict.fromkeys(args["to"])), args["path"].strip()
+    if not names:
+        return ToolResult("Name the people you pass it to.")
+    for name in names:
+        if name == r.name:
+            return ToolResult("You cannot pass a file to yourself.")
+        other = world.residents.get(name)
+        if other is None or other.conversation is not r.conversation:
+            return ToolResult(f"{name} is not in your conversation.")
     # One's own files are those the file tools reach (agent.files): background.md and what lies
     # under memory/ and skills/, links followed.
     root, relative = r.agent_dir.resolve(), PurePosixPath(path)
@@ -969,19 +981,20 @@ async def _share_file(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     if parts[0] == "skills" and not world.config.social.skills_shareable:
         return ToolResult("Skills cannot be passed on here.")
     shared, content = "/".join(parts), target.read_text(encoding="utf-8", errors="replace")
+    for name in names:  # a copy to each, logged as one passed to one
 
-    def tell(w: str | None) -> str:
-        told = f"{cap(you(r.name, w))} passed {you(name, w)} a copy of {shared}"
-        return f"{told}. It reads:\n\n{content}" if w == name else f"{told}."
+        def tell(w: str | None, name: str = name) -> str:
+            told = f"{cap(you(r.name, w))} passed {you(name, w)} a copy of {shared}"
+            return f"{told}. It reads:\n\n{content}" if w == name else f"{told}."
 
-    world.record(
-        "skill_shared",
-        tell,
-        actor=r,
-        audience=[world.residents[name]],
-        payload={"to": name, "file": shared, "text": content},
-    )
-    return ToolResult(f"You passed {name} a copy of {shared}.")
+        world.record(
+            "skill_shared",
+            tell,
+            actor=r,
+            audience=[world.residents[name]],
+            payload={"to": name, "file": shared, "text": content},
+        )
+    return ToolResult(f"You passed {listed(names)} a copy of {shared}.")
 
 
 async def _leave_conversation(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -1019,6 +1032,7 @@ HANDLERS: dict[str, Handler] = {
     "wait": _wait,
     "sleep": _sleep,
     "view_board": _view_board,
+    "read_task": _read_task,
     "claim_task": _claim_task,
     "shell": _shell,
     "read_repo_file": _read_repo_file,

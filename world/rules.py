@@ -178,9 +178,11 @@ class Rules:
         work = (
             f"{cap(workplace.name)} takes in programming work from clients elsewhere and posts "
             "it on its board there: each task is a code repository with a problem to fix, and "
-            f"pays {money(c.work.payment)}. Claim a task at the board and you get a workspace "
-            "with its repository, where you can run commands and read and write files; there is "
-            f"no internet. You can work on it wherever you are, not only at {workplace.name}. "
+            f"pays {money(c.work.payment)}. The board shows the first line of each problem; "
+            "there read_task gives you the whole of one without claiming it. Claim a task at "
+            "the board and you get a workspace with its repository, where you can run commands "
+            "and read and write files; there is no internet. You can work on it wherever you "
+            f"are, not only at {workplace.name}. "
             "When your fix is ready, hand it in with submit: the client's own checks, which you "
             "do not see, run on it in a clean copy of the repository, and if they pass you are "
             f"paid at once. You can hand in each task at most {c.work.acceptance_runs} times a "
@@ -189,9 +191,9 @@ class Rules:
             "again a task you have been paid for."
         )
         work += (
-            " Everyone works from the same board; a task someone holds is shown as held, and "
-            "nobody else can claim it; a task someone has been paid for leaves the board for "
-            "the day."
+            " Everyone works from the same board; a task someone holds is shown as held, stays "
+            "on the board from day to day while it is held, and nobody else can claim it; a "
+            "task someone has been paid for leaves the board for the day."
             if social.mode == "town"
             else " The board is yours alone."
         )
@@ -212,10 +214,11 @@ class Rules:
             )
             work += (
                 f" Some clients bring a project of {counted(c.work.project_size, 'task')} in one "
-                "repository, listed together on the board, and want a different person on each, "
-                "who claims, hands in and is paid for it like any other task. If all "
-                f"{c.work.project_size} are accepted {by}, each of the {c.work.project_size} "
-                f"people paid for them also receives a bonus of {money(c.work.project_bonus)}."
+                "repository, listed together on the board until the project is done or its time "
+                "is up, and want a different person on each, who claims, hands in and is paid for "
+                f"it like any other task. If all {c.work.project_size} are accepted {by}, each of "
+                f"the {c.work.project_size} people paid for them also receives a bonus of "
+                f"{money(c.work.project_bonus)}."
             )
 
         assert my_home.rent is not None
@@ -276,7 +279,7 @@ class Rules:
         if contact:
             people += (
                 " With share_file you can pass a copy of any of your files but your journal to "
-                "someone you are talking with; they receive its text."
+                "people you are talking with; they receive its text."
             )
 
         sleep = (

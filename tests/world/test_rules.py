@@ -87,7 +87,7 @@ def test_ties_are_told_in_the_town_mode_and_seed_the_notes_on_people():
     assert town.sections("Mei")["people"].endswith(
         "Some of them you know already. Aisha has the room next to yours and shares the "
         "kitchen. With share_file you can pass a copy of any of your files but your journal to "
-        "someone you are talking with; they receive its text."
+        "people you are talking with; they receive its text."
     )
     assert town.people_notes("Mei") == (
         "# People\n\nAisha has the room next to yours and shares the kitchen.\n"

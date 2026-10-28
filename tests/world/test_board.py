@@ -1,5 +1,6 @@
-"""The board's daily posting: the next tasks of a rotation through the pool, seeded by the run;
-a task paid for leaves a shared board for the day."""
+"""The board's daily posting: the next tasks of a rotation through the pool, seeded by the run,
+and on a shared board the tasks still held carried over; a task paid for leaves a shared board
+for the day."""
 
 from collections import Counter
 from datetime import date
@@ -56,25 +57,39 @@ def test_a_pool_no_larger_than_the_board_is_posted_whole_every_day():
         assert postings(make_board(3, size), 4) == [[1, 2, 3]] * 4
 
 
-async def test_only_posted_tasks_are_claimed_and_a_held_task_stays_held_off_the_board():
-    board = make_board(10, 4)
+async def test_a_shared_board_keeps_a_held_task_until_its_claim_ends_and_ones_own_does_not():
+    # A pool of 20 on a board of 4, as the town's 1,912 on 56: each day's four are new.
+    board = make_board(20, 4)
     board.post(1)
-    unposted = min(set(range(1, 11)) - set(board.posted))
+    unposted = min(set(range(1, 21)) - set(board.posted))
     assert board.claim_refusal("Mei", unposted) == f"There is no task {unposted} on the board."
     held = board.posted[0]
     assert board.claim_refusal("Mei", held) is None
     await board.claim("Mei", held, day=1)
-    board.post(2)
-    assert held not in board.posted and board.claims["Mei"].task == held
+    board.post(2)  # the next four of the rotation, and beside them the task still held
+    assert board.posted == sorted([*board.rotation[4:8], held])
     text = board.text("Mei", "08:00")
-    assert text.splitlines()[1:5] == [
-        f"{n}. org/repo{n}: Problem {n} goes wrong. Pays 20." for n in board.posted
-    ]
+    assert f"\n{held}. org/repo{held}: Problem {held} goes wrong. Pays 20. You hold it.\n" in text
     assert text.endswith(
         f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
         f"Details of {held}."
     )
-    assert (board.expired(1), board.expired(2)) == ([], ["Mei"])
+    assert board.claim_refusal("Tomas", held) == f"Task {held} is held by someone else."
+    board.drop("Mei")  # given up: the day's board lists it still, for another to claim
+    assert board.claim_refusal("Tomas", held) is None
+    board.post(3)  # held by nobody, it is not carried over again
+    assert board.posted == sorted(board.rotation[8:12])
+
+    own = make_board(20, 4, shared=False)
+    own.post(1)
+    held = own.posted[0]
+    await own.claim("Mei", held, day=1)
+    own.post(2)  # a board of one's own carries nothing over; the task stays held off it
+    assert own.posted == sorted(own.rotation[4:8]) and own.claims["Mei"].task == held
+    assert own.text("Mei", "08:00").splitlines()[1:5] == [
+        f"{n}. org/repo{n}: Problem {n} goes wrong. Pays 20." for n in own.posted
+    ]
+    assert (own.expired(1), own.expired(2)) == ([], ["Mei"])
 
 
 async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round_again():
@@ -98,21 +113,13 @@ async def test_a_task_paid_for_leaves_a_shared_board_for_the_day_and_comes_round
     )
 
 
-async def test_an_empty_board_says_when_the_next_goes_up_and_still_shows_the_task_held():
+async def test_an_empty_board_says_when_the_next_goes_up():
     board = make_board(10, 1)
-    assert board.text("Mei", "08:00") == (
-        "Nothing is posted on the board now; the next board goes up at 08:00."
-    )
+    empty = "Nothing is posted on the board now; the next board goes up at 08:00."
+    assert board.text("Mei", "08:00") == empty  # before the first board
     board.post(1)
-    (held,) = board.posted
-    await board.claim("Mei", held, day=1)
-    board.post(2)
-    board.finish(await board.claim("Tomas", board.posted[0], day=2))
-    assert board.posted == [] and board.text("Mei", "08:00") == (
-        "Nothing is posted on the board now; the next board goes up at 08:00.\n\n"
-        f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
-        f"Details of {held}."
-    )
+    board.finish(await board.claim("Tomas", board.posted[0], day=1))
+    assert board.posted == [] and board.text("Mei", "08:00") == empty  # once it is cleared
 
 
 async def test_a_task_paid_for_stays_on_an_isolated_board():

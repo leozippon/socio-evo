@@ -79,7 +79,7 @@ MEI_STEPS = (
     # 09:20, Tomas's question.
     step(
         tool_call("say", text="I run pytest -x first.", to=["Tomas"]),
-        tool_call("share_file", to="Tomas", path="skills/testing.md"),
+        tool_call("share_file", to=["Tomas"], path="skills/testing.md"),
     ),
     step(),
     # Tomas speaks privately to Aisha.

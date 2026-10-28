@@ -147,18 +147,20 @@ async def test_a_copy_of_any_file_but_the_journal_reaches_its_recipient_as_text(
     await town.call("Mei", "say", text="I have a method for you.")
     town.take("Aisha")
     for path in ("../../Aisha/memory/x.md", "session.jsonl", "/etc/passwd", "memory/none.md"):
-        refused = await town.call("Mei", "share_file", to="Aisha", path=path)
+        refused = await town.call("Mei", "share_file", to=["Aisha"], path=path)
         assert refused.text == f"You have no file {path}."
-    journal = await town.call("Mei", "share_file", to="Aisha", path="memory/journal/2001-01-01.md")
+    journal = await town.call(
+        "Mei", "share_file", to=["Aisha"], path="memory/journal/2001-01-01.md"
+    )
     assert journal.text == "You can pass on any of your files but your journal."
-    shared = await town.call("Mei", "share_file", to="Aisha", path="skills/bisect.md")
+    shared = await town.call("Mei", "share_file", to=["Aisha"], path="skills/bisect.md")
     assert shared.text == "You passed Aisha a copy of skills/bisect.md."
     assert town.take("Aisha") == [
         "Mei passed you a copy of skills/bisect.md. It reads:\n\nFind the breaking commit by "
         "halving the range.\n"
     ]
     assert not (tmp_path / "agents" / "Aisha" / "skills" / "bisect.md").exists()
-    letter = await town.call("Mei", "share_file", to="Aisha", path="memory/letter.md")
+    letter = await town.call("Mei", "share_file", to=["Aisha"], path="memory/letter.md")
     assert letter.text == "You passed Aisha a copy of memory/letter.md."
     shares = [e["payload"] for e in town.world.log.entries() if e["kind"] == "skill_shared"]
     assert [(p["file"], p["text"]) for p in shares] == [
@@ -167,15 +169,51 @@ async def test_a_copy_of_any_file_but_the_journal_reaches_its_recipient_as_text(
     ]
 
 
+async def test_a_file_is_passed_to_each_one_named_who_is_in_the_conversation(make_town, tmp_path):
+    town = make_town()
+    await awake_at(town)
+    (tmp_path / "agents" / "Mei" / "memory" / "letter.md").write_text("Dear all,\n")
+    for name in ("Mei", "Tomas", "Aisha"):
+        await town.call(name, "go", place="cafe")
+    await town.until("07:30")
+    await town.call("Mei", "say", text="A letter for you.", to=["Aisha"])  # Tomas stays out
+    path = "memory/letter.md"
+    refusals = {
+        "Aisha": "to must be a list of names.",  # a name, not a list of them
+        (): "Name the people you pass it to.",
+        ("Mei",): "You cannot pass a file to yourself.",
+        ("Jonas",): "Jonas is not in your conversation.",
+        ("Aisha", "Tomas"): "Tomas is not in your conversation.",
+    }
+    for to, refusal in refusals.items():
+        to = to if isinstance(to, str) else list(to)
+        assert (await town.call("Mei", "share_file", to=to, path=path)).text == refusal
+    assert "skill_shared" not in town.kinds()
+
+    await town.call("Mei", "say", text="And for you.", to=["Tomas"])
+    for name in ("Tomas", "Aisha"):
+        town.take(name)
+    passed = await town.call("Mei", "share_file", to=["Aisha", "Tomas", "Aisha"], path=path)
+    assert passed.text == "You passed Aisha and Tomas a copy of memory/letter.md."
+    for name in ("Tomas", "Aisha"):
+        assert town.take(name) == [f"Mei passed you a copy of {path}. It reads:\n\nDear all,\n"]
+    shares = [
+        (e["actor"], e["payload"]["to"])
+        for e in town.world.log.entries()
+        if e["kind"] == "skill_shared"
+    ]
+    assert shares == [("Mei", "Aisha"), ("Mei", "Tomas")]  # a copy to each, logged one by one
+
+
 async def test_skills_cannot_be_passed_on_when_they_are_not_shareable(make_town, tmp_path):
     town = make_town(town_config(shareable=False))
     await awake_at(town)
     (tmp_path / "agents" / "Mei" / "skills" / "bisect.md").write_text("Halve.\n")
     (tmp_path / "agents" / "Mei" / "memory" / "work.md").write_text("Halve first.\n")
     await town.call("Mei", "say", text="Hello.")
-    refused = await town.call("Mei", "share_file", to="Aisha", path="skills/bisect.md")
+    refused = await town.call("Mei", "share_file", to=["Aisha"], path="skills/bisect.md")
     assert refused.text == "Skills cannot be passed on here."
-    notes = await town.call("Mei", "share_file", to="Aisha", path="memory/work.md")
+    notes = await town.call("Mei", "share_file", to=["Aisha"], path="memory/work.md")
     assert notes.text == "You passed Aisha a copy of memory/work.md."  # notes go all the same
     assert "skill" not in town.world.rules.text("Mei").lower().replace("skills folder", "")
 

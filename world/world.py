@@ -1387,7 +1387,7 @@ class World:
             ):
                 useless.add("message")  # nothing to write with
             if r.place != self.config.workplace.id:
-                useless |= {"view_board", "claim_task"}  # the board hangs at the workplace
+                useless |= {"view_board", "read_task", "claim_task"}  # the board hangs there
             if claim is None:
                 useless |= TASK_TOOLS
             elif not self.board.ready(claim):

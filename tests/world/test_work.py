@@ -98,12 +98,34 @@ async def test_the_board_is_posted_every_morning_and_what_is_left_stays_up_until
     await town.until("07:59", day=2)
     assert board.posted == first  # through midnight and the night
     await town.until("08:00", day=2)
-    second = board.posted
-    assert not set(first) & set(second) and board.claims["Tomas"].task == first[0]
+    second = board.posted  # the next four, and beside them the task Tomas holds
+    assert set(first) & set(second) == {first[0]} and len(second) == 5
+    assert board.claims["Tomas"].task == first[0]
     await town.until("08:00", day=3)
     posted = [e for e in town.world.log.entries() if e["kind"] == "board_posted"]
     assert [e["sim_time"] for e in posted] == [at("08:00"), at("08:00", 2), at("08:00", 3)]
     assert posted[0]["payload"] == {"tasks": 4} and posted[0]["audience"] == ["Tomas"]
+
+
+async def test_a_task_on_the_board_is_read_whole_without_claiming_it(make_town):
+    town = make_town(town_config(board_size=4), FakeBackend(10))
+    board, mei = town.world.board, town.world.residents["Mei"]
+    await awake_at(town)
+    assert (await town.call("Mei", "read_task", task=1)).text == "You are not at the workshop."
+    await town.call("Mei", "go", place="workshop")
+    await town.until("07:59")
+    assert (await town.call("Mei", "read_task", task=1)).text == "There is no task 1 on the board."
+    await town.until("08:00")
+    number = board.posted[0]
+    assert (await town.call("Mei", "read_task", task=number)).text == (
+        f"The problem of task {number}, in org/repo{number}:\n\nProblem {number} goes wrong.\n"
+        f"Details of {number}."
+    )
+    unposted = min(set(range(1, 11)) - set(board.posted))  # in the pool, not on today's board
+    for missing in (unposted, 11):
+        refused = (await town.call("Mei", "read_task", task=missing)).text
+        assert refused == f"There is no task {missing} on the board."
+    assert board.claims == {} and not isinstance(mei.base, Work)  # nothing claimed, nobody sat
 
 
 async def test_the_board_is_read_by_whoever_is_at_the_workshop(make_town):
@@ -124,13 +146,13 @@ async def test_a_task_is_claimed_at_the_board_and_worked_on_anywhere(make_town):
     town = make_town()
     await at_the_workshop(town, "Mei")
     world, mei, port = town.world, town.world.residents["Mei"], town.world.ports["Mei"]
-    assert "view_board, claim_task, say" in port.situation()  # no task held: nothing to work on
+    assert "view_board, read_task, claim_task, say" in port.situation()  # nothing to work on
     await town.call("Mei", "claim_task", task=1)
     went = await town.call("Mei", "go", place="cafe")
     assert went.text.startswith("You stopped work. You set off for the café on the square")
     await town.until("09:05")
     situation = port.situation()
-    assert "claim_task" not in situation and "view_board" not in situation  # the board is away
+    assert [t for t in ("view_board", "read_task", "claim_task") if t in situation] == []  # away
     assert "shell, read_repo_file, write_repo_file, edit_repo_file, submit, abandon_task" in (
         situation
     )

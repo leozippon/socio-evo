@@ -5,25 +5,29 @@ seed, into a rotation. The board of calendar day N is posted that morning at the
 in place of what is left of the day before's, and holds the next `board_size` tasks of the
 rotation after day N - 1's, wrapping round to its start, so that every task comes round about
 every pool / `board_size` days; a pool no larger than `board_size` is posted whole every day.
-Only posted tasks can be claimed, and a claim does not change what is posted: a held task that
-leaves the board stays held.
+Only posted tasks can be claimed.
 
 In the town mode one board is shared: a task someone holds is shown as held and cannot be claimed
-by another, and a task that has been paid for leaves the day's board for everyone, since a client
-pays once; it comes round again with the rotation, and may then be done by a resident not yet
-paid for it. In the isolated mode every resident has a board of its own, which here means that
-no claim or payment of another counts. A resident holds at most one task, keeps it when it leaves
-the workplace, and loses it unpaid at the midnight that ends the calendar day `claim_expiry_days`
-days after the day of the claim, even while a submission of it is being checked; only a held
-claim is paid, so that a task is paid once. A task a resident has been paid for is done for that
-resident and cannot be claimed by it again.
+by another, and it stays posted while it is held. Each board carries over from the day before's,
+beside its `board_size` tasks and not counted among them, every task still held and every task of
+a running project not yet paid for, so that a partner can still join a task for two and a
+project's task given up can be claimed again until the project's deadline. A task that has been
+paid for leaves the day's board for everyone, since a client pays once; it comes round again with
+the rotation, and may then be done by a resident not yet paid for it. In the isolated mode every
+resident has a board of its own, which here means that no claim or payment of another counts and
+nothing is carried over: a held task that leaves the board stays held. A resident holds at most
+one task, keeps it when it leaves the workplace, and loses it unpaid at the midnight that ends the
+calendar day `claim_expiry_days` days after the day of the claim, even while a submission of it is
+being checked; only a held claim is paid, so that a task is paid once. A task a resident has been
+paid for is done for that resident and cannot be claimed by it again.
 
 A shared board posts a share of the rotation for two (`for_two`: the tasks at the places where
 the share, counted up place by place, reaches another whole task, so that a quarter is every
 fourth): such a task is held by two residents, who share one `Claim`. The first to claim it
 waits for a partner, and a second claim of it joins the first; it can be worked on (`ready`)
 once both hold it. One who leaves it, by giving it up or by dying, leaves it to the other,
-waiting again; both lose it at the same midnight, the first claim's.
+waiting again, though nobody can join it while a hand-in of it is being checked, which pays only
+those who hold it when the verdict comes; both lose it at the same midnight, the first claim's.
 
 A shared board may also group tasks into clients' projects (`projects_a_day` of them a day, of
 `project_size` tasks each). When a board is posted, its tasks are taken in rotation order, those
@@ -32,9 +36,10 @@ for two and those of a project still running left out, and the first repository 
 `projects_a_day`; a repository makes one at most. Each task of a project is claimed, worked and
 paid as any other, except that the client wants a different person on each: one who has been
 paid for a task of a project cannot claim another of it, and one holds a single task at a time.
-The project records who was paid for each (`paid_for`) and is over once all are, or lapses at the
-midnight that ends the calendar day `claim_expiry_days` days after the day it was posted
-(`lapse`), the same midnight as a claim made that day.
+The project records who was paid for each (`paid_for`), and a task paid for cannot be claimed
+again while the project runs, even where the rotation posts it again; it is over once all are
+paid for, or lapses at the midnight that ends the calendar day `claim_expiry_days` days after the
+day it was posted (`lapse`), the same midnight as a claim made that day.
 
 A claim opens a workspace once it is ready; the two of a pair share it. When nobody holds a
 claim any more, by acceptance or abandonment, its workspace is closed at once; when it runs out,
@@ -144,11 +149,17 @@ class Board:
         return self.tasks[number - 1]
 
     def post(self, day: int) -> list[Project]:
-        """Post the board of calendar day `day`; returns the projects formed on it."""
+        """Post the board of calendar day `day`: the next `board_size` tasks of the rotation and,
+        on a shared board, carried over beside them and not counted among them, every task still
+        held and every task of a running project not yet paid for; returns the projects formed
+        on it."""
         size = min(self.work.board_size, len(self.rotation))
         start = (day - 1) * size
         turn = [self.rotation[(start + i) % len(self.rotation)] for i in range(size)]
-        self.posted = sorted(turn)
+        carried = {n for project in self.projects for n in project.tasks if n not in project.paid}
+        if self.shared:  # on a board of one's own another's claim is not seen
+            carried |= {claim.task for claim in self.claims.values()}
+        self.posted = sorted(carried.union(turn))
         if not self.work.projects_a_day:
             return []
         running = {number for project in self.projects for number in project.tasks}
@@ -228,6 +239,14 @@ class Board:
         """Whether `claim` can be worked on: a task for two once both hold it."""
         return claim.task not in self.for_two or len(self.holders(claim)) == 2
 
+    def shows(self, number: int) -> bool:
+        """Whether the board lists task `number`: posted, or of a project listed with its tasks
+        posted, as `text` lists them."""
+        project = self.project(number)
+        return number in self.posted or (
+            project is not None and bool(set(project.tasks) & set(self.posted))
+        )
+
     def text(self, name: str, posting: str) -> str:
         """The posted tasks as `name` reads them, those of each project on it grouped after the
         others under a line that tells the project, with who holds each and who was paid for
@@ -290,16 +309,15 @@ class Board:
         return line
 
     def claim_refusal(self, name: str, number: int) -> str | None:
+        project = self.project(number)
+        if project is not None and number in project.paid:  # shown with its project, posted or not
+            return f"Task {number} has been accepted from {you(project.paid[number], name)}."
         if number not in self.posted:
-            project = self.project(number)
-            if project is not None and number in project.paid:  # still shown with its project
-                return f"Task {number} has been accepted from {you(project.paid[number], name)}."
             return f"There is no task {number} on the board."
         if name in self.claims:
             return f"You already hold task {self.claims[name].task}; submit it or give it up first."
         if number in self.done[name]:
             return f"You have already been paid for task {number}."
-        project = self.project(number)
         mine = [n for n, payee in project.paid.items() if payee == name] if project else []
         if mine:  # one task of a project a resident, held (above) or paid for
             return (
@@ -307,7 +325,7 @@ class Board:
                 "paid for; the client wants a different person on each of its tasks."
             )
         other = self.taken(name, number)
-        if other is not None and self.ready(other):
+        if other is not None and (self.ready(other) or other.checking):  # none joins a hand-in
             return f"Task {number} is held by someone else."
         return None
 
