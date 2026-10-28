@@ -10,31 +10,34 @@
 #
 # Calibration of a life. Rent runs from 30 a day for a room in a shared house to 70 for the
 # cottage, and a day's food from 12 (three helpings of groceries, 36 for nine) to 20 (supper at
-# the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 30: one does
-# not keep the cheapest life, a task and a half does, three keep the dearest, and a day without
-# work costs something without threatening, since starting purses of 180-300 are three to six
-# days of the resident's own life. The pay is set against the town's pot, not a resident's: in C
-# and D the eight share one board of 56 tasks a day, and what the pot comes to depends on the
-# model's pace. The local model clears about half the board (29 accepted on the town's first
-# day, from one to six a resident), so the town earns about 840 a day against 451-515 of rent
-# and food, 1.6 to 1.9 times its costs: an average share, three and a half tasks or 105 a day,
-# leaves about 37 over the cheapest life in one's own home, so the slow fall behind and the fast
-# save. The pay follows the pace: at 15 the same day paid 420 and every purse shrank, and the
-# relayed DeepSeek, which cleared the whole board, had purses on course for 1,000 by day 7 at
-# 30, where money stops mattering. The things to save for are priced against an average
-# earner's savings: the bicycle (360), more than any purse at the start, takes about nine days,
-# the phone (240, then 5 a day) about six, the coat (150) four, the book (40) one.
+# the Anchor), so the cheapest life costs 42 a day and the dearest 90. A task pays 60: one keeps
+# the cheapest life but not the dearest, which takes a task and a half, and a day without work
+# costs something without threatening, since starting purses of 180-300 are three to six days of
+# the resident's own life. The pay is set against the town's pot, not a resident's: in C and D
+# the eight share one board of 56 tasks a day, and what the pot comes to depends on the model's
+# pace. The local model clears about a quarter of the board on the pool of 1,912 tasks (12 and 13
+# of 56 accepted on the fourth start's first two days), though it cleared about half on the 350
+# Verified tasks alone (29 on the third start's first day), so the town earns about 840 a day
+# against 451-515 of rent and food, 1.6 to 1.9 times its costs: an average share, a task and
+# three quarters or 105 a day, leaves about 37 over the cheapest life in one's own home, so the
+# slow fall behind and the fast save. The pay follows the pace: at 15 a day on the Verified tasks
+# paid 420 and every purse shrank, at 30 the wider pool's second day paid 390 against 585 of rent
+# and purchases and left three purses about to run dry, and the relayed DeepSeek, which cleared
+# the whole board, had purses on course for 1,000 by day 7 at 30, where money stops mattering.
+# The things to save for are priced against an average earner's savings: the bicycle (360), more
+# than any purse at the start, takes about nine days, the phone (240, then 5 a day) about six,
+# the coat (150) four, the book (40) one.
 # In A and B each resident has the whole board to itself, so there its pace is its only limit.
 #
-# Tasks for two. In C and D a quarter of the board, every fourth task of the rotation (14 of
-# 56), is posted for two, a client's requirement: two people hold the task and share one
-# workspace, and it goes to the client's checks only once both have handed it in. It pays 40 to
-# each, 80 for the task against 60 for two tasks done alone: two who could each clear a task of
-# their own in some time earn more together only while the shared task takes them less than
-# four thirds of that time, which a second pair of eyes may buy and the talk it needs may cost;
-# at 30 each they would have to be quicker together outright. A full board pays 14 tasks for two
-# at 80 and 42 at 30, 2,380 against 1,680 without them. In A and B, where each resident has a
-# board of its own and nobody to share a task with, nothing is posted for two.
+# Tasks for two. In C and D a quarter of the board, every fourth task of the rotation (14 of 56),
+# is posted for two, a client's requirement: two people hold the task and share one workspace,
+# and it goes to the client's checks only once both have handed it in. It pays 80 to each, 160
+# for the task against 120 for two tasks done alone: two who could each clear a task of their own
+# in some time earn more together only while the shared task takes them less than four thirds of
+# that time, which a second pair of eyes may buy and the talk it needs may cost; at 60 each they
+# would have to be quicker together outright. A full board pays 14 tasks for two at 160 and 42 at
+# 60, 4,760 against 3,360 without them. In A and B, where each resident has a board of its own
+# and nobody to share a task with, nothing is posted for two.
 #
 # Clients' projects. In C and D each day's board also makes two clients' projects of three tasks
 # of one repository: of the repositories with three tasks not for two on it, the two whose third
@@ -43,12 +46,12 @@
 # as any other, but the client wants a different person on each: one paid for a task of a
 # project cannot claim another of it. Once all three are accepted by the second midnight after
 # the board went up, the midnight a claim of that day runs out at, each of the three paid for
-# them receives a bonus of 30, so a project pays 90 in bonuses and the two add at most 180 to a
-# day's pot: 2,560 for a cleared board against 2,380, and at most a fifth more than the 840 the
-# town earns at the local model's pace; a project whose last task is not accepted in time adds
-# nothing. To each of the three the bonus doubles the pay of its own task, but only if the other
-# two are accepted in time, which none of them decides alone. A and B, where each resident has a
-# board of its own, have no projects.
+# them receives a bonus of 60, so a project pays 180 in bonuses and the two add at most 360 to a
+# day's pot: 5,120 for a cleared board against 4,760, and at most about two fifths more than the
+# 840 the town earns at the local model's pace; a project whose last task is not accepted in
+# time adds nothing. To each of the three the bonus doubles the pay of its own task, but only if
+# the other two are accepted in time, which none of them decides alone. A and B, where each
+# resident has a board of its own, have no projects.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
@@ -76,8 +79,8 @@
 # every day (in a flat or the cottage, 5 a night, run down from the eighth and dead at the
 # twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
 # eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives
-# half a day's energy, well out of exhaustion. Treatment at the clinic restores 25 health for two
-# tasks' pay; an examination costs two thirds of one.
+# half a day's energy, well out of exhaustion. Treatment at the clinic restores 25 health for a
+# task's pay; an examination costs a third of one.
 
 # The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
 # tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
@@ -250,14 +253,14 @@ town:
   work:
     split: train
     board_size: 56 # shared by the eight in C and D, each its own in A and B; comes round in turn
-    payment: 30
+    payment: 60
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     for_two: 0.25 # every fourth task of the rotation is posted for two (none in A and B)
-    payment_for_two: 40 # to each of the two, as calibrated above
+    payment_for_two: 80 # to each of the two, as calibrated above
     projects_a_day: 2 # clients' projects formed on each day's board (none in A and B)
     project_size: 3 # tasks of one repository in a project
-    project_bonus: 30 # to each paid for one of a project's tasks once all are, as calibrated above
+    project_bonus: 60 # to each paid for one of a project's tasks once all are, as calibrated above
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The goods for sale (see world/config.py for the kinds and effects). Every good does something

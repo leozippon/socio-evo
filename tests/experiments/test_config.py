@@ -151,7 +151,9 @@ def test_ties_are_mutual_pass_the_guard_and_reach_only_the_town_groups():
         assert Rules(a.town).people_notes(name) == "# People\n"
 
 
-CLEARED = 0.5  # the share of the board paid in a day at the local model's pace (29 of 56 on the town's first day)
+# The share of the board paid in a day at the local model's pace: 12 and 13 of 56 on the first two
+# days of the fourth start, on the pool of 1,912 tasks.
+CLEARED = 0.25
 
 
 def test_the_pay_is_set_against_the_towns_shared_board():
@@ -162,13 +164,16 @@ def test_the_pay_is_set_against_the_towns_shared_board():
     meals = [good.price for good in food if good.kind == "immediate"]
     a_day = min([good.price // good.days for good in food if good.kind == "consumable"] + meals)
     cheapest = min(rents.values()) + a_day
-    assert payment < cheapest <= 1.5 * payment  # one task does not keep the cheapest life; one and a half do
+    dearest = max(rents.values()) + max(meals + [a_day])  # the cottage and suppers at the Anchor
+    # One task keeps the cheapest life and not the dearest; a task and a half keeps the dearest.
+    assert cheapest <= payment < dearest <= 1.5 * payment
     for resident in town.residents:  # and a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
-    # The board of the day is the town's pot if it were cleared; the local model clears about
-    # half of it (29 of 56 accepted on the town's first day), which pays for the town's rent and
-    # food with a margin, but less than twice its cheapest costs, so the slow fall behind.
+    # The board of the day is the town's pot if it were cleared; the local model clears about a
+    # quarter of it (12 and 13 of 56 accepted on the fourth start's first two days), which pays
+    # for the town's rent and food with a margin, but less than twice its cheapest costs, so the
+    # slow fall behind.
     pot = town.work.board_size * payment * CLEARED
     rent = sum(rents[resident.home] for resident in town.residents)
     assert rent + n * max(meals) < pot < 2 * (rent + n * a_day)
@@ -176,7 +181,7 @@ def test_the_pay_is_set_against_the_towns_shared_board():
     # durable, which no purse covers at the start, in about a week; daily charges are small.
     saved = pot / n - (rent / n + a_day)
     durables = [good for good in town.goods if good.kind == "durable"]
-    dearest = max(good.price for good in durables)
-    assert dearest > max(resident.purse for resident in town.residents)
-    assert 5 <= dearest / saved <= 10
+    priciest = max(good.price for good in durables)
+    assert priciest > max(resident.purse for resident in town.residents)
+    assert 5 <= priciest / saved <= 10
     assert all(good.fee_per_day <= saved / 5 for good in durables)

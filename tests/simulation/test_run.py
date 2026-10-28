@@ -68,10 +68,10 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
     assert set(saved["residents"]) == {"Mei", "Tomas"}
-    # Each was paid for a task, bought groceries and a meal and paid its rent: Mei 240 + 15 - 36
-    # - 15 - 30, Tomas 260 + 15 - 36 - 15 - 55.
+    # Each was paid for a task, bought groceries and a meal and paid its rent: Mei 240 + 60 - 36
+    # - 15 - 30, Tomas 260 + 60 - 36 - 15 - 55.
     purses = {name: r["purse"] for name, r in saved["residents"].items()}
-    assert purses == {"Mei": 189, "Tomas": 184}
+    assert purses == {"Mei": 219, "Tomas": 214}
     living = saved["residents"]["Mei"]["living"]
     # Fed by the café's meal and a helping of the stock in the evening, rested, in good health.
     assert living["things"] == {"groceries": 8} and living["eaten"] == {}
