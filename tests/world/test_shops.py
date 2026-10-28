@@ -1,7 +1,7 @@
 """The Store and the Restaurant: the counter open only while the shopkeeper is at work there, a
 sale paid in cash and short of stock, an order paid to the supplier and delivered the next
-morning, prices set, the chef buying for the kitchen at work and for itself off duty, cooking
-from the kitchen's stock and short of it, a dish served and eaten, what is unsold gone at
+morning, prices set, the chef buying for the kitchen and for itself, cooking from the kitchen's
+stock and short of it, a dish served and eaten, what is unsold gone at
 midnight, the checkpoint that carries the Store and the kitchen, and the money that only clients
 bring into the town and only the supplier takes out of it."""
 
@@ -151,9 +151,7 @@ async def test_an_order_is_paid_at_once_and_arrives_the_next_morning_and_prices_
     assert [p.text for p in town.heard["Olga"] if p.kind == "delivery"] == [delivered[0]["text"]]
 
 
-async def test_the_chef_buys_for_the_kitchen_at_work_cooks_and_serves_and_what_is_left_goes(
-    make_town,
-):
+async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_goes(make_town):
     town = make_town(SHOPS)
     await awake_at(town)
     world = town.world
@@ -163,21 +161,30 @@ async def test_the_chef_buys_for_the_kitchen_at_work_cooks_and_serves_and_what_i
         await town.call(name, "go", place="store")
     await town.until("07:10")
     await town.call("Olga", "start_work")
-    # Off duty the chef buys for himself; at work at the store, for the kitchen, and the fund pays.
+    # Without for_the_kitchen the chef buys for himself; with it, for the kitchen, and the fund
+    # pays. Only the chef's buy takes it, and his work is not here.
     assert (await town.call("Jonas", "buy", item="eggs", quantity=2)).text == (
         "You bought 2 units of eggs for $4. You have 2 units of eggs. Your purse holds $96."
     )
-    assert "start_work" in offered(town, "Jonas") and "cook" not in offered(town, "Jonas")
-    assert (await town.call("Jonas", "start_work")).text == (
-        "You sat down to work. It is 07:10. What you buy here now is for the kitchen, and the "
-        "fund pays."
+    assert "start_work" not in offered(town, "Jonas") and "cook" not in offered(town, "Jonas")
+    assert (
+        await town.call("Jonas", "start_work")
+    ).text == "Your work is at the café on the square."
+    chefs = {spec.name: spec for spec in town.world.ports["Jonas"].tool_specs()}
+    assert "for_the_kitchen" in chefs["buy"].parameters["properties"]
+    olgas = {spec.name: spec for spec in town.world.ports["Olga"].tool_specs()}
+    assert "for_the_kitchen" not in olgas["buy"].parameters["properties"]
+    assert (await town.call("Olga", "buy", item="eggs", for_the_kitchen=True)).text == (
+        "buy takes no for_the_kitchen."
     )
-    assert (await town.call("Jonas", "buy", item="eggs", quantity=4)).text == (
+    assert (
+        await town.call("Jonas", "buy", item="eggs", quantity=4, for_the_kitchen=True)
+    ).text == (
         "You bought 4 units of eggs for the kitchen for $8, which the fund paid. The kitchen "
         "holds 4 units of eggs."
     )
-    await town.call("Jonas", "buy", item="vegetables", quantity=3)
-    assert (await town.call("Jonas", "buy", item="coat")).text == (
+    await town.call("Jonas", "buy", item="vegetables", quantity=3, for_the_kitchen=True)
+    assert (await town.call("Jonas", "buy", item="coat", for_the_kitchen=True)).text == (
         "A coat is nothing the kitchen cooks with."
     )
     assert world.kitchen.stock == {"eggs": 4, "vegetables": 3} and jonas.inventory.money == 96
@@ -267,8 +274,7 @@ async def test_the_checkpoint_keeps_the_store_and_the_kitchen_and_money_comes_on
     await town.until("07:10")
     await town.call("Olga", "order", item="eggs", quantity=6)
     await town.call("Olga", "set_price", item="vegetables", price=4)
-    await town.call("Jonas", "start_work")
-    await town.call("Jonas", "buy", item="vegetables", quantity=6)
+    await town.call("Jonas", "buy", item="vegetables", quantity=6, for_the_kitchen=True)
     await town.call("Tomas", "buy", item="phone")
     await town.call("Jonas", "go", place="cafe")
     await town.call("Mei", "go", place="workshop")

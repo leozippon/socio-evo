@@ -26,11 +26,17 @@ KINDS = {
     "depart": "a resident set off for another place",
     "arrive": "a resident arrived somewhere",
     "time": "a resident waiting was told the time, or that what it was just told ended its wait",
-    "board_posted": "the day's board posted at the office in the morning",
+    "task_arrived": "a client's task came in on the Office's board, told to those there "
+    "(payload: task, instance_id, repo)",
+    "task_withdrawn": "a client withdrew a task not accepted in time, at midnight, told to whoever "
+    "held it (payload: task, holder or null)",
     "start_work": "a resident sat down to work: with start_work, or by doing its occupation's work "
-    "where it works (claiming a task, acting in its workspace, cooking, ordering, setting a price)",
+    "where it works (claiming, assigning or acting in a task's workspace, cooking, ordering, "
+    "setting a price, examining or treating, reading the report, announcing)",
     "leave_work": "a resident stopped work, or the forced sleep stopped it",
     "claim": "a resident claimed a task and got a workspace",
+    "assign": "the team leader gave a task to a programmer, or moved it from the one who held it, "
+    "told to both (payload: task, to, from or null)",
     "command": "a shell command run in a workspace, with its exit code and output tail",
     "file_read": "a file read in a workspace",
     "file_write": "a file written in a workspace",
@@ -38,10 +44,9 @@ KINDS = {
     "verdict": "the acceptance verdict on a submission",
     "service": "a resident was paid a sum for a service at once, as far as the fund had it: for a "
     "task of its own accepted, for one of the programmers' to the team leader, for a sale to the "
-    "shopkeeper, for a dish served to the chef (payload: for, task or null, amount, paid, owed, "
-    "money)",
+    "shopkeeper, for a dish served to the chef, for a patient examined or treated to the doctor "
+    "(payload: for, task or null, amount, paid, owed, money)",
     "abandon": "a resident gave up its task",
-    "expiry": "a claim ran out unpaid at midnight",
     "workspace_closed": "a workspace closed at the checkpoint, its changes kept",
     "speech": "something said, with its text and recipients",
     "leave_conversation": "a resident left a conversation",
@@ -49,26 +54,36 @@ KINDS = {
     "gift": "money, a thing or helpings of a stock handed from one resident to another, on "
     "their own terms (payload: to, and amount of money or item, name and quantity)",
     "message": "a written message from one resident to another, read wherever the other is",
-    "sale": "goods bought at the Store's counter, by a resident for itself or by the chef at "
-    "work for the kitchen, which the fund pays (payload: item, name, quantity, price, amount, "
-    "seller, kitchen)",
+    "sale": "goods bought at the Store's counter, by a resident for itself or by the chef for "
+    "the kitchen, which the fund pays (payload: item, name, quantity, price, amount, seller, "
+    "kitchen)",
     "served": "a dish bought at the Restaurant and eaten there (payload: dish, name, amount, chef)",
     "order": "goods the shopkeeper ordered from the supplier, paid by the fund at once (payload: "
     "item, name, quantity, amount, arrives)",
     "delivery": "what the Store ordered arrived in the morning (payload: items)",
     "cook": "portions of a dish the chef cooked from the kitchen's stock (payload: dish, name, "
     "portions, used)",
-    "price": "a price the shopkeeper or the chef set (payload: item, name, place, price, before)",
+    "price": "a price the shopkeeper, the chef or the doctor set (payload: item, name, place, "
+    "price, before)",
+    "examination": "the doctor examined a patient, who paid the fee; the numbers it was told, "
+    "told to both (payload: patient, fee, satiety, energy, health, ill, night)",
+    "treatment": "the doctor treated a patient, who paid the fee (payload: patient, fee, restores, "
+    "before, health, ill, bedridden)",
+    "report": "the mayor read the town's report (its text is not kept)",
+    "announcement": "the mayor announced something, told to every resident at once or on waking "
+    "(payload: text)",
     "move_in": "a resident moved into another home",
     "wage": "a resident's wages paid at midnight for its hours at work, with its rent and daily "
     "charges taken out of them (payload: hours, wages, owed_before, rent, charges, "
     "arrears_before, remainder, paid, owed, arrears, money)",
     "settlement": "the midnight statement, with the day's food and the body's numbers after the "
-    "night's reckoning of health",
+    "night's reckoning of health (payload: nourishment, satiety, energy, health, night, ill)",
+    "illness": "a resident fell ill at midnight (payload: chance, nights, health)",
     "condition": "a need of a resident's body crossed into another band; told to it if awake",
     "bedridden": "a resident's health ran out at midnight: it took to its bed at home, carried "
     "there if it was elsewhere, until treated",
-    "recovered": "treatment let a bedridden resident leave its bed",
+    "recovered": "a resident's illness passed at midnight, or treatment ended it or let one "
+    "bedridden leave its bed (payload: illness, bedridden, treated, health)",
     "sleep": "a resident went to bed, with the journal entry it gave, if any",
     "fell_asleep": "a resident in bed fell asleep",
     "forced_sleep": "a resident still up at the forced hour fell asleep without going to bed",

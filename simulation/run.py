@@ -67,9 +67,8 @@ from world.world import OnCheckpoint, World
 
 log = logging.getLogger("simulation")
 
-DRY_RUN_BOARDS = 3
-"""A dry run's pool, in boards: larger than the board, as the town's is, so that each day's board
-is new and holds only what a shared board carries over from the day before."""
+DRY_RUN_TASKS = 250
+"""A dry run's pool of tasks: more than a 28-day run of the town draws."""
 DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
 ADDED = {"llm": ("context_window",), "runtime": ("kept_tokens",)}
@@ -101,8 +100,7 @@ async def run(
     }
     client = _client(config, dry_run)
     await _check_model(client, config)
-    pool = DRY_RUN_BOARDS * config.town.work.board_size
-    backend: Backend = FakeBackend(pool) if dry_run else SwebenchBackend()
+    backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
     backend.require_images(backend.load_split(config.town.work.split))
     revision = code_revision()
     adopted: list[str] = []
@@ -157,7 +155,7 @@ async def run(
                 )
                 for index, r in enumerate(config.residents)
             }
-            checkpoints = _Checkpoints(directory, config.town, world.report)
+            checkpoints = _Checkpoints(directory, config.town, world.fund_report)
             await _live(world, runtimes, until, checkpoints)
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
         except asyncio.CancelledError:
@@ -273,15 +271,23 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, with the fund's day
-    as `report` tells it."""
+    as `fund_report` tells it."""
 
     COUNTED = (
+        "task_arrived",
         "claim",
+        "assign",
         "submission",
         "accepted",
+        "sale",
+        "served",
+        "examination",
+        "treatment",
+        "announcement",
         "speech",
         "gift",
         "journal",
+        "illness",
         "forced_sleep",
         "bedridden",
     )

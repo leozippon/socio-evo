@@ -4,11 +4,14 @@ completeness of the world log."""
 from __future__ import annotations
 
 import asyncio
+import copy
 import json
 
 import pytest
 
 from tests.world.conftest import (
+    CARE,
+    NEEDS,
     RESIDENTS,
     TRADES,
     FakeBackend,
@@ -67,7 +70,7 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
     ]
 
 
-async def test_one_can_wait_at_the_workplace_for_the_board(make_town):
+async def test_one_can_wait_at_the_workplace_for_the_tasks_to_come_in(make_town):
     town = make_town()
     await awake_at(town)
     port = town.world.ports["Tomas"]
@@ -78,7 +81,9 @@ async def test_one_can_wait_at_the_workplace_for_the_board(make_town):
     waiting = asyncio.create_task(port.wait())
     await town.until("08:00")
     assert [p.text for p in waiting.result()] == [
-        "It is 08:00: the day's board is posted at the workshop.",
+        "It is 08:00: task 1 (org/repo1) came in on the board.",
+        "It is 08:00: task 3 (org/repo3) came in on the board.",
+        "It is 08:00: task 2 (org/repo2) came in on the board.",
         "That ended the wait you began at 07:30; it is now 08:00.",
     ]
     assert (await town.call("Tomas", "claim_task", task=1)).text.startswith(
@@ -147,13 +152,13 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.until("03:00", day=2)
     ((day, state),) = town.checkpoints
     assert day == 1
-    assert state["residents"]["Mei"]["claim"] == {
-        "task": 2,
-        "day": 1,
-        "diff": json.dumps({"b.py": "half\n"}),
-    }
-    assert state["residents"]["Mei"]["done"] == [1]
+    assert state["residents"]["Mei"]["claim"] == {"task": 2, "diff": json.dumps({"b.py": "half\n"})}
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
+    # Task 1 was accepted; 2 and 3, which came in on day 1, stay open until the end of day 2.
+    assert state["office"] == {"arrived": 3, "schedule": [], "open": [[2, 1], [3, 1]]}
+    assert state["fees"] == {"examination": 10, "treatment": 30} and state["announcements"] == []
+    assert state["daybook"]["today"]["accepted"] == []
+    assert state["daybook"]["days"][-1]["accepted"] == [["Mei", 1]]
     mei_living = state["residents"]["Mei"]["living"]
     # Mei ate two helpings of her bread on day 1, when she could eat, and none yet today; she
     # was paid $20 for task 1, and the rent was not taken from her purse but is owed from her
@@ -162,7 +167,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "money": 120 + 20, "items": {"bread": 7, "coat": 1}, "moves": [],
     }  # fmt: skip
     assert mei_living["eaten"] == {}
-    assert set(mei_living) == {"eaten", "satiety", "energy", "health", "night", "bedridden"}
+    assert set(mei_living) == {"eaten", "satiety", "energy", "health", "night", "ill", "bedridden"}
     assert state["fund"] == {
         "balance": 1000 + 50 - 20,
         "ledger": {},
@@ -246,7 +251,13 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
 
 
 async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
-    town = make_town(town_config(residents=RESIDENTS + TRADES))
+    leader = dict(RESIDENTS[1], occupation="team-leader")
+    needs = copy.deepcopy(NEEDS)
+    needs["health"]["illness"]["chance"] = 1  # everyone well falls ill at the first midnight
+    config = town_config(
+        residents=(RESIDENTS[0], leader, RESIDENTS[2], *TRADES, *CARE), needs=needs
+    )
+    town = make_town(config, FakeBackend(4))
     await awake_at(town)
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
@@ -265,7 +276,8 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Tomas", "submit")
     await town.call("Mei", "claim_task", task=3)
     await town.call("Mei", "abandon_task")
-    await town.call("Tomas", "claim_task", task=3)
+    await town.call("Tomas", "assign", task=3, to="Aisha")  # hers until it is withdrawn
+    await town.call("Tomas", "claim_task", task=4)  # open until the night closes it
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give", to="Tomas", what="money", amount=5)
     await town.call("Mei", "leave_conversation")
@@ -274,29 +286,36 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.until("18:00")
     for name in ("Mei", "Tomas", "Olga", "Jonas"):
         await town.call(name, "go", place="store")
+    await town.call("Lucia", "go", place="clinic")
+    await town.call("Vera", "go", place="hall")
     await town.until("18:10")
     await town.call("Olga", "start_work")
     await town.call("Olga", "order", item="bread", quantity=2)
     await town.call("Olga", "set_price", item="bread", price=5)
     for name in ("Mei", "Tomas"):
         await town.call(name, "buy", item="phone")
-    await town.call("Jonas", "start_work")
-    await town.call("Jonas", "buy", item="eggs", quantity=2)
-    await town.call("Jonas", "buy", item="vegetables")
+    await town.call("Jonas", "buy", item="eggs", quantity=2, for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="vegetables", for_the_kitchen=True)
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
+    await town.call("Vera", "report")
+    await town.call("Vera", "announce", text="The well is dry.")
     for name in ("Mei", "Jonas"):
         await town.call(name, "go", place="cafe")
     await town.until("18:20")
     await town.call("Jonas", "cook", dish="omelette", portions=1)
     await town.call("Mei", "buy", item="omelette")
-    await town.call("Mei", "go", place="college-flat")
+    await town.call("Mei", "go", place="clinic")
     await town.until("18:30")
+    await town.call("Lucia", "examine", patient="Mei")
+    await town.call("Lucia", "treat", patient="Mei")
+    await town.call("Mei", "go", place="college-flat")
+    await town.until("18:45")
     await town.call("Mei", "move_in")
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     town.rest()
     town.world.residents["Aisha"].living.health = 1  # her last night on her feet
-    await town.until("00:00", day=3)  # Tomas's claim runs out; Aisha takes to her bed
+    await town.until("00:00", day=3)  # Aisha's task is withdrawn; she takes to her bed
     town.world.treat(town.world.residents["Aisha"], 25)  # and is let up
 
     make_agent_dirs(tmp_path / "r", town.world.config)

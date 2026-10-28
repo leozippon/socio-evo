@@ -164,7 +164,7 @@ export function mountOverview(root, ctx) {
   }
 
   /** The fixed hours of the day as a reader says them; `sleep_at_most` is a length, not an hour. */
-  const DAY_HOURS = { forced_sleep: "everyone still up falls asleep at", checkpoint: "the day is saved at", forced_wake: "those put to sleep wake at", board_posted: "the board goes up at", sleep_at_most: "a sleep lasts at most" };
+  const DAY_HOURS = { forced_sleep: "everyone still up falls asleep at", checkpoint: "the day is saved at", forced_wake: "those put to sleep wake at", delivery: "the Store's orders arrive at", sleep_at_most: "a sleep lasts at most" };
   const dayHour = (name, clock) => (name === "sleep_at_most" ? duration(parseHHMM(clock)) : clock);
 
   function rules() {
@@ -185,7 +185,7 @@ export function mountOverview(root, ctx) {
           h("li", {}, h("span", { class: "muted" }, "rent for a room"), " ", h("b", {}, `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day`)),
           h("li", {}, h("span", { class: "muted" }, "for sale"), " ", h("b", {}, `${fmt.plural(world.goods.length, "good")}, ${range(world.goods.map((g) => g.price))}`)),
           h("li", {}, h("span", { class: "muted" }, "hand-ins per task"), " ", h("b", {}, `${world.work.acceptance_runs} a day`)),
-          h("li", {}, h("span", { class: "muted" }, "a claim runs out"), " ", h("b", {}, `after ${world.work.claim_expiry_days + 1} ${world.work.claim_expiry_days ? "midnights" : "midnight"}`)),
+          h("li", {}, h("span", { class: "muted" }, "a task not accepted is withdrawn"), " ", h("b", {}, `${fmt.plural(world.work.expiry_days, "day")} after the day it came in`)),
           Object.entries(world.day).map(([name, clock]) => h("li", {}, h("span", { class: "muted" }, DAY_HOURS[name] ?? name.replaceAll("_", " ")), " ", h("b", {}, dayHour(name, clock)))),
         ),
       ),

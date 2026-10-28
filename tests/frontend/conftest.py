@@ -13,7 +13,7 @@ from typing import Any
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag, read_jsonl
 from simulation.config import ExperimentConfig
-from tests.world.conftest import Town, make_agent_dirs, town_config
+from tests.world.conftest import Town, make_agent_dirs, opening, town_config
 from world.clock import DAY, ManualClock
 from world.config import TownConfig
 from world.testing import FakeBackend
@@ -21,7 +21,7 @@ from world.world import World
 
 
 def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirectory, Town]:
-    config = town_config(claim_expiry_days=0)
+    config = town_config(expiry_days=0)
     run = RunDirectory(root / "town")
     if not run.root.exists():
         frozen = ExperimentConfig.model_validate(
@@ -40,13 +40,15 @@ def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirecto
         run = RunDirectory.create(root, "town", config=frozen, code_revision="test")
     make_agent_dirs(run.root, config)
     backend = backend or FakeBackend()
-    return run, Town(World(config, run.root, backend, clock=ManualClock()), backend)
+    world = World(config, run.root, backend, clock=ManualClock())
+    opening(world)
+    return run, Town(world, backend)
 
 
 async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> None:
     """Day 1 and day 2 until 18:05: Mei works, talks, gives and is paid; Tomas fails a task, works
-    until 18:00 and keeps the task until it runs out at midnight; Aisha stays home and is put to
-    sleep at the forced hour."""
+    until 18:00 and keeps the task until its client withdraws it at midnight; Aisha stays home and
+    is put to sleep at the forced hour."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)

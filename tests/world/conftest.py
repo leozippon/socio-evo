@@ -1,8 +1,11 @@
 """A small town for the world's tests: three residents, programmers at the workshop (the office),
-and the shopkeeper and the chef that `TRADES` adds for the tests of the store and the café (the
-restaurant); two homes and a park; a catalogue with ready food, two ingredients and a durable of
-each effect, and two dishes; the real town's needs; the fake work backend of `world.testing`; and
-a harness that runs the world on a manual clock and stands in for the residents' runtimes."""
+the shopkeeper and the chef that `TRADES` adds for the tests of the store and the café (the
+restaurant), and the doctor and the mayor that `CARE` adds for those of the clinic (the hospital)
+and the hall; two homes and a park; a catalogue with ready food, two ingredients and a durable of
+each effect, and two dishes; the real town's needs, with no illness unless a test asks for it;
+no task arriving unless a test schedules it (`opening` makes the whole pool arrive at 08:00 on
+the first day, as the towns of `make_town` have it); the fake work backend of `world.testing`;
+and a harness that runs the world on a manual clock and stands in for the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -29,6 +32,11 @@ TRADES = (
     {"name": "Jonas", "home": "college-flat", "occupation": "chef", "purse": 100},
 )
 """The shopkeeper and the chef, for the tests of the store and the café."""
+CARE = (
+    {"name": "Lucia", "home": "college-flat", "occupation": "doctor", "purse": 100},
+    {"name": "Vera", "home": "college-flat", "occupation": "mayor", "purse": 100},
+)
+"""The doctor and the mayor, for the tests of the clinic and the hall."""
 OCCUPATIONS = (
     {"id": "programmer", "title": "a programmer", "workplace": "workshop", "wage_per_hour": 7,
      "per_service": 20},
@@ -38,6 +46,10 @@ OCCUPATIONS = (
      "per_service": 3},
     {"id": "shopkeeper", "title": "the shopkeeper", "workplace": "store", "wage_per_hour": 7,
      "per_service": 2},
+    {"id": "doctor", "title": "the doctor", "workplace": "clinic", "wage_per_hour": 9,
+     "per_service": 4},
+    {"id": "mayor", "title": "the mayor", "workplace": "hall", "wage_per_hour": 8,
+     "per_service": 0},
 )  # fmt: skip
 
 SUPPLIER = (
@@ -90,6 +102,14 @@ NEEDS = {
         "exhausted": 5,
         "poor_home": 2,
         "recovery": 5,
+        "illness": {
+            "chance": 0,
+            "run_down": 0,
+            "unwell": 0,
+            "poor_home": 0,
+            "per_night": 3,
+            "nights": 5,
+        },  # fmt: skip
         "bands": [
             {"floor": 65, "name": "in good health"},
             {"floor": 35, "name": "run down"},
@@ -98,13 +118,14 @@ NEEDS = {
         ],
     },
 }
-"""The test town's needs: the real town's rates and bands."""
+"""The test town's needs: the real town's rates and bands, and an illness that never comes."""
 
 
 def town_config(
     *,
     residents: tuple[dict[str, Any], ...] = RESIDENTS,
     supplier: tuple[dict[str, Any], ...] = SUPPLIER,
+    needs: dict[str, Any] = NEEDS,
     **work: Any,
 ) -> TownConfig:
     return TownConfig.model_validate(
@@ -133,6 +154,8 @@ def town_config(
                 {"id": "cafe", "name": "the café on the square", "kind": "restaurant"},
                 {"id": "park", "name": "the park", "kind": "social"},
                 {"id": "store", "name": "the store", "kind": "store"},
+                {"id": "clinic", "name": "the clinic", "kind": "hospital"},
+                {"id": "hall", "name": "the hall", "kind": "hall"},
             ],
             "travel_minutes": 10,
             "routes": [{"between": ["workshop", "cafe"], "minutes": 5}],
@@ -141,10 +164,12 @@ def town_config(
             "fund": {"start": 1000},
             "work": {
                 "split": "train",
-                "board_size": 3,
+                "tasks_a_day": 0,
+                "arrive_from": "08:00",
+                "arrive_until": "18:00",
+                "expiry_days": 1,
                 "payment": 50,
                 "acceptance_runs": 2,
-                "claim_expiry_days": 1,
                 "shell_timeout_s": 60,
                 "acceptance_timeout_s": 600,
             }
@@ -152,7 +177,8 @@ def town_config(
             "supplier": list(supplier),
             "dishes": list(DISHES),
             "store": {"stock": STOCK},
-            "needs": NEEDS,
+            "hospital": {"examination": 10, "treatment": 30, "restores": 25},
+            "needs": needs,
             "social": {"silence_minutes": 10},
             "clock": {
                 "speed_idle": 100,
@@ -164,7 +190,6 @@ def town_config(
                 "forced_sleep": "02:00",
                 "checkpoint": "02:30",
                 "forced_wake": "07:00",
-                "board_posted": "08:00",
                 "delivery": "08:00",
                 "sleep_at_most": "12:00",
             },
@@ -189,6 +214,12 @@ def backend_of(repos: dict[str, int]) -> FakeBackend:
 def at(hour: str, day: int = 1) -> int:
     """Simulated time of `hour` on calendar day `day`."""
     return (day - 1) * DAY + parse_hour(hour)
+
+
+def opening(world: World) -> None:
+    """Make the whole pool arrive at 08:00 on the first day: a world not yet running whose
+    arrivals were none."""
+    world.board.schedule = [at("08:00")] * len(world.board.tasks)
 
 
 @dataclass
@@ -262,6 +293,7 @@ async def make_town(tmp_path):
         make_agent_dirs(root, config)
         backend = backend or FakeBackend()
         town = Town(World(config, root, backend, clock=ManualClock()), backend)
+        opening(town.world)
         towns.append(town)
         return town
 

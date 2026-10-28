@@ -1,39 +1,38 @@
-"""The workplace's board, the claims on its tasks and their workspaces, and acceptance.
+"""The Office's board: the clients' tasks as they arrive, who holds which, their workspaces,
+acceptance, and the tasks the clients withdraw.
 
 The tasks of the pool are numbered from 1 in the split's order and shuffled once, by the run's
-seed, into a rotation. The board of calendar day N is posted that morning at the configured hour,
-in place of what is left of the day before's, and holds the next `board_size` tasks of the
-rotation after day N - 1's, wrapping round to its start, so that every task comes round about
-every pool / `board_size` days; a pool no larger than `board_size` is posted whole every day.
-Only posted tasks can be claimed.
+seed, into a rotation. The arrivals of each calendar day are drawn at the midnight before it
+(`draw`), from the run's seed and the day alone: a Poisson count with mean `tasks_a_day`, each at
+a minute drawn uniformly from `arrive_from` up to `arrive_until`. Each arrival takes the next task
+of the rotation, so that a task comes once in a run; a pool used up is an error. A task that has
+come is open (`open`, with the calendar day it came) until it is accepted, which pays the client's
+payment once, or withdrawn by its client, held or not, at the midnight that ends the calendar day
+`expiry_days` days after the day it came; either way it is gone for good.
 
-The board is shared: a task someone holds is shown as held and cannot be claimed by another, and
-it stays posted while it is held, each board carrying over from the day before's, beside its
-`board_size` tasks and not counted among them, every task still held. A task that has been paid
-for leaves the day's board for everyone, since a client pays once; it comes round again with the
-rotation, and may then be done by a resident not yet paid for it. A resident holds at most one
-task, keeps it when it leaves the workplace, and loses it unpaid at the midnight that ends the
-calendar day `claim_expiry_days` days after the day of the claim, even while a submission of it
-is being checked; only a held claim is paid, so that a task is paid once. A task a resident has
-been paid for is done for that resident and cannot be claimed by it again.
-
-A claim opens a workspace. When its holder gives the claim up or is paid, the workspace is closed
-at once; when the claim runs out, its workspace may be in use by a command still running, so it
-is set aside and closed at the checkpoint. At the checkpoint every workspace is closed and the
-changes of each held task are kept; the next `workspace` starts a fresh one and reapplies them.
-Acceptance runs on the submitted diff in a fresh container, at most `acceptance_runs` a day for
-each resident and task; a run whose checks could not be run at all (an `error`, the machinery's
-failing) is not counted, and the count starts again at every checkpoint.
+A resident holds at most one task (`claims`): taken with `claim`, or given to it by the team
+leader (`give`), which may move a task from one holder to another. It keeps the task wherever it
+goes until it is accepted, given up, moved or withdrawn. A claim opens a workspace when its holder
+first works on it. When its holder gives the claim up or is paid, the workspace is closed at once;
+when the task is moved or withdrawn, the workspace may be in use by a command still running, so
+it is set aside and closed at the checkpoint, its changes gone with it. At the checkpoint every
+workspace is closed and the changes of each held task are kept; the next `workspace` starts a
+fresh one and reapplies them. Acceptance runs on the submitted diff in a fresh container, at most
+`acceptance_runs` a day for each resident and task; a run whose checks could not be run at all
+(an `error`, the machinery's failing) is not counted, and the count starts again at every
+checkpoint.
 """
 
 from __future__ import annotations
 
+import math
 import random
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from world.backend import Backend, Task, Verdict, Workspace
+from world.clock import DAY, parse_hour
 from world.config import Work
 from world.telling import counted, first_line
 
@@ -42,18 +41,25 @@ KEPT_CHANGES = "/tmp/kept-changes.patch"
 
 @dataclass(eq=False)
 class Claim:
-    """A task held (`Board.claims` maps its holder to it). `day` is the calendar day it was
-    claimed; `diff` the changes of its workspace kept over the night; `workspace` is open while
-    it is in use."""
+    """A task held (`Board.claims` maps its holder to it). `diff` is the changes of its workspace
+    kept over the night; `workspace` is open while it is in use."""
 
     task: int
-    day: int
     diff: str = ""
     workspace: Workspace | None = field(default=None, repr=False)
 
     def saved(self) -> dict[str, Any]:
         """What a checkpoint keeps of it."""
-        return {"task": self.task, "day": self.day, "diff": self.diff}
+        return {"task": self.task, "diff": self.diff}
+
+
+def poisson(rng: random.Random, mean: float) -> int:
+    """A count drawn from the Poisson distribution of `mean` (Knuth's method)."""
+    limit, count, product = math.exp(-mean), 0, rng.random()
+    while product > limit:
+        count += 1
+        product *= rng.random()
+    return count
 
 
 class Board:
@@ -70,78 +76,90 @@ class Board:
         self.tasks = list(tasks)
         self.backend = backend
         self.work = work
+        self.seed = seed
         self.rotation = list(range(1, len(self.tasks) + 1))
         random.Random(f"{seed}:board").shuffle(self.rotation)
-        self.posted: list[int] = []
+        self.arrived = 0
+        """How many tasks of the rotation have come."""
+        self.schedule: list[int] = []
+        """The times of the arrivals still to come today."""
+        self.open: dict[int, int] = {}
+        """The tasks open on the board, each with the calendar day it came."""
         self.money = money
-        names = list(names)
         self.claims: dict[str, Claim] = {}
-        self.done: dict[str, set[int]] = {name: set() for name in names}
         self.runs: dict[str, dict[int, int]] = {name: {} for name in names}
         self.orphans: list[Workspace] = []
 
     def task(self, number: int) -> Task:
         return self.tasks[number - 1]
 
-    def post(self, day: int) -> None:
-        """Post the board of calendar day `day`: the next `board_size` tasks of the rotation
-        and, carried over beside them and not counted among them, every task still held."""
-        size = min(self.work.board_size, len(self.rotation))
-        start = (day - 1) * size
-        turn = [self.rotation[(start + i) % len(self.rotation)] for i in range(size)]
-        carried = {claim.task for claim in self.claims.values()}
-        self.posted = sorted(carried.union(turn))
-
-    def taken(self, name: str, number: int) -> Claim | None:
-        """The claim someone other than `name` holds on task `number`, if any."""
-        others = (claim for holder, claim in self.claims.items() if holder != name)
-        return next((claim for claim in others if claim.task == number), None)
-
-    def text(self, name: str, posting: str) -> str:
-        """The posted tasks as `name` reads them, with who holds each, and the problem of the
-        task `name` holds; with nothing posted, when the next board goes up, at the hour
-        `posting`."""
-        mine = self.claims.get(name)
-        lines = [self._line(name, number) for number in self.posted]
-        text = (
-            "The board:\n" + "\n".join(lines)
-            if lines
-            else f"Nothing is posted on the board now; the next board goes up at {posting}."
+    def draw(self, day: int) -> list[int]:
+        """The times at which tasks arrive on calendar day `day`, from the run's seed."""
+        rng = random.Random(f"{self.seed}:arrivals:{day}")
+        count = poisson(rng, self.work.tasks_a_day)
+        first, last = (
+            parse_hour(hour) // 60 for hour in (self.work.arrive_from, self.work.arrive_until)
         )
+        return sorted((day - 1) * DAY + rng.randrange(first, last) * 60 for _ in range(count))
+
+    def arrive(self, day: int) -> int:
+        """The next task of the rotation comes, on calendar day `day`; returns its number."""
+        if self.arrived >= len(self.rotation):
+            raise RuntimeError(f"the pool of {len(self.rotation)} tasks is used up")
+        number = self.rotation[self.arrived]
+        self.arrived += 1
+        self.open[number] = day
+        return number
+
+    def withdrawn_on(self, number: int) -> int:
+        """The calendar day at whose end the client withdraws task `number`."""
+        return self.open[number] + self.work.expiry_days
+
+    def holder(self, number: int) -> str | None:
+        """Who holds task `number`, if anyone."""
+        return next((name for name, claim in self.claims.items() if claim.task == number), None)
+
+    def text(self, name: str, date: Callable[[int], str]) -> str:
+        """The open tasks as `name` reads them, with who holds each and when the client withdraws
+        it (`date` tells a calendar day), and the problem of the task `name` holds."""
+        mine = self.claims.get(name)
+        lines = [self._line(name, number, date) for number in sorted(self.open)]
+        text = "The board:\n" + "\n".join(lines) if lines else "No task is open on the board now."
         if mine is not None:
             problem = self.task(mine.task).problem_statement
             text += f"\n\nThe problem of task {mine.task}, which you hold:\n\n{problem}"
         return text
 
-    def _line(self, name: str, number: int) -> str:
+    def _line(self, name: str, number: int, date: Callable[[int], str]) -> str:
         """Task `number` as `name` reads it on the board."""
         task = self.task(number)
         pays = self.money(self.work.payment)
         problem = first_line(task.problem_statement)
-        line = f"{number}. {task.repo}: {problem} The client pays {pays}."
-        mine = self.claims.get(name)
-        if mine is not None and mine.task == number:
+        until = date(self.withdrawn_on(number))
+        line = (
+            f"{number}. {task.repo}: {problem} The client pays {pays} and withdraws it at the end "
+            f"of {until}."
+        )
+        holder = self.holder(number)
+        if holder == name:
             line += " You hold it."
-        elif number in self.done[name]:
-            line += " You have been paid for it."
-        elif self.taken(name, number) is not None:
-            line += " Held."
+        elif holder is not None:
+            line += f" {holder} holds it."
         return line
 
     def claim_refusal(self, name: str, number: int) -> str | None:
-        if number not in self.posted:
+        if number not in self.open:
             return f"There is no task {number} on the board."
         if name in self.claims:
             return f"You already hold task {self.claims[name].task}; submit it or give it up first."
-        if number in self.done[name]:
-            return f"You have already been paid for task {number}."
-        if self.taken(name, number) is not None:
-            return f"Task {number} is held by someone else."
+        holder = self.holder(number)
+        if holder is not None:
+            return f"Task {number} is held by {holder}."
         return None
 
-    async def claim(self, name: str, number: int, day: int) -> Claim:
+    async def claim(self, name: str, number: int) -> Claim:
         """Hold task `number` for `name` and open its workspace."""
-        claim = Claim(number, day)
+        claim = Claim(number)
         self.claims[name] = claim
         try:
             await self.workspace(name, claim)
@@ -151,14 +169,24 @@ class Board:
             raise
         return claim
 
+    def give(self, name: str, number: int) -> str | None:
+        """`name` holds the open task `number`, given to it, its workspace opened when it first
+        works on it; the one who held it, if anyone, holds it no more, its workspace set aside;
+        returns that one."""
+        before = self.holder(number)
+        if before is not None:
+            self._set_aside(before)
+        self.claims[name] = Claim(number)
+        return before
+
     def hold(self, name: str, saved: dict[str, Any]) -> None:
         """Give `name` back the claim a checkpoint `saved` of it."""
         self.claims[name] = Claim(**saved)
 
     async def workspace(self, name: str, claim: Claim) -> Workspace:
         """The workspace of `claim`, which `name` holds, opened if it is not open, with the kept
-        changes reapplied. A workspace that opens after the claim ran out is set aside to be
-        closed at the checkpoint."""
+        changes reapplied. A workspace that opens after the claim ended is set aside to be closed
+        at the checkpoint."""
         if claim.workspace is None:
             workspace = await self._open(name, claim)
             if self.claims.get(name) is claim:
@@ -194,12 +222,9 @@ class Board:
         self.runs[name][number] = self.runs[name].get(number, 0) + 1
 
     def finish(self, name: str) -> Workspace | None:
-        """Mark the task `name` holds done for it, take it off the board, and release it;
-        returns its workspace, for the caller to close."""
-        number = self.claims[name].task
-        if number in self.posted:
-            self.posted.remove(number)
-        self.done[name].add(number)
+        """The task `name` holds was accepted: it leaves the board and `name`; returns its
+        workspace, for the caller to close."""
+        del self.open[self.claims[name].task]
         return self.drop(name)
 
     def drop(self, name: str) -> Workspace | None:
@@ -208,13 +233,24 @@ class Board:
         workspace, claim.workspace = claim.workspace, None
         return workspace
 
-    def expired(self, day: int) -> list[str]:
-        """Who holds a claim that runs out at the midnight that ends calendar day `day`."""
-        return [
-            name
-            for name, claim in self.claims.items()
-            if claim.day + self.work.claim_expiry_days <= day
-        ]
+    def _set_aside(self, name: str) -> None:
+        """Release the task `name` holds, its workspace to be closed at the checkpoint."""
+        workspace = self.drop(name)
+        if workspace is not None:
+            self.orphans.append(workspace)
+
+    def withdraw(self, day: int) -> list[tuple[int, str | None]]:
+        """The clients withdraw the tasks whose time runs out at the midnight that ends calendar
+        day `day`; returns each with who held it."""
+        ending = [number for number in sorted(self.open) if self.withdrawn_on(number) <= day]
+        withdrawn = []
+        for number in ending:
+            holder = self.holder(number)
+            if holder is not None:
+                self._set_aside(holder)
+            del self.open[number]
+            withdrawn.append((number, holder))
+        return withdrawn
 
     async def close_all(self) -> list[tuple[str, Claim]]:
         """Close every workspace, keeping the changes of each held task; returns each holder
@@ -230,6 +266,20 @@ class Board:
         while self.orphans:
             await self.orphans.pop().close()
         return closed
+
+    def saved(self) -> dict[str, Any]:
+        """What a checkpoint keeps of the board, beside the claims: how many tasks have come,
+        the arrivals still to come and the open tasks, each `[task, the day it came]`."""
+        return {
+            "arrived": self.arrived,
+            "schedule": list(self.schedule),
+            "open": [[number, day] for number, day in sorted(self.open.items())],
+        }
+
+    def restore(self, saved: dict[str, Any]) -> None:
+        self.arrived = saved["arrived"]
+        self.schedule = list(saved["schedule"])
+        self.open = {number: day for number, day in saved["open"]}
 
 
 def failure(verdict: Verdict) -> str:

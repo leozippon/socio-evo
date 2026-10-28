@@ -69,9 +69,10 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     saved = json.loads(run.checkpoint_path(1).read_text())
     assert set(saved["residents"]) == {"Mei", "Olga", "Jonas"}
     entries = list(read_jsonl(root / "world.jsonl"))
-    # Mei worked at the Office from about 08:15 to 17:00, Olga kept the Store's counter from
-    # 07:15 to 19:00, and Jonas cooked at the Linde until 20:00, his time buying for the kitchen
-    # at the Store not counted; each was paid its wages at midnight, its rent taken out of them.
+    # Mei worked at the Office from about 08:15 to 17:00, waiting there for the tasks to come in,
+    # Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde until 20:00,
+    # his time buying for the kitchen at the Store not counted; each was paid its wages at
+    # midnight, its rent taken out of them.
     wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
     for name, rent, wage, hours in (
         ("Mei", 30, 9, (8, 9)),
@@ -114,9 +115,12 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
     lived = (
-        "wake", "start_work", "claim", "verdict", "service", "order", "price", "sale", "cook",
-        "served", "speech", "sleep", "wage",
+        "wake", "task_arrived", "start_work", "claim", "verdict", "service", "order", "price",
+        "sale", "cook", "served", "speech", "sleep", "wage",
     )  # fmt: skip
+    # The next day's arrivals, drawn at midnight, are saved with the tasks still open.
+    office = saved["office"]
+    assert office["schedule"] and office["arrived"] == kinds(root).count("task_arrived")
     for kind in lived:
         assert kind in log, kind
     assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log

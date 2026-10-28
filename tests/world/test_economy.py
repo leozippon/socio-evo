@@ -80,7 +80,7 @@ async def test_wages_for_the_hours_at_work_are_paid_at_midnight_with_the_rent_ta
     assert world.fund.ledger == {}
     assert world.fund.yesterday == {"client": 50, "service": 20, "rent": 20, "wage": 56}
     assert world.fund.arrears == {"Tomas": 30, "Aisha": 20} and world.fund.owed == {}
-    assert world.report() == (
+    assert world.fund_report() == (
         "The fund holds $994. Yesterday it took in $50 from clients and $20 in rent and daily "
         "charges and paid out $56 in wages and $20 in sums for services. Owing rent the wages "
         "did not cover: Tomas $30 and Aisha $20."
@@ -131,7 +131,7 @@ async def test_a_fund_that_runs_short_pays_what_it_has_and_owes_the_rest(make_to
         "not pay and owes you."
     )
     assert world.fund.balance == 0
-    assert world.report() == (
+    assert world.fund_report() == (
         "The fund holds $0. Yesterday it took in $40 in rent and daily charges and paid out $60 "
         "in wages. It owes in wages it could not pay: Mei $16 and Aisha $36. Owing rent the "
         "wages did not cover: Tomas $30."

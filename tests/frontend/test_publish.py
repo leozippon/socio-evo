@@ -79,7 +79,7 @@ async def make_run(root: Path) -> RunDirectory:
     """The town's run after a lived day: agents committed as created and at the first
     checkpoint, with Mei's trace and session."""
     run, town = new_town(root)
-    config = town_config(claim_expiry_days=0)
+    config = town_config(expiry_days=0)
     commit_agents(run, config, 0)
     await live_a_day(town)
     await town.close()
@@ -355,10 +355,12 @@ def test_the_world_lays_the_town_out(published):
     assert [(p["id"], p["kind"], p["x"], p["y"]) for p in world["places"]] == [
         ("mill-street-house", "home", 0.5, 0.0),
         ("college-flat", "home", 1.5, 0.0),
-        ("workshop", "office", 1.0, 1.5),
+        ("workshop", "office", 0.0, 1.5),
         ("cafe", "restaurant", 0.0, 3.0),
         ("park", "social", 1.0, 3.0),
         ("store", "store", 2.0, 3.0),
+        ("clinic", "hospital", 1.0, 1.5),
+        ("hall", "hall", 2.0, 1.5),
     ]
     assert [(p["rent"], p["rooms"], p["comfort"]) for p in world["places"]][:3] == [
         (20, 3, 0.9),

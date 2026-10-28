@@ -11,7 +11,14 @@ from agent.runtime import Runtime
 from agent.testing import ScriptedModel, reply, running, tool_call
 from agent.texts import NOT_CARRIED_OUT
 from infrastructure.storage import read_jsonl
-from tests.world.conftest import FakeBackend, Town, make_agent_dirs, stocked, town_config
+from tests.world.conftest import (
+    FakeBackend,
+    Town,
+    make_agent_dirs,
+    opening,
+    stocked,
+    town_config,
+)
 from world.clock import ManualClock
 from world.events import Work
 from world.world import World
@@ -30,6 +37,7 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
     directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background)
     make_agent_dirs(tmp_path, config)
     world = World(config, tmp_path, FakeBackend(), clock=ManualClock())
+    opening(world)
     model = ScriptedModel(
         reply("", tool_call("go", place="workshop")),
         reply("", tool_call("wait", minutes=110)),
@@ -84,6 +92,7 @@ def _mei(tmp_path) -> tuple[AgentDirectory, World, Town]:
     directory = AgentDirectory.create(tmp_path / "agents" / "Mei", background=background)
     make_agent_dirs(tmp_path, config)
     world = World(config, tmp_path, FakeBackend(), clock=ManualClock())
+    opening(world)
     return directory, world, Town(world, FakeBackend())
 
 

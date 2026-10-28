@@ -1,17 +1,20 @@
 """The residents' bodies: needs that fall by the hour and are read in bands, told as they cross
 one; a dish and ready food that restore satiety; sleep that restores energy by the home's comfort
 and never above health; work stopped by exhaustion and barred until one has slept; health worn at
-midnight by starving, exhaustion and a poor home, mended by rest and by treatment; the
-examination's words; and the bed that health at its floor puts one in, at home, told to the
-others, kept by a checkpoint and left when treated."""
+midnight by starving, exhaustion, a poor home and illness, mended by rest and by treatment;
+illness, which comes by a seeded chance at midnight, halves what sleep restores and passes after
+its nights; the examination's words; and the bed that health at its floor puts one in, at home,
+told to the others, kept by a checkpoint and left when treated."""
 
 from __future__ import annotations
 
+import copy
 import json
+import random
 
 import pytest
 
-from tests.world.conftest import at, awake_at, stocked, town_config
+from tests.world.conftest import NEEDS, at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
 from world.events import BEDRIDDEN, EXHAUSTED, Bedridden, Conversation, Idle, Sleep, Work
@@ -75,9 +78,12 @@ def test_health_moves_at_midnight_by_the_days_wear_and_recovery():
     body.treat(living, 25)
     assert living.health == 25
     assert body.examination(living) == (
-        "The doctor looks you over. Food: 0 of 100, you are starving. Energy: 50 of 100, you "
-        "are a little tired. Health: 25 of 100, you are unwell. Last night your health fell by "
-        "15: you were starving at midnight."
+        "Food: 0 of 100, you are starving. Energy: 50 of 100, you are a little tired. Health: 25 "
+        "of 100, you are unwell. Last night your health fell by 15: you were starving at midnight."
+    )
+    assert body.examination(living, "Mei") == (  # as the doctor reads it
+        "Food: 0 of 100, Mei is starving. Energy: 50 of 100, Mei is a little tired. Health: 25 "
+        "of 100, Mei is unwell. Last night Mei's health fell by 15: Mei was starving at midnight."
     )
     living.night = {"poor_home": -2, "recovery": 5}
     assert body.examination(living).endswith(
@@ -85,6 +91,72 @@ def test_health_moves_at_midnight_by_the_days_wear_and_recovery():
         "rested."
     )
     assert "Last night" not in body.examination(Living())
+
+
+def test_illness_comes_by_the_band_of_health_costs_its_nights_and_ends_with_treatment():
+    needs = copy.deepcopy(NEEDS)
+    needs["health"]["illness"].update(chance=0.02, run_down=0.05, unwell=0.08, poor_home=0.02)
+    body = Body(town_config(needs=needs).needs)
+    chances = [body.illness_chance(Living(health=h), 1.0) for h in (100, 65, 64, 35, 34, 10, 9, 0)]
+    assert chances == [0.02, 0.02, 0.05, 0.05, 0.08, 0.08, 0.08, 0.08]
+    assert body.illness_chance(Living(), 0.9) == pytest.approx(0.04)  # a home of little comfort
+    living = Living(energy=40)
+    body.fall_ill(living)
+    assert living.ill == 5 and body.condition(living).endswith(
+        "You are in good health. You are ill."
+    )
+    body.elapse(living, 3600, "sleep", 1.0)
+    assert living.energy == 46  # half of 12 an hour
+    assert body.examination(living, "Mei").endswith(
+        "Mei is ill; untreated, it passes after 5 more nights."
+    )
+    for night in range(1, 6):  # each night costs 3 and mends nothing, rested and fed as it is
+        assert body.night(living, 1.0) == {"illness": -3} and living.ill == 5 - night
+    assert living.health == 85 and "ill" not in body.condition(living)
+    assert body.night(living, 1.0) == {"recovery": 5}  # well again
+    body.fall_ill(living)
+    body.treat(living, 25)
+    assert living.ill == 0 and living.health == 100
+
+
+async def test_illness_at_midnight_is_drawn_from_the_seed_told_and_passes(make_town, tmp_path):
+    needs = copy.deepcopy(NEEDS)
+    needs["health"]["illness"]["chance"] = 0.5
+    config = town_config(needs=needs)
+    town = make_town(config)
+    await awake_at(town)
+    stocked(town, days=8)
+    world = town.world
+    town.rest()
+    await town.until("00:00", day=2)
+    fell = {e["actor"] for e in world.log.entries() if e["kind"] == "illness"}
+    # The chance is drawn from the run's seed, the day and the name: the same in another town.
+    drawn = random.Random
+    assert fell == {n for n in world.residents if drawn(f"7:illness:1:{n}").random() < 0.5}
+    again = make_town(config, root=tmp_path / "again")
+    await awake_at(again)
+    stocked(again, days=8)
+    again.rest()
+    await again.until("00:00", day=2)
+    assert fell == {e["actor"] for e in again.world.log.entries() if e["kind"] == "illness"}
+    ill = world.residents[sorted(fell)[0]]
+    entry = next(e for e in world.log.entries() if e["kind"] == "illness")
+    assert entry["payload"] == {"chance": 0.5, "nights": 5, "health": 100.0}
+    statement = [p.text for p in town.heard[ill.name] if p.kind == "settlement"][-1]
+    assert (
+        "You have fallen ill. You are well fed. You are fresh. You are in good health. You are ill."
+        in statement
+    )
+    await town.until("07:00", day=2)
+    woke = [p.text for p in town.heard[ill.name] if p.kind == "wake"][-1]
+    assert woke.endswith("You are in good health. You are ill.")
+    assert (await town.call(ill.name, "how_am_i")).text.endswith("You are ill.")
+    await town.until("00:00", day=7)  # five nights later
+    passed = [e for e in world.log.entries() if e["kind"] == "recovered" and e["actor"] == ill.name]
+    assert passed and passed[0]["payload"]["treated"] is False
+    assert passed[0]["sim_time"] == 6 * DAY
+    told = [p.text for p in town.heard[ill.name] if p.kind == "settlement"]
+    assert any("Your illness has passed." in text for text in told)
 
 
 def _live_day(body: Body, living: Living, comfort: float, hours: list[tuple[str, float]]) -> None:
@@ -343,8 +415,8 @@ async def test_health_is_worn_by_the_days_shows_to_others_and_is_mended_by_treat
     )
     assert "looking unwell" not in (await town.call("Mei", "look_around")).text
     assert world.body.examination(mei.living) == (
-        "The doctor looks you over. Food: 82 of 100, you are well fed. Energy: 99 of 100, you "
-        "are fresh. Health: 30 of 100, you are unwell."
+        "Food: 82 of 100, you are well fed. Energy: 99 of 100, you are fresh. Health: 30 of 100, "
+        "you are unwell."
     )
     world.treat(mei, 25)
     assert mei.living.health == 55 and world.body.told("health", 55) == "You are run down."
@@ -480,7 +552,9 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
         ("Mei is well enough to leave its bed.", ["Mei", "Aisha"]),
     ]
     assert recovered[0]["personal"] == {"Mei": "You are well enough to leave your bed."}
-    assert recovered[0]["payload"] == {"restores": 25, "health": 25.0}
+    assert recovered[0]["payload"] == {
+        "illness": False, "bedridden": True, "treated": True, "health": 25.0,
+    }  # fmt: skip
     assert (await town.call("Mei", "go", place="workshop")).ends_turn
 
 

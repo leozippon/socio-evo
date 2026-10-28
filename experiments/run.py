@@ -28,7 +28,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
     parser.add_argument("--until-day", type=int, help="stop after the checkpoint of this day")
     parser.add_argument("--resume", action="store_true", help="continue the existing run")
-    parser.add_argument("--dry-run", action="store_true", help="scripted model, fake board")
+    parser.add_argument("--dry-run", action="store_true", help="scripted model, fake tasks")
     args = parser.parse_args(argv)
     logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
     config = load_experiment(args.config)

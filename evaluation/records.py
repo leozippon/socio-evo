@@ -14,11 +14,11 @@ told as the world told it to the resident ("you"); a happening of several lines 
 indented lines. It holds:
 
 - from the world log, every entry the resident is the actor of or in the audience of, which is
-  every kind the log has about it: waking; setting off and arriving; the board posted; starting
-  and stopping work, or being taken from it; claims; shell commands with
+  every kind the log has about it: waking; setting off and arriving; tasks coming in; starting
+  and stopping work, or being taken from it; claims and tasks given; shell commands with
   their exit code and the tail of their output; workspace files read and written, and whether that
-  failed; submissions and verdicts; the sums paid for tasks accepted; giving a task up and claims
-  running out; workspaces closed at night; speech it said or was told, with who said what to whom
+  failed; submissions and verdicts; the sums paid for tasks accepted; giving a task up and tasks
+  withdrawn; workspaces closed at night; speech it said or was told, with who said what to whom
   (what others said privately in its presence only as something it could not hear); leaving and
   ending conversations; money and things given; skills passed on, with the text of one it received;
   messages written and received; goods bought, with the findings of an examination; moving

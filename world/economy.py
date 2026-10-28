@@ -1,5 +1,5 @@
 """The town's money and what it owns: each resident's inventory, the town's one fund, the Store
-and the Restaurant's kitchen.
+and the Restaurant's kitchen, and the daybook of what the report tells.
 
 Money is a whole number of the town's currency (`money` writes it). A resident's `Inventory` is
 what it has: its money, never below zero, and its items, the units it keeps of each good (one of
@@ -9,34 +9,37 @@ cash from the inventory, and the world refuses one that its money does not cover
 items pass between residents as they hand them over, of which the world keeps no account beyond
 the hand-over.
 
-The `Fund` is the town's money: the employer, the landlord and the owner of the Store and the
-Restaurant. Money enters the town only from clients, whose payment for a task accepted goes to
-the fund, and leaves it only to the supplier, whom the fund pays at once for what the Store
-orders; everything else moves between the fund and the residents, so that the fund and the
-inventories together change only by what clients pay and the supplier is paid. What the chef buys
-at the Store for the kitchen is taken in as a sale and paid out for the kitchen, a movement
+The `Fund` is the town's money: the employer, the landlord and the owner of the Store, the
+Restaurant and the Hospital. Money enters the town only from clients, whose payment for a task
+accepted goes to the fund, and leaves it only to the supplier, whom the fund pays at once for what
+the Store orders; everything else moves between the fund and the residents, so that the fund and
+the inventories together change only by what clients pay and the supplier is paid. What the chef
+buys at the Store for the kitchen is taken in as a sale and paid out for the kitchen, a movement
 within the fund. The fund pays what it has. A sum per service goes into the inventory at once
 (`Fund.service`); the day's wages are paid at midnight with the rent and the daily charges taken
 out of them (`Fund.settle`), so that money in hand is never touched by rent. What the fund cannot
-pay it owes (`owed`) and pays with the next wages; the rent and charges the wages did not cover
-are owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its movements since
-the last midnight by kind (`TAKEN` and `PAID`), and `yesterday` those of the day the last
-midnight closed.
+pay it owes (`owed`) and pays with the next wages; the rent and charges the wages did not cover are
+owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its movements since the
+last midnight by kind (`TAKEN` and `PAID`), and `yesterday` those of the day the last midnight
+closed.
 
 The `Store` keeps its stock of each good, its prices and the orders on their way; the `Kitchen`
-keeps the Restaurant's stock of ingredients, the menu's prices and the portions cooked and not
-yet served. Both are checkpointed whole.
+keeps the Restaurant's stock of ingredients, the menu's prices and the portions cooked and not yet
+served. The `Daybook` keeps, day by day, what the Store sold, the dishes served, the patients seen,
+the tasks accepted and the hours at work, for the mayor's report. All are checkpointed whole.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 TAKEN = {
     "client": "from clients",
     "rent": "in rent and daily charges",
     "sale": "in sales",
     "dish": "for dishes",
+    "fee": "in the Hospital's fees",
 }
 """The kinds of money the fund takes in, with how the report words each."""
 PAID = {
@@ -72,7 +75,8 @@ def take(stock: dict[str, int], item: str, units: int) -> None:
 @dataclass
 class Inventory:
     """What a resident has, checkpointed whole (see the module docstring); `moves` holds each
-    movement as `[kind, amount, about]`: `service`, `received`, `gave` or `bought`."""
+    movement as `[kind, amount, about]`: `service`, `received`, `gave`, `bought` or `paid` (a
+    fee at the Hospital)."""
 
     money: int = 0
     items: dict[str, int] = field(default_factory=dict)
@@ -213,3 +217,37 @@ class Kitchen:
     menu: dict[str, int]
     stock: dict[str, int] = field(default_factory=dict)
     portions: dict[str, int] = field(default_factory=dict)
+
+
+WEEK = 7
+"""The closed days the daybook keeps."""
+
+
+def new_day() -> dict[str, Any]:
+    """A day of the daybook with nothing in it yet."""
+    return {"sales": {}, "dishes": {}, "patients": [], "accepted": [], "hours": {}}
+
+
+@dataclass
+class Daybook:
+    """What the report tells of the town's days, checkpointed whole: for the day since the last
+    midnight (`today`) and for each of the last `WEEK` days closed (`days`, the latest last), the
+    units of each good sold at the Store, for a resident or for the kitchen (`sales`), the portions
+    of each dish served (`dishes`), the patients the doctor saw, each `[name, service]` with the
+    service `examination` or `treatment` (`patients`), the tasks accepted, each `[name, task]`
+    (`accepted`), and, set as the day closes, each resident's seconds at work at its workplace
+    (`hours`)."""
+
+    today: dict[str, Any] = field(default_factory=new_day)
+    days: list[dict[str, Any]] = field(default_factory=list)
+
+    def close_day(self, hours: dict[str, int]) -> None:
+        """Midnight: today, with each resident's `hours` at work, becomes the latest closed day."""
+        self.today["hours"] = hours
+        self.days = [*self.days, self.today][-WEEK:]
+        self.today = new_day()
+
+    @property
+    def yesterday(self) -> dict[str, Any]:
+        """The day the last midnight closed; empty before the first."""
+        return self.days[-1] if self.days else new_day()

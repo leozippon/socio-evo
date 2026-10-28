@@ -104,44 +104,37 @@ def test_a_count_of_exchanges_kept_is_refused_and_set_aside_only_in_a_record_mad
     assert load_config(path, ExperimentConfig, record=True) == town()
 
 
-def test_backgrounds_are_first_person_circumstances_without_trait_words():
+def test_backgrounds_are_first_person_and_a_shared_history_without_trait_words():
     config = town()
     assert len(config.residents) == 8
+    named = dict.fromkeys((r.name for r in config.residents), 0)
     for resident in config.residents:
         text = resident.background_path.read_text(encoding="utf-8")
         assert text.startswith(f"I am {resident.name}, "), resident.name
         assert not re.search(r"\byou\b|\byours?\b", text, re.IGNORECASE), resident.name
         assert offences(text) == [], resident.name
-        others = [r.name for r in config.residents if r.name != resident.name]
-        assert not [name for name in others if name in text], resident.name
+        for other in named:
+            if other != resident.name and re.search(rf"\b{other}\b", text):
+                named[other] += 1
+    assert min(named.values()) >= 2, named  # everyone is in the history of at least two others
 
 
-def test_ties_are_mutual_pass_the_guard_and_reach_everyone():
+def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
     config = town().town
-    residents = {r.name: r for r in config.residents}
-    for resident in residents.values():
-        assert 1 <= len(resident.ties) <= 2, resident.name
-        for other, how in resident.ties.items():
-            assert how.startswith(other), (resident.name, other)
-            assert resident.name in residents[other].ties  # mutual, as the configuration demands
-    known = {name: set(resident.ties) for name, resident in residents.items()}
-    reached, frontier = set(), {"Mei"}
-    while frontier:
-        reached |= frontier
-        frontier = {other for name in frontier for other in known[name]} - reached
-    assert reached == set(residents)  # everyone is reachable through someone they know
     rules = Rules(config)
-    for name, resident in residents.items():
-        text = rules.text(name)
-        assert offences(text) == [], (name, offences(text))
-        for how in resident.ties.values():
-            assert how in text
+    for resident in config.residents:
+        text = rules.text(resident.name)
+        assert 2500 <= len(text) <= 3500, (resident.name, len(text))
+        assert offences(text) == [], (resident.name, offences(text))
+        assert text.split("\n\n")[2].startswith("Work. You are ")  # its occupation and workplace
 
 
-# The work the fund's day is set against: about three tasks arriving a day, half of them accepted.
-ARRIVING, ACCEPTED = 3, 0.5
+# The work the fund's day is set against: the tasks arriving a day, half of them accepted.
+ACCEPTED = 0.5
 HOURS = 8
 """A day's work at one's workplace."""
+TEAMS_SHARE = 2 / 5
+"""The share of a client's payment that goes to the team: the programmer's and the leader's sums."""
 
 
 def test_wages_rent_food_and_the_fund_are_set_against_one_another():
@@ -172,8 +165,10 @@ def test_wages_rent_food_and_the_fund_are_set_against_one_another():
     # The fund's day, everyone at work for a day, half the tasks arriving accepted from the
     # programmers, and everyone living on the cheapest food, bought in one sale each: clients,
     # rent and sales in; wages, the sums for tasks and sales and the supplier's price of the
-    # food out; within a tenth of what passes through it.
-    accepted = ARRIVING * ACCEPTED
+    # food the town eats out; within a tenth of what passes through it.
+    office = sum(r.occupation in ("programmer", "team-leader") for r in config.residents)
+    assert config.work.tasks_a_day < office  # fewer than those who take them on
+    accepted = config.work.tasks_a_day * ACCEPTED
     task = occupations["programmer"].per_service + occupations["team-leader"].per_service
     rent = sum(rents[resident.home] for resident in config.residents)
     paid_wages = HOURS * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
@@ -185,3 +180,21 @@ def test_wages_rent_food_and_the_fund_are_set_against_one_another():
     # With no task accepted, the fund pays out more than it takes, and its start lasts ten days.
     short = paid_wages + sale_sums + supplier - rent - sales
     assert short > 0 and config.fund.start >= 10 * short
+
+
+def test_a_sum_per_service_is_at_most_a_fifth_of_what_the_customer_pays():
+    config = town().town
+    sums = {occupation.id: occupation.per_service for occupation in config.occupations}
+    least = {
+        "shopkeeper": min(good.price for good in config.supplier),
+        "chef": min(dish.price for dish in config.dishes),
+        "doctor": min(config.hospital.examination, config.hospital.treatment),
+        "team-leader": config.work.payment,
+        "mayor": 0,
+    }
+    for occupation, paid in least.items():
+        assert sums[occupation] <= paid / 5, occupation
+    assert sums["mayor"] == 0 and all(sums[o] > 0 for o in least if o != "mayor")
+    # The programmers' sum is the exception, a share of the client's payment: with the leader's,
+    # two fifths of it.
+    assert sums["programmer"] + sums["team-leader"] <= TEAMS_SHARE * config.work.payment

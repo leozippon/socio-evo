@@ -4,11 +4,13 @@ few fixed hours of its day. Every check that the world relies on is made when th
 is validated, so that a bad configuration stops a run before anything is written.
 
 A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the
-restaurant, the hospital and the hall, at most one of each) or a social place, which has no
+restaurant, the hospital and the hall, exactly one of each) or a social place, which has no
 purpose but company. Each resident has an `occupation`, which says where it works and what the
 town pays it: a wage for each hour at work at the occupation's workplace and a sum for each
 service rendered, both from the town's one fund, which starts at `fund.start`. Each occupation
-works at a place of its own kind (`WORKPLACE_OF`), and every workplace is some occupation's.
+works at a place of its own kind (`WORKPLACE_OF`), and every workplace is some occupation's. The
+office takes in clients' tasks (`work`), which arrive at random through the working day; the
+hospital charges the fees of `hospital` for an examination and a treatment.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -29,8 +31,9 @@ The residents' bodies (`needs`, implemented by `world.body`) are three needs, ea
 0 to 100 that the resident reads in bands of plain words: satiety, which falls by the hour and
 rises with what is eaten; energy, spent awake, at work and on the road and restored by sleep
 in proportion to the home's comfort, never above the resident's health; and health, reckoned
-at midnight from the day. Every rate and band is configuration; the world knows only the three
-needs and that the lowest band of each is where the consequences lie.
+at midnight from the day, and worn by illness, which comes by chance at midnight. Every rate,
+band and chance is configuration; the world knows only the three needs, that the lowest band of
+each is where the consequences lie, and that illness is likelier the lower one's health.
 """
 
 from __future__ import annotations
@@ -61,7 +64,7 @@ Effect = Literal["food", "travel", "messaging", "appearance"]
 EFFECTS: tuple[str, ...] = get_args(Effect)
 PlaceKind = Literal["home", "office", "store", "restaurant", "hospital", "hall", "social"]
 WORKPLACES = ("office", "store", "restaurant", "hospital", "hall")
-"""The kinds of place where an occupation works, at most one place of each."""
+"""The kinds of place where an occupation works, exactly one place of each."""
 OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
 WORKPLACE_OF: dict[str, str] = {
     "programmer": "office",
@@ -72,9 +75,6 @@ WORKPLACE_OF: dict[str, str] = {
     "mayor": "hall",
 }
 """The kind of place where each occupation works."""
-ERRANDS: dict[str, str] = {"chef": "store"}
-"""Where an occupation also works, away from its workplace and without wages for the hours: the
-chef at the store, where what it buys goes to the kitchen."""
 A_DAYS_FOOD = 100
 """A day's need of food, which nourishment is a share of, and what a dish gives."""
 
@@ -231,15 +231,35 @@ class Energy(Need):
         return self
 
 
+Chance = Annotated[float, Field(ge=0, le=1)]
+
+
+class Illness(StrictModel):
+    """At midnight a resident not ill and not in bed falls ill with the chance of its band of
+    health: `chance` in the top band, `run_down` in the second, `unwell` in the third and below;
+    `poor_home` more in a home of comfort below 1. While ill it loses `per_night` health at each
+    midnight, which mends nothing, and sleep restores half as much energy; it is well again after
+    `nights` midnights, or when treated."""
+
+    chance: Chance
+    run_down: Chance
+    unwell: Chance
+    poor_home: Chance
+    per_night: float = Field(ge=0)
+    nights: int = Field(ge=1)
+
+
 class Health(Need):
     """Reckoned at midnight: falls `starving` when satiety is in its lowest band, `exhausted`
-    when energy is, `poor_home` when the home's comfort is below 1; rises `recovery` when
-    neither starving nor exhausted. At 0 the resident takes to its bed until treated."""
+    when energy is, `poor_home` when the home's comfort is below 1, and by the illness if the
+    resident is ill; rises `recovery` when neither starving nor exhausted nor ill. At 0 the
+    resident takes to its bed until treated."""
 
     starving: float = Field(ge=0)
     exhausted: float = Field(ge=0)
     poor_home: float = Field(ge=0)
     recovery: float = Field(ge=0)
+    illness: Illness
 
 
 class Needs(StrictModel):
@@ -263,7 +283,7 @@ class Occupation(StrictModel):
     and its hours at work are counted; it is paid `wage_per_hour` for each hour at work there and
     `per_service` at once for each service rendered: a programmer for a task of its own accepted,
     the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
-    sale."""
+    sale, the doctor for a patient examined or treated."""
 
     id: OccupationId
     title: str = Field(min_length=1)
@@ -276,33 +296,49 @@ class FundSettings(StrictModel):
     start: int = Field(ge=0, description="the balance the town's fund starts with")
 
 
+class HospitalSettings(StrictModel):
+    """The Hospital's fees at the start, which the doctor changes, and the health a treatment
+    restores (it also ends an illness and lets one in bed up)."""
+
+    examination: int = Field(ge=1)
+    treatment: int = Field(ge=1)
+    restores: float = Field(gt=0, le=100)
+
+
 class Resident(StrictModel):
-    """A resident: its name, its home, its occupation, the money it starts with (`purse`), the
-    people it knows already (`ties`: for each, a sentence or two in the second person on how,
-    which the rules tell it; every tie is mutual), and its agent directory, which the
-    composition layer sets; without one it is `agents/<name>` in the run directory."""
+    """A resident: its name, its home, its occupation, the money it starts with (`purse`), and
+    its agent directory, which the composition layer sets; without one it is `agents/<name>` in
+    the run directory. What it has with the others is told in its own background."""
 
     name: Name
     home: Id
     occupation: Id
     purse: int = Field(ge=0)
-    ties: dict[Name, str] = Field(default_factory=dict)
     agent_dir: Path | None = None
 
 
 class Work(StrictModel):
-    """The work at the office. `split` names the task pool, of which the board posts
-    `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
-    pool; a claim made on a calendar day runs out at the midnight that ends the day
-    `claim_expiry_days` days later. A task accepted pays the fund `payment`."""
+    """The work at the office. `split` names the task pool, which the run's seed shuffles once
+    into a rotation; each calendar day a number of tasks drawn with mean `tasks_a_day` arrive, each
+    the next of the rotation, at minutes drawn between `arrive_from` and `arrive_until`. The client
+    withdraws a task not accepted by the midnight that ends the `expiry_days`th day after the day
+    it arrived. A task accepted pays the fund `payment`."""
 
     split: str = Field(min_length=1)
-    board_size: int = Field(ge=1, description="tasks posted a day, the whole pool if it is smaller")
+    tasks_a_day: float = Field(ge=0, description="the mean number of tasks arriving a day")
+    arrive_from: Hour
+    arrive_until: Hour
+    expiry_days: int = Field(ge=0)
     payment: int = Field(ge=1)
     acceptance_runs: int = Field(ge=1, description="acceptance runs per task per resident per day")
-    claim_expiry_days: int = Field(ge=0)
     shell_timeout_s: int = Field(ge=1)
     acceptance_timeout_s: int = Field(ge=1)
+
+    @model_validator(mode="after")
+    def _window(self) -> Work:
+        if parse_hour(self.arrive_from) >= parse_hour(self.arrive_until):
+            raise ValueError("tasks arrive between arrive_from and a later arrive_until")
+        return self
 
 
 class Social(StrictModel):
@@ -332,16 +368,14 @@ class ClockSettings(StrictModel):
 class DayHours(StrictModel):
     """The only fixed hours of a day, all after midnight: at `forced_sleep`, the night's end,
     whoever is still up falls asleep where it is, to wake at `forced_wake`; at `checkpoint`,
-    between the two, the day's state is saved; at `board_posted` the day's board goes up at the
-    office, and at `delivery` what the Store ordered the day before arrives, both no earlier than
-    the waking. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour
-    but the longest one sleep may last, written the same way and so less than a day; it is at
-    least the forced sleep's span."""
+    between the two, the day's state is saved; at `delivery`, no earlier than the waking, what the
+    Store ordered the day before arrives. A lived day runs from one checkpoint to the next.
+    `sleep_at_most` is not an hour but the longest one sleep may last, written the same way and so
+    less than a day; it is at least the forced sleep's span."""
 
     forced_sleep: Hour
     checkpoint: Hour
     forced_wake: Hour
-    board_posted: Hour
     delivery: Hour
     sleep_at_most: Hour
 
@@ -355,7 +389,7 @@ class DayHours(StrictModel):
 class TownConfig(StrictModel):
     currency: str = Field(min_length=1, description="the symbol money is written with")
     start_date: date = Field(description="the date of day 1")
-    seed: int = Field(description="seeds the board's rotation")
+    seed: int = Field(description="seeds the tasks' rotation and arrivals, and illness")
     places: tuple[Place, ...] = Field(min_length=1)
     travel_minutes: int = Field(ge=1, description="walking time between places without a route")
     routes: tuple[Route, ...] = ()
@@ -366,6 +400,7 @@ class TownConfig(StrictModel):
     supplier: tuple[Good, ...] = Field(min_length=1)
     dishes: tuple[Dish, ...] = ()
     store: StoreSettings
+    hospital: HospitalSettings
     needs: Needs
     social: Social
     clock: ClockSettings
@@ -397,7 +432,7 @@ class TownConfig(StrictModel):
             found = [place.id for place in self.places if place.kind == kind]
             if len(found) > 1:
                 raise ValueError(f"a town has at most one {kind}, not {len(found)}")
-        for kind in ("office", "store", "restaurant"):
+        for kind in WORKPLACES:
             if not any(place.kind == kind for place in self.places):
                 raise ValueError(f"the town has no {kind}")
         _unique("occupation id", [occupation.id for occupation in self.occupations])
@@ -417,7 +452,6 @@ class TownConfig(StrictModel):
         occupations = {occupation.id for occupation in self.occupations}
         if "team-leader" in occupations and "programmer" not in occupations:
             raise ValueError("the team leader leads programmers, and the town has none")
-        residents = {resident.name: resident for resident in self.residents}
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
@@ -431,25 +465,16 @@ class TownConfig(StrictModel):
                     raise ValueError(
                         f"{place.id} has {place.rooms} rooms for {len(living)} residents"
                     )
-        for resident in self.residents:
-            for other, how in resident.ties.items():
-                if other == resident.name or other not in residents:
-                    raise ValueError(
-                        f"{resident.name}'s tie to {other}: no other resident is so named"
-                    )
-                if resident.name not in residents[other].ties:
-                    raise ValueError(f"{resident.name}'s tie to {other} is not mutual")
-                if not how.strip():
-                    raise ValueError(f"{resident.name}'s tie to {other} says nothing")
         day = self.day
         hours = (day.forced_sleep, day.checkpoint, day.forced_wake)
         forced, checkpoint, wake = map(parse_hour, hours)
         longest = parse_hour(day.sleep_at_most)
         if not forced < checkpoint < wake:
             raise ValueError("the hours must run forced_sleep < checkpoint < forced_wake")
-        for name in ("board_posted", "delivery"):
-            if parse_hour(getattr(day, name)) < wake:
-                raise ValueError(f"the hours must run forced_wake <= {name}")
+        if parse_hour(day.delivery) < wake:
+            raise ValueError("the hours must run forced_wake <= delivery")
+        if parse_hour(self.work.arrive_from) < wake:
+            raise ValueError("tasks arrive no earlier than forced_wake")
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         return self

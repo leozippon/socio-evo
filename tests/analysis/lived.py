@@ -4,7 +4,7 @@ directory it leaves (frozen configuration, world log, agent directories, Mei's t
 the analysis reads.
 
 Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way out, waits until
-09:00 (the board, posted at 08:00, is told to her and she waits on), claims task 1 (and is
+09:00 (the tasks coming in at 08:00 are told to her and she waits on), claims task 1 (and is
 refused task 2, as she holds one), then, the task's actions offered once it is held, runs two
 commands, writes the fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas,
 who claimed task 2, asks her privately how she runs the tests; she answers privately. He tells
@@ -18,7 +18,7 @@ everyone is hungry by the first midnight and starving by the second, which costs
 $20 a day on Mill Street and $30 at the flat.
 
 Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00) and goes back to
-bed with a second journal entry; Tomas's claim runs out at midnight; Tomas and Aisha are put to
+bed with a second journal entry; Tomas's task is withdrawn at midnight; Tomas and Aisha are put to
 sleep at 02:00.
 """
 
@@ -34,7 +34,7 @@ from agent.testing import ScriptedModel, running, tool_call
 from infrastructure.llm import LLMConfig, LLMResponse, ToolCall, Usage
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig, Resident
-from tests.world.conftest import Town, town_config
+from tests.world.conftest import Town, opening, town_config
 from world.clock import ManualClock
 from world.testing import FakeBackend
 from world.world import World
@@ -63,7 +63,7 @@ MEI_STEPS = (
     step(tool_call("read_file", path="memory/work.md"), tool_call("go", place="workshop")),
     # 07:10, arrived with the others.
     step(tool_call("wait", minutes=110)),
-    # 08:00, the board posted.
+    # 08:00, the tasks come in.
     step(tool_call("wait", minutes=60)),
     # 09:00, the board.
     step(
@@ -137,6 +137,7 @@ async def live(root: Path) -> None:
             (run.agent_dir(name) / folder).mkdir(parents=True)
         (run.agent_dir(name) / TRACE).touch()
     world = World(town, run.root, FakeBackend(), clock=ManualClock())
+    opening(world)
     harness = Town(world, FakeBackend())
     port = world.ports["Mei"]
     model = ScriptedModel(*MEI_STEPS)

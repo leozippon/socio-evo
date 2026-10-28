@@ -6,8 +6,9 @@ in while it lasts, offering its own actions and not the base event's, and when i
 leaving, by everyone else leaving or by the silence rule, the base event is back as it was: one
 spoken to at work is at work again without sitting down anew, and its stretch of work runs on
 through the talk. Work is entered at one's own workplace by `start_work` or by doing the work of
-one's occupation there (the chef may also start work at the Store, where it buys for the
-kitchen), except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`). `go`
+one's occupation there, except by one exhausted, and ends when the body is found exhausted
+(`EXHAUSTED`); the doctor also examines and treats at the bedside of one too ill to get up,
+without sitting down to work there. `go`
 leaves a conversation on its own; waiting in a conversation is listening, and leaves it standing.
 A Conversation is shared by its members: the residents at one place who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
@@ -46,9 +47,14 @@ IDLE_TOOLS = frozenset(
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "assign",
         "cook",
         "order",
         "set_price",
+        "examine",
+        "treat",
+        "report",
+        "announce",
         "say",
         "message",
         "buy",
@@ -75,9 +81,14 @@ WORK_TOOLS = frozenset(
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "assign",
         "cook",
         "order",
         "set_price",
+        "examine",
+        "treat",
+        "report",
+        "announce",
         "say",
         "message",
         "buy",
@@ -107,13 +118,15 @@ TASK_TOOLS = frozenset(
 """What acts on the task one holds, of use only to one who holds a task, at the office."""
 OCCUPATION_TOOLS: dict[str, frozenset[str]] = {
     "programmer": BOARD_TOOLS | TASK_TOOLS,
-    "team-leader": BOARD_TOOLS | TASK_TOOLS,
+    "team-leader": BOARD_TOOLS | TASK_TOOLS | {"assign"},
     "chef": frozenset({"cook", "set_price"}),
     "shopkeeper": frozenset({"order", "set_price"}),
-    "doctor": frozenset(),
-    "mayor": frozenset(),
+    "doctor": frozenset({"examine", "treat", "set_price"}),
+    "mayor": frozenset({"report", "announce"}),
 }
 """What each occupation adds to what everyone can do: its work, done at its workplace."""
+BEDSIDE = frozenset({"examine", "treat"})
+"""The doctor's work that is also done at the home of one too ill to get up."""
 WORK_DONE = frozenset().union(*OCCUPATION_TOOLS.values())
 """Everything that is some occupation's work."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})

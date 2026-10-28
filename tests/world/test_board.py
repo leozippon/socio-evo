@@ -1,109 +1,98 @@
-"""The board's daily posting: the next tasks of a rotation through the pool, seeded by the run,
-and the tasks still held carried over; a task paid for leaves the board for the day."""
-
-from collections import Counter
-from itertools import pairwise
+"""The Office's board: arrivals drawn from the run's seed and the day, each the next task of a
+seeded rotation and never the same twice; the open tasks listed with who holds each and when the
+client withdraws it; a task given or moved, finished, and withdrawn at the end of its days."""
 
 import pytest
-from pydantic import ValidationError
 
 from tests.world.conftest import town_config
 from world.board import Board
+from world.clock import DAY, parse_hour, tell_date
 from world.testing import FakeBackend
 
+START = town_config().start_date
 
-def make_board(pool: int, size: int, seed: int = 7) -> Board:
+
+def make_board(pool: int, seed: int = 7, **work) -> Board:
     backend = FakeBackend(pool)
-    work = town_config(board_size=size).work
-    return Board(backend.tasks, backend, work, seed=seed, names=["Mei", "Tomas"], money=str)
+    config = town_config(**work).work
+    return Board(backend.tasks, backend, config, seed=seed, names=["Mei", "Tomas"], money=str)
 
 
-def postings(board: Board, days: int) -> list[list[int]]:
-    posted = []
-    for day in range(1, days + 1):
-        board.post(day)
-        posted.append(board.posted)
-    return posted
+def date(day: int) -> str:
+    return tell_date(day, START)
 
 
-def test_each_day_posts_the_next_tasks_of_a_rotation_seeded_by_the_run():
-    pool, size = 20, 6
-    days = postings(make_board(pool, size), pool)
-    assert days == postings(make_board(pool, size), pool)
-    assert days != postings(make_board(pool, size, seed=8), pool)
-    assert all(len(set(posted)) == size for posted in days)
-    assert all(not set(today) & set(tomorrow) for today, tomorrow in pairwise(days))
-    before_the_wrap = [number for posted in days[: pool // size] for number in posted]
-    assert len(before_the_wrap) == len(set(before_the_wrap))
-    assert set().union(*days[: -(-pool // size)]) == set(range(1, pool + 1))
-    everything = Counter(number for posted in days for number in posted)
-    assert everything == dict.fromkeys(range(1, pool + 1), size)
+def test_the_arrivals_of_a_day_are_drawn_from_the_seed_within_the_window():
+    board = make_board(10, tasks_a_day=3, arrive_from="08:00", arrive_until="18:00")
+    days = {day: board.draw(day) for day in range(1, 201)}
+    assert days == {day: make_board(10, tasks_a_day=3).draw(day) for day in days}
+    assert days != {day: make_board(10, seed=8, tasks_a_day=3).draw(day) for day in days}
+    for day, times in days.items():
+        assert times == sorted(times)
+        for t in times:
+            assert parse_hour("08:00") <= t - (day - 1) * DAY < parse_hour("18:00") and t % 60 == 0
+    counts = [len(times) for times in days.values()]
+    assert 2.6 < sum(counts) / len(counts) < 3.4 and 0 in counts and max(counts) >= 7
+    assert all(not make_board(10).draw(day) for day in range(1, 30))  # a mean of none
 
 
-def test_a_pool_no_larger_than_the_board_is_posted_whole_every_day():
-    for size in (3, 48):
-        assert postings(make_board(3, size), 4) == [[1, 2, 3]] * 4
+def test_each_arrival_takes_the_next_task_of_the_rotation_once_and_the_pool_runs_out():
+    board = make_board(5)
+    arrived = [board.arrive(day=1) for _ in range(5)]
+    assert sorted(arrived) == [1, 2, 3, 4, 5] and arrived == board.rotation
+    assert arrived != make_board(5, seed=8).rotation
+    assert board.open == dict.fromkeys(arrived, 1)
+    with pytest.raises(RuntimeError, match="the pool of 5 tasks is used up"):
+        board.arrive(day=2)
 
 
-async def test_the_board_keeps_a_held_task_until_its_claim_ends():
-    # A pool of 20 on a board of 4, as the town's 1,912 on 56: each day's four are new.
-    board = make_board(20, 4)
-    board.post(1)
-    unposted = min(set(range(1, 21)) - set(board.posted))
-    assert board.claim_refusal("Mei", unposted) == f"There is no task {unposted} on the board."
-    held = board.posted[0]
-    assert board.claim_refusal("Mei", held) is None
-    await board.claim("Mei", held, day=1)
-    board.post(2)  # the next four of the rotation, and beside them the task still held
-    assert board.posted == sorted([*board.rotation[4:8], held])
-    text = board.text("Mei", "08:00")
-    line = f"{held}. org/repo{held}: Problem {held} goes wrong. The client pays 50. You hold it."
-    assert f"\n{line}\n" in text
-    assert text.endswith(
-        f"The problem of task {held}, which you hold:\n\nProblem {held} goes wrong.\n"
-        f"Details of {held}."
+async def test_the_board_lists_the_open_tasks_who_holds_each_and_when_it_is_withdrawn():
+    board = make_board(4, expiry_days=3)
+    assert board.text("Mei", date) == "No task is open on the board now."
+    first = board.arrive(day=1)
+    second = board.arrive(day=2)
+    assert board.claim_refusal("Mei", 9) == "There is no task 9 on the board."
+    await board.claim("Mei", first)
+    assert board.claim_refusal("Tomas", first) == f"Task {first} is held by Mei."
+    assert board.claim_refusal("Mei", second) == (
+        f"You already hold task {first}; submit it or give it up first."
     )
-    assert board.claim_refusal("Tomas", held) == f"Task {held} is held by someone else."
-    board.drop("Mei")  # given up: the day's board lists it still, for another to claim
-    assert board.claim_refusal("Tomas", held) is None
-    board.post(3)  # held by nobody, it is not carried over again
-    assert board.posted == sorted(board.rotation[8:12])
-    await board.claim("Mei", board.posted[0], day=3)
-    assert (board.expired(3), board.expired(4)) == ([], ["Mei"])
-
-
-async def test_a_task_paid_for_leaves_the_board_for_the_day_and_comes_round_again():
-    board = make_board(10, 4)
-    board.post(1)
-    number = board.posted[0]
-    await board.claim("Mei", number, day=1)
-    board.finish("Mei")
-    assert number not in board.posted and board.done["Mei"] == {number}
-    assert board.claim_refusal("Tomas", number) == f"There is no task {number} on the board."
-    listed = board.text("Tomas", "08:00").splitlines()[1:]
-    assert [int(line.split(".")[0]) for line in listed] == board.posted and len(listed) == 3
-    for day in range(2, 5):  # a pool of 10 on a board of 4 comes round whole by day 4
-        board.post(day)
-        if number in board.posted:
-            break
-    assert number in board.posted and board.claim_refusal("Tomas", number) is None
-    assert board.claim_refusal("Mei", number) == f"You have already been paid for task {number}."
-    assert (
-        f"{number}. org/repo{number}: Problem {number} goes wrong. The client pays 50. You have "
-        "been paid " in board.text("Mei", "08:00")
+    lines = {
+        name: board.text(name, date).split("\n\n")[0].splitlines()[1:] for name in ("Mei", "Tomas")
+    }
+    mine = (
+        f"{first}. org/repo{first}: Problem {first} goes wrong. The client pays 50 and withdraws "
+        f"it at the end of {date(4)}."
+    )
+    other = (
+        f"{second}. org/repo{second}: Problem {second} goes wrong. The client pays 50 and "
+        f"withdraws it at the end of {date(5)}."
+    )
+    expected = sorted([(first, mine), (second, other)])
+    assert lines["Mei"] == [
+        line + (" You hold it." if number == first else "") for number, line in expected
+    ]
+    assert lines["Tomas"] == [
+        line + (" Mei holds it." if number == first else "") for number, line in expected
+    ]
+    assert board.text("Mei", date).endswith(
+        f"The problem of task {first}, which you hold:\n\nProblem {first} goes wrong.\n"
+        f"Details of {first}."
     )
 
 
-async def test_an_empty_board_says_when_the_next_goes_up():
-    board = make_board(10, 1)
-    empty = "Nothing is posted on the board now; the next board goes up at 08:00."
-    assert board.text("Mei", "08:00") == empty  # before the first board
-    board.post(1)
-    await board.claim("Tomas", board.posted[0], day=1)
-    board.finish("Tomas")
-    assert board.posted == [] and board.text("Mei", "08:00") == empty  # once it is cleared
-
-
-def test_the_board_posts_at_least_one_task():
-    with pytest.raises(ValidationError, match="board_size"):
-        town_config(board_size=0)
+async def test_a_task_is_given_or_moved_finished_or_withdrawn_at_the_end_of_its_days():
+    board = make_board(4, expiry_days=1)
+    first, second, third = (board.arrive(day=day) for day in (1, 1, 2))
+    claim = await board.claim("Mei", first)
+    workspace = claim.workspace
+    assert board.give("Tomas", first) == "Mei"  # moved: Mei holds it no more
+    assert "Mei" not in board.claims and board.claims["Tomas"].task == first
+    assert board.claims["Tomas"].workspace is None and board.orphans == [workspace]
+    assert board.give("Mei", second) is None
+    assert board.finish("Mei") is None and second not in board.open  # accepted: gone for good
+    assert board.withdraw(1) == []
+    assert board.withdraw(2) == [(first, "Tomas")]  # at the end of the day after it came
+    assert "Tomas" not in board.claims and sorted(board.open) == [third]
+    assert board.withdraw(3) == [(third, None)] and board.open == {}
+    assert board.saved() == {"arrived": 3, "schedule": [], "open": []}

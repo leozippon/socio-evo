@@ -233,7 +233,7 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `residents[].home` | string | The id of its home. |
 | `residents[].purse` | integer | The money it started with. |
 | `residents[].rules` | string | The standing rules of the town as this resident was told them. |
-| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day and `claim_expiry_days`. |
+| `work` | object | The work at the workplace as configured: among its fields `payment` for an accepted task, `acceptance_runs` per task and day, `tasks_a_day` and `expiry_days`, the days after the one it came in at whose end an unaccepted task is withdrawn. |
 | `goods` | array | The supplier's catalogue as configured, which the Store sells, each with `id`, `name`, `wholesale` (what the supplier charges for a unit), `price` (the Store's price at the start), `kind` (`consumable` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`) and the fields of its kind and effect (`fee_per_day`, `nourishment`, 0 for an ingredient, `factor`, `phrase`), null where they do not apply. |
 | `needs` | object | The residents' bodies as configured: `satiety`, `energy` and `health`, each with its rates and its `bands` from the top down, each band with `floor`, `name` (what follows "you are") and `seen` (what others see, or null). |
 | `social` | object | The social rules as configured: `silence_minutes`, after which a conversation nobody speaks in ends. |

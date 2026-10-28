@@ -1,150 +1,154 @@
-"""The rules as one resident is told them: the money it starts with, its occupation and the
-others', wages and rent, what is for sale and where, where people live and meet and which rooms
-are free, and the people it knows already; and `help` on the work of each workplace."""
+"""The rules as one resident is told them: six short sections, its own occupation and workplace,
+its money, its body, who lives and works where, and sleep; and `help`, which tells the detail by
+topic: the work of each place of work, money, the body, the day and the places."""
 
 from __future__ import annotations
 
-from tests.world.conftest import RESIDENTS, TRADES, town_config
-from world.rules import DETAILS, TOPICS, Rules
+from tests.world.conftest import CARE, RESIDENTS, TRADES, town_config
+from world.rules import SECTIONS, TOPICS, Rules
 
-TIES = (
-    dict(RESIDENTS[0], ties={"Aisha": "Aisha has the room next to yours and shares the kitchen."}),
-    RESIDENTS[1],
-    dict(RESIDENTS[2], ties={"Mei": "Mei was in the house before you came."}),
-    *TRADES,
-)
+TOWN = town_config(residents=RESIDENTS + TRADES + CARE)
 
 
-def test_the_rules_tell_the_purse_the_wages_the_rent_the_shops_and_where_people_live_and_meet():
-    rules = Rules(town_config(residents=TIES))
+def test_the_rules_are_six_short_sections_ones_own_work_first():
+    rules = Rules(TOWN)
     sections = rules.sections("Mei")
-    assert sections["money"] == (
-        "You have $120 to begin with. The town keeps one fund, which takes in what clients pay "
-        "for the work, the rent and what is sold, and pays everyone who works. You are a "
-        "programmer at the workshop: you are paid $7 an hour for your time at work there, from "
-        "sitting down to work until you stop, and $20 at once for each task of yours accepted. "
-        "At midnight your wages for the day are paid into your purse, with the rent for your "
-        "room at the shared house on Mill Street, $20 a day, and the daily charge on anything "
-        "you own that carries one taken out of them, and you get a statement of your money; "
-        "what is in your purse is never touched by rent. When your wages do not cover the rent, "
-        "you owe the rest, and it is taken from your next wages; when the fund cannot pay you, "
-        "it owes you the rest and pays it with your next wages. You pay for everything in cash "
-        "from your purse, and cannot pay more than it holds. With give you can hand money, a "
-        "thing you own (with any daily charge on it) or food you keep to anyone awake where you "
-        "are, as a gift or on terms you agree between you; the town keeps no account of it."
-    )
-    assert (
-        "At midnight your wages for the day are paid, with your rent taken out of them"
-        in (sections["day"])
-    )
-    assert "Your home is the shared house on Mill Street." in sections["places"]
-    assert (
-        "The homes, with the rent a day for a room and the rooms free: the shared house on Mill "
-        "Street $20 (3 rooms, 1 free, little comfort) and the flat by the college gates $30 (6 "
-        "rooms, 3 free)."
-    ) in sections["places"]
-    assert sections["shopping"] == (
-        "Goods are sold at the store while its shopkeeper is at work there: ready food (bread), "
-        "which you keep and eat a helping at a time whenever you could eat; what the kitchen "
-        "cooks with (eggs and vegetables), not eaten as it is; a bicycle, a phone and a coat. "
-        "Dishes are served at the café on the square while its chef is at work there, each a "
-        "day's food, eaten there and then. You pay in cash with buy; what is for sale, and at "
-        "what price, you see when you are there. With a bicycle your journeys take half the "
-        "time. With a phone ($2 a day while you own it) you can write to anyone else who has "
-        "one, wherever they are, with message; they read it when they next look up from what "
-        "they are doing. What you wear and carry, others see: with a coat, in a new coat. What "
-        "you have, and how much of it is left, inventory tells you."
-    )
-    assert sections["health"] == (
-        "Through the day you get hungry, and what you eat restores you: a dish, or 3 helpings of "
-        "bread, is about a day's need. You tire with the hours awake, faster at work and on "
-        "the road, and sleep restores you, the more the better your home; exhausted, you stop "
-        "work and cannot work again until you have slept. A day that ends with you starving or "
-        "exhausted, or lived in a home of little comfort, wears your health down; a day in which "
-        "you have eaten and rested mends it. When your health is gone, you take to your bed at "
-        "home, carried there if you are elsewhere, and keep to it until you are treated. You can "
-        "take stock of how you feel at any time with how_am_i."
-    )
-    assert sections["day"].endswith(
-        "At 02:00 anyone still up falls asleep where it is and wakes at home at 07:00. When you "
-        "do nothing, time passes until something happens or 30 minutes have gone by, and you are "
-        "told the hour; with wait you let up to 600 minutes pass."
-    )
-    moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha", "Olga", "Jonas"]}
-    assert "(3 rooms, 2 free, little comfort)" in rules.help("Mei", "places", moved)
-    assert "Aisha (the flat by the college gates)" in rules.help("Mei", "people", moved)
-    assert sections["sleep"].endswith(
-        "In bed, before you fall asleep, you can look back over your day and see to your files."
-    )
-    people = sections["people"]
-    assert "Tomas (the flat by the college gates), Aisha (the shared house on Mill Street)" in (
-        people
-    )
-    assert "People run into one another at the café on the square, the park and the store" in (
-        people
-    )
-    assert "call on someone at home, or find them where they work." in people
-    assert sections["work"] == (
-        "You are a programmer at the workshop. Clients' tasks are posted on its board: you claim "
-        "one at a time, work on it there, where the machines are, and hand it in for the "
-        "client's checks. You sit down to work there with start_work, or by doing your work, and "
-        "are at work until you stop with leave_work, go elsewhere or go to sleep. In the town, "
-        "Tomas and Aisha are programmers at the workshop, Jonas is the chef at the café on the "
-        "square and Olga is the shopkeeper at the store. With help you can ask how the work "
-        "goes at the office, the store or the restaurant."
-    )
-    office = rules.help("Mei", "office")
-    assert "the client pays the town $50 once it is accepted" in office
-    assert "the client's own checks" in office and "posts it on its board there" in office
-    assert "You work on it at the workshop, where the machines are." in office
-    assert "wherever you are" not in office
-    assert rules.help("Mei", "Money") == sections["money"]
-    assert rules.help("Mei", "weather") == f"You can ask about: {', '.join(TOPICS + DETAILS)}."
+    assert list(sections) == list(SECTIONS)
     text = rules.text("Mei")
-    assert text.startswith("How the town works.\n\nPlaces. ") and "\n\nSleep. " in text
-    assert "\n\nHealth. Through the day you get hungry" in text
-
-
-def test_ties_are_told_in_the_rules_to_those_who_have_them():
-    town = Rules(town_config(residents=TIES))
-    assert town.sections("Mei")["people"].endswith(
-        "Some of them you know already. Aisha has the room next to yours and shares the kitchen."
+    assert text.startswith("How the town works.\n\nThe town. The places, with the short name ")
+    assert [line.split(".")[0] for line in text.split("\n\n")[1:]] == [
+        "The town", "Work", "Money", "Body", "People", "Sleep",
+    ]  # fmt: skip
+    assert len(text) < 3000
+    assert sections["work"] == (
+        "You are a programmer at the workshop. Clients' tasks come in on its board through the "
+        "day: you take one at a time with claim_task, or are given one by the team leader, work "
+        "on it there, where the machines are, and hand it in for the client's checks before the "
+        "client withdraws it, at the end of the first day after the one it came in. You sit down "
+        "to work there with start_work, or by doing your work, and are at work until you stop "
+        "with leave_work, go elsewhere or go to sleep."
     )
-    assert "know already" not in town.sections("Tomas")["people"]
-
-
-def test_each_occupation_is_told_its_own_work_and_sum_and_help_tells_the_rest():
-    rules = Rules(town_config(residents=(dict(RESIDENTS[0], occupation="team-leader"), *TRADES)))
-    olga, jonas, mei = (rules.sections(name) for name in ("Olga", "Jonas", "Mei"))
-    assert olga["work"].startswith(
-        "You are the shopkeeper at the store. It is open while you are at work there: you sell "
-        "its goods at the prices you set, and order more from the supplier, which the fund pays "
-        "and which arrives the next morning."
+    assert "the doctor at the clinic treats illness" in sections["body"]
+    assert sections["town"].endswith("help tells more of the town, by topic.")
+    assert sections["money"] == (
+        "You have $120 to begin with. The town's fund pays you $7 an hour for your time at work "
+        "at the workshop, and $20 at once for each task of yours accepted. At midnight your "
+        "wages are paid into your purse, with the rent for your room, $20 a day, taken out of "
+        "them. You pay for everything in cash from your purse, and with give you can hand money "
+        "or things to anyone with you."
+    )
+    assert sections["people"] == (
+        "You live in the shared house on Mill Street with Aisha; Tomas, Olga, Jonas, Lucia and "
+        "Vera live in the flat by the college gates. Tomas and Aisha are programmers at the "
+        "workshop, Jonas is the chef at the café on the square, Olga is the shopkeeper at the "
+        "store, Lucia is the doctor at the clinic and Vera is the mayor at the hall. You can "
+        "speak to anyone awake where you are, to everyone there or only to the people you name, "
+        "and the others notice that you said something but not what; a conversation lasts until "
+        "its people leave it or nobody speaks for 10 minutes."
     )
     assert (
-        "In the town, Mei is the team leader at the workshop and Jonas is the chef"
-        in (olga["work"])
+        "Walking from one to another takes 10 minutes, 5 between the workshop and the café"
+        in (sections["town"])
     )
-    assert (
-        "you are paid $7 an hour for your time at work there, from sitting down to work "
-        in (olga["money"])
+    assert "Your home is the shared house on Mill Street." in sections["town"]
+    assert "a dish, or 3 helpings of bread, is about a day's need" in sections["body"]
+    assert sections["sleep"].endswith(
+        "At 02:00 anyone still up falls asleep where it is and wakes at home at 07:00."
     )
-    assert "and $2 at once for each sale." in olga["money"]
-    assert (
-        "You buy what you cook with at the store: start work there, and what you buy goes to "
-        in (jonas["work"])
+    moved = {
+        "mill-street-house": ["Mei"],
+        "college-flat": ["Tomas", "Aisha", "Olga", "Jonas", "Lucia", "Vera"],
+    }
+    assert rules.sections("Aisha", moved)["people"].startswith(
+        "You live in the flat by the college gates with Tomas, Olga, Jonas, Lucia and Vera; Mei "
+        "lives in the shared house on Mill Street."
     )
-    assert "and $3 at once for each dish served." in jonas["money"]
+
+
+def test_each_occupation_is_told_its_own_work_and_sum():
+    leader = dict(RESIDENTS[0], occupation="team-leader")
+    rules = Rules(town_config(residents=(leader, *TRADES, *CARE)))
+    told = {name: rules.sections(name) for name in ("Mei", "Olga", "Jonas", "Lucia", "Vera")}
+    assert told["Mei"]["work"].startswith(
+        "You are the team leader at the workshop. You lead its programmers. Clients' tasks come in "
+        "on its board through the day: you can give any of them a task with assign,"
+    )
     assert (
         "$10 at once for each task of the programmers' accepted and $20 for each task of your "
         "own accepted."
-    ) in mei["money"]
-    store, restaurant = rules.help("Olga", "store"), rules.help("Olga", "restaurant")
-    assert "the goods arrive at 08:00 the next morning" in store
-    assert "Each sale pays the shopkeeper $2." in store
+    ) in told["Mei"]["money"]
+    assert told["Olga"]["work"].startswith(
+        "You are the shopkeeper at the store. It is open while you are at work there: you sell "
+        "its goods at the prices you set,"
+    )
+    assert "and $2 at once for each sale." in told["Olga"]["money"]
+    assert (
+        "You buy what you cook with at the store with buy for_the_kitchen, and the fund pays."
+        in (told["Jonas"]["work"])
+    )
+    assert (
+        "Its surgery is open while you are at work there: you examine and treat patients"
+        in (told["Lucia"]["work"])
+    )
+    assert "and $4 at once for each patient examined or treated." in told["Lucia"]["money"]
+    assert told["Vera"]["work"].startswith(
+        "You are the mayor at the hall. There you read the town's report with report, and with "
+        "announce you tell every resident whatever you want them to know."
+    )
+    assert (
+        told["Vera"]["money"].endswith(
+            "at the hall. At midnight your wages are paid into your purse, with the rent for your "
+            "room, $30 a day, taken out of them. You pay for everything in cash from your purse, "
+            "and with give you can hand money or things to anyone with you."
+        )
+        and "at once" not in told["Vera"]["money"]
+    )  # the mayor has no sum
+
+
+def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
+    rules = Rules(TOWN)
+    listed = (
+        "You can ask about: office, store, restaurant, hospital, hall, money, body, day and places."
+    )
+    assert rules.help("") == rules.help("weather") == listed
+    topics = {topic: rules.help(topic) for topic in TOPICS}
+    assert rules.help(" Office ") == topics["office"]
+    office = topics["office"]
+    for told in (
+        "their tasks come in on its board at random through the day, about 0 a day between 08:00 "
+        "and 18:00, and whoever is there is told as one comes in",
+        "the client pays the town $50 once it is accepted",
+        "read_task gives the whole problem without taking it",
+        "You can hand in each task at most 2 times a day.",
+        "The team leader can give a task to any of the programmers with assign",
+        "withdrawn by its client at the end of the first day after the one it came in, held or not",
+        "pays the one who handed it in $20 and the team leader $10.",
+    ):
+        assert told in office, told
+    assert "the goods arrive at 08:00 the next morning" in topics["store"]
+    assert "Each sale pays the shopkeeper $2." in topics["store"]
     assert (
         "an omelette from 2 units of eggs and 1 unit of vegetables; vegetable soup from 2 units "
         "of vegetables."
-    ) in restaurant
-    assert "What is not sold by midnight is gone. Each dish served pays the chef $3." in restaurant
-    assert all(detail not in rules.text("Olga") for detail in (store, restaurant))
+    ) in topics["restaurant"]
+    assert "An examination, $10 at the start" in topics["hospital"]
+    assert (
+        "A treatment, $30 at the start, restores 25 of the patient's health" in (topics["hospital"])
+    )
+    assert "but nobody's purse. With announce the mayor tells every resident" in topics["hall"]
+    assert "when the fund cannot pay you, it owes you the rest" in topics["money"]
+    assert "each night costs you 3 of your health and mends nothing" in topics["body"]
+    assert "it passes after 5 nights, or when the doctor treats you" in topics["body"]
+    assert topics["day"].endswith(
+        "When you do nothing, time passes until something happens or 30 minutes have gone by, "
+        "and you are told the hour; with wait you let up to 600 minutes pass."
+    )
+    assert (
+        "the shared house on Mill Street $20 (3 rooms, 1 free, little comfort) and the flat by "
+        "the college gates $30 (6 rooms, 1 free)"
+    ) in topics["places"]
+    moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha", "Olga", "Jonas"]}
+    assert "(3 rooms, 2 free, little comfort)" in rules.help("places", moved)
+    text = rules.text("Mei")
+    assert all(detail not in text for detail in topics.values())
+    assert "600 minutes" not in text and "30 minutes" not in text  # the day topic's alone

@@ -32,7 +32,7 @@ def test_a_town_validates():
     data = config.model_dump(mode="json")
     data["day"]["sleep_at_most"] = "05:00"  # as long as the forced sleep, 02:00 to 07:00
     assert type(config).model_validate(data).day.sleep_at_most == "05:00"
-    data["day"]["board_posted"] = data["day"]["delivery"] = "07:00"  # as the residents wake
+    data["day"]["delivery"] = data["work"]["arrive_from"] = "07:00"  # as the residents wake
     assert type(config).model_validate(data).day.delivery == "07:00"
 
 
@@ -45,11 +45,8 @@ def test_a_town_validates():
             "a town has at most one office, not 2",
         ),
         (lambda d: d["places"].pop(5), {}, "the town has no store"),
-        (
-            lambda d: d["places"].append({"id": "hall", "name": "the hall", "kind": "hall"}),
-            {},
-            "the hall hall is no occupation's workplace",
-        ),
+        (lambda d: d["places"].pop(7), {}, "the town has no hall"),
+        (lambda d: d["occupations"].pop(5), {}, "the hall hall is no occupation's workplace"),
         (lambda d: d["places"][2].update(kind="shop"), {}, "Input should be 'home', 'office'"),
         (lambda d: d["places"][2].update(opens="09:00"), {}, "Extra inputs are not permitted"),
         (lambda d: d["day"].update(forced_wake="7am"), {}, "HH:MM"),
@@ -63,7 +60,9 @@ def test_a_town_validates():
         ),
         (lambda d: d["day"].update(checkpoint="01:00"), {}, "forced_sleep < checkpoint"),
         (lambda d: d["day"].update(forced_wake="02:15"), {}, "checkpoint < forced_wake"),
-        (lambda d: d["day"].update(board_posted="06:59"), {}, "forced_wake <= board_posted"),
+        (lambda d: d["work"].update(arrive_from="06:59"), {}, "no earlier than forced_wake"),
+        (lambda d: d["work"].update(arrive_until="08:00"), {}, "a later arrive_until"),
+        (lambda d: d["work"].update(tasks_a_day=-1), {}, "greater than or equal to 0"),
         (lambda d: d["day"].update(delivery="06:59"), {}, "forced_wake <= delivery"),
         (lambda d: d["day"].pop("forced_wake"), {}, "Field required"),
         (
@@ -72,24 +71,10 @@ def test_a_town_validates():
             "sleep_at_most must last at least from forced_sleep to forced_wake",
         ),
         (lambda d: d["day"].update(sleep_at_most="24:00"), {}, "HH:MM"),
-        (
-            lambda d: d["residents"][0].update(ties={"Tomas": "Tomas lives up the hill."}),
-            {},
-            "Mei's tie to Tomas is not mutual",
-        ),
-        (lambda d: d["residents"][0].update(ties={"Zoe": "Zoe."}), {}, "no other resident"),
-        (lambda d: d["residents"][0].update(ties={"Mei": "Me."}), {}, "no other resident"),
-        (
-            lambda d: [
-                d["residents"][0].update(ties={"Tomas": " "}),
-                d["residents"][1].update(ties={"Mei": "Mei."}),
-            ],
-            {},
-            "Mei's tie to Tomas says nothing",
-        ),
+        (lambda d: d["residents"][0].update(ties={"Tomas": "x"}), {}, "Extra inputs"),
         (lambda d: d["work"].update(payment=0), {}, "greater than or equal to 1"),
         (lambda d: d["residents"][0].pop("occupation"), {}, "occupation\n  Field required"),
-        (lambda d: d["residents"][0].update(occupation="doctor"), {}, "doctor is not known"),
+        (lambda d: d["residents"][0].update(occupation="baker"), {}, "baker is not known"),
         (lambda d: d["occupations"][0].update(id="baker"), {}, "Input should be 'programmer'"),
         (lambda d: d["residents"][0].update(purse=-1), {}, "greater than or equal to 0"),
         (
@@ -176,6 +161,14 @@ def test_a_town_validates():
             "out of its lowest band at any health",
         ),
         (lambda d: d["needs"]["health"].update(starving=-1), {}, "greater than or equal to 0"),
+        (
+            lambda d: d["needs"]["health"]["illness"].update(chance=1.5),
+            {},
+            "less than or equal to 1",
+        ),
+        (lambda d: d["needs"]["health"]["illness"].update(nights=0), {}, "greater than or equal"),
+        (lambda d: d.pop("hospital"), {}, "hospital\n  Field required"),
+        (lambda d: d["hospital"].update(treatment=0), {}, "greater than or equal to 1"),
         (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=70), {}, "from the top down"),
         (lambda d: d["needs"]["satiety"]["bands"][1].update(floor=65), {}, "from the top down"),
         (

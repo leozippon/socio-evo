@@ -14,8 +14,8 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           the lived days, from one checkpoint to the next; the day in progress ends at null.
           "real_start" and "real_end" are the real (Unix) times at which the day was begun and
           checkpointed: it was begun at the checkpoint before it, at the resumption that went
-          back to that checkpoint, or, for day 1, at the first entry of the log, the board
-          posted as the world began; null with no entries at all
+          back to that checkpoint, or, for day 1, at the first entry of the log the timeline
+          keeps; null with no entries at all
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
@@ -41,7 +41,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     payment       task, amount            the sum paid at once for a task accepted (a `service`
                                           entry of the log)
     abandon       task                    the resident gave its task up
-    expiry        task                    the claim ran out unpaid
+    expiry        task                    the claim ran out unpaid, or the client withdrew the
+                                          task held (a `task_withdrawn` entry of the log)
     speech        text, to, private       "to" is everyone who heard it
     message       to, text                a written message, read by "to" alone
     gift          to, amount              money given; or to, item, name, quantity for a thing
@@ -90,7 +91,6 @@ _FOLDED = frozenset(
         "wake",
         "depart",
         "arrive",
-        "board_posted",
         "start_work",
         "leave_work",
         "sleep",
@@ -101,6 +101,7 @@ _FOLDED = frozenset(
         "service",
         "abandon",
         "expiry",
+        "task_withdrawn",
         "speech",
         "message",
         "leave_conversation",
@@ -119,9 +120,9 @@ _FOLDED = frozenset(
     }
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
-the time told) add nothing to it. The board posted as the run starts is its first entry, kept
-for the real time at which day 1 was begun; a `resume` is kept after it has set the lost day
-aside, for the real time at which the day was begun again."""
+the time told) add nothing to it. The first of them is kept for the real time at which day 1
+was begun; a `resume` is kept after it has set the lost day aside, for the real time at which
+the day was begun again."""
 
 
 @dataclass
@@ -296,6 +297,10 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
+        if kind == "task_withdrawn":  # the holder's, as a claim run out; nobody's if unheld
+            if payload["holder"] is None:
+                continue
+            kind, lane = "expiry", lanes[payload["holder"]]
         if kind in ("wake", "start_work", "leave_work"):
             lane.enter(t, "work" if kind == "start_work" else "idle", place)
         elif kind == "depart":
