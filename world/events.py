@@ -5,21 +5,23 @@ Bedridden; a Conversation takes the place of the Idle, Work or Bedridden it foun
 in while it lasts, offering its own actions and not the base event's, and when it ends, by
 leaving, by everyone else leaving or by the silence rule, the base event is back as it was: one
 spoken to at work is at work again without sitting down anew, and its stretch of work runs on
-through the talk. Work is entered at the workplace by claiming a task or acting in its workspace,
-except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`). `go` leaves a
-conversation on its own; waiting in a conversation is listening, and leaves it standing. A
-Conversation is shared by its members: the residents at one place who have spoken or been drawn
-in by speech. Sleep has two stages: in bed, where the resident may still look around, review its
-day, go to bed again to add to its journal entry and see to its files, and suspended, once its
-runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
-back. Bedridden is where health at its floor puts a resident, at its home, until it is treated:
-it can only ask, look around, take stock of itself and of what it has, speak to whoever comes
-and sleep.
+through the talk. Work is entered at one's own workplace by `start_work` or by doing the work of
+one's occupation there (the chef may also start work at the Store, where it buys for the
+kitchen), except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`). `go`
+leaves a conversation on its own; waiting in a conversation is listening, and leaves it standing.
+A Conversation is shared by its members: the residents at one place who have spoken or been
+drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
+review its day, go to bed again to add to its journal entry and see to its files, and suspended,
+once its runtime has nothing more to do (or at the forced hour), from which only the wake-up
+brings it back. Bedridden is where health at its floor puts a resident, at its home, until it is
+treated: it can only ask, look around, take stock of itself and of what it has, speak to whoever
+comes and sleep.
 
-Each event's tools are the architecture's table. The resident's request declares those of its
-event at its place now, less the ones of no use there (`World.usable`); a call that names one
-the event does not offer by the time it is carried out returns the refusal below, naming the
-condition.
+Each event's tools are the architecture's table. What everyone can do is in them all; each
+occupation adds its own work (`OCCUPATION_TOOLS`), done at its workplace. The resident's request
+declares the tools of its event at its place now that are its own, less the ones of no use there
+(`World.usable`); a call that names one the event does not offer by the time it is carried out
+returns the refusal below, naming the condition.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ IDLE_TOOLS = frozenset(
         "how_am_i",
         "inventory",
         "go",
+        "start_work",
         "view_board",
         "read_task",
         "claim_task",
@@ -43,6 +46,9 @@ IDLE_TOOLS = frozenset(
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "cook",
+        "order",
+        "set_price",
         "say",
         "message",
         "buy",
@@ -69,6 +75,9 @@ WORK_TOOLS = frozenset(
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "cook",
+        "order",
+        "set_price",
         "say",
         "message",
         "buy",
@@ -91,11 +100,22 @@ CONVERSATION_TOOLS = frozenset(
     }
 )
 BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
-"""What reads and claims from the board, which hangs at the workplace."""
+"""What reads and claims from the board, which hangs at the office."""
 TASK_TOOLS = frozenset(
     {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
 )
-"""What acts on the task one holds, of use only to one who holds a task, at the workplace."""
+"""What acts on the task one holds, of use only to one who holds a task, at the office."""
+OCCUPATION_TOOLS: dict[str, frozenset[str]] = {
+    "programmer": BOARD_TOOLS | TASK_TOOLS,
+    "team-leader": BOARD_TOOLS | TASK_TOOLS,
+    "chef": frozenset({"cook", "set_price"}),
+    "shopkeeper": frozenset({"order", "set_price"}),
+    "doctor": frozenset(),
+    "mayor": frozenset(),
+}
+"""What each occupation adds to what everyone can do: its work, done at its workplace."""
+WORK_DONE = frozenset().union(*OCCUPATION_TOOLS.values())
+"""Everything that is some occupation's work."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
 BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "inventory", "say", "sleep"})
 
@@ -182,5 +202,9 @@ def refusal(event: Base | Conversation, tool: str, *, destination: str) -> str:
     if tool in SLEEP_TOOLS:
         return "You can do that only once you have gone to bed."
     if isinstance(event, Work):
-        return "You are at work; leave work first."
+        return (
+            "You are at work already."
+            if tool == "start_work"
+            else ("You are at work; leave work first.")
+        )
     return "You are not at work."

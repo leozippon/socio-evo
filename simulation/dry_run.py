@@ -1,16 +1,21 @@
 """A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing
 a plausible day from what each request shows, so that the whole pipeline runs without a model.
 
-The day it plays: wait at home until the day's board is posted, go to the workplace, read the
-board, claim a free task and then, the task's actions offered once it is held, run a command,
-read a file, write a fix and submit, and stay at work until 17:00; go to a shop, if the town has
-one, buy a stock of food and look at what it has; go to a social place, eat there if it sells a
-meal and, if anyone is there, say something once; at 20:00 go home and go to bed with a journal
-entry, to wake at the town's forced waking hour; in bed, review the day, note it in
-memory/notes.md and fall asleep. Spoken to, it answers once a day and leaves the conversation.
-It keeps no state of its own: the resident's name comes from the system prompt, and the day so
-far from the messages since the last wake-up, so it continues a resumed run as it would have
-continued the run.
+The day it plays depends on the resident's occupation. The shopkeeper goes to the Store at
+waking, starts work, orders from the supplier the bread and what the kitchen will take the next
+day, sets a price, keeps the counter until 19:00, buys bread at it and goes to the Restaurant.
+The chef goes to the Store once the morning's delivery is in, buys bread for itself, starts work
+there and buys for the kitchen what two dishes take, goes to the Restaurant and cooks them, and
+serves until 20:00. Everyone else waits at home until the day's board is posted and goes to its
+workplace: a programmer or the team leader reads the board, claims a free task and then, the
+task's actions offered once it is held, runs a command, reads a file, writes a fix and submits;
+anyone else starts work; all stay at work until 17:00. Then they go to the Store and buy bread
+if it is open, and to the Restaurant, where they have a dish if one is ready and, if anyone is
+there, say something once. At 20:00 everyone goes home and to bed with a journal entry, to wake
+at the town's forced waking hour; in bed, it reviews the day, notes it in memory/notes.md and
+falls asleep. Spoken to, it answers once a day and leaves the conversation. It keeps no state of
+its own: the resident's name comes from the system prompt, and the day so far from the messages
+since the last wake-up, so it continues a resumed run as it would have continued the run.
 """
 
 from __future__ import annotations
@@ -24,11 +29,16 @@ from agent.texts import NOTES_HEADINGS
 from infrastructure.llm import LLMRequest, LLMResponse, Message, ToolCall
 from world.clock import parse_hour
 from world.config import TownConfig
+from world.rules import bare
 
 WORK_ENDS = parse_hour("17:00")
+COUNTER_CLOSES = parse_hour("19:00")
 EVENING = parse_hour("20:00")
+PORTIONS = 4
+"""What the chef cooks of each of the first two dishes."""
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* The client pays \S+\.(.*)$", re.MULTILINE)
+CLOSED = ("is closed: nobody is at the counter.", "The kitchen is closed.")
 
 
 @dataclass(frozen=True)
@@ -45,18 +55,17 @@ class DryRunModel:
         self._town = town
         self._index = {resident.name: i for i, resident in enumerate(town.residents)}
         self._homes = {resident.name: resident.home for resident in town.residents}
+        self._occupations = {r.name: town.occupation(r.occupation) for r in town.residents}
         self._places = {place.name: place.id for place in town.places}
-        self._social = next(place.id for place in town.places if place.kind == "social")
-        for_sale = town.goods
-        stocks = [g for g in for_sale if g.kind == "consumable" and g.effect == "food"]
-        self._stock = stocks[0] if stocks else None
-        self._shop = self._stock.sold_at[0] if self._stock else None
-        meals = [
-            g
-            for g in for_sale
-            if g.kind == "immediate" and g.effect == "food" and self._social in g.sold_at
-        ]
-        self._meal = meals[0] if meals else None
+        self._store = town.workplace("store").id
+        self._restaurant = town.workplace("restaurant").id
+        self._bread = next(good.id for good in town.supplier if good.ready)
+        self._dishes = town.dishes[:2]
+        kitchen: dict[str, int] = {}
+        for dish in self._dishes:
+            for good, units in dish.ingredients.items():
+                kitchen[good] = kitchen.get(good, 0) + units * PORTIONS
+        self._kitchen = kitchen
 
     def __call__(self, request: LLMRequest) -> LLMResponse:
         if not request.tools:  # the check that the model answers, before the run
@@ -90,6 +99,8 @@ class _Day:
         self.hour = parse_hour(moments[-1]) if moments else 0
         self.fresh = bool(messages) and messages[-1].role == "user"
         self.batch = self._last_batch() if not self.fresh else []
+        occupation = model._occupations[name]
+        self.occupation, self.workplace = occupation.id, occupation.workplace
 
     def next(self) -> LLMResponse:
         if not self.fresh:
@@ -103,42 +114,141 @@ class _Day:
             calls = [] if self._said() else [tool_call("say", text=self._greeting())]
             return reply("", *calls, tool_call("leave_conversation"))
         if "You are at work at" in s:
-            if not self._did("submit"):
-                return reply("", tool_call("view_board"))
-            if self.hour < WORK_ENDS:
-                return reply("", tool_call("wait", minutes=(WORK_ENDS - self.hour) // 60))
-            return reply("", tool_call("leave_work"), tool_call("go", place=self.after_work))
+            return self._at_work()
         place = self._place()
-        town = self.model._town
         if place == self.home:
             if self._did("go"):
                 return reply("", self._sleep())
-            board = parse_hour(town.day.board_posted)
-            if self.hour < board:
-                return reply("", tool_call("wait", minutes=(board - self.hour) // 60))
-            return reply("", tool_call("go", place=town.workplace.id))
-        if place == town.workplace.id:
+            if self.occupation == "shopkeeper":  # the counter opens at waking
+                return self._go(self.model._store)
+            day = self.model._town.day
+            starts = parse_hour(day.delivery if self.occupation == "chef" else day.board_posted)
+            if self.hour < starts:
+                return self._wait_until(starts)
+            return self._go(self.model._store if self.occupation == "chef" else self.workplace)
+        if place == self.workplace:
+            return self._at_workplace()
+        if place == self.model._store:
+            return self._shop()
+        if place == self.model._restaurant and self.hour < EVENING:
+            return self._dine()
+        return self._go(self.home)
+
+    def _at_workplace(self) -> LLMResponse:
+        """Idle at its own workplace: begin the day's work, or, the work done, move on."""
+        if self.occupation in ("programmer", "team-leader"):
             if self._did("view_board"):
-                return reply("", tool_call("go", place=self.after_work))
+                return self._go(self.model._store)
             return reply("", tool_call("view_board"))
-        if place == self.model._shop and place != self.social:
-            bought = self._did("buy", "You bought")
-            calls = [] if bought else [self._buy(self.model._stock), tool_call("inventory")]
-            return reply("", *calls, tool_call("go", place=self.social))
-        if place == self.social and self.hour < EVENING:
-            calls = []
-            meal = self.model._meal
-            if meal is not None and not self._did("buy", f"You bought {meal.name}"):
-                calls.append(self._buy(meal))
-            if "Also here:" in s and not self._said():
-                calls += [tool_call("say", text=self._greeting()), tool_call("leave_conversation")]
-            minutes = min(600, max(1, (EVENING - self.hour) // 60))
-            return reply("", *calls, tool_call("wait", minutes=minutes))
-        return reply("", tool_call("go", place=self.home))
+        if self.occupation == "shopkeeper":
+            if self.hour >= COUNTER_CLOSES:
+                return self._go(self.model._restaurant)
+            orders = {self.model._bread: 10} | self.model._kitchen  # what the day will sell
+            return reply(
+                "",
+                tool_call("start_work"),
+                *[tool_call("order", item=good, quantity=n) for good, n in orders.items()],
+                tool_call("set_price", item=self.model._bread, price=self._price_now()),
+                self._wait_call(COUNTER_CLOSES),
+            )
+        if self.occupation == "chef":
+            if self.hour >= EVENING:
+                return self._go(self.home)
+            cook = [
+                tool_call("cook", dish=dish.id, portions=PORTIONS) for dish in self.model._dishes
+            ]
+            return reply("", *cook, self._wait_call(EVENING))
+        if self.hour >= WORK_ENDS:
+            return self._go(self.model._store)
+        return reply("", tool_call("start_work"), self._wait_call(WORK_ENDS))
+
+    def _at_work(self) -> LLMResponse:
+        if self.occupation in ("programmer", "team-leader"):
+            if not self._did("submit"):
+                return reply("", tool_call("view_board"))
+            ends = WORK_ENDS
+        elif self.occupation == "shopkeeper":
+            if self.hour >= COUNTER_CLOSES:  # bread for herself, at her own counter
+                return reply(
+                    "",
+                    tool_call("buy", item=self.model._bread, quantity=2),
+                    tool_call("leave_work"),
+                    tool_call("go", place=self.model._restaurant),
+                )
+            ends = COUNTER_CLOSES
+        elif self.occupation == "chef":
+            if self._place() == self.model._store:
+                return self._go(self.model._restaurant)
+            ends = EVENING
+        else:
+            ends = WORK_ENDS
+        if self.hour < ends:
+            return self._wait_until(ends)
+        after = self.home if self.occupation == "chef" else self.model._store
+        return reply("", tool_call("leave_work"), tool_call("go", place=after))
+
+    def _shop(self) -> LLMResponse:
+        """At the Store: the chef in the morning, buying for itself and then, at work, for the
+        kitchen; anyone else after work, buying bread if the counter is open."""
+        closed = CLOSED[0] in self.situation
+        if self.occupation == "chef":
+            if closed:
+                return self._wait_minutes(10)
+            kitchen = [
+                tool_call("buy", item=good, quantity=units)
+                for good, units in self.model._kitchen.items()
+            ]
+            return reply(
+                "",
+                tool_call("buy", item=self.model._bread, quantity=2),
+                tool_call("start_work"),
+                *kitchen,
+                tool_call("go", place=self.model._restaurant),
+            )
+        calls = []
+        if not closed and not self._did("buy", "You bought"):
+            calls = [tool_call("buy", item=self.model._bread, quantity=2), tool_call("inventory")]
+        return reply("", *calls, tool_call("go", place=self.model._restaurant))
+
+    def _dine(self) -> LLMResponse:
+        """At the Restaurant in the evening: a dish if one is ready, a word to whoever is there,
+        and then the evening passes."""
+        calls = []
+        dish = self._ready_dish()
+        if dish is not None and not self._did("buy", "You had"):
+            calls.append(tool_call("buy", item=dish))
+        if "Also here:" in self.situation and not self._said():
+            calls += [tool_call("say", text=self._greeting()), tool_call("leave_conversation")]
+        return reply("", *calls, self._wait_call(EVENING))
+
+    def _ready_dish(self) -> str | None:
+        """The first dish the situation tells is ready, if the kitchen is open."""
+        if CLOSED[1] in self.situation:
+            return None
+        for dish in self.model._town.dishes:
+            found = re.search(
+                rf"\b{re.escape(bare(dish.name))} \S+ \((\d+) ready\)", self.situation
+            )
+            if found:
+                return dish.id
+        return None
+
+    def _price_now(self) -> int:
+        """A price one more than the Store's starting price of bread."""
+        return self.model._town.good(self.model._bread).price + 1
+
+    def _go(self, place: str) -> LLMResponse:
+        return reply("", tool_call("go", place=place))
+
+    def _wait_call(self, until: int) -> ToolCall:
+        return tool_call("wait", minutes=min(600, max(1, (until - self.hour) // 60)))
+
+    def _wait_until(self, until: int) -> LLMResponse:
+        return reply("", self._wait_call(until))
 
     @staticmethod
-    def _buy(good) -> ToolCall:
-        return tool_call("buy", item=good.id, quantity=1)
+    def _wait_minutes(minutes: int) -> LLMResponse:
+        return reply("", tool_call("wait", minutes=minutes))
 
     def _after(self, batch: list[_Call]) -> LLMResponse:
         """The reply once the calls of `batch` have been answered and nothing new was told."""
@@ -160,7 +270,7 @@ class _Day:
         if held:
             return self._fix()
         if not free:
-            return reply("", tool_call("go", place=self.social))
+            return self._go(self.model._store)
         start = self.model._index[self.name] % len(lines)
         task = min(free, key=lambda number: (number - 1 - start) % len(lines))
         return reply(f"I will work on task {task}.", tool_call("claim_task", task=task))
@@ -197,20 +307,30 @@ class _Day:
         """The day in a few sentences, from what its calls returned."""
         parts = []
         claim = next((c for c in self.calls if c.name == "claim_task"), None)
-        if claim is not None and "You claimed" in claim.result:
-            parts.append(f"I claimed task {claim.arguments['task']} at the Workshop.")
+        if claim is not None and "claimed task" in claim.result:
+            parts.append(f"I claimed task {claim.arguments['task']} at {self._workplace_name}.")
         submit = next((c for c in self.calls if c.name == "submit"), None)
         if submit is not None:
             accepted = "Accepted." in submit.result
             parts.append("My fix was accepted." if accepted else "My fix was not accepted.")
+        if self._did("order", "You ordered"):
+            parts.append("I ordered from the supplier.")
+        if self._did("cook", "You cooked"):
+            parts.append("I cooked for the evening.")
         if self._did("buy", "You bought"):
             parts.append("I bought what I needed.")
+        if self._did("buy", "You had"):
+            parts.append("I had my supper out.")
         if self._said():
             parts.append("I talked with people in the evening.")
         return " ".join(parts) or "A quiet day."
 
     def _greeting(self) -> str:
-        return f"Hello, I am {self.name}. I spent the day on a task at the Workshop."
+        return f"Hello, I am {self.name}. I spent the day at {self._workplace_name}."
+
+    @property
+    def _workplace_name(self) -> str:
+        return self.model._town.place(self.workplace).name
 
     def _did(self, name: str, result: str = "") -> bool:
         """Whether `name` was called today, with a result that tells `result` (what happened
@@ -232,12 +352,3 @@ class _Day:
     @property
     def home(self) -> str:
         return self.model._homes[self.name]
-
-    @property
-    def social(self) -> str:
-        return self.model._social
-
-    @property
-    def after_work(self) -> str:
-        """Where the day goes after work: the shop, if the town has one to buy food at."""
-        return self.model._shop or self.social

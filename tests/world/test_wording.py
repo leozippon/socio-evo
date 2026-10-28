@@ -12,9 +12,9 @@ import pytest
 
 import world
 from agent.wording import offences
-from tests.world.conftest import awake_at, backend_of, town_config
+from tests.world.conftest import RESIDENTS, TRADES, awake_at, backend_of, town_config
 from world.events import Bedridden, Conversation, Idle, Movement, Sleep, Work, refusal
-from world.rules import TOPICS
+from world.rules import DETAILS, TOPICS
 
 DAY_NUMBER = re.compile(r"\b[Dd]ay[ -]?\d")
 
@@ -51,10 +51,10 @@ def _check(texts: list[str]) -> None:
 
 
 async def test_every_rendered_text_passes_the_guard(make_town):
-    town = make_town(town_config(), backend_of({"org/repo": 3}))
+    town = make_town(town_config(residents=RESIDENTS + TRADES), backend_of({"org/repo": 3}))
     world_ = town.world
     texts = [world_.rules.text(name) for name in world_.residents]
-    texts += [world_.rules.help("Mei", topic) for topic in (*TOPICS, "anything")]
+    texts += [world_.rules.help("Mei", topic) for topic in (*TOPICS, *DETAILS, "anything")]
     for spec in world_.tool_specs:
         texts.append(spec.description)
         for parameter in spec.parameters["properties"].values():
@@ -77,12 +77,40 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     await awake_at(town)
     texts += [world_.ports[name].situation() for name in world_.residents]
     await town.call("Mei", "say", text="Morning.")
-    await town.call("Mei", "go", place="store")
+    for name in ("Mei", "Olga", "Jonas"):
+        await town.call(name, "go", place="store")
+    await town.call("Aisha", "go", place="cafe")
     await town.until("07:10")
+    texts.append(world_.ports["Mei"].situation())  # the store closed
     texts.append((await town.call("Mei", "buy", item="coat")).text)
-    texts.append((await town.call("Mei", "buy", item="groceries")).text)
+    texts.append((await town.call("Olga", "start_work")).text)
+    texts.append(world_.ports["Mei"].situation())  # the counter
+    texts.append((await town.call("Mei", "buy", item="coat")).text)
+    texts.append((await town.call("Mei", "buy", item="coat")).text)  # none left
+    texts.append((await town.call("Mei", "buy", item="bread", quantity=2)).text)
+    texts.append((await town.call("Mei", "order", item="bread", quantity=1)).text)
+    texts.append((await town.call("Olga", "order", item="bread", quantity=3)).text)
+    texts.append((await town.call("Olga", "set_price", item="bread", price=5)).text)
+    texts.append((await town.call("Olga", "set_price", item="soup", price=5)).text)
+    texts.append(world_.ports["Olga"].situation())  # what is on order
+    texts.append((await town.call("Jonas", "buy", item="eggs")).text)  # for himself
+    texts.append((await town.call("Jonas", "start_work")).text)
+    texts.append((await town.call("Jonas", "buy", item="eggs", quantity=4)).text)
+    texts.append((await town.call("Jonas", "buy", item="coat")).text)
+    texts.append(world_.ports["Jonas"].situation())  # the kitchen's stock
+    texts.append(world_.ports["Aisha"].situation())  # the kitchen closed
+    texts.append((await town.call("Aisha", "buy", item="omelette")).text)
     texts.append((await town.call("Mei", "help", topic="money")).text)
     texts.append((await town.call("Mei", "inventory")).text)
+    await town.call("Jonas", "go", place="cafe")
+    await town.until("07:20")
+    texts.append((await town.call("Jonas", "cook", dish="omelette", portions=3)).text)  # short
+    texts.append((await town.call("Jonas", "cook", dish="omelette", portions=1)).text)
+    texts.append((await town.call("Jonas", "set_price", item="bread", price=5)).text)
+    texts.append(world_.ports["Aisha"].situation())  # the menu
+    texts.append((await town.call("Aisha", "buy", item="soup")).text)  # none ready
+    texts.append((await town.call("Aisha", "buy", item="omelette")).text)
+    texts.append((await town.call("Jonas", "buy", item="omelette")).text)
     await town.call("Mei", "go", place="workshop")
     texts.append(world_.ports["Mei"].situation())
     await town.until("09:00")

@@ -1,25 +1,29 @@
 """The configuration of a town: its places, its residents and their occupations, its fund, its
-work, the goods for sale, its social life, its clock and the few fixed hours of its day. Every
-check that the world relies on is made when the configuration is validated, so that a bad
-configuration stops a run before anything is written.
+work, the supplier's catalogue and the dishes of its kitchen, its social life, its clock and the
+few fixed hours of its day. Every check that the world relies on is made when the configuration
+is validated, so that a bad configuration stops a run before anything is written.
 
-Each resident has an `occupation`, which says where it works and what the town pays it: a wage
-for each hour at work at the occupation's workplace and a sum for each service rendered, both
-from the town's one fund, which starts at `fund.start` and takes in what clients pay for the work
-(`work.payment`), the rent and what the shops sell.
+A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the
+restaurant, the hospital and the hall, at most one of each) or a social place, which has no
+purpose but company. Each resident has an `occupation`, which says where it works and what the
+town pays it: a wage for each hour at work at the occupation's workplace and a sum for each
+service rendered, both from the town's one fund, which starts at `fund.start`. Each occupation
+works at a place of its own kind (`WORKPLACE_OF`), and every workplace is some occupation's.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
-and the goods it buys. Goods are a catalogue (`goods`): the world implements three kinds of good
-and the effects of `Effect`, and everything else about a good is data, so the catalogue grows
-without code. A `consumable` is bought as a stock of `uses`, which its owner eats from as it gets
-hungry, at most `per_day` units a day; an `immediate` good is consumed as it is bought; a
-`durable` is owned once and kept, billed `fee_per_day` on the statement while owned. A good with
-the effect `food` gives its `nourishment` when it is eaten, a share of a day's need (100 a full
-day); `travel` makes the owner's journeys take `factor` of the time; `messaging` lets owners
-write to one another wherever they are; `appearance` shows `phrase` to whoever sees the owner;
-`examination` tells the buyer the numbers of its body and their causes; `treatment` restores
-`restores` of its health.
+and what it buys. The Store sells the supplier's catalogue (`supplier`), each good bought from
+the supplier at `wholesale` and sold at a price that starts at `price` and is the shopkeeper's
+to change, from a stock that starts as `store.stock`: the world implements two kinds of good and
+the effects of `Effect`, and everything else about a good is data, so the catalogue grows
+without code. A `consumable` is food, kept by the unit: ready food, a helping of `nourishment`
+(a share of a day's need, 100 a full day) eaten whenever its owner could eat, or an ingredient,
+of no nourishment (`nourishment: 0`), which is not eaten as it is but cooked. A `durable` is
+owned once and kept, billed `fee_per_day` on the statement while owned: `travel` makes the
+owner's journeys take `factor` of the time; `messaging` lets owners write to one another
+wherever they are; `appearance` shows `phrase` to whoever sees the owner. The Restaurant's
+kitchen cooks `dishes`, each from its `ingredients`, a day's food served at a price that starts
+at `price` and is the chef's to change.
 
 The residents' bodies (`needs`, implemented by `world.body`) are three needs, each a number from
 0 to 100 that the resident reads in bands of plain words: satiety, which falls by the hour and
@@ -52,22 +56,37 @@ Hour = Annotated[str, AfterValidator(_hour)]
 Id = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 """A resident's name: one capitalised word, the way others address it."""
-Effect = Literal["food", "travel", "messaging", "appearance", "examination", "treatment"]
+Effect = Literal["food", "travel", "messaging", "appearance"]
 """What a good does in the world: the one enumeration of effects, each implemented by the world."""
 EFFECTS: tuple[str, ...] = get_args(Effect)
-IMMEDIATE_EFFECTS = frozenset({"examination", "treatment"})
-"""The effects that only an immediate good has: a service, used up as it is bought."""
+PlaceKind = Literal["home", "office", "store", "restaurant", "hospital", "hall", "social"]
+WORKPLACES = ("office", "store", "restaurant", "hospital", "hall")
+"""The kinds of place where an occupation works, at most one place of each."""
+OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
+WORKPLACE_OF: dict[str, str] = {
+    "programmer": "office",
+    "team-leader": "office",
+    "chef": "restaurant",
+    "shopkeeper": "store",
+    "doctor": "hospital",
+    "mayor": "hall",
+}
+"""The kind of place where each occupation works."""
+ERRANDS: dict[str, str] = {"chef": "store"}
+"""Where an occupation also works, away from its workplace and without wages for the hours: the
+chef at the store, where what it buys goes to the kitchen."""
+A_DAYS_FOOD = 100
+"""A day's need of food, which nourishment is a share of, and what a dish gives."""
 
 
 class Place(StrictModel):
-    """A place of the town. `name` is how a sentence names it ("the café on the square").
-    Every place, the workplace included, can be visited and used at any hour. A home has `rooms`,
-    one a resident, charges `rent` a day for each and has a `comfort` (1 is an ordinary home); a
-    shop and a social place may sell goods."""
+    """A place of the town. `name` is how a sentence names it ("the Store"). Every place can be
+    visited at any hour. A home has `rooms`, one a resident, charges `rent` a day for each and
+    has a `comfort` (1 is an ordinary home)."""
 
     id: Id
     name: str = Field(min_length=1)
-    kind: Literal["home", "workplace", "social", "shop"]
+    kind: PlaceKind
     rent: int | None = Field(default=None, ge=0, description="a home's rent a day for one room")
     rooms: int | None = Field(default=None, ge=1, description="a home's rooms, one a resident")
     comfort: float | None = Field(default=None, gt=0, description="a home's comfort, 1 ordinary")
@@ -84,54 +103,35 @@ class Place(StrictModel):
 
 
 class Good(StrictModel):
-    """A good for sale (see the module docstring). `name` is how a sentence names it, with its
-    article ("a bicycle", "groceries", "a meal at Café Linde"); `sold_at` names the places that
-    sell it."""
+    """A good of the supplier's catalogue (see the module docstring). `name` is how a sentence
+    names it, with its article ("a bicycle", "bread")."""
 
     id: Id
     name: str = Field(min_length=1)
-    price: int = Field(ge=1)
-    sold_at: tuple[Id, ...] = Field(min_length=1)
-    kind: Literal["consumable", "immediate", "durable"]
+    wholesale: int = Field(ge=1, description="what the supplier charges for a unit")
+    price: int = Field(ge=1, description="the Store's price for a unit at the start")
+    kind: Literal["consumable", "durable"]
     effect: Effect
-    uses: int | None = Field(default=None, ge=1, description="a consumable's units in one purchase")
-    per_day: int | None = Field(default=None, ge=1, description="a consumable's units used a day")
     fee_per_day: int = Field(default=0, ge=0, description="a durable's charge a day while owned")
-    nourishment: int | None = Field(default=None, ge=1, description="food: what one unit gives")
+    nourishment: int | None = Field(
+        default=None, ge=0, le=A_DAYS_FOOD, description="food: what a helping gives, 0 if raw"
+    )
     factor: float | None = Field(default=None, gt=0, le=1, description="travel: the time taken")
     phrase: str | None = Field(default=None, description="appearance: what others see")
-    restores: float | None = Field(default=None, gt=0, description="treatment: the health given")
 
     @model_validator(mode="after")
     def _consistent(self) -> Good:
         what = f"the good {self.id}"
-        if self.kind == "consumable":
-            if self.uses is None or self.per_day is None:
-                raise ValueError(f"{what} is consumable and needs uses and per_day")
-            if self.per_day > self.uses:
-                raise ValueError(f"{what} uses more a day than one purchase holds")
-        elif self.uses is not None or self.per_day is not None:
-            raise ValueError(f"{what} is not consumable and has no uses or per_day")
+        if (self.kind == "consumable") != (self.effect == "food"):
+            raise ValueError(f"{what}: food is consumable, and everything else durable")
         if self.kind != "durable" and self.fee_per_day:
             raise ValueError(f"{what} is not durable and carries no fee")
-        if self.effect == "food":
-            if self.kind == "durable":
-                raise ValueError(f"{what} is food and so is consumable or immediate")
-        elif self.effect in IMMEDIATE_EFFECTS:
-            if self.kind != "immediate":
-                raise ValueError(
-                    f"{what} has the effect {self.effect}, which only an immediate has"
-                )
-        elif self.kind != "durable":
-            raise ValueError(f"{what} has the effect {self.effect}, which only a durable has")
         if (self.nourishment is not None) != (self.effect == "food"):
             raise ValueError(f"{what}: nourishment belongs to the effect food, and only to it")
         if (self.factor is not None) != (self.effect == "travel"):
             raise ValueError(f"{what}: factor belongs to the effect travel, and only to it")
         if (self.phrase is not None) != (self.effect == "appearance"):
             raise ValueError(f"{what}: phrase belongs to the effect appearance, and only to it")
-        if (self.restores is not None) != (self.effect == "treatment"):
-            raise ValueError(f"{what}: restores belongs to the effect treatment, and only to it")
         if self.phrase is not None:
             if not self.phrase.strip():
                 raise ValueError(f"{what} has an empty phrase")
@@ -140,10 +140,26 @@ class Good(StrictModel):
         return self
 
     @property
-    def days(self) -> int:
-        """How many days one purchase of a consumable lasts."""
-        assert self.uses is not None and self.per_day is not None
-        return self.uses // self.per_day
+    def ready(self) -> bool:
+        """Whether it is ready food, eaten as it is; an ingredient is not."""
+        return bool(self.nourishment)
+
+
+class Dish(StrictModel):
+    """A dish of the Restaurant: `name` as a sentence names it ("stew"), the units of the
+    supplier's goods a portion takes (`ingredients`), and its price on the menu at the start. A
+    portion is a day's food, eaten where it is bought, and keeps until midnight."""
+
+    id: Id
+    name: str = Field(min_length=1)
+    ingredients: dict[Id, Annotated[int, Field(ge=1)]] = Field(min_length=1)
+    price: int = Field(ge=1)
+
+
+class StoreSettings(StrictModel):
+    stock: dict[Id, Annotated[int, Field(ge=0)]] = Field(
+        description="the units of each good the Store holds at the start"
+    )
 
 
 class Band(StrictModel):
@@ -242,12 +258,14 @@ class Route(StrictModel):
 
 
 class Occupation(StrictModel):
-    """What a resident does for a living. `title` is how a sentence names it ("a programmer");
-    `workplace` the place where its work is done and its hours at work are counted; it is paid
-    `wage_per_hour` for each hour at work there and `per_service` at once for each service
-    rendered (for a programmer, a task of its own accepted)."""
+    """What a resident does for a living. `title` is how a sentence names it ("the chef");
+    `workplace` the place, of the occupation's own kind (`WORKPLACE_OF`), where its work is done
+    and its hours at work are counted; it is paid `wage_per_hour` for each hour at work there and
+    `per_service` at once for each service rendered: a programmer for a task of its own accepted,
+    the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
+    sale."""
 
-    id: Id
+    id: OccupationId
     title: str = Field(min_length=1)
     workplace: Id
     wage_per_hour: int = Field(ge=1)
@@ -273,7 +291,7 @@ class Resident(StrictModel):
 
 
 class Work(StrictModel):
-    """The work at the workplace. `split` names the task pool, of which the board posts
+    """The work at the office. `split` names the task pool, of which the board posts
     `board_size` tasks every day at the hour `day.board_posted`, in a rotation through the whole
     pool; a claim made on a calendar day runs out at the midnight that ends the day
     `claim_expiry_days` days later. A task accepted pays the fund `payment`."""
@@ -314,15 +332,17 @@ class ClockSettings(StrictModel):
 class DayHours(StrictModel):
     """The only fixed hours of a day, all after midnight: at `forced_sleep`, the night's end,
     whoever is still up falls asleep where it is, to wake at `forced_wake`; at `checkpoint`,
-    between the two, the day's state is saved; at `board_posted`, no earlier than the waking,
-    the day's board goes up at the workplace. A lived day runs from one checkpoint to the next.
-    `sleep_at_most` is not an hour but the longest one sleep may last, written the same way and
-    so less than a day; it is at least the forced sleep's span."""
+    between the two, the day's state is saved; at `board_posted` the day's board goes up at the
+    office, and at `delivery` what the Store ordered the day before arrives, both no earlier than
+    the waking. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour
+    but the longest one sleep may last, written the same way and so less than a day; it is at
+    least the forced sleep's span."""
 
     forced_sleep: Hour
     checkpoint: Hour
     forced_wake: Hour
     board_posted: Hour
+    delivery: Hour
     sleep_at_most: Hour
 
     def of_day(self, hour: str) -> int:
@@ -343,7 +363,9 @@ class TownConfig(StrictModel):
     occupations: tuple[Occupation, ...] = Field(min_length=1)
     fund: FundSettings
     work: Work
-    goods: tuple[Good, ...] = Field(min_length=1)
+    supplier: tuple[Good, ...] = Field(min_length=1)
+    dishes: tuple[Dish, ...] = ()
+    store: StoreSettings
     needs: Needs
     social: Social
     clock: ClockSettings
@@ -352,38 +374,49 @@ class TownConfig(StrictModel):
     @model_validator(mode="after")
     def _consistent(self) -> TownConfig:
         places = {place.id: place for place in self.places}
+        goods = {good.id: good for good in self.supplier}
         _unique("place id", [place.id for place in self.places])
         _unique("resident name", [resident.name for resident in self.residents])
         _unique("agent directory", [r.agent_dir for r in self.residents if r.agent_dir])
         _unique("route", [frozenset(route.between) for route in self.routes])
-        _unique("good id", [good.id for good in self.goods])
-        for good in self.goods:
-            for place_id in good.sold_at:
-                if places.get(place_id, None) is None or places[place_id].kind not in (
-                    "social",
-                    "shop",
-                ):
-                    raise ValueError(
-                        f"the good {good.id} is sold at {place_id}, not a shop or social place"
-                    )
-        if not any(good.effect == "food" for good in self.goods):
+        _unique("good or dish id", [g.id for g in self.supplier] + [d.id for d in self.dishes])
+        for dish in self.dishes:
+            for good_id in dish.ingredients:
+                if good_id not in goods or goods[good_id].effect != "food":
+                    raise ValueError(f"the dish {dish.id} is cooked from {good_id}, not a food")
+        for good_id in self.store.stock:
+            if good_id not in goods:
+                raise ValueError(f"the Store's stock has {good_id}, which the supplier lacks")
+        if not self.dishes and not any(good.ready for good in self.supplier):
             raise ValueError("the town sells nothing to eat")
         for route in self.routes:
             a, b = route.between
             if a == b or a not in places or b not in places:
                 raise ValueError(f"route {a}-{b} must join two different known places")
-        workplaces = [place for place in self.places if place.kind == "workplace"]
-        if len(workplaces) != 1:
-            raise ValueError(f"a town has exactly one workplace, not {len(workplaces)}")
+        for kind in WORKPLACES:
+            found = [place.id for place in self.places if place.kind == kind]
+            if len(found) > 1:
+                raise ValueError(f"a town has at most one {kind}, not {len(found)}")
+        for kind in ("office", "store", "restaurant"):
+            if not any(place.kind == kind for place in self.places):
+                raise ValueError(f"the town has no {kind}")
         _unique("occupation id", [occupation.id for occupation in self.occupations])
         for occupation in self.occupations:
+            kind = WORKPLACE_OF[occupation.id]
             workplace = places.get(occupation.workplace)
-            if workplace is None or workplace.kind != "workplace":
+            if workplace is None or workplace.kind != kind:
+                article = "an" if kind[0] in "aeiou" else "a"
                 raise ValueError(
-                    f"the occupation {occupation.id}'s workplace {occupation.workplace} is not a "
-                    "workplace"
+                    f"the occupation {occupation.id} works at {article} {kind}, and "
+                    f"{occupation.workplace} is not one"
                 )
+        staffed = {occupation.workplace for occupation in self.occupations}
+        for place in self.places:
+            if place.kind in WORKPLACES and place.id not in staffed:
+                raise ValueError(f"the {place.kind} {place.id} is no occupation's workplace")
         occupations = {occupation.id for occupation in self.occupations}
+        if "team-leader" in occupations and "programmer" not in occupations:
+            raise ValueError("the team leader leads programmers, and the town has none")
         residents = {resident.name: resident for resident in self.residents}
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
@@ -409,26 +442,30 @@ class TownConfig(StrictModel):
                 if not how.strip():
                     raise ValueError(f"{resident.name}'s tie to {other} says nothing")
         day = self.day
-        hours = (day.forced_sleep, day.checkpoint, day.forced_wake, day.board_posted)
-        forced, checkpoint, wake, posted = map(parse_hour, hours)
+        hours = (day.forced_sleep, day.checkpoint, day.forced_wake)
+        forced, checkpoint, wake = map(parse_hour, hours)
         longest = parse_hour(day.sleep_at_most)
-        if not forced < checkpoint < wake <= posted:
-            raise ValueError(
-                "the hours must run forced_sleep < checkpoint < forced_wake <= board_posted"
-            )
+        if not forced < checkpoint < wake:
+            raise ValueError("the hours must run forced_sleep < checkpoint < forced_wake")
+        for name in ("board_posted", "delivery"):
+            if parse_hour(getattr(day, name)) < wake:
+                raise ValueError(f"the hours must run forced_wake <= {name}")
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         return self
 
-    @property
-    def workplace(self) -> Place:
-        return next(place for place in self.places if place.kind == "workplace")
+    def workplace(self, kind: str) -> Place:
+        """The town's place of the workplace kind `kind`."""
+        return next(place for place in self.places if place.kind == kind)
 
     def place(self, place_id: str) -> Place:
         return next(place for place in self.places if place.id == place_id)
 
     def good(self, good_id: str) -> Good:
-        return next(good for good in self.goods if good.id == good_id)
+        return next(good for good in self.supplier if good.id == good_id)
+
+    def dish(self, dish_id: str) -> Dish:
+        return next(dish for dish in self.dishes if dish.id == dish_id)
 
     def occupation(self, occupation_id: str) -> Occupation:
         return next(o for o in self.occupations if o.id == occupation_id)

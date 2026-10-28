@@ -34,7 +34,7 @@ export function goodEffect(good) {
   const share = (n) => (n >= 100 ? "a day's food" : `${Math.round(n)}% of a day's food`);
   switch (good.effect) {
     case "food":
-      return good.kind === "consumable" ? `${fmt.plural(good.uses, "helping")} of ${share(good.nourishment)} each, eaten at home as the owner gets hungry, ${good.per_day} a day at most` : `${share(good.nourishment)[0].toUpperCase()}${share(good.nourishment).slice(1)}, eaten on the spot`;
+      return good.nourishment ? `A helping of ${share(good.nourishment)}, eaten as the owner gets hungry` : "Cooked with in the kitchen, not eaten as it is";
     case "travel":
       return good.factor === 0.5 ? "Halves the time of every journey" : `Journeys take ${Math.round(good.factor * 100)}% of the time`;
     case "messaging":
@@ -53,14 +53,13 @@ export function goodEffect(good) {
 /** The kind of good in a word: kept, a stock, or used up as bought. */
 export const goodKind = (good) => ({ durable: good.fee_per_day ? "kept, charged daily" : "kept", consumable: "a stock", immediate: "used at once" })[good.kind] ?? good.kind;
 
-/** Where a good is sold, by the places' short names. */
-export const soldAt = (good, world) => good.sold_at.map((id) => world.places.find((place) => place.id === id)).filter(Boolean).map(shortName).join(", ");
+/** Where a good is sold: the store, by its short name. */
+export const soldAt = (good, world) => world.places.filter((place) => place.kind === "store").map(shortName).join(", ");
 
-/** The stock of a consumable in words: `6 helpings · about 2 days`. */
+/** What is kept of a consumable in words: `6 helpings`, `4 units`. */
 export function stockText(good, units) {
   if (good.kind !== "consumable") return null;
-  const days = Math.ceil(units / good.per_day);
-  return `${fmt.plural(units, "helping")} · about ${fmt.plural(days, "day")}`;
+  return fmt.plural(units, good.nourishment ? "helping" : "unit");
 }
 
 /**

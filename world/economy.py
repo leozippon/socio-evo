@@ -1,38 +1,72 @@
-"""The town's money: each resident's inventory and the town's one fund.
+"""The town's money and what it owns: each resident's inventory, the town's one fund, the Store
+and the Restaurant's kitchen.
 
 Money is a whole number of the town's currency (`money` writes it). A resident's `Inventory` is
 what it has: its money, never below zero, and its items, the units it keeps of each good (one of
-a durable, the helpings left of a stock), with `moves`, the movements of its money since its
-last midnight statement, which the statement tells. A purchase is paid in cash from the
-inventory, and the world refuses one that its money does not cover; money and items pass between
-residents as they hand them over, of which the world keeps no account beyond the hand-over.
+a durable, the helpings of ready food, the units of an ingredient), with `moves`, the movements
+of its money since its last midnight statement, which the statement tells. A purchase is paid in
+cash from the inventory, and the world refuses one that its money does not cover; money and
+items pass between residents as they hand them over, of which the world keeps no account beyond
+the hand-over.
 
-The `Fund` is the town's money: the employer, the landlord and the owner of the shops. Money
-enters the town only from clients, whose payment for a task accepted goes to the fund, and would
-leave it only to a supplier, whom this town does not yet pay; everything else moves between the
-fund and the residents, so that the fund and the inventories together change only by what clients
-pay. The fund pays what it has. A sum per service goes into the inventory at once
+The `Fund` is the town's money: the employer, the landlord and the owner of the Store and the
+Restaurant. Money enters the town only from clients, whose payment for a task accepted goes to
+the fund, and leaves it only to the supplier, whom the fund pays at once for what the Store
+orders; everything else moves between the fund and the residents, so that the fund and the
+inventories together change only by what clients pay and the supplier is paid. What the chef buys
+at the Store for the kitchen is taken in as a sale and paid out for the kitchen, a movement
+within the fund. The fund pays what it has. A sum per service goes into the inventory at once
 (`Fund.service`); the day's wages are paid at midnight with the rent and the daily charges taken
 out of them (`Fund.settle`), so that money in hand is never touched by rent. What the fund cannot
 pay it owes (`owed`) and pays with the next wages; the rent and charges the wages did not cover
 are owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its movements since
 the last midnight by kind (`TAKEN` and `PAID`), and `yesterday` those of the day the last
 midnight closed.
+
+The `Store` keeps its stock of each good, its prices and the orders on their way; the `Kitchen`
+keeps the Restaurant's stock of ingredients, the menu's prices and the portions cooked and not
+yet served. Both are checkpointed whole.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 
-TAKEN = {"client": "from clients", "rent": "in rent and daily charges", "sale": "in sales"}
+TAKEN = {
+    "client": "from clients",
+    "rent": "in rent and daily charges",
+    "sale": "in sales",
+    "dish": "for dishes",
+}
 """The kinds of money the fund takes in, with how the report words each."""
-PAID = {"wage": "in wages", "service": "in sums for services"}
+PAID = {
+    "wage": "in wages",
+    "service": "in sums for services",
+    "supplier": "to the supplier",
+    "kitchen": "for the kitchen",
+}
 """The kinds of money the fund pays out, with how the report words each."""
 
 
 def money(currency: str, amount: int) -> str:
     """`amount` of `currency`, as the town writes it: `$40`."""
     return f"{currency}{amount}"
+
+
+def add(stock: dict[str, int], item: str, units: int) -> None:
+    """Put `units` of `item` into `stock`."""
+    stock[item] = stock.get(item, 0) + units
+
+
+def take(stock: dict[str, int], item: str, units: int) -> None:
+    """Take `units` of `item` out of `stock`, which must hold them; what is used up leaves it."""
+    left = stock.get(item, 0) - units
+    if left < 0:
+        raise ValueError(f"only {stock.get(item, 0)} of {item} to take {units} from")
+    if left:
+        stock[item] = left
+    else:
+        del stock[item]
 
 
 @dataclass
@@ -48,16 +82,10 @@ class Inventory:
         return self.items.get(item, 0)
 
     def add(self, item: str, units: int) -> None:
-        self.items[item] = self.units(item) + units
+        add(self.items, item, units)
 
     def remove(self, item: str, units: int) -> None:
-        left = self.units(item) - units
-        if left < 0:
-            raise ValueError(f"only {self.units(item)} of {item} to take {units} from")
-        if left:
-            self.items[item] = left
-        else:
-            del self.items[item]
+        take(self.items, item, units)
 
 
 @dataclass(frozen=True)
@@ -89,7 +117,7 @@ class Fund:
     arrears: dict[str, int] = field(default_factory=dict)
 
     def take(self, kind: str, amount: int) -> None:
-        """Money of `kind` into the fund: a client's payment or a sale."""
+        """Money of `kind` into the fund: a client's payment, a sale or a dish."""
         if kind not in TAKEN:
             raise ValueError(f"the fund takes no {kind!r}")
         self.balance += amount
@@ -148,3 +176,40 @@ class Fund:
     def _owe(self, name: str, amount: int) -> None:
         if amount:
             self.owed[name] = self.owed.get(name, 0) + amount
+
+
+@dataclass
+class Store:
+    """The Store (see the module docstring): the units of each good in `stock`, the price of a
+    unit of each in `prices`, and the orders `pending`, each `[good, units, the time it
+    arrives]`."""
+
+    stock: dict[str, int]
+    prices: dict[str, int]
+    pending: list[list[str | int]] = field(default_factory=list)
+
+    def receive(self, now: int) -> dict[str, int]:
+        """The orders that have arrived by `now` go into the stock; returns what came."""
+        came: dict[str, int] = {}
+        waiting = []
+        for good, units, t in self.pending:
+            assert isinstance(good, str) and isinstance(units, int) and isinstance(t, int)
+            if t <= now:
+                add(came, good, units)
+            else:
+                waiting.append([good, units, t])
+        self.pending = waiting
+        for good, units in came.items():
+            add(self.stock, good, units)
+        return came
+
+
+@dataclass
+class Kitchen:
+    """The Restaurant's kitchen (see the module docstring): the units of each ingredient in
+    `stock`, the price of each dish on the `menu`, and the `portions` of each cooked and not yet
+    served, which are gone at midnight."""
+
+    menu: dict[str, int]
+    stock: dict[str, int] = field(default_factory=dict)
+    portions: dict[str, int] = field(default_factory=dict)

@@ -40,9 +40,18 @@ their workspaces, which the bundle does not carry."""
 UNPUBLISHED = frozenset({"session.jsonl", "trace.jsonl"})
 """Files of an agent's repository whose changes, diffs and contents the bundle leaves out."""
 EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
-ROWS = {"home": 0.0, "workplace": 1.5, "social": 3.0, "shop": 3.0}
+ROWS = {
+    "home": 0.0,
+    "office": 1.5,
+    "hall": 1.5,
+    "hospital": 1.5,
+    "store": 3.0,
+    "restaurant": 3.0,
+    "social": 3.0,
+}
 """Where each kind of place stands on the map, in map units: the homes in a row at the top, the
-workplace in the middle, the social places and the shops in a row below."""
+office, the hall and the hospital in the middle, the store, the restaurant and the social places
+in a row below."""
 COUNTED = (
     "claims",
     "submissions",
@@ -148,7 +157,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
             for r in town.residents
         ],
         "work": town.work.model_dump(mode="json"),
-        "goods": [good.model_dump(mode="json") for good in town.goods],
+        "goods": [good.model_dump(mode="json") for good in town.supplier],
         "needs": town.needs.model_dump(mode="json"),
         "social": town.social.model_dump(mode="json"),
         "day": town.day.model_dump(mode="json"),
@@ -239,12 +248,12 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
     """What each resident owns over the run, by name: `[time, {good id: units}]` from the
     start and after each change, a durable counted 1 and a consumable by the units left of it.
     The purchases and the gifts of things are the timeline's markers: a durable is owned from
-    then on, a consumable adds its units a purchase, an immediate good is used up as it is
-    bought, and what is given goes from the giver to the receiver. What is eaten leaves no
+    then on, a consumable adds the units bought, and what is given goes from the giver to the
+    receiver. What is eaten leaves no
     entry in the log, so at every checkpoint whose file the run has written the stock is read
     from the checkpoint instead, exact as of that moment; between checkpoints it is as last
     counted plus what was bought and given since."""
-    goods = {good.id: good for good in town.goods}
+    goods = {good.id: good for good in town.supplier}
     snapshots: dict[int, dict[str, dict[str, int]]] = {}
     for day in [{"day": 0, "end": data["start"]}, *data["days"]]:
         path = run.checkpoint_path(day["day"])
@@ -280,9 +289,8 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
                 good = goods[change["item"]]
                 if good.kind == "durable":
                     held[good.id] = 1
-                elif good.kind == "consumable":
-                    assert good.uses is not None
-                    held[good.id] = held.get(good.id, 0) + good.uses * change["quantity"]
+                else:
+                    held[good.id] = held.get(good.id, 0) + change["quantity"]
             if t == series[-1][0]:
                 series[-1][1] = dict(held)
             elif held != series[-1][1]:

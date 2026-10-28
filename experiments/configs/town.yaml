@@ -1,62 +1,71 @@
-# The town: eight residents in five homes, the Workshop, Café Linde, the Anchor, the river walk,
-# the Store and the clinic, for 28 days. A run's configuration under runs/ overlays it with the
-# run's name and what differs (see experiments/config.py for how an overlay merges).
+# The town: eight residents in five homes, the Office, the Store, the Linde (the Restaurant), the
+# Hospital, the Town Hall and the river walk, for 28 days. A run's configuration under runs/
+# overlays it with the run's name and what differs (see experiments/config.py for how an overlay
+# merges).
 #
-# The world gives no place opening hours: the Workshop is open at all hours, and the café (meant
-# 07:00-23:00) and the Anchor (meant 17:00-00:00) can be visited at any hour, like the river walk,
-# the Store and the clinic. The only fixed hours are the night's below and the morning hour the
-# Workshop's board goes up, together with the longest one sleep may last.
+# The world gives no place opening hours: a place of work is open while someone is at work there
+# (the Store while the shopkeeper is, the Linde's kitchen while the chef is), and every place can
+# be visited at any hour. The only fixed hours are the night's below, the morning hour the
+# Office's board goes up and the Store's orders arrive, and the longest one sleep may last.
 #
 # Calibration of a life. Rent runs from 30 a day for a room in a shared house to 70 for the
-# cottage, and a day's food from 12 (three helpings of groceries, 36 for nine) to 20 (supper at
-# the Anchor), so the cheapest life costs 42 a day and the dearest 90. Every resident is, for now,
-# a programmer at the Workshop, paid by the town's fund 7 an hour for its time at work there and
-# 40 at once for each task of its own accepted, of the 150 the client pays the fund for it. Eight
-# hours at work earn 56, which keep the cheapest life with 14 over and less than half as much
-# again; the dearest takes thirteen hours, or eight and a task accepted. Wages are paid at
-# midnight with the rent and daily charges taken out of them, so that a day without work leaves
-# the purse alone and is owed from later wages, and starting purses of 180-300 are three to six
-# days of the resident's own life. The fund starts at 1,500. With eight hours' work each and
-# three tasks a day of which half are accepted, its day takes 225 from clients and 355 of rent
-# and pays 448 in wages and 60 for tasks: 72 over, within a tenth of the 1,088 that pass through
-# it. With no task accepted it pays out 93 more than it takes, so the starting fund lasts sixteen
-# days. The board posts more than three tasks a day, and each accepted beyond them leaves the
-# fund 110 better off. Until the town pays a supplier for its goods, what the Store, the café and
-# the clinic sell (about 100 a day of food) is the fund's gain and is left out of that balance.
-# The goods keep their prices: the bicycle (360) costs more than any starting purse, the phone
-# 240 and then 5 a day, the coat 150 and the book 40. A task held stays on the board, beside the
-# next day's 56 and not counted among them, until its claim runs out.
+# cottage, and a day's food from 12 (three helpings of fruit at the Store's starting 4) to 20
+# (stew at the Linde), so the cheapest life costs 42 a day and the dearest 90. The town's fund
+# pays each resident by the hour for its time at work at its own workplace, at its occupation's
+# rate (7 a programmer, the chef and the shopkeeper, 8 the mayor, 9 the team leader and the
+# doctor), and a sum at once for each service: 40 a programmer for a task of its own accepted,
+# of the 150 the client pays the fund, and the team leader as much for one of her own; 20 the
+# team leader for each task a programmer has accepted; 3 the chef a dish served; 2 the shopkeeper
+# a sale; 10 the doctor a patient. Eight hours at the lowest wage earn 56, which keep the
+# cheapest life with 14 over and less than half as much again; the dearest takes ten hours at
+# the highest wage. Wages are paid at midnight with the rent and daily charges taken out of
+# them, so that a day without work leaves the purse alone and is owed from later wages, and
+# starting purses of 180-300 are three to six days of the resident's own life. The fund starts
+# at 1,500. With eight hours' work each, three tasks a day of which half are accepted, and
+# everyone living on three helpings of fruit bought in one sale, its day takes 225 from
+# clients, 355 of rent and 96 in sales, and pays 488 in wages, 90 for tasks, 16 for the sales
+# and 48 to the supplier for the fruit: 34 over, within a tenth of the 1,318 that pass through
+# it. With no task accepted it pays out 101 more than it takes, so the starting fund lasts
+# fourteen days. The board posts more than three tasks a day, and each accepted beyond them
+# leaves the fund 90 better off. The shopkeeper orders from the supplier at the wholesale price
+# and sets the Store's prices, which start at about half as much again; the starting stock is a
+# few days of the town's food. The chef buys for the kitchen at the Store's prices, which the
+# fund pays itself, so a dish costs the town the wholesale of its ingredients: 8 the soup, 16
+# the stew, against 12 and 20 on the menu. The durables are things to save for: the bicycle
+# (360) costs more than any starting purse, the phone 240 and then 5 a day, the coat 150 and the
+# book 40, one of each in stock. A task held stays on the board, beside the next day's 56 and
+# not counted among them, until its claim runs out.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
-# full day: a meal at the café and supper at the Anchor are each a day's food, and groceries are
-# nine helpings of a third of it, eaten three a day as the owner gets hungry, so a stock keeps a
-# resident fed round the clock. Satiety falls 90 a day, so a meal a day, at whatever hour, never
-# leaves a resident starving (below 10) at midnight, and a resident that eats nothing is starving
-# from about twenty-four hours after its last meal. Every midnight found starving takes 15 of its
-# 100 health (17 in a shared house), so one that never eats is starving from the second midnight
-# after its last meal and in bed at the eighth, or the seventh in a shared house, with "run down"
-# told on the fourth day and "looking unwell" seen by others from the sixth; one that eats a meal
-# a day never takes to its bed from hunger. Energy falls 1.5 an hour awake, 6.5 at work and 7.5
-# on foot (half the road with a bicycle), and sleep gives 12 an hour times the home's comfort, up
-# to the resident's health or to 50, whichever is higher: seven hours in a flat restore 84, the
-# three hours the forced sleep leaves 32 in a shared house. A twelve-hour work day costs 78, so a
-# resident fresh at 07:00 is tired (below 35) after ten hours of work and exhausted (below 15)
-# after thirteen, when its work stops and it cannot work again until it has slept; twelve hours
-# of work in a day leave one still up at midnight exhausted (14.5), eleven tired (19.5), and
-# after a night the forced sleep cut short two to five hours of work exhaust one. A midnight
-# found exhausted costs 5 health, a home of little comfort (the shared houses, 0.9) costs 2 a
-# night, and a night neither starving nor exhausted mends 5, so twelve-hour days with nights of
-# about eight hours, in bed by 23:00, keep full health. Working until exhausted and staying up to
-# midnight or later every day does not: the resident is exhausted at every midnight (kept up to
-# the forced sleep, it wakes in a shared house with 32, two or three hours of work), loses 7
-# health a night, is run down from the sixth, unwell from the tenth and in bed at the fifteenth,
-# eating every day (in a flat or the cottage, 5 a night, run down from the eighth and in bed at
-# the twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
-# eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives
-# half a day's energy, well out of exhaustion. Treatment at the clinic restores 25 health for 60;
-# an examination costs 20. Health has a floor: at 0 a resident takes to
-# its bed at home, carried there if it was elsewhere, where it can do little but speak to whoever
-# comes and eat what it is given, until treatment lets it up.
+# full day: a dish at the Linde is a day's food, eaten there, and bread and fruit are helpings
+# of a third of it, kept and eaten a helping at a time as their owner gets hungry, so a few
+# helpings keep a resident fed round the clock. Satiety falls 90 a day, so a dish a day, at
+# whatever hour, never leaves a resident starving (below 10) at midnight, and a resident that
+# eats nothing is starving from about twenty-four hours after its last meal. Every midnight
+# found starving takes 15 of its 100 health (17 in a shared house), so one that never eats is
+# starving from the second midnight after its last meal and in bed at the eighth, or the
+# seventh in a shared house, with "run down" told on the fourth day and "looking unwell" seen by
+# others from the sixth; one that eats a dish a day never takes to its bed from hunger. Energy
+# falls 1.5 an hour awake, 6.5 at work and 7.5 on foot (half the road with a bicycle), and sleep
+# gives 12 an hour times the home's comfort, up to the resident's health or to 50, whichever is
+# higher: seven hours in a flat restore 84, the three hours the forced sleep leaves 32 in a
+# shared house. A twelve-hour work day costs 78, so a resident fresh at 07:00 is tired (below
+# 35) after ten hours of work and exhausted (below 15) after thirteen, when its work stops and
+# it cannot work again until it has slept; twelve hours of work in a day leave one still up at
+# midnight exhausted (14.5), eleven tired (19.5), and after a night the forced sleep cut short
+# two to five hours of work exhaust one. A midnight found exhausted costs 5 health, a home of
+# little comfort (the shared houses, 0.9) costs 2 a night, and a night neither starving nor
+# exhausted mends 5, so twelve-hour days with nights of about eight hours, in bed by 23:00,
+# keep full health. Working until exhausted and staying up to midnight or later every day does
+# not: the resident is exhausted at every midnight (kept up to the forced sleep, it wakes in a
+# shared house with 32, two or three hours of work), loses 7 health a night, is run down from
+# the sixth, unwell from the tenth and in bed at the fifteenth, eating every day (in a flat or
+# the cottage, 5 a night, run down from the eighth and in bed at the twentieth); it is told
+# "exhausted", "run down" and "unwell" on the way. An ill resident that eats and rests gains 3
+# to 5 a night, and nobody is trapped: at any health a night's sleep gives half a day's energy,
+# well out of exhaustion. Health has a floor: at 0 a resident takes to its bed at home, carried
+# there if it was elsewhere, where it can do little but speak to whoever comes and eat what it
+# is given, until the doctor's treatment lets it up.
 
 # The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
 # tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
@@ -108,35 +117,41 @@ town:
     - {id: market-flat, name: the flat on the market square, kind: home, rent: 50, rooms: 2, comfort: 1.0}
     - {id: river-cottage, name: the cottage by the river, kind: home, rent: 70, rooms: 1, comfort: 1.1}
     - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 35, rooms: 3, comfort: 0.9}
-    - {id: workshop, name: the Workshop, kind: workplace}
-    - {id: cafe, name: Café Linde, kind: social}
-    - {id: anchor, name: the Anchor, kind: social}
+    - {id: office, name: the Office, kind: office}
+    - {id: store, name: the Store, kind: store}
+    - {id: linde, name: the Linde, kind: restaurant}
+    - {id: hospital, name: the Hospital, kind: hospital}
+    - {id: town-hall, name: the Town Hall, kind: hall}
     - {id: river-walk, name: the river walk, kind: social}
-    - {id: store, name: the Store, kind: shop}
-    - {id: clinic, name: the clinic, kind: shop}
-  # Fifteen minutes from or to a home; ten among the Workshop, the café, the Anchor, the walk,
-  # the Store and the clinic.
+  # Fifteen minutes from or to a home; ten among the Office, the Store, the Linde, the Hospital,
+  # the Town Hall and the river walk.
   travel_minutes: 15
   routes:
-    - {between: [workshop, cafe], minutes: 10}
-    - {between: [workshop, anchor], minutes: 10}
-    - {between: [workshop, river-walk], minutes: 10}
-    - {between: [workshop, store], minutes: 10}
-    - {between: [cafe, anchor], minutes: 10}
-    - {between: [cafe, river-walk], minutes: 10}
-    - {between: [cafe, store], minutes: 10}
-    - {between: [anchor, river-walk], minutes: 10}
-    - {between: [anchor, store], minutes: 10}
-    - {between: [river-walk, store], minutes: 10}
-    - {between: [workshop, clinic], minutes: 10}
-    - {between: [cafe, clinic], minutes: 10}
-    - {between: [anchor, clinic], minutes: 10}
-    - {between: [river-walk, clinic], minutes: 10}
-    - {between: [store, clinic], minutes: 10}
-  # Occupations: for now one, every resident a programmer at the Workshop, paid for each hour at
-  # work there and a sum for each task of its own accepted; the fund pays them, as calibrated above.
+    - {between: [office, store], minutes: 10}
+    - {between: [office, linde], minutes: 10}
+    - {between: [office, hospital], minutes: 10}
+    - {between: [office, town-hall], minutes: 10}
+    - {between: [office, river-walk], minutes: 10}
+    - {between: [store, linde], minutes: 10}
+    - {between: [store, hospital], minutes: 10}
+    - {between: [store, town-hall], minutes: 10}
+    - {between: [store, river-walk], minutes: 10}
+    - {between: [linde, hospital], minutes: 10}
+    - {between: [linde, town-hall], minutes: 10}
+    - {between: [linde, river-walk], minutes: 10}
+    - {between: [hospital, town-hall], minutes: 10}
+    - {between: [hospital, river-walk], minutes: 10}
+    - {between: [town-hall, river-walk], minutes: 10}
+  # The six occupations, each at its workplace, paid for each hour at work there and a sum at
+  # once for each service, as calibrated above. The mayor's work is no service to anyone in
+  # particular and has no sum.
   occupations:
-    - {id: programmer, title: a programmer, workplace: workshop, wage_per_hour: 7, per_service: 40}
+    - {id: programmer, title: a programmer, workplace: office, wage_per_hour: 7, per_service: 40}
+    - {id: team-leader, title: the team leader, workplace: office, wage_per_hour: 9, per_service: 20}
+    - {id: chef, title: the chef, workplace: linde, wage_per_hour: 7, per_service: 3}
+    - {id: shopkeeper, title: the shopkeeper, workplace: store, wage_per_hour: 7, per_service: 2}
+    - {id: doctor, title: the doctor, workplace: hospital, wage_per_hour: 9, per_service: 10}
+    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0}
   fund:
     start: 1500
   # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
@@ -145,7 +160,7 @@ town:
   residents:
     - name: Mei
       home: mill-street-house
-      occupation: programmer
+      occupation: team-leader
       purse: 240
       ties:
         Aisha: >-
@@ -153,19 +168,19 @@ town:
           autumn, and the two of you share the kitchen.
         Ravi: >-
           Ravi comes from the same city as you: his studio had the floor above your office
-          there, and you knew each other to nod to before you ran into him again at the Anchor
+          there, and you knew each other to nod to before you ran into him again at the Linde
           in your first week here.
     - name: Tomas
       home: college-flat
-      occupation: programmer
+      occupation: mayor
       purse: 260
       ties:
         Lucia: >-
           Lucia, who rents the cottage by the river, is writing a book about her grandmother's
-          village; you met at Café Linde in her first week, when she heard you had worked the
+          village; you met at the Linde in her first week, when she heard you had worked the
           railway and asked about the old line that ran past the village.
         Aisha: >-
-          Aisha, who rents a room on Mill Street, got talking to you over the paper at Café
+          Aisha, who rents a room on Mill Street, got talking to you over the paper at the
           Linde in her first week; she finished a degree in the summer and is waiting on job
           applications.
     - name: Aisha
@@ -177,11 +192,11 @@ town:
           Mei has the room across the landing from yours on Mill Street; she was there before
           you came, and the two of you share the kitchen.
         Tomas: >-
-          Tomas reads the paper at Café Linde most mornings; you got talking there in your first
+          Tomas reads the paper at the Linde most mornings; you got talking there in your first
           week, and he told you his daughter studies at the college.
     - name: Jonas
       home: market-flat
-      occupation: programmer
+      occupation: chef
       purse: 210
       ties:
         Ravi: >-
@@ -192,16 +207,16 @@ town:
           as you do after baking; you fell into step one morning and got talking.
     - name: Lucia
       home: river-cottage
-      occupation: programmer
+      occupation: doctor
       purse: 300
       ties:
         Tomas: >-
           Tomas, who lives in the flat by the college gates, worked the railway for thirty
-          years; you met at Café Linde in your first week, and he knows the old line that ran
+          years; you met at the Linde in your first week, and he knows the old line that ran
           past your grandmother's village.
         Olga: >-
           Olga, who rents a room on Hill Road, translates from Russian and German; you met at
-          Café Linde, and when she heard that some of your grandmother's papers are in German
+          the Linde, and when she heard that some of your grandmother's papers are in German
           she said to bring one along sometime.
     - name: Ravi
       home: market-flat
@@ -214,10 +229,10 @@ town:
         Mei: >-
           Mei comes from the same city as you: her freight company's office had the floor below
           your studio there, and you knew each other to nod to before you ran into her again at
-          the Anchor in your first week here.
+          the Linde in your first week here.
     - name: Olga
       home: hill-road-house
-      occupation: programmer
+      occupation: shopkeeper
       purse: 230
       ties:
         Kofi: >-
@@ -225,7 +240,7 @@ town:
           with a bad back, and the two of you share the kitchen.
         Lucia: >-
           Lucia, who rents the cottage by the river, is writing a book about her grandmother's
-          village; you met at Café Linde, and when she said that some of her grandmother's
+          village; you met at the Linde, and when she said that some of her grandmother's
           papers are in German, you told her to bring one along sometime.
     - name: Kofi
       home: hill-road-house
@@ -241,26 +256,43 @@ town:
           talking.
   work:
     split: train
-    board_size: 56 # new a day, shared by the eight; in turn through the pool
+    board_size: 56 # new a day, shared by the four at the Office; in turn through the pool
     payment: 150 # to the fund, for a task accepted
     acceptance_runs: 2
     claim_expiry_days: 1 # a claim runs out at the second midnight after it is made
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
-  # The goods for sale (see world/config.py for the kinds and effects). Every good does something
-  # in the world: feeds, shortens journeys, lets owners write to one another, shows on its owner
-  # wherever others see it, or looks after the body. Names carry their article, as a sentence
-  # names them.
-  goods:
-    - {id: groceries, name: groceries, price: 36, sold_at: [store], kind: consumable, uses: 9, per_day: 3, effect: food, nourishment: 34}
-    - {id: cafe-meal, name: a meal at Café Linde, price: 15, sold_at: [cafe], kind: immediate, effect: food, nourishment: 100}
-    - {id: supper, name: supper at the Anchor, price: 20, sold_at: [anchor], kind: immediate, effect: food, nourishment: 100}
-    - {id: bicycle, name: a bicycle, price: 360, sold_at: [store], kind: durable, effect: travel, factor: 0.5}
-    - {id: phone, name: a phone, price: 240, sold_at: [store], kind: durable, effect: messaging, fee_per_day: 5}
-    - {id: coat, name: a coat, price: 150, sold_at: [store], kind: durable, effect: appearance, phrase: in a new coat}
-    - {id: book, name: a book, price: 40, sold_at: [store], kind: durable, effect: appearance, phrase: with a book under one arm}
-    - {id: examination, name: an examination, price: 20, sold_at: [clinic], kind: immediate, effect: examination}
-    - {id: treatment, name: treatment, price: 60, sold_at: [clinic], kind: immediate, effect: treatment, restores: 25}
+  # The supplier's catalogue (see world/config.py for the kinds and effects), with what the
+  # supplier charges for a unit and the Store's price at the start, which the shopkeeper
+  # changes. Ingredients are food of no nourishment of their own, cooked at the Linde; bread and
+  # fruit are ready food, a helping a third of a day's; every durable does something in the
+  # world: shortens journeys, lets owners write to one another, or shows on its owner wherever
+  # others see it. Names carry their article, as a sentence names them.
+  supplier:
+    - {id: vegetables, name: vegetables, wholesale: 4, price: 6, kind: consumable, effect: food, nourishment: 0}
+    - {id: eggs, name: eggs, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 0}
+    - {id: rice, name: rice, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 0}
+    - {id: flour, name: flour, wholesale: 2, price: 4, kind: consumable, effect: food, nourishment: 0}
+    - {id: meat, name: meat, wholesale: 8, price: 12, kind: consumable, effect: food, nourishment: 0}
+    - {id: fish, name: fish, wholesale: 7, price: 11, kind: consumable, effect: food, nourishment: 0}
+    - {id: bread, name: bread, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 34}
+    - {id: fruit, name: fruit, wholesale: 2, price: 4, kind: consumable, effect: food, nourishment: 34}
+    - {id: phone, name: a phone, wholesale: 180, price: 240, kind: durable, effect: messaging, fee_per_day: 5}
+    - {id: coat, name: a coat, wholesale: 110, price: 150, kind: durable, effect: appearance, phrase: in a new coat}
+    - {id: bicycle, name: a bicycle, wholesale: 270, price: 360, kind: durable, effect: travel, factor: 0.5}
+    - {id: book, name: a book, wholesale: 25, price: 40, kind: durable, effect: appearance, phrase: with a book under one arm}
+  # The Linde's dishes, each a day's food, with what a portion takes and the menu's price at the
+  # start, which the chef changes.
+  dishes:
+    - {id: vegetable-soup, name: vegetable soup, ingredients: {vegetables: 2}, price: 12}
+    - {id: omelette, name: an omelette, ingredients: {eggs: 2, vegetables: 1}, price: 14}
+    - {id: rice-bowl, name: a rice bowl, ingredients: {rice: 2, vegetables: 1}, price: 12}
+    - {id: pancakes, name: pancakes, ingredients: {flour: 1, eggs: 1}, price: 10}
+    - {id: fish-pie, name: fish pie, ingredients: {fish: 1, flour: 1}, price: 18}
+    - {id: stew, name: stew, ingredients: {meat: 1, vegetables: 2}, price: 20}
+  # The Store's stock at the start; the kitchen starts empty.
+  store:
+    stock: {bread: 20, fruit: 20, vegetables: 20, eggs: 20, rice: 10, flour: 10, meat: 6, fish: 6, phone: 1, coat: 1, bicycle: 1, book: 1}
   # The body: three needs from 0 to 100, each read in bands from the top down (a band's name
   # follows "you are"; `seen` is what others see on a resident in that band). The lowest band is
   # where the consequences lie: starving and exhausted wear health at midnight, exhausted stops
@@ -310,5 +342,6 @@ town:
     forced_sleep: "04:00"
     checkpoint: "04:30"
     forced_wake: "07:00"
-    board_posted: "08:00" # the day's board goes up at the Workshop, replacing what is left of yesterday's
+    board_posted: "08:00" # the day's board goes up at the Office, replacing what is left of yesterday's
+    delivery: "08:00" # what the Store ordered the day before arrives
     sleep_at_most: "12:00" # hours and minutes, not an hour of the day

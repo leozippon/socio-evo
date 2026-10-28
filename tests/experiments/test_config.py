@@ -11,6 +11,7 @@ import yaml
 from agent.wording import offences
 from experiments.config import PROJECT_ROOT, ExperimentConfig, load_experiment, overlay
 from infrastructure.config import ConfigError, load_config
+from world.config import A_DAYS_FOOD, WORKPLACE_OF
 from world.rules import Rules
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
@@ -34,10 +35,14 @@ def test_the_town_and_the_run_over_it():
     )
 
 
-def test_the_smoke_town_is_two_residents_of_the_town_for_a_day():
+def test_the_smoke_town_is_the_team_leader_the_shopkeeper_and_the_chef_for_a_day():
     smoke, found = load_experiment(CONFIGS / "smoke.yaml"), town()
     assert [r.name for r in smoke.residents] == [r.name for r in smoke.town.residents]
-    assert [r.name for r in smoke.residents] == ["Mei", "Tomas"]
+    assert [(r.name, r.occupation) for r in smoke.town.residents] == [
+        ("Mei", "team-leader"),
+        ("Olga", "shopkeeper"),
+        ("Jonas", "chef"),
+    ]
     assert smoke.days == 1 and smoke.town.clock == found.town.clock
     assert smoke.town.social == found.town.social and smoke.town.work == found.town.work
 
@@ -136,32 +141,47 @@ def test_ties_are_mutual_pass_the_guard_and_reach_everyone():
 # The work the fund's day is set against: about three tasks arriving a day, half of them accepted.
 ARRIVING, ACCEPTED = 3, 0.5
 HOURS = 8
-"""A day's work at the workplace."""
+"""A day's work at one's workplace."""
 
 
-def test_wages_rent_and_the_fund_are_set_against_one_another():
+def test_wages_rent_food_and_the_fund_are_set_against_one_another():
     config = town().town
-    (occupation,) = config.occupations  # every resident a programmer, for now
-    assert {resident.occupation for resident in config.residents} == {occupation.id}
+    occupations = {occupation.id: occupation for occupation in config.occupations}
+    assert set(occupations) == set(WORKPLACE_OF)  # the six of the design
     n = len(config.residents)
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
-    food = [good for good in config.goods if good.effect == "food"]
-    meals = [good.price for good in food if good.kind == "immediate"]
-    a_day = min([good.price // good.days for good in food if good.kind == "consumable"] + meals)
+    wages = [occupation.wage_per_hour for occupation in occupations.values()]
+    # The cheapest day's food: the helpings of ready food that make a day's need, at the price
+    # the Store starts with.
+    food = min(
+        (good for good in config.supplier if good.ready),
+        key=lambda good: good.price * round(A_DAYS_FOOD / good.nourishment),
+    )
+    helpings = round(A_DAYS_FOOD / food.nourishment)
+    a_day = helpings * food.price
     cheapest = min(rents.values()) + a_day
-    wages = HOURS * occupation.wage_per_hour
-    # A day's work keeps the cheapest life with something over, and less than half as much again.
-    assert cheapest < wages < 1.5 * cheapest
+    # A day's work at the lowest wage keeps the cheapest life with something over, and less than
+    # half as much again; the dearest life, the dearest home and the dearest dish every day,
+    # takes ten hours at the highest wage.
+    assert cheapest < HOURS * min(wages) < 1.5 * cheapest
+    dearest = max(rents.values()) + max(dish.price for dish in config.dishes)
+    assert 9 * max(wages) < dearest <= 10 * max(wages)
     for resident in config.residents:  # a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
-    # The fund's day, everyone at work for a day and half the tasks arriving accepted: clients
-    # and rent in, wages and sums for tasks out, within a tenth of what passes through it. What
-    # the shops sell is the fund's gain until a supplier is paid for the goods, and is left out.
+    # The fund's day, everyone at work for a day, half the tasks arriving accepted from the
+    # programmers, and everyone living on the cheapest food, bought in one sale each: clients,
+    # rent and sales in; wages, the sums for tasks and sales and the supplier's price of the
+    # food out; within a tenth of what passes through it.
     accepted = ARRIVING * ACCEPTED
+    task = occupations["programmer"].per_service + occupations["team-leader"].per_service
     rent = sum(rents[resident.home] for resident in config.residents)
-    taken = accepted * config.work.payment + rent
-    paid = n * wages + accepted * occupation.per_service
+    paid_wages = HOURS * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
+    sales, supplier = n * a_day, n * helpings * food.wholesale
+    sale_sums = n * occupations["shopkeeper"].per_service
+    taken = accepted * config.work.payment + rent + sales
+    paid = paid_wages + accepted * task + sale_sums + supplier
     assert abs(taken - paid) <= (taken + paid) / 10
     # With no task accepted, the fund pays out more than it takes, and its start lasts ten days.
-    assert n * wages > rent and config.fund.start >= 10 * (n * wages - rent)
+    short = paid_wages + sale_sums + supplier - rent - sales
+    assert short > 0 and config.fund.start >= 10 * short

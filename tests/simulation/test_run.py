@@ -67,34 +67,60 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         "day-01.json",
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
-    assert set(saved["residents"]) == {"Mei", "Tomas"}
-    # Each was paid 40 for its task, of the 150 its client paid the fund, bought groceries and a
-    # meal, worked until 17:00 and was paid its wages at midnight, its rent taken out of them.
-    wages = {
-        e["actor"]: e["payload"] for e in read_jsonl(root / "world.jsonl") if e["kind"] == "wage"
-    }
-    for name, purse, rent in (("Mei", 240, 30), ("Tomas", 260, 55)):
+    assert set(saved["residents"]) == {"Mei", "Olga", "Jonas"}
+    entries = list(read_jsonl(root / "world.jsonl"))
+    # Mei worked at the Office from about 08:15 to 17:00, Olga kept the Store's counter from
+    # 07:15 to 19:00, and Jonas cooked at the Linde until 20:00, his time buying for the kitchen
+    # at the Store not counted; each was paid its wages at midnight, its rent taken out of them.
+    wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
+    for name, rent, wage, hours in (
+        ("Mei", 30, 9, (8, 9)),
+        ("Olga", 35, 7, (11.5, 12)),
+        ("Jonas", 50, 7, (11.5, 12.5)),
+    ):
         paid = wages[name]
-        assert 8 < paid["hours"] < 9 and abs(paid["wages"] - paid["hours"] * 7) < 1
+        assert hours[0] < paid["hours"] < hours[1], name
+        assert abs(paid["wages"] - paid["hours"] * wage) < 1
         assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - rent)
-        assert saved["residents"][name]["inventory"] == {
-            "money": purse + 40 - 36 - 15 + paid["paid"], "items": {"groceries": 8}, "moves": [],
-        }  # fmt: skip
+    # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
+    # the next morning; the chef bought for the kitchen there, cooked and served; Mei bought
+    # bread and had a dish.
+    sold = [
+        (e["actor"], e["payload"]["item"], e["payload"]["kitchen"])
+        for e in entries
+        if e["kind"] == "sale"
+    ]
+    assert ("Mei", "bread", False) in sold and ("Jonas", "vegetables", True) in sold
+    served = [e for e in entries if e["kind"] == "served"]
+    assert [(e["actor"], e["payload"]["chef"]) for e in served] == [
+        ("Mei", "Jonas"),
+        ("Olga", "Jonas"),
+    ]
+    orders = [e["payload"] for e in entries if e["kind"] == "order"]
+    assert saved["store"]["pending"] == [[o["item"], o["quantity"], o["arrives"]] for o in orders]
+    assert {o["item"] for o in orders} == {"bread", "vegetables", "eggs"}
+    assert saved["kitchen"]["portions"] == {} and saved["kitchen"]["stock"] == {}
     fund = saved["fund"]
     money = sum(r["inventory"]["money"] for r in saved["residents"].values())
-    assert fund["balance"] + money == 1500 + 240 + 260 + 2 * 150  # only the clients' money came in
+    # Only the client's money came in and only the supplier's went out.
+    supplier = sum(o["amount"] for o in orders)
+    assert fund["balance"] + money == 1500 + 240 + 230 + 210 + 150 - supplier
+    assert fund["yesterday"]["client"] == 150 and fund["yesterday"]["supplier"] == supplier
     assert fund["owed"] == fund["arrears"] == {} and fund["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]
-    # Fed by the café's meal and a helping of the stock in the evening, rested, in good health.
+    # Fed by a dish and a helping of bread in the evening, rested, in good health.
     assert living["eaten"] == {}
     assert living["health"] == 100 and living["satiety"] > 35 and living["energy"] > 65
     assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
-    lived = ("wake", "claim", "verdict", "service", "purchase", "speech", "sleep", "wage")
+    lived = (
+        "wake", "start_work", "claim", "verdict", "service", "order", "price", "sale", "cook",
+        "served", "speech", "sleep", "wage",
+    )  # fmt: skip
     for kind in lived:
         assert kind in log, kind
     assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log
-    for name in ("Mei", "Tomas"):
+    for name in ("Mei", "Olga", "Jonas"):
         agent = run.agent_dir(name)
         repository = Repository(agent)
         assert [c.subject for c in repository.log()] == [
@@ -138,7 +164,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
     assert (root / "run.log").read_text() == log
     lost = {}  # a save of day 2 killed after its tags and before its checkpoint
-    for name in ("Mei", "Tomas"):
+    for name in ("Mei", "Olga", "Jonas"):
         repository = Repository(RunDirectory(root).agent_dir(name))
         lost[name] = repository.commit("day-02", date=datetime.now(UTC), allow_empty=True)
         repository.tag("day-02")
@@ -153,7 +179,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     resume = entries[first]
     assert resume["kind"] == "resume" and resume["payload"]["day"] == 1
     assert [entry["kind"] for entry in entries].count("checkpoint") == 2
-    for name in ("Mei", "Tomas"):
+    for name in ("Mei", "Olga", "Jonas"):
         agent = RunDirectory(root).agent_dir(name)
         repository = Repository(agent)
         assert repository.tree("day-02") and lost[name] not in {c.id for c in repository.log()}
@@ -196,7 +222,7 @@ async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path,
 
     monkeypatch.setattr(simulation, "Runtime", SecondDies)
     async with asyncio.timeout(60):
-        with pytest.raises(RuntimeError, match="the runtime of Tomas ended") as raised:
+        with pytest.raises(RuntimeError, match="the runtime of Olga ended") as raised:
             await simulation.run(smoke(), tmp_path, dry_run=True)
     assert isinstance(raised.value.__cause__, OSError)
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
@@ -225,14 +251,14 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
         runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2),
     )
     async with asyncio.timeout(60):
-        with pytest.raises(RuntimeError, match="the runtime of (Mei|Tomas) ended") as raised:
+        with pytest.raises(RuntimeError, match="the runtime of (Mei|Olga|Jonas) ended") as raised:
             await simulation.run(config, tmp_path, dry_run=True)
     assert "2 requests in a row lapsed" in str(raised.value.__cause__)
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
     assert run.read_manifest().status == "failed"
     log = run.run_log_path.read_text()
     assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
-    assert replicas == {"check": {2}, "Mei": {0}, "Tomas": {1}}  # each its place in the list
+    assert replicas == {"check": {2}, "Mei": {0}, "Olga": {1}, "Jonas": {2}}  # its place
 
 
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(

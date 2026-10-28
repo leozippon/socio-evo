@@ -26,8 +26,9 @@ KINDS = {
     "depart": "a resident set off for another place",
     "arrive": "a resident arrived somewhere",
     "time": "a resident waiting was told the time, or that what it was just told ended its wait",
-    "board_posted": "the day's board posted at the workplace in the morning",
-    "start_work": "a resident sat down to work, claiming a task or acting in its workspace",
+    "board_posted": "the day's board posted at the office in the morning",
+    "start_work": "a resident sat down to work: with start_work, or by doing its occupation's work "
+    "where it works (claiming a task, acting in its workspace, cooking, ordering, setting a price)",
     "leave_work": "a resident stopped work, or the forced sleep stopped it",
     "claim": "a resident claimed a task and got a workspace",
     "command": "a shell command run in a workspace, with its exit code and output tail",
@@ -35,8 +36,10 @@ KINDS = {
     "file_write": "a file written in a workspace",
     "submission": "a resident submitted its workspace's changes",
     "verdict": "the acceptance verdict on a submission",
-    "service": "a resident was paid its occupation's sum for a service, a task of its own "
-    "accepted, at once as far as the fund had it (payload: task, amount, paid, owed, money)",
+    "service": "a resident was paid a sum for a service at once, as far as the fund had it: for a "
+    "task of its own accepted, for one of the programmers' to the team leader, for a sale to the "
+    "shopkeeper, for a dish served to the chef (payload: for, task or null, amount, paid, owed, "
+    "money)",
     "abandon": "a resident gave up its task",
     "expiry": "a claim ran out unpaid at midnight",
     "workspace_closed": "a workspace closed at the checkpoint, its changes kept",
@@ -46,7 +49,16 @@ KINDS = {
     "gift": "money, a thing or helpings of a stock handed from one resident to another, on "
     "their own terms (payload: to, and amount of money or item, name and quantity)",
     "message": "a written message from one resident to another, read wherever the other is",
-    "purchase": "a good bought, with its price, and consumed at once if it is immediate",
+    "sale": "goods bought at the Store's counter, by a resident for itself or by the chef at "
+    "work for the kitchen, which the fund pays (payload: item, name, quantity, price, amount, "
+    "seller, kitchen)",
+    "served": "a dish bought at the Restaurant and eaten there (payload: dish, name, amount, chef)",
+    "order": "goods the shopkeeper ordered from the supplier, paid by the fund at once (payload: "
+    "item, name, quantity, amount, arrives)",
+    "delivery": "what the Store ordered arrived in the morning (payload: items)",
+    "cook": "portions of a dish the chef cooked from the kitchen's stock (payload: dish, name, "
+    "portions, used)",
+    "price": "a price the shopkeeper or the chef set (payload: item, name, place, price, before)",
     "move_in": "a resident moved into another home",
     "wage": "a resident's wages paid at midnight for its hours at work, with its rent and daily "
     "charges taken out of them (payload: hours, wages, owed_before, rent, charges, "

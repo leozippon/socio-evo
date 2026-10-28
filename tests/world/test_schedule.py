@@ -10,6 +10,7 @@ import pytest
 
 from tests.world.conftest import (
     RESIDENTS,
+    TRADES,
     FakeBackend,
     Town,
     at,
@@ -124,10 +125,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     town = make_town(backend=backend)
     await awake_at(town)
     await town.call("Aisha", "say", text="Busy day?", to=["Mei"])
-    await town.call("Mei", "go", place="store")
-    await town.until("07:10")
-    await town.call("Mei", "buy", item="groceries")
-    await town.call("Mei", "buy", item="coat")
+    town.world.residents["Mei"].inventory.items.update({"bread": 9, "coat": 1})
     await town.call("Mei", "go", place="workshop")
     await town.until("09:00")
     await town.call("Mei", "claim_task", task=1)
@@ -157,21 +155,24 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["residents"]["Mei"]["done"] == [1]
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
     mei_living = state["residents"]["Mei"]["living"]
-    # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today;
-    # she paid $42 at the store and was paid $20 for task 1, and the rent was not taken from
-    # her purse but is owed from her wages, as Tomas's and Aisha's are.
+    # Mei ate two helpings of her bread on day 1, when she could eat, and none yet today; she
+    # was paid $20 for task 1, and the rent was not taken from her purse but is owed from her
+    # wages, as Tomas's and Aisha's are.
     assert state["residents"]["Mei"]["inventory"] == {
-        "money": 120 - 12 - 30 + 20, "items": {"groceries": 7, "coat": 1}, "moves": [],
+        "money": 120 + 20, "items": {"bread": 7, "coat": 1}, "moves": [],
     }  # fmt: skip
     assert mei_living["eaten"] == {}
     assert set(mei_living) == {"eaten", "satiety", "energy", "health", "night", "bedridden"}
     assert state["fund"] == {
-        "balance": 1000 + 42 + 50 - 20,
+        "balance": 1000 + 50 - 20,
         "ledger": {},
-        "yesterday": {"sale": 42, "client": 50, "service": 20},
+        "yesterday": {"client": 50, "service": 20},
         "owed": {},
         "arrears": {"Mei": 20, "Tomas": 30, "Aisha": 20},
     }
+    assert state["store"]["stock"] == town.world.config.store.stock and state["kitchen"] == {
+        "menu": {"omelette": 10, "soup": 8}, "stock": {}, "portions": {},
+    }  # fmt: skip
     # Tomas's hour at work after midnight counts towards the coming day's wages.
     assert state["residents"]["Tomas"]["worked"] == 3600
     assert state["residents"]["Mei"]["worked"] == 0
@@ -225,7 +226,7 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     )
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
-    assert later.residents["Mei"].inventory.items == {"groceries": 6}  # the stock came back
+    assert later.residents["Mei"].inventory.items == {"bread": 6}  # the bread came back
     assert (await again.call("Mei", "read_repo_file", path="b.py")).text.endswith("\nhalf\n")
     await again.close()
 
@@ -245,7 +246,7 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
 
 
 async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
-    town = make_town()
+    town = make_town(town_config(residents=RESIDENTS + TRADES))
     await awake_at(town)
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
@@ -271,15 +272,25 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "leave_work")
     await town.call("Tomas", "leave_work")
     await town.until("18:00")
-    for name in ("Mei", "Tomas"):
+    for name in ("Mei", "Tomas", "Olga", "Jonas"):
         await town.call(name, "go", place="store")
     await town.until("18:10")
+    await town.call("Olga", "start_work")
+    await town.call("Olga", "order", item="bread", quantity=2)
+    await town.call("Olga", "set_price", item="bread", price=5)
     for name in ("Mei", "Tomas"):
         await town.call(name, "buy", item="phone")
-    await town.call("Mei", "buy", item="groceries")
+    await town.call("Jonas", "start_work")
+    await town.call("Jonas", "buy", item="eggs", quantity=2)
+    await town.call("Jonas", "buy", item="vegetables")
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
-    await town.call("Mei", "go", place="college-flat")
+    for name in ("Mei", "Jonas"):
+        await town.call(name, "go", place="cafe")
     await town.until("18:20")
+    await town.call("Jonas", "cook", dish="omelette", portions=1)
+    await town.call("Mei", "buy", item="omelette")
+    await town.call("Mei", "go", place="college-flat")
+    await town.until("18:30")
     await town.call("Mei", "move_in")
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")

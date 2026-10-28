@@ -4,15 +4,19 @@ interruptions that come with the transitions."""
 from __future__ import annotations
 
 import asyncio
+from typing import get_args
 
 import pytest
 
 from tests.world.conftest import at, awake_at
+from world.config import WORKPLACE_OF, OccupationId
 from world.events import (
     BEDRIDDEN_TOOLS,
     CONVERSATION_TOOLS,
     IDLE_TOOLS,
+    OCCUPATION_TOOLS,
     SLEEP_TOOLS,
+    WORK_DONE,
     WORK_TOOLS,
     Bedridden,
     Conversation,
@@ -21,12 +25,14 @@ from world.events import (
     Sleep,
     Work,
 )
+from world.rules import OWN_WORK, SERVICE
 
 ARCHITECTURE_TABLE = {
     "idle": {
         "help",
         "look_around",
         "go",
+        "start_work",
         "view_board",
         "read_task",
         "claim_task",
@@ -36,6 +42,9 @@ ARCHITECTURE_TABLE = {
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "cook",
+        "order",
+        "set_price",
         "say",
         "message",
         "buy",
@@ -58,6 +67,9 @@ ARCHITECTURE_TABLE = {
         "edit_repo_file",
         "submit",
         "abandon_task",
+        "cook",
+        "order",
+        "set_price",
         "say",
         "message",
         "buy",
@@ -74,6 +86,14 @@ for _event, _tools in ARCHITECTURE_TABLE.items():
         _tools |= {"how_am_i", "help"}
     if _event not in ("movement", "sleep"):  # seeing what one has: every waking event out of bed
         _tools.add("inventory")
+
+
+def test_every_occupation_has_its_workplace_its_work_and_its_words():
+    occupations = set(get_args(OccupationId))
+    assert (
+        set(WORKPLACE_OF) == set(OCCUPATION_TOOLS) == set(OWN_WORK) == set(SERVICE) == occupations
+    )
+    assert WORK_DONE <= IDLE_TOOLS and WORK_DONE <= WORK_TOOLS  # done at rest or at work
 
 
 def test_the_tool_sets_are_the_architecture_table():

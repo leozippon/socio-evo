@@ -10,12 +10,13 @@ then drives the town until a given day's checkpoint.
 Everything that happens at a moment of simulated time is a timer in one queue, run by `run` in
 the order of its times: arrivals, wake-ups, the end of a silent conversation, the percept that
 tells a waiting resident the time, and the day's schedule, which is all the fixed structure a
-day has. For day N (whose daytime is calendar day N): the posting of day N's board at the
-workplace in the morning, which replaces what was left of the day before's; midnight, when each
-resident's food and health are reckoned, its wages are paid with its rent and daily charges
-taken out of them, with a statement, and expired claims run out; the forced sleep; and the
-checkpoint. Every hour on the hour, besides, the bodies are brought up to date (see below). The
-workplace never closes, and residents go to bed and wake when they choose, except that one sleep
+day has. For day N (whose daytime is calendar day N): the posting of day N's board at the office
+in the morning, which replaces what was left of the day before's, and the delivery of what the
+Store ordered the day before; midnight, when each resident's food and health are reckoned, its
+wages are paid with its rent and daily charges taken out of them, with a statement, expired
+claims run out and the portions the kitchen did not sell are gone; the forced sleep; and the
+checkpoint. Every hour on the hour, besides, the bodies are brought up to date (see below). No
+place keeps hours, and residents go to bed and wake when they choose, except that one sleep
 lasts at most a configured span and that nobody wakes between the forced sleep and the
 checkpoint. At the checkpoint the world waits until every resident is asleep and its runtime
 waits on its port, holds the clock, closes every workspace keeping its changes, takes the
@@ -26,17 +27,28 @@ calendar day N to the one on calendar day N + 1; the journal, the acceptance run
 
 A resident's living (`Living`, of `world.body`) is what it has eaten since the last midnight and
 its body's three needs; its inventory (`Inventory`, of `world.economy`) is its money and what it
-keeps of the goods of the catalogue, which act through it. The town's fund (`Fund`) takes in
-what clients pay for tasks accepted, the rent and the sales, and pays each resident at once its
-occupation's sum for a service and, at midnight, its wages for the time it spent at work at its
-workplace (`Resident.worked`, counted as the body is reckoned and cleared at midnight), with its
-rent and daily charges taken out of them; `report` tells the fund's day. The body (`Body`) is
+keeps of the goods of the supplier's catalogue, which act through it. The town's fund (`Fund`)
+takes in what clients pay for tasks accepted, the rent, the Store's sales and the dishes served,
+pays the supplier for the Store's orders, and pays each resident at once a sum for each service
+and, at midnight, its wages for the time it spent at work at its own workplace
+(`Resident.worked`, counted as the body is reckoned and cleared at midnight), with its rent and
+daily charges taken out of them; `report` tells the fund's day.
+
+The Store (`Store`) sells while its shopkeeper is at work there (`serving`): a sale moves the
+price to the fund and the units out of its stock and pays the shopkeeper its sum, and when the
+buyer is the chef at work, the fund pays and the units go into the kitchen's stock; the
+shopkeeper's orders are paid to the supplier at once and arrive at the next morning's delivery.
+The Restaurant's kitchen (`Kitchen`) serves while its chef is at work there: the chef cooks
+portions from the kitchen's stock, a portion bought is eaten at once, and what is not sold by
+midnight is gone. At either place the situation tells what is for sale and at what price.
+
+The body (`Body`) is
 reckoned lazily and exactly: `reckon` brings a resident up to the moment at the rates of what it
 has been doing since it was last reckoned, and is called every hour on the hour, before every
 change of activity (sitting down to work, setting off, arriving, going to bed, falling asleep,
 waking) and at the checkpoint, so that a checkpoint carries the body as of its moment. A
-resident awake and able to eat eats from the stock of food in its inventory as it is reckoned;
-food bought on the spot is eaten as it is bought. A resident the reckoning finds at work in the
+resident awake and able to eat eats the ready food in its inventory, a helping at a time, as it
+is reckoned; a dish is eaten as it is bought. A resident the reckoning finds at work in the
 lowest band of energy stops work, as `leave_work` stops it, keeping its task, and is told that
 it cannot work until it has slept; before an action in its workspace the body is reckoned too,
 so that the exhausted are refused it (`tools`). A need that crosses into another band is logged,
@@ -51,15 +63,16 @@ lets it write to other owners, and one with appearance shows its phrase wherever
 the owner: who is here, who arrived, whom one is in conversation with; a low band of health
 shows the same way. Rent is the home's, and a resident may move into a home with a free room.
 
-Each resident's port declares to its runtime the tools of its event at its place now
-(`usable`), so that what a request offers is what can be done; the situation no longer lists
-them. The world delivers each percept to the ports of those who perceive it. Speech reaches the
-residents it is addressed to, at their place and awake; it draws into the conversation, with
-`interrupt`, those it names and, when it is said to everyone, those not working outside the
-conversation. A resident at work outside it hears a remark to everyone without being drawn in or
-interrupted, and reads it, like everything else, with its runtime's next tool result or when it
-next waits. A resident in transit is at no place and perceives nothing there; an asleep resident
-cannot be addressed, and what is told to it while suspended is held until it wakes.
+Each resident's port declares to its runtime the tools of its event at its place now that its
+occupation gives it (`usable`), so that what a request offers is what can be done; the situation
+no longer lists them. The world delivers each percept to the ports of those who perceive it.
+Speech reaches the residents it is addressed to, at their place and awake; it draws into the
+conversation, with `interrupt`, those it names and, when it is said to everyone, those not
+working outside the conversation. A resident at work outside it hears a remark to everyone
+without being drawn in or interrupted, and reads it, like everything else, with its runtime's
+next tool result or when it next waits. A resident in transit is at no place and perceives
+nothing there; an asleep resident cannot be addressed, and what is told to it while suspended is
+held until it wakes.
 """
 
 from __future__ import annotations
@@ -84,12 +97,13 @@ from world.backend import Backend
 from world.board import Board
 from world.body import Activity, Body, Living
 from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_date, tell_moment
-from world.config import Band, Good, Occupation, Place, TownConfig
-from world.economy import PAID, TAKEN, Fund, Inventory, Settled, money
+from world.config import A_DAYS_FOOD, ERRANDS, Band, Good, Occupation, Place, TownConfig
+from world.economy import PAID, TAKEN, Fund, Inventory, Kitchen, Settled, Store, money
 from world.events import (
-    BOARD_TOOLS,
     EXHAUSTED,
+    OCCUPATION_TOOLS,
     TASK_TOOLS,
+    WORK_DONE,
     Base,
     Bedridden,
     Conversation,
@@ -100,7 +114,7 @@ from world.events import (
     refusal,
 )
 from world.log import Entry, WorldLog
-from world.rules import Rules, bare, longest_sleep
+from world.rules import Rules, amount, bare, longest_sleep
 from world.telling import cap, counted, duration, listed, you
 
 Tell = Callable[[str | None], str]
@@ -195,6 +209,7 @@ class World:
         self._forced = parse_hour(config.day.forced_sleep)
         self._forced_wake = parse_hour(config.day.forced_wake)
         self._board_posted = parse_hour(config.day.board_posted)
+        self._delivery = parse_hour(config.day.delivery)
         self._checkpoint_hour = parse_hour(config.day.checkpoint)
         self._longest = parse_hour(config.day.sleep_at_most)
         start = self._checkpoint_hour
@@ -210,6 +225,9 @@ class World:
         names = [r.name for r in config.residents]
         self.money: Callable[[int], str] = partial(money, config.currency)
         self.fund = Fund(config.fund.start)
+        self.store = Store(dict(config.store.stock), {g.id: g.price for g in config.supplier})
+        self.kitchen = Kitchen({dish.id: dish.price for dish in config.dishes})
+        self._dishes = {dish.id: dish for dish in config.dishes}
         self.board = Board(
             tasks, backend, config.work, seed=config.seed, names=names, money=self.money
         )
@@ -295,23 +313,40 @@ class World:
         world starts and a restored one stands), which the configuration puts before all of
         them."""
         self._at((day - 1) * DAY + self._board_posted, partial(self._post_board, day))
+        self._at((day - 1) * DAY + self._delivery, self._deliver)
         self._at(day * DAY, partial(self._midnight, day))
         self._at(day * DAY + self._forced, partial(self._force_sleep, day))
         self._at(day * DAY + self._checkpoint_hour, partial(self._checkpoint, day))
 
     def _post_board(self, day: int) -> None:
         """Post the board of calendar day `day`, in place of what was left of the day before's,
-        and tell those at the workplace."""
+        and tell those at the office."""
         self.board.post(day)
-        workplace = self.config.workplace
-        here = [r for r in self.residents.values() if r.place == workplace.id and r.awake]
+        office = self.config.workplace("office")
+        here = [r for r in self.residents.values() if r.place == office.id and r.awake]
         hour = clock_time(self.clock.now())
         self.record(
             "board_posted",
-            lambda w: f"It is {hour}: the day's board is posted at {workplace.name}.",
-            place=workplace.id,
+            lambda w: f"It is {hour}: the day's board is posted at {office.name}.",
+            place=office.id,
             audience=here,
             payload={"tasks": len(self.board.posted)},
+        )
+
+    def _deliver(self) -> None:
+        """What the Store ordered for this morning arrives, told to its shopkeeper."""
+        came = self.store.receive(self.clock.now())
+        if not came:
+            return
+        store = self.config.workplace("store")
+        goods = listed([amount(self.config.good(item), units) for item, units in came.items()])
+        hour = clock_time(self.clock.now())
+        self.record(
+            "delivery",
+            lambda w: f"It is {hour}: the supplier delivered {goods} to {store.name}.",
+            place=store.id,
+            audience=self.of_occupation("shopkeeper"),
+            payload={"items": came},
         )
 
     def _hourly(self) -> None:
@@ -324,9 +359,11 @@ class World:
 
     def _midnight(self, day: int) -> None:
         """The end of calendar day `day`: its food and its health reckoned, its wages paid with
-        the rent and charges taken out of them, and the claims that run out with it."""
+        the rent and charges taken out of them, the claims that run out with it, and the portions
+        the kitchen did not sell, which are gone."""
         self._settle(day)
         self._expire(day)
+        self.kitchen.portions = {}
 
     def _expire(self, day: int) -> None:
         board = self.board
@@ -367,16 +404,22 @@ class World:
                 self._take_to_bed(r, day)
             self.note_bands(r, before, tell=False)
             stock = []
-            for good in self.config.goods:
-                if good.kind != "consumable" or not living.eaten.get(good.id):
+            for good in self.config.supplier:
+                if not good.ready or not living.eaten.get(good.id):
                     continue
-                assert good.per_day is not None
+                assert good.nourishment
                 left = inventory.units(good.id)
                 if not left:
                     stock.append(f"You have used up your {bare(good.name)}.")
-                elif left <= good.per_day:
-                    stock.append(f"You have {counted(left, 'helping')} of {bare(good.name)} left.")
-            charged = [g for g in self.config.goods if g.fee_per_day and inventory.units(g.id)]
+                elif left * good.nourishment < A_DAYS_FOOD:  # less than a day's food
+                    stock.append(f"You have {amount(good, left)} left.")
+            if r.occupation.id == "chef" and self.kitchen.portions:
+                unsold = [
+                    f"{counted(n, 'portion')} of {bare(self._dishes[dish].name)}"
+                    for dish, n in self.kitchen.portions.items()
+                ]
+                stock.append(f"What the kitchen did not sell is gone: {listed(unsold)}.")
+            charged = [g for g in self.config.supplier if g.fee_per_day and inventory.units(g.id)]
             wages = r.worked * r.occupation.wage_per_hour // 3600
             charges = sum(good.fee_per_day for good in charged)
             settled = self.fund.settle(r.name, wages, home.rent, charges)
@@ -403,24 +446,13 @@ class World:
                 },
             )
             nourishment = self.nourishment(r)
-            eaten = [
-                f"{counted(units, 'helping')} of {bare(good.name)}"
-                if good.kind == "consumable"
-                else good.name
-                if units == 1
-                else f"{units} × {good.name}"
-                for good in self.config.goods
-                if (units := living.eaten.get(good.id))
-            ]
+            eaten = [self._eaten(item, units) for item, units in living.eaten.items()]
             food = (
                 f"You ate today: {listed(eaten)}."
                 if nourishment
                 else "You had nothing to eat today."
             )
-            moves = [
-                MOVES[str(kind)].format(money=self.money(int(amount)), about=about)
-                for kind, amount, about in inventory.moves
-            ]
+            moves = self._moves_told(inventory)
             items = moves + self._wages_told(r, settled, home, charged)
             statement = " ".join(
                 [f"Your statement for {date}: {'; '.join(items)}.", food, *stock]
@@ -444,6 +476,26 @@ class World:
             )
             living.eaten, inventory.moves, r.worked = {}, [], 0
         self.fund.close_day()
+
+    def _eaten(self, item: str, units: int) -> str:
+        """`units` of the ready food or the dish `item`, as the statement tells what was eaten."""
+        dish = self._dishes.get(item)
+        if dish is None:
+            return amount(self.config.good(item), units)
+        return dish.name if units == 1 else f"{counted(units, 'portion')} of {bare(dish.name)}"
+
+    def _moves_told(self, inventory: Inventory) -> list[str]:
+        """The statement's items on the movements of `inventory`'s money since the last midnight,
+        in their order, the same movement told once with how many times it was made."""
+        times: dict[tuple[str, int, str], int] = {}
+        for kind, paid, about in inventory.moves:
+            key = (str(kind), int(paid), str(about))
+            times[key] = times.get(key, 0) + 1
+        return [
+            MOVES[kind].format(money=self.money(paid), about=about)
+            + (f", {n} times" if n > 1 else "")
+            for (kind, paid, about), n in times.items()
+        ]
 
     def _wages_told(
         self, r: Resident, settled: Settled, home: Place, charged: list[Good]
@@ -526,10 +578,8 @@ class World:
 
     def treat(self, r: Resident, restores: float) -> None:
         """Treatment restores `restores` of `r`'s health and, if `r` was bedridden, lets it up:
-        Idle at its home, logged as `recovered` and told to it and to those there. The clinic's
-        treatment, which a resident buys there for itself, calls this; the Hospital's doctor at
-        a patient's bedside will call the same. Until then a bedridden resident, which can
-        neither leave its home nor buy, cannot be treated."""
+        Idle at its home, logged as `recovered` and told to it and to those there. The doctor's
+        treatment, at the Hospital or at a patient's bedside, is to call this."""
         self.reckon(r)
         self.body.treat(r.living, restores)
         if not r.living.bedridden:
@@ -599,22 +649,14 @@ class World:
         return "awake"
 
     def feed(self, r: Resident) -> None:
-        """Awake and able to eat, `r` eats from the stock of food in its inventory, a unit at a
-        time and at most the good's units a day, until it could eat no more."""
+        """Awake and able to eat, `r` eats the ready food in its inventory, a helping at a time,
+        until it could eat no more."""
         if not r.awake:
             return
-        living = r.living
-        for good in self.config.goods:
-            if good.kind != "consumable" or good.nourishment is None:
-                continue
-            assert good.per_day is not None
-            while (
-                self.body.hungry(living)
-                and r.inventory.units(good.id)
-                and living.eaten.get(good.id, 0) < good.per_day
-            ):
+        for good in self.config.supplier:
+            while good.ready and self.body.hungry(r.living) and r.inventory.units(good.id):
                 r.inventory.remove(good.id, 1)
-                self.eat(r, good, 1)
+                self.eat(r, good.id, 1)
 
     def note_bands(self, r: Resident, before: dict[str, Band], *, tell: bool) -> None:
         """Log each need of `r` whose band is no longer `before`'s, in the band's words, and
@@ -640,17 +682,21 @@ class World:
     def nourishment(self, r: Resident) -> int:
         """What `r` has eaten since the last midnight, as nourishment: the one measure of
         whether it has eaten today."""
-        return sum(
-            good.nourishment * units
-            for good in self.config.goods
-            if good.nourishment is not None and (units := r.living.eaten.get(good.id))
-        )
+        return sum(self._food(item) * units for item, units in r.living.eaten.items())
 
-    def eat(self, r: Resident, good: Good, units: int) -> None:
-        """`r` eats `units` of the food `good`: today's record grows and its satiety rises."""
-        assert good.nourishment is not None
-        r.living.eaten[good.id] = r.living.eaten.get(good.id, 0) + units
-        self.body.eat(r.living, good.nourishment * units)
+    def _food(self, item: str) -> int:
+        """What a helping of the ready food `item`, or a portion of the dish `item`, gives."""
+        if item in self._dishes:
+            return A_DAYS_FOOD
+        nourishment = self.config.good(item).nourishment
+        assert nourishment
+        return nourishment
+
+    def eat(self, r: Resident, item: str, units: int) -> None:
+        """`r` eats `units` of the ready food or the dish `item`: today's record grows and its
+        satiety rises."""
+        r.living.eaten[item] = r.living.eaten.get(item, 0) + units
+        self.body.eat(r.living, self._food(item) * units)
 
     def _force_sleep(self, day: int) -> None:
         wake = day * DAY + self._forced_wake
@@ -760,6 +806,8 @@ class World:
             "time": self.clock.now(),
             "posted": list(self.board.posted),
             "fund": asdict(self.fund),
+            "store": asdict(self.store),
+            "kitchen": asdict(self.kitchen),
             "residents": residents,
         }
 
@@ -772,6 +820,8 @@ class World:
         self.clock.set(state["time"])
         self.board.posted = list(state["posted"])  # the last board, less what was paid for
         self.fund = Fund(**copy.deepcopy(state["fund"]))
+        self.store = Store(**copy.deepcopy(state["store"]))
+        self.kitchen = Kitchen(**copy.deepcopy(state["kitchen"]))
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -848,6 +898,82 @@ class World:
     def addressable(self, r: Resident) -> list[Resident]:
         return [other for other in self.company(r) if other.awake]
 
+    def of_occupation(self, occupation: str) -> list[Resident]:
+        """The residents whose occupation is `occupation`."""
+        return [r for r in self.residents.values() if r.occupation.id == occupation]
+
+    def works_at(self, r: Resident, place_id: str | None) -> bool:
+        """Whether `r` can be at work at `place_id`: its own workplace, or where its occupation
+        also works (the chef at the Store, buying for the kitchen)."""
+        errand = ERRANDS.get(r.occupation.id)
+        return place_id == r.occupation.workplace or (
+            errand is not None and place_id == self.config.workplace(errand).id
+        )
+
+    def serving(self, kind: str) -> Resident | None:
+        """Who is at work at the town's workplace of `kind`, of those whose workplace it is: the
+        shopkeeper at the Store's counter, the chef in the kitchen; None while nobody is, and the
+        door is shut."""
+        place = self.config.workplace(kind).id
+        return next(
+            (
+                r
+                for r in self.residents.values()
+                if r.place == place and r.occupation.workplace == place and isinstance(r.base, Work)
+            ),
+            None,
+        )
+
+    def counter_told(self, r: Resident) -> list[str]:
+        """What `r` is told where it is of what is for sale there now and at what price, at the
+        Store or the Restaurant, or that its door is shut; and, to the shopkeeper at the Store,
+        what is on order, to the chef there or in the kitchen, what the kitchen holds."""
+        store, restaurant = self.config.workplace("store"), self.config.workplace("restaurant")
+        told = []
+        if r.place == store.id:
+            if self.serving("store") is None:
+                told.append(f"{cap(store.name)} is closed: nobody is at the counter.")
+            else:
+                told.append(self._counter())
+            if r.occupation.workplace == store.id and self.store.pending:
+                coming: dict[str, int] = {}
+                for good, units, _ in self.store.pending:
+                    coming[str(good)] = coming.get(str(good), 0) + int(units)
+                ordered = [amount(self.config.good(g), n) for g, n in coming.items()]
+                told.append(f"On order from the supplier: {listed(ordered)}.")
+        elif r.place == restaurant.id:
+            if self.serving("restaurant") is None:
+                told.append("The kitchen is closed.")
+            else:
+                menu = [
+                    f"{bare(dish.name)} {self.money(self.kitchen.menu[dish.id])} "
+                    f"({self.kitchen.portions.get(dish.id) or 'none'} ready)"
+                    for dish in self.config.dishes
+                ]
+                told.append(f"On the menu: {listed(menu)}.")
+        if r.occupation.id == "chef" and r.place in (store.id, restaurant.id):
+            told.append(self.kitchen_told())
+        return told
+
+    def _counter(self) -> str:
+        """The Store's counter: each good it has, with its price and how many are left, and
+        what is sold out."""
+        stocked, out = [], []
+        for good in self.config.supplier:
+            left = self.store.stock.get(good.id, 0)
+            price = self.money(self.store.prices[good.id])
+            if left:
+                stocked.append(f"{bare(good.name)} {price} ({left} left)")
+            else:
+                out.append(bare(good.name))
+        told = f"At the counter: {listed(stocked)}" if stocked else "At the counter: nothing"
+        return told + (f"; sold out: {listed(out)}." if out else ".")
+
+    def kitchen_told(self) -> str:
+        """What the kitchen holds, as the chef reads it."""
+        held = [amount(self.config.good(g), n) for g, n in self.kitchen.stock.items()]
+        return f"The kitchen holds {listed(held)}." if held else "The kitchen holds nothing."
+
     def occupants(self, place_id: str) -> list[Resident]:
         """Who lives at `place_id` now."""
         return [r for r in self.residents.values() if r.home == place_id]
@@ -865,7 +991,7 @@ class World:
         where that shows, or nothing."""
         phrases = [
             good.phrase
-            for good in self.config.goods
+            for good in self.config.supplier
             if good.phrase is not None and r.inventory.units(good.id)
         ]
         if (seen := self.body.seen(r.living)) is not None:
@@ -897,16 +1023,12 @@ class World:
         return f"Also here: {listed([state(other) for other in people])}."
 
     def things_told(self, r: Resident) -> str:
-        """What `r` owns and has in stock, in its own words."""
-        things = []
-        for good in self.config.goods:
-            left = r.inventory.units(good.id)
-            if not left:
-                continue
-            if good.kind == "consumable":
-                things.append(f"{good.name} ({counted(left, 'helping')})")
-            else:
-                things.append(good.name)
+        """What `r` owns and keeps, in its own words."""
+        things = [
+            amount(good, units)
+            for good in self.config.supplier
+            if (units := r.inventory.units(good.id))
+        ]
         return f"You have {listed(things)}." if things else "You have nothing of your own yet."
 
     def purse(self, r: Resident) -> str:
@@ -923,12 +1045,13 @@ class World:
         """What `r` has, as `inventory` tells it: its money, then each thing it keeps, a line
         each, with how much is left of a stock and any daily charge."""
         lines = [f"Money: {self.money(r.inventory.money)}."]
-        for good in self.config.goods:
+        for good in self.config.supplier:
             units = r.inventory.units(good.id)
             if not units:
                 continue
             if good.kind == "consumable":
-                lines.append(f"{cap(bare(good.name))}: {counted(units, 'helping')}.")
+                each = "helping" if good.ready else "unit"
+                lines.append(f"{cap(bare(good.name))}: {counted(units, each)}.")
             elif good.fee_per_day:
                 charge = self.money(good.fee_per_day)
                 lines.append(f"{cap(good.name)}, with a daily charge of {charge}.")
@@ -936,22 +1059,37 @@ class World:
                 lines.append(f"{cap(good.name)}.")
         return "\n".join(lines)
 
-    def pay_service(self, r: Resident, task: int) -> str:
-        """`r` is paid its occupation's sum for a service, task `task` of its own accepted: into
-        its inventory as far as the fund has it, the rest owed. Returns what it is told."""
-        amount = r.occupation.per_service
-        paid = self.fund.service(r.name, amount)
+    def pay_service(
+        self,
+        r: Resident,
+        service: str,
+        about: str,
+        *,
+        due: int | None = None,
+        task: int | None = None,
+        tell: bool = False,
+    ) -> str:
+        """`r` is paid a sum for a service rendered, told as being for `about`: its
+        occupation's sum unless `due` is given, into its inventory as far as the fund has it, the
+        rest owed. `service` names the service in the log: `task`, a task of one's own accepted;
+        `team`, one of the programmers' tasks accepted, to the team leader; `sale`; `dish`. It is
+        told to `r` if `tell` (a result tells it otherwise); returns what `r` is told, nothing
+        when the sum is nothing."""
+        due = r.occupation.per_service if due is None else due
+        if not due:
+            return ""
+        paid = self.fund.service(r.name, due)
         r.inventory.money += paid
         if paid:
-            r.inventory.moves.append(["service", paid, f"task {task}"])
-        owed = amount - paid
+            r.inventory.moves.append(["service", paid, about])
+        owed = due - paid
 
         def told(w: str | None) -> str:
             who = cap(you(r.name, w))
             if not owed:
-                return f"{who} received {self.money(paid)} for task {task}."
+                return f"{who} received {self.money(paid)} for {about}."
             return (
-                f"{who} received {self.money(paid)} of the {self.money(amount)} for task {task}; "
+                f"{who} received {self.money(paid)} of the {self.money(due)} for {about}; "
                 f"the fund owes {you(r.name, w)} the rest."
             )
 
@@ -959,9 +1097,11 @@ class World:
             "service",
             told,
             actor=r,
+            audience=[r] if tell else [],
             payload={
+                "for": service,
                 "task": task,
-                "amount": amount,
+                "amount": due,
                 "paid": paid,
                 "owed": owed,
                 "money": r.inventory.money,
@@ -995,7 +1135,7 @@ class World:
         factor = min(
             (
                 good.factor
-                for good in self.config.goods
+                for good in self.config.supplier
                 if good.factor is not None and r.inventory.units(good.id)
             ),
             default=1.0,
@@ -1358,6 +1498,7 @@ class World:
             else:
                 parts.append(f"{where}.")
             parts.append(self.people_here(r))
+            parts += self.counter_told(r)
         parts.append(self.purse(r))
         parts += self.body.warnings(r.living)
         if r.place == r.home:
@@ -1369,20 +1510,23 @@ class World:
 
     def usable(self, r: Resident) -> list[ToolSpec]:
         """The tools `r`'s event offers at its place now, in declared order, less those of no
-        use there: `message` with nothing to write with, the board's and the task's away from
-        the workplace, where the board hangs and the work is done, and the task's without a
-        task."""
+        use to it there: the work of other occupations; its own away from its workplace, where
+        the board hangs and the machines are, the counter or the kitchen; the task's without a
+        task; `start_work` where it has no work; and `message` with nothing to write with."""
         if r.suspended:
             return []
-        useless: set[str] = set()
-        if not any(
-            r.inventory.units(good.id) for good in self.config.goods if good.effect == "messaging"
-        ):
-            useless.add("message")
-        if r.place != self.config.workplace.id:
-            useless |= BOARD_TOOLS | TASK_TOOLS
+        own = OCCUPATION_TOOLS[r.occupation.id]
+        useless = set(WORK_DONE - own)
+        if r.place != r.occupation.workplace:
+            useless |= own
         if r.name not in self.board.claims:
             useless |= TASK_TOOLS
+        if not self.works_at(r, r.place):
+            useless.add("start_work")
+        if not any(
+            r.inventory.units(g.id) for g in self.config.supplier if g.effect == "messaging"
+        ):
+            useless.add("message")
         return [spec for spec in self.tool_specs if spec.name in r.tools - useless]
 
     def review(self, r: Resident) -> str:
@@ -1450,6 +1594,8 @@ class World:
             )
             text = refusal(event, name, destination=destination)
             return ToolResult(text, ends_turn=isinstance(event, Movement))
+        if name in WORK_DONE - OCCUPATION_TOOLS[r.occupation.id]:
+            return ToolResult(f"That is not your work: you are {r.occupation.title}.")
         problem = tools.check(self._specs[name], args)
         if problem:
             return ToolResult(problem)

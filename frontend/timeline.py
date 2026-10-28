@@ -47,7 +47,8 @@ The markers, each on the lane of the resident who acted, with their own fields:
     gift          to, amount              money given; or to, item, name, quantity for a thing
                                           or helpings of a stock
     skill_shared  to, file                a copy of one of the resident's files passed on
-    purchase      item, name, quantity, amount
+    purchase      item, name, quantity, amount   a good bought for oneself at the Store (a
+                                          `sale` entry of the log; one of an older log)
     move_in       from, to                the resident moved house; its lane's home follows
     journal       text, day, wake         going to bed with the day's journal entry (a bedtime
                                           without one has no marker)
@@ -107,6 +108,7 @@ _FOLDED = frozenset(
         "gift",
         "skill_shared",
         "purchase",
+        "sale",
         "move_in",
         "wage",
         "settlement",
@@ -359,7 +361,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                 name=payload["name"],
                 quantity=payload["quantity"],
             )
-        elif kind == "purchase":
+        elif kind == "purchase" or (kind == "sale" and not payload["kitchen"]):
             lane.mark(
                 entry,
                 "purchase",

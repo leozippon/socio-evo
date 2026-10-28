@@ -1,8 +1,7 @@
-"""The goods of the catalogue and the homes: buying where a good is sold and with cash in hand,
-food eaten on the spot or from a stock drawn on as one gets hungry, a durable kept and billed, a
-bicycle that shortens the walk, messages between phone owners wherever they are, what one wears
-seen by others, and moving into a home with a free room. What the body makes of food, sleep and
-work is in test_body."""
+"""What a resident keeps and the homes: ready food eaten from the inventory as one gets hungry,
+a durable kept and billed, a bicycle that shortens the walk, messages between phone owners
+wherever they are, what one wears seen by others, and moving into a home with a free room. Buying
+is in test_shops; what the body makes of food, sleep and work is in test_body."""
 
 from __future__ import annotations
 
@@ -10,144 +9,72 @@ from tests.world.conftest import at, awake_at, town_config
 from world.config import TownConfig
 
 
-async def test_a_good_is_bought_only_where_it_is_sold_and_only_with_the_cash(make_town):
-    town = make_town()
-    await awake_at(town)
-    assert (await town.call("Mei", "buy", item="groceries")).text == (
-        "You can buy groceries at the store, not here."
-    )
-    for name in ("Mei", "Aisha"):
-        await town.call(name, "go", place="store")
-    await town.until("07:10")
-    assert (await town.call("Aisha", "buy", item="bicycle")).text == (
-        "You do not have $50. Your purse holds $30."
-    )
-    assert (await town.call("Aisha", "buy", item="coat", quantity=2)).text == (
-        "One coat is all you can have."
-    )
-    assert (await town.call("Aisha", "buy", item="coat", quantity=0)).text == (
-        "quantity must be a whole number of at least 1."
-    )
-    assert (await town.call("Aisha", "buy", item="coat")).text == (
-        "You bought a coat for $30. You have a coat. Your purse holds $0."
-    )
-    assert (await town.call("Aisha", "buy", item="coat")).text == "You already have a coat."
-    assert (await town.call("Aisha", "buy", item="groceries")).text == (
-        "You do not have $12. Your purse holds $0."
-    )
-    assert (await town.call("Mei", "buy", item="groceries", quantity=2)).text == (
-        "You bought 2 × groceries for $24. You have groceries (18 helpings). Your purse holds $96."
-    )
-    assert (await town.call("Mei", "inventory")).text == "Money: $96.\nGroceries: 18 helpings."
-    bought = [e for e in town.world.log.entries() if e["kind"] == "purchase"]
-    assert [(e["actor"], e["text"], e["payload"]) for e in bought] == [
-        (
-            "Aisha",
-            "Aisha bought a coat for $30.",
-            {"item": "coat", "name": "a coat", "kind": "durable", "effect": "appearance",
-             "quantity": 1, "amount": 30},
-        ),
-        (
-            "Mei",
-            "Mei bought 2 × groceries for $24.",
-            {"item": "groceries", "name": "groceries", "kind": "consumable", "effect": "food",
-             "quantity": 2, "amount": 24},
-        ),
-    ]  # fmt: skip
-    money = {name: r.inventory.money for name, r in town.world.residents.items()}
-    assert money == {"Mei": 96, "Tomas": 180, "Aisha": 0}
-    assert town.world.fund.balance == 1000 + 30 + 24  # what the store sold is the fund's
-
-
-async def test_food_on_the_spot_or_from_a_stock_is_the_days_food(make_town):
+async def test_ready_food_is_eaten_a_helping_at_a_time_and_the_statement_tells_what_is_left(
+    make_town,
+):
     town = make_town()
     await awake_at(town)
     world = town.world
-    mei, tomas = world.residents["Mei"], world.residents["Tomas"]
-    await town.call("Mei", "go", place="cafe")
-    await town.call("Tomas", "go", place="store")
-    await town.until("07:10")
-    assert (await town.call("Mei", "buy", item="meal")).text == (
-        "You bought a meal at the café for $10. You are well fed. Your purse holds $110."
-    )
-    assert world.nourishment(mei) == 100 and mei.living.eaten == {"meal": 1}
-    assert (await town.call("Tomas", "buy", item="groceries")).text == (
-        "You bought groceries for $12. You have groceries (9 helpings). Your purse holds $168."
-    )
-    assert world.nourishment(tomas) == 0 and tomas.inventory.items == {"groceries": 9}
+    tomas = world.residents["Tomas"]
+    tomas.inventory.items["bread"] = 9
+    assert (await town.call("Tomas", "inventory")).text == "Money: $180.\nBread: 9 helpings."
     for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
     statements = {name: town.take(name)[-1] for name in world.residents}
+    assert statements["Tomas"] == (  # helpings, eaten as he could eat
+        "Your statement for Monday 1 January: no time at work; rent for your room at the flat "
+        "by the college gates $30; your wages fell $30 short of that; you owe it, and it is "
+        "taken from your next wages. You ate today: 2 helpings of bread. You are well fed. You "
+        "are fresh. You are in good health. Your purse holds $180."
+    )
     owed = "your wages fell $20 short of that; you owe it, and it is taken from your next wages"
-    assert statements["Mei"] == (
-        "Your statement for Monday 1 January: bought a meal at the café for $10; no time at "
-        f"work; rent for your room at the shared house on Mill Street $20; {owed}. You ate "
-        "today: a meal at the café. You are a little hungry. You are fresh. You are in good "
-        "health. Your purse holds $110."
-    )
-    assert statements["Tomas"] == (  # helpings of the stock, eaten as he could eat
-        "Your statement for Monday 1 January: bought groceries for $12; no time at work; rent "
-        "for your room at the flat by the college gates $30; your wages fell $30 short of that; "
-        "you owe it, and it is taken from your next wages. You ate today: 2 helpings of "
-        "groceries. You are well fed. You are fresh. You are in good health. Your purse holds "
-        "$168."
-    )
     assert statements["Aisha"] == (
         "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
         f"house on Mill Street $20; {owed}. You had nothing to eat today. You are hungry. You "
         "are fresh. You are in good health. Your purse holds $30."
     )
-    # The day's record starts afresh; the stock went down by the two helpings Tomas ate when
+    # The day's record starts afresh; the bread went down by the two helpings Tomas ate when
     # he could eat, at 12:00 and 21:00. Aisha, full when the town began, is hungry but not yet
     # starving at the first midnight.
-    assert world.nourishment(mei) == 0 and tomas.inventory.items == {"groceries": 7}
+    assert world.nourishment(tomas) == 0 and tomas.inventory.items == {"bread": 7}
     settled = [e for e in world.log.entries() if e["kind"] == "settlement"]
-    assert [e["payload"]["nourishment"] for e in settled] == [100, 68, 0]
-    paid = [e["payload"] for e in world.log.entries() if e["kind"] == "wage"]
-    assert [(p["money"], p["arrears"]) for p in paid] == [(110, 20), (168, 30), (30, 20)]
+    assert [e["payload"]["nourishment"] for e in settled] == [0, 68, 0]
     assert settled[2]["payload"]["night"] == {"poor_home": -2, "recovery": 5}
 
-    # The stock is drawn on as its owner gets hungry, at most three helpings a day, and the
-    # statement tells what is left when it is nearly gone and when it is gone.
+    # The statement tells what is left once it is less than a day's food, and when it is gone.
     town.rest()
-    await town.until("00:01", day=6)
+    await town.until("00:01", day=5)
     statements = [p.text for p in town.heard["Tomas"] if p.kind == "settlement"]
     notes = [
         note
         for text in statements
-        for note in ("helpings of groceries left", "used up your groceries")
+        for note in ("helpings of bread left", "used up your bread")
         if note in text
     ]
-    assert notes == ["helpings of groceries left", "used up your groceries"]
-    assert tomas.inventory.items == {} and "You had nothing to eat today." in statements[-1]
+    assert notes == ["helpings of bread left", "used up your bread"]
+    assert tomas.inventory.items == {}
 
 
 async def test_a_durable_is_kept_and_its_charge_is_billed_each_midnight_while_owned(make_town):
     town = make_town()
     await awake_at(town)
-    await town.call("Mei", "go", place="store")
-    await town.until("07:10")
-    assert (await town.call("Mei", "buy", item="phone")).text == (
-        "You bought a phone for $40. You have a phone. Your purse holds $80."
-    )
+    town.world.residents["Mei"].inventory.items["phone"] = 1
     town.take("Mei")
     await town.until("00:00", day=2)
     assert town.take("Mei")[-1] == (
-        "Your statement for Monday 1 January: bought a phone for $40; no time at work; rent for "
-        "your room at the shared house on Mill Street $20; the daily charge on a phone $2; your "
-        "wages fell $22 short of that; you owe it, and it is taken from your next wages. You had "
-        "nothing to eat today. You are hungry. You are fresh. You are in good health. Your purse "
-        "holds $80."
+        "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
+        "house on Mill Street $20; the daily charge on a phone $2; your wages fell $22 short of "
+        "that; you owe it, and it is taken from your next wages. You had nothing to eat today. "
+        "You are hungry. You are fresh. You are in good health. Your purse holds $120."
     )
     paid = [e for e in town.world.log.entries() if e["kind"] == "wage"]
     assert {k: paid[0]["payload"][k] for k in ("rent", "charges", "arrears", "money")} == {
-        "rent": 20, "charges": 2, "arrears": 22, "money": 80,
+        "rent": 20, "charges": 2, "arrears": 22, "money": 120,
     }  # fmt: skip
     assert (await town.call("Mei", "inventory")).text == (
-        "Money: $80.\nA phone, with a daily charge of $2."
+        "Money: $120.\nA phone, with a daily charge of $2."
     )
-    assert town.world.residents["Mei"].inventory.items == {"phone": 1}
 
 
 async def test_a_bicycle_halves_the_walk(make_town):
@@ -158,7 +85,7 @@ async def test_a_bicycle_halves_the_walk(make_town):
     await town.call("Mei", "go", place="store")
     assert mei.base.arrival == at("07:10")  # ten minutes on foot
     await town.until("07:10")
-    await town.call("Mei", "buy", item="bicycle")
+    mei.inventory.items["bicycle"] = 1
     assert (await town.call("Mei", "go", place="workshop")).text == (
         "You set off for the workshop and will arrive at 07:15."
     )
@@ -175,14 +102,11 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
     assert (await town.call("Mei", "message", to="Tomas", text="Hello?")).text == (
         "You have no phone."
     )
-    for name in ("Mei", "Tomas"):
-        await town.call(name, "go", place="store")
-    await town.until("07:10")
-    await town.call("Mei", "buy", item="phone")
+    world.residents["Mei"].inventory.items["phone"] = 1
     assert (await town.call("Mei", "message", to="Tomas", text="Hello?")).text == (
         "Tomas has no phone."
     )
-    await town.call("Tomas", "buy", item="phone")
+    world.residents["Tomas"].inventory.items["phone"] = 1
     assert (await town.call("Mei", "message", to="Zoe", text="Hello?")).text == (
         "There is nobody called Zoe in the town."
     )
@@ -191,7 +115,7 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
     )
     assert (await town.call("Mei", "message", to="Tomas", text=" ")).text == "You wrote nothing."
     await town.call("Tomas", "go", place="workshop")
-    await town.until("07:20")
+    await town.until("07:10")
     for name in world.residents:
         town.take(name)
     assert (await town.call("Mei", "message", to="Tomas", text="Lunch at one?")).text == (
@@ -206,7 +130,7 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
     assert written[-1]["text"] == "Mei wrote to Tomas: “Lunch at one?”"
 
     await town.call("Tomas", "go", place="college-flat")
-    await town.until("07:30")
+    await town.until("07:20")
     await town.call("Tomas", "sleep", until="12:00", journal="A nap.")
     town.take("Tomas")
     town.rest("Tomas")
@@ -227,7 +151,7 @@ async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conver
     await town.call("Mei", "go", place="store")
     await town.call("Tomas", "go", place="workshop")
     await town.until("08:10")
-    await town.call("Mei", "buy", item="coat")
+    town.world.residents["Mei"].inventory.items["coat"] = 1
     for name in ("Mei", "Tomas"):
         town.take(name)
     await town.call("Mei", "go", place="workshop")

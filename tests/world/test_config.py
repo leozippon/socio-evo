@@ -22,16 +22,18 @@ def broken(change, **options) -> str:
 
 def test_a_town_validates():
     config = town_config()
-    assert config.workplace.id == "workshop"
+    assert config.workplace("office").id == "workshop" and config.workplace("store").id == "store"
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
-    assert config.good("groceries").days == 3 and config.place("college-flat").comfort == 1.0
+    assert config.good("bread").ready and not config.good("eggs").ready
+    assert config.dish("soup").ingredients == {"vegetables": 2}
+    assert config.place("college-flat").comfort == 1.0
     assert config.needs.satiety.lowest.name == "starving"
     data = config.model_dump(mode="json")
     data["day"]["sleep_at_most"] = "05:00"  # as long as the forced sleep, 02:00 to 07:00
     assert type(config).model_validate(data).day.sleep_at_most == "05:00"
-    data["day"]["board_posted"] = "07:00"  # as the residents wake
-    assert type(config).model_validate(data).day.board_posted == "07:00"
+    data["day"]["board_posted"] = data["day"]["delivery"] = "07:00"  # as the residents wake
+    assert type(config).model_validate(data).day.delivery == "07:00"
 
 
 @pytest.mark.parametrize(
@@ -40,8 +42,15 @@ def test_a_town_validates():
         (
             lambda d: d["places"].append(dict(d["places"][2], id="second")),
             {},
-            "exactly one workplace",
+            "a town has at most one office, not 2",
         ),
+        (lambda d: d["places"].pop(5), {}, "the town has no store"),
+        (
+            lambda d: d["places"].append({"id": "hall", "name": "the hall", "kind": "hall"}),
+            {},
+            "the hall hall is no occupation's workplace",
+        ),
+        (lambda d: d["places"][2].update(kind="shop"), {}, "Input should be 'home', 'office'"),
         (lambda d: d["places"][2].update(opens="09:00"), {}, "Extra inputs are not permitted"),
         (lambda d: d["day"].update(forced_wake="7am"), {}, "HH:MM"),
         (lambda d: d["residents"][0].update(home="cafe"), {}, "is not a home"),
@@ -55,6 +64,7 @@ def test_a_town_validates():
         (lambda d: d["day"].update(checkpoint="01:00"), {}, "forced_sleep < checkpoint"),
         (lambda d: d["day"].update(forced_wake="02:15"), {}, "checkpoint < forced_wake"),
         (lambda d: d["day"].update(board_posted="06:59"), {}, "forced_wake <= board_posted"),
+        (lambda d: d["day"].update(delivery="06:59"), {}, "forced_wake <= delivery"),
         (lambda d: d["day"].pop("forced_wake"), {}, "Field required"),
         (
             lambda d: d["day"].update(sleep_at_most="04:59"),
@@ -79,12 +89,18 @@ def test_a_town_validates():
         ),
         (lambda d: d["work"].update(payment=0), {}, "greater than or equal to 1"),
         (lambda d: d["residents"][0].pop("occupation"), {}, "occupation\n  Field required"),
-        (lambda d: d["residents"][0].update(occupation="chef"), {}, "chef is not known"),
+        (lambda d: d["residents"][0].update(occupation="doctor"), {}, "doctor is not known"),
+        (lambda d: d["occupations"][0].update(id="baker"), {}, "Input should be 'programmer'"),
         (lambda d: d["residents"][0].update(purse=-1), {}, "greater than or equal to 0"),
         (
             lambda d: d["occupations"][0].update(workplace="store"),
             {},
-            "the occupation programmer's workplace store is not a workplace",
+            "the occupation programmer works at an office, and store is not one",
+        ),
+        (
+            lambda d: d["occupations"].pop(0),
+            {},
+            "the team leader leads programmers, and the town has none",
         ),
         (
             lambda d: d["occupations"].append(dict(d["occupations"][0])),
@@ -97,27 +113,60 @@ def test_a_town_validates():
         (lambda d: d["places"][0].pop("rent"), {}, "needs rent, rooms and comfort"),
         (lambda d: d["places"][2].update(rent=5), {}, "is not a home and has no rent"),
         (lambda d: d["places"][0].update(rooms=1), {}, "has 1 rooms for 2 residents"),
-        (lambda d: d["goods"].append(dict(d["goods"][0])), {}, "duplicate good id"),
-        (lambda d: d["goods"][0].update(sold_at=["workshop"]), {}, "not a shop or social place"),
-        (lambda d: d["goods"][0].update(sold_at=[]), {}, "at least 1 item"),
-        (lambda d: d.update(goods=[d["goods"][2]]), {}, "sells nothing to eat"),
-        (lambda d: d["goods"][0].pop("uses"), {}, "needs uses and per_day"),
-        (lambda d: d["goods"][0].update(per_day=10), {}, "uses more a day than one purchase holds"),
-        (lambda d: d["goods"][1].update(uses=2), {}, "is not consumable and has no uses"),
-        (lambda d: d["goods"][1].update(fee_per_day=1), {}, "is not durable and carries no fee"),
-        (lambda d: d["goods"][2].update(effect="food"), {}, "is food and so is consumable"),
-        (lambda d: d["goods"][1].update(effect="travel"), {}, "which only a durable has"),
-        (lambda d: d["goods"][0].pop("nourishment"), {}, "nourishment belongs to the effect food"),
-        (lambda d: d["goods"][2].update(phrase="x"), {}, "phrase belongs to the effect appearance"),
-        (lambda d: d["goods"][4].update(phrase=" "), {}, "has an empty phrase"),
-        (lambda d: d["goods"][4].update(phrase="in an honest coat"), {}, "the town does not use"),
-        (lambda d: d["goods"][5].update(kind="durable"), {}, "which only an immediate has"),
+        (lambda d: d["supplier"].append(dict(d["supplier"][0])), {}, "duplicate good or dish id"),
         (
-            lambda d: d["goods"][5].update(restores=5),
+            lambda d: d["dishes"].append(dict(d["dishes"][0], id="bread")),
             {},
-            "restores belongs to the effect treatment",
+            "duplicate good or dish id",
         ),
-        (lambda d: d["goods"][6].pop("restores"), {}, "restores belongs to the effect treatment"),
+        (lambda d: d["supplier"][0].pop("wholesale"), {}, "Field required"),
+        (
+            lambda d: d["supplier"][0].update(sold_at=["store"]),
+            {},
+            "Extra inputs are not permitted",
+        ),
+        (
+            lambda d: [
+                d.update(supplier=d["supplier"][1:], dishes=[]),
+                d["store"]["stock"].pop("bread"),
+            ],
+            {},
+            "the town sells nothing to eat",
+        ),
+        (lambda d: d["supplier"][0].update(kind="durable"), {}, "food is consumable"),
+        (lambda d: d["supplier"][3].update(kind="consumable"), {}, "food is consumable"),
+        (lambda d: d["supplier"][0].update(kind="immediate"), {}, "Input should be 'consumable'"),
+        (lambda d: d["supplier"][0].update(fee_per_day=1), {}, "is not durable and carries no fee"),
+        (
+            lambda d: d["supplier"][0].pop("nourishment"),
+            {},
+            "nourishment belongs to the effect food",
+        ),
+        (lambda d: d["supplier"][0].update(nourishment=101), {}, "less than or equal to 100"),
+        (
+            lambda d: d["supplier"][3].update(phrase="x"),
+            {},
+            "phrase belongs to the effect appearance",
+        ),
+        (lambda d: d["supplier"][5].update(phrase=" "), {}, "has an empty phrase"),
+        (
+            lambda d: d["supplier"][5].update(phrase="in an honest coat"),
+            {},
+            "the town does not use",
+        ),
+        (lambda d: d["supplier"][4].update(effect="treatment"), {}, "Input should be 'food'"),
+        (
+            lambda d: d["dishes"][0]["ingredients"].update(coat=1),
+            {},
+            "the dish omelette is cooked from coat, not a food",
+        ),
+        (lambda d: d["dishes"][0].update(ingredients={}), {}, "at least 1 item"),
+        (
+            lambda d: d["store"]["stock"].update(wine=3),
+            {},
+            "the Store's stock has wine, which the supplier lacks",
+        ),
+        (lambda d: d["store"]["stock"].update(bread=-1), {}, "greater than or equal to 0"),
         (lambda d: d.pop("needs"), {}, "needs\n  Field required"),
         (lambda d: d["needs"]["satiety"].update(per_hour=0), {}, "greater than 0"),
         (lambda d: d["needs"]["energy"].pop("sleep_per_hour"), {}, "Field required"),

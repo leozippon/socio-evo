@@ -1,7 +1,8 @@
-"""A small town for the world's tests: three residents (backgrounds from the old town), all
-programmers at the workshop, two homes, a shop and a clinic with a good of every kind and effect,
-the real town's needs, the fake work backend of `world.testing`, and a harness that runs the world
-on a manual clock and stands in for the residents' runtimes."""
+"""A small town for the world's tests: three residents, programmers at the workshop (the office),
+and the shopkeeper and the chef that `TRADES` adds for the tests of the store and the café (the
+restaurant); two homes and a park; a catalogue with ready food, two ingredients and a durable of
+each effect, and two dishes; the real town's needs; the fake work backend of `world.testing`; and
+a harness that runs the world on a manual clock and stands in for the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -23,32 +24,43 @@ RESIDENTS = (
     {"name": "Tomas", "home": "college-flat", "occupation": "programmer", "purse": 180},
     {"name": "Aisha", "home": "mill-street-house", "occupation": "programmer", "purse": 30},
 )
-PROGRAMMER = {
-    "id": "programmer",
-    "title": "a programmer",
-    "workplace": "workshop",
-    "wage_per_hour": 7,
-    "per_service": 20,
-}
-
-
-GOODS = (
-    {"id": "groceries", "name": "groceries", "price": 12, "sold_at": ["store"],
-     "kind": "consumable", "uses": 9, "per_day": 3, "effect": "food", "nourishment": 34},
-    {"id": "meal", "name": "a meal at the café", "price": 10, "sold_at": ["cafe"],
-     "kind": "immediate", "effect": "food", "nourishment": 100},
-    {"id": "bicycle", "name": "a bicycle", "price": 50, "sold_at": ["store"],
-     "kind": "durable", "effect": "travel", "factor": 0.5},
-    {"id": "phone", "name": "a phone", "price": 40, "sold_at": ["store"],
-     "kind": "durable", "effect": "messaging", "fee_per_day": 2},
-    {"id": "coat", "name": "a coat", "price": 30, "sold_at": ["store"],
-     "kind": "durable", "effect": "appearance", "phrase": "in a new coat"},
-    {"id": "examination", "name": "an examination", "price": 10, "sold_at": ["clinic"],
-     "kind": "immediate", "effect": "examination"},
-    {"id": "treatment", "name": "treatment", "price": 25, "sold_at": ["clinic"],
-     "kind": "immediate", "effect": "treatment", "restores": 25},
+TRADES = (
+    {"name": "Olga", "home": "college-flat", "occupation": "shopkeeper", "purse": 100},
+    {"name": "Jonas", "home": "college-flat", "occupation": "chef", "purse": 100},
+)
+"""The shopkeeper and the chef, for the tests of the store and the café."""
+OCCUPATIONS = (
+    {"id": "programmer", "title": "a programmer", "workplace": "workshop", "wage_per_hour": 7,
+     "per_service": 20},
+    {"id": "team-leader", "title": "the team leader", "workplace": "workshop",
+     "wage_per_hour": 9, "per_service": 10},
+    {"id": "chef", "title": "the chef", "workplace": "cafe", "wage_per_hour": 7,
+     "per_service": 3},
+    {"id": "shopkeeper", "title": "the shopkeeper", "workplace": "store", "wage_per_hour": 7,
+     "per_service": 2},
 )  # fmt: skip
-"""The test town's catalogue: a good of each kind and each effect."""
+
+SUPPLIER = (
+    {"id": "bread", "name": "bread", "wholesale": 2, "price": 4, "kind": "consumable",
+     "effect": "food", "nourishment": 34},
+    {"id": "eggs", "name": "eggs", "wholesale": 1, "price": 2, "kind": "consumable",
+     "effect": "food", "nourishment": 0},
+    {"id": "vegetables", "name": "vegetables", "wholesale": 2, "price": 3, "kind": "consumable",
+     "effect": "food", "nourishment": 0},
+    {"id": "bicycle", "name": "a bicycle", "wholesale": 30, "price": 50, "kind": "durable",
+     "effect": "travel", "factor": 0.5},
+    {"id": "phone", "name": "a phone", "wholesale": 25, "price": 40, "kind": "durable",
+     "effect": "messaging", "fee_per_day": 2},
+    {"id": "coat", "name": "a coat", "wholesale": 20, "price": 30, "kind": "durable",
+     "effect": "appearance", "phrase": "in a new coat"},
+)  # fmt: skip
+"""The test town's catalogue: ready food, two ingredients and a durable of each effect."""
+DISHES = (
+    {"id": "omelette", "name": "an omelette", "ingredients": {"eggs": 2, "vegetables": 1},
+     "price": 10},
+    {"id": "soup", "name": "vegetable soup", "ingredients": {"vegetables": 2}, "price": 8},
+)  # fmt: skip
+STOCK = {"bread": 10, "eggs": 10, "vegetables": 10, "bicycle": 1, "phone": 2, "coat": 1}
 
 NEEDS = {
     "satiety": {
@@ -92,7 +104,7 @@ NEEDS = {
 def town_config(
     *,
     residents: tuple[dict[str, Any], ...] = RESIDENTS,
-    goods: tuple[dict[str, Any], ...] = GOODS,
+    supplier: tuple[dict[str, Any], ...] = SUPPLIER,
     **work: Any,
 ) -> TownConfig:
     return TownConfig.model_validate(
@@ -117,16 +129,15 @@ def town_config(
                     "rooms": 6,
                     "comfort": 1.0,
                 },
-                {"id": "workshop", "name": "the workshop", "kind": "workplace"},
-                {"id": "cafe", "name": "the café on the square", "kind": "social"},
+                {"id": "workshop", "name": "the workshop", "kind": "office"},
+                {"id": "cafe", "name": "the café on the square", "kind": "restaurant"},
                 {"id": "park", "name": "the park", "kind": "social"},
-                {"id": "store", "name": "the store", "kind": "shop"},
-                {"id": "clinic", "name": "the clinic", "kind": "shop"},
+                {"id": "store", "name": "the store", "kind": "store"},
             ],
             "travel_minutes": 10,
             "routes": [{"between": ["workshop", "cafe"], "minutes": 5}],
             "residents": list(residents),
-            "occupations": [PROGRAMMER],
+            "occupations": list(OCCUPATIONS),
             "fund": {"start": 1000},
             "work": {
                 "split": "train",
@@ -138,7 +149,9 @@ def town_config(
                 "acceptance_timeout_s": 600,
             }
             | work,
-            "goods": list(goods),
+            "supplier": list(supplier),
+            "dishes": list(DISHES),
+            "store": {"stock": STOCK},
             "needs": NEEDS,
             "social": {"silence_minutes": 10},
             "clock": {
@@ -152,6 +165,7 @@ def town_config(
                 "checkpoint": "02:30",
                 "forced_wake": "07:00",
                 "board_posted": "08:00",
+                "delivery": "08:00",
                 "sleep_at_most": "12:00",
             },
         }
@@ -265,9 +279,7 @@ async def awake_at(town: Town, hour: str = "07:00", day: int = 1) -> None:
 
 
 def stocked(town: Town, days: int = 3) -> None:
-    """Give every resident a stock of groceries for `days`, so that a test that crosses midnight
-    on its way to something else is not about hunger."""
-    good = town.world.config.good("groceries")
-    assert good.per_day is not None
+    """Give every resident bread for `days`, three helpings a day, so that a test that crosses
+    midnight on its way to something else is not about hunger."""
     for r in town.world.residents.values():
-        r.inventory.items["groceries"] = days * good.per_day
+        r.inventory.items["bread"] = days * 3

@@ -353,13 +353,12 @@ def test_the_world_lays_the_town_out(published):
     _, _, site = published
     world = read(site, f"{RUN}/world.json")
     assert [(p["id"], p["kind"], p["x"], p["y"]) for p in world["places"]] == [
-        ("mill-street-house", "home", 1.0, 0.0),
-        ("college-flat", "home", 2.0, 0.0),
-        ("workshop", "workplace", 1.5, 1.5),
-        ("cafe", "social", 0.0, 3.0),
+        ("mill-street-house", "home", 0.5, 0.0),
+        ("college-flat", "home", 1.5, 0.0),
+        ("workshop", "office", 1.0, 1.5),
+        ("cafe", "restaurant", 0.0, 3.0),
         ("park", "social", 1.0, 3.0),
-        ("store", "shop", 2.0, 3.0),
-        ("clinic", "shop", 3.0, 3.0),
+        ("store", "store", 2.0, 3.0),
     ]
     assert [(p["rent"], p["rooms"], p["comfort"]) for p in world["places"]][:3] == [
         (20, 3, 0.9),
@@ -367,7 +366,7 @@ def test_the_world_lays_the_town_out(published):
         (None, None, None),
     ]
     assert [g["id"] for g in world["goods"]] == [
-        "groceries", "meal", "bicycle", "phone", "coat", "examination", "treatment",
+        "bread", "eggs", "vegetables", "bicycle", "phone", "coat",
     ]  # fmt: skip
     assert world["needs"]["health"]["bands"][-1] == {
         "floor": 0, "name": "gravely ill", "seen": "looking gravely ill",
@@ -649,10 +648,9 @@ async def test_push_uploads_only_what_changed_and_switches_the_site_at_once(tmp_
 
 
 def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
-    """Mei buys groceries and a phone on day 1 and eats from the stock unseen; the checkpoint
-    of day 1 counts what is left, and day 2's purchase adds to that, until she gives Aisha the
-    phone and Tomas four helpings. Tomas buys a meal, which is used up as it is bought, and the
-    checkpoint of day 2 is not written yet."""
+    """Mei buys bread and a phone on day 1 and eats a helping unseen; the checkpoint of day 1
+    counts what is left, and day 2's purchase adds to that, until she gives Aisha the phone and
+    Tomas four helpings. Tomas buys a coat, and the checkpoint of day 2 is not written yet."""
     run, _ = new_town(tmp_path)
     town = town_config()
     start, end1, end2 = at("02:30"), at("02:30", day=2), at("02:30", day=3)
@@ -677,15 +675,15 @@ def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
             {
                 "name": "Mei",
                 "markers": [
-                    purchase(at("13:00"), "groceries", 2),
+                    purchase(at("13:00"), "bread", 2),
                     purchase(at("14:00"), "phone"),
-                    purchase(at("09:00", day=2), "groceries"),
+                    purchase(at("09:00", day=2), "bread", 5),
                     gift(at("10:00", day=2), "Aisha", "phone", 1),
-                    gift(at("11:00", day=2), "Tomas", "groceries", 4),
+                    gift(at("11:00", day=2), "Tomas", "bread", 4),
                     {"seq": 0, "t": at("12:00", day=2), "kind": "gift", "to": "Tomas", "amount": 5},
                 ],
             },
-            {"name": "Tomas", "markers": [purchase(at("12:00"), "meal")]},
+            {"name": "Tomas", "markers": [purchase(at("12:00"), "coat")]},
             {"name": "Aisha", "markers": []},
         ],
     }
@@ -695,8 +693,8 @@ def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
             {
                 "time": end1,
                 "residents": {
-                    "Mei": kept({"groceries": 15, "phone": 1}),
-                    "Tomas": kept({}),
+                    "Mei": kept({"bread": 1, "phone": 1}),
+                    "Tomas": kept({"coat": 1}),
                     "Aisha": kept({}),
                 },
             }
@@ -705,14 +703,18 @@ def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
     found = bundle.things(run, town, data)
     assert found["Mei"] == [
         [start, {}],
-        [at("13:00"), {"groceries": 18}],
-        [at("14:00"), {"groceries": 18, "phone": 1}],
-        [end1, {"groceries": 15, "phone": 1}],
-        [at("09:00", day=2), {"groceries": 24, "phone": 1}],
-        [at("10:00", day=2), {"groceries": 24}],
-        [at("11:00", day=2), {"groceries": 20}],
+        [at("13:00"), {"bread": 2}],
+        [at("14:00"), {"bread": 2, "phone": 1}],
+        [end1, {"bread": 1, "phone": 1}],
+        [at("09:00", day=2), {"bread": 6, "phone": 1}],
+        [at("10:00", day=2), {"bread": 6}],
+        [at("11:00", day=2), {"bread": 2}],
     ]  # money given changes nothing owned
-    assert found["Tomas"] == [[start, {}], [at("11:00", day=2), {"groceries": 4}]]
+    assert found["Tomas"] == [
+        [start, {}],
+        [at("12:00"), {"coat": 1}],
+        [at("11:00", day=2), {"coat": 1, "bread": 4}],
+    ]
     assert found["Aisha"] == [[start, {}], [at("10:00", day=2), {"phone": 1}]]
 
 
