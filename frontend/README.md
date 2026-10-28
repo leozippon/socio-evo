@@ -366,7 +366,6 @@ The measures of every lived day a checkpoint closed, from `analysis.measures`, a
 | `graph[].messages` | integer | Written messages `source` sent `target`. |
 | `graph[].gifts` | integer | Times `source` handed `target` money or a thing. |
 | `graph[].money` | integer | The money handed over in all. |
-| `graph[].skills` | integer | Copies of files `source` passed to `target`. |
 
 ### `runs/{run}/evaluation.json`
 
@@ -430,7 +429,7 @@ The versions a resident committed on one day, each with what it changed and ever
 
 ### `runs/{run}/agents/{agent}/trace-day-{day}.json`
 
-The raw trace of a resident's runtime on one lived day, as the runtime wrote it into the resident's own directory (`agent/trace.py` defines the records): the system prompt whenever it was assembled, every request and its reply, every tool call and result, every percept, interruption, compaction and lapse. A record belongs to the lived day in whose real time it was written. Nothing comes from outside the resident's directory. A day without records has no file.
+The raw trace of a resident's runtime on one lived day, as the runtime wrote it into the resident's own directory (`agent/trace.py` defines the records): the system prompt whenever it was assembled, every request and its reply, every tool call and result, every percept, compaction and lapse. A record belongs to the lived day in whose real time it was written. Nothing comes from outside the resident's directory. A day without records has no file.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

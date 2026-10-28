@@ -71,7 +71,9 @@ async def test_a_resident_works_a_real_task_across_a_night(tmp_path):
         assert town.world.board.claims["Mei"].workspace is None
         assert "+kept" in town.world.board.claims["Mei"].diff
 
-        await town.until("09:00", day=2)  # at home: the workspace opens again where she is
+        await town.until("08:50", day=2)
+        await town.call("Mei", "go", place="workshop")
+        await town.until("09:00", day=2)  # back at the workshop: the workspace opens again
         reopened = await town.call("Mei", "read_repo_file", path="probe_note.txt")
         assert reopened.text == "You sat down to work. It is 09:00.\nkept\n"
         verdict = await town.call("Mei", "submit")

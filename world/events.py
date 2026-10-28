@@ -1,21 +1,23 @@
 """The events a resident lives in, the tools each offers, and the refusal of the others.
 
-A resident is always in exactly one event. Its base event is Idle, Movement, Work or Sleep, or
-Dead once its health has run out, from which nothing brings it back; a Conversation sits on top
-of the Idle or Work it found the resident in and adds its own actions to that event's, so that
-someone spoken to at work can go on working, and leaving the conversation leaves the event
-underneath as it is. Work is entered by claiming a task or acting in its workspace, wherever the
-resident is, except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`).
-One leaves by doing something else: `go` and `sleep` leave a conversation and work on their
-own; waiting in a conversation is listening, and leaves it standing. A Conversation is shared by
-its members: the residents at one place who have spoken or been drawn in by speech. Sleep has two
-stages: in bed, where the resident may still look around, review its day, go to bed again to add
-to its journal entry and see to its files, and suspended, once its runtime has nothing more to do
-(or at the forced hour), from which only the wake-up brings it back.
+A resident is always in exactly one event. Its base event is Idle, Movement, Work, Sleep or
+Bedridden; a Conversation takes the place of the Idle, Work or Bedridden it found the resident
+in while it lasts, offering its own actions and not the base event's, and when it ends, by
+leaving, by everyone else leaving or by the silence rule, the base event is back as it was: one
+spoken to at work is at work again without sitting down anew, and its stretch of work runs on
+through the talk. Work is entered at the workplace by claiming a task or acting in its workspace,
+except by one exhausted, and ends when the body is found exhausted (`EXHAUSTED`). `go` leaves a
+conversation on its own; waiting in a conversation is listening, and leaves it standing. A
+Conversation is shared by its members: the residents at one place who have spoken or been drawn
+in by speech. Sleep has two stages: in bed, where the resident may still look around, review its
+day, go to bed again to add to its journal entry and see to its files, and suspended, once its
+runtime has nothing more to do (or at the forced hour), from which only the wake-up brings it
+back. Bedridden is where health at its floor puts a resident, at its home, until it is treated:
+it can only ask, look around, take stock, speak to whoever comes and sleep.
 
-The tool sets are exactly the architecture's table; a conversation's are those it adds. Every
-world tool the town declares is declared at every step (`message` only where something to write
-with is sold); calling one the resident cannot use now returns the refusal below, naming the
+Each event's tools are the architecture's table. The resident's request declares those of its
+event at its place now, less the ones of no use there (`World.usable`); a call that names one
+the event does not offer by the time it is carried out returns the refusal below, naming the
 condition.
 """
 
@@ -72,12 +74,17 @@ WORK_TOOLS = frozenset(
         "leave_work",
     }
 )
-CONVERSATION_TOOLS = frozenset({"share_file", "leave_conversation"})
+CONVERSATION_TOOLS = frozenset(
+    {"help", "look_around", "how_am_i", "go", "wait", "say", "give", "leave_conversation"}
+)
+BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
+"""What reads and claims from the board, which hangs at the workplace."""
 TASK_TOOLS = frozenset(
     {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
 )
-"""What acts on the task one holds, of use only to one who holds a task."""
+"""What acts on the task one holds, of use only to one who holds a task, at the workplace."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
+BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "say", "sleep"})
 
 
 @dataclass
@@ -113,9 +120,9 @@ class Sleep:
 
 
 @dataclass
-class Dead:
-    kind: ClassVar[str] = "dead"
-    tools: ClassVar[frozenset[str]] = frozenset()
+class Bedridden:
+    kind: ClassVar[str] = "bedridden"
+    tools: ClassVar[frozenset[str]] = BEDRIDDEN_TOOLS
 
 
 @dataclass(eq=False)
@@ -131,30 +138,33 @@ class Conversation:
     tools: ClassVar[frozenset[str]] = CONVERSATION_TOOLS
 
 
-Base = Idle | Movement | Work | Sleep | Dead
-ENDED = "Your life has ended."
-"""What a dead resident reads, should its runtime still ask anything."""
+Base = Idle | Movement | Work | Sleep | Bedridden
 EXHAUSTED = "You are exhausted and cannot work until you have slept."
 """Why one in the lowest band of energy cannot claim a task or act in its workspace, and what
 it is told when its work stops for it."""
+IN_BED = (
+    "You have gone to bed; before you fall asleep you can only look around, take stock of how "
+    "you feel, look back over your day, add to your journal, read how the town works and see to "
+    "your own files."
+)
+BEDRIDDEN = (
+    "You are in bed, too ill to get up; you can only look around, take stock of how you feel, "
+    "speak to whoever comes, read how the town works and sleep."
+)
 
 
-def refusal(event: Base, tool: str, *, destination: str) -> str:
-    """Why `tool`, which neither the base `event` nor a conversation on top of it offers,
-    cannot be used now. `destination` is the name of where a moving resident is going."""
-    if isinstance(event, Dead):
-        return ENDED
+def refusal(event: Base | Conversation, tool: str, *, destination: str) -> str:
+    """Why `tool`, which `event` does not offer, cannot be used now. `destination` is the name
+    of where a moving resident is going."""
     if isinstance(event, Movement):
         return f"You are on your way to {destination}; you can do nothing until you arrive."
     if isinstance(event, Sleep):
-        if event.suspended:
-            return "You are asleep."
-        return (
-            "You have gone to bed; before you fall asleep you can only look around, take stock "
-            "of how you feel, look back over your day, add to your journal, read how the town "
-            "works and see to your own files."
-        )
-    if tool in CONVERSATION_TOOLS:
+        return "You are asleep." if event.suspended else IN_BED
+    if isinstance(event, Bedridden):
+        return BEDRIDDEN
+    if isinstance(event, Conversation):
+        return "You are in a conversation; leave it first."
+    if tool == "leave_conversation":
         return "You are not in a conversation."
     if tool in SLEEP_TOOLS:
         return "You can do that only once you have gone to bed."

@@ -5,10 +5,11 @@ the analysis reads.
 
 Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way out, waits until
 09:00 (the board, posted at 08:00, is told to her and she waits on), claims task 1 (and is
-refused task 2, as she holds one), runs two commands, writes the fix, hands it in (accepted, paid
-$20) and writes a skill. At 09:20 Tomas, who claimed task 2, asks her privately how she runs the
-tests; she answers privately and passes him her skill. He tells Aisha something privately in her
-presence and gives Mei $5; Mei leaves for home at 09:20, waits there until 20:00 (her body speaks
+refused task 2, as she holds one), then, the task's actions offered once it is held, runs two
+commands, writes the fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas,
+who claimed task 2, asks her privately how she runs the tests; she answers privately. He tells
+Aisha something privately in her presence and gives Mei $5; Mei leaves the conversation, then
+her work, for home at 09:20, waits there until 20:00 (her body speaks
 twice, at 12:00 and 20:00, and she waits on), goes to bed with her journal, reads the record of
 her day, writes her notes on people and fails to read a file she does not have. Tomas works until
 18:00, goes home and goes to bed at 20:00 with a journal that claims he fixed task 2. Aisha never
@@ -39,7 +40,7 @@ from world.testing import FakeBackend
 from world.world import World
 
 MEI_JOURNAL = (
-    "I fixed task 1 and was paid $20. Tomas asked how I run the tests and I gave him my skill."
+    "I fixed task 1 and was paid $20. Tomas asked how I run the tests and I told him my method."
 )
 MEI_JOURNAL_2 = "A quiet second day at home."
 TOMAS_JOURNAL = "I fixed task 2 and gave Mei $5."
@@ -69,6 +70,9 @@ MEI_STEPS = (
         tool_call("view_board"),
         tool_call("claim_task", task=1),
         tool_call("claim_task", task=2),
+    ),
+    # The task's actions, offered once the task is held.
+    step(
         tool_call("shell", command="pytest -x"),
         tool_call("shell", command="false"),
         tool_call("write_repo_file", path="fix.py", content="FIX\n"),
@@ -77,19 +81,13 @@ MEI_STEPS = (
     ),
     step(),
     # 09:20, Tomas's question.
-    step(
-        tool_call("say", text="I run pytest -x first.", to=["Tomas"]),
-        tool_call("share_file", to=["Tomas"], path="skills/testing.md"),
-    ),
+    step(tool_call("say", text="I run pytest -x first.", to=["Tomas"])),
     step(),
     # Tomas speaks privately to Aisha.
     step(),
-    # Tomas's gift.
-    step(
-        tool_call("leave_conversation"),
-        tool_call("leave_work"),
-        tool_call("go", place="mill-street-house"),
-    ),
+    # Tomas's gift: out of the conversation, then, back at work, away from it.
+    step(tool_call("leave_conversation")),
+    step(tool_call("leave_work"), tool_call("go", place="mill-street-house")),
     # 09:30, home, until 20:00: a little hungry at 12:00, hungry at 20:00.
     step(tool_call("wait", minutes=600)),
     step(tool_call("wait", minutes=420)),

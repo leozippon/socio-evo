@@ -81,13 +81,13 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     lived = ("wake", "claim", "verdict", "payment", "purchase", "speech", "sleep", "settlement")
     for kind in lived:
         assert kind in log, kind
-    assert log[-1] == "checkpoint" and "forced_sleep" not in log and "death" not in log
+    assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log
     for name in ("Mei", "Tomas"):
         agent = run.agent_dir(name)
         repository = Repository(agent)
         assert [c.subject for c in repository.log()] == [
-            "day-01: Tuesday 3 March, 02:30",
-            "day-00: Monday 2 March, 02:30",
+            "day-01: Tuesday 3 March, 04:30",
+            "day-00: Monday 2 March, 04:30",
         ]
         assert repository.tree("day-01") and not repository.has_changes()
         assert (agent / "memory" / "journal" / "2026-03-02.md").read_text().strip()

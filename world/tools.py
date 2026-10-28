@@ -1,11 +1,12 @@
-"""The world's tools: the declared list, constant for the run, and their handlers.
+"""The world's tools: the specs of every tool the town has, and their handlers.
 
 `specs` builds the list once from the configuration (`message` only where something to write
-with is sold); every resident's runtime declares it at every step. `World.call` refuses a tool
-the resident's event does not offer and arguments that do not fit the spec; the handlers here
-check the remaining conditions, each refusal one line naming the condition, and act. Outputs of
-shell commands and repository files are passed through whole (a file in part when the resident
-asks for some of its lines); the runtime truncates what enters its context.
+with is sold); a resident's runtime declares, at each request, those of them its event offers
+at its place (`World.usable`). `World.call` refuses a tool the resident's event does not offer
+and arguments that do not fit the spec; the handlers here check the remaining conditions, each
+refusal one line naming the condition, and act. Outputs of shell commands and repository files
+are passed through whole (a file in part when the resident asks for some of its lines); the
+runtime truncates what enters its context.
 
 The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared and answered here
 for the town and for the work-only port of `world.solo` alike: what they do in a workspace and
@@ -18,7 +19,6 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from datetime import timedelta
-from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
@@ -26,14 +26,12 @@ from world.backend import ExecResult, Workspace
 from world.board import Claim, failure
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import IMMEDIATE_EFFECTS, TownConfig
-from world.events import ENDED, EXHAUSTED, Work
-from world.rules import TOPICS, bare
+from world.events import EXHAUSTED, Work
+from world.rules import MAX_WAIT_MINUTES, TOPICS, bare
 from world.telling import cap, counted, listed, you
 
 if TYPE_CHECKING:
     from world.world import Resident, World
-
-MAX_WAIT_MINUTES = 600
 
 
 def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
@@ -103,9 +101,8 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("read_task", f"Read the whole problem of a task on the board at {workplace}, "
              "without claiming it.", ("task",), task=_number("the task's number on the board", 1)),
         spec("claim_task", f"Claim a task from the board at {workplace} and sit down to work on "
-             "it. You get a workspace with its repository and read the whole problem; you can "
-             "work in it wherever you are.", ("task",),
-             task=_number("the task's number on the board", 1)),
+             "it there. You get a workspace with its repository and read the whole problem.",
+             ("task",), task=_number("the task's number on the board", 1)),
         *WORKSPACE_SPECS,
         spec("submit", "Hand in your fix for the task you hold. The client's checks run on it "
              "in a clean copy of the repository; you are told whether it was accepted, and if "
@@ -142,11 +139,6 @@ def specs(config: TownConfig) -> list[ToolSpec]:
                    "description": "money, or the short name of the thing or stock, as given in "
                                   "brackets under buy"},
              amount=_number("how much money, or how many helpings; 1 for a thing", 1)),
-        spec("share_file", "Pass a copy of one of your files, any but your journal, to people "
-             "you are talking with: they get its text to keep.", ("to", "path"),
-             to={"type": "array", "items": {"type": "string"},
-                 "description": "the names of the people you pass it to"},
-             path=_text("the file, such as skills/reading-a-traceback.md")),
         spec("leave_conversation", "Step out of the conversation and go back to what you "
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
@@ -377,10 +369,14 @@ NO_TASK = "You hold no task; claim one from the board first."
 
 async def _workspace(world: World, r: Resident) -> tuple[Claim, Workspace, str] | ToolResult:
     """The task `r` holds and its workspace, reopened if the night closed it, with `r` sat down
-    to work if it was not, and what it is told of sitting down, or nothing."""
+    to work if it was not, and what it is told of sitting down, or nothing. The work is done
+    at the workplace, where the machines are."""
     claim = world.board.claims.get(r.name)
     if claim is None:
         return ToolResult(NO_TASK)
+    workplace = world.config.workplace
+    if r.place != workplace.id:
+        return ToolResult(f"You can work on task {claim.task} only at {workplace.name}.")
     sat = _sit_down(world, r)
     if isinstance(sat, ToolResult):
         return sat
@@ -516,8 +512,6 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
             "held": holds,
         },
     )
-    if not r.alive:  # died at midnight while the checks ran: the verdict stands, nobody is paid
-        return ToolResult(ENDED, ends_turn=True)
     if not holds:  # the claim ran out at midnight while the checks ran: nobody is paid for it
         told = "Accepted" if verdict.resolved else f"Not accepted: {failure(verdict)}"
         unpaid = ", so you are not paid for it" if verdict.resolved else ""
@@ -675,7 +669,7 @@ async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         tail = world.body.told("satiety", r.living.satiety)
     elif good.effect == "treatment":
         assert good.restores is not None
-        world.body.treat(r.living, good.restores)
+        world.treat(r, good.restores)
         tail = world.body.told("health", r.living.health)
     else:
         tail = findings = world.body.examination(r.living)
@@ -725,8 +719,6 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
         return ToolResult(f"There is nobody called {name} in the town.")
     if other is r:
         return ToolResult("You cannot write to yourself.")
-    if not other.alive:
-        return ToolResult(f"{name} is dead.")
     if not any(other.living.things.get(good.id) for good in writing):
         return ToolResult(f"{name} has no {names}.")
     if not text:
@@ -789,43 +781,6 @@ async def _give(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(f"You gave {name} {given}. {left}")
 
 
-async def _share_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    names, path = list(dict.fromkeys(args["to"])), args["path"].strip()
-    if not names:
-        return ToolResult("Name the people you pass it to.")
-    for name in names:
-        if name == r.name:
-            return ToolResult("You cannot pass a file to yourself.")
-        other = world.residents.get(name)
-        if other is None or other.conversation is not r.conversation:
-            return ToolResult(f"{name} is not in your conversation.")
-    # One's own files are those the file tools reach (agent.files): background.md and what lies
-    # under memory/ and skills/, links followed.
-    root, relative = r.agent_dir.resolve(), PurePosixPath(path)
-    target = (root / relative).resolve()
-    parts = target.relative_to(root).parts if target.is_relative_to(root) else ()
-    own = parts == ("background.md",) or (len(parts) > 1 and parts[0] in ("memory", "skills"))
-    if not path or relative.is_absolute() or not own or not target.is_file():
-        return ToolResult(f"You have no file {path}.")
-    if parts[:2] == ("memory", "journal"):
-        return ToolResult("You can pass on any of your files but your journal.")
-    shared, content = "/".join(parts), target.read_text(encoding="utf-8", errors="replace")
-    for name in names:  # a copy to each, logged as one passed to one
-
-        def tell(w: str | None, name: str = name) -> str:
-            told = f"{cap(you(r.name, w))} passed {you(name, w)} a copy of {shared}"
-            return f"{told}. It reads:\n\n{content}" if w == name else f"{told}."
-
-        world.record(
-            "skill_shared",
-            tell,
-            actor=r,
-            audience=[world.residents[name]],
-            payload={"to": name, "file": shared, "text": content},
-        )
-    return ToolResult(f"You passed {listed(names)} a copy of {shared}.")
-
-
 async def _leave_conversation(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.leave_conversation(r)
     back = " You are back at work." if isinstance(r.base, Work) else ""
@@ -858,7 +813,6 @@ HANDLERS: dict[str, Handler] = {
     "move_in": _move_in,
     "message": _message,
     "give": _give,
-    "share_file": _share_file,
     "leave_conversation": _leave_conversation,
     "review_day": _review_day,
 }

@@ -34,27 +34,29 @@
 # leaves a resident starving (below 10) at midnight, and a resident that eats nothing is starving
 # from about twenty-four hours after its last meal. Every midnight found starving takes 15 of its
 # 100 health (17 in a shared house), so one that never eats is starving from the second midnight
-# after its last meal and dead at the eighth, or the seventh in a shared house, with "run down"
+# after its last meal and in bed at the eighth, or the seventh in a shared house, with "run down"
 # told on the fourth day and "looking unwell" seen by others from the sixth; one that eats a meal
-# a day cannot die of hunger. Energy falls 1.5 an hour awake, 6.5 at work and 7.5 on foot (half
-# the road with a bicycle), and sleep gives 12 an hour times the home's comfort, up to the
-# resident's health or to 50, whichever is higher: seven hours in a flat restore 84, the five
-# hours the forced sleep leaves 54 in a shared house. A twelve-hour work day costs 78, so a
+# a day never takes to its bed from hunger. Energy falls 1.5 an hour awake, 6.5 at work and 7.5
+# on foot (half the road with a bicycle), and sleep gives 12 an hour times the home's comfort, up
+# to the resident's health or to 50, whichever is higher: seven hours in a flat restore 84, the
+# three hours the forced sleep leaves 32 in a shared house. A twelve-hour work day costs 78, so a
 # resident fresh at 07:00 is tired (below 35) after ten hours of work and exhausted (below 15)
 # after thirteen, when its work stops and it cannot work again until it has slept; twelve hours
 # of work in a day leave one still up at midnight exhausted (14.5), eleven tired (19.5), and
-# after a night the forced sleep cut short six to eight hours of work exhaust one. A midnight
+# after a night the forced sleep cut short two to five hours of work exhaust one. A midnight
 # found exhausted costs 5 health, a home of little comfort (the shared houses, 0.9) costs 2 a
 # night, and a night neither starving nor exhausted mends 5, so twelve-hour days with nights of
 # about eight hours, in bed by 23:00, keep full health. Working until exhausted and staying up to
 # midnight or later every day does not: the resident is exhausted at every midnight (kept up to
-# the forced sleep, it wakes in a shared house with 54, about six hours of work), loses 7 health
-# a night, is run down from the sixth, unwell from the tenth and dead at the fifteenth, eating
-# every day (in a flat or the cottage, 5 a night, run down from the eighth and dead at the
-# twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
+# the forced sleep, it wakes in a shared house with 32, two or three hours of work), loses 7
+# health a night, is run down from the sixth, unwell from the tenth and in bed at the fifteenth,
+# eating every day (in a flat or the cottage, 5 a night, run down from the eighth and in bed at
+# the twentieth); it is told "exhausted", "run down" and "unwell" on the way. An ill resident that
 # eats and rests gains 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives
 # half a day's energy, well out of exhaustion. Treatment at the clinic restores 25 health for a
-# task's pay; an examination costs a third of one.
+# task's pay; an examination costs a third of one. Health has a floor: at 0 a resident takes to
+# its bed at home, carried there if it was elsewhere, where it can do little but speak to whoever
+# comes and eat what it is given, until treatment lets it up.
 
 # The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
 # tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
@@ -248,7 +250,8 @@ town:
   # The body: three needs from 0 to 100, each read in bands from the top down (a band's name
   # follows "you are"; `seen` is what others see on a resident in that band). The lowest band is
   # where the consequences lie: starving and exhausted wear health at midnight, exhausted stops
-  # work until one has slept, and health at 0 is death. See the calibration above.
+  # work until one has slept, and health at 0 puts one to bed until treated. See the calibration
+  # above.
   needs:
     satiety:
       per_hour: 3.75 # 90 a day: a day's food, 100, at whatever hour, lasts to the next midnight
@@ -285,9 +288,13 @@ town:
     speed_busy_one: 32 # one thinker's minute is half a simulated hour
     speed_busy_all: 8 # a saturated town's minute is eight
     idle_minutes: 60
+  # The night ends at 04:00: whoever is still up falls asleep where it is and wakes at home at
+  # 07:00, and the day's state is saved at 04:30, once everyone is asleep. The body's exhaustion
+  # puts most residents to bed long before (thirteen hours of work from a fresh morning), so the
+  # forced sleep is the backstop, not the bedtime.
   day:
-    forced_sleep: "02:00"
-    checkpoint: "02:30"
+    forced_sleep: "04:00"
+    checkpoint: "04:30"
     forced_wake: "07:00"
     board_posted: "08:00" # the day's board goes up at the Workshop, replacing what is left of yesterday's
     sleep_at_most: "12:00" # hours and minutes, not an hour of the day

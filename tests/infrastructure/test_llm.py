@@ -1,4 +1,3 @@
-import asyncio
 import json
 
 import pytest
@@ -255,22 +254,15 @@ def test_messages_fit_their_roles_and_plain_ones_serialize_as_before():
     assert ToolCall.read("c3", "look", "[1, 2]").unreadable == "[1, 2]"
 
 
-async def test_scripted_stream_delivers_tool_calls_and_can_be_aborted(tmp_path):
+async def test_scripted_stream_delivers_tool_calls_a_word_at_a_time(tmp_path):
     call = ToolCall(id="c1", name="look", arguments={"far": True})
     whole = LLMResponse(
         text="one two three four five six", reasoning="hm", tool_calls=(call,), latency=0
     )
     client = ScriptedClient(lambda request: whole, delay=0.01)
     streamed = await client.stream(_request())
-    assert streamed.text == whole.text and streamed.tool_calls == (call,) and not streamed.aborted
-
-    abort = asyncio.Event()
-    task = asyncio.create_task(client.stream(_request(), abort=abort))
-    await asyncio.sleep(0.035)
-    abort.set()
-    cut = await asyncio.wait_for(task, 1)
-    assert cut.aborted and cut.tool_calls == () and cut.reasoning == "hm"
-    assert whole.text.startswith(cut.text) and len(cut.text) < len(whole.text)
+    assert streamed.text == whole.text and streamed.tool_calls == (call,)
+    assert streamed.latency >= 0.07  # seven words, a hundredth of a second each
 
     path = tmp_path / "llm_calls.jsonl"
     recorded = await RecordingClient(client, path).stream(_request())

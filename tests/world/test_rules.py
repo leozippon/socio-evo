@@ -53,9 +53,15 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
         "the road, and sleep restores you, the more the better your home; exhausted, you stop "
         "work and cannot work again until you have slept. A day that ends with you starving or "
         "exhausted, or lived in a home of little comfort, wears your health down; a day in which "
-        "you have eaten and rested mends it. When your health is gone, you die. You can take "
-        "stock of how you feel at any time with how_am_i, and at the clinic an examination tells "
-        "you exactly how you stand and treatment restores your health."
+        "you have eaten and rested mends it. When your health is gone, you take to your bed at "
+        "home, carried there if you are elsewhere, and keep to it until you are treated. You can "
+        "take stock of how you feel at any time with how_am_i, and at the clinic an examination "
+        "tells you exactly how you stand and treatment restores your health."
+    )
+    assert sections["day"].endswith(
+        "At 02:00 anyone still up falls asleep where it is and wakes at home at 07:00. When you "
+        "do nothing, time passes until something happens or 30 minutes have gone by, and you are "
+        "told the hour; with wait you let up to 600 minutes pass."
     )
     moved = {"mill-street-house": ["Mei"], "college-flat": ["Tomas", "Aisha"]}
     assert "(3 rooms, 2 free, little comfort)" in rules.help("Mei", "places", moved)
@@ -73,7 +79,8 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
     assert "call on someone at home, or find them at the workshop." in people
     assert "pays $20" in sections["work"] and "the client's own checks" in sections["work"]
     assert "posts it on its board there" in sections["work"]
-    assert "You can work on it wherever you are, not only at the workshop." in sections["work"]
+    assert "You work on it at the workshop, where the machines are." in sections["work"]
+    assert "wherever you are" not in sections["work"]
     assert rules.help("Mei", "Money") == sections["money"]
     assert rules.help("Mei", "weather") == f"You can ask about: {', '.join(TOPICS)}."
     text = rules.text("Mei")
@@ -84,8 +91,6 @@ def test_the_rules_tell_the_purse_the_rent_the_shops_and_where_people_live_and_m
 def test_ties_are_told_in_the_rules_to_those_who_have_them():
     town = Rules(town_config(residents=TIES))
     assert town.sections("Mei")["people"].endswith(
-        "Some of them you know already. Aisha has the room next to yours and shares the "
-        "kitchen. With share_file you can pass a copy of any of your files but your journal to "
-        "people you are talking with; they receive its text."
+        "Some of them you know already. Aisha has the room next to yours and shares the kitchen."
     )
     assert "know already" not in town.sections("Tomas")["people"]

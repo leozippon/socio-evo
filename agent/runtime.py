@@ -2,21 +2,27 @@
 
     loop:
         situation + pending percepts  -> user message
-        stream the reply (abortable)  -> assistant message
+        stream the reply              -> assistant message
         no tool calls                 -> wait for the world (port.wait) -> loop
         tool calls, in order          -> file tools here, the rest through port.call
                                          -> tool messages, each led by the percepts pending
                                             when its call was carried out -> loop
         a result that ends the turn   -> wait for the world -> loop
 
+Each request declares the runtime's own tools (the files and `compact`) and then those the
+port offers at that moment, so that what is offered is what can be done; the server's prefix
+cache is lost whenever the set changes, which is accepted. A call that names a tool the request
+did not declare is answered as nothing one can do.
+
 A percept that does not interrupt is told ahead of the result of the next call carried out, so
 that what happened before a call is read before what the call did: each with its hour, and all
 set apart from the result, so that none is read as the call's output. With no call to carry,
-it is told with the situation, which tells the hour. An interrupting percept aborts a reply in
-flight: the partial reply is traced as aborted and dropped, the percept is told with the
-situation, and the request is made again. A tool that is running is never aborted; once an
-interrupting percept is pending, the calls still to carry out in the same reply are answered
-as not carried out and the percept is told at once. A reply cut off at the token limit is
+it is told with the situation, which tells the hour. An interrupting percept lets a reply in
+flight finish and keeps it: none of its calls is carried out, each being answered as not
+carried out, and the percept is told at once with the situation, so that the resident keeps
+its train of thought and goes on from the new situation. A tool that is running is never cut
+short; once an interrupting percept is pending, the calls still to carry out in the same reply
+are answered as not carried out. A reply cut off at the token limit is
 asked for again once at a lower reasoning effort, or, at the lowest, with twice the token
 limit; cut off again, it is kept as it stands, without its tool calls, with a note. A reply
 enters the session together with the results of its calls, so that the session never holds a
@@ -152,30 +158,13 @@ class Runtime:
         *,
         replica: int | None = None,
     ) -> None:
-        world = port.tool_specs()
-        specs = [*files.SPECS, COMPACT, *world]
-        names = [spec.name for spec in specs]
-        if len(set(names)) < len(names):
-            raise ValueError(f"tool names declared twice: {sorted(_twice(names))}")
         self._directory = directory
         self._port = port
         self._client = client
         self._config = config or RuntimeConfig()
         self._replica = replica
         self._files = files.FileTools(directory)
-        self._world = {spec.name for spec in world}
-        self._tools = tuple(
-            {
-                "type": "function",
-                "function": {
-                    "name": spec.name,
-                    "description": spec.description,
-                    "parameters": spec.parameters,
-                },
-            }
-            for spec in specs
-        )
-        self._tools_text = json.dumps(self._tools, ensure_ascii=False)
+        self._declared: set[str] = set()  # the names the last request declared
         self._session = Session(directory.session_path)
         self._trace = Trace(directory.trace_path, port.sim_time)
         self._prompt = ""
@@ -197,7 +186,8 @@ class Runtime:
     async def _step(self) -> bool:
         """One model request and the tool calls of its reply; whether the resident is done for
         now."""
-        if self._session.size(self._system_prompt() + self._tools_text) > (
+        tools_text = json.dumps(self._tools(), ensure_ascii=False)
+        if self._session.size(self._system_prompt() + tools_text) > (
             self._config.compaction_threshold
         ):
             await self._compact()
@@ -225,9 +215,9 @@ class Runtime:
         return False
 
     async def _reply(self) -> LLMResponse | None:
-        """The reply to the context as it stands, after any interruptions, at most one cut-off
-        and at most one compaction of a context the model's window refused; None after a
-        lapse, which a second refusal is."""
+        """The reply to the context as it stands, after at most one cut-off and at most one
+        compaction of a context the model's window refused; None after a lapse, which a second
+        refusal is."""
         effort, limit = self._config.reasoning_effort, self._config.reply_max_tokens
         attempts = itertools.count(1)
         retried = compacted = False
@@ -235,9 +225,7 @@ class Runtime:
             messages, ids = self._context()
             request = self._request(messages, effort, limit)
             try:
-                reply = await self._ask(
-                    request, ids, attempts, purpose="step", abort=self._port.interrupt
-                )
+                reply = await self._ask(request, ids, attempts, purpose="step")
             except LLMContextOverflowError as error:
                 if compacted:
                     self._lapse("step", [_describe(error)])
@@ -247,12 +235,6 @@ class Runtime:
                 continue
             if reply is None:
                 return None
-            if reply.aborted:
-                percepts = self._port.pending()
-                self._trace.write("interruption", events=[p.event_id for p in percepts])
-                self._tell(percepts)
-                attempts = itertools.count(1)
-                continue
             if reply.truncated and not retried:
                 retried = True
                 effort, limit = again(effort, limit)
@@ -296,13 +278,7 @@ class Runtime:
         )
 
     async def _ask(
-        self,
-        request: LLMRequest,
-        ids: list[int],
-        attempts: Iterator[int],
-        *,
-        purpose: str,
-        abort: asyncio.Event | None = None,
+        self, request: LLMRequest, ids: list[int], attempts: Iterator[int], *, purpose: str
     ) -> LLMResponse | None:
         """The model's reply to `request`, traced with it, or None, after a lapse, when every
         attempt failed; `attempts` numbers the requests made for one reply in the trace. A
@@ -325,7 +301,7 @@ class Runtime:
                     attempt=next(attempts),
                 )
                 try:
-                    reply = await self._client.stream(request, abort=abort)
+                    reply = await self._client.stream(request)
                 except LLMContextOverflowError as error:
                     self._trace.write("overflow", purpose=purpose, error=_describe(error))
                     raise
@@ -391,7 +367,7 @@ class Runtime:
             return ToolResult(texts.UNREADABLE), {}
         if call.name == COMPACT.name:
             return ToolResult(texts.CONDENSING), {}
-        if call.name not in files.NAMES and call.name not in self._world:
+        if call.name not in self._declared:
             return ToolResult(texts.UNKNOWN_TOOL.format(name=call.name)), {}
         try:
             with self._busy():
@@ -442,6 +418,25 @@ class Runtime:
             self._prompt = prompt
         return self._prompt
 
+    def _tools(self) -> tuple[dict[str, Any], ...]:
+        """The tools declared now, as the API takes them: the runtime's own, then those the port
+        offers at this moment; a name declared twice is an error."""
+        specs = [*files.SPECS, COMPACT, *self._port.tool_specs()]
+        names = [spec.name for spec in specs]
+        if len(set(names)) < len(names):
+            raise ValueError(f"tool names declared twice: {sorted(_twice(names))}")
+        return tuple(
+            {
+                "type": "function",
+                "function": {
+                    "name": spec.name,
+                    "description": spec.description,
+                    "parameters": spec.parameters,
+                },
+            }
+            for spec in specs
+        )
+
     def _request(
         self,
         messages: tuple[Message, ...],
@@ -450,11 +445,13 @@ class Runtime:
         *,
         tool_choice: str | None = None,
     ) -> LLMRequest:
-        """A request with every tool declared, so that each request's prefix is the last one's
-        and the server's prefix cache serves it, and `tool_choice`, if one is given."""
+        """A request declaring the tools of the moment, which the calls of its reply are checked
+        against, and `tool_choice`, if one is given."""
+        tools = self._tools()
+        self._declared = {tool["function"]["name"] for tool in tools}
         return LLMRequest(
             messages=messages,
-            tools=self._tools,
+            tools=tools,
             tool_choice=tool_choice,
             reasoning_effort=effort,
             sampling=Sampling(max_tokens=max_tokens),

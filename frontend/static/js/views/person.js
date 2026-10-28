@@ -127,7 +127,7 @@ export function mountPerson(root, ctx) {
     const earned = mine.filter((m) => m.kind === "payment").reduce((a, m) => a + m.amount, 0);
     const accepted = mine.filter((m) => m.kind === "submission" && m.resolved === true).length;
     const ties = new Map();
-    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, moneyTo: 0, moneyFrom: 0, skillsTo: 0, skillsFrom: 0 }).get(other);
+    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, moneyTo: 0, moneyFrom: 0 }).get(other);
     for (const edge of measures.graph) {
       if (edge.day > moment.day.day) continue;
       if (edge.source === agentName()) {
@@ -135,12 +135,10 @@ export function mountPerson(root, ctx) {
         t.minutes += edge.minutes;
         t.toThem += edge.said;
         t.moneyTo += edge.money;
-        t.skillsTo += edge.skills;
       } else if (edge.target === agentName()) {
         const t = tie(edge.source);
         t.fromThem += edge.said;
         t.moneyFrom += edge.money;
-        t.skillsFrom += edge.skills;
       }
     }
     const dead = me.segments.some((seg) => seg.kind === "dead" && seg.start <= moment.time);
@@ -204,14 +202,14 @@ export function mountPerson(root, ctx) {
                 h(
                   "table",
                   { class: "data" },
-                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from"), h("th", { title: "Skills passed to them, and received from them" }, "Skills to / from"))),
+                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from"))),
                   h(
                     "tbody",
                     {},
                     [...ties]
                       .sort((a, b) => b[1].minutes - a[1].minutes)
                       .map(([name, t]) =>
-                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`), h("td", {}, `${t.skillsTo} / ${t.skillsFrom}`)),
+                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`)),
                       ),
                   ),
                 ),
@@ -531,7 +529,7 @@ export function mountPerson(root, ctx) {
     );
     const list = doc ? h("ol", { class: "card trace-list" }, doc.records.map((record, i) => traceRecord(record, i + 1))) : null;
     return [
-      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, interruptions, compactions and lapses. Each record is folded to a line; tap one to read it whole. Nothing here comes from outside the resident's directory.`), picker),
+      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, compactions and lapses. Each record is folded to a line; tap one to read it whole. Nothing here comes from outside the resident's directory.`), picker),
       doc
         ? [
             doc.prompt ? h("details", { class: "card pad fold trace-prompt" }, h("summary", {}, h("b", {}, "The system prompt as the day began"), h("span", { class: "muted" }, ` · ${fmt.plural(doc.prompt.length, "character")}`)), h("pre", { class: "trace-text" }, doc.prompt)) : h("p", { class: "note" }, "No system prompt had been assembled before this day's first record; the first one appears below."),

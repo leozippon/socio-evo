@@ -9,6 +9,7 @@ import asyncio
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime
 from agent.testing import ScriptedModel, reply, running, tool_call
+from agent.texts import NOT_CARRIED_OUT
 from infrastructure.storage import read_jsonl
 from tests.world.conftest import FakeBackend, Town, make_agent_dirs, stocked, town_config
 from world.clock import ManualClock
@@ -32,9 +33,9 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
     model = ScriptedModel(
         reply("", tool_call("go", place="workshop")),
         reply("", tool_call("wait", minutes=110)),
+        reply("", tool_call("claim_task", task=1)),  # the task's actions are offered once held
         reply(
             "",
-            tool_call("claim_task", task=1),
             tool_call("write_repo_file", path="fix.py", content="FIX\n"),
             tool_call("submit"),
             tool_call("leave_work"),
@@ -139,7 +140,7 @@ async def test_a_remark_to_everyone_reaches_a_working_resident_with_its_next_res
     await town.close()
 
     records = list(read_jsonl(directory.trace_path))
-    assert not [r for r in records if r["kind"] == "interruption" or r.get("aborted")]
+    assert not [r for r in records if r["kind"] == "tool_result" and r["text"] == NOT_CARRIED_OUT]
     (shell,) = [m.content for m in model.requests[-1].messages if m.role == "tool"]
     assert shell == (
         "Meanwhile:\n08:10 — Tomas said: “Morning, all.”\n\n"

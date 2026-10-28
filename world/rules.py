@@ -1,8 +1,8 @@
 """The standing rules of the town, as one resident is told them, and `help` by topic.
 
 The rules are derived from the configuration and from who lives where, which the world passes
-in as it stands: a move or a death changes the homes, the free rooms and one's own rent, and
-nothing else in them changes during a run. They are part of the system prompt. They describe
+in as it stands: a move changes the homes, the free rooms and one's own rent, and nothing else
+in them changes during a run. They are part of the system prompt. They describe
 what can be done and what follows from it, in plain words, and nothing else: not the length of
 the run, not the machinery, not how anyone ought to behave. `help` tells the same paragraphs on
 one topic.
@@ -17,6 +17,8 @@ from world.config import DayHours, Good, TownConfig
 from world.telling import cap, counted, listed
 
 TOPICS = ("places", "day", "work", "money", "shopping", "health", "people", "sleep")
+MAX_WAIT_MINUTES = 600
+"""The longest a resident can ask to wait, in minutes: the bound of `wait`, told in the rules."""
 _HEADINGS = {
     "places": "Places",
     "day": "The day",
@@ -136,8 +138,10 @@ class Rules:
             "the day is posted; what is left of the day before's stays up until then. At "
             "midnight rent is taken from every purse and your health is reckoned from the day. "
             "You go to bed at home at whatever hour you choose, giving the hour you want to "
-            f"wake. At {c.day.forced_sleep} anyone still up falls asleep and wakes at home at "
-            f"{c.day.forced_wake}."
+            f"wake. At {c.day.forced_sleep} anyone still up falls asleep where it is and wakes "
+            f"at home at {c.day.forced_wake}. When you do nothing, time passes until something "
+            f"happens or {counted(c.clock.idle_minutes, 'minute')} have gone by, and you are "
+            f"told the hour; with wait you let up to {counted(MAX_WAIT_MINUTES, 'minute')} pass."
         )
 
         # A claim runs out at the midnight that ends the day this many days after the day it
@@ -155,8 +159,8 @@ class Rules:
             f"pays {money(c.work.payment)}. The board shows the first line of each problem; "
             "there read_task gives you the whole of one without claiming it. Claim a task at "
             "the board and you get a workspace with its repository, where you can run commands "
-            "and read and write files; there is no internet. You can work on it wherever you "
-            f"are, not only at {workplace.name}. "
+            "and read and write files; there is no internet. You work on it at "
+            f"{workplace.name}, where the machines are. "
             "When your fix is ready, hand it in with submit: the client's own checks, which you "
             "do not see, run on it in a clean copy of the repository, and if they pass you are "
             f"paid at once. You can hand in each task at most {c.work.acceptance_runs} times a "
@@ -187,11 +191,7 @@ class Rules:
         health = self._health(for_sale)
 
         others = listed(
-            [
-                f"{r.name} ({c.place(home_of[r.name]).name})"
-                for r in c.residents
-                if r.name != name and r.name in home_of  # the dead live nowhere
-            ]
+            [f"{r.name} ({c.place(home_of[r.name]).name})" for r in c.residents if r.name != name]
         )
         meeting = listed([place.name for place in c.places if place.kind in ("social", "shop")])
         people = f"The others who live in the town, with their homes: {others}. "
@@ -208,10 +208,6 @@ class Rules:
         )
         if me.ties:
             people += " Some of them you know already. " + " ".join(me.ties.values())
-        people += (
-            " With share_file you can pass a copy of any of your files but your journal to "
-            "people you are talking with; they receive its text."
-        )
 
         sleep = (
             "Go to bed at home at any hour with sleep, giving the hour you want to wake and, if "
@@ -255,7 +251,8 @@ class Rules:
             "work and cannot work again until you have slept. A day that ends with "
             "you starving or exhausted, or lived in a home of little comfort, wears your health "
             "down; a day in which you have eaten and rested mends it. When your health is gone, "
-            "you die. You can take stock of how you feel at any time with how_am_i"
+            "you take to your bed at home, carried there if you are elsewhere, and keep to it "
+            "until you are treated. You can take stock of how you feel at any time with how_am_i"
         )
         if clinic:
             text += (

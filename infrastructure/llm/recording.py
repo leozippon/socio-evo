@@ -1,6 +1,5 @@
 """Client wrapper that logs every call as one JSON line."""
 
-import asyncio
 from pathlib import Path
 
 from infrastructure.llm.base import LLMClient, LLMRequest, LLMResponse
@@ -31,11 +30,9 @@ class RecordingClient:
         self._record(request, response, None)
         return response
 
-    async def stream(
-        self, request: LLMRequest, *, abort: asyncio.Event | None = None
-    ) -> LLMResponse:
+    async def stream(self, request: LLMRequest) -> LLMResponse:
         try:
-            response = await self._inner.stream(request, abort=abort)  # type: ignore[attr-defined]
+            response = await self._inner.stream(request)  # type: ignore[attr-defined]
         except Exception as exc:
             self._record(request, None, exc)
             raise

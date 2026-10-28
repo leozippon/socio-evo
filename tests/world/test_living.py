@@ -227,10 +227,10 @@ async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conver
     assert (await town.call("Tomas", "look_around")).text.endswith(
         "Also here: Mei (in a new coat)."
     )
-    await town.call("Tomas", "say", text="New coat?", to=["Mei"])
+    await town.call("Tomas", "claim_task", task=1)
+    await town.call("Tomas", "say", text="New coat?", to=["Mei"])  # talking at his desk
     assert "in a conversation with Mei (in a new coat)." in town.world.ports["Tomas"].situation()
     assert "in a conversation with Tomas." in town.world.ports["Mei"].situation()
-    await town.call("Tomas", "claim_task", task=1)  # sitting down to work while they talk
     assert (await town.call("Mei", "look_around")).text.endswith(
         "Also here: Tomas (working, in a conversation)."
     )

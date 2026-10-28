@@ -321,12 +321,10 @@ class _Metered:
         self._attempts = attempts
         self._failures = 0
 
-    async def stream(
-        self, request: LLMRequest, *, abort: asyncio.Event | None = None
-    ) -> LLMResponse:
+    async def stream(self, request: LLMRequest) -> LLMResponse:
         await self._port.turn()
         try:
-            reply = await self._client.stream(request, abort=abort)
+            reply = await self._client.stream(request)
         except LLMError as error:
             self._failures += 1
             if self._failures >= self._attempts:

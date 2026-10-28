@@ -288,7 +288,6 @@ def test_every_file_has_exactly_the_documented_fields(published):
         "payment",
         "speech",
         "gift",
-        "skill_shared",
         "journal",
         "forced_sleep",
         "expiry",
@@ -306,13 +305,7 @@ def test_every_file_has_exactly_the_documented_fields(published):
             kinds.add(found["kind"])
             assert found["kind"] in LOG_KINDS
             assert not set(found["payload"]) & bundle.OMITTED
-    assert {
-        "submission",
-        "checkpoint",
-        "speech",
-        "gift",
-        "skill_shared",
-    } <= kinds
+    assert {"submission", "checkpoint", "speech", "gift"} <= kinds
 
 
 def test_references_carry_the_hash_of_files_inside_the_site(published):

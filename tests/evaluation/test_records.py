@@ -41,7 +41,7 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     mine = [e for e in entries if e["actor"] == "Mei" or "Mei" in e["audience"]]
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "board_posted", "start_work", "claim", "command",
-        "file_write", "submission", "verdict", "payment", "speech", "skill_shared", "gift",
+        "file_write", "submission", "verdict", "payment", "speech", "gift",
         "leave_conversation", "leave_work", "sleep", "fell_asleep", "settlement",
         "condition",
     }  # fmt: skip

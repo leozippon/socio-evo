@@ -60,7 +60,7 @@ COUNTED = (
     "deaths",
 )
 """The counts of `frontend.progress` summed into a run's headline."""
-GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "skills")
+GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money")
 """What one resident had to do with another on a day, by field."""
 JOURNAL_FIELDS = (
     "resident",
@@ -90,7 +90,6 @@ EXPLORED = (
     "work_hours",
     "said_public",
     "said_private",
-    "skills_given",
     "money_given",
     "journal",
     "forced_sleep",
@@ -197,8 +196,8 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     with anything to count, by day, source and target. `minutes` are simulated minutes `source`
     spent in conversations `target` took part in (from the timeline's conversations, each on
     the day it began); the rest counts the day's entries: things `source` said that `target`
-    heard (`said`, of which `said_private` to it by name), messages written to it, gifts
-    (`gifts` times, `money` the money among them) and copies of files passed on."""
+    heard (`said`, of which `said_private` to it by name), messages written to it and gifts
+    (`gifts` times, `money` the money among them)."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 
@@ -230,8 +229,6 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
             elif kind == "gift":
                 add(day, actor, payload["to"], "gifts", 1)
                 add(day, actor, payload["to"], "money", payload.get("amount", 0))  # 0: a thing
-            elif kind == "skill_shared":
-                add(day, actor, payload["to"], "skills", 1)
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())

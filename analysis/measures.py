@@ -51,8 +51,6 @@ MEASURES = {
     "interlocutors": "distinct residents it spoke or wrote to, or was spoken or written to by",
     "messages_sent": "written messages it sent",
     "messages_received": "written messages it received",
-    "skills_given": "copies of its files passed to others, skills or notes",
-    "skills_received": "copies of others' files received, skills or notes",
     "money_given": "money handed to others",
     "money_received": "money received from others",
     "journal": "1 if it wrote a journal entry, going to bed",
@@ -62,7 +60,6 @@ MEASURES = {
     "completion_tokens": "completion tokens reported",
     "cached_share": "cached prompt tokens over prompt tokens, of the replies that report them",
     "lapses": "steps or compactions that found no usable reply",
-    "interruptions": "replies aborted by speech",
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
@@ -140,8 +137,6 @@ def world_measures(day: Day, name: str) -> Row:
         ),
         "messages_sent": len(sent),
         "messages_received": len(got),
-        "skills_given": len(mine("skill_shared")),
-        "skills_received": len(to_me("skill_shared", "to")),
         "money_given": sum(e["payload"].get("amount", 0) for e in mine("gift")),  # 0: a thing
         "money_received": sum(e["payload"].get("amount", 0) for e in to_me("gift", "to")),
         "journal": int(any(e["payload"]["journal"] for e in mine("sleep"))),
@@ -177,7 +172,6 @@ def trace_measures(trace: Sequence[Entry]) -> Row:
         if prompt
         else None,
         "lapses": sum(r["kind"] == "lapse" for r in trace),
-        "interruptions": sum(r["kind"] == "interruption" for r in trace),
         "compactions": sum(r["kind"] == "compaction" for r in trace),
     }
 

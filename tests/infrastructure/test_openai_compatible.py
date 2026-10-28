@@ -389,36 +389,8 @@ async def test_a_stream_is_accumulated_into_one_reply(monkeypatch):
     assert response.tool_calls == (
         ToolCall(id="c9", name="write_file", arguments={"path": "a.md"}),
     )
-    assert response.finish_reason == "tool_calls" and not response.aborted
+    assert response.finish_reason == "tool_calls"
     assert response.usage == Usage(prompt_tokens=40, completion_tokens=9, cached_prompt_tokens=32)
-
-
-async def test_an_aborted_stream_is_closed_and_returns_what_arrived(monkeypatch):
-    closed = asyncio.Event()
-
-    def handler(request: httpx2.Request) -> httpx2.Response:
-        async def body():
-            try:
-                for chunk in STREAM[:4]:
-                    yield f"data: {json.dumps(chunk)}\n\n".encode()
-                    await asyncio.sleep(0.01)
-                await asyncio.sleep(60)
-                yield b"data: [DONE]\n\n"
-            finally:
-                closed.set()
-
-        return httpx2.Response(200, headers={"content-type": "text/event-stream"}, content=body())
-
-    abort = asyncio.Event()
-    client = _client(monkeypatch, handler)
-    task = asyncio.create_task(client.stream(_request(), abort=abort))
-    await asyncio.sleep(0.2)
-    abort.set()
-    response = await asyncio.wait_for(task, 5)
-    assert response.aborted and response.text == "Writing now."
-    assert response.reasoning == "I should write it." and response.usage is None
-    assert response.finish_reason is None and response.tool_calls == ()
-    await asyncio.wait_for(closed.wait(), 5)
 
 
 async def test_a_stream_that_breaks_off_is_retried_from_its_start(monkeypatch):

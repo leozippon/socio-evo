@@ -88,7 +88,6 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("claim", at("09:00")),
         ("speech", at("09:32")),
         ("gift", at("09:32")),
-        ("skill_shared", at("09:32")),
         ("submission", at("10:00")),
         ("payment", at("10:00")),
         ("journal", at("22:00")),

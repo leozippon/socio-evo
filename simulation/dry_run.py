@@ -1,12 +1,12 @@
 """A scripted resident for dry runs: `DryRunModel` answers every resident's requests by playing a
 plausible day from what each request shows, so that the whole pipeline runs without a model.
 
-The day it plays: wait at home until the day's board is posted, go to the workplace, start work,
-read the board, claim a free task, run a command, read a file, write a fix, submit and leave; go
-to a shop, if the town has one, and buy a stock of food; go to a social place, eat there if it
-sells a meal and, if anyone is there, say something once; at 20:00 go home and go to bed with a
-journal entry, to wake at the town's forced waking hour; in bed, review the day, note it in
-memory/notes.md and fall asleep.
+The day it plays: wait at home until the day's board is posted, go to the workplace, read the
+board, claim a free task and then, the task's actions offered once it is held, run a command,
+read a file, write a fix, submit and leave; go to a shop, if the town has one, and buy a stock
+of food; go to a social place, eat there if it sells a meal and, if anyone is there, say
+something once; at 20:00 go home and go to bed with a journal entry, to wake at the town's
+forced waking hour; in bed, review the day, note it in memory/notes.md and fall asleep.
 Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own: the
 resident's name comes from the system prompt, and the day so far from the messages since the
 last wake-up, so it continues a resumed run as it would have continued the run.
@@ -140,26 +140,29 @@ class _Day:
         names = [call.name for call in batch]
         if "view_board" in names:
             return self._work(batch[names.index("view_board")].result)
+        if "claim_task" in names:
+            return self._fix()
         if "review_day" in names:
             return reply("Good night.")
         return reply("")
 
     def _work(self, board: str) -> LLMResponse:
+        """Claim a free task, or go on with the one held; the task's actions come with the next
+        request, once the task is held."""
         lines = [(int(number), rest) for number, rest in _BOARD_LINE.findall(board)]
         held = [number for number, rest in lines if "You hold it" in rest]
         free = [number for number, rest in lines if not rest.strip()]
-        calls: list[ToolCall] = []
         if held:
-            task = held[0]
-        elif free:
-            start = self.model._index[self.name] % len(lines)
-            task = min(free, key=lambda number: (number - 1 - start) % len(lines))
-            calls.append(tool_call("claim_task", task=task))
-        else:
+            return self._fix()
+        if not free:
             return reply("", tool_call("go", place=self.social))
+        start = self.model._index[self.name] % len(lines)
+        task = min(free, key=lambda number: (number - 1 - start) % len(lines))
+        return reply(f"I will work on task {task}.", tool_call("claim_task", task=task))
+
+    def _fix(self) -> LLMResponse:
         return reply(
-            f"I will work on task {task}.",
-            *calls,
+            "",
             tool_call("shell", command="git status --short && ls"),
             tool_call("read_repo_file", path="README"),
             tool_call("write_repo_file", path="fix.py", content="FIX\n"),

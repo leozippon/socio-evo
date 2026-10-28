@@ -21,7 +21,7 @@ CLAIMS = {
     MEI_JOURNAL: [
         ("I fixed task 1", "I fixed task 1 and it was accepted."),
         ("was paid $20", "I was paid $20."),
-        ("I gave him my skill", "I passed my skill to Tomas."),
+        ("I told him my method", "I told Tomas how I run the tests."),
     ],
     TOMAS_JOURNAL: [
         ("I fixed task 2", "I fixed task 2 and it was accepted."),
@@ -31,7 +31,10 @@ CLAIMS = {
 LABELS = {
     "I fixed task 1 and it was accepted.": ("supported", "Task 1, handed in by you, was accepted."),
     "I was paid $20.": ("supported", "You received $20 for task 1."),
-    "I passed my skill to Tomas.": ("supported", "You passed Tomas a copy of skills/testing.md."),
+    "I told Tomas how I run the tests.": (
+        "supported",
+        "You said to Tomas: “I run pytest -x first.”",
+    ),
     "I fixed task 2 and it was accepted.": ("contradicted", "You claimed task 2 (org/repo2)."),
     "I gave Mei $5.": ("supported", "You gave Mei $5."),
 }

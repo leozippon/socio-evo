@@ -1,16 +1,15 @@
 """The contract between the agent runtime and the world.
 
-The world implements `WorldPort` once per resident. The runtime declares the port's tool specs
-(constant for the whole run, so that the prefix cache survives event transitions), opens a step
-with the port's situation and the percepts pending, forwards every tool call the model makes
-that is not one of its own file tools, and blocks on `wait` when the resident has nothing more
-to do. The port owns the resident's inbox: the world delivers percepts into it, and sets
-`interrupt` when a delivered percept must reach the resident at once, which makes the runtime
-abort an in-flight model stream and leave the rest of a reply's calls undone. Which percepts
-interrupt is the world's to decide; one that does not waits in the inbox, and the runtime takes
-it before it carries out its next call and tells it ahead of that call's result, or takes it
-with `wait`. A work-only port for evaluation implements the same protocol with a single Work
-event and no town.
+The world implements `WorldPort` once per resident. The runtime declares, in each request, the
+tool specs the port offers at that moment, opens a step with the port's situation and the
+percepts pending, forwards every tool call the model makes that is not one of its own file
+tools, and blocks on `wait` when the resident has nothing more to do. The port owns the
+resident's inbox: the world delivers percepts into it, and sets `interrupt` when a delivered
+percept must reach the resident at once, which makes the runtime leave a reply's calls undone
+and tell the percept. Which percepts interrupt is the world's to decide; one that does not
+waits in the inbox, and the runtime takes it before it carries out its next call and tells it
+ahead of that call's result, or takes it with `wait`. A work-only port for evaluation
+implements the same protocol with a single Work event and no town.
 """
 
 from __future__ import annotations
@@ -61,12 +60,13 @@ class WorldPort(Protocol):
         ...
 
     def tool_specs(self) -> list[ToolSpec]:
-        """Every world tool, in a fixed order; constant for the run."""
+        """The world tools the resident can use at this moment, in a fixed order: what the
+        next request declares."""
         ...
 
     def situation(self) -> str:
         """The moment as this resident sees it: time, place, people, what it is doing, its
-        purse, its task, and which tools apply now."""
+        purse and its task."""
         ...
 
     def sim_time(self) -> int:

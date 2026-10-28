@@ -50,8 +50,8 @@ def reply(
 
 class ScriptedModel(ScriptedClient):
     """A tool-calling model that answers with `replies` in order and keeps every request it
-    receives; with no reply left it raises LookupError. Streams deliver a word every `delay`
-    seconds, so that a slow one can be aborted."""
+    receives; with no reply left it raises LookupError. Streams take `delay` seconds a word,
+    so that something can happen while a reply is in flight."""
 
     def __init__(self, *replies: Reply, delay: float = 0.0) -> None:
         self.requests: list[LLMRequest] = []
@@ -72,11 +72,11 @@ Handler = ToolResult | Callable[[dict[str, Any]], ToolResult | Awaitable[ToolRes
 
 
 class FakePort:
-    """A world of one resident that tests drive by hand: it declares `tools`, answers a call
-    with its entry in `results` (a result, or a function of the arguments giving one), tells
-    `situation`, and delivers what `deliver` is given. It keeps every call made and every busy
-    signal; `waiting` is set while `wait` blocks on an empty inbox (and cleared by a delivery),
-    and `clock` is the simulated time it reports."""
+    """A world of one resident that tests drive by hand: it offers `tools` (a list a test may
+    change between steps), answers a call with its entry in `results` (a result, or a function
+    of the arguments giving one), tells `situation`, and delivers what `deliver` is given. It
+    keeps every call made and every busy signal; `waiting` is set while `wait` blocks on an
+    empty inbox (and cleared by a delivery), and `clock` is the simulated time it reports."""
 
     def __init__(
         self,
@@ -92,7 +92,7 @@ class FakePort:
         self.busy: list[bool] = []
         self.waiting = asyncio.Event()
         self._rules = rules
-        self._tools = list(tools)
+        self.tools = list(tools)
         self._results = dict(results or {})
         self._inbox: list[Percept] = []
         self._arrived = asyncio.Event()
@@ -112,7 +112,7 @@ class FakePort:
         return self._rules
 
     def tool_specs(self) -> list[ToolSpec]:
-        return list(self._tools)
+        return list(self.tools)
 
     def situation(self) -> str:
         return self.situation_text

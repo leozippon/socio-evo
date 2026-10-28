@@ -5,7 +5,7 @@ import contextlib
 
 import pytest
 
-from agent import texts
+from agent import files, texts
 from agent.compaction import INSTRUCTION
 from agent.port import ToolResult, ToolSpec
 from agent.runtime import Runtime, RuntimeConfig
@@ -124,28 +124,62 @@ async def test_a_result_that_ends_the_turn_waits_for_the_world(directory):
     )
 
 
-async def test_an_interrupting_percept_aborts_the_reply_in_flight(directory):
+async def test_an_interrupting_percept_lets_the_reply_finish_and_leaves_its_calls_undone(
+    directory,
+):
     long = " ".join(f"word{n}" for n in range(300))
-    model = ScriptedModel(reply(long, reasoning="Let me think."), reply("Hello, Ben."), delay=0.01)
-    port = FakePort()
+    port = FakePort(tools=[SAY], results={"say": ToolResult("Said.")})
+    model = ScriptedModel(
+        reply(long, tool_call("say", text="Morning, all."), reasoning="Let me think."),
+        reply("Hello, Ben."),
+        delay=0.001,
+    )
     port.deliver("Your alarm rings.")
     async with running(Runtime(directory, port, model)):
         while not model.requests:
             await asyncio.sleep(0.01)
-        await asyncio.sleep(0.1)
-        ben = port.deliver("Ben says: good morning!", interrupt=True)
+        ben = port.deliver("Ben says: good morning!", interrupt=True)  # mid-reply
         await settle(port)
 
+    assert port.calls == []  # the reply finished, but what it meant to do was not done
     records = trace(directory)
-    (aborted,) = [r for r in records if r["kind"] == "reply" and r["aborted"]]
-    assert aborted["reasoning"] == "Let me think." and aborted["text"]
-    assert long.startswith(aborted["text"]) and aborted["text"] != long
-    (interruption,) = [r for r in records if r["kind"] == "interruption"]
-    assert interruption["events"] == [ben.event_id]
-    resumed = model.requests[1].messages
-    assert [m.role for m in resumed] == ["system", "user", "user"]
-    assert resumed[-1].content == "Ben says: good morning!\n\n" + port.situation_text
-    assert [m.content for m in context(directory) if m.role == "assistant"] == ["Hello, Ben."]
+    first = [r for r in records if r["kind"] == "reply"][0]
+    assert first["text"] == long and first["reasoning"] == "Let me think."
+    assert "aborted" not in first and not [r for r in records if r["kind"] == "interruption"]
+    after = model.requests[1].messages
+    assert [m.role for m in after] == ["system", "user", "assistant", "tool", "user"]
+    assert after[2].content == long and after[3].content == texts.NOT_CARRIED_OUT
+    assert after[4].content == "Ben says: good morning!\n\n" + port.situation_text
+    told = [r for r in records if r["kind"] == "percept" and r["event_id"] == ben.event_id]
+    assert len(told) == 1
+    assert [m.content for m in context(directory) if m.role == "assistant"] == [long, "Hello, Ben."]
+
+
+async def test_each_request_declares_what_the_port_offers_then(directory):
+    port = FakePort(
+        tools=[SAY], results={"say": ToolResult("Said."), "go": ToolResult("Off.", ends_turn=True)}
+    )
+    model = ScriptedModel(
+        reply("", tool_call("go", place="café")),  # not offered yet, though the port knows it
+        reply("Nothing to do."),
+        reply("", tool_call("go", place="café")),
+    )
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+        assert port.calls == []
+        port.tools = [GO, SAY]
+        port.deliver("The café has opened.")
+        await settle(port)
+
+    assert port.calls == [("go", {"place": "café"})]
+    own = [spec.name for spec in files.SPECS] + ["compact"]
+    declared = [[t["function"]["name"] for t in request.tools] for request in model.requests]
+    assert declared == [[*own, "say"], [*own, "say"], [*own, "go", "say"]]
+    answers = [m.content for m in model.requests[1].messages if m.role == "tool"]
+    assert answers == [texts.UNKNOWN_TOOL.format(name="go")]
+    requests = [r for r in trace(directory) if r["kind"] == "request"]
+    assert [r["tools"] for r in requests] == declared
 
 
 async def test_a_running_tool_finishes_and_the_calls_after_it_are_not_carried_out(directory):

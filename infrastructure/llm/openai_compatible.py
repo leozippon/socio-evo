@@ -66,9 +66,7 @@ class OpenAICompatibleClient:
     runs more than one.
 
     `stream` makes the same call as a stream, retried in the same way from its start (a stream
-    that breaks off is a call that failed), with usage asked for in the last chunk. Setting its
-    `abort` event cancels the call wherever it is, waiting for a retry included, closes the
-    connection and returns what had arrived, marked `aborted`.
+    that breaks off is a call that failed), with usage asked for in the last chunk.
     """
 
     def __init__(self, config: LLMConfig, *, http_client: httpx2.AsyncClient | None = None) -> None:
@@ -113,9 +111,7 @@ class OpenAICompatibleClient:
             latency=latency,
         )
 
-    async def stream(
-        self, request: LLMRequest, *, abort: asyncio.Event | None = None
-    ) -> LLMResponse:
+    async def stream(self, request: LLMRequest) -> LLMResponse:
         arguments = {
             **self._arguments(request),
             "stream": True,
@@ -134,11 +130,9 @@ class OpenAICompatibleClient:
             _refuse_unfinished(received[0].finish_reason)
 
         started = time.perf_counter()
-        finished = await _unless_aborted(self._retrying(call), abort)
+        await self._retrying(call)
         return received[0].reply(
-            aborted=not finished,
-            max_tokens=arguments.get("max_tokens"),
-            latency=time.perf_counter() - started,
+            max_tokens=arguments.get("max_tokens"), latency=time.perf_counter() - started
         )
 
     def _arguments(self, request: LLMRequest) -> dict[str, Any]:
@@ -244,7 +238,7 @@ class _Received:
             if choice.finish_reason is not None:
                 self.finish_reason = choice.finish_reason
 
-    def reply(self, *, aborted: bool, max_tokens: int | None, latency: float) -> LLMResponse:
+    def reply(self, *, max_tokens: int | None, latency: float) -> LLMResponse:
         return LLMResponse(
             text="".join(self.text),
             truncated=self.finish_reason == "length",
@@ -255,31 +249,9 @@ class _Received:
                 for _, call in sorted(self.calls.items())
             ),
             finish_reason=self.finish_reason,
-            aborted=aborted,
             usage=_usage(self.usage),
             latency=latency,
         )
-
-
-async def _unless_aborted(work: Awaitable[Any], abort: asyncio.Event | None) -> bool:
-    """Await `work` and return True, or, as soon as `abort` is set, cancel it, let it close
-    what it holds and return False. Errors of `work` propagate."""
-    if abort is None:
-        await work
-        return True
-    task = asyncio.ensure_future(work)
-    waiter = asyncio.ensure_future(abort.wait())
-    try:
-        await asyncio.wait({task, waiter}, return_when=asyncio.FIRST_COMPLETED)
-    finally:
-        waiter.cancel()
-        if not task.done():
-            task.cancel()
-            await asyncio.wait({task})
-    if task.cancelled():
-        return False
-    task.result()
-    return True
 
 
 def _wire(message: Message) -> dict[str, Any]:

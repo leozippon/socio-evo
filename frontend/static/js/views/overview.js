@@ -251,13 +251,12 @@ export function mountOverview(root, ctx) {
       said: ["Things said", (e) => e.said || null, fmt.int, null],
       minutes: ["Minutes together", (e) => (e.minutes ? Math.round(e.minutes) : null), fmt.int, null],
       money: ["Money handed over", (e) => e.money || null, fmt.int, null],
-      skills: ["Files passed on", (e) => e.skills || null, fmt.int, null],
     };
     const [, value, format, fixed] = options[view.matrix] ?? options.said;
     const totals = new Map();
     for (const edge of measures.graph) {
       const key = `${edge.source}>${edge.target}`;
-      const t = totals.get(key) ?? { minutes: 0, said: 0, said_private: 0, gifts: 0, money: 0, skills: 0 };
+      const t = totals.get(key) ?? { minutes: 0, said: 0, said_private: 0, gifts: 0, money: 0 };
       for (const field of Object.keys(t)) t[field] += edge[field];
       totals.set(key, t);
     }
@@ -280,7 +279,7 @@ export function mountOverview(root, ctx) {
               if (from === to) return h("td", { class: "self" }, "");
               const edge = totals.get(`${from}>${to}`);
               const v = edge ? value(edge) : null;
-              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately), ${fmt.money(edge.money)} handed over, ${edge.skills} skills passed on` : `${from} had nothing to do with ${to}`;
+              const detail = edge ? `${from} → ${to}: ${fmt.int(Math.round(edge.minutes))} min in conversation, ${edge.said} things said (${edge.said_private} privately), ${fmt.money(edge.money)} handed over` : `${from} had nothing to do with ${to}`;
               return h("td", { class: v === null ? "none" : `heat-${level(v)}`, title: detail }, v === null ? "" : format(v));
             }),
           ),
@@ -491,7 +490,7 @@ export function mountOverview(root, ctx) {
       if (!rows.length) return h("div", { class: "card" }, emptyState("No day has closed yet.", running() ? `Model usage is counted over lived days a checkpoint closed, the first at ${world.day.checkpoint}.` : "Model usage is counted over closed days only, and the run stopped before a checkpoint closed a day."));
       const rowPoints = (field) => (name) => rows.filter((row) => row.resident === name).map((row) => [row.day, typeof field === "function" ? field(row) : row[field]]);
       return [
-        h("p", { class: "note section-note" }, `${fmt.int(sum(rows, "requests"))} model requests over the closed days, ${fmt.compact(sum(rows, "prompt_tokens") + sum(rows, "completion_tokens"))} tokens; ${fmt.int(sum(rows, "lapses"))} lapses, ${fmt.int(sum(rows, "interruptions"))} replies interrupted by speech, ${fmt.int(sum(rows, "compactions"))} compactions.`),
+        h("p", { class: "note section-note" }, `${fmt.int(sum(rows, "requests"))} model requests over the closed days, ${fmt.compact(sum(rows, "prompt_tokens") + sum(rows, "completion_tokens"))} tokens; ${fmt.int(sum(rows, "lapses"))} lapses, ${fmt.int(sum(rows, "compactions"))} compactions.`),
         h(
           "div",
           { class: "figures" },

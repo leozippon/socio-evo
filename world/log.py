@@ -44,14 +44,15 @@ KINDS = {
     "conversation_end": "a conversation ended",
     "gift": "money, a thing or helpings of a stock handed from one resident to another, on "
     "their own terms (payload: to, and amount of money or item, name and quantity)",
-    "skill_shared": "a copy of one of a resident's files, its journal excepted, handed to another",
     "message": "a written message from one resident to another, read wherever the other is",
     "purchase": "a good bought, with its price, and consumed at once if it is immediate",
     "move_in": "a resident moved into another home",
     "settlement": "the rent and fees charged at midnight, with the statement, the day's food and "
     "the body's numbers after the night's reckoning of health",
     "condition": "a need of a resident's body crossed into another band; told to it if awake",
-    "death": "a resident's health ran out at midnight: its life ended, and the others were told",
+    "bedridden": "a resident's health ran out at midnight: it took to its bed at home, carried "
+    "there if it was elsewhere, until treated",
+    "recovered": "treatment let a bedridden resident leave its bed",
     "sleep": "a resident went to bed, with the journal entry it gave, if any",
     "fell_asleep": "a resident in bed fell asleep",
     "forced_sleep": "a resident still up at the forced hour fell asleep without going to bed",

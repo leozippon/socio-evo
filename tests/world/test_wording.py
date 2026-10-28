@@ -13,7 +13,7 @@ import pytest
 import world
 from agent.wording import offences
 from tests.world.conftest import awake_at, backend_of, town_config
-from world.events import Idle, Movement, Sleep, Work, refusal
+from world.events import Bedridden, Conversation, Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS
 
 DAY_NUMBER = re.compile(r"\b[Dd]ay[ -]?\d")
@@ -65,6 +65,8 @@ async def test_every_rendered_text_passes_the_guard(make_town):
         Work(),
         Sleep(0),
         Sleep(0, True),
+        Bedridden(),
+        Conversation("cafe", "cafe", set(), 0),
     ]
     texts += [
         refusal(event, spec.name, destination="the café")
@@ -103,7 +105,13 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     await town.call("Mei", "sleep", until="07:00", journal="Worked on a task.")
     texts.append(world_.ports["Mei"].situation())
     texts.append((await town.call("Mei", "review_day")).text)
+    mei = world_.residents["Mei"]
+    mei.living.health, mei.living.satiety = 1, 0  # bedridden at midnight, let up the next day
     town.rest()
+    await town.until("09:00", day=2)
+    texts.append(world_.ports["Mei"].situation())
+    texts.append((await town.call("Aisha", "look_around")).text)
+    world_.treat(mei, 25)
     await town.until("18:00", day=2)
     for entry in world_.log.entries():
         if entry["audience"] or entry["personal"]:

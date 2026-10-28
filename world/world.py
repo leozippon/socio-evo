@@ -36,15 +36,18 @@ it cannot work until it has slept; before an action in its workspace the body is
 so that the exhausted are refused it (`tools`). A need that crosses into another band is
 logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
 purchase's result tell it otherwise); the situation names the needs in their lowest band. At
-midnight health moves by the day, and a resident whose health has run out dies: it leaves what
-it was in, its claim is dropped, it is at no place and in the event Dead, from which nothing
-brings it back, and the others of its town are told; a checkpoint keeps it dead. A durable with
-the effect travel shortens the owner's journeys, one with messaging lets it write to other
-owners, and one with appearance shows its phrase wherever others perceive the owner: who is
-here, who arrived, whom one is in conversation with; a low band of health shows the same way.
-Rent is the home's, and a resident may move into a home with a free room.
+midnight health moves by the day, and a resident whose health has reached its floor takes to
+its bed: it leaves what it was in, is carried home if it was elsewhere, and is in the event
+Bedridden, where it can do little but speak to whoever comes and eat what it is given, until
+treatment (`treat`) lets it up; those where it was and at its home are told, and a checkpoint
+keeps it so. A durable with the effect travel shortens the owner's journeys, one with messaging
+lets it write to other owners, and one with appearance shows its phrase wherever others perceive
+the owner: who is here, who arrived, whom one is in conversation with; a low band of health
+shows the same way. Rent is the home's, and a resident may move into a home with a free room.
 
-The world delivers each percept to the ports of those who perceive it. Speech reaches the
+Each resident's port declares to its runtime the tools of its event at its place now
+(`usable`), so that what a request offers is what can be done; the situation no longer lists
+them. The world delivers each percept to the ports of those who perceive it. Speech reaches the
 residents it is addressed to, at their place and awake; it draws into the conversation, with
 `interrupt`, those it names and, when it is said to everyone, those not working outside the
 conversation. A resident at work outside it hears a remark to everyone without being drawn in or
@@ -78,12 +81,12 @@ from world.clock import DAY, Clock, ManualClock, clock_time, parse_hour, tell_da
 from world.config import Band, Good, TownConfig
 from world.economy import Economy
 from world.events import (
-    ENDED,
+    BOARD_TOOLS,
     EXHAUSTED,
     TASK_TOOLS,
     Base,
+    Bedridden,
     Conversation,
-    Dead,
     Idle,
     Movement,
     Sleep,
@@ -133,26 +136,22 @@ class Resident:
 
     @property
     def event(self) -> Base | Conversation:
+        """The event the resident is in: its conversation while one lasts, else its base."""
         return self.conversation or self.base
 
     @property
     def tools(self) -> frozenset[str]:
-        """What the resident can do now: its base event's actions, and a conversation's on
-        top of them."""
-        return self.base.tools | (Conversation.tools if self.conversation else frozenset())
-
-    @property
-    def alive(self) -> bool:
-        return not isinstance(self.base, Dead)
+        """What the resident can do now: its event's actions."""
+        return self.event.tools
 
     @property
     def awake(self) -> bool:
-        return not isinstance(self.base, Sleep | Dead)
+        return not isinstance(self.base, Sleep)
 
     @property
     def suspended(self) -> bool:
-        """Whether nothing reaches the resident: asleep, or dead."""
-        return (isinstance(self.base, Sleep) and self.base.suspended) or not self.alive
+        """Whether nothing reaches the resident: asleep."""
+        return isinstance(self.base, Sleep) and self.base.suspended
 
 
 class World:
@@ -290,11 +289,10 @@ class World:
         )
 
     def _hourly(self) -> None:
-        """Every hour on the hour, every living resident's body is brought up to it; the first
-        call, as the world starts to run, only arms the next hour."""
+        """Every hour on the hour, every resident's body is brought up to it; the first call,
+        as the world starts to run, only arms the next hour."""
         for r in self.residents.values():
-            if r.alive:
-                self.reckon(r)
+            self.reckon(r)
         now = self.clock.now()
         self._at(now - now % 3600 + 3600, self._hourly)
 
@@ -325,22 +323,20 @@ class World:
             )
 
     def _settle(self, day: int) -> None:
-        """Midnight for every living resident: its body is brought up to the hour and its health
-        moves by the day (a resident whose health has run out dies here), the day's food is
-        reckoned, rent and the fees of what it owns are taken, and the statement is told."""
+        """Midnight for every resident: its body is brought up to the hour and its health moves
+        by the day (a resident whose health has reached its floor takes to its bed here), the
+        day's food is reckoned, rent and the fees of what it owns are taken, and the statement
+        is told."""
         date = tell_date(day, self.config.start_date)
         for r in self.residents.values():
-            if not r.alive:
-                continue
             self.reckon(r)
             living = r.living
             home = self.config.place(r.home)
             assert home.rent is not None and home.comfort is not None
             before = self.body.bands(living)
             night = self.body.night(living, home.comfort)
-            if not living.alive:
-                self._die(r, day)
-                continue
+            if living.health <= 0 and not living.bedridden:
+                self._take_to_bed(r, day)
             self.note_bands(r, before, tell=False)
             stock = []
             for good in self.config.goods:
@@ -400,34 +396,71 @@ class World:
             )
             living.eaten = {}
 
-    def _die(self, r: Resident, day: int) -> None:
-        """`r`'s health has run out at the midnight that ends calendar day `day`: its life stops
-        here. It leaves its conversation and its work, its claim is dropped (the workspace is
-        closed at the checkpoint), it is at no place and in the event Dead, and the others of
-        its town are told."""
+    def _take_to_bed(self, r: Resident, day: int) -> None:
+        """`r`'s health has reached its floor at the midnight that ends calendar day `day`: it
+        takes to its bed at home, carried there if it was elsewhere, and keeps to it until
+        treated. It leaves its conversation and its work and keeps its task; one in bed or
+        asleep already is bedridden on waking. It is told, and so are those where it was and
+        those at its home."""
+        r.living.bedridden = True
+        origin = r.place
+        witnesses = self.addressable(r)
         self.break_off(r)
-        if r.timer is not None:
-            r.timer.cancel()
-            r.timer = None
-        self.disarm_tick(r)
-        claim = self.board.claims.get(r.name)
-        if claim is not None:
-            workspace = self.board.drop(r.name)
-            if workspace is not None:
-                self.board.orphans.append(workspace)
-        r.base, r.place = Dead(), None
-        r.port.held = []
-        r.port.pending()  # nothing told before is read now
-        others = [other for other in self.residents.values() if other is not r and other.alive]
-        self.record(
-            "death",
-            lambda w: f"{r.name} died in the night.",
-            actor=r,
-            place=None,
-            audience=others,
-            payload={"day": day, "home": r.home, "task": claim.task if claim else None},
+        carried = False
+        if not isinstance(r.base, Sleep):
+            if r.timer is not None:  # on the road: the arrival never comes
+                r.timer.cancel()
+                r.timer = None
+            carried = origin != r.home
+            r.place, r.base = r.home, Bedridden()
+            witnesses += [other for other in self.addressable(r) if other not in witnesses]
+        how = "were carried home to bed" if carried else "took to your bed"
+        told = f"You are too ill to go on: you {how}, and keep to it until you are treated."
+        seen = (
+            f"{r.name} was carried home to bed, too ill to go on."
+            if carried
+            else f"{r.name} took to bed, too ill to go on."
         )
-        self.rest_changed()
+        claim = self.board.claims.get(r.name)
+        self.record(
+            "bedridden",
+            lambda w: told if w == r.name else seen,
+            actor=r,
+            place=r.home,
+            audience=[r, *witnesses],
+            payload={
+                "day": day,
+                "home": r.home,
+                "from": origin,
+                "carried": carried,
+                "task": claim.task if claim else None,
+            },
+        )
+
+    def treat(self, r: Resident, restores: float) -> None:
+        """Treatment restores `restores` of `r`'s health and, if `r` was bedridden, lets it up:
+        Idle at its home, logged as `recovered` and told to it and to those there. The clinic's
+        treatment, which a resident buys there for itself, calls this; the Hospital's doctor at
+        a patient's bedside will call the same. Until then a bedridden resident, which can
+        neither leave its home nor buy, cannot be treated."""
+        self.reckon(r)
+        self.body.treat(r.living, restores)
+        if not r.living.bedridden:
+            return
+        r.living.bedridden = False
+        if isinstance(r.base, Bedridden):
+            r.base = Idle()
+        self.record(
+            "recovered",
+            lambda w: (
+                "You are well enough to leave your bed."
+                if w == r.name
+                else f"{r.name} is well enough to leave its bed."
+            ),
+            actor=r,
+            audience=[r, *self.addressable(r)],
+            payload={"restores": restores, "health": round(r.living.health, 1)},
+        )
 
     # The body ---------------------------------------------------------------------------------
 
@@ -534,11 +567,14 @@ class World:
         wake = day * DAY + self._forced_wake
         hour = clock_time(self.clock.now())
         for r in self.residents.values():
-            if not r.alive:
-                continue
             if isinstance(r.base, Sleep):
                 if not r.base.suspended:
                     self._fall_asleep(r, f"It is {hour}: you fell asleep.")
+                continue
+            if isinstance(r.base, Bedridden):  # in bed already
+                self.break_off(r)
+                self._put_to_sleep(r, wake)
+                self._fall_asleep(r, f"It is {hour}: you fell asleep.")
                 continue
             self.break_off(r)
             if r.timer is not None:
@@ -578,8 +614,7 @@ class World:
                 self.board.runs[name] = {}
             for r in self.residents.values():
                 r.day.clear()
-                if r.alive:
-                    self.reckon(r)
+                self.reckon(r)
             state = self.snapshot()
             self.record(
                 "checkpoint", lambda w: f"The state of day {day} was saved.", payload={"day": day}
@@ -618,14 +653,14 @@ class World:
             raise RuntimeError(f"no checkpoint state: unsettled {unsettled or 'world state'}")
         residents = {}
         for name, r in self.residents.items():
-            assert isinstance(r.base, Sleep | Dead)
+            assert isinstance(r.base, Sleep)
             claim = self.board.claims.get(name)
             residents[name] = {
                 "place": r.place,
                 "home": r.home,
                 "living": asdict(r.living),
-                "wake": r.base.wake if isinstance(r.base, Sleep) else None,
-                "longest": isinstance(r.base, Sleep) and r.base.longest,
+                "wake": r.base.wake,
+                "longest": r.base.longest,
                 "purse": self.economy.purses[name],
                 "ledger": copy.deepcopy(self.economy.ledger[name]),
                 "claim": claim.saved() if claim else None,
@@ -650,13 +685,9 @@ class World:
             r.home = saved["home"]
             r.living = Living(**copy.deepcopy(saved["living"]))
             r.reckoned = state["time"]
-            if r.living.alive:
-                # A checkpoint from before the body woke anyone early has no `longest`.
-                longest = saved.get("longest", False)
-                self._put_to_sleep(r, saved["wake"], suspended=True, longest=longest)
-            else:
-                assert saved["wake"] is None
-                r.base = Dead()
+            # A checkpoint from before the body woke anyone early has no `longest`.
+            longest = saved.get("longest", False)
+            self._put_to_sleep(r, saved["wake"], suspended=True, longest=longest)
             self.economy.purses[name] = saved["purse"]
             self.economy.ledger[name] = copy.deepcopy(saved["ledger"])
             if saved["claim"] is not None:
@@ -724,7 +755,7 @@ class World:
 
     def occupants(self, place_id: str) -> list[Resident]:
         """Who lives at `place_id` now."""
-        return [r for r in self.residents.values() if r.alive and r.home == place_id]
+        return [r for r in self.residents.values() if r.home == place_id]
 
     def homes(self) -> dict[str, list[str]]:
         """Who lives where now, for the rules and `help`."""
@@ -756,9 +787,14 @@ class World:
         def state(other: Resident) -> str:
             if not other.awake:
                 return f"{other.name} (asleep)"
-            working = ["working"] if isinstance(other.base, Work) else []
-            talking = ["in a conversation"] if other.conversation is not None else []
-            return self.named(other, *working, *talking)
+            notes = []
+            if isinstance(other.base, Work):
+                notes.append("working")
+            elif isinstance(other.base, Bedridden):
+                notes.append("in bed")
+            if other.conversation is not None:
+                notes.append("in a conversation")
+            return self.named(other, *notes)
 
         people = self.company(r)
         if not people:
@@ -1057,7 +1093,7 @@ class World:
         self.reckon(r)
         longest = isinstance(r.base, Sleep) and r.base.longest
         r.timer = None
-        r.base, r.place = Idle(), r.home
+        r.base, r.place = (Bedridden() if r.living.bedridden else Idle()), r.home
         before = self.body.bands(r.living)
         self.feed(r)
         self.note_bands(r, before, tell=False)
@@ -1115,8 +1151,6 @@ class World:
     # What a resident reads ------------------------------------------------------------------
 
     def situation(self, r: Resident) -> str:
-        if not r.alive:
-            return ENDED
         now = self.clock.now()
         parts = [f"{tell_moment(now, self.config.start_date)}."]
         if isinstance(r.base, Sleep):
@@ -1128,14 +1162,17 @@ class World:
         elif isinstance(r.base, Movement):
             parts.append(
                 f"You are on your way to {self.config.place(r.base.destination).name} and will "
-                f"arrive at {clock_time(r.base.arrival)}."
+                f"arrive at {clock_time(r.base.arrival)}. There is nothing to do until you arrive."
             )
         else:
             assert r.place is not None
             place = self.config.place(r.place).name
-            where = (
-                f"You are at work at {place}" if isinstance(r.base, Work) else f"You are at {place}"
-            )
+            if isinstance(r.base, Work):
+                where = f"You are at work at {place}"
+            elif isinstance(r.base, Bedridden):
+                where = "You are in bed at home, too ill to get up"
+            else:
+                where = f"You are at {place}"
             if r.conversation is not None:
                 others = [
                     self.named(self.residents[name])
@@ -1152,26 +1189,25 @@ class World:
         claim = self.board.claims.get(r.name)
         if claim is not None:
             parts.append(f"You hold task {claim.task} ({self.board.task(claim.task).repo}).")
-        if r.suspended:
-            pass
-        elif isinstance(r.base, Movement):
-            parts.append("There is nothing to do until you arrive.")
-        else:
-            useless: set[str] = set()  # what the resident could do but to no purpose
-            if not any(
-                r.living.things.get(good.id)
-                for good in self.config.goods
-                if good.effect == "messaging"
-            ):
-                useless.add("message")  # nothing to write with
-            if r.place != self.config.workplace.id:
-                useless |= {"view_board", "read_task", "claim_task"}  # the board hangs there
-            if claim is None:
-                useless |= TASK_TOOLS
-            usable = [spec.name for spec in self.tool_specs if spec.name in r.tools - useless]
-            files = ", and see to your files" if isinstance(r.base, Sleep) else ""
-            parts.append(f"What you can do now: {', '.join(usable)}{files}.")
         return " ".join(parts)
+
+    def usable(self, r: Resident) -> list[ToolSpec]:
+        """The tools `r`'s event offers at its place now, in declared order, less those of no
+        use there: `message` with nothing to write with, the board's and the task's away from
+        the workplace, where the board hangs and the work is done, and the task's without a
+        task."""
+        if r.suspended:
+            return []
+        useless: set[str] = set()
+        if not any(
+            r.living.things.get(good.id) for good in self.config.goods if good.effect == "messaging"
+        ):
+            useless.add("message")
+        if r.place != self.config.workplace.id:
+            useless |= BOARD_TOOLS | TASK_TOOLS
+        if r.name not in self.board.claims:
+            useless |= TASK_TOOLS
+        return [spec for spec in self.tool_specs if spec.name in r.tools - useless]
 
     def review(self, r: Resident) -> str:
         """The world's record of `r`'s day, told to it as its own day; the work in a workspace
@@ -1229,12 +1265,10 @@ class World:
 
     async def call(self, r: Resident, name: str, args: dict[str, Any]) -> ToolResult:
         handler = tools.HANDLERS[name]
-        if not r.alive:
-            return ToolResult(ENDED, ends_turn=True)
         if r.suspended:
             return ToolResult("You are asleep.", ends_turn=True)
-        event = r.base
-        if name not in r.tools:
+        event = r.event
+        if name not in event.tools:
             destination = (
                 self.config.place(event.destination).name if isinstance(event, Movement) else ""
             )
@@ -1266,13 +1300,11 @@ class ResidentPort:
 
     def rules(self) -> str:
         """The rules as they stand: who lives where now, and so one's own home and rent."""
-        r = self._resident
-        if not r.alive:
-            return ENDED
-        return self._world.rules.text(r.name, self._world.homes())
+        return self._world.rules.text(self._resident.name, self._world.homes())
 
     def tool_specs(self) -> list[ToolSpec]:
-        return list(self._world.tool_specs)
+        """The tools the resident's event offers at its place now (`World.usable`)."""
+        return self._world.usable(self._resident)
 
     def situation(self) -> str:
         return self._world.situation(self._resident)

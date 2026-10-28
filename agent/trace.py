@@ -7,14 +7,13 @@ Kinds and their fields:
   after the system prompt; a compaction request adds its instruction after them), `tools` (the
   names declared), `reasoning_effort`, `max_tokens`, `attempt` (the request's number among those
   made for one reply, retries after a model error or a cut-off counting on);
-- `reply`: the response in full (text, reasoning, tool calls, finish reason, whether cut off
-  or aborted, usage, latency), with `purpose`;
+- `reply`: the response in full (text, reasoning, tool calls, finish reason, whether cut off,
+  usage, latency), with `purpose`;
 - `tool_call`: `id`, `name`, `arguments`, and `unreadable` when the arguments could not be read;
 - `tool_result`: `id`, `name`, `text` in full, `ends_turn`, and `error` when carrying the call
   out raised;
 - `percept`: the percept's `text`, `percept_kind`, `event_id`, `percept_sim_time`,
   `percept_real_time`;
-- `interruption`: `events`, the ids of the percepts that aborted the reply in flight;
 - `overflow`: `purpose` and `error`, when the server refused a request because its context does
   not fit the model's window;
 - `compaction`: `id` (the session record), `replaced`, `kept`, `summary`;
@@ -37,7 +36,6 @@ Kind = Literal[
     "tool_call",
     "tool_result",
     "percept",
-    "interruption",
     "overflow",
     "compaction",
     "lapse",

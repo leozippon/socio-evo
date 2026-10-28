@@ -1,6 +1,5 @@
 """Backend-neutral LLM types: messages, requests, responses, the client protocols and errors."""
 
-import asyncio
 import json
 from collections.abc import Callable, Sequence
 from typing import Any, Literal, Protocol
@@ -100,9 +99,8 @@ class LLMResponse(StrictModel):
     call was made with, None when none was set or the backend is no model; `reasoning` is
     separated reasoning text when the backend returns it; `tool_calls` are the calls the reply
     makes, in order; `finish_reason` is the server's (`stop`, `length`, `tool_calls`, ...),
-    None when it gave none; `aborted` says that a streamed reply was abandoned on request
-    before it ended, so it holds only what had arrived, with no usage and no finish reason;
-    `usage` is None when the backend reports none; `latency` is in seconds."""
+    None when it gave none; `usage` is None when the backend reports none; `latency` is in
+    seconds."""
 
     text: str
     truncated: bool = False
@@ -110,7 +108,6 @@ class LLMResponse(StrictModel):
     reasoning: str | None = None
     tool_calls: tuple[ToolCall, ...] = ()
     finish_reason: str | None = None
-    aborted: bool = False
     usage: Usage | None = None
     latency: float
 
@@ -156,14 +153,10 @@ class LLMClient(Protocol):
 
 
 class StreamingClient(LLMClient, Protocol):
-    """A client that can also stream a reply and abandon it on request."""
+    """A client that can also receive a reply as a stream."""
 
-    async def stream(
-        self, request: LLMRequest, *, abort: asyncio.Event | None = None
-    ) -> LLMResponse:
-        """The reply to `request`, received as a stream. If `abort` is set before the reply
-        ends, the stream is closed at once and the reply returned marked `aborted` with what
-        had arrived. Errors are those of `complete`."""
+    async def stream(self, request: LLMRequest) -> LLMResponse:
+        """The reply to `request`, received as a stream. Errors are those of `complete`."""
         ...
 
 

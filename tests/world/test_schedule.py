@@ -156,7 +156,10 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     mei_living = state["residents"]["Mei"]["living"]
     # Mei ate two helpings of her groceries on day 1, when she could eat, and none yet today.
     assert mei_living["things"] == {"groceries": 7, "coat": 1} and mei_living["eaten"] == {}
-    assert set(mei_living) == {"things", "eaten", "satiety", "energy", "health", "night"}
+    assert set(mei_living) == {
+        "things", "eaten", "satiety", "energy", "health", "night", "bedridden",
+    }  # fmt: skip
+    assert mei_living["bedridden"] is False
     assert mei_living["health"] == 100 and mei_living["night"] == {
         "poor_home": -2,
         "recovery": 5,
@@ -228,8 +231,6 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
 async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     town = make_town()
     await awake_at(town)
-    skill = tmp_path / "agents" / "Mei" / "skills" / "triage.md"
-    skill.write_text("Read the traceback first.\n")
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("08:00")
@@ -250,7 +251,6 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "give", to="Tomas", what="money", amount=5)
-    await town.call("Mei", "share_file", to=["Tomas"], path="skills/triage.md")
     await town.call("Mei", "leave_conversation")
     await town.call("Mei", "leave_work")
     await town.call("Tomas", "leave_work")
@@ -268,8 +268,9 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     town.rest()
-    town.world.residents["Aisha"].living.health = 1  # her last night
-    await town.until("00:00", day=3)  # Tomas's claim runs out; Aisha dies
+    town.world.residents["Aisha"].living.health = 1  # her last night on her feet
+    await town.until("00:00", day=3)  # Tomas's claim runs out; Aisha takes to her bed
+    town.world.treat(town.world.residents["Aisha"], 25)  # and is let up
 
     make_agent_dirs(tmp_path / "r", town.world.config)
     restored = World(town.world.config, tmp_path / "r", FakeBackend(), clock=ManualClock())

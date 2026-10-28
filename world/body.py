@@ -9,8 +9,10 @@ least, so that illness limits the day without trapping it), so that health sets 
 Health is the slow integral, reckoned once at midnight from the
 day: it falls for a midnight found starving (satiety in its lowest band), for one found
 exhausted (energy in its lowest band) and for a home of comfort below 1, and rises when neither
-starving nor exhausted; treatment restores it; at 0 the resident dies. The world drives the
-clock, the activities and the telling; this module only moves the numbers and words them.
+starving nor exhausted; treatment restores it. Its floor is 0, where the resident takes to its
+bed (`Living.bedridden`) until treated; the other needs go on being reckoned there and never
+bring it lower. The world drives the clock, the activities and the telling; this module only
+moves the numbers and words them.
 """
 
 from __future__ import annotations
@@ -45,9 +47,9 @@ def clamp(value: float) -> float:
 class Living:
     """A resident's living, checkpointed whole: `things` is what it owns, by the good's id (1
     for a durable, the units left of a consumable); `eaten` the units of each food good it has
-    eaten since the last midnight, the day's record of nourishment; the three needs; and
-    `night`, how health moved at the last midnight, by cause. A new resident is full in every
-    need; one whose health has reached 0 is dead."""
+    eaten since the last midnight, the day's record of nourishment; the three needs; `night`,
+    how health moved at the last midnight, by cause; and `bedridden`, set when health reaches
+    its floor at midnight and cleared by treatment. A new resident is full in every need."""
 
     things: dict[str, int] = field(default_factory=dict)
     eaten: dict[str, int] = field(default_factory=dict)
@@ -55,10 +57,7 @@ class Living:
     energy: float = 100.0
     health: float = 100.0
     night: dict[str, float] = field(default_factory=dict)
-
-    @property
-    def alive(self) -> bool:
-        return self.health > 0
+    bedridden: bool = False
 
 
 class Body:
@@ -76,8 +75,8 @@ class Body:
         return {name: self.band(name, getattr(living, name)) for name in NEEDS}
 
     def lowest(self, name: str, value: float) -> bool:
-        """Whether `value` is in the lowest band of the need `name`: starving, exhausted, or at
-        health's end."""
+        """Whether `value` is in the lowest band of the need `name`: starving, exhausted, or
+        gravely ill."""
         return self.band(name, value) is self.need(name).lowest
 
     def hungry(self, living: Living) -> bool:

@@ -279,10 +279,9 @@ class _Checkpoints:
         "accepted",
         "speech",
         "gift",
-        "skill_shared",
         "journal",
         "forced_sleep",
-        "death",
+        "bedridden",
     )
 
     def __init__(self, directory: RunDirectory, town: TownConfig) -> None:

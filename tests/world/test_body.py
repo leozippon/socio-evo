@@ -2,8 +2,8 @@
 one; food and a stock that restore satiety; sleep that restores energy by the home's comfort and
 never above health; work stopped by exhaustion and barred until one has slept; health worn at
 midnight by starving, exhaustion and a poor home, mended by rest and by the clinic; the
-examination's words; and death, which stops a life, is told to the others, and is kept by a
-checkpoint."""
+examination's words; and the bed that health at its floor puts one in, at home, told to the
+others, kept by a checkpoint and left when treated."""
 
 from __future__ import annotations
 
@@ -11,11 +11,10 @@ import json
 
 import pytest
 
-from agent.port import ToolResult
 from tests.world.conftest import at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
-from world.events import ENDED, EXHAUSTED, Dead, Idle, Work
+from world.events import BEDRIDDEN, EXHAUSTED, Bedridden, Conversation, Idle, Sleep, Work
 from world.testing import FakeBackend
 from world.world import World
 
@@ -72,7 +71,7 @@ def test_health_moves_at_midnight_by_the_days_wear_and_recovery():
     living.health = 1
     living.satiety = 0
     body.night(living, 1.0)
-    assert living.health == 0 and not living.alive
+    assert living.health == 0  # the floor
     body.treat(living, 25)
     assert living.health == 25
     assert body.examination(living) == (
@@ -108,8 +107,8 @@ WORK_DAY = [
     ("sleep", 7), ("awake", 1), ("eat", 0), ("awake", 1), ("work", 12), ("awake", 2), ("sleep", 1),
 ]  # fmt: skip
 """Asleep to 07:00, a meal at 08:00, twelve hours of work from 09:00 and in bed at 23:00."""
-LATE_DAY = [("awake", 2), ("sleep", 5), ("awake", 2), ("eat", 0), ("work", 15)]
-"""Up until the forced sleep at 02:00, asleep to 07:00, a meal at 09:00 and work from then for
+LATE_DAY = [("awake", 4), ("sleep", 3), ("awake", 2), ("eat", 0), ("work", 15)]
+"""Up until the forced sleep at 04:00, asleep to 07:00, a meal at 09:00 and work from then for
 as long as the body allows, still up at midnight."""
 
 
@@ -139,13 +138,13 @@ def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_
     for day in range(1, 5):
         _live_day(body, living, 1.0, [("sleep", 7), ("eat", 0), ("awake", 17)])
         assert living.health == 10 + 5 * day and living.night == {"recovery": 5}
-    # One that never eats, full at its last meal, is starving from the second midnight and dies
-    # in about a week: at the eighth midnight in a flat, the seventh in a shared house.
+    # One that never eats, full at its last meal, is starving from the second midnight and in
+    # bed in about a week: at the eighth midnight in a flat, the seventh in a shared house.
     for comfort, nights in ((1.0, 8), (0.9, 7)):
         living = Living()
         for night in range(1, nights + 1):
             _live_day(body, living, comfort, [("sleep", 7), ("awake", 17)])
-            assert living.alive == (night < nights), (comfort, night)
+            assert (living.health > 0) == (night < nights), (comfort, night)
     # One such day, worked to exhaustion and up past midnight, ends exhausted even after a full
     # night's rest, and a rested day after it mends it.
     living = Living()
@@ -154,19 +153,19 @@ def test_the_calibration_keeps_a_rested_working_life_well_and_overwork_wears_it_
     assert living.health == 93 and living.night == {"exhausted": -5, "poor_home": -2}
     _live_day(body, living, 0.9, WORK_DAY)
     assert body.band("energy", living.energy).name == "tired" and living.health == 96
-    # Lived so every day, it is exhausted at every midnight and, eating every day, dies of it at
-    # the fifteenth in a shared house and the twentieth in a flat, told run down and unwell first.
+    # Lived so every day, it is exhausted at every midnight and, eating every day, in bed at the
+    # fifteenth in a shared house and the twentieth in a flat, told run down and unwell first.
     for comfort, nights, first_told in (
         (0.9, 15, {"in good health": 1, "run down": 6, "unwell": 10, "gravely ill": 13}),
         (1.0, 20, {"in good health": 1, "run down": 8, "unwell": 14, "gravely ill": 19}),
     ):
         living, first = Living(), {}
         for night in range(1, nights + 1):
-            assert living.alive
+            assert living.health > 0
             _live_day(body, living, comfort, LATE_DAY)
             assert body.lowest("energy", living.energy)
             first.setdefault(body.band("health", living.health).name, night)
-        assert not living.alive and first == first_told
+        assert living.health == 0 and first == first_told
 
 
 async def test_the_needs_are_told_by_the_hour_as_they_cross_a_band_and_on_asking(make_town):
@@ -330,8 +329,10 @@ async def test_exhaustion_stops_work_and_bars_it_until_one_has_slept(make_town):
     await town.call("Tomas", "sleep", until="12:00")
     town.rest("Tomas")
     await town.until("12:00")
+    await town.call("Tomas", "go", place="workshop")
+    await town.until("12:10")
     assert (await town.call("Tomas", "shell", command="ls")).text.startswith(
-        "You sat down to work. It is 12:00."
+        "You sat down to work. It is 12:10."
     )
     assert isinstance(tomas.base, Work)
 
@@ -411,26 +412,27 @@ async def test_health_is_worn_by_the_days_and_shows_to_others_and_the_clinic_men
     )
 
 
-async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_without_it(
+async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_treated(
     make_town, tmp_path
 ):
     town = make_town()
     await awake_at(town)
     world = town.world
-    mei, tomas, aisha = (world.residents[name] for name in ("Mei", "Tomas", "Aisha"))
+    mei, aisha = world.residents["Mei"], world.residents["Aisha"]
+    port = world.ports["Mei"]
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("15:00")
     await town.call("Mei", "claim_task", task=1)  # at work at midnight, not yet exhausted
-    mei.living.health = 10  # her last day, out of food
+    mei.living.health = 10  # her last day on her feet, out of food
     mei.living.satiety = 0
     for name in world.residents:
         town.take(name)
     town.rest("Tomas", "Aisha")
     await town.until("00:00", day=2)
-    assert not mei.alive and isinstance(mei.base, Dead) and mei.place is None
-    assert mei.living.health == 0
-    assert "Mei" not in world.board.claims and len(world.board.orphans) == 1
+    assert mei.living.bedridden and mei.living.health == 0
+    assert isinstance(mei.base, Bedridden) and mei.place == "mill-street-house"
+    assert world.board.claims["Mei"].task == 1  # kept, to run out as any claim does
     midnight = [
         (e["kind"], e["actor"])
         for e in world.log.entries()
@@ -438,49 +440,83 @@ async def test_a_resident_whose_health_runs_out_dies_and_the_town_goes_on_withou
     ]
     assert midnight == [
         ("leave_work", "Mei"),
-        ("death", "Mei"),
+        ("bedridden", "Mei"),
+        ("settlement", "Mei"),
         ("settlement", "Tomas"),
         ("settlement", "Aisha"),
     ]
-    death = [e for e in world.log.entries() if e["kind"] == "death"][0]
-    assert death["text"] == "Mei died in the night." and death["personal"] == {}
-    assert death["audience"] == ["Tomas", "Aisha"] and death["payload"] == {
-        "day": 1, "home": "mill-street-house", "task": 1,
+    bed = [e for e in world.log.entries() if e["kind"] == "bedridden"][0]
+    assert bed["text"] == "Mei was carried home to bed, too ill to go on."
+    assert bed["personal"] == {
+        "Mei": "You are too ill to go on: you were carried home to bed, and keep to it until "
+        "you are treated."
+    }
+    assert bed["audience"] == ["Mei", "Tomas", "Aisha"] and bed["place"] == "mill-street-house"
+    assert bed["payload"] == {
+        "day": 1, "home": "mill-street-house", "from": "workshop", "carried": True, "task": 1,
     }  # fmt: skip
-    for name in ("Tomas", "Aisha"):  # both awake: told at once
-        assert [p.text for p in town.heard[name] if p.kind == "death"] == ["Mei died in the night."]
-    # Nothing reaches the dead, who is at no place and answers nothing; her room is free.
-    town.take("Mei")  # what her body told her at work, before midnight
-    await town.until("00:30", day=2)
-    assert town.take("Mei") == [] and world.ports["Mei"].situation() == ENDED
-    assert (await town.call("Mei", "look_around")) == ToolResult(ENDED, ends_turn=True)
-    assert world.company(tomas) == [] and world.homes()["mill-street-house"] == ["Aisha"]
-    assert (await town.call("Tomas", "say", text="Mei?", to=["Mei"])).text == "Mei is not here."
-    tomas.living.things["phone"] = mei.living.things["phone"] = 1
-    assert (await town.call("Tomas", "message", to="Mei", text="Mei?")).text == "Mei is dead."
-    assert (
-        "Mei" not in (await town.call("Tomas", "help", topic="places")).text.split("Your home")[0]
+    for name in ("Tomas", "Aisha"):  # where she was, and at her home: told at once
+        assert [p.text for p in town.heard[name] if p.kind == "bedridden"] == [bed["text"]]
+    told = town.take("Mei")
+    assert told[-2] == bed["personal"]["Mei"]
+    assert told[-1].startswith("Your statement for Monday 1 January")  # still told
+    # In bed she can do little; she is seen there, spoken to, and fed by whoever comes.
+    assert port.situation().startswith(
+        "Tuesday 2 January, 00:00. You are in bed at home, too ill to get up. Also here: Aisha."
     )
-    assert "Mei (" not in world.ports["Tomas"].rules()  # no longer among the living
-    assert world.ports["Mei"].rules() == ENDED
-
-    # The run goes on: the checkpoint is taken with her dead, and a restored world keeps her so.
+    assert [spec.name for spec in port.tool_specs()] == [
+        "help", "look_around", "how_am_i", "sleep", "say",
+    ]  # fmt: skip
+    refused = await town.call("Mei", "go", place="workshop")
+    assert refused.text == BEDRIDDEN and not refused.ends_turn
+    assert (await town.call("Aisha", "look_around")).text.endswith(
+        "Also here: Mei (in bed, looking gravely ill)."
+    )
+    await town.call("Aisha", "say", text="Mei?", to=["Mei"])
+    assert isinstance(mei.event, Conversation) and isinstance(mei.base, Bedridden)
+    assert (await town.call("Mei", "say", text="Water.", to=["Aisha"])).text == (
+        "You said to Aisha: “Water.”"
+    )
+    await town.call("Mei", "leave_conversation")
+    assert isinstance(mei.event, Bedridden)
+    aisha.living.things["groceries"] = 3
+    given = await town.call("Aisha", "give", to="Mei", what="groceries", amount=1)
+    assert given.text.startswith("You gave Mei 1 helping of groceries.")
+    assert mei.living.eaten == {"groceries": 1} and mei.living.things == {}  # eaten at once
+    # Still up at the forced hour, she falls asleep in her bed; the checkpoint keeps her there,
+    # and so does a restored world; she wakes in it.
+    town.take("Mei")
     town.rest("Mei")
+    await town.until("02:00", day=2)
+    assert mei.suspended and town.heard["Mei"][-1].text == "It is 02:00: you fell asleep."
+    assert "forced_sleep" not in [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
     await town.until("03:00", day=2)
     ((day, state),) = town.checkpoints
-    assert day == 1 and state["residents"]["Mei"]["wake"] is None
-    assert state["residents"]["Mei"]["living"]["health"] == 0
-    assert state["residents"]["Mei"]["place"] is None and state["residents"]["Mei"]["claim"] is None
+    assert day == 1 and state["residents"]["Mei"]["living"]["bedridden"] is True
+    assert state["residents"]["Mei"]["place"] == "mill-street-house"
     restored = World(world.config, tmp_path, FakeBackend(), clock=ManualClock())
     restored.restore(json.loads(json.dumps(state)))
-    again = restored.residents["Mei"]
-    assert not again.alive and again.place is None and restored.snapshot() == state
-    assert restored.ports["Mei"].situation() == ENDED
+    assert restored.residents["Mei"].living.bedridden and restored.snapshot() == state
     await town.until("07:00", day=2)
-    assert isinstance(aisha.base, Idle) and mei.day == [] and not mei.alive
+    assert isinstance(mei.base, Bedridden) and isinstance(aisha.base, Idle)
+    # She may sleep by day, and wakes in bed; treatment lets her up, Idle at home.
+    slept = await town.call("Mei", "sleep", until="12:00")
+    assert slept.ends_turn and slept.text == "You went to bed."
+    assert isinstance(mei.base, Sleep)
+    await town.until("12:00", day=2)
+    assert isinstance(mei.base, Bedridden)
+    world.treat(mei, 25)
+    assert not mei.living.bedridden and mei.living.health == 25 and isinstance(mei.base, Idle)
+    recovered = [e for e in world.log.entries() if e["kind"] == "recovered"]
+    assert [(e["text"], e["audience"]) for e in recovered] == [
+        ("Mei is well enough to leave its bed.", ["Mei", "Aisha"]),
+    ]
+    assert recovered[0]["personal"] == {"Mei": "You are well enough to leave your bed."}
+    assert recovered[0]["payload"] == {"restores": 25, "health": 25.0}
+    assert (await town.call("Mei", "go", place="workshop")).ends_turn
 
 
-async def test_a_resident_that_dies_while_its_checks_run_is_not_paid(make_town, monkeypatch):
+async def test_a_resident_taken_to_bed_while_its_checks_run_is_still_paid(make_town, monkeypatch):
     town = make_town()
     await awake_at(town)
     world = town.world
@@ -497,8 +533,8 @@ async def test_a_resident_that_dies_while_its_checks_run_is_not_paid(make_town, 
         return await accept(*args)
 
     monkeypatch.setattr(world.board.backend, "accept", slow_accept)
-    assert (await town.call("Mei", "submit")) == ToolResult(ENDED, ends_turn=True)
-    assert not mei.alive and world.economy.purses["Mei"] == 120
+    paid = await town.call("Mei", "submit")
+    assert paid.text == "Accepted. You were paid $20. Your purse holds $120. It is 00:05."
+    assert mei.living.bedridden and mei.place == "mill-street-house"
     kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
-    assert "verdict" in kinds and "payment" not in kinds
-    assert kinds.index("death") < kinds.index("verdict")  # the check ended after her life
+    assert kinds.index("bedridden") < kinds.index("verdict") < kinds.index("payment")

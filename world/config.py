@@ -213,7 +213,7 @@ class Energy(Need):
 class Health(Need):
     """Reckoned at midnight: falls `starving` when satiety is in its lowest band, `exhausted`
     when energy is, `poor_home` when the home's comfort is below 1; rises `recovery` when
-    neither starving nor exhausted. At 0 the resident dies."""
+    neither starving nor exhausted. At 0 the resident takes to its bed until treated."""
 
     starving: float = Field(ge=0)
     exhausted: float = Field(ge=0)
@@ -289,12 +289,12 @@ class ClockSettings(StrictModel):
 
 
 class DayHours(StrictModel):
-    """The only fixed hours of a day, all after midnight: at `forced_sleep` whoever is still up
-    falls asleep, to wake at `forced_wake`; at `checkpoint`, between the two, the day's state is
-    saved; at `board_posted`, no earlier than the waking, the day's board goes up at the
-    workplace. A lived day runs from one checkpoint to the next. `sleep_at_most` is not an hour
-    but the longest one sleep may last, written the same way and so less than a day; it is at
-    least the forced sleep's span."""
+    """The only fixed hours of a day, all after midnight: at `forced_sleep`, the night's end,
+    whoever is still up falls asleep where it is, to wake at `forced_wake`; at `checkpoint`,
+    between the two, the day's state is saved; at `board_posted`, no earlier than the waking,
+    the day's board goes up at the workplace. A lived day runs from one checkpoint to the next.
+    `sleep_at_most` is not an hour but the longest one sleep may last, written the same way and
+    so less than a day; it is at least the forced sleep's span."""
 
     forced_sleep: Hour
     checkpoint: Hour
