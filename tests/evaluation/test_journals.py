@@ -8,8 +8,9 @@ import json
 import pytest
 
 from evaluation import journals
+from evaluation.honesty import judged_text
 from evaluation.judge import Judge
-from evaluation.records import day_record
+from evaluation.records import day_record, days_before, lived_days, town
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
 from tests.analysis.lived import MEI_JOURNAL, TOMAS_JOURNAL, live
@@ -98,10 +99,15 @@ def test_every_resident_day_is_a_row_and_every_claim_too(run_dir, tmp_path, scri
     # Three journals extracted, five claims checked, each against its own day's record.
     assert len(scripted_judge) == 8 == len(list(read_jsonl(out / "judge.jsonl")))
     checked = [r for r in scripted_judge if "## Instruction" not in r.messages[1].content]
+    config, lived = town(run_dir), lived_days(run_dir)
     assert {section(r, "Text") for r in checked} == {
-        day_record(run_dir, "Mei", 1),
-        day_record(run_dir, "Tomas", 1),
+        judged_text(days_before(config, lived, name, 1), day_record(run_dir, name, 1))
+        for name in ("Mei", "Tomas")
     }
+    # A later day is read with the statements of the days before it.
+    (mei_2,) = journals.prepare(run_dir, [2], ["Mei"])
+    assert mei_2.before == days_before(config, lived, "Mei", 2)
+    assert "Your statement for Monday 1 January" in mei_2.before
 
 
 def test_nothing_is_overwritten_and_bad_days_or_names_stop_before_the_judge(

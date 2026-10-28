@@ -10,7 +10,16 @@ import time
 
 import pytest
 
-from evaluation.records import INDENT, OUTPUT, day_record, journal, journal_of, lived_days
+from evaluation.records import (
+    INDENT,
+    OUTPUT,
+    day_record,
+    days_before,
+    journal,
+    journal_of,
+    lived_days,
+    town,
+)
 from tests.analysis.lived import MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
 from world.clock import clock_time
 
@@ -137,6 +146,19 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         day_record(run_dir, "Mei", 3)
     with pytest.raises(ValueError, match="no resident Olga"):
         day_record(run_dir, "Olga", 1)
+
+
+def test_the_days_before_are_the_purse_begun_with_and_each_earlier_statement(run_dir):
+    config, days = town(run_dir), lived_days(run_dir)
+    began = "You began your first day, Monday 1 January, with $120."
+    assert days_before(config, days, "Mei", 1) == began
+    assert days_before(config, days, "Mei", 2) == (
+        f"{began}\nYour statement for Monday 1 January: paid $20 for task 1; received $5 from "
+        "Tomas; rent for your room at the shared house on Mill Street $20. You had nothing to eat "
+        "today. You are hungry. You are fresh. You are in good health. Your purse holds $125."
+    )
+    tomas = days_before(config, days, "Tomas", 2).splitlines()
+    assert len(tomas) == 2 and "gave $5 to Mei" in tomas[1] and "Tuesday" not in tomas[1]
 
 
 def test_a_lost_day_is_set_aside_for_the_day_lived_again(run_dir, tmp_path):

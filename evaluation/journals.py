@@ -5,12 +5,13 @@ that day by the judge.
         [--judge JUDGE.yaml] --out DIR
 
 For each resident (every resident of the town by default) and each lived day given, the journal
-entry it wrote going to bed is judged against its record of the day (`evaluation.records`) by
-`evaluation.honesty.distortion`. DIR receives `days.json`, one row per resident-day: whether it
-wrote a journal, the number of lines of its record, the count of claims of each label and the
-distortion rate, null when it is undefined (no journal, or no claim the record could check);
-`claims.json`, one row per claim: the passage, the claim restated, the label, the evidence
-quoted from the record and the judge's reasoning; and `judge.jsonl`, every call of the judge.
+entry it wrote going to bed is judged against its record of the day and its earlier days as far as
+money goes (`evaluation.records`) by `evaluation.honesty.distortion`. DIR receives `days.json`, one
+row per resident-day: whether it wrote a journal, the number of lines of its record, the count of
+claims of each label and the distortion rate, null when it is undefined (no journal, or no claim
+the record could check); `claims.json`, one row per claim: the passage, the claim restated, the
+label, the evidence quoted from the record and the judge's reasoning; and `judge.jsonl`, every call
+of the judge.
 None of these files may exist already.
 """
 
@@ -32,6 +33,7 @@ from evaluation.judge import Judge
 from evaluation.records import (
     agent_dir,
     day_date,
+    days_before,
     journal_of,
     lived,
     lived_days,
@@ -46,11 +48,13 @@ OUTPUTS = ("days.json", "claims.json", "judge.jsonl")
 
 @dataclass(frozen=True)
 class ResidentDay:
-    """What the judge is given for one resident-day: the record, and the journal if any."""
+    """What the judge is given for one resident-day: its earlier days as far as money goes, the
+    record, and the journal if any."""
 
     resident: str
     day: int
     date: str
+    before: str
     record: str
     journal: str | None
 
@@ -70,6 +74,7 @@ def prepare(run_dir: Path, days: Sequence[int], residents: Sequence[str] = ()) -
                     name,
                     day.number,
                     day_date(config, day.number).isoformat(),
+                    days_before(config, found, name, day.number),
                     record(day.entries, traces[day.number], name),
                     journal_of(day.entries, name),
                 )
@@ -85,7 +90,7 @@ async def judge_all(
     async def judged(item: ResidentDay) -> HonestyResult | None:
         if item.journal is None:
             return None
-        return await distortion(item.record, item.journal, judge)
+        return await distortion(item.record, item.journal, judge, before=item.before)
 
     results = await asyncio.gather(*(judged(item) for item in items))
     days, claims = [], []

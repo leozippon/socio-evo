@@ -37,6 +37,13 @@ files; the problem statements it read; what it thought or wrote without calling 
 condensing of its conversation. A refused call's longer text arguments are left out, and the
 journal never appears in the record, which is what the journal is set against.
 
+The days before. A journal often restates earlier days: tasks won, money earned, the purse.
+What a claim about them is read against is the resident's earlier days as far as money goes, as
+it was told them: the purse it began its first day with, from the town's configuration, then the
+midnight statement of each earlier lived day (the tasks it was paid for, projects' bonuses, money
+received, given and spent, the charges, and the purse left); a lost day's statement drops out
+with the day.
+
 The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it;
 a day it wrote none, going to bed without one or never going to bed, has no journal.
 The file `memory/journal/<date>.md` starts with the same text, but the resident's file tools can
@@ -60,8 +67,9 @@ from agent.runtime import COMPACT
 from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
-from world.clock import clock_time
+from world.clock import clock_time, tell_date
 from world.config import TownConfig
+from world.economy import Economy
 from world.telling import first_line
 
 INDENT = " " * 6
@@ -160,6 +168,22 @@ def day_record(run_dir: Path, resident: str, day: int) -> str:
     found = lived(lived_days(run_dir), day)
     trace = trace_days(agent_dir(run_dir, town(run_dir), resident) / TRACE, [found])[day]
     return record(found.entries, trace, resident)
+
+
+def days_before(config: TownConfig, days: Mapping[int, Day], resident: str, day: int) -> str:
+    """`resident`'s days before lived day `day` of `days`, as far as money goes (see the module
+    docstring): the purse it began with, then each earlier day's statement, one line each."""
+    purse = {r.name: r.purse for r in config.residents}[resident]
+    money = Economy(config.currency, {}).money(purse)
+    lines = [f"You began your first day, {tell_date(1, config.start_date)}, with {money}."]
+    lines += [
+        e["personal"][resident]
+        for number in sorted(days)
+        if number < day
+        for e in days[number].entries
+        if e["kind"] == "settlement" and e["actor"] == resident
+    ]
+    return "\n".join(lines)
 
 
 def journal(run_dir: Path, resident: str, day: int) -> str | None:
