@@ -16,6 +16,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 
 from world.config import A_DAYS_FOOD, TownConfig
+from world.occupations import CHEF, DOCTOR, OCCUPATIONS, PROGRAMMER, SHOPKEEPER, TEAM_LEADER
 from world.telling import (
     amount,
     bare,
@@ -44,50 +45,6 @@ _HEADINGS = {
     "people": "People",
     "sleep": "Sleep",
 }
-OWN_WORK = {
-    "programmer": (
-        "Clients' tasks come in on its board through the day: you take one at a time with "
-        "claim_task, or are given one by the team leader, work on it there, where the machines "
-        "are, and hand it in for the client's checks before the client withdraws it, at the end "
-        "of {withdrawn}."
-    ),
-    "team-leader": (
-        "You lead its programmers. Clients' tasks come in on its board through the day: you can "
-        "give any of them a task with assign, and, like them, take one at a time yourself, work "
-        "on it there, where the machines are, and hand it in for the client's checks before the "
-        "client withdraws it, at the end of {withdrawn}."
-    ),
-    "chef": (
-        "Its kitchen is open while you are at work there: you cook dishes from what the kitchen "
-        "holds and set the menu's prices, and whoever comes buys a dish, or is handed one by you "
-        "with pass and pays nothing. You buy what you cook with at {store} with buy "
-        "for_the_kitchen, and the fund pays."
-    ),
-    "shopkeeper": (
-        "Its counter is open while you are at work there: you sell its goods at the prices you "
-        "set, and order more from the supplier, which the fund pays and which arrives the next "
-        "morning."
-    ),
-    "doctor": (
-        "Its surgery is open while you are at work there: you examine and treat patients, at "
-        "fees you set, and you go to the bedside of anyone too ill to get up."
-    ),
-    "mayor": (
-        "There you read the town's report with report, and with announce you tell every "
-        "resident whatever you want them to know. Your work is being about the town, so once "
-        "you have sat down to work it goes with you wherever you go."
-    ),
-}
-"""What each occupation's work is, told to the resident who has it after its workplace."""
-SERVICE = {
-    "programmer": "for each task of yours accepted",
-    "team-leader": "for each task of the programmers' accepted",
-    "chef": "for each dish served",
-    "shopkeeper": "for each sale",
-    "doctor": "for each patient examined or treated",
-    "mayor": "for each service",
-}
-"""What each occupation's sum per service is paid for, as the money rules tell it."""
 Homes = Mapping[str, Sequence[str]]
 """Who lives where: the names of the residents of each home, by the home's id."""
 
@@ -140,7 +97,7 @@ class Rules:
         )
 
         store, withdrawn = c.workplace("store").name, self._withdrawn()
-        own = OWN_WORK[occupation.id].format(store=store, withdrawn=withdrawn)
+        own = OCCUPATIONS[occupation.id].told.format(store=store, withdrawn=withdrawn)
         until = "you stop with leave_work" + (
             "" if occupation.duty == "anywhere" else " or go elsewhere"
         )
@@ -150,9 +107,9 @@ class Rules:
         )
 
         assert my_home.rent is not None
-        sums = [f"{money(occupation.per_service)} at once {SERVICE[occupation.id]}"]
-        if occupation.id == "team-leader":
-            programmer = c.occupation("programmer")
+        sums = [f"{money(occupation.per_service)} at once {OCCUPATIONS[occupation.id].service}"]
+        if occupation.id == TEAM_LEADER:
+            programmer = c.occupation(PROGRAMMER)
             sums.append(f"{money(programmer.per_service)} for each task of your own accepted")
         at = "" if occupation.duty == "anywhere" else f" at {workplace.name}"
         wage = f"{money(occupation.wage_per_hour)} an hour for your time at work{at}"
@@ -274,7 +231,7 @@ class Rules:
         office, store = c.workplace("office"), c.workplace("store")
         restaurant, hospital, hall = (c.workplace(k) for k in ("restaurant", "hospital", "hall"))
         work, day = c.work, c.day
-        programmer, leader = c.occupation("programmer"), c.occupation("team-leader")
+        programmer, leader = c.occupation(PROGRAMMER), c.occupation(TEAM_LEADER)
         office_work = (
             f"{cap(office.name)} takes in programming work from clients elsewhere: their tasks "
             f"come in on its board at random through the day, about {work.tasks_a_day:g} a day "
@@ -298,7 +255,7 @@ class Rules:
             f"{money(leader.per_service)}."
         )
 
-        shopkeeper = c.occupation("shopkeeper")
+        shopkeeper = c.occupation(SHOPKEEPER)
         store_work = (
             f"{cap(store.name)} sells while its shopkeeper is at work there; otherwise its door "
             "is shut. It sells from its shelves, which the shopkeeper sees whenever there, at the "
@@ -310,7 +267,7 @@ class Rules:
             "for_the_kitchen, and the fund pays."
         )
 
-        chef = c.occupation("chef")
+        chef = c.occupation(CHEF)
         recipes = "; ".join(
             f"{dish.name} from "
             + listed([amount(c.item(item), units) for item, units in dish.ingredients.items()])
@@ -327,7 +284,7 @@ class Rules:
             f"{money(chef.per_service)}."
         )
 
-        doctor, fees = c.occupation("doctor"), c.hospital
+        doctor, fees = c.occupation(DOCTOR), c.hospital
         hospital_work = (
             f"The surgery at {hospital.name} is open while its doctor is at work there. An "
             f"examination, {money(fees.examination)} at the start, tells the doctor and the "

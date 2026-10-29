@@ -6,7 +6,8 @@ from world.backend import Backend, SwebenchBackend
 from world.clock import Clock, ManualClock
 from world.config import TownConfig
 from world.log import KINDS, WorldLog
-from world.world import ResidentPort, World
+from world.port import ResidentPort
+from world.world import World
 
 __all__ = [
     "KINDS",

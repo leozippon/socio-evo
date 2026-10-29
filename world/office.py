@@ -45,6 +45,7 @@ from agent.port import ToolResult
 from world.backend import Backend, Task, Workspace
 from world.clock import DAY, calendar_day, clock_time, parse_hour, tell_date
 from world.config import TownConfig
+from world.occupations import PROGRAMMER, TEAM_LEADER
 from world.telling import cap, counted, first_line, listed, you
 from world.tools import Handler, hour_told, sit_down, working_at
 from world.workspace import edit_repo, failure, read_repo, told_command, write_repo
@@ -423,7 +424,7 @@ async def _assign(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
     if isinstance(sat, ToolResult):
         return sat
     other = world.residents.get(name)
-    if other is None or other.occupation.id != "programmer":
+    if other is None or other.occupation.id != PROGRAMMER:
         return ToolResult(f"{sat}{name} is not one of the programmers.")
     if number not in board.open:
         return ToolResult(f"{sat}There is no task {number} on the board.")
@@ -623,9 +624,9 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
         await finished.close()
     world.daybook.today["accepted"].append([r.name, number])
     world.fund.take("client", world.config.work.payment)
-    sum_ = world.config.occupation("programmer").per_service  # the leader's own tasks too
+    sum_ = world.config.occupation(PROGRAMMER).per_service  # the leader's own tasks too
     paid = world.pay_service(r, "task", f"task {number}", due=sum_, task=number)
-    for leader in world.of_occupation("team-leader"):
+    for leader in world.of_occupation(TEAM_LEADER):
         if leader is not r:
             about = f"task {number}, which {r.name} handed in"
             world.pay_service(leader, "team", about, task=number, tell=True)

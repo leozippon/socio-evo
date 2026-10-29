@@ -8,7 +8,8 @@ import json
 
 from tests.world.conftest import RESIDENTS, TRADES, at, awake_at, stocked, town_config
 from world.clock import DAY
-from world.events import BOARD_TOOLS, TASK_TOOLS, Idle, Sleep, Work
+from world.events import Idle, Sleep, Work
+from world.occupations import BOARD_TOOLS, TASK_TOOLS
 from world.testing import FakeBackend, FakeVerdict
 
 

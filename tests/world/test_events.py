@@ -9,15 +9,12 @@ from typing import get_args
 import pytest
 
 from tests.world.conftest import at, awake_at
-from world.config import WORKPLACE_OF, OccupationId
 from world.events import (
     BEDRIDDEN_TOOLS,
     CONVERSATION_TOOLS,
     IDLE_TOOLS,
-    OCCUPATION_TOOLS,
     SLEEP_TOOLS,
     TALK,
-    WORK_DONE,
     WORK_TOOLS,
     Bedridden,
     Conversation,
@@ -26,7 +23,7 @@ from world.events import (
     Sleep,
     Work,
 )
-from world.rules import OWN_WORK, SERVICE
+from world.occupations import OCCUPATIONS, WORK_DONE, OccupationId
 
 ARCHITECTURE_TABLE = {
     "idle": {
@@ -116,10 +113,7 @@ for _event, _tools in ARCHITECTURE_TABLE.items():
 
 
 def test_every_occupation_has_its_workplace_its_work_and_its_words():
-    occupations = set(get_args(OccupationId))
-    assert (
-        set(WORKPLACE_OF) == set(OCCUPATION_TOOLS) == set(OWN_WORK) == set(SERVICE) == occupations
-    )
+    assert set(OCCUPATIONS) == set(get_args(OccupationId))
     assert WORK_DONE <= IDLE_TOOLS and WORK_DONE <= WORK_TOOLS  # done at rest or at work
     # What a conversation offers of its own is what idling and working offer, and talk.
     assert CONVERSATION_TOOLS <= (IDLE_TOOLS | TALK) and CONVERSATION_TOOLS <= (WORK_TOOLS | TALK)

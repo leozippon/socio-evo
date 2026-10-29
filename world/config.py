@@ -3,16 +3,15 @@ work, the catalogue of its items, its social life, its clock and the few fixed h
 Every check that the world relies on is made when the configuration is validated, so that a bad
 configuration stops a run before anything is written.
 
-A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the
-restaurant, the hospital and the hall, exactly one of each) or a social place, which has no
-purpose but company. Each resident has an `occupation`, which says where it works and what the
-town pays it: a wage for each hour at work at the occupation's workplace and a sum for each
-service rendered, both from the town's one fund, which starts at `fund.start`, except the wages
-of an occupation paid from the fund's tax account, into which every resident pays `tax` of its
-day's wages and sums at midnight. Each occupation
-works at a place of its own kind (`WORKPLACE_OF`), and every workplace is some occupation's. The
-office takes in clients' tasks (`work`), which arrive at random through the working day; the
-hospital charges the fees of `hospital` for an examination and a treatment.
+A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the restaurant,
+the hospital and the hall, exactly one of each) or a social place, which has no purpose but company.
+Each resident has an `occupation`, which says where it works and what the town pays it: a wage for
+each hour at work at the occupation's workplace and a sum for each service rendered, both from the
+town's one fund, which starts at `fund.start`, except the wages of an occupation paid from the
+fund's tax account, into which every resident pays `tax` of its day's wages and sums at midnight.
+Each occupation works at a place of its own kind (`world.occupations`), and every workplace is some
+occupation's. The office takes in clients' tasks (`work`), which arrive at random through the
+working day; the hospital charges the fees of `hospital` for an examination and a treatment.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -53,6 +52,7 @@ from infrastructure.config import StrictModel
 from world import telling
 from world.clock import parse_hour
 from world.economy import LARDER, PORTIONS, SHELVES, SUPPLIER
+from world.occupations import OCCUPATIONS, PROGRAMMER, TEAM_LEADER, OccupationId
 
 
 def _hour(text: str) -> str:
@@ -71,16 +71,6 @@ world."""
 PlaceKind = Literal["home", "office", "store", "restaurant", "hospital", "hall", "social"]
 WORKPLACES = ("office", "store", "restaurant", "hospital", "hall")
 """The kinds of place where an occupation works, exactly one place of each."""
-OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
-WORKPLACE_OF: dict[str, str] = {
-    "programmer": "office",
-    "team-leader": "office",
-    "chef": "restaurant",
-    "shopkeeper": "store",
-    "doctor": "hospital",
-    "mayor": "hall",
-}
-"""The kind of place where each occupation works."""
 A_DAYS_FOOD = 100
 """A day's need of food, which nourishment is a share of."""
 
@@ -300,8 +290,8 @@ class Route(StrictModel):
 
 class Occupation(StrictModel):
     """What a resident does for a living. `title` is how a sentence names it ("the chef");
-    `workplace` the place, of the occupation's own kind (`WORKPLACE_OF`), where its work is done
-    and where one sits down to work; it is paid `wage_per_hour` for each hour at work and
+    `workplace` the place, of the occupation's own kind (`world.occupations`), where its work is
+    done and where one sits down to work; it is paid `wage_per_hour` for each hour at work and
     `per_service` at once for each service rendered: a programmer for a task of its own accepted,
     the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
     sale, the doctor for a patient examined or treated. Its `duty` says where the hours at work
@@ -469,7 +459,7 @@ class TownConfig(StrictModel):
                 raise ValueError(f"the town has no {kind}")
         _unique("occupation id", [occupation.id for occupation in self.occupations])
         for occupation in self.occupations:
-            kind = WORKPLACE_OF[occupation.id]
+            kind = OCCUPATIONS[occupation.id].workplace
             workplace = places.get(occupation.workplace)
             if workplace is None or workplace.kind != kind:
                 article = "an" if kind[0] in "aeiou" else "a"
@@ -482,7 +472,7 @@ class TownConfig(StrictModel):
             if place.kind in WORKPLACES and place.id not in staffed:
                 raise ValueError(f"the {place.kind} {place.id} is no occupation's workplace")
         occupations = {occupation.id for occupation in self.occupations}
-        if "team-leader" in occupations and "programmer" not in occupations:
+        if TEAM_LEADER in occupations and PROGRAMMER not in occupations:
             raise ValueError("the team leader leads programmers, and the town has none")
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":

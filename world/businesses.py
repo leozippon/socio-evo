@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from world.config import Place, TownConfig
 from world.economy import LARDER, PORTIONS, SHELVES, add
 from world.events import Work
+from world.occupations import OCCUPATIONS
 from world.telling import bare, cap, listed
 
 if TYPE_CHECKING:
@@ -55,9 +56,10 @@ class Business:
     def place(self, config: TownConfig) -> Place:
         return config.workplace(self.kind)
 
-    def keeps(self, config: TownConfig, r: Resident) -> bool:
-        """Whether `r` is its keeper: its occupation works there."""
-        return r.occupation.workplace == self.place(config).id
+    def keeps(self, occupation: str) -> bool:
+        """Whether the occupation `occupation` keeps it: its workplace is of the business's
+        kind."""
+        return OCCUPATIONS[occupation].workplace == self.kind
 
     def serving(self, world: World) -> Resident | None:
         """Its keeper at work there, while it is open; None while it is shut."""
@@ -66,7 +68,7 @@ class Business:
             (
                 r
                 for r in world.residents.values()
-                if r.place == place and self.keeps(world.config, r) and isinstance(r.base, Work)
+                if r.place == place and self.keeps(r.occupation.id) and isinstance(r.base, Work)
             ),
             None,
         )
@@ -178,7 +180,7 @@ def counter_told(world: World, r: Resident) -> list[str]:
     for business in BUSINESSES.values():
         if r.place != business.place(c).id:
             continue
-        keeper = business.keeps(c, r)
+        keeper = business.keeps(r.occupation.id)
         if business.serving(world) is None:
             told.append(business.closed_told(c))
             if keeper and business.kept is not None:
@@ -190,7 +192,7 @@ def counter_told(world: World, r: Resident) -> list[str]:
             for item, units, _ in world.store.pending:
                 add(coming, str(item), int(units))
             told.append(f"On order from the supplier: {listed(world.held_told(coming))}.")
-    if KITCHEN.keeps(c, r) and r.place in (STORE.place(c).id, KITCHEN.place(c).id):
+    if KITCHEN.keeps(r.occupation.id) and r.place in (STORE.place(c).id, KITCHEN.place(c).id):
         told.append(kitchen_told(world))
     return told
 

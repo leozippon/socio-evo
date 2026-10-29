@@ -230,7 +230,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
 def own(specs: list[ToolSpec], occupation: str) -> list[ToolSpec]:
     """`specs` as a resident of `occupation` has them: the chef's `buy` can buy for the
     kitchen, and its `pass` hand over a dish ready to serve."""
-    if occupation != "chef":
+    if not KITCHEN.keeps(occupation):
         return specs
 
     def chef(s: ToolSpec) -> ToolSpec:
@@ -498,7 +498,7 @@ def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
     chef = KITCHEN.serving(world)
     if chef is None:
         return ToolResult(KITCHEN.closed_told(world.config))
-    if KITCHEN.keeps(world.config, r):
+    if KITCHEN.keeps(r.occupation.id):
         return ToolResult("You cook the dishes here; you cannot buy them.")
     if units != 1:
         return ToolResult("One dish at a time.")

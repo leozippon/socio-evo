@@ -21,7 +21,7 @@ treated: it can only ask, look around, take stock of itself and of what it has, 
 comes and sleep.
 
 Each event's tools are the architecture's table. What everyone can do is in them all; each
-occupation adds its own work (`OCCUPATION_TOOLS`), done at its workplace. The resident's request
+occupation adds its own work (`world.occupations`), done at its workplace. The resident's request
 declares the tools of its event at its place now that are its own, less the ones of no use there
 (`World.usable`); a call of a world tool that the event does not offer by the time it is carried
 out, declared or not, returns the refusal below, naming the condition.
@@ -32,31 +32,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
-IDLE_TOOLS = frozenset(
+from world.occupations import WORK_DONE
+
+EVERYDAY = frozenset(
     {
         "help",
         "look_around",
         "how_am_i",
         "inventory",
         "go",
-        "start_work",
-        "view_board",
-        "read_task",
-        "claim_task",
-        "shell",
-        "read_repo_file",
-        "write_repo_file",
-        "edit_repo_file",
-        "submit",
-        "abandon_task",
-        "assign",
-        "cook",
-        "order",
-        "set_price",
-        "examine",
-        "treat",
-        "report",
-        "announce",
+        "wait",
         "say",
         "message",
         "get",
@@ -64,46 +49,11 @@ IDLE_TOOLS = frozenset(
         "put",
         "eat",
         "buy",
-        "move_in",
-        "sleep",
-        "wait",
     }
 )
-WORK_TOOLS = frozenset(
-    {
-        "help",
-        "look_around",
-        "how_am_i",
-        "inventory",
-        "go",
-        "view_board",
-        "read_task",
-        "claim_task",
-        "shell",
-        "read_repo_file",
-        "write_repo_file",
-        "edit_repo_file",
-        "submit",
-        "abandon_task",
-        "assign",
-        "cook",
-        "order",
-        "set_price",
-        "examine",
-        "treat",
-        "report",
-        "announce",
-        "say",
-        "message",
-        "get",
-        "pass",
-        "put",
-        "eat",
-        "buy",
-        "wait",
-        "leave_work",
-    }
-)
+"""What one up and about can do, at rest or at work, besides the work of the occupations."""
+IDLE_TOOLS = EVERYDAY | WORK_DONE | {"start_work", "move_in", "sleep"}
+WORK_TOOLS = EVERYDAY | WORK_DONE | {"leave_work"}
 CONVERSATION_TOOLS = frozenset(
     {
         "help",
@@ -126,25 +76,6 @@ with things while talking. What else the event underneath offers is offered too,
 conversation first."""
 TALK = frozenset({"say", "wait", "leave_conversation"})
 """What a conversation adds to whatever event it covers."""
-BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
-"""What reads and claims from the board, which hangs at the office."""
-TASK_TOOLS = frozenset(
-    {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
-)
-"""What acts on the task one holds, of use only to one who holds a task, at the office."""
-OCCUPATION_TOOLS: dict[str, frozenset[str]] = {
-    "programmer": BOARD_TOOLS | TASK_TOOLS,
-    "team-leader": BOARD_TOOLS | TASK_TOOLS | {"assign"},
-    "chef": frozenset({"cook", "set_price"}),
-    "shopkeeper": frozenset({"order", "set_price"}),
-    "doctor": frozenset({"examine", "treat", "set_price"}),
-    "mayor": frozenset({"report", "announce"}),
-}
-"""What each occupation adds to what everyone can do: its work, done at its workplace."""
-BEDSIDE = frozenset({"examine", "treat"})
-"""The doctor's work that is also done at the home of one too ill to get up."""
-WORK_DONE = frozenset().union(*OCCUPATION_TOOLS.values())
-"""Everything that is some occupation's work."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
 BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "inventory", "say", "sleep"})
 

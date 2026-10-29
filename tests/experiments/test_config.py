@@ -11,7 +11,8 @@ import pytest
 from agent.wording import offences
 from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
-from world.config import A_DAYS_FOOD, WORKPLACE_OF
+from world.config import A_DAYS_FOOD
+from world.occupations import OCCUPATIONS
 from world.rules import Rules
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
@@ -121,7 +122,7 @@ HOURS = 8
 def test_wages_tax_rent_food_and_the_fund_are_set_against_one_another():
     config = town().town
     occupations = {occupation.id: occupation for occupation in config.occupations}
-    assert set(occupations) == set(WORKPLACE_OF)  # the six of the design
+    assert set(occupations) == set(OCCUPATIONS)  # the six of the design
     n, tax = len(config.residents), config.tax
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
     # The cheapest day's food: the helpings of ready food that make a day's need, at the price
