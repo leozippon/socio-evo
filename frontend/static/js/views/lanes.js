@@ -55,10 +55,14 @@ export function mountLanes(root, ctx) {
         if (concerns(m, other.name, selected)) found.push([m, other.name]);
       }
     }
+    for (let i = lowerBound(data.markers, t0, (m) => m.t); i < data.markers.length && data.markers[i].t <= t1; i++) {
+      const m = data.markers[i];
+      if (concerns(m, null, selected)) found.push([m, null]);
+    }
     found.sort((a, b) => a[0].seq - b[0].seq);
     fill(who, cast.badge(selected, 22), ` ${selected}`, h("a", { class: "ghost small", href: href(sibling({ ...route, query: { t: cursor === null ? null : stamp(Math.floor(cursor)) } }, "person", { agent: selected })) }, "Story", icon("chevron", 14)));
     const shown = found.slice(0, PANEL_LIMIT);
-    window_.textContent = `${between(Math.max(t0, data.start), Math.min(t1, data.now))} · purse ${fmt.money(purseAt(lane, Math.min(t1, data.now)))} · ${fmt.plural(found.length, "entry", "entries")}${found.length > shown.length ? `, the first ${shown.length} shown` : ""}`;
+    window_.textContent = `${between(Math.max(t0, data.start), Math.min(t1, data.now))} · money ${fmt.money(purseAt(lane, Math.min(t1, data.now)))} · ${fmt.plural(found.length, "entry", "entries")}${found.length > shown.length ? `, the first ${shown.length} shown` : ""}`;
     fill(
       entries,
       shown.map(([m, by]) => {
@@ -150,7 +154,7 @@ export function mountLanes(root, ctx) {
       h(
         "header",
         { class: "page-head spread" },
-        h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Everyone's days side by side, one lane each: marks for what each did (tasks, money, social life and the body), whom it talked with, what it was doing and where, and its purse. Scroll or pinch to zoom, drag to move, use the strip at the top to jump across the run, and pick a lane to read its entries.")),
+        h("div", {}, h("h1", {}, "Timeline"), h("p", { class: "lede" }, "Everyone's days side by side, one lane each, under a row of what came to the town itself: marks for what each did (its work, its money, what it said and how its body felt), whom it talked with, what it was doing and where, and the money it held. Scroll or pinch to zoom, drag to move, use the strip at the top to jump across the run, and pick a lane to read its entries.")),
         controls,
       ),
       legendBox,

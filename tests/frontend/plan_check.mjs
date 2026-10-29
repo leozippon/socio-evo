@@ -21,19 +21,28 @@ const place = (id, kind, x, y, name = id) => ({ id, kind, name, x, y });
 const made = (name, places) => [name, { name, places }];
 worlds.push(
   made("one place", [place("home", "home", 0, 0)]),
-  made("a row", [place("a", "home", 0, 0), place("b", "workplace", 1, 0), place("c", "social", 2, 0)]),
-  made("a column", [place("a", "home", 3, 0), place("b", "workplace", 3, 1), place("c", "social", 3, 2), place("d", "home", 3, 3)]),
-  made("crowded and fractional", [place("a", "home", 0, 0), place("b", "workplace", 0.4, 0.1), place("c", "social", 0.2, 0.5), place("d", "home", 0.7, 0.6), place("e", "home", 1.1, 0.2)]),
-  made("all at one point", [place("flat", "home", 0, 0), place("house", "home", 0, 0), place("office", "workplace", 0, 0), place("cafe", "social", 0, 0), place("park", "social", 0, 0)]),
-  made("far apart", [place("a", "home", 0, 0), place("b", "workplace", 60, 40), place("c", "social", 120, 0)]),
+  made("a row", [place("a", "home", 0, 0), place("b", "office", 1, 0), place("c", "social", 2, 0)]),
+  made("a column", [place("a", "home", 3, 0), place("b", "store", 3, 1), place("c", "social", 3, 2), place("d", "home", 3, 3)]),
+  made("crowded and fractional", [place("a", "home", 0, 0), place("b", "hospital", 0.4, 0.1), place("c", "restaurant", 0.2, 0.5), place("d", "home", 0.7, 0.6), place("e", "hall", 1.1, 0.2)]),
+  made("all at one point", [place("flat", "home", 0, 0), place("house", "home", 0, 0), place("office", "office", 0, 0), place("cafe", "restaurant", 0, 0), place("park", "social", 0, 0)]),
+  made("far apart", [place("a", "home", 0, 0), place("b", "office", 60, 40), place("c", "social", 120, 0)]),
   made("words", [
     place("mill", "home", 1, 4, "the mill cottage by the river"),
     place("inn", "social", 3, 1, "the Swan, an inn by the river"),
-    place("shop", "workplace", 3, 3, "the workshop on the town square"),
-    place("cafe", "social", 2, 3, "the café on the square"),
+    place("shop", "office", 3, 3, "the workshop on the town square"),
+    place("cafe", "restaurant", 2, 3, "the café on the square"),
     place("hall", "home", 6, 6, "the house on Hill Lane"),
     place("gate", "home", 7, 2, "the lodge by the park gates"),
-    place("lib", "workplace", 5, 3, "the library"),
+    place("lib", "office", 5, 3, "the library"),
+  ]),
+  made("a town of occupations", [
+    place("home", "home", 0, 0, "the shared house on Mill Street"),
+    place("office", "office", 0, 1.5, "the Office"),
+    place("hospital", "hospital", 1, 1.5, "the Hospital"),
+    place("hall", "hall", 2, 1.5, "the Town Hall"),
+    place("store", "store", 0, 3, "the Store"),
+    place("linde", "restaurant", 1, 3, "the Linde"),
+    place("walk", "social", 2, 3, "the river walk"),
   ]),
 );
 
@@ -79,6 +88,7 @@ for (const [name, world] of worlds) {
     check("words: a gate where a name says so", plan.gates.length === 1);
     check("words: buildings follow their words", ["cottage", "tavern", "workshop", "cafe", "house", "library"].every((style) => plan.places.some((p) => p.style === style)), plan.places.map((p) => p.style));
   }
+  if (name === "a town of occupations") check("a town of occupations: each workplace and the walk have their own look", plan.places.map((p) => p.style).join(",") === "shared,office,hospital,hall,shop,restaurant,walk", plan.places.map((p) => p.style));
   if (name === "one place" || name === "a row") check(`${name}: no water or square without words for them`, plan.river === null && plan.square === null);
 }
 

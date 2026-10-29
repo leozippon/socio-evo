@@ -247,7 +247,8 @@ export class Timeline {
       const x = this.dayX(e.sim_time);
       if (e.kind === "speech") parts.push(s("circle", { class: "speech-mark", cx: x, cy: 18, r: 1.8 }));
       if (e.kind === "verdict") parts.push(s("circle", { class: `work-mark ${e.payload?.resolved ? "good" : "serious"}`, cx: x, cy: 24, r: 2.6 }));
-      if (e.kind === "forced_sleep" || e.kind === "expiry") parts.push(s("circle", { class: "work-mark critical", cx: x, cy: 24, r: 2.6 }));
+      if (e.kind === "task_arrived") parts.push(s("circle", { class: "work-mark", cx: x, cy: 24, r: 2 }));
+      if (e.kind === "forced_sleep" || e.kind === "task_withdrawn" || e.kind === "bedridden") parts.push(s("circle", { class: "work-mark critical", cx: x, cy: 24, r: 2.6 }));
     }
     if (this.run.running && this.run.last !== null && this.within(this.run.last).day === day) parts.push(s("circle", { class: "live-edge", cx: this.dayX(this.run.last), cy: height - 6, r: 3.5 }));
     parts.push(s("g", { class: "cursor" }, s("line", { x1: 0, x2: 0, y1: 11, y2: height }), s("path", { d: "M-4.5,11h9l-4.5,5z" })));

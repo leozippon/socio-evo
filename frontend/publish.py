@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from analysis.measures import daily, measure
+from analysis.measures import daily, measure, town_days
 from frontend import bundle
 from frontend.progress import progress
 from frontend.timeline import timeline
@@ -46,7 +46,7 @@ from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag, read_jsonl
 from simulation.config import ExperimentConfig
 
-FORMAT = 8
+FORMAT = 9
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,
@@ -278,7 +278,8 @@ def publish_run(
         return site.put(target, build())
 
     data = timeline(root)
-    owned = bundle.things(run, config.town, data)
+    states = bundle.saved(run, data)
+    owned = bundle.things(states, config.town, data)
     lanes = [{**lane, "things": owned[lane["name"]]} for lane in data["residents"]]
     data = {**data, "residents": lanes}
     entries = list(read_jsonl(run.world_log_path)) if run.world_log_path.exists() else []
@@ -343,7 +344,11 @@ def publish_run(
     world = bundle.world(config)
     headline = progress(data)
     rows = measure(root) if settled_day else []
-    measures = {"rows": rows, "daily": daily(rows), "graph": bundle.graph(data, days)}
+    # The world logs a day's checkpoint before the run writes its file; while the latest is
+    # being saved, the town's days, which read the fund from the files, wait for it.
+    saving = settled_day and not run.checkpoint_path(settled_day).is_file()
+    town = town_days(root) if settled_day and not saving else []
+    measures = {"rows": rows, "daily": daily(rows), "town": town, "graph": bundle.graph(data, days)}
     evaluation = bundle.evaluation(results_root, name)
     digests = {
         "world": put("world.json", lambda: world, 0),
@@ -377,7 +382,7 @@ def publish_run(
         "residents": [resident.name for resident in config.town.residents],
         "model": world["model"]["name"],
         "dry_run": world["model"]["backend"] == "scripted",
-        "headline": bundle.headline(headline),
+        "headline": bundle.headline(headline, town),
     }
     return entry, bundle.Analysed(name, rows, evaluation)
 

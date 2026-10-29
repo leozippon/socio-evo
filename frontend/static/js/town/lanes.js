@@ -1,9 +1,10 @@
-// Every resident's events side by side on one canvas: a lane per resident over simulated time.
-// A lane, top to bottom: three rows of markers (tasks, money, social, rest and the body) in
-// which markers within a few pixels fold into one count; the conversation row, naming the
-// partners where there is room; the base event as a band (idle light, movement hatched, work
-// solid with the task written, sleep dim, dead dark) with the place as a strip under it; and
-// the purse as a step line.
+// Every resident's events side by side on one canvas: a lane per resident over simulated time,
+// under a row of what happened to nobody in particular (a task coming in or withdrawn, a
+// delivery). A lane, top to bottom: three rows of markers (work, money, life: what it said, felt
+// and went through) in which markers within a few pixels fold into one count; the conversation
+// row, naming the partners where there is room; the base event as a band (idle light, movement
+// hatched, work solid with the task written, sleep dim, in bed red) with the place as a strip
+// under it; and the purse as a step line.
 // The view zooms and pans by wheel, pinch, drag and buttons, a day strip over the axis moves
 // across a long run, and the moment shown elsewhere is a cursor.
 
@@ -18,11 +19,40 @@ const LABEL_NARROW = 80; // on a phone, the name and the purse
 const STRIP_Y = 4; // the day strip over the axis
 const STRIP_H = 8;
 const AXIS_H = 50;
+const TOWN_H = 22; // the row of the town's own markers, under the axis
+const TOP = AXIS_H + TOWN_H; // where the first lane begins
 const LANE_H = 108;
-const ROWS = ["tasks", "money", "social"];
+const ROWS = ["work", "money", "life"];
 const ROW_Y = [11, 24, 37]; // the rows' centres
 const ROW_H = 13;
-const ROW_OF = { claim: 0, submission: 0, abandon: 0, expiry: 0, payment: 1, gift: 1, purchase: 1, settlement: 1, speech: 2, message: 2, skill_shared: 2, move_in: 2, journal: 2, forced_sleep: 2, condition: 2, death: 2 };
+const ROW_OF = {
+  claim: 0,
+  assign: 0,
+  submission: 0,
+  abandon: 0,
+  order: 0,
+  cook: 0,
+  price: 0,
+  examination: 0,
+  treatment: 0,
+  report: 0,
+  announcement: 0,
+  service: 1,
+  wage: 1,
+  gift: 1,
+  sale: 1,
+  served: 1,
+  speech: 2,
+  message: 2,
+  move_in: 2,
+  journal: 2,
+  forced_sleep: 2,
+  settlement: 2,
+  condition: 2,
+  illness: 2,
+  recovered: 2,
+  bedridden: 2,
+};
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -35,8 +65,27 @@ const GLYPH = 5; // half a glyph's box
 const GAP = 8; // a marker closer than this to the last one drawn in its row joins its count
 const MIN_SPAN = 600;
 const FONT = "system-ui, sans-serif";
-const PLACE_COLOUR = { home: "o1", workplace: "o3", social: "o5", shop: "o5" };
-const TOKENS = ["page", "surface", "surface-3", "ink", "ink-2", "muted", "line", "line-2", "accent", "accent-soft", "good", "serious", "critical", "warn", "o1", "o3", "o5", "lane-idle", "lane-sleep", "lane-movement", "lane-work", "lane-dead", "lane-conversation", "lane-skill", ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [`a${n}`, `a${n}-ink`])];
+const PLACE_COLOUR = { home: "o1", office: "o3", store: "o3", restaurant: "o3", hospital: "o3", hall: "o3", social: "o5" };
+const TOKENS = ["page", "surface", "surface-2", "surface-3", "ink", "ink-2", "muted", "line", "line-2", "accent", "accent-soft", "good", "serious", "critical", "warn", "o1", "o2", "o3", "o5", "lane-idle", "lane-sleep", "lane-movement", "lane-work", "lane-bedridden", "lane-conversation", ...[1, 2, 3, 4, 5, 6, 7, 8].flatMap((n) => [`a${n}`, `a${n}-ink`])];
+
+/** A diamond around (cx, cy): money moving. */
+const diamond = (g, cx, cy) => {
+  g.moveTo(cx, cy - 5.5);
+  g.lineTo(cx + 5, cy);
+  g.lineTo(cx, cy + 5.5);
+  g.lineTo(cx - 5, cy);
+  g.closePath();
+};
+
+/** Fill the path drawn, and stroke it if `stroke` is given. */
+const paint = (g, fill, stroke = null) => {
+  g.fillStyle = fill;
+  g.fill();
+  if (stroke) {
+    g.strokeStyle = stroke;
+    g.stroke();
+  }
+};
 
 /** The marker's glyph in a box of ten pixels, as the legend and the lanes draw it. */
 export function drawMarker(g, m, cx, cy, C) {
@@ -50,31 +99,37 @@ export function drawMarker(g, m, cx, cy, C) {
       if (m.private) {
         g.strokeStyle = C["lane-conversation"];
         g.stroke();
-      } else {
-        g.fillStyle = C["lane-conversation"];
-        g.fill();
-      }
+      } else paint(g, C["lane-conversation"]);
       break;
-    case "claim":
+    case "claim": // a triangle pointing down: taken from the board
       g.moveTo(cx - 5, cy - 4);
       g.lineTo(cx + 5, cy - 4);
       g.lineTo(cx, cy + 5);
       g.closePath();
-      g.fillStyle = C["ink-2"];
-      g.fill();
+      paint(g, C["ink-2"]);
+      break;
+    case "assign": // a triangle pointing on: handed to someone
+      g.moveTo(cx - 4, cy - 5);
+      g.lineTo(cx + 5, cy);
+      g.lineTo(cx - 4, cy + 5);
+      g.closePath();
+      paint(g, C.surface, C["ink-2"]);
+      break;
+    case "task_arrived": // a triangle pointing down, hollow: a task on the board
+      g.moveTo(cx - 5, cy - 4);
+      g.lineTo(cx + 5, cy - 4);
+      g.lineTo(cx, cy + 5);
+      g.closePath();
+      paint(g, C.surface, C["ink-2"]);
       break;
     case "submission":
       if (m.resolved === undefined) {
         g.rect(cx - 4, cy - 4, 8, 8);
-        g.fillStyle = C.surface;
-        g.fill();
-        g.strokeStyle = C.muted;
-        g.stroke();
+        paint(g, C.surface, C.muted);
         break;
       }
       g.rect(cx - 5, cy - 5, 10, 10);
-      g.fillStyle = m.resolved ? C.good : C.critical;
-      g.fill();
+      paint(g, m.resolved ? C.good : C.critical);
       g.strokeStyle = C.surface;
       g.lineWidth = 1.8;
       g.beginPath();
@@ -95,55 +150,102 @@ export function drawMarker(g, m, cx, cy, C) {
       g.lineTo(cx + 5, cy + 4);
       g.lineTo(cx - 5, cy + 4);
       g.closePath();
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C.serious;
-      g.stroke();
+      paint(g, C.surface, C.serious);
       break;
-    case "expiry":
+    case "task_withdrawn": // a struck ring: a task gone
       g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C.critical;
-      g.stroke();
+      paint(g, C.surface, C.critical);
       g.beginPath();
       g.moveTo(cx - 3, cy + 3);
       g.lineTo(cx + 3, cy - 3);
       g.stroke();
       break;
-    case "payment":
-    case "gift":
-      g.moveTo(cx, cy - 5.5);
-      g.lineTo(cx + 5, cy);
-      g.lineTo(cx, cy + 5.5);
-      g.lineTo(cx - 5, cy);
-      g.closePath();
-      if (m.kind !== "gift") {
-        g.fillStyle = C.good;
-        g.fill();
-      } else {
-        g.fillStyle = C.surface;
-        g.fill();
-        g.strokeStyle = C.good;
-        g.stroke();
-      }
+    case "service": // a filled diamond: paid for a service
+      diamond(g, cx, cy);
+      paint(g, C.good);
       break;
-    case "skill_shared":
-      g.strokeStyle = C["lane-skill"];
-      g.lineWidth = 2.4;
-      g.lineCap = "round";
-      g.moveTo(cx - 4.5, cy);
-      g.lineTo(cx + 4.5, cy);
-      g.moveTo(cx, cy - 4.5);
-      g.lineTo(cx, cy + 4.5);
+    case "gift": // a hollow diamond: money or a thing handed over
+      diamond(g, cx, cy);
+      paint(g, C.surface, C.good);
+      break;
+    case "sale": // a hollow diamond, muted: bought at the Store's counter
+      diamond(g, cx, cy);
+      paint(g, C.surface, C.muted);
+      break;
+    case "served": // a bowl: a dish eaten
+      g.arc(cx, cy - 1, 5, 0, Math.PI);
+      g.closePath();
+      paint(g, C.o2);
+      break;
+    case "wage": // a disc with a bar: the midnight's wages, the rent taken out
+      g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
+      paint(g, C.surface, C["ink-2"]);
+      g.beginPath();
+      g.moveTo(cx - 2.5, cy);
+      g.lineTo(cx + 2.5, cy);
       g.stroke();
+      break;
+    case "order": // a parcel on its way
+    case "delivery": // a parcel come
+      g.rect(cx - 4.5, cy - 4, 9, 8);
+      paint(g, m.kind === "delivery" ? C.o3 : C.surface, C.o3);
+      g.beginPath();
+      g.moveTo(cx - 4.5, cy - 1);
+      g.lineTo(cx + 4.5, cy - 1);
+      g.strokeStyle = m.kind === "delivery" ? C.surface : C.o3;
+      g.stroke();
+      break;
+    case "cook": // a pot
+      g.roundRect(cx - 4.5, cy - 2, 9, 7, 2);
+      paint(g, C.o2);
+      g.beginPath();
+      g.moveTo(cx - 6, cy - 3);
+      g.lineTo(cx + 6, cy - 3);
+      g.strokeStyle = C.o2;
+      g.stroke();
+      break;
+    case "price": // a tag
+      g.moveTo(cx - 5, cy - 4);
+      g.lineTo(cx + 1.5, cy - 4);
+      g.lineTo(cx + 5, cy);
+      g.lineTo(cx + 1.5, cy + 4);
+      g.lineTo(cx - 5, cy + 4);
+      g.closePath();
+      paint(g, C.surface, C["ink-2"]);
+      break;
+    case "examination": // a ring with a cross
+    case "treatment": // a filled cross
+      if (m.kind === "examination") {
+        g.arc(cx, cy, 5, 0, 2 * Math.PI);
+        paint(g, C.surface, C.critical);
+        g.beginPath();
+      }
+      g.rect(cx - 1.2, cy - 3.5, 2.4, 7);
+      g.rect(cx - 3.5, cy - 1.2, 7, 2.4);
+      paint(g, C.critical);
+      break;
+    case "report": // a sheet read
+      g.rect(cx - 3.5, cy - 4.5, 7, 9);
+      paint(g, C["surface-2"], C.o3);
+      g.beginPath();
+      g.moveTo(cx - 1.5, cy - 1.5);
+      g.lineTo(cx + 1.5, cy - 1.5);
+      g.moveTo(cx - 1.5, cy + 1);
+      g.lineTo(cx + 1.5, cy + 1);
+      g.strokeStyle = C.o3;
+      g.stroke();
+      break;
+    case "announcement": // a horn
+      g.moveTo(cx - 5, cy - 1.5);
+      g.lineTo(cx + 4, cy - 5);
+      g.lineTo(cx + 4, cy + 5);
+      g.lineTo(cx - 5, cy + 1.5);
+      g.closePath();
+      paint(g, C.accent);
       break;
     case "journal":
       g.rect(cx - 3.5, cy - 4.5, 7, 9);
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C.ink;
-      g.stroke();
+      paint(g, C.surface, C.ink);
       g.beginPath();
       g.moveTo(cx - 1.5, cy - 1.5);
       g.lineTo(cx + 1.5, cy - 1.5);
@@ -161,34 +263,13 @@ export function drawMarker(g, m, cx, cy, C) {
       g.lineTo(cx - 4, cy + 4);
       g.stroke();
       break;
-    case "purchase": // a hollow diamond: money out, for a thing
-      g.moveTo(cx, cy - 5.5);
-      g.lineTo(cx + 5, cy);
-      g.lineTo(cx, cy + 5.5);
-      g.lineTo(cx - 5, cy);
-      g.closePath();
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C.muted;
-      g.stroke();
-      break;
-    case "settlement": // a hollow disc with a bar: the rent and the charges taken at midnight
-      g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C["ink-2"];
-      g.stroke();
-      g.beginPath();
-      g.moveTo(cx - 2.5, cy);
-      g.lineTo(cx + 2.5, cy);
-      g.stroke();
+    case "settlement": // a small square: the midnight statement
+      g.rect(cx - 3, cy - 3, 6, 6);
+      paint(g, C.surface, C.muted);
       break;
     case "message": // a folded note
       g.rect(cx - 5, cy - 3.5, 10, 7);
-      g.fillStyle = C.surface;
-      g.fill();
-      g.strokeStyle = C["lane-conversation"];
-      g.stroke();
+      paint(g, C.surface, C["lane-conversation"]);
       g.beginPath();
       g.moveTo(cx - 5, cy - 3.5);
       g.lineTo(cx, cy + 0.5);
@@ -204,20 +285,30 @@ export function drawMarker(g, m, cx, cy, C) {
       g.lineTo(cx - 3.5, cy + 5);
       g.lineTo(cx - 3.5, cy);
       g.closePath();
-      g.fillStyle = C.o1;
-      g.fill();
+      paint(g, C.o1);
       break;
     case "condition": // a small ring: how the body feels changed; filled where it is at its worst
       g.arc(cx, cy, 3.2, 0, 2 * Math.PI);
-      g.fillStyle = m.lowest ? C.warn : C.surface;
-      g.fill();
-      g.strokeStyle = m.lowest ? C.warn : C.muted;
+      paint(g, m.lowest ? C.warn : C.surface, m.lowest ? C.warn : C.muted);
+      break;
+    case "illness": // a disc in the colour of trouble
+      g.arc(cx, cy, 4.2, 0, 2 * Math.PI);
+      paint(g, C.serious);
+      break;
+    case "recovered": // a disc in the colour of good news
+      g.arc(cx, cy, 4.2, 0, 2 * Math.PI);
+      paint(g, C.surface, C.good);
+      g.beginPath();
+      g.moveTo(cx - 2, cy);
+      g.lineTo(cx - 0.5, cy + 1.8);
+      g.lineTo(cx + 2.4, cy - 1.8);
+      g.strokeStyle = C.good;
       g.stroke();
       break;
-    case "death": // a dark disc: the lane ends here
-      g.arc(cx, cy, 5, 0, 2 * Math.PI);
-      g.fillStyle = C.ink;
-      g.fill();
+    case "bedridden": // a bed
+      g.rect(cx - 5, cy - 1, 10, 4);
+      g.rect(cx - 5, cy - 4, 3, 3);
+      paint(g, C["lane-bedridden"]);
       break;
     default: // a kind the viewer does not know
       g.arc(cx, cy, 4, 0, 2 * Math.PI);
@@ -270,13 +361,15 @@ export function legend(C) {
   return h(
     "div",
     { class: "lanes-legend" },
-    row("Doing", ...["idle", "movement", "work", "sleep", "dead"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
-    row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at the workplace"), item(swatch("place-social"), "out, at a social place or a shop"), item(swatch("place-road"), "on the way")),
-    row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up"), item(glyph({ kind: "expiry" }), "claim run out")),
-    row("Money", item(glyph({ kind: "payment" }), "paid for a task"), item(glyph({ kind: "gift" }), "money handed over"), item(glyph({ kind: "purchase" }), "something bought"), item(glyph({ kind: "settlement" }), "rent and charges taken at midnight")),
-    row("Social", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "skill_shared" }), "a file passed on"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
-    row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "death" }), "died")),
-    row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "purse, one scale for all")),
+    row("Doing", ...["idle", "movement", "work", "sleep", "bedridden"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
+    row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at a workplace"), item(swatch("place-social"), "at the river walk or another place for company"), item(swatch("place-road"), "on the way")),
+    row("Town", item(glyph({ kind: "task_arrived" }), "a task came in"), item(glyph({ kind: "task_withdrawn" }), "a task withdrawn by its client"), item(glyph({ kind: "delivery" }), "the Store's order delivered")),
+    row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "assign" }), "given by the team leader"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up")),
+    row("Work", item(glyph({ kind: "order" }), "ordered from the supplier"), item(glyph({ kind: "price" }), "a price set"), item(glyph({ kind: "cook" }), "cooked"), item(glyph({ kind: "examination" }), "examined a patient"), item(glyph({ kind: "treatment" }), "treated a patient"), item(glyph({ kind: "report" }), "read the report"), item(glyph({ kind: "announcement" }), "announced")),
+    row("Money", item(glyph({ kind: "service" }), "paid for a service"), item(glyph({ kind: "wage" }), "wages at midnight, rent taken"), item(glyph({ kind: "gift" }), "money or a thing handed over"), item(glyph({ kind: "sale" }), "bought at the Store"), item(glyph({ kind: "served" }), "a dish eaten")),
+    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep"), item(glyph({ kind: "settlement" }), "the midnight statement")),
+    row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "illness" }), "fell ill"), item(glyph({ kind: "recovered" }), "well again"), item(glyph({ kind: "bedridden" }), "took to bed")),
+    row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "money in hand, one scale for all")),
   );
 }
 
@@ -312,7 +405,7 @@ export class Lanes {
     this.hover = null; // what is under the pointer: {px, py, found}
     this.lit = null; // the conversations to outline, by lane, while one is hovered
     this.heard = null; // the residents who heard the speech hovered
-    this.drawn = {}; // where each lane's markers were drawn, for hovering
+    this.drawn = {}; // where each lane's markers were drawn, and the town's under null, for hovering
     this.drag = null;
     this.pinch = null;
     this.pointers = new Map();
@@ -617,7 +710,7 @@ export class Lanes {
     const room = Math.min(x1, this.canvas.clientWidth) - left - 4;
     if (room < 16) return;
     const place = seg.place == null ? "on the way" : short(this.placeName(seg.place));
-    const what = seg.kind === "work" ? (seg.task == null ? "Work, no task" : `Task ${seg.task}`) : seg.kind === "movement" ? `→ ${place}` : (EVENTS[seg.kind] ?? seg.kind);
+    const what = seg.kind === "work" ? (seg.task == null ? "Work" : `Task ${seg.task}`) : seg.kind === "movement" ? `→ ${place}` : (EVENTS[seg.kind] ?? seg.kind);
     const forms = seg.kind === "movement" ? [what, "→"] : [`${what} · ${place}`, what];
     ctx.font = `600 11px ${FONT}`;
     ctx.textAlign = "left";
@@ -795,6 +888,37 @@ export class Lanes {
     ctx.fillText(fmt.money(points[points.length - 1][1]), x, top + PURSE_Y + PURSE_H / 2 + 0.5);
   }
 
+  /** The town's row: what happened to nobody in particular, folded as in a lane's rows. */
+  drawTown() {
+    const { ctx, C } = this;
+    const width = this.canvas.clientWidth;
+    const left = this.labelW;
+    ctx.fillStyle = C["surface-2"];
+    ctx.fillRect(0, AXIS_H, width, TOWN_H);
+    ctx.fillStyle = C.line;
+    ctx.fillRect(0, TOP - 1, width, 1);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(left, AXIS_H, width - left, TOWN_H);
+    ctx.clip();
+    const markers = this.data.markers;
+    const from = lowerBound(markers, this.tAt(left - 12), (m) => m.t);
+    const to = lowerBound(markers, this.tAt(width + 12), (m) => m.t);
+    const drawn = (this.drawn[""] = []);
+    const cy = AXIS_H + TOWN_H / 2;
+    for (const cluster of this.clusters(markers.slice(from, to))) {
+      if (cluster.items.length === 1) drawMarker(ctx, cluster.items[0], cluster.cx, cy, C);
+      else drawCount(ctx, cluster.items.length, cluster.cx, cy, C);
+      drawn.push({ row: 0, cx: cluster.cx, half: cluster.half, items: cluster.items });
+    }
+    ctx.restore();
+    ctx.font = `600 11px ${FONT}`;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = C.muted;
+    ctx.fillText("The town", left === LABEL_WIDE ? 31 : 8, cy + 0.5);
+  }
+
   /** Who heard the speech hovered: a dotted line from the speaker's tick to a ring on each hearer's conversation row. */
   drawHeard() {
     const { ctx, C } = this;
@@ -804,9 +928,9 @@ export class Lanes {
     const x = Math.round(this.x(m.t)) + 0.5;
     if (x < this.labelW || x > this.canvas.clientWidth) return;
     const index = new Map(this.data.residents.map((r, i) => [r.name, i]));
-    const ys = m.to.filter((name) => index.has(name)).map((name) => AXIS_H + index.get(name) * LANE_H + CONV_Y + CONV_H / 2);
+    const ys = m.to.filter((name) => index.has(name)).map((name) => TOP + index.get(name) * LANE_H + CONV_Y + CONV_H / 2);
     if (!ys.length) return;
-    const own = AXIS_H + index.get(found.r.name) * LANE_H + ROW_Y[2];
+    const own = TOP + index.get(found.r.name) * LANE_H + ROW_Y[2];
     ctx.save();
     ctx.setLineDash([2, 3]);
     ctx.strokeStyle = C.ink;
@@ -831,7 +955,7 @@ export class Lanes {
     if (!this.data || !this.canvas.clientWidth) return;
     const { ctx, C } = this;
     const residents = this.data.residents;
-    const height = AXIS_H + residents.length * LANE_H;
+    const height = TOP + residents.length * LANE_H;
     const dpr = window.devicePixelRatio || 1;
     const width = this.canvas.clientWidth;
     this.labelW = width < 560 ? LABEL_NARROW : LABEL_WIDE;
@@ -857,7 +981,8 @@ export class Lanes {
     this.drawAxis(height, boxes);
     const values = residents.flatMap((r) => r.purse.map((p) => p[1]));
     const scale = { min: Math.min(0, ...values), max: Math.max(0, ...values) };
-    residents.forEach((r, i) => this.drawLane(r, AXIS_H + i * LANE_H, scale));
+    this.drawTown();
+    residents.forEach((r, i) => this.drawLane(r, TOP + i * LANE_H, scale));
     this.drawHeard();
     if (after >= this.labelW && after <= width) {
       ctx.fillStyle = C["ink-2"];
@@ -882,10 +1007,19 @@ export class Lanes {
   hit(px, py) {
     const residents = this.data?.residents ?? [];
     if (px >= this.labelW && py >= STRIP_Y - 3 && py <= STRIP_Y + STRIP_H + 3) return { strip: true };
-    const i = Math.floor((py - AXIS_H) / LANE_H);
-    if (py < AXIS_H || i >= residents.length) return null;
+    if (py >= AXIS_H && py < TOP) {
+      if (px < this.labelW) return null;
+      let best = null;
+      for (const c of this.drawn[""] ?? []) {
+        const d = Math.abs(c.cx - px);
+        if (d <= c.half + 2 && (!best || d < best.d)) best = { d, c };
+      }
+      return best ? { town: true, t: this.tAt(px), cluster: best.c, row: 0 } : null;
+    }
+    const i = Math.floor((py - TOP) / LANE_H);
+    if (py < TOP || i >= residents.length) return null;
     const r = residents[i];
-    const y = py - AXIS_H - i * LANE_H;
+    const y = py - TOP - i * LANE_H;
     const t = this.tAt(px);
     if (px < this.labelW) return { r, t: null };
     if (y < CONV_Y - 1) {
@@ -936,17 +1070,18 @@ export class Lanes {
   showTip(found, px, py) {
     let content = null;
     const where = (t, place) => h("div", { class: "muted" }, `${this.moment(t)} · ${this.placeName(place)}`);
+    const by = found?.town ? null : found?.r?.name;
     if (found?.cluster?.items.length === 1) {
       const m = found.cluster.items[0];
-      const [label, text] = describeMarker(m, found.r.name, found.r.name);
-      content = [h("b", {}, found.r.name), " ", this.cast.mention(label), text ? h("div", {}, text.length > 400 ? `${text.slice(0, 400)}…` : text) : null, where(m.t, m.place)];
+      const [label, text] = describeMarker(m, by, by);
+      content = [by ? h("b", {}, by) : null, " ", this.cast.mention(label), text ? h("div", {}, text.length > 400 ? `${text.slice(0, 400)}…` : text) : null, where(m.t, m.place)];
     } else if (found?.cluster) {
       const items = found.cluster.items;
       const shown = items.slice(0, 8);
       content = [
-        h("b", {}, `${items.length} in the ${ROWS[found.row]} row`),
+        h("b", {}, found.town ? `${items.length} in the town's row` : `${items.length} in the ${ROWS[found.row]} row`),
         h("div", { class: "muted" }, this.between(items[0].t, items.at(-1).t)),
-        h("ul", {}, shown.map((m) => h("li", {}, `${hhmm(secondOfDay(m.t))} `, this.cast.mention(describeMarker(m, found.r.name, found.r.name)[0])))),
+        h("ul", {}, shown.map((m) => h("li", {}, `${hhmm(secondOfDay(m.t))} `, this.cast.mention(describeMarker(m, by, by)[0])))),
         items.length > shown.length ? h("div", { class: "muted" }, `and ${items.length - shown.length} more: zoom in`) : null,
       ];
     } else if (found?.conversation) {
@@ -954,11 +1089,11 @@ export class Lanes {
       content = [h("b", {}, "Conversation"), " with ", this.cast.mention(c.with.join(", ")), h("div", {}, `over ${EVENTS[c.over]?.toLowerCase() ?? c.over} at ${this.placeName(c.place)}`), h("div", { class: "muted" }, `${this.between(c.start, c.end)} (${duration(c.end - c.start)})`)];
     } else if (found?.segment) {
       const seg = found.segment;
-      const what = seg.kind === "work" ? `Work · ${seg.task == null ? "no task held" : `task ${seg.task}`}` : (EVENTS[seg.kind] ?? seg.kind);
+      const what = seg.kind === "work" ? (seg.task == null ? "Work" : `Work · task ${seg.task}`) : (EVENTS[seg.kind] ?? seg.kind);
       const place = seg.kind === "movement" ? `on the way to ${this.placeName(seg.place)}` : `at ${this.placeName(seg.place)}`;
       content = [h("b", {}, what), h("div", {}, place), h("div", { class: "muted" }, `${this.between(seg.start, seg.end)} (${duration(seg.end - seg.start)})`)];
     } else if (found?.purse) {
-      content = [h("b", {}, "Purse"), ` ${fmt.money(found.purse[1])}`, h("div", { class: "muted" }, this.moment(found.purse[0]))];
+      content = [h("b", {}, "Money"), ` ${fmt.money(found.purse[1])}`, h("div", { class: "muted" }, this.moment(found.purse[0]))];
     }
     if (!content) {
       this.tip.hidden = true;
@@ -1068,7 +1203,7 @@ export class Lanes {
       if (!d || d.strip || d.moved || !this.data || e.type !== "pointerup") return;
       const found = this.hit(e.offsetX, e.offsetY);
       if (!found || found.strip) return;
-      this.handlers.onSelect?.(found.r.name);
+      if (found.r) this.handlers.onSelect?.(found.r.name);
       const t = found.cluster?.items.length === 1 ? found.cluster.items[0].t : found.t;
       if (t !== null && t <= this.data.now) this.handlers.onMoment?.(Math.max(this.data.start, Math.round(t)));
     };

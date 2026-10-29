@@ -63,6 +63,15 @@ const PATHS = {
   sun: "M12 16.5a4.5 4.5 0 1 0 0-9 4.5 4.5 0 0 0 0 9zM12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1",
   moon: "M19 14.5A8 8 0 0 1 9.5 5a8 8 0 1 0 9.5 9.5z",
   bed: "M3 18.5V8M3 12.5h18v6M3 16.5h18M6.5 12.5V9.5h5v3",
+  // The town's work: tasks coming in and handed over, the counter, the kitchen, the surgery, the hall.
+  inbox: "M3.5 13.5l2.5-8h12l2.5 8v5h-17zM3.5 13.5h5l1.5 2.5h4l1.5-2.5h5M12 3v7M9.5 7.5L12 10l2.5-2.5",
+  handoff: "M3.5 12h12M11.5 7l5 5-5 5M20.5 5v14",
+  truck: "M2.5 6.5h11v9h-11zM13.5 9.5h4l3 3v3h-7zM6.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4zM16.5 19a2 2 0 1 0 0-4 2 2 0 0 0 0 4z",
+  tag: "M3.5 12.5V4h8.5l8.5 8.5-8 8zM8 8.5h.01",
+  pot: "M4.5 10.5h15v6.5a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3zM2.5 10.5h19M9 7.5c0-1 1-1.5 1-2.5M14 7.5c0-1 1-1.5 1-2.5",
+  megaphone: "M3.5 10v4h3l9 5V5l-9 5zM18.5 9a4 4 0 0 1 0 6M6.5 14l1.5 5.5h3L9.5 15",
+  thermometer: "M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0zM12 17v-6",
+  report: "M6 3.5h8.5L18 7v13.5H6zM14.5 3.5V7H18M9 11h6M9 14.5h6M9 18h4",
 };
 
 export function icon(name, size = 18, label = null) {

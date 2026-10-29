@@ -47,9 +47,8 @@
   --lane-sleep: #a9a79f;
   --lane-movement: #1baf7a;
   --lane-work: #2a78d6;
-  --lane-dead: #3a3732;
+  --lane-bedridden: #8a3b33;
   --lane-conversation: #eb6834;
-  --lane-skill: #6250d6;
 
   /* Type: one system stack, a short scale, two weights that matter. */
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -116,9 +115,8 @@
     --lane-sleep: #64635d;
     --lane-movement: #199e70;
     --lane-work: #3987e5;
-    --lane-dead: #171614;
+    --lane-bedridden: #b0574c;
     --lane-conversation: #d95926;
-    --lane-skill: #9085e9;
   }
 }
 
@@ -449,7 +447,8 @@ table.data.text th, table.data.text td { text-align: left; white-space: normal; 
 .item.effect-travel .item-icon { color: var(--a3-shade); }
 .item.effect-messaging .item-icon { color: var(--a1-shade); }
 .item.effect-appearance .item-icon { color: var(--a7-shade); }
-.item.effect-examination .item-icon, .item.effect-treatment .item-icon { color: var(--a8-shade); }
+.item.dish .item-icon { color: var(--a5-shade); }
+.item.money-card .item-icon { color: var(--good-text); }
 .item-text { display: flex; flex-direction: column; min-width: 0; }
 .item-text b { font-weight: 600; }
 .item-line { color: var(--ink-2); font-size: 12px; overflow-wrap: anywhere; }

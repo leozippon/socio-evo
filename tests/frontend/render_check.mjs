@@ -203,12 +203,12 @@ function routes() {
   const timeline = JSON.parse(readFileSync(join(dirname(runFile), run.timeline.split("?")[0]), "utf8"));
   const base = `#/run/${encodeURIComponent(entry.name)}`;
   found.push(["run", base]);
-  for (const section of ["money", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
+  for (const section of ["money", "trade", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
   const when = at ? `&t=${at}` : "";
   found.push(["town", `${base}/town?${when.slice(1)}`]);
   const agent = run.residents[0]?.name;
   if (agent) {
-    for (const panel of ["people", "feed", "board", "ties", "day"]) found.push([`town-${panel}`, `${base}/town?panel=${panel}&agent=${encodeURIComponent(agent)}${when}`]);
+    for (const panel of ["people", "feed", "work", "ties", "day"]) found.push([`town-${panel}`, `${base}/town?panel=${panel}&agent=${encodeURIComponent(agent)}${when}`]);
     found.push(["timeline", `${base}/timeline?agent=${encodeURIComponent(agent)}`]);
     // One hour of the first day, five hours in, with the moment shown in its middle.
     const from = timeline.start + 5 * 3600;

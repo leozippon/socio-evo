@@ -1,7 +1,8 @@
 // The town at any moment, from the run's timeline (frontend.timeline) and nothing else: where
-// each resident is, what it is in (idle, on the way, at work on a task, asleep, in conversation),
-// what it holds, what it owns and how its body stands. Pure: no DOM, no fetching, so it runs under node as well as in
-// the browser. The timeline is the server's reading of the world log; the viewer adds no reading
+// each resident is, what it is in (idle, on the way, at work on a task, asleep, in bed, in
+// conversation), what task it holds, what it owns and how its body stands, and the state of the
+// Office, the Store, the kitchen and the Hospital. Pure: no DOM, no fetching, so it runs under
+// node as well as in the browser. The timeline is the server's reading of the world log; the viewer adds no reading
 // of its own, only looks up moments in it. The timeline's times are whole seconds, but a moment
 // looked up need not be: the town plays through the seconds between them.
 
@@ -44,11 +45,14 @@ export const segmentAt = (lane, t) => spanAt(lane.segments, t, nowOf(lane));
 /** The conversation a lane is in at `t`, or null. */
 export const conversationAt = (lane, t) => spanAt(lane.conversations, t, nowOf(lane));
 
-/** The purse of a lane at `t`: after its last change at or before `t`. */
-export function purseAt(lane, t) {
-  const i = lowerBound(lane.purse, after(t), (point) => point[0]) - 1;
-  return lane.purse[Math.max(i, 0)][1];
+/** The state of a series (`[[time, state], ...]` from the start) at `t`: as of its last change at or before `t`; null before the first. */
+export function seriesAt(series, t) {
+  const i = lowerBound(series, after(t), (point) => point[0]) - 1;
+  return i < 0 ? null : series[i][1];
 }
+
+/** The purse of a lane at `t`: after its last change at or before `t`. */
+export const purseAt = (lane, t) => seriesAt(lane.purse, t) ?? lane.purse[0][1];
 
 /** The markers of a lane with `from` < t ≤ `to` (every marker up to `to` when `from` is null). */
 export function markersBetween(lane, from, to) {
@@ -57,17 +61,38 @@ export function markersBetween(lane, from, to) {
   return lane.markers.slice(first, last);
 }
 
-/**
- * The task a lane holds at `t`: its last claim not yet paid, given up, run out or dropped by
- * death; null for none.
- */
-export function heldAt(lane, t) {
-  let held = null;
-  for (const m of markersBetween(lane, null, t)) {
-    if (m.kind === "claim") held = { task: m.task, instance_id: m.instance_id, since: m.t };
-    else if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry" || m.kind === "death") held = null;
+/** The Office's task `task` at `t`: its holder (or null), since when, and who gave it, if the team leader did. */
+export function holderAt(task, t) {
+  const i = lowerBound(task.holders, after(t), (entry) => entry[0]) - 1;
+  if (i < 0 || task.holders[i][1] === null) return null;
+  const [since, holder, by] = task.holders[i];
+  return { holder, since, by };
+}
+
+/** Whether the Office's task `task` is on the board at `t`: come in, and neither accepted nor withdrawn yet. */
+export const openAt = (task, t) => task.arrived <= t && !(task.accepted !== null && task.accepted <= t) && !(task.withdrawn !== null && task.withdrawn <= t);
+
+/** What each resident holds at `t`, by name: the task, its instance, since when and who gave it; nobody holding nothing is absent. */
+export function holdersAt(timeline, t) {
+  const found = new Map();
+  for (const task of timeline.tasks) {
+    const held = holderAt(task, t);
+    if (held) found.set(held.holder, { task: task.task, instance_id: task.instance_id, since: held.since, by: held.by });
   }
-  return held;
+  return found;
+}
+
+/** The task the resident `name` holds at `t`, as `holdersAt` gives it, or null. */
+export const heldAt = (timeline, name, t) => holdersAt(timeline, t).get(name) ?? null;
+
+/** Whether a lane is ill at `t`: it fell ill at a midnight and has not recovered from it since. */
+export function illAt(lane, t) {
+  let ill = false;
+  for (const m of markersBetween(lane, null, t)) {
+    if (m.kind === "illness") ill = true;
+    else if (m.kind === "recovered" && m.illness) ill = false;
+  }
+  return ill;
 }
 
 /**
@@ -92,11 +117,21 @@ export function settlementAt(lane, t) {
 }
 
 /** What a lane owns at `t`, by good id: as of its last change at or before `t`; nothing before any. */
-export function thingsAt(lane, t) {
-  const series = lane.things ?? [];
-  const i = lowerBound(series, after(t), (point) => point[0]) - 1;
-  return i < 0 ? {} : series[i][1];
-}
+export const thingsAt = (lane, t) => seriesAt(lane.things ?? [], t) ?? {};
+
+/**
+ * The Store, the kitchen and the Hospital at `t`: the Store's stock, prices and what is on order,
+ * the kitchen's stock, menu and portions ready, and the Hospital's fees, each by id.
+ */
+export const shopsAt = (timeline, t) => ({
+  stock: seriesAt(timeline.store.stock, t),
+  prices: seriesAt(timeline.store.prices, t),
+  onOrder: seriesAt(timeline.store.on_order, t),
+  larder: seriesAt(timeline.kitchen.stock, t),
+  menu: seriesAt(timeline.kitchen.menu, t),
+  portions: seriesAt(timeline.kitchen.portions, t),
+  fees: seriesAt(timeline.fees, t),
+});
 
 /** The place a lane set off from for the movement `segment`: the place of the segment before it. */
 export function originOf(lane, segment) {
@@ -111,6 +146,7 @@ export function originOf(lane, segment) {
  */
 export function moment(timeline, t) {
   const residents = {};
+  const holders = holdersAt(timeline, t);
   for (const lane of timeline.residents) {
     const segment = segmentAt(lane, t);
     let moving = null;
@@ -118,7 +154,7 @@ export function moment(timeline, t) {
       const span = segment.end - segment.start;
       moving = { from: originOf(lane, segment), to: segment.place, fraction: span > 0 ? Math.min(1, Math.max(0, (t - segment.start) / span)) : 0 };
     }
-    residents[lane.name] = { lane, segment, conversation: conversationAt(lane, t), purse: purseAt(lane, t), held: heldAt(lane, t), moving };
+    residents[lane.name] = { lane, segment, conversation: conversationAt(lane, t), purse: purseAt(lane, t), held: holders.get(lane.name) ?? null, moving };
   }
   return { time: t, day: livedDay(timeline.days, t), residents };
 }

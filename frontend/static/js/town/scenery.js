@@ -143,6 +143,72 @@ const BUILD = {
     out.push(s("rect", { class: "barrel", x: -w / 2 - 15, y: -7, width: 6, height: 7, rx: 2.2 }));
     return smoke;
   },
+  restaurant(p, out, windows) {
+    const { w, h, roof } = p;
+    const smoke = chimney(out, p.chimney * (w / 2 - 12), -h - roof - 4, 14);
+    out.push(s("rect", { class: `wall w${(p.variant + 1) % 3}`, x: -w / 2, y: -h, width: w, height: h }));
+    out.push(s("path", { class: "roof r2", d: gable(w, h, roof, 5, 10) }));
+    out.push(s("path", { class: "eaves", d: `M${-w / 2},${-h + 1}h${w}v3h${-w}Z` }));
+    win(out, windows, -w * 0.42, -h * 0.7, 11, h * 0.48, { arch: true });
+    win(out, windows, w * 0.42 - 11, -h * 0.7, 11, h * 0.48, { arch: true });
+    out.push(door(-6, -h * 0.66, 12, h * 0.66, true));
+    // The menu on a board by the door, and a lantern over it.
+    out.push(s("rect", { class: "menu-board", x: w * 0.12, y: -h * 0.5, width: 9, height: 12, rx: 1 }));
+    out.push(s("path", { class: "menu-lines", d: `M${w * 0.12 + 2},${-h * 0.5 + 3.5}h5M${w * 0.12 + 2},${-h * 0.5 + 6.5}h5M${w * 0.12 + 2},${-h * 0.5 + 9.5}h3` }));
+    out.push(s("rect", { class: "lantern", x: -2, y: -h * 0.86, width: 4, height: 5, rx: 1 }));
+    // Two tables at the edges of the terrace.
+    for (const side of [-1, 1]) {
+      const tx = side * (Math.max(w + 10, 76) / 2 - 7);
+      out.push(s("ellipse", { class: "table", cx: tx, cy: 14, rx: 4.5, ry: 2.6 }));
+      out.push(s("path", { class: "chair", d: `M${tx - 8},12h3v4h-3ZM${tx + 5},12h3v4h-3Z` }));
+    }
+    return smoke;
+  },
+  hospital(p, out, windows) {
+    const { w, h } = p;
+    out.push(s("rect", { class: "wall clinic", x: -w / 2, y: -h, width: w, height: h }));
+    out.push(s("path", { class: "cornice", d: `M${-w / 2 - 3},${-h - 6}h${w + 6}v6h${-w - 6}Z` }));
+    out.push(s("path", { class: "storey", d: `M${-w / 2},${-h * 0.5}h${w}` }));
+    for (const y of [-h + 7, -h * 0.5 + 4]) for (const x of [-0.42, -0.24, 0.12, 0.3]) win(out, windows, w * x, y, 9, 10);
+    // The cross over the door, under a canopy on two posts.
+    out.push(s("path", { class: "cross-sign", d: "M-2.2,0h4.4v3.3h3.3v4.4h-3.3V11h-4.4V7.7h-3.3V3.3h3.3Z", transform: `translate(0,${-h + 5})` }));
+    out.push(s("path", { class: "canopy", d: `M-15,${-h * 0.42}h30l2,4h-34Z` }));
+    for (const x of [-13, 12]) out.push(s("rect", { class: "column", x, y: -h * 0.38, width: 2, height: h * 0.38 }));
+    out.push(door(-8, -h * 0.34, 16, h * 0.34));
+    out.push(s("path", { class: "door-line", d: `M0,${-h * 0.34}V0` }));
+    return null;
+  },
+  hall(p, out, windows) {
+    const { w, h, roof } = p;
+    // A clock tower over a pediment on columns, up a flight of steps.
+    const tower = 12;
+    out.push(s("rect", { class: "wall stone", x: -tower / 2, y: -h - roof + 6, width: tower, height: roof - 6 }));
+    out.push(s("path", { class: "roof slate", d: `M${-tower / 2 - 2},${-h - roof + 7}L0,${-h - roof}L${tower / 2 + 2},${-h - roof + 7}Z` }));
+    out.push(s("circle", { class: "clock-face", cy: -h - roof + 13, r: 3.6 }));
+    out.push(s("path", { class: "clock-hands", d: `M0,${-h - roof + 13}v-2.4M0,${-h - roof + 13}h1.8` }));
+    out.push(s("rect", { class: "wall stone", x: -w / 2, y: -h, width: w, height: h }));
+    out.push(s("path", { class: "roof slate", d: `M${-w / 2 - 4},${-h - 3}L0,${-h - 15}L${w / 2 + 4},${-h - 3}Z` }));
+    out.push(s("path", { class: "cornice", d: `M${-w / 2 - 4},${-h - 3}h${w + 8}v4h${-w - 8}Z` }));
+    for (const x of [-0.3, 0.3]) win(out, windows, w * x - 4.5, -h * 0.78, 9, h * 0.46, { arch: true });
+    out.push(door(-6, -h * 0.62, 12, h * 0.62, true));
+    for (const x of [-0.46, -0.16, 0.16, 0.46]) out.push(s("rect", { class: "column", x: w * x - 2.2, y: -h + 1, width: 4.4, height: h - 3 }));
+    out.push(s("path", { class: "step", d: `M${-w / 2 + 2},0h${w - 4}v2.5h${-w + 4}ZM${-w / 2 + 7},2.5h${w - 14}v2.5h${-w + 14}Z` }));
+    return null;
+  },
+  walk(p, out) {
+    const { w, h, roof } = p;
+    // A pavilion open on every side, benches beside it.
+    out.push(s("rect", { class: "step", x: -w / 2 - 2, y: -3, width: w + 4, height: 4, rx: 1.5 }));
+    for (const x of [-0.46, -0.16, 0.16, 0.46]) out.push(s("rect", { class: "column", x: w * x - 1.6, y: -h, width: 3.2, height: h - 3 }));
+    out.push(s("path", { class: "rail", d: `M${-w / 2},${-h * 0.36}H${w / 2}` }));
+    out.push(s("path", { class: "roof r1", d: `M${-w / 2 - 6},${-h + 1}L${-w / 4},${-h - roof}H${w / 4}L${w / 2 + 6},${-h + 1}Z` }));
+    out.push(s("path", { class: "finial", d: `M0,${-h - roof}v-5` }));
+    for (const side of [-1, 1]) {
+      const bx = side * (Math.max(w + 10, 76) / 2 - 9);
+      out.push(s("path", { class: "bench", d: `M${bx - 7},10h14v3h-14ZM${bx - 6},13v2.5M${bx + 6},13v2.5` }));
+    }
+    return null;
+  },
   shop(p, out, windows) {
     const { w, h, roof } = p;
     out.push(s("rect", { class: `wall w${p.variant}`, x: -w / 2, y: -h, width: w, height: h }));

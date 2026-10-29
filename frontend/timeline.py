@@ -1,4 +1,5 @@
-"""The timeline of a run: every resident's events side by side, built from the world log.
+"""The timeline of a run: every resident's events side by side, and the town's own state, built
+from the world log.
 
 `timeline(run_dir)` reads the town of the run's frozen configuration and the run's world log
 and returns plain, JSON-serialisable data. Times are simulated seconds since 00:00 of day 1.
@@ -6,10 +7,10 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
     {
       "start_date": "2001-01-01",   the date of day 1
       "currency": "$",
-      "start": 9000,                when the world began: the checkpoint hour of day 1
+      "start": 16200,               when the world began: the checkpoint hour of day 1
       "now": 95400,                 the time of the last entry in the log
-      "places": {"workshop": "the workshop", ...},
-      "days": [{"day": 1, "start": 9000, "end": 95400,
+      "places": {"office": "the Office", ...},
+      "days": [{"day": 1, "start": 16200, "end": 102600,
                 "real_start": 1792871249.7, "real_end": 1792880505.6}, ...],
           the lived days, from one checkpoint to the next; the day in progress ends at null.
           "real_start" and "real_end" are the real (Unix) times at which the day was begun and
@@ -19,48 +20,94 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
       "residents": [{
           "name": "Mei",
           "home": "mill-street-house",
-          "segments": [{"kind": "sleep", "start": 9000, "end": 25200,
+          "segments": [{"kind": "sleep", "start": 16200, "end": 25200,
                         "place": "mill-street-house", "task": null}, ...],
               the base event, contiguous from "start" to "now": "idle", "movement" (its place
               is the destination), "work" (its task is the task held, a new segment when that
-              changes), "sleep" (in bed and asleep alike) or "dead" (at no place, to the end)
+              changes), "sleep" (in bed and asleep alike) or "bedridden" (awake in bed at home,
+              too ill to get up, until treated)
           "conversations": [{"start", "end", "place", "over": "work", "with": ["Tomas"]}, ...],
               the conversations layered over the base event they interrupted ("over" is its
               kind when the conversation began); "with" is whom the resident spoke to or heard
               from in it
           "markers": [{"seq", "t", "kind", "place", ...}, ...],
-          "purse": [[9000, 120], [36000, 140], ...]   the purse after each change
-      }, ...]
+          "purse": [[16200, 240], [36000, 260], ...]   the money held after each change
+      }, ...],
+      "markers": [{"seq", "t", "kind", "place", ...}, ...],
+          what happened to no resident in particular: task_arrived, task_withdrawn, delivery
+      "tasks": [{"task": 170, "instance_id": "...", "repo": "...", "arrived": 36782,
+                 "deadline": 345600, "holders": [[36859, "Aisha", null], [36887, null, null]],
+                 "accepted": 36887, "by": "Aisha", "withdrawn": null}, ...],
+          the Office's tasks in the order they came in: when the client withdraws one not
+          accepted ("deadline", the midnight that ends the day `work.expiry_days` after its
+          arrival), who held it from when (`[time, holder or null, the team leader who gave it
+          or null]`: a claim, an assignment, and null when it was given up, accepted or
+          withdrawn), when it was accepted and who handed it in, when it was withdrawn
+      "store": {"stock": [[t, {good: units}]], "prices": [[t, {good: price}]],
+                "on_order": [[t, {good: units}]]},
+      "kitchen": {"stock": [[t, {good: units}]], "menu": [[t, {dish: price}]],
+                  "portions": [[t, {dish: portions}]]},
+      "fees": [[t, {"examination": 20, "treatment": 60}]]
+          the Store's, the kitchen's and the Hospital's state from the start (the
+          configuration's) and after each change: a sale, a delivery, an order, a price set,
+          cooking, a dish served, and the midnight, when the portions not sold are gone
     }
 
 The markers, each on the lane of the resident who acted, with their own fields:
 
     claim         task, instance_id
+    assign        task, to, from          the team leader gave a task to `to`, taking it from
+                                          `from` (or null); the holders follow
     submission    task; and once the verdict is in: resolved, status, fail_to_pass, pass_to_pass
                   (passed and total counts)
-    payment       task, amount            the sum paid at once for a task accepted (a `service`
-                                          entry of the log)
     abandon       task                    the resident gave its task up
-    expiry        task                    the claim ran out unpaid, or the client withdrew the
-                                          task held (a `task_withdrawn` entry of the log)
+    service       for, task, amount, paid, owed   a sum paid at once for a service: for `task`
+                                          (one's own task accepted), `team` (the team leader's
+                                          for the programmers'), `sale`, `dish` or `patient`
     speech        text, to, private       "to" is everyone who heard it
     message       to, text                a written message, read by "to" alone
     gift          to, amount              money given; or to, item, name, quantity for a thing
                                           or helpings of a stock
-    skill_shared  to, file                a copy of one of the resident's files passed on
-    purchase      item, name, quantity, amount   a good bought for oneself at the Store (a
-                                          `sale` entry of the log; one of an older log)
+    sale          item, name, quantity, price, amount, seller, kitchen
+                                          goods bought at the Store's counter, for oneself or,
+                                          the chef, for the kitchen (which the fund pays)
+    served        dish, name, amount, chef   a dish bought at the restaurant and eaten there
+    order         item, name, quantity, amount, arrives   the shopkeeper's order, paid by the fund
+    cook          dish, name, portions, used   portions the chef cooked from the kitchen's stock
+    price         item, name, place, price, before   a price set at the Store, the restaurant
+                                          or the Hospital
+    examination   patient, fee, satiety, energy, health, ill, night   the doctor's examination
+                                          and the numbers it told
+    treatment     patient, fee, restores, before, health, ill, bedridden
+    report                                the mayor read the town's report
+    announcement  text                    the mayor's announcement, told to everyone
+    illness       chance, nights, health  the resident fell ill at midnight
+    recovered     illness, bedridden, treated, health   an illness passed or was treated, or a
+                                          bed was left
+    bedridden     day, home, from, carried, task   health ran out at midnight: in bed at home
     move_in       from, to                the resident moved house; its lane's home follows
     journal       text, day, wake         going to bed with the day's journal entry (a bedtime
                                           without one has no marker)
     forced_sleep  wake
-    settlement    rent, fees, nourishment, satiety, energy, health, night
-                  midnight: the rent and the daily charges taken from the day's wages (as the
-                  `wage` entry before it gives them), the day's food as a share of a day's need,
-                  the body's numbers after the night's reckoning and how health moved, by cause
-                  (the purse after the wages is a point of "purse")
+    wage          hours, wages, owed_before, rent, charges, arrears_before, remainder, paid,
+                  owed, arrears           the midnight's wages for the day's hours at work, with
+                                          the rent and charges taken out of them (the money
+                                          after them is a point of "purse")
+    settlement    nourishment, satiety, energy, health, night, ill   the midnight statement:
+                                          the day's food as a share of a day's need, the body's
+                                          numbers after the night's reckoning, how health moved,
+                                          by cause, and the nights of illness to come
     condition     need, band, value, lowest   a need of the body crossed into another band
-    death                                the resident's health ran out; its lane is dead from here
+
+and those of no resident, under "markers":
+
+    task_arrived    task, instance_id, repo   a client's task came in at the Office
+    task_withdrawn  task, holder              a client withdrew a task not accepted in time
+    delivery        items                     what the Store ordered arrived ({good: units})
+
+The purse moves with every sum of money the log records: the money after a service and after
+the midnight's wages, money given and received, what a resident paid at the Store's counter
+for itself and for a dish, and the Hospital's fee a patient paid.
 
 The log is the only source. A running run's clock may be ahead of its last entry; the open
 segment and conversation end at "now" all the same. When the world went back to a checkpoint,
@@ -83,8 +130,9 @@ from typing import Any
 from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
-from world.clock import parse_hour
+from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
+from world.economy import add, take
 
 _FOLDED = frozenset(
     {
@@ -95,34 +143,79 @@ _FOLDED = frozenset(
         "leave_work",
         "sleep",
         "forced_sleep",
+        "task_arrived",
+        "task_withdrawn",
         "claim",
+        "assign",
         "submission",
         "verdict",
         "service",
         "abandon",
-        "expiry",
-        "task_withdrawn",
         "speech",
         "message",
         "leave_conversation",
         "conversation_end",
         "gift",
-        "skill_shared",
-        "purchase",
         "sale",
+        "served",
+        "order",
+        "delivery",
+        "cook",
+        "price",
+        "examination",
+        "treatment",
+        "report",
+        "announcement",
+        "illness",
+        "recovered",
+        "bedridden",
         "move_in",
         "wage",
         "settlement",
         "condition",
-        "death",
         "checkpoint",
         "resume",
     }
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
-the time told) add nothing to it. The first of them is kept for the real time at which day 1
-was begun; a `resume` is kept after it has set the lost day aside, for the real time at which
-the day was begun again."""
+the time told, falling asleep) add nothing to it. The first of them is kept for the real time
+at which day 1 was begun; a `resume` is kept after it has set the lost day aside, for the real
+time at which the day was begun again."""
+_COPIED = {
+    "claim": ("task", "instance_id"),
+    "assign": ("task", "to", "from"),
+    "abandon": ("task",),
+    "service": ("for", "task", "amount", "paid", "owed"),
+    "message": ("to", "text"),
+    "sale": ("item", "name", "quantity", "price", "amount", "seller", "kitchen"),
+    "served": ("dish", "name", "amount", "chef"),
+    "order": ("item", "name", "quantity", "amount", "arrives"),
+    "cook": ("dish", "name", "portions", "used"),
+    "price": ("item", "name", "place", "price", "before"),
+    "examination": ("patient", "fee", "satiety", "energy", "health", "ill", "night"),
+    "treatment": ("patient", "fee", "restores", "before", "health", "ill", "bedridden"),
+    "report": (),
+    "announcement": ("text",),
+    "illness": ("chance", "nights", "health"),
+    "recovered": ("illness", "bedridden", "treated", "health"),
+    "bedridden": ("day", "home", "from", "carried", "task"),
+    "move_in": ("from", "to"),
+    "wage": (
+        "hours",
+        "wages",
+        "owed_before",
+        "rent",
+        "charges",
+        "arrears_before",
+        "remainder",
+        "paid",
+        "owed",
+        "arrears",
+    ),
+    "settlement": ("nourishment", "satiety", "energy", "health", "night", "ill"),
+    "condition": ("need", "band", "value", "lowest"),
+}
+"""The markers whose fields are the entry's payload as recorded, and those fields."""
 
 
 @dataclass
@@ -204,6 +297,11 @@ def _set_aside_lost_day(entries: list[dict[str, Any]], resume: dict[str, Any]) -
     raise ValueError(f"entry {resume['seq']} resumes day {day}, which has no checkpoint")
 
 
+def _marker(entry: dict[str, Any], kind: str, **fields: Any) -> dict[str, Any]:
+    found = {"seq": entry["seq"], "t": entry["sim_time"], "kind": kind, "place": entry["place"]}
+    return found | fields
+
+
 class _Lane:
     """One resident's timeline as it is built."""
 
@@ -216,7 +314,7 @@ class _Lane:
         self.task: int | None = None
         self.talk: dict[str, Any] | None = None
         self.submitted: dict[str, Any] | None = None
-        self.wage: dict[str, Any] | None = None  # the last midnight's, for its statement
+        self.bedridden = False
         self.segments.append(
             {"kind": "sleep", "start": start, "end": None, "place": home, "task": None}
         )
@@ -261,13 +359,7 @@ class _Lane:
         self.talk = None
 
     def mark(self, entry: dict[str, Any], kind: str, **fields: Any) -> dict[str, Any]:
-        marker = {
-            "seq": entry["seq"],
-            "t": entry["sim_time"],
-            "kind": kind,
-            "place": entry["place"],
-            **fields,
-        }
+        marker = _marker(entry, kind, **fields)
         self.markers.append(marker)
         return marker
 
@@ -288,20 +380,58 @@ class _Lane:
         }
 
 
+class _Series:
+    """A state of the town (stock, prices, portions) as it is built: `[time, state]` from the
+    start and after each change, a change at the same moment replacing the point before."""
+
+    def __init__(self, start: int, state: dict[str, int]) -> None:
+        self.state = dict(state)
+        self.points: list[list[Any]] = [[start, dict(state)]]
+
+    def changed(self, t: int) -> None:
+        if t == self.points[-1][0]:
+            self.points[-1][1] = dict(self.state)
+        elif self.state != self.points[-1][1]:
+            self.points.append([t, dict(self.state)])
+
+
 def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> dict[str, Any]:
     start = parse_hour(town.day.checkpoint)
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
+    kinds = {place.id: place.kind for place in town.places}
+    markers: list[dict[str, Any]] = []
+    tasks: dict[int, dict[str, Any]] = {}
+    stock = _Series(start, town.store.stock)
+    prices = _Series(start, {good.id: good.price for good in town.supplier})
+    on_order = _Series(start, {})
+    larder = _Series(start, {})
+    menu = _Series(start, {dish.id: dish.price for dish in town.dishes})
+    portions = _Series(start, {})
+    hospital = town.hospital
+    fees = _Series(start, {"examination": hospital.examination, "treatment": hospital.treatment})
+    priced = {"store": prices, "restaurant": menu, "hospital": fees}
+    midnight = (start // DAY + 1) * DAY  # the next midnight, when the unsold portions go
     days: list[dict[str, Any]] = []
     begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
+
+    def task(number: int, seq: int) -> dict[str, Any]:
+        if number not in tasks:
+            raise ValueError(f"entry {seq}: task {number} never came in")
+        return tasks[number]
+
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
+        if t >= midnight:  # the portions not sold are gone
+            portions.state.clear()
+            portions.changed(midnight)
+            midnight = t - t % DAY + DAY
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
-        if kind == "task_withdrawn":  # the holder's, as a claim run out; nobody's if unheld
-            if payload["holder"] is None:
-                continue
-            kind, lane = "expiry", lanes[payload["holder"]]
-        if kind in ("wake", "start_work", "leave_work"):
+        if kind in _COPIED:
+            lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
+        if kind == "wake":
+            lane.enter(t, "bedridden" if lane.bedridden else "idle", place)
+        elif kind in ("start_work", "leave_work"):
             lane.enter(t, "work" if kind == "start_work" else "idle", place)
         elif kind == "depart":
             lane.enter(t, "movement", payload["to"])
@@ -315,10 +445,38 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "forced_sleep":
             lane.enter(t, "sleep", lane.home)
             lane.mark(entry, "forced_sleep", wake=payload["wake"])
+        elif kind == "task_arrived":
+            number = payload["task"]
+            fields = {key: payload[key] for key in ("task", "instance_id", "repo")}
+            markers.append(_marker(entry, kind, **fields))
+            deadline = (calendar_day(t) + town.work.expiry_days) * DAY
+            tasks[number] = fields | {
+                "arrived": t,
+                "deadline": deadline,
+                "holders": [],
+                "accepted": None,
+                "by": None,
+                "withdrawn": None,
+            }
+        elif kind == "task_withdrawn":
+            holder, found = payload["holder"], task(payload["task"], entry["seq"])
+            markers.append(_marker(entry, kind, task=payload["task"], holder=holder))
+            found["withdrawn"] = t
+            if holder is not None:
+                lanes[holder].hold(t, None)
+                found["holders"].append([t, None, None])
         elif kind == "claim":
             lane.hold(t, payload["task"])
-            instance = payload["instance_id"]
-            lane.mark(entry, "claim", task=payload["task"], instance_id=instance)
+            task(payload["task"], entry["seq"])["holders"].append([t, lane.name, None])
+        elif kind == "assign":
+            if payload["from"] is not None:
+                lanes[payload["from"]].hold(t, None)
+            lanes[payload["to"]].hold(t, payload["task"])
+            given = [t, payload["to"], lane.name]
+            task(payload["task"], entry["seq"])["holders"].append(given)
+        elif kind == "abandon":
+            lane.hold(t, None)
+            task(payload["task"], entry["seq"])["holders"].append([t, None, None])
         elif kind == "submission":
             lane.submitted = lane.mark(entry, "submission", task=payload["task"])
         elif kind == "verdict":
@@ -331,87 +489,74 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                 pass_to_pass=payload["pass_to_pass"],
             )
             lane.submitted = None
-        elif kind == "service":
-            lane.hold(t, None)
-            lane.mark(entry, "payment", task=payload["task"], amount=payload["paid"])
+            if payload["resolved"] and payload["held"]:  # accepted, and paid for
+                lane.hold(t, None)
+                found = task(payload["task"], entry["seq"])
+                found.update(accepted=t, by=lane.name)
+                found["holders"].append([t, None, None])
+        elif kind in ("service", "wage"):
             lane.purse.append([t, payload["money"]])
-        elif kind in ("abandon", "expiry"):
-            lane.hold(t, None)
-            lane.mark(entry, kind, task=payload["task"])
         elif kind == "speech":
-            heard = payload["to"]
-            # Those in the conversation: the log says who since a remark stopped drawing in
-            # everyone who heard it; older logs leave it to the audience.
-            people = payload["members"] if "members" in payload else [lane.name, *heard]
-            for name in people:
-                lanes[name].join(t, place, [other for other in people if other != name])
+            heard, members = payload["to"], payload["members"]  # no members: nobody drawn in
+            for name in members:
+                lanes[name].join(t, place, [other for other in members if other != name])
             lane.mark(entry, "speech", text=payload["text"], to=heard, private=payload["private"])
         elif kind == "leave_conversation":
             lane.part(t, entry["seq"])
         elif kind == "conversation_end":
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
-        elif kind == "message":
-            lane.mark(entry, "message", to=payload["to"], text=payload["text"])
         elif kind == "gift" and "amount" in payload:  # money
             lane.mark(entry, "gift", to=payload["to"], amount=payload["amount"])
             lane.credit(t, -payload["amount"])
             lanes[payload["to"]].credit(t, payload["amount"])
         elif kind == "gift":  # a thing, or helpings of a stock
-            lane.mark(
-                entry,
-                "gift",
-                to=payload["to"],
-                item=payload["item"],
-                name=payload["name"],
-                quantity=payload["quantity"],
-            )
-        elif kind == "purchase" or (kind == "sale" and not payload["kitchen"]):
-            lane.mark(
-                entry,
-                "purchase",
-                item=payload["item"],
-                name=payload["name"],
-                quantity=payload["quantity"],
-                amount=payload["amount"],
-            )
+            fields = {key: payload[key] for key in ("to", "item", "name", "quantity")}
+            lane.mark(entry, "gift", **fields)
+        elif kind == "sale":
+            take(stock.state, payload["item"], payload["quantity"])
+            stock.changed(t)
+            if payload["kitchen"]:
+                add(larder.state, payload["item"], payload["quantity"])
+                larder.changed(t)
+            else:
+                lane.credit(t, -payload["amount"])
+        elif kind == "served":
+            take(portions.state, payload["dish"], 1)
+            portions.changed(t)
             lane.credit(t, -payload["amount"])
+        elif kind == "order":
+            add(on_order.state, payload["item"], payload["quantity"])
+            on_order.changed(t)
+        elif kind == "delivery":
+            markers.append(_marker(entry, kind, items=payload["items"]))
+            for item, units in payload["items"].items():
+                take(on_order.state, item, units)
+                add(stock.state, item, units)
+            on_order.changed(t)
+            stock.changed(t)
+        elif kind == "cook":
+            for item, units in payload["used"].items():
+                take(larder.state, item, units)
+            add(portions.state, payload["dish"], payload["portions"])
+            larder.changed(t)
+            portions.changed(t)
+        elif kind == "price":
+            series = priced[kinds[payload["place"]]]
+            series.state[payload["item"]] = payload["price"]
+            series.changed(t)
+        elif kind in ("examination", "treatment"):
+            lanes[payload["patient"]].credit(t, -payload["fee"])
+        elif kind == "bedridden":
+            lane.bedridden = True
+            if lane.segments[-1]["kind"] != "sleep":  # one asleep is bedridden on waking
+                lane.enter(t, "bedridden", payload["home"])
+        elif kind == "recovered" and payload["bedridden"]:
+            lane.bedridden = False
+            if lane.segments[-1]["kind"] == "bedridden":
+                lane.enter(t, "idle", lane.segments[-1]["place"])
         elif kind == "move_in":
             lane.home = payload["to"]
-            lane.mark(entry, "move_in", **{"from": payload["from"], "to": payload["to"]})
-        elif kind == "skill_shared":  # a log from before any file was shared names a skill
-            file = payload["file"] if "file" in payload else f"skills/{payload['skill']}.md"
-            lane.mark(entry, "skill_shared", to=payload["to"], file=file)
-        elif kind == "wage":
-            lane.purse.append([t, payload["money"]])
-            lane.wage = payload
-        elif kind == "settlement":
-            if lane.wage is None:
-                raise ValueError(f"entry {entry['seq']}: a statement without its wages")
-            lane.mark(
-                entry,
-                "settlement",
-                rent=lane.wage["rent"],
-                fees=lane.wage["charges"],
-                nourishment=payload["nourishment"],
-                satiety=payload["satiety"],
-                energy=payload["energy"],
-                health=payload["health"],
-                night=payload["night"],
-            )
-        elif kind == "condition":
-            lane.mark(
-                entry,
-                "condition",
-                need=payload["need"],
-                band=payload["band"],
-                value=payload["value"],
-                lowest=payload["lowest"],
-            )
-        elif kind == "death":
-            lane.hold(t, None)
-            lane.enter(t, "dead", None)
-            lane.mark(entry, "death")
         elif kind == "checkpoint":
             days.append(
                 {
@@ -444,4 +589,9 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         "places": {place.id: place.name for place in town.places},
         "days": days,
         "residents": [lane.data(end) for lane in lanes.values()],
+        "markers": markers,
+        "tasks": list(tasks.values()),
+        "store": {"stock": stock.points, "prices": prices.points, "on_order": on_order.points},
+        "kitchen": {"stock": larder.points, "menu": menu.points, "portions": portions.points},
+        "fees": fees.points,
     }

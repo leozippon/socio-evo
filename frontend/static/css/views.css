@@ -274,7 +274,7 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
 .lanes-legend .swatch.movement { background: repeating-linear-gradient(135deg, var(--lane-movement) 0 2px, var(--lane-idle) 2px 5px); }
 .lanes-legend .swatch.work { background: var(--lane-work); }
 .lanes-legend .swatch.sleep { background: var(--lane-sleep); }
-.lanes-legend .swatch.dead { background: var(--lane-dead); }
+.lanes-legend .swatch.bedridden { background: var(--lane-bedridden); }
 .lanes-legend .swatch.conversation { height: 8px; border-radius: 0; background: color-mix(in srgb, var(--lane-conversation) 30%, var(--surface)); border-top: 2px solid var(--lane-conversation); }
 .lanes-legend .swatch[class*="place-"] { height: 5px; border-radius: 1px; }
 .lanes-legend .swatch.place-home { background: var(--o1); }

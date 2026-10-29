@@ -1,6 +1,7 @@
 // Checks the viewer's replay module against a published run: what it looks up in the timeline
-// at the end of every lived day (purses, the task held) and over each day (the markers counted)
-// must equal what the bundle's progress document says, the lanes must be contiguous and
+// at the end of every lived day (the money held) and over each day (the markers counted, the
+// residents' and the town's) must equal what the bundle's progress document says, the task
+// each holds must follow its claims, assignments and their ends, the lanes must be contiguous and
 // distinct, a moment looked up at any time must be consistent with itself, also between whole
 // seconds as the town plays, and where the town shows its residents (town/plan.js) must be a
 // function of the moment alone.
@@ -16,7 +17,7 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { conversationAt, heldAt, markersBetween, moment, purseAt, segmentAt } = await viewer("replay.js");
+const { conversationAt, heldAt, markersBetween, moment, openAt, purseAt, segmentAt } = await viewer("replay.js");
 const { DAY, daylight, livedDay, secondOfDay } = await viewer("clock.js");
 const { standing, townPlan, walkways } = await viewer("town/plan.js");
 
@@ -37,8 +38,9 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
-// Every lived day: the purses at its end and the markers it counted.
-const COUNTED = { claim: "claims", submission: "submissions", payment: "payments", speech: "speeches", gift: "gifts", skill_shared: "skills_shared", journal: "journals", forced_sleep: "forced_sleeps" };
+// Every lived day: the money held at its end and the markers it counted.
+const COUNTED = { task_arrived: "arrived", claim: "claims", assign: "assigned", submission: "submissions", task_withdrawn: "withdrawn", sale: "sales", served: "dishes", examination: "examinations", treatment: "treatments", announcement: "announcements", speech: "speeches", message: "messages", gift: "gifts", journal: "journals", illness: "illnesses", bedridden: "bedridden", forced_sleep: "forced_sleeps" };
+const town = { name: "the town", markers: timeline.markers };
 for (const [i, row] of progress.daily.entries()) {
   const day = timeline.days[i];
   check(`day ${row.day} of the timeline`, day.day, row.day);
@@ -48,13 +50,11 @@ for (const [i, row] of progress.daily.entries()) {
   const counts = Object.fromEntries(Object.values(COUNTED).map((key) => [key, 0]));
   counts.accepted = 0;
   counts.rejected = 0;
-  counts.paid = 0;
-  for (const lane of timeline.residents)
+  for (const lane of [town, ...timeline.residents])
     for (const m of markersBetween(lane, i ? timeline.days[i - 1].end : null, end)) {
       if (!(m.kind in COUNTED)) continue;
       counts[COUNTED[m.kind]] += 1;
       if (m.kind === "submission" && "resolved" in m) counts[m.resolved ? "accepted" : "rejected"] += 1;
-      if (m.kind === "payment") counts.paid += m.amount;
     }
   check(`markers of day ${row.day}`, counts, Object.fromEntries(Object.keys(counts).map((key) => [key, row[key]])));
 }
@@ -69,12 +69,21 @@ for (const lane of timeline.residents) {
     check(`${lane.name}'s segments ${k - 1} and ${k} differ`, [segments[k].kind, segments[k].place, segments[k].task] !== [segments[k - 1].kind, segments[k - 1].place, segments[k - 1].task], true);
   }
   for (const talk of lane.conversations) check(`${lane.name}'s conversation at ${talk.start} lies within the run`, talk.start >= timeline.start && talk.end <= timeline.now && talk.start <= talk.end, true);
-  // A task is held from its claim until it is paid, given up or runs out; never at the start.
-  check(`${lane.name} holds nothing at the start`, heldAt(lane, timeline.start), null);
+  // A task is held from its claim, or from the team leader's giving it, until it is accepted,
+  // given up, given to another or withdrawn; never at the start.
+  check(`${lane.name} holds nothing at the start`, heldAt(timeline, lane.name, timeline.start), null);
   for (const m of lane.markers) {
-    if (m.kind === "claim") check(`${lane.name} holds task ${m.task} after claiming it`, heldAt(lane, m.t)?.task ?? null, m.task);
-    if (m.kind === "payment" || m.kind === "abandon" || m.kind === "expiry") check(`${lane.name} holds nothing after ${m.kind} of task ${m.task}`, heldAt(lane, m.t), null);
+    if (m.kind === "claim") check(`${lane.name} holds task ${m.task} after claiming it`, heldAt(timeline, lane.name, m.t)?.task ?? null, m.task);
+    if (m.kind === "assign") check(`${m.to} holds task ${m.task} after ${lane.name} gave it`, heldAt(timeline, m.to, m.t)?.task ?? null, m.task);
+    if (m.kind === "abandon") check(`${lane.name} no longer holds task ${m.task} once given up`, heldAt(timeline, lane.name, m.t)?.task === m.task, false);
   }
+}
+for (const task of timeline.tasks) if (task.accepted !== null) check(`${task.by} no longer holds task ${task.task} once accepted`, heldAt(timeline, task.by, task.accepted)?.task === task.task, false);
+for (const m of timeline.markers) {
+  if (m.kind === "task_withdrawn" && m.holder) check(`${m.holder} no longer holds task ${m.task} once withdrawn`, heldAt(timeline, m.holder, m.t)?.task === m.task, false);
+  const task = timeline.tasks.find((found) => found.task === m.task);
+  if (m.kind === "task_arrived") check(`task ${m.task} is open as it comes in`, openAt(task, m.t), true);
+  if (m.kind === "task_withdrawn") check(`task ${m.task} is closed once withdrawn`, openAt(task, m.t), false);
 }
 
 // Moments at random times are consistent with the lanes they are looked up in.

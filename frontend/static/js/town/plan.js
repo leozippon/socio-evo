@@ -18,14 +18,23 @@ export function seeded(text) {
   };
 }
 
+const TAVERN = /tavern|\bpub\b|\binn\b|\bbar\b|alehouse|anchor/;
+const CAFE = /caf[eé]|coffee|tea ?room/;
+
 /** Building styles: by kind, then by what the place's own words say it is. */
 const STYLES = [
-  ["workplace", /librar|reading room/, "library"],
-  ["workplace", /workshop|workroom|factory|forge|studio|\bmill\b|yard/, "workshop"],
-  ["workplace", /./, "office"],
-  ["social", /tavern|\bpub\b|\binn\b|\bbar\b|alehouse|anchor/, "tavern"],
-  ["social", /./, "cafe"],
-  ["shop", /./, "shop"],
+  ["office", /librar|reading room/, "library"],
+  ["office", /workshop|workroom|factory|forge|studio|\bmill\b|yard/, "workshop"],
+  ["office", /./, "office"],
+  ["store", /./, "shop"],
+  ["restaurant", TAVERN, "tavern"],
+  ["restaurant", CAFE, "cafe"],
+  ["restaurant", /./, "restaurant"],
+  ["hospital", /./, "hospital"],
+  ["hall", /./, "hall"],
+  ["social", TAVERN, "tavern"],
+  ["social", CAFE, "cafe"],
+  ["social", /./, "walk"],
   ["home", /cottage/, "cottage"],
   ["home", /\bflat\b|apartment/, "flat"],
   ["home", /shared|lodging|boarding/, "shared"],
@@ -43,6 +52,10 @@ export const SIZES = {
   cafe: { w: 62, h: 36, roof: 18 },
   tavern: { w: 66, h: 40, roof: 24 },
   shop: { w: 62, h: 36, roof: 18 },
+  restaurant: { w: 70, h: 38, roof: 20 },
+  hospital: { w: 80, h: 46, roof: 10 },
+  hall: { w: 76, h: 40, roof: 34 },
+  walk: { w: 54, h: 22, roof: 16 },
 };
 
 const words = (place) => `${place.name} ${place.description ?? ""}`.toLowerCase();
@@ -468,7 +481,7 @@ export function townPlan(world) {
       if (!lamps.some((l) => dist(l, { x, y }) < 30)) lamps.push({ x, y });
     benches.push({ x: square.x0 + 14, y: square.y1 - 6 }, { x: square.x1 - 18, y: square.y0 + 10 });
   }
-  for (const p of built.filter((q) => q.kind === "social" || q.kind === "shop")) {
+  for (const p of built.filter((q) => ["store", "restaurant", "social"].includes(q.kind))) {
     const lamp = { x: p.door.x + 14, y: p.base + 3 };
     if (!lamps.some((l) => dist(l, lamp) < 24)) lamps.push({ ...lamp, porch: true });
   }
@@ -597,7 +610,7 @@ export function standing(plan, walk, { names, state, speech, k, dark }) {
   for (const [id, here] of groups) {
     const p = plan.byId.get(id);
     if (!p) continue;
-    const asleep = here.filter((name) => state.residents[name].segment.kind === "sleep");
+    const asleep = here.filter((name) => ["sleep", "bedridden"].includes(state.residents[name].segment.kind));
     const awake = here.filter((name) => !asleep.includes(name));
     if (p.kind === "home" && asleep.length) asleep.forEach((name, i) => out.set(name, { x: p.door.x + (i - (asleep.length - 1) / 2) * 13 * k, y: p.base + 9 * k, facing: 0, asleep: true }));
     else awake.push(...asleep);
@@ -621,7 +634,7 @@ export function standing(plan, walk, { names, state, speech, k, dark }) {
       const row = Math.floor(i / per);
       const inRow = Math.min(per, rest.length - row * per);
       const col = i - row * per;
-      out.set(name, { x: yardMid + (col - (inRow - 1) / 2) * 17 * k + (row % 2) * 6 * k, y: startY + row * 15 * k, facing: 0, asleep: dark && state.residents[name].segment.kind === "sleep" });
+      out.set(name, { x: yardMid + (col - (inRow - 1) / 2) * 17 * k + (row % 2) * 6 * k, y: startY + row * 15 * k, facing: 0, asleep: dark && ["sleep", "bedridden"].includes(state.residents[name].segment.kind) });
     });
   }
   // Speakers turn to the one they address, if both stand there.

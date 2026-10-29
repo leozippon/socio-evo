@@ -1,6 +1,7 @@
-// One resident, as of a moment: who they are, how they fared, their day as they were told it,
-// their journal, and their files as the git repository
-// holds them: every version, with what changed, and the memory and skills they then had.
+// One resident, as of a moment: who they are and what they do, how they fared at work and with
+// money, their day as they were told it, their journal, their files as the git repository holds
+// them (every version, with what changed, and the memory and skills they then had), and the raw
+// trace of their runtime.
 
 import { DayChart, figure } from "../charts.js";
 import { dateOf, hhmm, livedDay, parseStamp, secondOfDay, stamp } from "../clock.js";
@@ -9,10 +10,10 @@ import { append, emptyState, fill, fmt, h } from "../dom.js";
 import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { markdown } from "../markdown.js";
-import { bodyAt, markersBetween, purseAt, settlementAt, thingsAt } from "../replay.js";
+import { bodyAt, illAt, markersBetween, purseAt, settlementAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { detail, feedItems, glyph, involved, line, witnessed } from "../town/events.js";
-import { placeById } from "../world.js";
+import { jobOf, placeById } from "../world.js";
 import { areasOf, stat } from "./overview.js";
 
 const TABS = [
@@ -77,7 +78,7 @@ export function mountPerson(root, ctx) {
         "div",
         { class: "identity" },
         cast.badge(me.name, 52),
-        h("div", { class: "identity-text" }, h("h1", {}, me.name), h("p", { class: "identity-meta" }, `lives at ${home ? home.name : me.home} · started with ${fmt.money(me.purse)} · ${world.name}`)),
+        h("div", { class: "identity-text" }, h("h1", {}, me.name), h("p", { class: "identity-meta" }, `${jobOf(world, me.name)} · lives at ${home ? home.name : me.home} · started with ${fmt.money(me.purse)} · ${world.name}`)),
       ),
       h(
         "div",
@@ -118,16 +119,16 @@ export function mountPerson(root, ctx) {
     return figure({ title, note, chart });
   }
 
+  /** Hours a lane spent in Work from `from` to `to`. */
+  const hoursAtWork = (lane, from, to) => lane.segments.filter((seg) => seg.kind === "work" && seg.end > from && seg.start < to).reduce((a, seg) => a + (Math.min(seg.end, to) - Math.max(seg.start, from)), 0) / 3600;
+
   function overview(moment, made) {
     const me = lane();
     const mine = markersBetween(me, null, moment.time);
     const count = (kind) => mine.filter((m) => m.kind === kind).length;
-    const others = data.residents.filter((r) => r.name !== agentName());
-    const skillsReceived = others.flatMap((r) => markersBetween(r, null, moment.time).filter((m) => m.kind === "skill_shared" && m.to === agentName())).length;
-    const earned = mine.filter((m) => m.kind === "payment").reduce((a, m) => a + m.amount, 0);
-    const accepted = mine.filter((m) => m.kind === "submission" && m.resolved === true).length;
+    const sumOf = (kind, field, keep = () => true) => mine.filter((m) => m.kind === kind && keep(m)).reduce((a, m) => a + m[field], 0);
     const ties = new Map();
-    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, moneyTo: 0, moneyFrom: 0 }).get(other);
+    const tie = (other) => ties.get(other) ?? ties.set(other, { minutes: 0, toThem: 0, fromThem: 0, moneyTo: 0, moneyFrom: 0, served: 0, servedBy: 0 }).get(other);
     for (const edge of measures.graph) {
       if (edge.day > moment.day.day) continue;
       if (edge.source === agentName()) {
@@ -135,27 +136,35 @@ export function mountPerson(root, ctx) {
         t.minutes += edge.minutes;
         t.toThem += edge.said;
         t.moneyTo += edge.money;
+        t.served += edge.served;
       } else if (edge.target === agentName()) {
         const t = tie(edge.source);
         t.fromThem += edge.said;
         t.moneyFrom += edge.money;
+        t.servedBy += edge.served;
       }
     }
-    const dead = me.segments.some((seg) => seg.kind === "dead" && seg.start <= moment.time);
+    const abed = me.segments.some((seg) => seg.kind === "bedridden" && seg.start <= moment.time && moment.time <= seg.end);
+    const ill = illAt(me, moment.time);
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     const midnight = settlementAt(me, moment.time);
-    const bought = mine.filter((m) => m.kind === "purchase");
-    const spent = bought.reduce((a, m) => a + m.amount, 0);
-    const moved = midnight ? Object.entries(midnight.night).map(([cause, change]) => `${fmt.signed(change)} ${{ starving: "for a day ended starving", exhausted: "for a day ended exhausted", poor_home: "for a home of little comfort", recovery: "for a day fed and rested" }[cause] ?? cause}`) : [];
+    const wage = mine.filter((m) => m.kind === "wage").at(-1) ?? null;
+    const others = data.residents.filter((r) => r.name !== agentName());
+    const fees = others.concat([me]).flatMap((r) => markersBetween(r, null, moment.time).filter((m) => (m.kind === "examination" || m.kind === "treatment") && m.patient === agentName())).reduce((a, m) => a + m.fee, 0);
+    const spent = sumOf("sale", "amount", (m) => !m.kitchen) + sumOf("served", "amount") + fees;
+    const services = mine.filter((m) => m.kind === "service");
+    const kinds = { task: "tasks accepted", team: "team tasks accepted", sale: "sales", dish: "dishes served", patient: "patients seen" };
+    const byKind = Object.entries(kinds).map(([kind, words]) => [services.filter((m) => m.for === kind).length, words]).filter(([n]) => n).map(([n, words]) => `${fmt.int(n)} ${words}`);
+    const moved = midnight ? Object.entries(midnight.night).map(([cause, change]) => `${fmt.signed(change)} ${{ starving: "for a day ended starving", exhausted: "for a day ended exhausted", poor_home: "for a home of little comfort", recovery: "for a day fed and rested", illness: "for illness" }[cause] ?? cause}`) : [];
     return [
-      h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, and with whom. The other tabs hold the day as the world told it, every journal entry, the files at every version, and the raw trace of the runtime.`),
+      h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, at work and with money, and with whom. The other tabs hold the day as the world told it, every journal entry, the files at every version, and the raw trace of the runtime.`),
       h(
         "div",
         { class: "stats" },
-        stat("Purse", fmt.money(purseAt(me, moment.time)), `earned ${fmt.money(earned)} · spent ${fmt.money(spent)} on goods`),
-        stat("Hand-ins accepted", fmt.int(accepted), `${fmt.int(count("submission"))} handed in · ${fmt.int(count("claim"))} claims · ${fmt.int(count("abandon") + count("expiry"))} given up or run out`),
+        stat("Money", fmt.money(purseAt(me, moment.time)), `wages ${fmt.money(sumOf("wage", "paid"))} · sums ${fmt.money(sumOf("service", "paid"))} · spent ${fmt.money(spent)}`),
+        stat("Hours at work", fmt.num(hoursAtWork(me, data.start, moment.time), 1), `at its workplace · rent ${fmt.money(sumOf("wage", "rent"))} taken from the wages`),
+        stat("Services", fmt.int(services.length), byKind.join(" · ") || "none paid for yet"),
         stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(count("gift"), "gift")} given`),
-        stat("Files shared", `${fmt.int(count("skill_shared"))} / ${fmt.int(skillsReceived)}`, "copies passed on / received"),
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
       ),
       h(
@@ -164,28 +173,27 @@ export function mountPerson(root, ctx) {
         h(
           "section",
           { class: "card pad life-card" },
-          h("h2", {}, dead ? "Died" : "How they are"),
-          dead
-            ? h("p", { class: "note" }, "Health ran out at midnight; nothing of this resident goes on from then.")
-            : [
-                h("p", { class: "note" }, "Food in the body, energy and health, each read in the bands the town tells; a bar fills to the band's top, and hovering it gives the last number the world told."),
-                needBars(world, bodyAt(me, moment.time)),
-                midnight ? h("p", { class: "note midnight-note" }, `Last midnight: ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; paid ${fmt.money(midnight.rent)} rent${midnight.fees ? ` and ${fmt.money(midnight.fees)} in daily charges` : ""}; health ${moved.length ? moved.join(", ") : "unchanged"}.`) : h("p", { class: "note midnight-note" }, "No midnight statement yet: the first comes at the end of the first day."),
-              ],
+          h("h2", {}, abed ? "In bed" : "How they are"),
+          abed ? h("p", { class: "note critical-text" }, "Health ran out at midnight: in bed at home, too ill to get up, until the doctor treats them at their bedside.") : null,
+          h("p", { class: "note" }, `Food in the body, energy and health, each read in the bands the town tells; a bar fills to the band's top, and hovering it gives the last number the world told.${ill ? " Ill now, which others cannot see." : ""}`),
+          needBars(world, bodyAt(me, moment.time)),
+          midnight
+            ? h("p", { class: "note midnight-note" }, `Last midnight: ${wage ? `${fmt.num(wage.hours, 1)} h at work, ${fmt.money(wage.wages)} in wages, ${fmt.money(wage.rent)} rent${wage.charges ? ` and ${fmt.money(wage.charges)} in daily charges` : ""} taken out, ${fmt.money(wage.paid)} paid${wage.owed ? `, ${fmt.money(wage.owed)} owed by the fund` : ""}${wage.arrears ? `, ${fmt.money(wage.arrears)} of rent owed` : ""}; ` : ""}ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; health ${moved.length ? moved.join(", ") : "unchanged"}.`)
+            : h("p", { class: "note midnight-note" }, "No midnight statement yet: the first comes at the end of the first day."),
         ),
         h(
           "section",
           { class: "card pad life-card" },
-          h("h2", {}, "What they own"),
-          h("p", { class: "note" }, `${fmt.plural(bought.length, "purchase")} for ${fmt.money(spent)} so far. A stock of food is eaten as its owner gets hungry; the count is as last taken, at the purchase or at the checkpoint.`),
-          inventory(world, thingsAt(me, moment.time)),
+          h("h2", {}, "What they have"),
+          h("p", { class: "note" }, `Money first, as the inventory tells it. Bought at the counter ${fmt.plural(mine.filter((m) => m.kind === "sale" && !m.kitchen).length, "time")} and had ${fmt.plural(count("served"), "dish", "dishes")} so far. A stock of food is eaten as its owner gets hungry; the count is as last taken, when bought or at the checkpoint.`),
+          inventory(world, thingsAt(me, moment.time), { money: purseAt(me, moment.time) }),
         ),
       ),
       h(
         "div",
         { class: "figures" },
-        emphasisChart("Purse", "At the end of each lived day; the others in grey.", (r, t) => purseAt(r, t), fmt.int, { zero: true }, moment, made),
-        emphasisChart("Hand-ins accepted", "Per lived day.", (r, t, d) => markersBetween(r, d.start, t).filter((m) => m.kind === "submission" && m.resolved === true).length, fmt.int, { zero: true, integer: true }, moment, made),
+        emphasisChart("Money in hand", "At the end of each lived day; the others in grey.", (r, t) => purseAt(r, t), fmt.int, { zero: true }, moment, made),
+        emphasisChart("Hours at work", "Per lived day.", (r, t, d) => hoursAtWork(r, d.start, t), (v) => fmt.num(v, 1), { zero: true }, moment, made),
       ),
       h(
         "div",
@@ -202,14 +210,14 @@ export function mountPerson(root, ctx) {
                 h(
                   "table",
                   { class: "data" },
-                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from"))),
+                  h("thead", {}, h("tr", {}, h("th", { class: "sticky-col" }, "With"), h("th", { title: "Minutes in conversations they took part in" }, "Minutes"), h("th", { title: "Things said that they heard" }, "Said to"), h("th", { title: "Things they said that this resident heard" }, "Heard from"), h("th", { title: "Money handed to them, and received from them" }, "Money to / from"), h("th", { title: "Times this resident served them at its work, and was served by them" }, "Served / by"))),
                   h(
                     "tbody",
                     {},
                     [...ties]
                       .sort((a, b) => b[1].minutes - a[1].minutes)
                       .map(([name, t]) =>
-                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`)),
+                        h("tr", {}, h("td", { class: "sticky-col" }, cast.chip(name, href({ ...route, agent: name }))), h("td", {}, fmt.int(Math.round(t.minutes))), h("td", {}, fmt.int(t.toThem)), h("td", {}, fmt.int(t.fromThem)), h("td", {}, `${fmt.money(t.moneyTo)} / ${fmt.money(t.moneyFrom)}`), h("td", {}, `${fmt.int(t.served)} / ${fmt.int(t.servedBy)}`)),
                       ),
                   ),
                 ),
@@ -397,10 +405,10 @@ export function mountPerson(root, ctx) {
       case "percept":
         return `${String(record.percept_kind).replaceAll("_", " ")} · ${clip(record.text)}`;
       case "request":
-        return `${record.purpose} · ${fmt.plural(record.messages.length, "message")} in the context${record.new_messages?.length ? `, ${fmt.int(record.new_messages.length)} new` : ""}${record.attempt > 1 ? ` · attempt ${record.attempt}` : ""}`;
+        return `${record.purpose} · ${fmt.plural(record.messages.length, "message")} in the context${record.new_messages?.length ? `, ${fmt.int(record.new_messages.length)} new` : ""} · ${fmt.plural(record.tools.length, "tool")}${record.attempt > 1 ? ` · attempt ${record.attempt}` : ""}`;
       case "reply": {
         const calls = (record.tool_calls ?? []).map((call) => call.name);
-        return [calls.length ? `calls ${calls.join(", ")}` : null, clip(record.text || record.reasoning, 90) || null, record.truncated ? "cut off" : null, record.aborted ? "aborted" : null, record.latency === undefined ? null : `${fmt.num(record.latency, 1)} s`].filter(Boolean).join(" · ");
+        return [calls.length ? `calls ${calls.join(", ")}` : null, clip(record.text || record.reasoning, 90) || null, record.truncated ? "cut off" : null, record.latency === undefined ? null : `${fmt.num(record.latency, 1)} s`].filter(Boolean).join(" · ");
       }
       case "tool_call":
         return `${record.name} ${clip(JSON.stringify(record.arguments), 100)}`;
@@ -408,8 +416,8 @@ export function mountPerson(root, ctx) {
         return `${record.name} → ${record.error ? `error: ${clip(record.error, 90)}` : clip(record.text, 100) || "(nothing)"}`;
       case "compaction":
         return `${fmt.plural(record.replaced.length, "message")} replaced by a summary, ${fmt.int(record.kept.length)} kept`;
-      case "interruption":
-        return `the reply in flight was aborted by percepts ${record.events.join(", ")}`;
+      case "overflow":
+        return `${record.purpose}: the context did not fit the model's window`;
       case "lapse":
         return `${record.purpose}: no usable reply`;
       default:
@@ -426,12 +434,12 @@ export function mountPerson(root, ctx) {
       case "percept":
         return [h("span", { class: "muted" }, `${record.percept_kind} · world entry ${record.event_id} · at ${hhmm(secondOfDay(record.percept_sim_time))}`), traceText(record.text, { mono: false, open: true })];
       case "request": {
-        const meta = `${record.purpose} · attempt ${record.attempt} · effort ${record.reasoning_effort} · ${fmt.int(record.messages.length)} messages in the context · ${fmt.int(record.max_tokens)} tokens at most`;
-        return [h("span", { class: "muted" }, meta), record.new_messages?.length ? h("div", { class: "trace-messages" }, h("span", { class: "trace-role lead" }, "new in the context since the last request"), record.new_messages.map(message)) : h("span", { class: "muted small-text" }, "Nothing new in the context."), h("details", { class: "trace-more" }, h("summary", {}, "Tools declared and message ids"), h("span", { class: "mono small-text" }, (record.tools ?? []).join(", ")), h("div", { class: "mono small-text muted" }, `messages ${record.messages.join(" ")}`))];
+        const meta = `${record.purpose} · attempt ${record.attempt} · effort ${record.reasoning_effort} · ${fmt.int(record.messages.length)} messages in the context · ${fmt.plural(record.tools.length, "tool")} declared · ${fmt.int(record.max_tokens)} tokens at most`;
+        return [h("span", { class: "muted" }, meta), record.new_messages?.length ? h("div", { class: "trace-messages" }, h("span", { class: "trace-role lead" }, "new in the context since the last request"), record.new_messages.map(message)) : h("span", { class: "muted small-text" }, "Nothing new in the context."), h("details", { class: "trace-more" }, h("summary", {}, `The ${fmt.plural(record.tools.length, "tool")} declared and the message ids`), h("span", { class: "mono small-text" }, record.tools.join(", ")), h("div", { class: "mono small-text muted" }, `messages ${record.messages.join(" ")}`))];
       }
       case "reply": {
         const usage = record.usage ? `${fmt.int(record.usage.prompt_tokens)} prompt tokens (${fmt.int(record.usage.cached_prompt_tokens ?? 0)} cached), ${fmt.int(record.usage.completion_tokens)} completion` : "no usage reported";
-        const flags = [record.finish_reason, record.truncated ? "cut off" : null, record.aborted ? "aborted" : null].filter(Boolean).join(" · ");
+        const flags = [record.finish_reason, record.truncated ? "cut off" : null].filter(Boolean).join(" · ");
         return [
           h("span", { class: "muted" }, `${record.purpose} · ${flags} · ${usage} · ${fmt.num(record.latency, 1)} s`),
           record.reasoning ? h("div", { class: "trace-reasoning" }, h("span", { class: "trace-role" }, "reasoning"), traceText(record.reasoning, { mono: false })) : null,
@@ -445,8 +453,8 @@ export function mountPerson(root, ctx) {
         return [h("span", { class: "muted" }, [h("code", {}, record.name), record.ends_turn ? " · ends the turn" : "", record.error ? ` · error: ${record.error}` : ""]), traceText(record.text ?? "")];
       case "compaction":
         return [h("span", { class: "muted" }, `${fmt.plural(record.replaced.length, "message")} replaced, ${fmt.int(record.kept.length)} kept`), traceText(record.summary, { mono: false })];
-      case "interruption":
-        return [h("span", { class: "muted" }, `The reply in flight was aborted by percepts ${record.events.join(", ")}.`)];
+      case "overflow":
+        return [h("span", { class: "muted" }, `${record.purpose}: the server refused the request, its context too long for the model's window.`), traceText(String(record.error))];
       case "lapse":
         return [h("span", { class: "muted" }, `${record.purpose}: no usable reply`), json(record.errors)];
       default:
@@ -529,7 +537,7 @@ export function mountPerson(root, ctx) {
     );
     const list = doc ? h("ol", { class: "card trace-list" }, doc.records.map((record, i) => traceRecord(record, i + 1))) : null;
     return [
-      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, compactions and lapses. Each record is folded to a line; tap one to read it whole. Nothing here comes from outside the resident's directory.`), picker),
+      h("div", { class: "spread" }, h("p", { class: "note" }, `The raw trace of ${agentName()}'s runtime on the day, as it recorded it in its own directory: the system prompt, every request with what entered its context, every reply with its reasoning and tool calls, every tool result and percept, requests too long for the model's window, compactions and lapses. Each record is folded to a line; tap one to read it whole. Nothing here comes from outside the resident's directory.`), picker),
       doc
         ? [
             doc.prompt ? h("details", { class: "card pad fold trace-prompt" }, h("summary", {}, h("b", {}, "The system prompt as the day began"), h("span", { class: "muted" }, ` · ${fmt.plural(doc.prompt.length, "character")}`)), h("pre", { class: "trace-text" }, doc.prompt)) : h("p", { class: "note" }, "No system prompt had been assembled before this day's first record; the first one appears below."),

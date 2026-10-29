@@ -1,7 +1,8 @@
 """The timeline of a run, built from the world log of a day lived in a real world: the base
 events contiguous per resident, conversation layered over what it interrupted, the markers, the
-purse, the days and when they were lived in real time, a growing log read a line at a time, and
-a lost day set aside on resumption."""
+money held, the Office's tasks, the Store's, the kitchen's and the Hospital's state agreeing with
+the checkpoint, the days and when they were lived in real time, a lane in bed until treated, a
+growing log read a line at a time, and a lost day set aside on resumption."""
 
 from __future__ import annotations
 
@@ -26,6 +27,15 @@ def spans(data: dict[str, Any], name: str) -> list[tuple[str, int, int, str | No
         (s["kind"], s["start"], s["end"], s["place"], s["task"])
         for s in lane(data, name)["segments"]
     ]
+
+
+def state_at(points: list[list[Any]], t: int) -> Any:
+    """The state of a series of the timeline at `t`."""
+    return [state for when, state in points if when <= t][-1]
+
+
+def fields(marker: dict[str, Any]) -> dict[str, Any]:
+    return {k: v for k, v in marker.items() if k not in ("seq", "t", "place", "kind")}
 
 
 async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_work(tmp_path):
@@ -53,8 +63,13 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("idle", at("07:10"), at("09:00"), "workshop", None),
         ("work", at("09:00"), at("10:00"), "workshop", 1),
         ("work", at("10:00"), at("10:30"), "workshop", None),
-        ("movement", at("10:30"), at("10:40"), home, None),
-        ("idle", at("10:40"), at("22:00"), home, None),
+        ("movement", at("10:30"), at("10:40"), "clinic", None),
+        ("movement", at("10:40"), at("10:50"), "cafe", None),  # seen at the clinic on arrival
+        ("idle", at("10:50"), at("11:00"), "cafe", None),
+        ("movement", at("11:00"), at("11:10"), "store", None),
+        ("idle", at("11:10"), at("11:15"), "store", None),
+        ("movement", at("11:15"), at("11:25"), home, None),
+        ("idle", at("11:25"), at("22:00"), home, None),
         ("sleep", at("22:00"), at("07:00", day=2), home, None),
         ("idle", at("07:00", day=2), now, home, None),
     ]
@@ -69,6 +84,10 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("idle", at("07:00"), at("02:00", day=2), home, None),
         ("sleep", at("02:00", day=2), at("07:00", day=2), home, None),
         ("idle", at("07:00", day=2), now, home, None),
+    ]
+    assert spans(data, "Olga")[1:3] == [
+        ("movement", at("07:00"), at("07:10"), "store", None),
+        ("work", at("07:10"), at("18:00"), "store", None),
     ]
 
     # Tomas's remark at 09:30 drew nobody in (Mei was at work); the conversation begins with
@@ -89,20 +108,54 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("speech", at("09:32")),
         ("gift", at("09:32")),
         ("submission", at("10:00")),
-        ("payment", at("10:00")),
+        ("service", at("10:00")),
+        ("served", at("11:00")),
+        ("sale", at("11:15")),
         ("journal", at("22:00")),
+        ("wage", DAY),
         ("settlement", DAY),
     ]
     mei = {m["kind"]: m for m in lane(data, "Mei")["markers"]}
     assert mei["speech"]["text"] == "Nearly done." and mei["speech"]["to"] == ["Tomas"]
-    assert mei["submission"]["resolved"] is True and mei["payment"]["amount"] == 20
+    assert mei["submission"]["resolved"] is True
+    assert fields(mei["service"]) == {"for": "task", "task": 1, "amount": 20, "paid": 20, "owed": 0}
+    assert fields(mei["served"]) == {
+        "dish": "omelette", "name": "an omelette", "amount": 10, "chef": "Jonas",
+    }  # fmt: skip
+    assert fields(mei["sale"]) == {
+        "item": "bread", "name": "bread", "quantity": 2, "price": 5, "amount": 10,
+        "seller": "Olga", "kitchen": False,
+    }  # fmt: skip
     assert mei["journal"]["text"] == "I fixed task 1."
+    # Ninety minutes at work earn $10, which does not cover the $20 rent: $10 is owed.
+    assert (mei["wage"]["wages"], mei["wage"]["rent"], mei["wage"]["arrears"]) == (10, 20, 10)
+    assert markers("Tomas") == [
+        ("speech", at("09:30")),
+        ("service", at("10:00")),
+        ("claim", at("10:00")),
+        ("submission", at("10:00")),
+        ("assign", at("10:00")),
+        ("journal", at("23:00")),
+        ("wage", DAY),
+        ("settlement", DAY),
+    ]
     tomas = {m["kind"]: m for m in lane(data, "Tomas")["markers"]}
+    assert fields(tomas["service"]) == {
+        "for": "team",
+        "task": 1,
+        "amount": 10,
+        "paid": 10,
+        "owed": 0,
+    }
+    assert fields(tomas["assign"]) == {"task": 3, "to": "Aisha", "from": None}
     assert tomas["submission"]["resolved"] is False
     assert tomas["submission"]["status"] == "failed_tests"
     assert tomas["submission"]["fail_to_pass"] == [1, 3]
-    assert tomas["expiry"]["t"] == DAY and tomas["expiry"]["task"] == 2  # the first midnight
-    assert markers("Aisha") == [("settlement", DAY), ("forced_sleep", at("02:00", day=2))]
+    assert markers("Aisha") == [
+        ("wage", DAY),
+        ("settlement", DAY),
+        ("forced_sleep", at("02:00", day=2)),
+    ]
     felt = [m for m in lane(data, "Aisha")["markers"] if m["kind"] == "condition"]
     assert [(m["need"], m["band"], m["lowest"]) for m in felt][:3] == [
         ("satiety", "a little hungry", False),
@@ -112,22 +165,110 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert all(0 <= m["value"] <= 100 for m in felt)
     assert felt[0]["value"] < 65 and felt[2]["value"] < 10
     # Aisha ate nothing all day and is hungry, not yet starving, at midnight; her home on Mill
-    # Street has little comfort.
-    midnight = next(m for m in lane(data, "Aisha")["markers"] if m["kind"] == "settlement")
-    assert midnight["rent"] == 20 and midnight["fees"] == 0 and midnight["nourishment"] == 0
+    # Street has little comfort, and her wages of nothing leave the rent owed.
+    aisha = {m["kind"]: m for m in lane(data, "Aisha")["markers"]}
+    assert (aisha["wage"]["rent"], aisha["wage"]["charges"], aisha["wage"]["paid"]) == (20, 0, 0)
+    midnight = aisha["settlement"]
+    assert midnight["nourishment"] == 0 and midnight["ill"] == 0
     assert 10 <= midnight["satiety"] < 35 and midnight["energy"] < 100
     assert midnight["health"] == 100 and midnight["night"] == {"poor_home": -2, "recovery": 5}
 
-    # The rent is taken from the wages at midnight: Mei's ninety minutes at work leave her
-    # purse as it was, and Tomas's eight hours pay him $56 less his $30.
+    # The work of the trades: the Store's counter, the kitchen, the surgery and the hall.
+    olga = [(m["kind"], m.get("for"), m.get("item")) for m in lane(data, "Olga")["markers"]]
+    assert [found for found in olga if found[0] != "condition"][:5] == [
+        ("service", "sale", None),
+        ("service", "sale", None),
+        ("order", None, "bread"),
+        ("price", None, "bread"),
+        ("service", "sale", None),
+    ]
+    jonas = [m for m in lane(data, "Jonas")["markers"] if m["kind"] in ("sale", "cook")]
+    assert [(m["kind"], m.get("kitchen"), m.get("dish")) for m in jonas] == [
+        ("sale", True, None),
+        ("sale", True, None),
+        ("cook", None, "omelette"),
+        ("cook", None, "soup"),
+    ]
+    lucia = [m for m in lane(data, "Lucia")["markers"] if m["kind"] in ("examination", "treatment")]
+    assert [(m["kind"], m["patient"], m["fee"]) for m in lucia] == [
+        ("examination", "Mei", 10),
+        ("treatment", "Mei", 30),
+    ]
+    vera = [m for m in lane(data, "Vera")["markers"] if m["kind"] in ("report", "announcement")]
+    assert [(m["kind"], m.get("text")) for m in vera] == [
+        ("report", None),
+        ("announcement", "The hall is open every day."),
+    ]
+
+    # The money held moves with every sum the log records: the gift, the sum for the task, the
+    # Hospital's fees, the dish and the bread, and the wages at midnight; the chef's purchases
+    # for the kitchen are the fund's.
     assert lane(data, "Mei")["purse"] == [
         [start, 120],
         [at("09:32"), 115],
         [at("10:00"), 135],
-        [DAY, 135],
+        [at("10:40"), 125],
+        [at("10:40"), 95],
+        [at("11:00"), 85],
+        [at("11:15"), 75],
+        [DAY, 75],
     ]
-    assert lane(data, "Tomas")["purse"] == [[start, 180], [at("09:32"), 185], [DAY, 211]]
+    # Tomas's eight hours as the team leader pay $72 less his $30 of rent.
+    assert lane(data, "Tomas")["purse"] == [
+        [start, 180],
+        [at("09:32"), 185],
+        [at("10:00"), 195],
+        [DAY, 237],
+    ]
     assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 30]]
+    assert lane(data, "Jonas")["purse"][:2] == [[start, 100], [at("11:00"), 103]]
+
+    # What came to the town itself, and the Office's tasks.
+    assert [(m["kind"], m["t"]) for m in data["markers"]] == [
+        *[("task_arrived", at("08:00"))] * 3,
+        ("task_withdrawn", DAY),
+        ("task_withdrawn", DAY),
+        ("delivery", at("08:00", day=2)),
+    ]
+    withdrawn = {m["task"]: m["holder"] for m in data["markers"] if m["kind"] == "task_withdrawn"}
+    assert withdrawn == {2: "Tomas", 3: "Aisha"}
+    tasks = {task["task"]: task for task in data["tasks"]}
+    assert tasks[1] == {
+        "task": 1,
+        "instance_id": "org__repo-1",
+        "repo": "org/repo1",
+        "arrived": at("08:00"),
+        "deadline": DAY,
+        "holders": [[at("09:00"), "Mei", None], [at("10:00"), None, None]],
+        "accepted": at("10:00"),
+        "by": "Mei",
+        "withdrawn": None,
+    }
+    assert tasks[2]["holders"] == [[at("10:00"), "Tomas", None], [DAY, None, None]]
+    assert (tasks[2]["accepted"], tasks[2]["withdrawn"]) == (None, DAY)
+    assert tasks[3]["holders"] == [[at("10:00"), "Aisha", "Tomas"], [DAY, None, None]]
+    assert tasks[3]["withdrawn"] == DAY
+
+    # The state of the Store, the kitchen and the Hospital, read from the log alone, is the
+    # world's own at the checkpoint, and so is the money each resident holds.
+    [(_, saved)] = town.checkpoints
+    t = saved["time"]
+    pending: dict[str, int] = {}
+    for good, units, _ in saved["store"]["pending"]:
+        pending[good] = pending.get(good, 0) + units
+    assert state_at(data["store"]["stock"], t) == saved["store"]["stock"]
+    assert state_at(data["store"]["prices"], t) == saved["store"]["prices"]
+    assert state_at(data["store"]["on_order"], t) == pending == {"bread": 5}
+    assert state_at(data["kitchen"]["stock"], t) == saved["kitchen"]["stock"]
+    assert state_at(data["kitchen"]["menu"], t) == saved["kitchen"]["menu"]
+    assert state_at(data["kitchen"]["portions"], t) == saved["kitchen"]["portions"] == {}
+    assert state_at(data["fees"], t) == saved["fees"]
+    for name, found in saved["residents"].items():
+        assert state_at(lane(data, name)["purse"], t) == found["inventory"]["money"], name
+    # The soup nobody had is gone at midnight; the bread ordered came in the morning.
+    assert state_at(data["kitchen"]["portions"], DAY - 1) == {"soup": 1}
+    assert state_at(data["store"]["stock"], now)["bread"] == 8 + 5
+
     entries = list(town.world.log.entries())
     first = next(e for e in entries if e["kind"] in module._FOLDED)["real_time"]  # the viewer's
     (closed,) = [e["real_time"] for e in entries if e["kind"] == "checkpoint"]
@@ -156,6 +297,53 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert spans(early, "Mei")[-1] == ("work", at("09:00"), at("09:35"), "workshop", 1)
     module._caches.clear()
     assert timeline(run.root) == data  # the incremental reading equals a reading from scratch
+
+
+def test_a_resident_whose_health_ran_out_lies_in_bed_until_treated(tmp_path):
+    """Aisha takes to bed at midnight while up, sleeps at the forced hour, wakes in bed, and
+    leaves it when Lucia treats her at her bedside, paying the fee."""
+    run, _ = new_town(tmp_path)
+    home = "mill-street-house"
+    bedridden = {"day": 1, "home": home, "from": home, "carried": False, "task": None}
+    treated = {
+        "patient": "Aisha", "fee": 30, "restores": 25, "before": 0, "health": 25, "ill": 3,
+        "bedridden": True,
+    }  # fmt: skip
+    lines = [
+        entry(1, "wake", at("07:00"), "Aisha"),
+        entry(2, "illness", DAY, "Aisha", chance=0.1, nights=5, health=10),
+        entry(3, "bedridden", DAY, "Aisha", **bedridden),
+        entry(4, "forced_sleep", at("02:00", day=2), "Aisha", wake=at("07:00", day=2)),
+        entry(5, "wake", at("07:00", day=2), "Aisha"),
+        entry(6, "treatment", at("10:00", day=2), "Lucia", **treated),
+        entry(7, "recovered", at("10:00", day=2), "Aisha", illness=True, bedridden=True,
+              treated=True, health=25),
+    ]  # fmt: skip
+    run.world_log_path.write_text("\n".join(lines) + "\n")
+    data = timeline(run.root)
+    assert spans(data, "Aisha") == [
+        ("sleep", at("02:30"), at("07:00"), home, None),
+        ("idle", at("07:00"), DAY, home, None),
+        ("bedridden", DAY, at("02:00", day=2), home, None),
+        ("sleep", at("02:00", day=2), at("07:00", day=2), home, None),
+        ("bedridden", at("07:00", day=2), at("10:00", day=2), home, None),
+        ("idle", at("10:00", day=2), at("10:00", day=2), home, None),
+    ]
+    assert [m["kind"] for m in lane(data, "Aisha")["markers"]] == [
+        "illness",
+        "bedridden",
+        "forced_sleep",
+        "recovered",
+    ]
+    assert lane(data, "Aisha")["purse"] == [[at("02:30"), 30], [at("10:00", day=2), 0]]
+
+
+def test_a_task_that_never_came_in_is_refused(tmp_path):
+    run, _ = new_town(tmp_path)
+    claim = entry(1, "claim", at("09:00"), "Mei", task=7, instance_id="seven")
+    run.world_log_path.write_text(claim + "\n")
+    with pytest.raises(ValueError, match="entry 1: task 7 never came in"):
+        timeline(run.root)
 
 
 async def test_a_line_being_written_waits_and_an_unchanged_log_is_not_read_again(tmp_path):
@@ -269,14 +457,3 @@ async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(t
     ]
     assert lane(data, "Mei")["purse"][-1] == [at("07:10"), 115]
     assert lane(data, "Tomas")["purse"][-1] == [at("07:10"), 185]
-
-
-def test_a_skill_shared_in_an_older_log_is_told_as_its_file(tmp_path):
-    run, _ = new_town(tmp_path)
-    lines = [
-        entry(1, "skill_shared", at("09:00"), "Mei", to="Tomas", skill="triage", text="x"),
-        entry(2, "skill_shared", at("09:01"), "Mei", to="Tomas", file="memory/notes.md", text="y"),
-    ]
-    run.world_log_path.write_text("\n".join(lines) + "\n")
-    shared = [m for m in lane(timeline(run.root), "Mei")["markers"] if m["kind"] == "skill_shared"]
-    assert [m["file"] for m in shared] == ["skills/triage.md", "memory/notes.md"]

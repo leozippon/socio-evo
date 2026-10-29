@@ -1,13 +1,14 @@
-// The things of a life, as a reader sees them: the goods of the town's catalogue with what each
-// does in plain words, what a resident owns as item cards, and its body's three needs as bars
-// read in the bands of the world's own words. Everything here is drawn from `world.json`
-// (the catalogue and the bands) and the timeline (purchases, the things owned, the markers of
-// the body); nothing is computed beyond looking those up.
+// The things of a life, as a reader sees them: the goods of the supplier's catalogue with what
+// each does in plain words, the restaurant's dishes, what a resident has (its money first) as
+// item cards, and its body's three needs as bars read in the bands of the world's own words.
+// Everything here is drawn from `world.json` (the catalogue, the dishes and the bands) and the
+// timeline (sales, the things owned, the markers of the body); nothing is computed beyond
+// looking those up.
 
 import { hhmm, secondOfDay } from "./clock.js";
 import { fmt, h } from "./dom.js";
 import { icon } from "./icons.js";
-import { shortName } from "./world.js";
+import { placeOfKind, shortName } from "./world.js";
 
 /** The three needs in the order the town tells them, each with the word a reader knows it by. */
 export const NEEDS = [
@@ -16,11 +17,11 @@ export const NEEDS = [
   ["health", "Health", "heart"],
 ];
 
-/** The icon of a good, by what it does. */
+/** The icon of a good, by what it does: an ingredient, ready food or a thing kept. */
 export function goodIcon(good) {
-  if (good.effect === "food") return good.kind === "consumable" ? "basket" : "meal";
+  if (good.effect === "food") return good.nourishment ? "meal" : "basket";
   if (good.effect === "appearance") return /\bbook\b/.test(good.name) ? "book" : "coat";
-  return { travel: "bicycle", messaging: "phone", examination: "clinic", treatment: "pill" }[good.effect] ?? "spark";
+  return { travel: "bicycle", messaging: "phone" }[good.effect] ?? "spark";
 }
 
 /** A good's name as a label: without its article, capitalised. */
@@ -41,20 +42,13 @@ export function goodEffect(good) {
       return `Write to other owners wherever they are${good.fee_per_day ? `; charged ${fmt.money(good.fee_per_day)} a day` : ""}`;
     case "appearance":
       return `Others see its owner ${good.phrase}`;
-    case "examination":
-      return "The doctor tells the body's numbers and why health last moved";
-    case "treatment":
-      return `Restores ${fmt.int(good.restores)} health`;
     default:
       return "";
   }
 }
 
-/** The kind of good in a word: kept, a stock, or used up as bought. */
-export const goodKind = (good) => ({ durable: good.fee_per_day ? "kept, charged daily" : "kept", consumable: "a stock", immediate: "used at once" })[good.kind] ?? good.kind;
-
-/** Where a good is sold: the store, by its short name. */
-export const soldAt = (good, world) => world.places.filter((place) => place.kind === "store").map(shortName).join(", ");
+/** Where goods are sold: the Store, by its short name. */
+export const soldAt = (world) => shortName(placeOfKind(world, "store"));
 
 /** What is kept of a consumable in words: `6 helpings`, `4 units`. */
 export function stockText(good, units) {
@@ -64,24 +58,44 @@ export function stockText(good, units) {
 
 /**
  * An item card: the icon, the name, and a line that says what it is worth to its owner. With
- * `units`, a consumable's stock; with `price`, the catalogue's price tag and where it is sold.
+ * `units`, a consumable's stock; with `price`, a price tag (the Store's price, or the one given)
+ * with what the supplier charges for it below.
  */
-export function itemCard(good, { units = null, price = false, world = null, compact = false } = {}) {
+export function itemCard(good, { units = null, price = null, compact = false } = {}) {
   const line = units !== null && good.kind === "consumable" ? stockText(good, units) : goodEffect(good);
+  const tag = price === true ? good.price : price;
   return h(
     "div",
-    { class: `item kind-${good.kind} effect-${good.effect}${compact ? " compact" : ""}`, title: `${goodName(good)}: ${goodEffect(good)}${price && world ? `. ${fmt.money(good.price)} at ${soldAt(good, world)}` : ""}` },
+    { class: `item kind-${good.kind} effect-${good.effect}${compact ? " compact" : ""}`, title: `${goodName(good)}: ${goodEffect(good)}${tag !== null ? `. ${fmt.money(tag)} at the counter, ${fmt.money(good.wholesale)} from the supplier` : ""}` },
     h("span", { class: "item-icon" }, icon(goodIcon(good), compact ? 16 : 22)),
     h("span", { class: "item-text" }, h("b", {}, goodName(good)), compact ? null : h("span", { class: "item-line" }, line)),
-    price ? h("span", { class: "item-price" }, fmt.money(good.price), world ? h("small", {}, soldAt(good, world)) : null) : null,
+    tag !== null ? h("span", { class: "item-price" }, fmt.money(tag), h("small", {}, `${fmt.money(good.wholesale)} wholesale`)) : null,
     compact && units !== null && good.kind === "consumable" ? h("span", { class: "item-count" }, `×${fmt.int(units)}`) : null,
   );
 }
 
-/** The things a resident owns (`things`, by good id) as item cards, or a quiet line if none. */
-export function inventory(world, things, { compact = false } = {}) {
+/** The ingredients of a dish in words: `2 × vegetables, 1 × eggs`. */
+export const recipe = (world, dish) => Object.entries(dish.ingredients).map(([id, units]) => `${units} × ${goodName(world.goods.find((good) => good.id === id)).toLowerCase()}`).join(", ");
+
+/** A dish of the restaurant as a card: what it is cooked from, its price on the menu and, with `portions`, how many are ready. */
+export function dishCard(world, dish, { price = dish.price, portions = null } = {}) {
+  return h(
+    "div",
+    { class: "item dish", title: `${goodName(dish)}: a day's food, cooked from ${recipe(world, dish)}` },
+    h("span", { class: "item-icon" }, icon("pot", 22)),
+    h("span", { class: "item-text" }, h("b", {}, goodName(dish)), h("span", { class: "item-line" }, portions === null ? recipe(world, dish) : `${portions ? fmt.plural(portions, "portion") : "none"} ready · ${recipe(world, dish)}`)),
+    h("span", { class: "item-price" }, fmt.money(price), h("small", {}, "a day's food")),
+  );
+}
+
+/**
+ * What a resident has as item cards, as its inventory tells it: with `money`, its money first,
+ * then each thing it owns (`things`, by good id); a quiet line if it has nothing.
+ */
+export function inventory(world, things, { compact = false, money = null } = {}) {
   const cards = world.goods.filter((good) => things[good.id]).map((good) => itemCard(good, { units: things[good.id], compact }));
-  return h("div", { class: `inventory${compact ? " compact" : ""}` }, cards.length ? cards : h("span", { class: "muted small-text" }, "Nothing of their own yet"));
+  const cash = money === null ? null : h("div", { class: `item money-card${compact ? " compact" : ""}`, title: "Money, which never goes below zero" }, h("span", { class: "item-icon" }, icon("coin", compact ? 16 : 22)), h("span", { class: "item-text" }, h("b", {}, "Money"), compact ? null : h("span", { class: "item-line" }, "in hand")), h("span", { class: "item-price" }, fmt.money(money)));
+  return h("div", { class: `inventory${compact ? " compact" : ""}` }, cash, cards.length || cash ? cards : h("span", { class: "muted small-text" }, "Nothing of their own yet"));
 }
 
 /** The band of a need a value falls in, from the world's bands (top down). */

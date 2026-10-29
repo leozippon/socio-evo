@@ -51,18 +51,24 @@ export function progressTable(doc, status = "running") {
     ["Day", "The lived day, from one checkpoint to the next", (d) => d.day],
     ["Date", "The date the lived day began on, in the town's calendar", (d) => dateOf(d.date, 0)],
     ["Real hours", "The real hours the day took, from its beginning to its checkpoint", (d) => (d.in_progress ? (open ? "…" : "–") : d.hours.toFixed(2))],
-    ["Claims", "Tasks claimed", (d) => d.claims],
-    ["Hand-ins", "Tasks handed in", (d) => d.submissions],
+    ["Came in", "Clients' tasks that came in at the Office", (d) => d.arrived],
+    ["Claimed", "Tasks claimed by a programmer", (d) => d.claims],
+    ["Assigned", "Tasks the team leader gave to a programmer", (d) => d.assigned],
+    ["Handed in", "Tasks handed in for the client's checks", (d) => d.submissions],
     ["Accepted", "Handed in and accepted", (d) => d.accepted],
     ["Not accepted", "Handed in and not accepted", (d) => d.rejected],
-    ["Paid", "The total paid for accepted tasks", (d) => (d.paid ? money(d.paid, currency) : 0)],
-    ["Bought", "Goods bought", (d) => d.purchases],
+    ["Withdrawn", "Tasks their clients withdrew, not accepted in time", (d) => d.withdrawn],
+    ["Sales", "Sales at the Store's counter, the kitchen's among them", (d) => d.sales],
+    ["Dishes", "Dishes served at the restaurant", (d) => d.dishes],
+    ["Patients", "Examinations and treatments at the Hospital or at a bedside", (d) => d.examinations + d.treatments],
+    ["Announced", "The mayor's announcements", (d) => d.announcements],
     ["Said", "Things said", (d) => d.speeches],
     ["Gifts", "Times money or a thing was given", (d) => d.gifts],
-    ["Files", "Copies of files passed on: skills, notes, drafts", (d) => d.skills_shared],
     ["Journals", "Residents gone to bed with the day's journal", (d) => d.journals],
+    ["Fell ill", "Residents who fell ill at midnight", (d) => d.illnesses],
+    ["To bed", "Residents whose health ran out, who took to their beds", (d) => d.bedridden],
     ["Forced asleep", "Residents fallen asleep at the forced hour, without going to bed", (d) => d.forced_sleeps],
-    ["Purses low · median · high", "The residents' purses at the end of the day, or at its latest moment for the day in progress", (d) => [d.purse.min, d.purse.median, d.purse.max].map((n) => money(n, currency)).join(" · ")],
+    ["Money low · median · high", "The money the residents held at the end of the day, or at its latest moment for the day in progress", (d) => [d.purse.min, d.purse.median, d.purse.max].map((n) => money(n, currency)).join(" · ")],
   ];
   return h(
     "div",
@@ -93,15 +99,12 @@ function runRow(entry, index) {
   const head = entry.headline;
   const open = { view: "overview", run: entry.name, query: {} };
   const cast = new Cast({ residents: entry.residents.map((name) => ({ name })) });
-  // The index gives no currency; the run's progress document does, so the sums of money read
-  // as plain numbers until it arrives.
-  const paid = figure("paid for tasks", fmt.int(head.paid), `${fmt.int(head.payments)} payments`);
-  const purse = figure("median purse", fmt.int(head.purse.median), `${fmt.int(head.purse.min)} to ${fmt.int(head.purse.max)}`);
+  // The index gives no currency; the run's progress document does, so the fund reads as a
+  // plain number until it arrives.
+  const fund = figure("the town's fund", fmt.int(head.fund), head.fund === null ? "Read at each checkpoint; none has been saved yet" : "At the last checkpoint");
   readProgress(index, entry).then(
     (doc) => {
-      paid.firstChild.textContent = money(head.paid, doc.currency);
-      purse.firstChild.textContent = money(head.purse.median, doc.currency);
-      purse.title = `${money(head.purse.min, doc.currency)} to ${money(head.purse.max, doc.currency)}`;
+      if (head.fund !== null) fund.firstChild.textContent = money(head.fund, doc.currency);
     },
     () => {},
   );
@@ -121,10 +124,10 @@ function runRow(entry, index) {
     h(
       "div",
       { class: "run-stats" },
-      figure("hand-ins accepted", fmt.int(head.accepted), `${fmt.int(head.submissions)} handed in, ${fmt.int(head.rejected)} not accepted`),
-      paid,
-      figure("things said", fmt.int(head.speeches), `${fmt.int(head.gifts)} gifts, ${fmt.int(head.skills_shared)} files passed on`),
-      purse,
+      fund,
+      figure("tasks accepted", fmt.int(head.accepted), `${fmt.int(head.arrived)} came in, ${fmt.int(head.submissions)} handed in, ${fmt.int(head.withdrawn)} withdrawn`),
+      figure("sales · dishes · patients", `${fmt.int(head.sales)} · ${fmt.int(head.dishes)} · ${fmt.int(head.examinations + head.treatments)}`, "Sales at the Store's counter, dishes served, examinations and treatments"),
+      figure("things said", fmt.int(head.speeches), `${fmt.int(head.gifts)} gifts, ${fmt.int(head.messages)} messages`),
     ),
     h("div", { class: "run-links" }, h("a", { class: "btn small", href: href({ ...open, view: "town" }) }, icon("map", 15), "Watch the town"), h("a", { class: "ghost small", href: href({ ...open, view: "person", agent: entry.residents[0] }) }, icon("people", 15), "People"), h("a", { class: "ghost small", href: href(open) }, icon("chart", 15), "Dashboard")),
   );
@@ -160,7 +163,7 @@ export function mountLanding(root, ctx) {
         "header",
         { class: "page-head" },
         h("h1", {}, "A small town"),
-        h("p", { class: "lede" }, "Each run is one town of residents living their days: they take tasks from the Workshop's board, pay rent, buy food and things, meet and talk, and keep their own notes. Nobody tells them how to behave; what they become is the question. Watch a town as it happens, read each resident's story, or open the dashboard for the numbers. Live runs update as they go."),
+        h("p", { class: "lede" }, "Each run is one town of residents living their days, each at its occupation: the programmers and their team leader take on clients' tasks at the Office, the shopkeeper keeps the Store, the chef cooks for the restaurant, the doctor sees patients and the mayor reads the town's report and makes announcements. The town's fund pays their wages and takes their rent; they buy food and things, eat out, fall ill, meet and talk, and keep their own notes. Nobody tells them how to behave; what they become is the question. Watch a town as it happens, read each resident's story, or open the dashboard for the numbers. Live runs update as they go."),
       ),
       index.runs.length || index.skipped.length ? null : h("div", { class: "card" }, emptyState("No runs are published yet.", "Runs appear here once one has been started and the runs root is published; a run just created shows up before its first entry.")),
       sets.map((set) => section(set.name, set.runs, set.name)),

@@ -13,12 +13,12 @@ import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { bodyAt, lowerBound, markersBetween, moment as momentOf, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { given, textFor } from "../town/events.js";
+import { ICONS, describeMarker, textFor, tone } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
-import { BoardPanel, ChroniclePanel, FeedPanel, PeoplePanel, doing, whereabouts } from "../town/panels.js";
+import { ChroniclePanel, FeedPanel, PeoplePanel, WorkPanel, doing, whereabouts } from "../town/panels.js";
 import { SPEEDS, Timeline } from "../town/timeline.js";
-import { placeById } from "../world.js";
+import { jobOf, occupationOf, placeById } from "../world.js";
 import { areasOf } from "./overview.js";
 
 const QUIET = 12 * 60; // simulated seconds without a moment that playback crosses quickly
@@ -27,11 +27,15 @@ const RECENT = 10 * 60; // seconds of speech and deeds the map keeps in view
 const PANELS = [
   ["people", "People"],
   ["feed", "Feed"],
-  ["board", "Board"],
+  ["work", "Work"],
   ["ties", "Ties"],
   ["day", "Day"],
 ];
 const DEFAULT_PANEL = "people";
+/** The entries the map shows as a notice for a while: what the whole town would notice. */
+const NOTICES = new Set(["task_arrived", "task_withdrawn", "delivery", "announcement", "bedridden", "forced_sleep"]);
+/** The markers the map shows by the resident for a while: what it just did, earned or felt. */
+const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "gift", "message", "sale", "served", "order", "cook", "price", "examination", "treatment", "report", "announcement", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -104,7 +108,7 @@ export function mountTown(root, ctx) {
         refreshPanel(true);
       },
     }),
-    board: new BoardPanel(),
+    work: new WorkPanel(),
     ties: new TiesPanel({ cast, onSelect: (name) => select(name) }),
     day: new ChroniclePanel({ onJump: (time) => seek(time, true) }),
   };
@@ -189,7 +193,7 @@ export function mountTown(root, ctx) {
   // The moment ----------------------------------------------------------------------------------
   function phase(time, state) {
     const second = secondOfDay(time);
-    const awake = Object.values(state.residents).filter((found) => found.segment && found.segment.kind !== "sleep" && found.segment.kind !== "dead").length;
+    const awake = Object.values(state.residents).filter((found) => found.segment && found.segment.kind !== "sleep" && found.segment.kind !== "bedridden").length;
     const up = `${awake} of ${cast.names.length} up`;
     if (second < hours.forced_sleep) return `Past midnight · ${up}`;
     if (second < hours.checkpoint) return `Forced sleep · ${up}`;
@@ -207,6 +211,8 @@ export function mountTown(root, ctx) {
       time: Math.floor(view.time),
       day,
       state,
+      timeline: data,
+      measures,
       world,
       cast,
       places,
@@ -239,65 +245,39 @@ export function mountTown(root, ctx) {
       const working = here.filter(([, found]) => found.segment.kind === "work").length;
       const talking = here.filter(([, found]) => found.conversation).length;
       const asleep = here.filter(([, found]) => found.segment.kind === "sleep").length;
+      const abed = here.filter(([, found]) => found.segment.kind === "bedridden").length;
+      const open = here.some(([name, found]) => found.segment.kind === "work" && occupationOf(world, name).workplace === place.id);
       const bits = [];
+      if (open) bits.push("open");
       if (working) bits.push(`${working} working`);
       if (talking) bits.push(`${talking} talking`);
       if (asleep) bits.push(`${asleep} asleep`);
+      if (abed) bits.push(`${abed} in bed`);
       if (bits.length) scenes.set(place.id, { label: bits.join(" · ") });
     }
     const deeds = new Map();
     const ailing = new Set();
     for (const lane of data.residents) {
       for (const mk of markersBetween(lane, recent, m.time)) {
-        const deed = deedOf(mk);
+        const deed = deedOf(mk, lane.name);
         if (deed) deeds.set(lane.name, deed);
       }
-      if (Object.values(bodyAt(lane, m.time)).some((need) => need.lowest)) ailing.add(lane.name);
+      if (Object.values(bodyAt(lane, m.time)).some((need) => need.lowest) || m.state.residents[lane.name].segment?.kind === "bedridden") ailing.add(lane.name);
     }
     const notices = m.dayEntries
-      .filter((e) => e.sim_time >= m.time - 15 * 60 && ["forced_sleep", "expiry", "death", "board_posted"].includes(e.kind))
+      .filter((e) => e.sim_time >= m.time - 15 * 60 && NOTICES.has(e.kind))
       .slice(-3)
-      .map((e) => ({ icon: e.kind === "board_posted" ? "board" : "alert", tone: e.kind === "board_posted" ? null : "critical", text: textFor(e, m.reader) }));
+      .map((e) => ({ icon: ICONS[e.kind], tone: tone(e) === "critical" ? "critical" : null, text: textFor(e, m.reader) }));
     const key = `${m.time}|${m.dayEntries.length}|${m.reader}`;
     return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, ailing, notices, effects, key };
   }
 
-  /** What a marker says in a few words by the resident, with its tone. */
-  function deedOf(mk) {
-    switch (mk.kind) {
-      case "claim":
-        return { icon: "board", text: `claims task ${mk.task}` };
-      case "submission":
-        return mk.resolved === undefined ? { icon: "check", text: `hands in task ${mk.task}` } : { icon: mk.resolved ? "check" : "cross", text: mk.resolved ? `task ${mk.task} accepted` : `task ${mk.task} not accepted`, tone: mk.resolved ? "good" : "serious" };
-      case "payment":
-        return { icon: "coin", text: `paid ${fmt.money(mk.amount)} for task ${mk.task}`, tone: "good" };
-      case "abandon":
-        return { icon: "cross", text: `gives up task ${mk.task}`, tone: "serious" };
-      case "expiry":
-        return { icon: "clock", text: `task ${mk.task} ran out`, tone: "critical" };
-      case "gift":
-        return { icon: "coin", text: `hands ${mk.to} ${given(mk)}` };
-      case "message":
-        return { icon: "speech", text: `writes to ${mk.to}` };
-      case "purchase":
-        return { icon: "coin", text: `buys ${mk.quantity > 1 ? `${mk.quantity} × ` : ""}${mk.name} for ${fmt.money(mk.amount)}` };
-      case "settlement":
-        return { icon: "coin", text: `pays ${fmt.money(mk.rent + mk.fees)} rent and charges` };
-      case "move_in":
-        return { icon: "home", text: `moves into ${data.places[mk.to] ?? mk.to}` };
-      case "skill_shared":
-        return { icon: "spark", text: `passes ${mk.to} a copy of ${mk.file}` };
-      case "journal":
-        return { icon: "book", text: "to bed, journal written" };
-      case "forced_sleep":
-        return { icon: "alert", text: "falls asleep at the forced hour", tone: "critical" };
-      case "condition":
-        return { icon: "eye", text: `is ${mk.band}`, tone: mk.lowest ? "warn" : null };
-      case "death":
-        return { icon: "alert", text: "died", tone: "critical" };
-      default:
-        return null;
-    }
+  /** What a marker says in a few words by the resident, with its icon and tone; null for what the map does not show. */
+  function deedOf(mk, name) {
+    if (!DEEDS.has(mk.kind)) return null;
+    const [label] = describeMarker(mk, name, name);
+    const shown = { kind: mk.kind, payload: mk };
+    return { icon: ICONS[mk.kind], text: label.length > 60 ? `${label.slice(0, 58)}…` : label, tone: mk.kind === "condition" ? (mk.lowest ? "warn" : null) : mk.kind === "submission" && mk.resolved !== undefined ? (mk.resolved ? "good" : "serious") : tone(shown) };
   }
 
   /** The selected resident: who, where, doing what, how it stands and what it owns, and whose wording the panels read. */
@@ -305,7 +285,6 @@ export function mountTown(root, ctx) {
     selectedBox.hidden = !view.selected;
     if (!view.selected) return fill(selectedBox);
     const found = m.state.residents[view.selected];
-    const dead = found.segment?.kind === "dead";
     const delta = found.purse - m.dayStartPurses[view.selected];
     fill(
       selectedBox,
@@ -313,19 +292,17 @@ export function mountTown(root, ctx) {
         "div",
         { class: "selected-head" },
         cast.badge(view.selected, 34),
-        h("div", { class: "selected-text" }, h("b", {}, view.selected), h("span", { class: "muted" }, whereabouts(found, places)), h("span", { class: "selected-job" }, doing(found, places))),
+        h("div", { class: "selected-text" }, h("b", {}, view.selected), h("span", { class: "muted" }, `${jobOf(world, view.selected)} · ${whereabouts(found, places) || "on the way"}`), h("span", { class: "selected-job" }, doing(found, places))),
         h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })), title: `${view.selected}'s story: journal, files and the raw trace` }, "Story", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
-      dead
-        ? h("p", { class: "note" }, `${view.selected} died: health ran out at midnight.`)
-        : h(
-            "div",
-            { class: "selected-life" },
-            needBars(world, bodyAt(found.lane, m.time)),
-            h("div", { class: "selected-purse" }, h("span", { class: `money${found.purse < 0 ? " debt" : ""}` }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)} today`) : null), h("span", { class: "muted small-text" }, "in the purse")),
-            inventory(world, thingsAt(found.lane, m.time), { compact: true }),
-          ),
+      h(
+        "div",
+        { class: "selected-life" },
+        needBars(world, bodyAt(found.lane, m.time)),
+        h("div", { class: "selected-purse" }, h("span", { class: "money" }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)} today`) : null), h("span", { class: "muted small-text" }, "in hand")),
+        inventory(world, thingsAt(found.lane, m.time), { compact: true }),
+      ),
       h(
         "div",
         { class: "seg lens", role: "group", "aria-label": "Whose wording to read" },
@@ -540,12 +517,17 @@ export function mountTown(root, ctx) {
     const before = view.time;
     view.time = time;
     const effects = [];
+    const gain = (agent, amount) => amount && effects.push({ agent, text: `+${amount}`, tone: "good" });
+    const loss = (agent, amount) => amount && effects.push({ agent, text: `−${amount}`, tone: "muted" });
     for (const lane of data.residents)
       for (const mk of markersBetween(lane, before, time)) {
-        if (mk.kind === "payment") effects.push({ agent: lane.name, text: `+${mk.amount}`, tone: "good" });
-        if (mk.kind === "gift" && !mk.item) effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" }, { agent: mk.to, text: `+${mk.amount}`, tone: "good" });
-        if (mk.kind === "purchase") effects.push({ agent: lane.name, text: `−${mk.amount}`, tone: "muted" });
-        if (mk.kind === "settlement") effects.push({ agent: lane.name, text: `−${mk.rent + mk.fees}`, tone: "muted" });
+        if (mk.kind === "service" || mk.kind === "wage") gain(lane.name, mk.paid);
+        if (mk.kind === "gift" && !mk.item) {
+          loss(lane.name, mk.amount);
+          gain(mk.to, mk.amount);
+        }
+        if ((mk.kind === "sale" && !mk.kitchen) || mk.kind === "served") loss(lane.name, mk.amount);
+        if (mk.kind === "examination" || mk.kind === "treatment") loss(mk.patient, mk.fee);
       }
     paint(effects);
   }
@@ -627,7 +609,7 @@ export function mountTown(root, ctx) {
     if (!WIDE.matches && (view.panel !== DEFAULT_PANEL || view.selected)) setSheet("half");
     source.measures().then((found) => {
       measures = found;
-      if (view.panel === "ties") refreshPanel(true);
+      if (view.panel === "ties" || view.panel === "work") refreshPanel(true);
     }, ctx.fail);
     prefetch();
   }

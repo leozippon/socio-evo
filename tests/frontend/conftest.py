@@ -1,6 +1,6 @@
-"""A run directory written by a real world living a day, single log entries written by hand,
-agent repositories committed as the simulation commits them, a resident's trace and session,
-and a results root, for the frontend's tests."""
+"""A run directory written by a real world living a day in a small town of occupations, single log
+entries written by hand, agent repositories committed as the simulation commits them, a
+resident's trace and session, and a results root, for the frontend's tests."""
 
 from __future__ import annotations
 
@@ -13,15 +13,33 @@ from typing import Any
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag, read_jsonl
 from simulation.config import ExperimentConfig
-from tests.world.conftest import Town, make_agent_dirs, opening, town_config
+from tests.world.conftest import (
+    CARE,
+    RESIDENTS,
+    TRADES,
+    Town,
+    make_agent_dirs,
+    opening,
+    town_config,
+)
 from world.clock import DAY, ManualClock
 from world.config import TownConfig
 from world.testing import FakeBackend
 from world.world import World
 
 
+def frontend_town() -> TownConfig:
+    """The town of the frontend's tests: Mei and Aisha, programmers at the workshop (the office),
+    and Tomas, their team leader; Olga the shopkeeper, Jonas the chef at the café (the
+    restaurant), Lucia the doctor at the clinic (the hospital) and Vera the mayor at the hall; a
+    client withdraws a task at the midnight of the day it came in."""
+    mei, tomas, aisha = RESIDENTS
+    office = (mei, tomas | {"occupation": "team-leader"}, aisha)
+    return town_config(residents=office + TRADES + CARE, expiry_days=0)
+
+
 def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirectory, Town]:
-    config = town_config(expiry_days=0)
+    config = frontend_town()
     run = RunDirectory(root / "town")
     if not run.root.exists():
         frozen = ExperimentConfig.model_validate(
@@ -46,15 +64,42 @@ def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirecto
 
 
 async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> None:
-    """Day 1 and day 2 until 18:05: Mei works, talks, gives and is paid; Tomas fails a task, works
-    until 18:00 and keeps the task until its client withdraws it at midnight; Aisha stays home and
-    is put to sleep at the forced hour."""
+    """Day 1 and day 2 until 18:05. The three tasks of the pool come in at 08:00. Olga opens the
+    Store at 07:10, where Jonas buys eggs and vegetables for the kitchen; she orders bread for
+    the morning and sets its price. Jonas cooks an omelette and a soup at the café at 07:30.
+    Vera reads the report at the hall and announces. Mei works, talks, gives and is paid; at
+    10:30 she leaves for the clinic, where Lucia examines and treats her, has the omelette at the
+    café, buys bread at the Store and goes home. Tomas, the team leader, is paid his sum for
+    Mei's task, fails a task of his own and gives the third to Aisha at home; he works until
+    18:00, and both keep their tasks until the clients withdraw them at midnight. The
+    four at the trades leave work at 18:00 for the flat, and are put to sleep at the forced
+    hour with Aisha, who stays home."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)
     await town.until("07:00")
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
+    for name, place in (
+        ("Olga", "store"),
+        ("Jonas", "store"),
+        ("Lucia", "clinic"),
+        ("Vera", "hall"),
+    ):
+        await town.call(name, "go", place=place)
+    await town.until("07:10")
+    await town.call("Olga", "start_work")
+    await town.call("Jonas", "buy", item="eggs", quantity=2, for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="vegetables", quantity=3, for_the_kitchen=True)
+    await town.call("Jonas", "go", place="cafe")
+    await town.call("Olga", "order", item="bread", quantity=5)
+    await town.call("Olga", "set_price", item="bread", price=5)
+    await town.call("Lucia", "start_work")
+    await town.call("Vera", "report")
+    await town.call("Vera", "announce", text="The hall is open every day.")
+    await town.until("07:30")
+    await town.call("Jonas", "cook", dish="omelette", portions=1)
+    await town.call("Jonas", "cook", dish="soup", portions=1)
     await town.until("09:00")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
@@ -71,11 +116,25 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Tomas", "claim_task", task=2)
     await town.call("Tomas", "write_repo_file", path="a.py", content="half\n")
     await town.call("Tomas", "submit")
+    await town.call("Tomas", "assign", task=3, to="Aisha")
     await town.until("10:30")
     await town.call("Mei", "leave_work")
+    await town.call("Mei", "go", place="clinic")
+    await town.until("10:40")
+    await town.call("Lucia", "examine", patient="Mei")
+    await town.call("Lucia", "treat", patient="Mei")
+    await town.call("Mei", "go", place="cafe")
+    await town.until("11:00")
+    await town.call("Mei", "buy", item="omelette")
+    await town.call("Mei", "go", place="store")
+    await town.until("11:15")
+    await town.call("Mei", "buy", item="bread", quantity=2)
     await town.call("Mei", "go", place="mill-street-house")
     await town.until("18:00")
-    await town.call("Tomas", "leave_work")
+    for name in ("Tomas", "Olga", "Jonas", "Lucia", "Vera"):
+        await town.call(name, "leave_work")
+    for name in ("Olga", "Jonas", "Lucia", "Vera"):
+        await town.call(name, "go", place="college-flat")
     await town.until("22:00")
     await town.call("Tomas", "go", place="college-flat")
     await town.call("Mei", "sleep", until="07:00", journal="I fixed task 1.")
@@ -174,6 +233,7 @@ def write_results(root: Path, run: str, *, finished: bool = True) -> None:
             json.dumps(
                 {
                     "model": {"model": "qwen"},
+                    "occupation": "programmer",
                     "resolved_rate": 0.25 if day_dir.name == "day-00" else 0.5,
                     "evaluated": 4,
                     "resolved": 1,

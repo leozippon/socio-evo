@@ -53,24 +53,33 @@ ROWS = {
 office, the hall and the hospital in the middle, the store, the restaurant and the social places
 in a row below."""
 COUNTED = (
+    "arrived",
     "claims",
+    "assigned",
     "submissions",
     "accepted",
     "rejected",
-    "payments",
-    "paid",
+    "withdrawn",
+    "sales",
+    "dishes",
+    "examinations",
+    "treatments",
+    "announcements",
     "speeches",
     "messages",
     "gifts",
-    "purchases",
-    "skills_shared",
     "journals",
+    "illnesses",
+    "bedridden",
     "forced_sleeps",
-    "deaths",
 )
 """The counts of `frontend.progress` summed into a run's headline."""
-GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money")
+GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "served")
 """What one resident had to do with another on a day, by field."""
+SERVING = {"sale": "seller", "served": "chef", "examination": None, "treatment": None}
+"""The entries of one resident serving another, with the payload's field naming the one who
+served, the actor being the buyer or the diner; where there is none, the actor is the doctor
+and the payload names the patient."""
 JOURNAL_FIELDS = (
     "resident",
     "day",
@@ -92,11 +101,11 @@ DECLARED = {
 """The declared outcomes compared across runs: the table of `evaluation.json` and the column
 each is read from, and what it is called."""
 EXPLORED = (
-    "claimed",
-    "accepted",
-    "earned",
-    "purse",
-    "work_hours",
+    "tasks_accepted",
+    "hours_at_work",
+    "wages",
+    "service_sums",
+    "money",
     "said_public",
     "said_private",
     "money_given",
@@ -153,11 +162,22 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         ],
         "travel_minutes": town.travel_minutes,
         "residents": [
-            {"name": r.name, "home": r.home, "purse": r.purse, "rules": rules.text(r.name)}
+            {
+                "name": r.name,
+                "home": r.home,
+                "occupation": r.occupation,
+                "purse": r.purse,
+                "rules": rules.text(r.name),
+            }
             for r in town.residents
         ],
+        "occupations": [occupation.model_dump(mode="json") for occupation in town.occupations],
+        "fund": town.fund.model_dump(mode="json"),
         "work": town.work.model_dump(mode="json"),
         "goods": [good.model_dump(mode="json") for good in town.supplier],
+        "store": town.store.model_dump(mode="json"),
+        "dishes": [dish.model_dump(mode="json") for dish in town.dishes],
+        "hospital": town.hospital.model_dump(mode="json"),
         "needs": town.needs.model_dump(mode="json"),
         "social": town.social.model_dump(mode="json"),
         "day": town.day.model_dump(mode="json"),
@@ -205,8 +225,10 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     with anything to count, by day, source and target. `minutes` are simulated minutes `source`
     spent in conversations `target` took part in (from the timeline's conversations, each on
     the day it began); the rest counts the day's entries: things `source` said that `target`
-    heard (`said`, of which `said_private` to it by name), messages written to it and gifts
-    (`gifts` times, `money` the money among them)."""
+    heard (`said`, of which `said_private` to it by name), messages written to it, gifts
+    (`gifts` times, `money` the money among them) and the times `source` served `target` at
+    its work (`served`: a sale at the Store's counter, a dish, an examination or a treatment;
+    nobody serves itself)."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 
@@ -238,31 +260,46 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
             elif kind == "gift":
                 add(day, actor, payload["to"], "gifts", 1)
                 add(day, actor, payload["to"], "money", payload.get("amount", 0))  # 0: a thing
+            elif kind in SERVING:
+                field = SERVING[kind]
+                server, served = (payload[field], actor) if field else (actor, payload["patient"])
+                if server != served:
+                    add(day, server, served, "served", 1)
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
     ]
 
 
-def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict[str, list]:
-    """What each resident owns over the run, by name: `[time, {good id: units}]` from the
-    start and after each change, a durable counted 1 and a consumable by the units left of it.
-    The purchases and the gifts of things are the timeline's markers: a durable is owned from
-    then on, a consumable adds the units bought, and what is given goes from the giver to the
-    receiver. What is eaten leaves no
-    entry in the log, so at every checkpoint whose file the run has written the stock is read
-    from the checkpoint instead, exact as of that moment; between checkpoints it is as last
-    counted plus what was bought and given since."""
-    goods = {good.id: good for good in town.supplier}
-    snapshots: dict[int, dict[str, dict[str, int]]] = {}
+def saved(run: RunDirectory, data: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
+    """The state of the world at every checkpoint whose file the run has written, by day: day
+    0, the world before the first day, and each lived day the timeline `data` has closed."""
+    states = {}
     for day in [{"day": 0, "end": data["start"]}, *data["days"]]:
         path = run.checkpoint_path(day["day"])
-        if day["end"] is None or not path.is_file():
-            continue
-        state = json.loads(path.read_text(encoding="utf-8"))
-        snapshots[day["end"]] = {
+        if day["end"] is not None and path.is_file():
+            states[day["day"]] = json.loads(path.read_text(encoding="utf-8"))
+    return states
+
+
+def things(
+    states: Mapping[int, Mapping[str, Any]], town: TownConfig, data: Mapping[str, Any]
+) -> dict[str, list]:
+    """What each resident owns over the run, by name: `[time, {good id: units}]` from the
+    start and after each change, a durable counted 1 and a consumable by the units left of it.
+    What it bought for itself at the Store's counter and the gifts of things are the timeline's
+    markers: a durable is owned from then on, a consumable adds the units bought, and what is
+    given goes from the giver to the receiver. What is eaten leaves no entry in the log, so at
+    every checkpoint of `states` the stock is read from the checkpoint instead, exact as of
+    that moment; between checkpoints it is as last counted plus what was bought and given
+    since."""
+    goods = {good.id: good for good in town.supplier}
+    snapshots = {
+        state["time"]: {
             name: dict(found["inventory"]["items"]) for name, found in state["residents"].items()
         }
+        for state in states.values()
+    }
     found = {}
     for lane in data["residents"]:
         changes: list[tuple[int, int, Any]] = [
@@ -270,7 +307,8 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
             for t, snapshot in snapshots.items()
             if lane["name"] in snapshot
         ]
-        changes += [(m["t"], 1, m) for m in lane["markers"] if m["kind"] == "purchase"]
+        bought = [m for m in lane["markers"] if m["kind"] == "sale" and not m["kitchen"]]
+        changes += [(m["t"], 1, m) for m in bought]
         for other in data["residents"]:  # things given away and received
             for m in other["markers"]:
                 if m["kind"] == "gift" and "item" in m and lane["name"] in (other["name"], m["to"]):
@@ -299,9 +337,11 @@ def things(run: RunDirectory, town: TownConfig, data: Mapping[str, Any]) -> dict
     return found
 
 
-def headline(progress: Mapping[str, Any]) -> dict[str, Any]:
+def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """A few numbers for the home page: the day reached and the counts of `frontend.progress`
-    summed over the lived days, with the purses at the end of the last of them."""
+    summed over the lived days, with the purses at the end of the last of them and the fund's
+    balance at the last checkpoint, from the town's days of `analysis.measures` (null before
+    any)."""
     daily = progress["daily"]
     return {
         "day": progress["day"],
@@ -309,6 +349,7 @@ def headline(progress: Mapping[str, Any]) -> dict[str, Any]:
         "hours_per_day": progress["hours_per_day"],
         **{key: sum(row[key] for row in daily) for key in COUNTED},
         "purse": daily[-1]["purse"],
+        "fund": town[-1]["fund"] if town else None,
     }
 
 
