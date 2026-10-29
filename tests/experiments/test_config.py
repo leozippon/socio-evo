@@ -28,7 +28,7 @@ def test_the_town_and_the_run_over_it():
     assert found.runtime.reasoning_effort == "low"
     assert found.llm.max_concurrency == len(found.residents)
     assert found.town.start_date.strftime("%A %d %B %Y") == "Monday 02 March 2026"
-    assert run.town.start_date.isoformat() == "2026-10-27"
+    assert run.town.start_date > found.town.start_date  # the run names the day it starts
     assert run.model_dump(exclude={"town"}) == found.model_dump(exclude={"town"})
     assert run.town.model_dump(exclude={"start_date"}) == found.town.model_dump(
         exclude={"start_date"}

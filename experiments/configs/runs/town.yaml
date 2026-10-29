@@ -3,4 +3,4 @@
 base: ../town.yaml
 name: town
 town:
-  start_date: 2026-10-27
+  start_date: 2026-10-29
