@@ -43,17 +43,20 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           arrival), who held it from when (`[time, holder or null, the team leader who gave it
           or null]`: a claim, an assignment, and null when it was given up, accepted or
           withdrawn), when it was accepted and who handed it in, when it was withdrawn
-      "store": {"stock": [[t, {good: units}]], "prices": [[t, {good: price}]],
-                "on_order": [[t, {good: units}]]},
-      "kitchen": {"stock": [[t, {good: units}]], "menu": [[t, {dish: price}]],
+      "store": {"stock": [[t, {item: units}]], "prices": [[t, {item: price}]],
+                "on_order": [[t, {item: units}]]},
+      "kitchen": {"stock": [[t, {item: units}]], "menu": [[t, {dish: price}]],
                   "portions": [[t, {dish: portions}]]},
       "fees": [[t, {"examination": 20, "treatment": 60}]]
-          the Store's, the kitchen's and the Hospital's state from the start (the
-          configuration's) and after each change: a sale, a delivery, an order, a price set,
-          cooking, a dish served, and the midnight, when the portions not sold are gone
+          the Store's shelves and prices, the kitchen's larder, menu and portions, and the
+          Hospital's fees, from the start (the configuration's) and after each change: a sale,
+          a delivery, an order, a price set, cooking, a dish bought or handed over by the chef,
+          and the midnight, when the portions not sold are gone
     }
 
-The markers, each on the lane of the resident who acted, with their own fields:
+The markers, each on the lane of the resident who acted, with their own fields; `gift`, `sale`
+and `served` are the log's `move` entries that hand something to another, buy at the Store's
+counter and buy a dish (taking things that were left, leaving them and eating have none):
 
     claim         task, instance_id
     assign        task, to, from          the team leader gave a task to `to`, taking it from
@@ -66,12 +69,14 @@ The markers, each on the lane of the resident who acted, with their own fields:
                                           for the programmers'), `sale`, `dish` or `patient`
     speech        text, to, private       "to" is everyone who heard it
     message       to, text                a written message, read by "to" alone
-    gift          to, amount              money given; or to, item, name, quantity for a thing
+    gift          to, amount              money passed; or to, item, name, quantity for a thing
                                           or helpings of a stock
     sale          item, name, quantity, price, amount, seller, kitchen
-                                          goods bought at the Store's counter, for oneself or,
-                                          the chef, for the kitchen (which the fund pays)
-    served        dish, name, amount, chef   a dish bought at the restaurant and eaten there
+                                          bought at the Store's counter, for oneself or, the
+                                          chef, for the kitchen's larder (which the fund pays)
+    served        dish, name, amount, chef   a dish bought at the restaurant and eaten there,
+                                          or handed over by the chef, unpaid (amount 0), on the
+                                          lane of the one who ate it
     order         item, name, quantity, amount, arrives   the shopkeeper's order, paid by the fund
     cook          dish, name, portions, used   portions the chef cooked from the kitchen's stock
     price         item, name, place, price, before   a price set at the Store, the restaurant
@@ -103,7 +108,7 @@ and those of no resident, under "markers":
 
     task_arrived    task, instance_id, repo   a client's task came in at the Office
     task_withdrawn  task, holder              a client withdrew a task not accepted in time
-    delivery        items                     what the Store ordered arrived ({good: units})
+    delivery        items                     what the Store ordered arrived ({item: units})
 
 The purse moves with every sum of money the log records: the money after a service and after
 the midnight's wages, money given and received, what a resident paid at the Store's counter
@@ -132,7 +137,7 @@ from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
 from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
-from world.economy import add, take
+from world.economy import LARDER, PORTIONS, SHELVES, add, take
 
 _FOLDED = frozenset(
     {
@@ -155,9 +160,7 @@ _FOLDED = frozenset(
         "message",
         "leave_conversation",
         "conversation_end",
-        "gift",
-        "sale",
-        "served",
+        "move",
         "order",
         "delivery",
         "cook",
@@ -187,8 +190,6 @@ _COPIED = {
     "abandon": ("task",),
     "service": ("for", "task", "amount", "paid", "owed"),
     "message": ("to", "text"),
-    "sale": ("item", "name", "quantity", "price", "amount", "seller", "kitchen"),
-    "served": ("dish", "name", "amount", "chef"),
     "order": ("item", "name", "quantity", "amount", "arrives"),
     "cook": ("dish", "name", "portions", "used"),
     "price": ("item", "name", "place", "price", "before"),
@@ -402,7 +403,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     markers: list[dict[str, Any]] = []
     tasks: dict[int, dict[str, Any]] = {}
     stock = _Series(start, town.store.stock)
-    prices = _Series(start, {good.id: good.price for good in town.supplier})
+    prices = _Series(start, {item.id: item.price for item in town.supplied})
     on_order = _Series(start, {})
     larder = _Series(start, {})
     menu = _Series(start, {dish.id: dish.price for dish in town.dishes})
@@ -436,7 +437,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "depart":
             lane.enter(t, "movement", payload["to"])
         elif kind == "arrive":
-            lane.enter(t, "idle", payload["place"])
+            lane.enter(t, "work" if payload["working"] else "idle", payload["place"])
         elif kind == "sleep":
             lane.enter(t, "sleep", place)
             if payload["journal"]:
@@ -506,25 +507,40 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         elif kind == "conversation_end":
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
-        elif kind == "gift" and "amount" in payload:  # money
-            lane.mark(entry, "gift", to=payload["to"], amount=payload["amount"])
-            lane.credit(t, -payload["amount"])
-            lanes[payload["to"]].credit(t, payload["amount"])
-        elif kind == "gift":  # a thing, or helpings of a stock
-            fields = {key: payload[key] for key in ("to", "item", "name", "quantity")}
-            lane.mark(entry, "gift", **fields)
-        elif kind == "sale":
-            take(stock.state, payload["item"], payload["quantity"])
-            stock.changed(t)
-            if payload["kitchen"]:
-                add(larder.state, payload["item"], payload["quantity"])
-                larder.changed(t)
-            else:
-                lane.credit(t, -payload["amount"])
-        elif kind == "served":
-            take(portions.state, payload["dish"], 1)
-            portions.changed(t)
-            lane.credit(t, -payload["amount"])
+        elif kind == "move":
+            item, units, paid = payload["item"], payload["units"], payload["money"]
+            source, target = payload["source"], payload["target"]
+            name = town.item(item).name if item is not None else None
+            if payload["reason"] == "pass" and item is None:  # money
+                lane.mark(entry, "gift", to=target, amount=paid)
+                lane.credit(t, -paid)
+                lanes[target].credit(t, paid)
+            elif payload["reason"] == "pass" and source == PORTIONS:  # a dish the chef served
+                served = {"dish": item, "name": name, "amount": 0, "chef": entry["actor"]}
+                lanes[target].mark(entry, "served", **served)
+            elif payload["reason"] == "pass":  # a thing, or helpings of a stock
+                lane.mark(entry, "gift", to=target, item=item, name=name, quantity=units)
+            elif payload["reason"] == "buy" and source == SHELVES:
+                kitchen = target == LARDER
+                lane.mark(
+                    entry, "sale", item=item, name=name, quantity=units, price=paid // units,
+                    amount=paid, seller=payload["seller"], kitchen=kitchen,
+                )  # fmt: skip
+                if kitchen:
+                    add(larder.state, item, units)
+                    larder.changed(t)
+                else:
+                    lane.credit(t, -paid)
+            elif payload["reason"] == "buy":  # a dish
+                served = {"dish": item, "name": name, "amount": paid, "chef": payload["seller"]}
+                lane.mark(entry, "served", **served)
+                lane.credit(t, -paid)
+            if source == SHELVES:
+                take(stock.state, item, units)
+                stock.changed(t)
+            elif source == PORTIONS:
+                take(portions.state, item, units)
+                portions.changed(t)
         elif kind == "order":
             add(on_order.state, payload["item"], payload["quantity"])
             on_order.changed(t)

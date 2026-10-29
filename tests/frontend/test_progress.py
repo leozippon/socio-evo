@@ -88,16 +88,15 @@ def speech(text: str, to: list[str], members: list[str]) -> dict:
     return {"text": text, "to": to, "private": False, "members": members}
 
 
-def sale(item: str, quantity: int, price: int, kitchen: bool) -> dict:
-    return {
-        "item": item,
-        "name": item,
-        "quantity": quantity,
-        "price": price,
-        "amount": quantity * price,
-        "seller": "Olga",
-        "kitchen": kitchen,
-    }
+def move(reason: str, source: str, target: str, **fields) -> dict:
+    """A move's payload: units of an item, or money alone, from `source` to `target`."""
+    found = {"item": None, "units": 0, "source": source, "target": target, "money": 0}
+    return found | {"reason": reason, "seller": None} | fields
+
+
+def sale(item: str, units: int, price: int, buyer: str, kitchen: bool) -> dict:
+    target, money = "larder" if kitchen else buyer, units * price
+    return move("buy", "shelves", target, item=item, units=units, money=money, seller="Olga")
 
 
 EXAMINATION = {
@@ -113,7 +112,7 @@ BEDRIDDEN = {"day": 2, "home": "mill-street-house", "from": None, "carried": Fal
 
 async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tmp_path):
     run, _ = new_town(tmp_path)  # Mei $120, Tomas $180, Aisha $30, the four trades $100 each
-    served = {"dish": "soup", "name": "vegetable soup", "amount": 8, "chef": "Jonas"}
+    served = move("buy", "portions", "Mei", item="soup", units=1, money=8, seller="Jonas")
     cook = {"dish": "soup", "name": "vegetable soup", "portions": 1, "used": {"vegetables": 2}}
     write(
         run,
@@ -125,7 +124,7 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
             ("assign", at("09:10"), "Tomas", 1002.0, {"task": 2, "to": "Aisha", "from": None}),
             ("speech", at("09:30"), "Tomas", 1003.0, speech("Hi", ["Mei"], [])),
             ("speech", at("09:31"), "Mei", 1004.0, speech("Hi", ["Tomas"], ["Mei", "Tomas"])),
-            ("gift", at("09:32"), "Mei", 1005.0, {"to": "Tomas", "amount": 5}),
+            ("move", at("09:32"), "Mei", 1005.0, move("pass", "Mei", "Tomas", money=5)),
             ("submission", at("10:00"), "Mei", 1007.0, {"task": 1}),
             ("verdict", at("10:00"), "Mei", 1008.0, verdict(1, True)),
             (
@@ -137,10 +136,10 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
             ),
             ("submission", at("11:00"), "Aisha", 1010.0, {"task": 2}),
             ("verdict", at("11:00"), "Aisha", 1011.0, verdict(2, False)),
-            ("sale", at("11:30"), "Jonas", 1011.1, sale("vegetables", 2, 3, kitchen=True)),
+            ("move", at("11:30"), "Jonas", 1011.1, sale("vegetables", 2, 3, "Jonas", kitchen=True)),
             ("cook", at("11:40"), "Jonas", 1011.2, cook),
-            ("served", at("12:00"), "Mei", 1011.3, served),
-            ("sale", at("12:10"), "Mei", 1011.4, sale("bread", 1, 4, kitchen=False)),
+            ("move", at("12:00"), "Mei", 1011.3, served),
+            ("move", at("12:10"), "Mei", 1011.4, sale("bread", 1, 4, "Mei", kitchen=False)),
             ("examination", at("13:00"), "Lucia", 1011.5, EXAMINATION),
             ("treatment", at("13:01"), "Lucia", 1011.6, TREATMENT),
             ("announcement", at("14:00"), "Vera", 1011.7, {"text": "Hello"}),
@@ -167,7 +166,7 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
             ("task_arrived", at("08:00", day=2), None, 9100.5, arrived(3)),
             ("claim", at("09:00", day=2), "Mei", 9101.0, {"task": 3, "instance_id": "t3"}),
             ("submission", at("09:20", day=2), "Mei", 9102.0, {"task": 3}),  # awaiting the verdict
-            ("gift", at("09:30", day=2), "Tomas", 9103.0, {"to": "Aisha", "amount": 10}),
+            ("move", at("09:30", day=2), "Tomas", 9103.0, move("pass", "Tomas", "Aisha", money=10)),
             ("bedridden", 2 * DAY, "Aisha", 9104.0, BEDRIDDEN),
         ],
     )

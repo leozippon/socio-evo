@@ -3,24 +3,26 @@ a plausible day from what each request shows, so that the whole pipeline runs wi
 
 The day it plays depends on the resident's occupation. The shopkeeper goes to the Store at waking,
 starts work, orders from the supplier the bread and what the kitchen will take the next day, sets a
-price, keeps the counter until 19:00, buys bread at it and goes to the Restaurant. The chef goes to
-the Store once the morning's delivery is in, buys bread for itself and, for the kitchen, what two
-dishes take, goes to the Restaurant, cooks them and serves until 20:00. Everyone else waits at home
-until tasks start to come in and goes to its workplace. A programmer sits down to work there and
-reads the board; the first of the programmers claims a free task, one of its own a day, and the
-others wait to be given one; with a task, the task's actions offered once it is held, it runs a
-command, reads a file, writes a fix and submits. The team leader, who lets the programmers look
-first when a task comes in, gives a task still free to the last of the programmers who holds none,
-or else takes one itself. While nothing is free they wait at the Office for the next task to come
-in, until 17:00. The doctor keeps the surgery until 18:00, examining and treating whoever comes;
-the mayor reads the report, announces and stays at work until 17:00. Then they go to the Store and
-buy bread if it is open, the first of the programmers going by the Hospital first to be seen, and
-to the Restaurant, where they have a dish if one is ready and, if anyone is there, say something
-once. At 20:00 everyone goes home and to bed with a journal entry, to wake at the town's forced
-waking hour; in bed, it reviews the day, notes it in memory/notes.md and falls asleep. Spoken to,
-it answers once a day and leaves the conversation. It keeps no state of its own: the resident's
-name comes from the system prompt, and the day so far from the messages since the last wake-up, so
-it continues a resumed run as it would have continued the run.
+price, buys bread at her own counter, keeps it until 19:00 and goes to the Restaurant, where she
+leaves a helping of her bread for anyone. The chef goes to the Store once the morning's delivery is
+in, buys bread for itself and, for the kitchen, what two dishes take, goes to the Restaurant, cooks
+them, serves until 20:00 and, once a day, hands a dish to the first one it sees there, which nobody
+pays for. Everyone else waits at home until tasks start to come in and goes to its workplace. A
+programmer sits down to work there and reads the board; the first of the programmers claims a free
+task, one of its own a day, and the others wait to be given one; with a task, the task's actions
+offered once it is held, it runs a command, reads a file, writes a fix and submits. The team leader,
+who lets the programmers look first when a task comes in, gives a task still free to the last of the
+programmers who holds none, or else takes one itself. While nothing is free they wait at the Office
+for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00, examining and
+treating whoever comes; the mayor reads the report, announces and stays at work until 17:00. Then
+they go to the Store and buy bread if it is open and eat a helping, the first of the programmers
+going by the Hospital first to be seen, and to the Restaurant, where they have a dish if one is
+ready, take what is left there for anyone and, if anyone is there, say something once and pass the
+first of them a little money. At 20:00 everyone goes home and to bed with a journal entry, to wake
+at the town's forced waking hour; in bed, it reviews the day, notes it in memory/notes.md and falls
+asleep. Spoken to, it answers once a day and leaves the conversation. It keeps no state of its own:
+the resident's name comes from the system prompt, and the day so far from the messages since the
+last wake-up, so it continues a resumed run as it would have continued the run.
 """
 
 from __future__ import annotations
@@ -42,6 +44,8 @@ COUNTER_CLOSES = parse_hour("19:00")
 EVENING = parse_hour("20:00")
 PORTIONS = 4
 """What the chef cooks of each of the first two dishes."""
+BREAD = 25
+"""The helpings of bread the shopkeeper orders for the next day: three for each resident."""
 ANNOUNCEMENT = "The Town Hall is open today, and the report is read every morning."
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* The client pays \S+ and withdraws it at .*?\.(.*)$", re.M)
@@ -72,12 +76,12 @@ class DryRunModel:
         doctor = any(r.occupation == "doctor" for r in town.residents)
         self._patient = self._programmers[0] if doctor and self._programmers else None
         """Who goes by the Hospital after work: the first programmer, if there is a doctor."""
-        self._bread = next(good.id for good in town.supplier if good.ready)
+        self._bread = next(item.id for item in town.supplied if item.ready)
         self._dishes = town.dishes[:2]
         kitchen: dict[str, int] = {}
         for dish in self._dishes:
-            for good, units in dish.ingredients.items():
-                kitchen[good] = kitchen.get(good, 0) + units * PORTIONS
+            for item, units in dish.ingredients.items():
+                kitchen[item] = kitchen.get(item, 0) + units * PORTIONS
         self._kitchen = kitchen
 
     def __call__(self, request: LLMRequest) -> LLMResponse:
@@ -166,12 +170,13 @@ class _Day:
         if self.occupation == "shopkeeper":
             if self.hour >= COUNTER_CLOSES:
                 return self._go(self.model._restaurant)
-            orders = {self.model._bread: 10} | self.model._kitchen  # what the day will sell
+            orders = {self.model._bread: BREAD} | self.model._kitchen  # what the day will sell
             return reply(
                 "",
                 tool_call("start_work"),
-                *[tool_call("order", item=good, quantity=n) for good, n in orders.items()],
+                *[tool_call("order", item=item, quantity=n) for item, n in orders.items()],
                 tool_call("set_price", item=self.model._bread, price=self._price_now()),
+                tool_call("buy", item=self.model._bread, units=3),  # for herself, at her counter
                 self._wait_call(COUNTER_CLOSES),
             )
         if self.occupation == "chef":
@@ -200,15 +205,15 @@ class _Day:
                 return reply("", tool_call("leave_work"), *self._leave().tool_calls)
             return reply("", tool_call("view_board"))
         if self.occupation == "shopkeeper":
-            if self.hour >= COUNTER_CLOSES:  # bread for herself, at her own counter
+            if self.hour >= COUNTER_CLOSES:
                 return reply(
-                    "",
-                    tool_call("buy", item=self.model._bread, quantity=2),
-                    tool_call("leave_work"),
-                    tool_call("go", place=self.model._restaurant),
+                    "", tool_call("leave_work"), tool_call("go", place=self.model._restaurant)
                 )
             ends = COUNTER_CLOSES
         elif self.occupation == "chef":
+            here, dish = self._here(), self._ready_dish()
+            if here and dish is not None and not self._did("pass") and self.hour < EVENING:
+                return reply("", tool_call("pass", item=dish, to=here[0]), self._wait_call(EVENING))
             ends = EVENING
         elif self.occupation == "doctor":
             patients = [
@@ -250,29 +255,45 @@ class _Day:
             if closed:
                 return self._wait_minutes(10)
             kitchen = [
-                tool_call("buy", item=good, quantity=units, for_the_kitchen=True)
-                for good, units in self.model._kitchen.items()
+                tool_call("buy", item=item, units=units, for_the_kitchen=True)
+                for item, units in self.model._kitchen.items()
             ]
             return reply(
                 "",
-                tool_call("buy", item=self.model._bread, quantity=2),
+                tool_call("buy", item=self.model._bread, units=2),
                 *kitchen,
                 tool_call("go", place=self.model._restaurant),
             )
         calls = []
         if not closed and not self._did("buy", "You bought"):
-            calls = [tool_call("buy", item=self.model._bread, quantity=2), tool_call("inventory")]
+            bread = self.model._bread
+            calls = [
+                tool_call("buy", item=bread, units=3),
+                tool_call("eat", item=bread),
+                tool_call("inventory"),
+            ]
         return reply("", *calls, tool_call("go", place=self.model._restaurant))
 
     def _dine(self) -> LLMResponse:
-        """At the Restaurant in the evening: a dish if one is ready, a word to whoever is there,
-        and then the evening passes."""
+        """At the Restaurant in the evening: a dish if one is ready, what is left there for anyone,
+        the shopkeeper leaving a helping of bread there, a word to whoever is there and a little
+        money for the first of them, and then the evening passes."""
         calls = []
         dish = self._ready_dish()
         if dish is not None and not self._did("buy", "You had"):
             calls.append(tool_call("buy", item=dish))
-        if "Also here:" in self.situation and not self._said():
-            calls += [tool_call("say", text=self._greeting()), tool_call("leave_conversation")]
+        left = re.search(r"Left here for anyone to take: (.+?)\.(?: |$)", self.situation)
+        if left and not self._did("get") and not self._did("put"):
+            items = self.model._town.items
+            calls += [tool_call("get", item=next(i.id for i in items if bare(i.name) in left[1]))]
+        if self.occupation == "shopkeeper" and not self._did("put"):
+            calls.append(tool_call("put", item=self.model._bread))
+        if (here := self._here()) and not self._said():
+            calls += [
+                tool_call("say", text=self._greeting()),
+                tool_call("pass", item="money", units=2, to=here[0]),
+                tool_call("leave_conversation"),
+            ]
         return reply("", *calls, self._wait_call(EVENING))
 
     def _ready_dish(self) -> str | None:
@@ -296,7 +317,7 @@ class _Day:
 
     def _price_now(self) -> int:
         """A price one more than the Store's starting price of bread."""
-        return self.model._town.good(self.model._bread).price + 1
+        return self.model._town.item(self.model._bread).price + 1
 
     def _go(self, place: str) -> LLMResponse:
         return reply("", tool_call("go", place=place))

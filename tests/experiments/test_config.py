@@ -147,7 +147,7 @@ def test_wages_rent_food_and_the_fund_are_set_against_one_another():
     # The cheapest day's food: the helpings of ready food that make a day's need, at the price
     # the Store starts with.
     food = min(
-        (good for good in config.supplier if good.ready),
+        (item for item in config.supplied if item.ready),
         key=lambda good: good.price * round(A_DAYS_FOOD / good.nourishment),
     )
     helpings = round(A_DAYS_FOOD / food.nourishment)
@@ -186,7 +186,7 @@ def test_a_sum_per_service_is_at_most_a_fifth_of_what_the_customer_pays():
     config = town().town
     sums = {occupation.id: occupation.per_service for occupation in config.occupations}
     least = {
-        "shopkeeper": min(good.price for good in config.supplier),
+        "shopkeeper": min(item.price for item in config.supplied),
         "chef": min(dish.price for dish in config.dishes),
         "doctor": min(config.hospital.examination, config.hospital.treatment),
         "team-leader": config.work.payment,

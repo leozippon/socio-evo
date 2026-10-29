@@ -246,17 +246,14 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `occupations[].workplace` | string | The id of the place where its work is done and its hours at work count. |
 | `occupations[].wage_per_hour` | integer | Its wage for an hour at work there. |
 | `occupations[].per_service` | integer | The sum paid at once for each service: a programmer's task of its own accepted, a task of the team accepted to the team leader, a dish served, a sale, a patient seen; 0 for the mayor. |
+| `occupations[].duty` | string | Where its hours at work run once one has sat down: `workplace`, until one leaves it, or `anywhere`, wherever one goes until one stops (the mayor's). |
 | `fund` | object | The town's fund as configured. |
 | `fund.start` | integer | The balance it starts with. |
 | `work` | object | The work at the office as configured: among its fields `payment`, what a client pays the fund for an accepted task, `acceptance_runs` per task and day, `tasks_a_day`, the mean number coming in a day between `arrive_from` and `arrive_until`, and `expiry_days`, the days after the one it came in at whose end an unaccepted task is withdrawn. |
-| `goods` | array | The supplier's catalogue as configured, which the Store sells, each with `id`, `name`, `wholesale` (what the supplier charges for a unit), `price` (the Store's price at the start), `kind` (`consumable` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`) and the fields of its kind and effect (`fee_per_day`, `nourishment`, 0 for an ingredient, `factor`, `phrase`), null where they do not apply. |
+| `goods` | array | The items of the catalogue the supplier sells, which the Store sells, as configured, each with `id`, `name`, `wholesale` (what the supplier charges for a unit), `price` (the Store's price at the start), `kind` (`consumable` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`), `ingredients` (empty), `perishes` and the fields of its kind and effect (`fee_per_day`, `nourishment`, 0 for an ingredient, `factor`, `phrase`), null where they do not apply. |
 | `store` | object | The Store as configured. |
-| `store.stock` | object | Good id to the units it holds at the start. |
-| `dishes` | array | The restaurant's dishes as configured, each a day's food. |
-| `dishes[].id` | string | The id used in entries. |
-| `dishes[].name` | string | How a sentence names it. |
-| `dishes[].ingredients` | object | Good id to the units a portion takes. |
-| `dishes[].price` | integer | Its price on the menu at the start. |
+| `store.stock` | object | Item id to the units on its shelves at the start. |
+| `dishes` | array | The items of the catalogue the restaurant's kitchen cooks, as configured, with the fields of `goods`: `wholesale` null, `ingredients` the item id to the units a portion takes, `price` its price on the menu at the start, `nourishment` what a portion gives (100, a day's food) and `perishes` whether what is not eaten is gone at midnight. |
 | `hospital` | object | The Hospital as configured. |
 | `hospital.examination` | integer | The fee of an examination at the start. |
 | `hospital.treatment` | integer | The fee of a treatment at the start. |
@@ -321,7 +318,7 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `residents[].conversations[].with` | array of strings | Whom the resident spoke to or heard from in it. |
 | `residents[].markers` | array | What the resident did, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
 | `residents[].purse` | array | `[time, money]` held after each change, from the start: the money after a sum for a service and after the midnight wages as the log records it, money given and received, what was paid at the Store's counter for oneself and for a dish, and the Hospital's fee a patient paid. |
-| `residents[].things` | array | `[time, {good id: units}]` of what the resident owns, from the start and after each change: a durable counted 1, a consumable by the units left. What it buys for itself at the counter adds; what is eaten leaves no entry in the log, so at each checkpoint whose file is written the stock is read from the checkpoint, exact as of that moment, and between checkpoints it is as last counted plus what was bought since. |
+| `residents[].things` | array | `[time, {item id: units}]` of what the resident owns, from the start and after each change: a durable counted 1, a consumable by the units left. What it buys for itself at the counter adds, and what it hands over or is handed moves; what is eaten, taken where it was left and left for anyone is not followed, so at each checkpoint whose file is written the stock is read from the checkpoint, exact as of that moment, and between checkpoints it is as last counted plus what was bought and handed over since. |
 | `markers` | array | What came to no resident in particular, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
 | `tasks` | array | The Office's tasks in the order they came in. |
 | `tasks[].task` | integer | Its number in the pool. |
@@ -334,13 +331,13 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `tasks[].by` | string or null | Who handed it in, if accepted. |
 | `tasks[].withdrawn` | integer or null | When its client withdrew it; null if not. |
 | `store` | object | The Store's state over time. |
-| `store.stock` | array | `[time, {good id: units}]` in stock: the configured stock less what is sold, with what is delivered; a good sold out is absent. |
-| `store.prices` | array | `[time, {good id: price}]` at the counter, from the catalogue's and as the shopkeeper sets them. |
-| `store.on_order` | array | `[time, {good id: units}]` ordered from the supplier and not yet delivered. |
+| `store.stock` | array | `[time, {item id: units}]` on the shelves: the configured stock less what is sold, with what is delivered; an item sold out is absent. |
+| `store.prices` | array | `[time, {item id: price}]` at the counter, from the catalogue's and as the shopkeeper sets them. |
+| `store.on_order` | array | `[time, {item id: units}]` ordered from the supplier and not yet delivered. |
 | `kitchen` | object | The restaurant's kitchen over time. |
-| `kitchen.stock` | array | `[time, {good id: units}]` of ingredients bought for the kitchen and not yet cooked. |
+| `kitchen.stock` | array | `[time, {item id: units}]` of ingredients in the larder, bought for the kitchen and not yet cooked. |
 | `kitchen.menu` | array | `[time, {dish id: price}]`, from the configured prices and as the chef sets them. |
-| `kitchen.portions` | array | `[time, {dish id: portions}]` cooked and not yet served; what is not sold is gone at midnight. |
+| `kitchen.portions` | array | `[time, {dish id: portions}]` cooked and not yet bought or handed over; what is not eaten is gone at midnight. |
 | `fees` | array | `[time, {"examination": fee, "treatment": fee}]` of the Hospital, as configured and as the doctor sets them. |
 
 | Marker | Fields |
@@ -352,11 +349,11 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `service` | `for`, `task`, `amount`, `paid`, `owed`: a sum for a service, paid at once as far as the fund had it, the rest owed; `for` is `task` (one's own task accepted), `team` (the team leader's for a task of the programmers'), `sale`, `dish` or `patient`, and `task` the task or null |
 | `speech` | `text`, `to` (everyone who heard it), `private` |
 | `message` | `to`, `text`: a written message, read by `to` alone |
-| `gift` | `to` and `amount` for money; `to`, `item`, `name`, `quantity` for a thing or helpings of a stock |
-| `sale` | `item`, `name`, `quantity`, `price`, `amount`, `seller`, `kitchen`: goods bought at the Store's counter from `seller`, for oneself or, the chef with `kitchen` true, for the kitchen, which the fund pays |
-| `served` | `dish`, `name`, `amount`, `chef`: a dish bought at the restaurant and eaten there |
+| `gift` | `to` and `amount` for money passed; `to`, `item`, `name`, `quantity` for a thing or helpings of a stock (from the log's `move` with reason `pass`) |
+| `sale` | `item`, `name`, `quantity`, `price`, `amount`, `seller`, `kitchen`: bought at the Store's counter from `seller`, for oneself or, the chef with `kitchen` true, for the kitchen's larder, which the fund pays (a `move` with reason `buy` off the shelves) |
+| `served` | `dish`, `name`, `amount`, `chef`: a dish bought at the restaurant and eaten there, or handed over by the chef unpaid (`amount` 0), on the lane of the one who ate it (a `move` from the kitchen's portions) |
 | `order` | `item`, `name`, `quantity`, `amount`, `arrives`: the shopkeeper's order to the supplier, paid by the fund, and when it arrives |
-| `cook` | `dish`, `name`, `portions`, `used`: portions the chef cooked, and the ingredients they took (`{good id: units}`) |
+| `cook` | `dish`, `name`, `portions`, `used`: portions the chef cooked, and the ingredients they took from the larder (`{item id: units}`) |
 | `price` | `item`, `name`, `place`, `price`, `before`: a price set at the Store, the restaurant or the Hospital (`item` is `examination` or `treatment` there) |
 | `examination` | `patient`, `fee`, `satiety`, `energy`, `health`, `ill`, `night`: the doctor's examination, which the patient paid for, and the numbers it told both, with the nights of illness to come and how health moved at the last midnight, by cause |
 | `treatment` | `patient`, `fee`, `restores`, `before`, `health`, `ill`, `bedridden`: the doctor's treatment, with the patient's health before and after it and whether it was ill or in bed |
@@ -378,7 +375,7 @@ The markers of `markers`, of no resident:
 | --- | --- |
 | `task_arrived` | `task`, `instance_id`, `repo`: a client's task came in at the Office |
 | `task_withdrawn` | `task`, `holder`: a client withdrew a task not accepted in time, at midnight, from its holder or from nobody (null) |
-| `delivery` | `items`: what the Store ordered arrived, `{good id: units}` |
+| `delivery` | `items`: what the Store ordered arrived on its shelves, `{item id: units}` |
 
 ### `runs/{run}/progress.json`
 

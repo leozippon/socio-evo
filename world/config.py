@@ -1,7 +1,7 @@
 """The configuration of a town: its places, its residents and their occupations, its fund, its
-work, the supplier's catalogue and the dishes of its kitchen, its social life, its clock and the
-few fixed hours of its day. Every check that the world relies on is made when the configuration
-is validated, so that a bad configuration stops a run before anything is written.
+work, the catalogue of its items, its social life, its clock and the few fixed hours of its day.
+Every check that the world relies on is made when the configuration is validated, so that a bad
+configuration stops a run before anything is written.
 
 A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the
 restaurant, the hospital and the hall, exactly one of each) or a social place, which has no
@@ -14,18 +14,20 @@ hospital charges the fees of `hospital` for an examination and a treatment.
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
-and what it buys. The Store sells the supplier's catalogue (`supplier`), each good bought from
-the supplier at `wholesale` and sold at a price that starts at `price` and is the shopkeeper's
-to change, from a stock that starts as `store.stock`: the world implements two kinds of good and
-the effects of `Effect`, and everything else about a good is data, so the catalogue grows
-without code. A `consumable` is food, kept by the unit: ready food, a helping of `nourishment`
-(a share of a day's need, 100 a full day) eaten whenever its owner could eat, or an ingredient,
-of no nourishment (`nourishment: 0`), which is not eaten as it is but cooked. A `durable` is
-owned once and kept, billed `fee_per_day` on the statement while owned: `travel` makes the
-owner's journeys take `factor` of the time; `messaging` lets owners write to one another
-wherever they are; `appearance` shows `phrase` to whoever sees the owner. The Restaurant's
-kitchen cooks `dishes`, each from its `ingredients`, a day's food served at a price that starts
-at `price` and is the chef's to change.
+and what it buys. Every kind of thing in the town is an `Item` of one catalogue (`items`): the
+world implements two kinds of item and the effects of `Effect`, and everything else about an
+item is data, so the catalogue grows without code. A `consumable` is food, kept by the unit:
+ready food, a helping of `nourishment` (a share of a day's need, 100 a full day) eaten whenever
+its owner could eat, or an ingredient, of no nourishment (`nourishment: 0`), which is not eaten
+as it is but cooked. A `durable` is owned once and kept, billed `fee_per_day` on the statement
+while owned: `travel` makes the owner's journeys take `factor` of the time; `messaging` lets
+owners write to one another wherever they are; `appearance` shows `phrase` to whoever sees the
+owner. An item comes into the town in one of two ways: the supplier outside the town sells it at
+`wholesale` and the Store sells it at a price that starts at `price` and is the shopkeeper's to
+change, from shelves stocked at the start with `store.stock`; or the Restaurant's kitchen cooks
+it, a dish, from its `ingredients`, units of what the supplier sells, and serves it at a price
+that starts at `price` and is the chef's to change. An item that `perishes` is gone at midnight,
+wherever it is.
 
 The residents' bodies (`needs`, implemented by `world.body`) are three needs, each a number from
 0 to 100 that the resident reads in bands of plain words: satiety, which falls by the hour and
@@ -60,7 +62,8 @@ Id = Annotated[str, Field(pattern=r"^[a-z0-9][a-z0-9-]*$")]
 Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 """A resident's name: one capitalised word, the way others address it."""
 Effect = Literal["food", "travel", "messaging", "appearance"]
-"""What a good does in the world: the one enumeration of effects, each implemented by the world."""
+"""What an item does in the world: the one enumeration of effects, each implemented by the
+world."""
 EFFECTS: tuple[str, ...] = get_args(Effect)
 PlaceKind = Literal["home", "office", "store", "restaurant", "hospital", "hall", "social"]
 WORKPLACES = ("office", "store", "restaurant", "hospital", "hall")
@@ -76,7 +79,10 @@ WORKPLACE_OF: dict[str, str] = {
 }
 """The kind of place where each occupation works."""
 A_DAYS_FOOD = 100
-"""A day's need of food, which nourishment is a share of, and what a dish gives."""
+"""A day's need of food, which nourishment is a share of."""
+HOLDERS = ("shelves", "larder", "portions", "supplier")
+"""The holders of items that are neither a resident nor what is left at a place (see
+`world.economy`), by the names no place may take."""
 
 
 class Place(StrictModel):
@@ -102,16 +108,25 @@ class Place(StrictModel):
         return self
 
 
-class Good(StrictModel):
-    """A good of the supplier's catalogue (see the module docstring). `name` is how a sentence
-    names it, with its article ("a bicycle", "bread")."""
+class Item(StrictModel):
+    """A kind of thing of the town's catalogue (see the module docstring). `name` is how a
+    sentence names it, with its article ("a bicycle", "bread", "an omelette"). It is either
+    bought from the supplier (`wholesale`) or cooked in the kitchen (`ingredients`, a dish), and
+    `price` is its price at the start where it is sold: the Store's for a unit, the menu's for a
+    portion."""
 
     id: Id
     name: str = Field(min_length=1)
-    wholesale: int = Field(ge=1, description="what the supplier charges for a unit")
-    price: int = Field(ge=1, description="the Store's price for a unit at the start")
     kind: Literal["consumable", "durable"]
     effect: Effect
+    wholesale: int | None = Field(
+        default=None, ge=1, description="what the supplier charges for a unit, if it sells it"
+    )
+    price: int = Field(ge=1, description="the price of a unit at the start, where it is sold")
+    ingredients: dict[Id, Annotated[int, Field(ge=1)]] = Field(
+        default_factory=dict, description="a dish's: the units of other items a portion takes"
+    )
+    perishes: bool = Field(default=False, description="whether it is gone at midnight")
     fee_per_day: int = Field(default=0, ge=0, description="a durable's charge a day while owned")
     nourishment: int | None = Field(
         default=None, ge=0, le=A_DAYS_FOOD, description="food: what a helping gives, 0 if raw"
@@ -120,8 +135,14 @@ class Good(StrictModel):
     phrase: str | None = Field(default=None, description="appearance: what others see")
 
     @model_validator(mode="after")
-    def _consistent(self) -> Good:
-        what = f"the good {self.id}"
+    def _consistent(self) -> Item:
+        what = f"the item {self.id}"
+        if (self.wholesale is None) == (not self.ingredients):
+            raise ValueError(f"{what} is either bought from the supplier or cooked, and not both")
+        if self.ingredients and not self.ready:
+            raise ValueError(f"{what} is a dish, which is food that is eaten")
+        if self.perishes and self.kind != "consumable":
+            raise ValueError(f"{what} is not consumable and does not perish")
         if (self.kind == "consumable") != (self.effect == "food"):
             raise ValueError(f"{what}: food is consumable, and everything else durable")
         if self.kind != "durable" and self.fee_per_day:
@@ -144,21 +165,15 @@ class Good(StrictModel):
         """Whether it is ready food, eaten as it is; an ingredient is not."""
         return bool(self.nourishment)
 
-
-class Dish(StrictModel):
-    """A dish of the Restaurant: `name` as a sentence names it ("stew"), the units of the
-    supplier's goods a portion takes (`ingredients`), and its price on the menu at the start. A
-    portion is a day's food, eaten where it is bought, and keeps until midnight."""
-
-    id: Id
-    name: str = Field(min_length=1)
-    ingredients: dict[Id, Annotated[int, Field(ge=1)]] = Field(min_length=1)
-    price: int = Field(ge=1)
+    @property
+    def dish(self) -> bool:
+        """Whether the kitchen cooks it, a portion at a time, and serves it to be eaten there."""
+        return bool(self.ingredients)
 
 
 class StoreSettings(StrictModel):
     stock: dict[Id, Annotated[int, Field(ge=0)]] = Field(
-        description="the units of each good the Store holds at the start"
+        description="the units of each item on the Store's shelves at the start"
     )
 
 
@@ -280,16 +295,19 @@ class Route(StrictModel):
 class Occupation(StrictModel):
     """What a resident does for a living. `title` is how a sentence names it ("the chef");
     `workplace` the place, of the occupation's own kind (`WORKPLACE_OF`), where its work is done
-    and its hours at work are counted; it is paid `wage_per_hour` for each hour at work there and
+    and where one sits down to work; it is paid `wage_per_hour` for each hour at work and
     `per_service` at once for each service rendered: a programmer for a task of its own accepted,
     the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
-    sale, the doctor for a patient examined or treated."""
+    sale, the doctor for a patient examined or treated. Its `duty` says where the hours at work
+    run once one has sat down: at the workplace, until one leaves it or stops; or `anywhere`,
+    wherever one goes until one stops, as the mayor's, whose work is being about the town."""
 
     id: OccupationId
     title: str = Field(min_length=1)
     workplace: Id
     wage_per_hour: int = Field(ge=1)
     per_service: int = Field(ge=0)
+    duty: Literal["workplace", "anywhere"] = "workplace"
 
 
 class FundSettings(StrictModel):
@@ -397,8 +415,7 @@ class TownConfig(StrictModel):
     occupations: tuple[Occupation, ...] = Field(min_length=1)
     fund: FundSettings
     work: Work
-    supplier: tuple[Good, ...] = Field(min_length=1)
-    dishes: tuple[Dish, ...] = ()
+    items: tuple[Item, ...] = Field(min_length=1)
     store: StoreSettings
     hospital: HospitalSettings
     needs: Needs
@@ -409,20 +426,27 @@ class TownConfig(StrictModel):
     @model_validator(mode="after")
     def _consistent(self) -> TownConfig:
         places = {place.id: place for place in self.places}
-        goods = {good.id: good for good in self.supplier}
+        items = {item.id: item for item in self.items}
         _unique("place id", [place.id for place in self.places])
         _unique("resident name", [resident.name for resident in self.residents])
         _unique("agent directory", [r.agent_dir for r in self.residents if r.agent_dir])
         _unique("route", [frozenset(route.between) for route in self.routes])
-        _unique("good or dish id", [g.id for g in self.supplier] + [d.id for d in self.dishes])
+        _unique("item id", [item.id for item in self.items])
+        for place in self.places:
+            if place.id in HOLDERS:
+                raise ValueError(f"{place.id} names a holder of items and cannot name a place")
         for dish in self.dishes:
-            for good_id in dish.ingredients:
-                if good_id not in goods or goods[good_id].effect != "food":
-                    raise ValueError(f"the dish {dish.id} is cooked from {good_id}, not a food")
-        for good_id in self.store.stock:
-            if good_id not in goods:
-                raise ValueError(f"the Store's stock has {good_id}, which the supplier lacks")
-        if not self.dishes and not any(good.ready for good in self.supplier):
+            for item_id in dish.ingredients:
+                found = items.get(item_id)
+                if found is None or found.effect != "food" or found.wholesale is None:
+                    raise ValueError(
+                        f"the dish {dish.id} is cooked from {item_id}, which is no food the "
+                        "supplier sells"
+                    )
+        for item_id in self.store.stock:
+            if item_id not in items or items[item_id].wholesale is None:
+                raise ValueError(f"the Store's stock has {item_id}, which the supplier lacks")
+        if not any(item.ready for item in self.items):
             raise ValueError("the town sells nothing to eat")
         for route in self.routes:
             a, b = route.between
@@ -486,11 +510,18 @@ class TownConfig(StrictModel):
     def place(self, place_id: str) -> Place:
         return next(place for place in self.places if place.id == place_id)
 
-    def good(self, good_id: str) -> Good:
-        return next(good for good in self.supplier if good.id == good_id)
+    def item(self, item_id: str) -> Item:
+        return next(item for item in self.items if item.id == item_id)
 
-    def dish(self, dish_id: str) -> Dish:
-        return next(dish for dish in self.dishes if dish.id == dish_id)
+    @property
+    def supplied(self) -> tuple[Item, ...]:
+        """The items the supplier sells, which the Store stocks, in the catalogue's order."""
+        return tuple(item for item in self.items if item.wholesale is not None)
+
+    @property
+    def dishes(self) -> tuple[Item, ...]:
+        """The items the kitchen cooks, in the catalogue's order."""
+        return tuple(item for item in self.items if item.dish)
 
     def occupation(self, occupation_id: str) -> Occupation:
         return next(o for o in self.occupations if o.id == occupation_id)

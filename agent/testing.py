@@ -73,10 +73,11 @@ Handler = ToolResult | Callable[[dict[str, Any]], ToolResult | Awaitable[ToolRes
 
 class FakePort:
     """A world of one resident that tests drive by hand: it offers `tools` (a list a test may
-    change between steps), answers a call with its entry in `results` (a result, or a function
-    of the arguments giving one), tells `situation`, and delivers what `deliver` is given. It
-    keeps every call made and every busy signal; `waiting` is set while `wait` blocks on an
-    empty inbox (and cleared by a delivery), and `clock` is the simulated time it reports."""
+    change between steps), knows and answers a call with its entry in `results` (a result, or a
+    function of the arguments giving one), tells `situation`, and delivers what `deliver` is
+    given. It keeps every call made and every busy signal; `waiting` is set while `wait` blocks
+    on an empty inbox (and cleared by a delivery), `clock` is the simulated time it reports, and
+    `asleep` whether the resident is asleep, which a test sets."""
 
     def __init__(
         self,
@@ -98,6 +99,7 @@ class FakePort:
         self._arrived = asyncio.Event()
         self._interrupt = asyncio.Event()
         self._events = itertools.count(1)
+        self.asleep = False
 
     def deliver(self, text: str, *, interrupt: bool = False, kind: str = "speech") -> Percept:
         percept = Percept(text, kind, next(self._events), self.clock, time.time())
@@ -122,6 +124,9 @@ class FakePort:
 
     def set_busy(self, busy: bool) -> None:
         self.busy.append(busy)
+
+    def knows(self, name: str) -> bool:
+        return name in self._results
 
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
         self.calls.append((name, args))

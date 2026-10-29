@@ -161,7 +161,7 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
     await town.call("Mei", "submit")
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Olga", "start_work")
-    await town.call("Aisha", "buy", item="bread", quantity=2)
+    await town.call("Aisha", "buy", item="bread", units=2)
     await town.until("16:10")
     for name in ("Mei", "Tomas", "Olga", "Vera"):
         await town.call(name, "leave_work")
@@ -176,15 +176,19 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
         "The fund. The fund holds $914. Yesterday it took in $50 from clients, $110 in rent and "
         "daily charges and $8 in sales and paid out $232 in wages and $22 in sums for services. "
         "Owing rent the wages did not cover: Aisha $20, Jonas $30 and Lucia $30.\n\n"
+        "The last days, as each closed at midnight:\n"
+        "Monday 1 January: the fund held $914 at midnight, down $86 on the day; accepted task 1 "
+        "by Mei; sold 2 helpings of bread; served nothing; nobody seen at the clinic.\n\n"
+        "Today.\n"
         "The workshop. Open on the board: task 2 (org/repo2), held by nobody; task 3 "
-        "(org/repo3), held by Tomas. Accepted yesterday: task 1 by Mei; in the last seven days: "
-        "Mei 1.\n\n"
+        "(org/repo3), held by Tomas.\n"
         "The store. In stock: bread $4 (8 left), eggs $2 (10 left), vegetables $3 (10 left), "
-        "bicycle $50 (1 left), phone $40 (2 left) and coat $30 (1 left). Sold yesterday: 2 "
-        "helpings of bread.\n\n"
+        "bicycle $50 (1 left), phone $40 (2 left) and coat $30 (1 left).\n"
         "The café on the square. On the menu: omelette $10 (none ready) and vegetable soup $8 "
-        "(none ready). Served yesterday: nothing.\n\n"
-        "The clinic. An examination costs $10, a treatment $30. Seen yesterday: nobody.\n\n"
+        "(none ready).\n"
+        "The clinic. An examination costs $10, a treatment $30.\n"
+        "So far today: accepted nothing; sold nothing; served nothing; nobody seen at the "
+        "clinic.\n\n"
         "The residents. Mei, a programmer: 8 hours at work yesterday. Tomas, a programmer: 8 "
         "hours at work yesterday. Aisha, a programmer: no time at work yesterday, looking "
         "unwell. Olga, the shopkeeper: 8 hours at work yesterday. Jonas, the chef: no time at "
@@ -216,9 +220,25 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
     )
     assert world.report().endswith("Tuesday 2 January, 09:15: “The well is dry; boil your water.”")
     assert (await town.call("Mei", "report")).text == "That is not your work: you are a programmer."
-    await town.call("Vera", "go", place="park")
+    # The mayor's duty runs on wherever she goes, until she stops; the report is read at the hall.
+    vera = world.residents["Vera"]
+    went = await town.call("Vera", "go", place="park")
+    assert went.text == "You set off for the park and will arrive at 09:25."
+    assert world.on_duty(vera) and world.activity(vera) == "walk"
     await town.until("09:30", day=2)
+    assert isinstance(vera.base, Work) and vera.place == "park"
+    assert (
+        world.ports["Vera"]
+        .situation()
+        .startswith("Tuesday 2 January, 09:30. You are at the park, at work.")
+    )
     assert (await town.call("Vera", "report")).text == "You can do that only at the hall."
+    assert (await town.call("Vera", "leave_work")).text == "You stopped work. It is 09:30."
+    assert vera.worked == 15 * 60  # from 09:15 at the hall, on the way and at the park
+    await town.call("Vera", "how_am_i")  # the body reckoned: idle, the hours stand
+    await town.until("10:00", day=2)
+    await town.call("Vera", "how_am_i")
+    assert vera.worked == 15 * 60
     # The checkpoint keeps the announcements, the fees and the days the report tells.
     await town.until("03:00", day=3)
     (_, state) = town.checkpoints[-1]

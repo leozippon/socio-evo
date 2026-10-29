@@ -153,11 +153,10 @@ async def test_the_board_is_read_by_whoever_is_at_the_workshop(make_town):
     assert board.startswith("The board:\n1. org/repo1: Problem 1 goes wrong.")
     await town.call("Tomas", "say", text="Seen the board?", to=["Mei"])
     assert town.world.residents["Mei"].conversation is not None
-    assert (await town.call("Mei", "view_board")).text == (  # not while talking
-        "You are in a conversation; leave it first."
+    assert (await town.call("Mei", "view_board")).text == (  # reading it ends the talk
+        f"You left the conversation. {board}"
     )
-    await town.call("Mei", "leave_conversation")
-    assert (await town.call("Mei", "view_board")).text == board
+    assert town.world.residents["Mei"].conversation is None
 
 
 async def test_a_task_is_claimed_at_the_board_and_worked_on_there_only(make_town):

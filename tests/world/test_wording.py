@@ -95,7 +95,15 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     texts.append(world_.ports["Mei"].situation())  # the counter
     texts.append((await town.call("Mei", "buy", item="coat")).text)
     texts.append((await town.call("Mei", "buy", item="coat")).text)  # none left
-    texts.append((await town.call("Mei", "buy", item="bread", quantity=2)).text)
+    texts.append((await town.call("Mei", "buy", item="bread", units=2)).text)
+    texts.append((await town.call("Mei", "put", item="bread")).text)
+    texts.append(world_.ports["Mei"].situation())  # what is left here for anyone
+    texts.append((await town.call("Mei", "get", item="bread", units=2)).text)  # only one
+    texts.append((await town.call("Mei", "get", item="bread")).text)
+    texts.append((await town.call("Mei", "pass", item="money", units=1, to="Olga")).text)
+    texts.append((await town.call("Mei", "pass", item="coat", to="Olga")).text)
+    texts.append((await town.call("Mei", "eat", item="bread")).text)
+    texts.append((await town.call("Mei", "eat", item="bread")).text)
     texts.append((await town.call("Mei", "order", item="bread", quantity=1)).text)
     texts.append((await town.call("Olga", "order", item="bread", quantity=3)).text)
     texts.append((await town.call("Olga", "set_price", item="bread", price=5)).text)
@@ -103,9 +111,7 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     texts.append(world_.ports["Olga"].situation())  # what is on order
     texts.append((await town.call("Jonas", "buy", item="eggs")).text)  # for himself
     texts.append((await town.call("Jonas", "start_work")).text)
-    texts.append(
-        (await town.call("Jonas", "buy", item="eggs", quantity=4, for_the_kitchen=True)).text
-    )
+    texts.append((await town.call("Jonas", "buy", item="eggs", units=4, for_the_kitchen=True)).text)
     texts.append((await town.call("Jonas", "buy", item="coat", for_the_kitchen=True)).text)
     texts.append(world_.ports["Jonas"].situation())  # the kitchen's stock
     texts.append(world_.ports["Aisha"].situation())  # the kitchen closed
@@ -121,6 +127,9 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     texts.append((await town.call("Aisha", "buy", item="soup")).text)  # none ready
     texts.append((await town.call("Aisha", "buy", item="omelette")).text)
     texts.append((await town.call("Jonas", "buy", item="omelette")).text)
+    await town.call("Jonas", "cook", dish="soup", portions=1)
+    texts.append((await town.call("Jonas", "pass", item="soup", to="Aisha")).text)  # a treat
+    texts.append((await town.call("Jonas", "pass", item="soup", to="Aisha")).text)  # none left
     await town.call("Mei", "go", place="workshop")
     await town.call("Tomas", "go", place="workshop")
     for name in ("Lucia", "Aisha"):

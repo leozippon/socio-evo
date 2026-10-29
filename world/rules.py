@@ -17,7 +17,7 @@ from functools import partial
 
 from world import economy
 from world.clock import parse_hour
-from world.config import A_DAYS_FOOD, DayHours, Good, TownConfig
+from world.config import A_DAYS_FOOD, DayHours, Item, TownConfig
 from world.telling import cap, counted, duration, listed
 
 SECTIONS = ("town", "work", "money", "body", "people", "sleep")
@@ -49,8 +49,9 @@ OWN_WORK = {
     ),
     "chef": (
         "You cook dishes in its kitchen from what the kitchen holds, set the menu's prices and "
-        "serve whoever comes while you are at work there. You buy what you cook with at {store} "
-        "with buy for_the_kitchen, and the fund pays."
+        "serve whoever comes while you are at work there, who buys a dish, or is handed one with "
+        "pass and pays nothing. You buy what you cook with at {store} with buy for_the_kitchen, "
+        "and the fund pays."
     ),
     "shopkeeper": (
         "It is open while you are at work there: you sell its goods at the prices you set, and "
@@ -62,7 +63,8 @@ OWN_WORK = {
     ),
     "mayor": (
         "There you read the town's report with report, and with announce you tell every "
-        "resident whatever you want them to know."
+        "resident whatever you want them to know. Your work is being about the town, so once "
+        "you have sat down to work it goes with you wherever you go."
     ),
 }
 """What each occupation's work is, told to the resident who has it after its workplace."""
@@ -80,19 +82,20 @@ Homes = Mapping[str, Sequence[str]]
 
 
 def bare(name: str) -> str:
-    """A good's name without its article: `a phone` is `phone`."""
+    """An item's name without its article: `a phone` is `phone`."""
     for article in ("a ", "an ", "the "):
         if name.startswith(article):
             return name[len(article) :]
     return name
 
 
-def amount(good: Good, units: int) -> str:
-    """`units` of `good` as a sentence names them: `a phone`, `2 phones`, `3 helpings of bread`,
-    `4 units of rice`."""
-    if good.kind == "durable":
-        return good.name if units == 1 else counted(units, bare(good.name))
-    return f"{counted(units, 'helping' if good.ready else 'unit')} of {bare(good.name)}"
+def amount(item: Item, units: int) -> str:
+    """`units` of `item` as a sentence names them: `a phone`, `2 phones`, `3 helpings of bread`,
+    `4 units of rice`, `stew`, `2 portions of stew`."""
+    if item.kind == "durable" or (item.dish and units == 1):
+        return item.name if units == 1 else counted(units, bare(item.name))
+    each = "portion" if item.dish else "helping" if item.ready else "unit"
+    return f"{counted(units, each)} of {bare(item.name)}"
 
 
 def fraction(factor: float) -> str:
@@ -170,10 +173,12 @@ class Rules:
 
         store, withdrawn = c.workplace("store").name, self._withdrawn()
         own = OWN_WORK[occupation.id].format(store=store, withdrawn=withdrawn)
+        until = "you stop with leave_work" + (
+            "" if occupation.duty == "anywhere" else " or go elsewhere"
+        )
         work = (
             f"You are {occupation.title} at {workplace.name}. {own} You sit down to work there "
-            "with start_work, or by doing your work, and are at work until you stop with "
-            "leave_work or go elsewhere."
+            f"with start_work, or by doing your work, and are at work until {until}."
         )
 
         assert my_home.rent is not None
@@ -181,13 +186,15 @@ class Rules:
         if occupation.id == "team-leader":
             programmer = c.occupation("programmer")
             sums.append(f"{money(programmer.per_service)} for each task of your own accepted")
+        at = "" if occupation.duty == "anywhere" else f" at {workplace.name}"
         money_rules = (
             f"You have {money(me.purse)} to begin with. The town's fund pays you "
-            f"{money(occupation.wage_per_hour)} an hour for your time at work at {workplace.name}"
+            f"{money(occupation.wage_per_hour)} an hour for your time at work{at}"
             + (f", and {listed(sums)}" if occupation.per_service else "")
             + ". At midnight your wages are paid into your purse, with the rent for your room, "
             f"{money(my_home.rent)} a day, taken out of them. You pay for everything in cash from "
-            "your purse, and with give you can hand money or things to anyone with you."
+            "your purse. With pass you hand money or things to anyone with you; put leaves "
+            "something where you are for anyone, and get takes what is left there."
         )
 
         food = self._a_days_food()
@@ -204,7 +211,8 @@ class Rules:
             f"{self._who_lives(name, home_of)} {self._who_works(name)} You can speak to anyone "
             "awake where you are, to everyone there or only to the people you name, and the "
             "others notice that you said something but not what; a conversation lasts until its "
-            f"people leave it or nobody speaks for {c.social.silence_minutes} minutes."
+            f"people leave it or nobody speaks for {c.social.silence_minutes} minutes. Talking, "
+            "you can still buy, eat and hand things over; doing your work leaves the talk."
         )
 
         day = c.day
@@ -213,8 +221,8 @@ class Rules:
             "you write one, the day's entry in your journal; an entry given again the same day "
             f"is added to it. You cannot sleep longer than {longest_sleep(day)} at a stretch. In "
             "bed, before you fall asleep, you can look back over your day and see to your files. "
-            f"At {day.forced_sleep} anyone still up falls asleep where it is and wakes at home at "
-            f"{day.forced_wake}."
+            f"At {day.forced_sleep} anyone still up falls asleep where they are and wakes at home "
+            f"at {day.forced_wake}."
         )
         return {
             "town": town,
@@ -267,11 +275,11 @@ class Rules:
         """`, or 3 helpings of bread or fruit,`: the helpings of ready food that make a day's
         need, or nothing if none is sold."""
         helpings: dict[int, list[str]] = {}
-        for good in self.config.supplier:
-            if good.ready:
-                assert good.nourishment
-                helpings.setdefault(round(A_DAYS_FOOD / good.nourishment), []).append(
-                    bare(good.name)
+        for item in self.config.items:
+            if item.ready and not item.dish:
+                assert item.nourishment
+                helpings.setdefault(round(A_DAYS_FOOD / item.nourishment), []).append(
+                    bare(item.name)
                 )
         food = [
             f"{counted(n, 'helping')} of {listed(foods, 'or')}" for n, foods in helpings.items()
@@ -312,28 +320,30 @@ class Rules:
         shopkeeper = c.occupation("shopkeeper")
         store_work = (
             f"{cap(store.name)} sells while its shopkeeper is at work there; otherwise its door "
-            f"is shut. It sells from its stock, at the prices the shopkeeper sets: {self._goods()} "
-            "What is sold out is gone until the shopkeeper orders more from the supplier outside "
-            f"the town: the fund pays the supplier at once, and the goods arrive at {day.delivery} "
-            "the next morning; an order the fund cannot pay for is refused. Each sale pays the "
-            f"shopkeeper {money(shopkeeper.per_service)}. The chef buys for the kitchen with buy "
+            "is shut. It sells from its shelves, which the shopkeeper sees whenever there, at the "
+            f"prices the shopkeeper sets: {self._goods()} What is sold out is gone until the "
+            "shopkeeper orders more from the supplier outside the town: the fund pays the "
+            f"supplier at once, and the order comes onto the shelves at {day.delivery} the next "
+            "morning; an order the fund cannot pay for is refused. Each sale pays the shopkeeper "
+            f"{money(shopkeeper.per_service)}. The chef buys for the kitchen with buy "
             "for_the_kitchen, and the fund pays."
         )
 
         chef = c.occupation("chef")
         recipes = "; ".join(
             f"{dish.name} from "
-            + listed([amount(c.good(good), units) for good, units in dish.ingredients.items()])
+            + listed([amount(c.item(item), units) for item, units in dish.ingredients.items()])
             for dish in c.dishes
         )
         restaurant_work = (
             f"The kitchen of {restaurant.name} serves while its chef is at work there, and is "
-            f"closed otherwise. The chef buys what it cooks with at {store.name} with buy "
-            "for_the_kitchen, the fund paying, and cooks dishes from what the kitchen holds, a "
-            f"portion of each from its ingredients: {recipes}. A dish is a day's food, eaten "
-            "there as it is bought, at the price on the menu, which the chef sets; the chef does "
-            "not buy its own dishes. What is not sold by midnight is gone. Each dish served pays "
-            f"the chef {money(chef.per_service)}."
+            f"closed otherwise. The chef buys what the kitchen cooks with at {store.name} with "
+            "buy for_the_kitchen, the fund paying, and cooks dishes from what the kitchen holds, "
+            f"a portion of each from its ingredients: {recipes}. A dish is a day's food, eaten "
+            "there as it is bought, at the price on the menu, which the chef sets, or as the chef "
+            "hands it over with pass, when nobody pays; the chef does not buy the kitchen's "
+            "dishes. What is left at midnight is gone. Each dish bought pays the chef "
+            f"{money(chef.per_service)}."
         )
 
         doctor, fees = c.occupation("doctor"), c.hospital
@@ -341,10 +351,10 @@ class Rules:
             f"The surgery at {hospital.name} is open while its doctor is at work there. An "
             f"examination, {money(fees.examination)} at the start, tells the doctor and the "
             "patient how hungry, tired and well the patient is, in numbers out of 100, whether "
-            "it is ill, and why its health moved the night before. A treatment, "
-            f"{money(fees.treatment)} at the start, restores {fees.restores:g} of the patient's "
-            "health, ends an "
-            "illness and gets one too ill to get up out of bed; the doctor goes to such a "
+            "the patient is ill, and why the patient's health moved the night before. A "
+            f"treatment, {money(fees.treatment)} at the start, restores {fees.restores:g} of the "
+            "patient's health, ends an illness and gets one too ill to get up out of bed; the "
+            "doctor goes to such a "
             "patient's bedside. The patient pays the fee in cash, and the doctor sets the fees. "
             f"Each patient examined or treated pays the doctor {money(doctor.per_service)}."
         )
@@ -360,7 +370,7 @@ class Rules:
             "can read with look_around."
         )
 
-        fees_charged = any(good.fee_per_day for good in c.supplier)
+        fees_charged = any(item.fee_per_day for item in c.items)
         money_detail = (
             "The town keeps one fund, which takes in what clients pay for the work, the rent, "
             "what is sold and the fees, and pays everyone who works: a wage for each hour at "
@@ -376,16 +386,20 @@ class Rules:
             "is never touched by rent. When your wages do not cover the rent, you owe the rest, "
             "and it is taken from your next wages; when the fund cannot pay you, it owes you the "
             "rest and pays it with your next wages. You pay for everything in cash from your "
-            "purse, and cannot pay more than it holds. With give you can hand money, a thing you "
+            "purse, and cannot pay more than it holds. With pass you can hand money, a thing you "
             "own (with any daily charge on it) or food you keep to anyone awake where you are, "
-            "as a gift or on terms you agree between you; the town keeps no account of it. What "
-            "you have, and how much of it is left, inventory tells you."
+            "as a gift or on terms you agree between you; the town keeps no account of it. With "
+            "put you leave something where you are, for anyone to take, and with get you take "
+            "what is left there; what a shop or a kitchen keeps is bought, not taken. What you "
+            "have, and how much of it is left, inventory tells you."
         )
 
         illness = c.needs.health.illness
         body = (
             "Through the day you get hungry, and what you eat restores you: a dish"
-            f"{self._a_days_food()} is about a day's need. You tire with the hours awake, faster "
+            f"{self._a_days_food()} is about a day's need. Food you keep you eat a helping at a "
+            "time as you get hungry, or when you choose with eat. You tire with the hours awake, "
+            "faster "
             "at work and on the road, and sleep restores you, the more the better your home; "
             "exhausted, you stop work and cannot work again until you have slept. A day that "
             "ends with you starving or exhausted, or lived in a home of little comfort, wears "
@@ -463,11 +477,11 @@ class Rules:
         return listed(parts)
 
     def _goods(self) -> str:
-        """What the Store sells, and what each good does, from the catalogue."""
+        """What the Store sells, and what each item does, from the catalogue."""
         c, money = self.config, self._money
-        ready = [bare(good.name) for good in c.supplier if good.ready]
-        raw = [bare(good.name) for good in c.supplier if good.effect == "food" and not good.ready]
-        kept = [good.name for good in c.supplier if good.kind == "durable"]
+        ready = [bare(item.name) for item in c.supplied if item.ready]
+        raw = [bare(item.name) for item in c.supplied if item.effect == "food" and not item.ready]
+        kept = [item.name for item in c.supplied if item.kind == "durable"]
         sold = [
             *([f"ready food ({listed(ready)}), which you keep and eat a helping at a time "
                "whenever you could eat"] if ready else []),
@@ -475,24 +489,24 @@ class Rules:
             *([listed(kept)] if kept else []),
         ]  # fmt: skip
         text = f"{'; '.join(sold)}."
-        for good in c.supplier:
-            if good.effect == "travel":
-                assert good.factor is not None
-                text += f" With {good.name} your journeys take {fraction(good.factor)} the time."
-        for good in c.supplier:
-            if good.effect == "messaging":
+        for item in c.supplied:
+            if item.effect == "travel":
+                assert item.factor is not None
+                text += f" With {item.name} your journeys take {fraction(item.factor)} the time."
+        for item in c.supplied:
+            if item.effect == "messaging":
                 charge = (
-                    f" ({money(good.fee_per_day)} a day while you own it)"
-                    if good.fee_per_day
+                    f" ({money(item.fee_per_day)} a day while you own it)"
+                    if item.fee_per_day
                     else ""
                 )
                 text += (
-                    f" With {good.name}{charge} you can write to anyone else who has one, "
+                    f" With {item.name}{charge} you can write to anyone else who has one, "
                     "wherever they are, with message; they read it when they next look up from "
                     "what they are doing."
                 )
         seen = [
-            f"with {good.name}, {good.phrase}" for good in c.supplier if good.effect == "appearance"
+            f"with {item.name}, {item.phrase}" for item in c.supplied if item.effect == "appearance"
         ]
         if seen:
             text += f" What you wear and carry, others see: {'; '.join(seen)}."

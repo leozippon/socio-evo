@@ -3,7 +3,9 @@
 The world implements `WorldPort` once per resident. The runtime declares, in each request, the
 tool specs the port offers at that moment, opens a step with the port's situation and the
 percepts pending, forwards every tool call the model makes that is not one of its own file
-tools, and blocks on `wait` when the resident has nothing more to do. The port owns the
+tools and that names one of the world's tools, declared or not (the world refuses, naming the
+condition, what cannot be done by the time it is carried out), and blocks on `wait` when the
+resident has nothing more to do; it takes no step while the resident is asleep. The port owns the
 resident's inbox: the world delivers percepts into it, and sets `interrupt` when a delivered
 percept must reach the resident at once, which makes the runtime leave a reply's calls undone
 and tell the percept. Which percepts interrupt is the world's to decide; one that does not
@@ -78,6 +80,11 @@ class WorldPort(Protocol):
         clock runs at its active speed while any resident is busy."""
         ...
 
+    def knows(self, name: str) -> bool:
+        """Whether `name` is one of the world's tools for this resident, whether or not it can
+        use it at this moment."""
+        ...
+
     async def call(self, name: str, args: dict[str, Any]) -> ToolResult:
         """Carry out a world tool. A tool that does not apply now returns a refusal naming the
         condition; an unknown name raises `KeyError`."""
@@ -96,4 +103,10 @@ class WorldPort(Protocol):
     @property
     def interrupt(self) -> asyncio.Event:
         """Set while an interrupting percept is pending; cleared by `pending` and `wait`."""
+        ...
+
+    @property
+    def asleep(self) -> bool:
+        """Whether the resident is asleep: what it is told is kept, and it takes no step until it
+        wakes."""
         ...

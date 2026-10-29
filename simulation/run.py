@@ -62,6 +62,7 @@ from simulation.dry_run import DryRunModel
 from world.backend import Backend, SwebenchBackend
 from world.clock import tell_moment
 from world.config import TownConfig
+from world.economy import PORTIONS
 from world.testing import FakeBackend
 from world.world import OnCheckpoint, World
 
@@ -271,7 +272,9 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, with the fund's day
-    as `fund_report` tells it."""
+    as `fund_report` tells it. Of the moves of items and money, the purchases at the Store's
+    counter (`sale`), the dishes bought or handed over by the chef (`served`) and the other
+    hand-overs (`gift`) are counted."""
 
     COUNTED = (
         "task_arrived",
@@ -305,6 +308,8 @@ class _Checkpoints:
         for entry in read_jsonl(self._directory.world_log_path):
             if entry["seq"] > self._seen:
                 counts[entry["kind"]] += 1
+                if entry["kind"] == "move":
+                    counts[_moved(entry["payload"])] += 1
                 counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
                 counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
         self._seen = self._last_seq()
@@ -316,6 +321,14 @@ class _Checkpoints:
     def _last_seq(self) -> int:
         path = self._directory.world_log_path
         return max((entry["seq"] for entry in read_jsonl(path)), default=0) if path.exists() else 0
+
+
+def _moved(payload: dict[str, Any]) -> str:
+    """A move as the day's counts name it: `served`, a dish from the kitchen's portions; `sale`,
+    anything else bought; `gift`, anything else handed over; `move`, taking, leaving, eating."""
+    if payload["source"] == PORTIONS:
+        return "served"
+    return {"buy": "sale", "pass": "gift"}.get(payload["reason"], "move")
 
 
 async def _live(

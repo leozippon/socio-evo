@@ -136,6 +136,9 @@ class SoloPort:
     def tool_specs(self) -> list[ToolSpec]:
         return list(self._specs.values())
 
+    def knows(self, name: str) -> bool:
+        return name in self._specs
+
     def situation(self) -> str:
         if self.ending is not None:
             return OVER
@@ -189,6 +192,10 @@ class SoloPort:
     @property
     def interrupt(self) -> asyncio.Event:
         return self._interrupt
+
+    @property
+    def asleep(self) -> bool:
+        return False
 
     # The budget and the end -----------------------------------------------------------------
 

@@ -36,7 +36,7 @@ from typing import Any
 from agent.directory import TRACE
 from evaluation.records import Day, Entry, agent_dir, day_date, lived_days, town, trace_days
 from infrastructure.storage import RunDirectory
-from world.economy import PAID, TAKEN
+from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN
 
 MEASURES = {
     "tasks_taken": "tasks it claimed from the Office's board",
@@ -54,13 +54,13 @@ MEASURES = {
     "arrears": "the rent and charges its wages have not covered, owed to the fund after midnight",
     "owed_wages": "what the fund owes it after midnight: wages and sums it could not pay",
     "money": "its money after the midnight wages",
-    "spent": "money it paid for goods at the Store, dishes and the Hospital's fees",
+    "spent": "money it paid at the Store's counter, for dishes and in the Hospital's fees",
     "sales_made": "sales at the Store's counter while it kept it",
     "bought": "purchases at the Store's counter for itself",
     "bought_for_kitchen": "purchases at the Store's counter for the kitchen, which the fund paid",
     "orders": "orders it placed with the supplier",
     "portions_cooked": "portions of dishes it cooked",
-    "dishes_served": "dishes it served as the chef",
+    "dishes_served": "dishes it served as the chef, for which the diner paid",
     "dishes_eaten": "dishes it bought and ate at the Restaurant",
     "examinations_given": "examinations it made as the doctor",
     "examinations_received": "examinations of it, for which it paid",
@@ -80,7 +80,8 @@ MEASURES = {
     "interlocutors": "distinct residents it spoke or wrote to, or was spoken or written to by",
     "messages_sent": "written messages it sent",
     "messages_received": "written messages it received",
-    "gifts_given": "hand-overs of money or things to others",
+    "gifts_given": "hand-overs of money or things to others, a dish the chef served unpaid among "
+    "them",
     "gifts_received": "hand-overs of money or things from others",
     "money_given": "money handed to others",
     "money_received": "money received from others",
@@ -167,14 +168,20 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         return [e for e in day.entries if e["kind"] == kind and e["payload"][key] == name]
 
     settled, paid = mine("settlement"), mine("wage")
-    sales, served = [e for e in day.entries if e["kind"] == "sale"], mine("served")
-    bought = [e for e in sales if e["actor"] == name and not e["payload"]["kitchen"]]
+    moves = [e["payload"] | {"actor": e["actor"]} for e in day.entries if e["kind"] == "move"]
+    bought = [m for m in moves if m["reason"] == "buy"]
+    sales = [m for m in bought if m["source"] == SHELVES]  # at the Store's counter
+    dishes = [m for m in bought if m["source"] == PORTIONS]
+    own = [m for m in sales if m["actor"] == name and m["target"] == name]
+    eaten = [m for m in dishes if m["actor"] == name]
     examined, treated = to_me("examination", "patient"), to_me("treatment", "patient")
     speech = [e for e in day.entries if e["kind"] == "speech"]
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
     sent, got = mine("message"), to_me("message", "to")
-    given, received = mine("gift"), to_me("gift", "to")
+    passed = [m for m in moves if m["reason"] == "pass"]
+    given = [m for m in passed if m["actor"] == name]
+    received = [m for m in passed if m["target"] == name]
     visits, visited = _visits(day, name, lying)
     return {
         "tasks_taken": len(mine("claim")),
@@ -194,15 +201,15 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         "arrears": paid[-1]["payload"]["arrears"] if paid else None,
         "owed_wages": paid[-1]["payload"]["owed"] if paid else None,
         "money": paid[-1]["payload"]["money"] if paid else None,
-        "spent": sum(e["payload"]["amount"] for e in bought + served)
+        "spent": sum(m["money"] for m in own + eaten)
         + sum(e["payload"]["fee"] for e in examined + treated),
-        "sales_made": sum(e["payload"]["seller"] == name for e in sales),
-        "bought": len(bought),
-        "bought_for_kitchen": sum(e["actor"] == name and e["payload"]["kitchen"] for e in sales),
+        "sales_made": sum(m["seller"] == name for m in sales),
+        "bought": len(own),
+        "bought_for_kitchen": sum(m["actor"] == name and m["target"] == LARDER for m in sales),
         "orders": len(mine("order")),
         "portions_cooked": sum(e["payload"]["portions"] for e in mine("cook")),
-        "dishes_served": len(to_me("served", "chef")),
-        "dishes_eaten": len(served),
+        "dishes_served": sum(m["seller"] == name for m in dishes),
+        "dishes_eaten": len(eaten),
         "examinations_given": len(mine("examination")),
         "examinations_received": len(examined),
         "treatments_given": len(mine("treatment")),
@@ -228,8 +235,8 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         "messages_received": len(got),
         "gifts_given": len(given),
         "gifts_received": len(received),
-        "money_given": sum(e["payload"].get("amount", 0) for e in given),  # 0: a thing
-        "money_received": sum(e["payload"].get("amount", 0) for e in received),
+        "money_given": sum(m["money"] for m in given),  # 0: a thing
+        "money_received": sum(m["money"] for m in received),
         "bedside_visits": visits,
         "visited_in_bed": visited,
         "journal": int(any(e["payload"]["journal"] for e in mine("sleep"))),

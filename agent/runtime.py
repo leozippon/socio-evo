@@ -11,8 +11,11 @@
 
 Each request declares the runtime's own tools (the files and `compact`) and then those the
 port offers at that moment, so that what is offered is what can be done; the server's prefix
-cache is lost whenever the set changes, which is accepted. A call that names a tool the request
-did not declare is answered as nothing one can do.
+cache is lost whenever the set changes, which is accepted. A call of one of the world's tools
+goes to the port whether the request declared it or not, since what can be done may have changed
+by the time it is carried out, and the world refuses, naming the condition, what cannot; only a
+name that is no tool at all is answered as nothing one can do. While the resident is asleep, what
+it is told is kept in its session and it takes no step until it wakes.
 
 A percept that does not interrupt is told ahead of the result of the next call carried out, so
 that what happened before a call is read before what the call did: each with its hour, and all
@@ -164,7 +167,6 @@ class Runtime:
         self._config = config or RuntimeConfig()
         self._replica = replica
         self._files = files.FileTools(directory)
-        self._declared: set[str] = set()  # the names the last request declared
         self._session = Session(directory.session_path)
         self._trace = Trace(directory.trace_path, port.sim_time)
         self._prompt = ""
@@ -172,13 +174,17 @@ class Runtime:
 
     async def run(self) -> None:
         """Live until cancelled: wait for the world, take steps until the resident is done for
-        now, and wait again. A model error that outlasts its retries is a lapse, after which
-        the runtime waits; any other error propagates and ends the runtime."""
+        now, and wait again; asleep, the resident takes no step, and what it was told waits in
+        its session until it wakes. A model error that outlasts its retries is a lapse, after
+        which the runtime waits; any other error propagates and ends the runtime."""
         done = True
         try:
             while True:
                 if done:
                     self._tell(await self._port.wait())
+                if self._port.asleep:
+                    done = True
+                    continue
                 done = await self._step()
         finally:
             self._port.set_busy(False)
@@ -367,7 +373,7 @@ class Runtime:
             return ToolResult(texts.UNREADABLE), {}
         if call.name == COMPACT.name:
             return ToolResult(texts.CONDENSING), {}
-        if call.name not in self._declared:
+        if call.name not in files.NAMES and not self._port.knows(call.name):
             return ToolResult(texts.UNKNOWN_TOOL.format(name=call.name)), {}
         try:
             with self._busy():
@@ -445,10 +451,8 @@ class Runtime:
         *,
         tool_choice: str | None = None,
     ) -> LLMRequest:
-        """A request declaring the tools of the moment, which the calls of its reply are checked
-        against, and `tool_choice`, if one is given."""
+        """A request declaring the tools of the moment, and `tool_choice`, if one is given."""
         tools = self._tools()
-        self._declared = {tool["function"]["name"] for tool in tools}
         return LLMRequest(
             messages=messages,
             tools=tools,

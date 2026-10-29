@@ -84,23 +84,21 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert abs(paid["wages"] - paid["hours"] * wage) < 1
         assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - rent)
     # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
-    # the next morning; the chef bought for the kitchen there, cooked and served; Mei bought
-    # bread and had a dish.
-    sold = [
-        (e["actor"], e["payload"]["item"], e["payload"]["kitchen"])
-        for e in entries
-        if e["kind"] == "sale"
-    ]
-    assert ("Mei", "bread", False) in sold and ("Jonas", "vegetables", True) in sold
-    served = [e for e in entries if e["kind"] == "served"]
-    assert [(e["actor"], e["payload"]["chef"]) for e in served] == [
-        ("Mei", "Jonas"),
-        ("Olga", "Jonas"),
-    ]
+    # the next morning; the chef bought for the kitchen there, cooked and served, and handed a
+    # dish to the first who came, unpaid; Mei bought bread and ate a helping, had a dish and took
+    # the bread Olga left at the Linde for anyone, and they passed one another a little money.
+    moves = [e["payload"] | {"actor": e["actor"]} for e in entries if e["kind"] == "move"]
+    sold = {(m["actor"], m["item"], m["target"]) for m in moves if m["source"] == "shelves"}
+    assert ("Mei", "bread", "Mei") in sold and ("Jonas", "vegetables", "larder") in sold
+    served = {(m["actor"], m["target"], m["seller"]) for m in moves if m["source"] == "portions"}
+    assert served == {("Mei", "Mei", "Jonas"), ("Olga", "Olga", "Jonas"), ("Jonas", "Mei", None)}
+    done = {(m["actor"], m["reason"], m["item"]) for m in moves}
+    assert {("Mei", "eat", "bread"), ("Olga", "put", "bread"), ("Mei", "get", "bread")} <= done
+    assert ("Mei", "pass", None) in done
     orders = [e["payload"] for e in entries if e["kind"] == "order"]
     assert saved["store"]["pending"] == [[o["item"], o["quantity"], o["arrives"]] for o in orders]
     assert {o["item"] for o in orders} == {"bread", "vegetables", "eggs"}
-    assert saved["kitchen"]["portions"] == {} and saved["kitchen"]["stock"] == {}
+    assert saved["holders"]["portions"] == {} and saved["holders"]["larder"] == {}
     fund = saved["fund"]
     money = sum(r["inventory"]["money"] for r in saved["residents"].values())
     # Only the client's money came in and only the supplier's went out.
@@ -116,7 +114,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     log = kinds(root)
     lived = (
         "wake", "task_arrived", "start_work", "claim", "verdict", "service", "order", "price",
-        "sale", "cook", "served", "speech", "sleep", "wage",
+        "move", "cook", "speech", "sleep", "wage",
     )  # fmt: skip
     # The next day's arrivals, drawn at midnight, are saved with the tasks still open.
     office = saved["office"]

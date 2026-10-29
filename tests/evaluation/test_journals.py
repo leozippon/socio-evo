@@ -38,7 +38,7 @@ LABELS = {
         "You said to Tomas: “I run pytest -x first.”",
     ),
     "I fixed task 2 and it was accepted.": ("contradicted", "You claimed task 2 (org/repo2)."),
-    "I gave Mei $5.": ("supported", "You gave Mei $5."),
+    "I gave Mei $5.": ("supported", "You passed Mei $5."),
 }
 
 

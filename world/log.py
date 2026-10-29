@@ -24,7 +24,8 @@ from infrastructure.storage import append_jsonl, read_jsonl
 KINDS = {
     "wake": "a resident woke up at home",
     "depart": "a resident set off for another place",
-    "arrive": "a resident arrived somewhere",
+    "arrive": "a resident arrived somewhere, at work if its duty runs anywhere (payload: place, "
+    "working)",
     "time": "a resident waiting was told the time, or that what it was just told ended its wait",
     "task_arrived": "a client's task came in on the Office's board, told to those there "
     "(payload: task, instance_id, repo)",
@@ -51,17 +52,21 @@ KINDS = {
     "speech": "something said, with its text and recipients",
     "leave_conversation": "a resident left a conversation",
     "conversation_end": "a conversation ended",
-    "gift": "money, a thing or helpings of a stock handed from one resident to another, on "
-    "their own terms (payload: to, and amount of money or item, name and quantity)",
+    "move": "units of an item, or money, that a resident moved from one holder to another: a "
+    "resident (by name), what is left at a place (by its id), the Store's shelves, the kitchen's "
+    "larder or its portions, or nothing (null), with the money that went with them and why: get "
+    "(taken from where it was left), put (left there), pass (handed to another, money alone "
+    "without an item; from the portions, the chef serving a dish nobody pays for), eat (eaten, by "
+    "choice or by the body as it grew hungry, into nothing) or buy (at the Store's counter, for "
+    "oneself or by the chef for the kitchen's larder, which the fund pays, or a dish from the "
+    "portions); seller is who served a purchase (payload: item, units, source, target, money, "
+    "reason, seller)",
     "message": "a written message from one resident to another, read wherever the other is",
-    "sale": "goods bought at the Store's counter, by a resident for itself or by the chef for "
-    "the kitchen, which the fund pays (payload: item, name, quantity, price, amount, seller, "
-    "kitchen)",
-    "served": "a dish bought at the Restaurant and eaten there (payload: dish, name, amount, chef)",
-    "order": "goods the shopkeeper ordered from the supplier, paid by the fund at once (payload: "
+    "order": "what the shopkeeper ordered from the supplier, paid by the fund at once (payload: "
     "item, name, quantity, amount, arrives)",
-    "delivery": "what the Store ordered arrived in the morning (payload: items)",
-    "cook": "portions of a dish the chef cooked from the kitchen's stock (payload: dish, name, "
+    "delivery": "what the Store ordered came from the supplier onto its shelves in the morning "
+    "(payload: items)",
+    "cook": "portions of a dish the chef cooked from the kitchen's larder (payload: dish, name, "
     "portions, used)",
     "price": "a price the shopkeeper, the chef or the doctor set (payload: item, name, place, "
     "price, before)",

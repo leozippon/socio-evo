@@ -154,16 +154,17 @@ town:
     - {between: [hospital, town-hall], minutes: 10}
     - {between: [hospital, river-walk], minutes: 10}
     - {between: [town-hall, river-walk], minutes: 10}
-  # The six occupations, each at its workplace, paid for each hour at work there and a sum at
-  # once for each service, as calibrated above. The mayor's work is no service to anyone in
-  # particular and has no sum.
+  # The six occupations, each at its workplace, paid for each hour at work and a sum at once for
+  # each service, as calibrated above. The mayor's work is no service to anyone in particular and
+  # has no sum; it is being about the town, so once he has sat down to work at the Town Hall his
+  # duty runs wherever he goes until he stops, where everyone else's work stops on leaving it.
   occupations:
     - {id: programmer, title: a programmer, workplace: office, wage_per_hour: 7, per_service: 40}
     - {id: team-leader, title: the team leader, workplace: office, wage_per_hour: 9, per_service: 20}
     - {id: chef, title: the chef, workplace: linde, wage_per_hour: 7, per_service: 2}
     - {id: shopkeeper, title: the shopkeeper, workplace: store, wage_per_hour: 7, per_service: 1}
     - {id: doctor, title: the doctor, workplace: hospital, wage_per_hour: 9, per_service: 4}
-    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0}
+    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0, duty: anywhere}
   fund:
     start: 1500
   # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
@@ -214,35 +215,37 @@ town:
     acceptance_runs: 2
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
-  # The supplier's catalogue (see world/config.py for the kinds and effects), with what the
-  # supplier charges for a unit and the Store's price at the start, which the shopkeeper
-  # changes. Ingredients are food of no nourishment of their own, cooked at the Linde; bread and
-  # fruit are ready food, a helping a third of a day's; every durable does something in the
-  # world: shortens journeys, lets owners write to one another, or shows on its owner wherever
-  # others see it. Names carry their article, as a sentence names them.
-  supplier:
-    - {id: vegetables, name: vegetables, wholesale: 4, price: 6, kind: consumable, effect: food, nourishment: 0}
-    - {id: eggs, name: eggs, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 0}
-    - {id: rice, name: rice, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 0}
-    - {id: flour, name: flour, wholesale: 2, price: 5, kind: consumable, effect: food, nourishment: 0}
-    - {id: meat, name: meat, wholesale: 8, price: 12, kind: consumable, effect: food, nourishment: 0}
-    - {id: fish, name: fish, wholesale: 7, price: 11, kind: consumable, effect: food, nourishment: 0}
-    - {id: bread, name: bread, wholesale: 3, price: 5, kind: consumable, effect: food, nourishment: 34}
-    - {id: fruit, name: fruit, wholesale: 2, price: 5, kind: consumable, effect: food, nourishment: 34}
-    - {id: phone, name: a phone, wholesale: 180, price: 240, kind: durable, effect: messaging, fee_per_day: 5}
-    - {id: coat, name: a coat, wholesale: 110, price: 150, kind: durable, effect: appearance, phrase: in a new coat}
-    - {id: bicycle, name: a bicycle, wholesale: 270, price: 360, kind: durable, effect: travel, factor: 0.5}
-    - {id: book, name: a book, wholesale: 25, price: 40, kind: durable, effect: appearance, phrase: with a book under one arm}
-  # The Linde's dishes, each a day's food, with what a portion takes and the menu's price at the
-  # start, which the chef changes.
-  dishes:
-    - {id: vegetable-soup, name: vegetable soup, ingredients: {vegetables: 2}, price: 12}
-    - {id: omelette, name: an omelette, ingredients: {eggs: 2, vegetables: 1}, price: 14}
-    - {id: rice-bowl, name: a rice bowl, ingredients: {rice: 2, vegetables: 1}, price: 12}
-    - {id: pancakes, name: pancakes, ingredients: {flour: 1, eggs: 1}, price: 10}
-    - {id: fish-pie, name: fish pie, ingredients: {fish: 1, flour: 1}, price: 18}
-    - {id: stew, name: stew, ingredients: {meat: 1, vegetables: 2}, price: 20}
-  # The Store's stock at the start; the kitchen starts empty.
+  # The catalogue of every kind of thing in the town (see world/config.py for the kinds and
+  # effects). Each unit of an item is held by one holder at a time: a resident, what is left at a
+  # place for anyone, the Store's shelves, the kitchen's larder or its portions, or the supplier
+  # outside the town. What the supplier sells has its wholesale price and the Store's price at
+  # the start, which the shopkeeper changes: ingredients, food of no nourishment of their own,
+  # cooked at the Linde; bread and fruit, ready food, a helping a third of a day's; and durables,
+  # each doing something in the world: shortening journeys, letting owners write to one another,
+  # or showing on its owner wherever others see it. The Linde's dishes are cooked from what a
+  # portion takes, each a day's food that perishes at midnight, at the menu's price at the start,
+  # which the chef changes. Names carry their article, as a sentence names them.
+  items:
+    - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 4, price: 6}
+    - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
+    - {id: rice, name: rice, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
+    - {id: flour, name: flour, kind: consumable, effect: food, nourishment: 0, wholesale: 2, price: 5}
+    - {id: meat, name: meat, kind: consumable, effect: food, nourishment: 0, wholesale: 8, price: 12}
+    - {id: fish, name: fish, kind: consumable, effect: food, nourishment: 0, wholesale: 7, price: 11}
+    - {id: bread, name: bread, kind: consumable, effect: food, nourishment: 34, wholesale: 3, price: 5}
+    - {id: fruit, name: fruit, kind: consumable, effect: food, nourishment: 34, wholesale: 2, price: 5}
+    - {id: phone, name: a phone, kind: durable, effect: messaging, fee_per_day: 5, wholesale: 180, price: 240}
+    - {id: coat, name: a coat, kind: durable, effect: appearance, phrase: in a new coat, wholesale: 110, price: 150}
+    - {id: bicycle, name: a bicycle, kind: durable, effect: travel, factor: 0.5, wholesale: 270, price: 360}
+    - {id: book, name: a book, kind: durable, effect: appearance, phrase: with a book under one arm, wholesale: 25, price: 40}
+    - {id: vegetable-soup, name: vegetable soup, kind: consumable, effect: food, nourishment: 100, ingredients: {vegetables: 2}, price: 12, perishes: true}
+    - {id: omelette, name: an omelette, kind: consumable, effect: food, nourishment: 100, ingredients: {eggs: 2, vegetables: 1}, price: 14, perishes: true}
+    - {id: rice-bowl, name: a rice bowl, kind: consumable, effect: food, nourishment: 100, ingredients: {rice: 2, vegetables: 1}, price: 12, perishes: true}
+    - {id: pancakes, name: pancakes, kind: consumable, effect: food, nourishment: 100, ingredients: {flour: 1, eggs: 1}, price: 10, perishes: true}
+    - {id: fish-pie, name: fish pie, kind: consumable, effect: food, nourishment: 100, ingredients: {fish: 1, flour: 1}, price: 18, perishes: true}
+    - {id: stew, name: stew, kind: consumable, effect: food, nourishment: 100, ingredients: {meat: 1, vegetables: 2}, price: 20, perishes: true}
+  # The Store's shelves at the start; the kitchen's larder and portions start empty, and nothing
+  # is left anywhere.
   store:
     stock: {bread: 20, fruit: 20, vegetables: 20, eggs: 20, rice: 10, flour: 10, meat: 6, fish: 6, phone: 1, coat: 1, bicycle: 1, book: 1}
   # The Hospital's fees at the start, which the doctor changes, and what a treatment restores.

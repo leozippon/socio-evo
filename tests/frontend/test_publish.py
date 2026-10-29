@@ -302,7 +302,7 @@ def test_every_file_has_exactly_the_documented_fields(published):
             kinds.add(found["kind"])
             assert found["kind"] in LOG_KINDS
             assert not set(found["payload"]) & bundle.OMITTED
-    assert {"submission", "checkpoint", "speech", "gift"} <= kinds
+    assert {"submission", "checkpoint", "speech", "move"} <= kinds
 
 
 def test_references_carry_the_hash_of_files_inside_the_site(published):
@@ -383,8 +383,9 @@ def test_the_world_lays_the_town_out(published):
     occupations = {o["id"]: o for o in world["occupations"]}
     assert occupations["chef"] == {
         "id": "chef", "title": "the chef", "workplace": "cafe", "wage_per_hour": 7,
-        "per_service": 3,
+        "per_service": 3, "duty": "workplace",
     }  # fmt: skip
+    assert occupations["mayor"]["duty"] == "anywhere"
     assert [(r["name"], r["occupation"]) for r in world["residents"]][3:] == [
         ("Olga", "shopkeeper"), ("Jonas", "chef"), ("Lucia", "doctor"), ("Vera", "mayor"),
     ]  # fmt: skip

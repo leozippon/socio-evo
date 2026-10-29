@@ -1,13 +1,19 @@
-"""The town's money and what it owns: each resident's inventory, the town's one fund, the Store
-and the Restaurant's kitchen, and the daybook of what the report tells.
+"""The town's things and money: the holders of items, each resident's inventory, the town's one
+fund, the Store and the Restaurant's kitchen, and the daybook of what the report tells.
 
-Money is a whole number of the town's currency (`money` writes it). A resident's `Inventory` is
-what it has: its money, never below zero, and its items, the units it keeps of each good (one of
-a durable, the helpings of ready food, the units of an ingredient), with `moves`, the movements
-of its money since its last midnight statement, which the statement tells. A purchase is paid in
-cash from the inventory, and the world refuses one that its money does not cover; money and
-items pass between residents as they hand them over, of which the world keeps no account beyond
-the hand-over.
+Every unit of an item is held by exactly one `Holder`, which keeps the units of each item it
+holds: a resident, by its `Inventory`; a place, by what is left there for anyone to take and, at the
+Store and the Restaurant, by what the business keeps there (`SHELVES`, the Store's shelves;
+`LARDER`, the kitchen's ingredients; `PORTIONS`, the dishes cooked and not yet served); or the
+`Supplier`, outside the town, who holds whatever it sells without end. Units change hands only by
+the world's move (`World.move`), which refuses what the source does not hold.
+
+Money is a whole number of the town's currency (`money` writes it), and no item: a resident's
+`Inventory` is its money, never below zero, besides its items (one of a durable, the helpings of
+ready food, the units of an ingredient), with `moves`, the movements of its money since its last
+midnight statement, which the statement tells. A purchase is paid in cash from the inventory, and
+the world refuses one that its money does not cover; money and items pass between residents as
+they hand them over, of which the world keeps no account beyond the hand-over.
 
 The `Fund` is the town's money: the employer, the landlord and the owner of the Store, the
 Restaurant and the Hospital. Money enters the town only from clients, whose payment for a task
@@ -23,14 +29,15 @@ owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its mov
 last midnight by kind (`TAKEN` and `PAID`), and `yesterday` those of the day the last midnight
 closed.
 
-The `Store` keeps its stock of each good, its prices and the orders on their way; the `Kitchen`
-keeps the Restaurant's stock of ingredients, the menu's prices and the portions cooked and not yet
-served. The `Daybook` keeps, day by day, what the Store sold, the dishes served, the patients seen,
+The `Store` keeps its prices and the orders on their way, its shelves being a holder; the
+`Kitchen` keeps the menu's prices, its larder and portions being holders. The `Daybook` keeps, day
+by day, the fund's balance and its net, what the Store sold, the dishes served, the patients seen,
 the tasks accepted and the hours at work, for the mayor's report. All are checkpointed whole.
 """
 
 from __future__ import annotations
 
+import sys
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -72,15 +79,17 @@ def take(stock: dict[str, int], item: str, units: int) -> None:
         del stock[item]
 
 
-@dataclass
-class Inventory:
-    """What a resident has, checkpointed whole (see the module docstring); `moves` holds each
-    movement as `[kind, amount, about]`: `service`, `received`, `gave`, `bought` or `paid` (a
-    fee at the Hospital)."""
+SHELVES, LARDER, PORTIONS, SUPPLIER = "shelves", "larder", "portions", "supplier"
+"""The holders that are neither a resident nor what is left at a place, by their names in the
+log and the checkpoint (`world.config.HOLDERS`)."""
 
-    money: int = 0
+
+@dataclass
+class Holder:
+    """Units of items, held by one holder (see the module docstring): `items`, the units of each
+    item it holds; an item it no longer holds leaves it."""
+
     items: dict[str, int] = field(default_factory=dict)
-    moves: list[list[str | int]] = field(default_factory=list)
 
     def units(self, item: str) -> int:
         return self.items.get(item, 0)
@@ -88,8 +97,32 @@ class Inventory:
     def add(self, item: str, units: int) -> None:
         add(self.items, item, units)
 
-    def remove(self, item: str, units: int) -> None:
+    def take(self, item: str, units: int) -> None:
         take(self.items, item, units)
+
+
+class Supplier(Holder):
+    """The supplier outside the town: it holds as many units of what it sells as are taken from
+    it, and nothing goes back to it."""
+
+    def units(self, item: str) -> int:
+        return sys.maxsize
+
+    def add(self, item: str, units: int) -> None:
+        raise ValueError("nothing goes back to the supplier")
+
+    def take(self, item: str, units: int) -> None:
+        pass
+
+
+@dataclass
+class Inventory(Holder):
+    """What a resident has, checkpointed whole (see the module docstring); `moves` holds each
+    movement of its money as `[kind, amount, about]`: `service`, `received`, `gave`, `bought` or
+    `paid` (a fee at the Hospital)."""
+
+    money: int = 0
+    moves: list[list[str | int]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -184,39 +217,32 @@ class Fund:
 
 @dataclass
 class Store:
-    """The Store (see the module docstring): the units of each good in `stock`, the price of a
-    unit of each in `prices`, and the orders `pending`, each `[good, units, the time it
-    arrives]`."""
+    """The Store (see the module docstring): the price of a unit of each item it sells in
+    `prices`, and the orders `pending`, each `[item, units, the time it arrives]`."""
 
-    stock: dict[str, int]
     prices: dict[str, int]
     pending: list[list[str | int]] = field(default_factory=list)
 
-    def receive(self, now: int) -> dict[str, int]:
-        """The orders that have arrived by `now` go into the stock; returns what came."""
+    def due(self, now: int) -> dict[str, int]:
+        """The orders that have arrived by `now`, no longer pending: the units of each item."""
         came: dict[str, int] = {}
         waiting = []
-        for good, units, t in self.pending:
-            assert isinstance(good, str) and isinstance(units, int) and isinstance(t, int)
+        for item, units, t in self.pending:
+            assert isinstance(item, str) and isinstance(units, int) and isinstance(t, int)
             if t <= now:
-                add(came, good, units)
+                add(came, item, units)
             else:
-                waiting.append([good, units, t])
+                waiting.append([item, units, t])
         self.pending = waiting
-        for good, units in came.items():
-            add(self.stock, good, units)
         return came
 
 
 @dataclass
 class Kitchen:
-    """The Restaurant's kitchen (see the module docstring): the units of each ingredient in
-    `stock`, the price of each dish on the `menu`, and the `portions` of each cooked and not yet
-    served, which are gone at midnight."""
+    """The Restaurant's kitchen (see the module docstring): the price of a portion of each dish
+    on the `menu`."""
 
     menu: dict[str, int]
-    stock: dict[str, int] = field(default_factory=dict)
-    portions: dict[str, int] = field(default_factory=dict)
 
 
 WEEK = 7
@@ -232,18 +258,23 @@ def new_day() -> dict[str, Any]:
 class Daybook:
     """What the report tells of the town's days, checkpointed whole: for the day since the last
     midnight (`today`) and for each of the last `WEEK` days closed (`days`, the latest last), the
-    units of each good sold at the Store, for a resident or for the kitchen (`sales`), the portions
-    of each dish served (`dishes`), the patients the doctor saw, each `[name, service]` with the
-    service `examination` or `treatment` (`patients`), the tasks accepted, each `[name, task]`
-    (`accepted`), and, set as the day closes, each resident's seconds at work at its workplace
-    (`hours`)."""
+    units of each item sold at the Store, for a resident or for the kitchen (`sales`), the
+    portions of each dish served (`dishes`), the patients the doctor saw, each `[name, service]`
+    with the service `examination` or `treatment` (`patients`), the tasks accepted, each `[name,
+    task]` (`accepted`), and, set as the day closes, its calendar day (`day`), each resident's
+    seconds at work (`hours`), the fund's balance (`fund`) and what it took in less what it paid
+    out that day (`net`)."""
 
     today: dict[str, Any] = field(default_factory=new_day)
     days: list[dict[str, Any]] = field(default_factory=list)
 
-    def close_day(self, hours: dict[str, int]) -> None:
-        """Midnight: today, with each resident's `hours` at work, becomes the latest closed day."""
-        self.today["hours"] = hours
+    def close_day(self, day: int, hours: dict[str, int], fund: Fund) -> None:
+        """Midnight that ends calendar day `day`, before the fund's day closes: today, with each
+        resident's `hours` at work and the `fund`'s balance and net, becomes the latest closed
+        day."""
+        taken = sum(fund.ledger.get(kind, 0) for kind in TAKEN)
+        paid = sum(fund.ledger.get(kind, 0) for kind in PAID)
+        self.today |= {"day": day, "hours": hours, "fund": fund.balance, "net": taken - paid}
         self.days = [*self.days, self.today][-WEEK:]
         self.today = new_day()
 

@@ -175,8 +175,14 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "owed": {},
         "arrears": {"Mei": 20, "Tomas": 30, "Aisha": 20},
     }
-    assert state["store"]["stock"] == town.world.config.store.stock and state["kitchen"] == {
-        "menu": {"omelette": 10, "soup": 8}, "stock": {}, "portions": {},
+    assert state["store"] == {"prices": {"bread": 4, "eggs": 2, "vegetables": 3, "bicycle": 50,
+                                         "phone": 40, "coat": 30}, "pending": []}  # fmt: skip
+    assert state["kitchen"] == {"menu": {"omelette": 10, "soup": 8}}
+    # Every holder of items but the residents, whose inventories are theirs: what is left at
+    # each place, the Store's shelves, the kitchen's larder and its portions.
+    assert state["holders"] == {
+        **{place.id: {} for place in town.world.config.places},
+        "shelves": town.world.config.store.stock, "larder": {}, "portions": {},
     }  # fmt: skip
     # Tomas's hour at work after midnight counts towards the coming day's wages.
     assert state["residents"]["Tomas"]["worked"] == 3600
@@ -279,7 +285,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Tomas", "assign", task=3, to="Aisha")  # hers until it is withdrawn
     await town.call("Tomas", "claim_task", task=4)  # open until the night closes it
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
-    await town.call("Mei", "give", to="Tomas", what="money", amount=5)
+    await town.call("Mei", "pass", item="money", units=5, to="Tomas")
     await town.call("Mei", "leave_conversation")
     await town.call("Mei", "leave_work")
     await town.call("Tomas", "leave_work")
@@ -294,7 +300,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Olga", "set_price", item="bread", price=5)
     for name in ("Mei", "Tomas"):
         await town.call(name, "buy", item="phone")
-    await town.call("Jonas", "buy", item="eggs", quantity=2, for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="eggs", units=2, for_the_kitchen=True)
     await town.call("Jonas", "buy", item="vegetables", for_the_kitchen=True)
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
     await town.call("Vera", "report")

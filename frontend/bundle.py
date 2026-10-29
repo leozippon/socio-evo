@@ -76,10 +76,6 @@ COUNTED = (
 """The counts of `frontend.progress` summed into a run's headline."""
 GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "served")
 """What one resident had to do with another on a day, by field."""
-SERVING = {"sale": "seller", "served": "chef", "examination": None, "treatment": None}
-"""The entries of one resident serving another, with the payload's field naming the one who
-served, the actor being the buyer or the diner; where there is none, the actor is the doctor
-and the payload names the patient."""
 JOURNAL_FIELDS = (
     "resident",
     "day",
@@ -174,7 +170,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         "occupations": [occupation.model_dump(mode="json") for occupation in town.occupations],
         "fund": town.fund.model_dump(mode="json"),
         "work": town.work.model_dump(mode="json"),
-        "goods": [good.model_dump(mode="json") for good in town.supplier],
+        "goods": [item.model_dump(mode="json") for item in town.supplied],
         "store": town.store.model_dump(mode="json"),
         "dishes": [dish.model_dump(mode="json") for dish in town.dishes],
         "hospital": town.hospital.model_dump(mode="json"),
@@ -257,14 +253,13 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
                         add(day, actor, other, "said_private", 1)
             elif kind == "message":
                 add(day, actor, payload["to"], "messages", 1)
-            elif kind == "gift":
-                add(day, actor, payload["to"], "gifts", 1)
-                add(day, actor, payload["to"], "money", payload.get("amount", 0))  # 0: a thing
-            elif kind in SERVING:
-                field = SERVING[kind]
-                server, served = (payload[field], actor) if field else (actor, payload["patient"])
-                if server != served:
-                    add(day, server, served, "served", 1)
+            elif kind == "move" and payload["reason"] == "pass":
+                add(day, actor, payload["target"], "gifts", 1)
+                add(day, actor, payload["target"], "money", payload["money"])  # 0: a thing
+            elif kind == "move" and payload["reason"] == "buy" and payload["seller"] != actor:
+                add(day, payload["seller"], actor, "served", 1)  # the buyer or the diner
+            elif kind in ("examination", "treatment") and payload["patient"] != actor:
+                add(day, actor, payload["patient"], "served", 1)
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
@@ -285,15 +280,15 @@ def saved(run: RunDirectory, data: Mapping[str, Any]) -> dict[int, dict[str, Any
 def things(
     states: Mapping[int, Mapping[str, Any]], town: TownConfig, data: Mapping[str, Any]
 ) -> dict[str, list]:
-    """What each resident owns over the run, by name: `[time, {good id: units}]` from the
+    """What each resident owns over the run, by name: `[time, {item id: units}]` from the
     start and after each change, a durable counted 1 and a consumable by the units left of it.
     What it bought for itself at the Store's counter and the gifts of things are the timeline's
     markers: a durable is owned from then on, a consumable adds the units bought, and what is
-    given goes from the giver to the receiver. What is eaten leaves no entry in the log, so at
-    every checkpoint of `states` the stock is read from the checkpoint instead, exact as of
-    that moment; between checkpoints it is as last counted plus what was bought and given
-    since."""
-    goods = {good.id: good for good in town.supplier}
+    given goes from the giver to the receiver. What is eaten, taken where it was left or left
+    for anyone has no marker, so at every checkpoint of `states` the stock is read from the
+    checkpoint instead, exact as of that moment; between checkpoints it is as last counted plus
+    what was bought and given since."""
+    items = {item.id: item for item in town.items}
     snapshots = {
         state["time"]: {
             name: dict(found["inventory"]["items"]) for name, found in state["residents"].items()
@@ -324,11 +319,11 @@ def things(
                 if not held[change["item"]]:
                     del held[change["item"]]
             else:
-                good = goods[change["item"]]
-                if good.kind == "durable":
-                    held[good.id] = 1
+                item = items[change["item"]]
+                if item.kind == "durable":
+                    held[item.id] = 1
                 else:
-                    held[good.id] = held.get(good.id, 0) + change["quantity"]
+                    held[item.id] = held.get(item.id, 0) + change["quantity"]
             if t == series[-1][0]:
                 series[-1][1] = dict(held)
             elif held != series[-1][1]:

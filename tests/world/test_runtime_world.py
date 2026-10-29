@@ -159,3 +159,71 @@ async def test_a_remark_to_everyone_reaches_a_working_resident_with_its_next_res
     )
     mei = world.residents["Mei"]
     assert isinstance(mei.event, Work) and mei.conversation is None
+
+
+async def test_a_call_the_request_did_not_declare_is_the_worlds_to_refuse_or_carry_out(tmp_path):
+    directory, world, town = _mei(tmp_path)
+    model = ScriptedModel(
+        reply(
+            "",
+            tool_call("say", text="Good night."),  # in the conversation
+            tool_call("start_work"),  # not declared at home, where she has no work
+            tool_call("eat_lunch"),  # no tool at all
+            tool_call("sleep", until="07:00"),
+        ),
+        reply("Asleep soon."),
+    )
+    port = world.ports["Mei"]
+    town.start()
+    await town.until("07:00")
+    town.rest("Tomas")
+    await town.call("Aisha", "say", text="Up already?", to=["Mei"])
+    town.take("Aisha")
+    async with running(Runtime(directory, port, model)):
+        await resting(port)
+    await town.close()
+
+    declared = [t["function"]["name"] for t in model.requests[0].tools]
+    assert "start_work" not in declared and {"say", "sleep", "leave_conversation"} <= set(declared)
+    answers = [m.content for m in model.requests[1].messages if m.role == "tool"]
+    assert answers == [
+        "You said: “Good night.”",
+        "You left the conversation. Your work is at the workshop.",  # what is not talk leaves it
+        "There is nothing you can do called eat_lunch.",
+        "You went to bed.",
+    ]
+    assert town.take("Aisha") == [
+        "Mei said: “Good night.”",
+        "At 07:00 Mei left the conversation.",
+        "At 07:00 the conversation ended.",
+    ]
+
+
+async def test_a_resident_put_to_sleep_at_the_nights_end_takes_no_step_until_it_wakes(tmp_path):
+    directory, world, town = _mei(tmp_path)
+    model = ScriptedModel(
+        reply("", tool_call("wait", minutes=600)),  # 07:00 to 17:00
+        reply("", tool_call("wait", minutes=600)),  # cut short by the statement at midnight
+        reply("", tool_call("wait", minutes=600)),  # cut short by the night's end at 02:00
+        reply("A new day."),  # waking at 07:00
+    )
+    port = world.ports["Mei"]
+    stocked(town)
+    town.start(until_day=2)
+    town.rest("Tomas", "Aisha")
+    async with running(Runtime(directory, port, model)):
+        for hour, day in (("07:00", 1), ("17:00", 1), ("00:00", 2), ("02:00", 2), ("06:59", 2)):
+            await town.until(hour, day)
+            await resting(port)
+        assert world.residents["Mei"].suspended and len(model.requests) == 3
+        await town.until("07:00", day=2)
+        await resting(port)
+    await town.close()
+
+    assert not model._replies and len(model.requests) == 4
+    told = [m.content for m in model.requests[-1].messages if m.role == "user"]
+    # What it was told as it fell asleep waits in its session, unanswered, until it wakes.
+    assert told[-2].startswith(
+        "It is 02:00: you fell asleep without going to bed, and will wake at home at 07:00."
+    )
+    assert told[-1].startswith("You woke up at home. It is Tuesday 2 January, 07:00.")

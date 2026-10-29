@@ -296,8 +296,10 @@ async def test_eating_restores_satiety_and_ready_food_is_eaten_as_one_gets_hungr
     world = town.world
     mei, tomas = world.residents["Mei"], world.residents["Tomas"]
     mei.living.satiety = 20
+    mei.inventory.items["soup"] = 1
     world.eat(mei, "soup", 1)
     assert mei.living.satiety == 100 and world.nourishment(mei) == 100  # a day's food, capped
+    assert mei.inventory.items == {}  # eaten: out of her inventory into nothing
 
     stocked(town, days=1)  # three helpings
     tomas.living.satiety = 30
@@ -520,8 +522,8 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     await town.call("Mei", "leave_conversation")
     assert isinstance(mei.event, Bedridden)
     aisha.inventory.items["bread"] = 3
-    given = await town.call("Aisha", "give", to="Mei", what="bread", amount=1)
-    assert given.text.startswith("You gave Mei 1 helping of bread.")
+    given = await town.call("Aisha", "pass", item="bread", to="Mei")
+    assert given.text.startswith("You passed Mei 1 helping of bread.")
     assert mei.living.eaten == {"bread": 1} and mei.inventory.items == {}  # eaten at once
     # Still up at the forced hour, she falls asleep in her bed; the checkpoint keeps her there,
     # and so does a restored world; she wakes in it.
@@ -549,7 +551,7 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     assert not mei.living.bedridden and mei.living.health == 25 and isinstance(mei.base, Idle)
     recovered = [e for e in world.log.entries() if e["kind"] == "recovered"]
     assert [(e["text"], e["audience"]) for e in recovered] == [
-        ("Mei is well enough to leave its bed.", ["Mei", "Aisha"]),
+        ("Mei is well enough to get up.", ["Mei", "Aisha"]),
     ]
     assert recovered[0]["personal"] == {"Mei": "You are well enough to leave your bed."}
     assert recovered[0]["payload"] == {

@@ -256,12 +256,12 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     pending: dict[str, int] = {}
     for good, units, _ in saved["store"]["pending"]:
         pending[good] = pending.get(good, 0) + units
-    assert state_at(data["store"]["stock"], t) == saved["store"]["stock"]
+    assert state_at(data["store"]["stock"], t) == saved["holders"]["shelves"]
     assert state_at(data["store"]["prices"], t) == saved["store"]["prices"]
     assert state_at(data["store"]["on_order"], t) == pending == {"bread": 5}
-    assert state_at(data["kitchen"]["stock"], t) == saved["kitchen"]["stock"]
+    assert state_at(data["kitchen"]["stock"], t) == saved["holders"]["larder"]
     assert state_at(data["kitchen"]["menu"], t) == saved["kitchen"]["menu"]
-    assert state_at(data["kitchen"]["portions"], t) == saved["kitchen"]["portions"] == {}
+    assert state_at(data["kitchen"]["portions"], t) == saved["holders"]["portions"] == {}
     assert state_at(data["fees"], t) == saved["fees"]
     for name, found in saved["residents"].items():
         assert state_at(lane(data, name)["purse"], t) == found["inventory"]["money"], name
@@ -446,8 +446,8 @@ async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(t
     await town.until("07:00")
     await town.call("Tomas", "go", place="mill-street-house")
     await town.until("07:10")
-    await town.call("Mei", "give", to="Tomas", what="money", amount=5)
-    await town.call("Mei", "give", to="Tomas", what="bread", amount=2)
+    await town.call("Mei", "pass", item="money", units=5, to="Tomas")
+    await town.call("Mei", "pass", item="bread", units=2, to="Tomas")
     await town.close()
     data = timeline(run.root)
     gifts = [m for m in lane(data, "Mei")["markers"] if m["kind"] == "gift"]

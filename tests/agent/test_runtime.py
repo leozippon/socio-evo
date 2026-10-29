@@ -156,30 +156,54 @@ async def test_an_interrupting_percept_lets_the_reply_finish_and_leaves_its_call
 
 
 async def test_each_request_declares_what_the_port_offers_then(directory):
-    port = FakePort(
-        tools=[SAY], results={"say": ToolResult("Said."), "go": ToolResult("Off.", ends_turn=True)}
-    )
+    def go(args):
+        if GO in port.tools:
+            return ToolResult("Off.", ends_turn=True)
+        return ToolResult("The café is not open yet.")
+
+    port = FakePort(tools=[SAY], results={"say": ToolResult("Said."), "go": go})
     model = ScriptedModel(
-        reply("", tool_call("go", place="café")),  # not offered yet, though the port knows it
+        reply("", tool_call("go", place="café")),  # not offered, but one of the world's tools
         reply("Nothing to do."),
         reply("", tool_call("go", place="café")),
     )
     port.deliver("Your alarm rings.")
     async with running(Runtime(directory, port, model)):
         await settle(port)
-        assert port.calls == []
         port.tools = [GO, SAY]
         port.deliver("The café has opened.")
         await settle(port)
 
-    assert port.calls == [("go", {"place": "café"})]
+    # A call of a tool the request did not declare goes to the world all the same, which says
+    # why it cannot be done, or does it if it can by then.
+    assert port.calls == [("go", {"place": "café"}), ("go", {"place": "café"})]
     own = [spec.name for spec in files.SPECS] + ["compact"]
     declared = [[t["function"]["name"] for t in request.tools] for request in model.requests]
     assert declared == [[*own, "say"], [*own, "say"], [*own, "go", "say"]]
     answers = [m.content for m in model.requests[1].messages if m.role == "tool"]
-    assert answers == [texts.UNKNOWN_TOOL.format(name="go")]
+    assert answers == ["The café is not open yet."]
     requests = [r for r in trace(directory) if r["kind"] == "request"]
     assert [r["tools"] for r in requests] == declared
+
+
+async def test_an_asleep_resident_takes_no_step_until_it_wakes(directory):
+    port = FakePort(tools=[SAY], results={"say": ToolResult("Said.")})
+    model = ScriptedModel(reply("A new day."))
+    port.asleep = True
+    port.deliver("It is 04:00: you fell asleep without going to bed.")  # told as it fell asleep
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+        assert model.requests == []  # nothing is asked of one asleep
+        port.asleep = False
+        port.deliver("You woke up at home.")
+        await settle(port)
+
+    assert len(model.requests) == 1
+    told = [m.content for m in model.requests[0].messages if m.role == "user"]
+    assert told == [
+        f"It is 04:00: you fell asleep without going to bed.\n\n{port.situation_text}",
+        f"You woke up at home.\n\n{port.situation_text}",
+    ]
 
 
 async def test_a_running_tool_finishes_and_the_calls_after_it_are_not_carried_out(directory):

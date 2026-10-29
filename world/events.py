@@ -1,15 +1,17 @@
 """The events a resident lives in, the tools each offers, and the refusal of the others.
 
 A resident is always in exactly one event. Its base event is Idle, Movement, Work, Sleep or
-Bedridden; a Conversation takes the place of the Idle, Work or Bedridden it found the resident
-in while it lasts, offering its own actions and not the base event's, and when it ends, by
-leaving, by everyone else leaving or by the silence rule, the base event is back as it was: one
-spoken to at work is at work again without sitting down anew, and its stretch of work runs on
-through the talk. Work is entered at one's own workplace by `start_work` or by doing the work of
-one's occupation there, except by one exhausted, and ends when the body is found exhausted
-(`EXHAUSTED`); the doctor also examines and treats at the bedside of one too ill to get up,
-without sitting down to work there. `go`
-leaves a conversation on its own; waiting in a conversation is listening, and leaves it standing.
+Bedridden; a Conversation covers the Idle, Work or Bedridden it found the resident in while it
+lasts, and when it ends, by leaving, by everyone else leaving or by the silence rule, the base
+event is back as it was: one spoken to at work is at work again without sitting down anew, and
+its stretch of work runs on through the talk. In a conversation one can do what the conversation
+offers of its own (`CONVERSATION_TOOLS`: talking, and what one does with things while talking)
+and what the base event offers besides: doing any of the latter, one's work for one, leaves the
+conversation first, so that one does one thing at a time. Work is entered at one's own workplace
+by `start_work` or by doing the work of one's occupation there, except by one exhausted, and ends
+when the body is found exhausted (`EXHAUSTED`); the doctor also examines and treats at the
+bedside of one too ill to get up, without sitting down to work there. `go` leaves a conversation
+on its own; waiting in a conversation is listening, and leaves it standing.
 A Conversation is shared by its members: the residents at one place who have spoken or been
 drawn in by speech. Sleep has two stages: in bed, where the resident may still look around,
 review its day, go to bed again to add to its journal entry and see to its files, and suspended,
@@ -21,8 +23,8 @@ comes and sleep.
 Each event's tools are the architecture's table. What everyone can do is in them all; each
 occupation adds its own work (`OCCUPATION_TOOLS`), done at its workplace. The resident's request
 declares the tools of its event at its place now that are its own, less the ones of no use there
-(`World.usable`); a call that names one the event does not offer by the time it is carried out
-returns the refusal below, naming the condition.
+(`World.usable`); a call of a world tool that the event does not offer by the time it is carried
+out, declared or not, returns the refusal below, naming the condition.
 """
 
 from __future__ import annotations
@@ -57,8 +59,11 @@ IDLE_TOOLS = frozenset(
         "announce",
         "say",
         "message",
+        "get",
+        "pass",
+        "put",
+        "eat",
         "buy",
-        "give",
         "move_in",
         "sleep",
         "wait",
@@ -90,8 +95,11 @@ WORK_TOOLS = frozenset(
         "announce",
         "say",
         "message",
+        "get",
+        "pass",
+        "put",
+        "eat",
         "buy",
-        "give",
         "wait",
         "leave_work",
     }
@@ -105,10 +113,19 @@ CONVERSATION_TOOLS = frozenset(
         "go",
         "wait",
         "say",
-        "give",
+        "get",
+        "pass",
+        "put",
+        "eat",
+        "buy",
         "leave_conversation",
     }
 )
+"""What a conversation offers of its own, done without leaving it: talking, and what one does
+with things while talking. What else the event underneath offers is offered too, and leaves the
+conversation first."""
+TALK = frozenset({"say", "wait", "leave_conversation"})
+"""What a conversation adds to whatever event it covers."""
 BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
 """What reads and claims from the board, which hangs at the office."""
 TASK_TOOLS = frozenset(
@@ -140,8 +157,12 @@ class Idle:
 
 @dataclass
 class Movement:
+    """`working`: the resident is on its way at work, its duty running wherever it goes (the
+    mayor's, `Occupation.duty`), and is at work again on arrival."""
+
     destination: str
     arrival: int
+    working: bool = False
     kind: ClassVar[str] = "movement"
     tools: ClassVar[frozenset[str]] = frozenset()
 
@@ -200,17 +221,15 @@ AT_HOME = "You can sleep only at home."
 """Why `sleep` is refused away from home, as at work, which is never at home."""
 
 
-def refusal(event: Base | Conversation, tool: str, *, destination: str) -> str:
-    """Why `tool`, which `event` does not offer, cannot be used now. `destination` is the name
-    of where a moving resident is going."""
+def refusal(event: Base, tool: str, *, destination: str) -> str:
+    """Why `tool`, which the base `event` does not offer (nor a conversation over it), cannot be
+    used now. `destination` is the name of where a moving resident is going."""
     if isinstance(event, Movement):
         return f"You are on your way to {destination}; you can do nothing until you arrive."
     if isinstance(event, Sleep):
         return "You are asleep." if event.suspended else IN_BED
     if isinstance(event, Bedridden):
         return BEDRIDDEN
-    if isinstance(event, Conversation):
-        return "You are in a conversation; leave it first."
     if tool == "leave_conversation":
         return "You are not in a conversation."
     if tool == "sleep":

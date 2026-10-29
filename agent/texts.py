@@ -30,8 +30,9 @@ FILES = """\
 
 You keep files of your own: your account of yourself, your journal, whatever you want to keep \
 under memory/ (notes, drafts, lists), and your skills under skills/, each a method written down \
-so that you can reread it. Your files stay with you from day to day, and no one else in town \
-reads them. Your account of yourself is background.md, the words about you that \
+so that you can reread it. Your journal, under memory/journal/, holds the entries you gave going \
+to bed, each kept as you wrote it. Your files stay with you from day to day, and no one else in \
+town reads them. Your account of yourself is background.md, the words about you that \
 open all this; they are yours: change them as you change, and what you write there is before \
 you from then on.
 
@@ -40,6 +41,10 @@ list_files. Paths are written like memory/notes.md. The first line of each file 
 what it is for."""
 
 SKILLS_READ_ONLY = "You can read the files in skills/ but not change them."
+JOURNAL_KEPT = (
+    "Your journal is kept as you wrote it: you can read it, and you add to it by giving the "
+    "day's entry as you go to bed."
+)
 
 KNOWN_FILES = {"background.md": "your account of yourself, in your own words"}
 """What the files every resident has are for, as the index of files says."""

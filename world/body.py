@@ -51,7 +51,7 @@ def clamp(value: float) -> float:
 
 @dataclass
 class Living:
-    """A resident's living, checkpointed whole: `eaten` the units of each food good it has
+    """A resident's living, checkpointed whole: `eaten` the units of each food item it has
     eaten since the last midnight, the day's record of nourishment; the three needs; `night`,
     how health moved at the last midnight, by cause; `ill`, the midnights of illness still to
     come, 0 when well; and `bedridden`, set when health reaches its floor at midnight and

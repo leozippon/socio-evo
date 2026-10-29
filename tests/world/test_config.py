@@ -25,8 +25,10 @@ def test_a_town_validates():
     assert config.workplace("office").id == "workshop" and config.workplace("store").id == "store"
     assert config.travel("workshop", "cafe") == config.travel("cafe", "workshop") == 5
     assert config.travel("park", "cafe") == 10 and config.travel("park", "park") == 0
-    assert config.good("bread").ready and not config.good("eggs").ready
-    assert config.dish("soup").ingredients == {"vegetables": 2}
+    assert config.item("bread").ready and not config.item("eggs").ready
+    assert config.item("soup").ingredients == {"vegetables": 2} and config.item("soup").dish
+    assert [item.id for item in config.dishes] == ["omelette", "soup"]
+    assert "soup" not in [item.id for item in config.supplied]
     assert config.place("college-flat").comfort == 1.0
     assert config.needs.satiety.lowest.name == "starving"
     data = config.model_dump(mode="json")
@@ -93,63 +95,60 @@ def test_a_town_validates():
             "duplicate occupation id",
         ),
         (lambda d: d["occupations"][0].update(wage_per_hour=0), {}, "greater than or equal to 1"),
+        (lambda d: d["occupations"][0].update(duty="home"), {}, "Input should be 'workplace'"),
         (lambda d: d.pop("fund"), {}, "fund\n  Field required"),
         (lambda d: d["fund"].update(start=-1), {}, "greater than or equal to 0"),
         (lambda d: d["places"][0].pop("rent"), {}, "needs rent, rooms and comfort"),
         (lambda d: d["places"][2].update(rent=5), {}, "is not a home and has no rent"),
         (lambda d: d["places"][0].update(rooms=1), {}, "has 1 rooms for 2 residents"),
-        (lambda d: d["supplier"].append(dict(d["supplier"][0])), {}, "duplicate good or dish id"),
+        (lambda d: d["items"].append(dict(d["items"][0])), {}, "duplicate item id"),
+        (lambda d: d["items"][0].pop("wholesale"), {}, "either bought from the supplier or cooked"),
         (
-            lambda d: d["dishes"].append(dict(d["dishes"][0], id="bread")),
+            lambda d: d["items"][6].update(wholesale=3),
             {},
-            "duplicate good or dish id",
+            "either bought from the supplier or cooked",
         ),
-        (lambda d: d["supplier"][0].pop("wholesale"), {}, "Field required"),
-        (
-            lambda d: d["supplier"][0].update(sold_at=["store"]),
-            {},
-            "Extra inputs are not permitted",
-        ),
+        (lambda d: d["items"][0].update(sold_at=["store"]), {}, "Extra inputs are not permitted"),
         (
             lambda d: [
-                d.update(supplier=d["supplier"][1:], dishes=[]),
+                d.update(items=d["items"][1:6]),
                 d["store"]["stock"].pop("bread"),
             ],
             {},
             "the town sells nothing to eat",
         ),
-        (lambda d: d["supplier"][0].update(kind="durable"), {}, "food is consumable"),
-        (lambda d: d["supplier"][3].update(kind="consumable"), {}, "food is consumable"),
-        (lambda d: d["supplier"][0].update(kind="immediate"), {}, "Input should be 'consumable'"),
-        (lambda d: d["supplier"][0].update(fee_per_day=1), {}, "is not durable and carries no fee"),
+        (lambda d: d["items"][0].update(kind="durable"), {}, "food is consumable"),
+        (lambda d: d["items"][3].update(kind="consumable"), {}, "food is consumable"),
+        (lambda d: d["items"][0].update(kind="immediate"), {}, "Input should be 'consumable'"),
+        (lambda d: d["items"][0].update(fee_per_day=1), {}, "is not durable and carries no fee"),
+        (lambda d: d["items"][0].pop("nourishment"), {}, "nourishment belongs to the effect food"),
+        (lambda d: d["items"][0].update(nourishment=101), {}, "less than or equal to 100"),
+        (lambda d: d["items"][3].update(phrase="x"), {}, "phrase belongs to the effect appearance"),
+        (lambda d: d["items"][5].update(phrase=" "), {}, "has an empty phrase"),
+        (lambda d: d["items"][5].update(phrase="in an honest coat"), {}, "the town does not use"),
+        (lambda d: d["items"][4].update(effect="treatment"), {}, "Input should be 'food'"),
+        (lambda d: d["items"][3].update(perishes=True), {}, "is not consumable and does not"),
         (
-            lambda d: d["supplier"][0].pop("nourishment"),
+            lambda d: d["items"][6]["ingredients"].update(coat=1),
             {},
-            "nourishment belongs to the effect food",
+            "the dish omelette is cooked from coat, which is no food the supplier sells",
         ),
-        (lambda d: d["supplier"][0].update(nourishment=101), {}, "less than or equal to 100"),
         (
-            lambda d: d["supplier"][3].update(phrase="x"),
+            lambda d: d["items"][6]["ingredients"].update(soup=1),
             {},
-            "phrase belongs to the effect appearance",
+            "the dish omelette is cooked from soup, which is no food the supplier sells",
         ),
-        (lambda d: d["supplier"][5].update(phrase=" "), {}, "has an empty phrase"),
-        (
-            lambda d: d["supplier"][5].update(phrase="in an honest coat"),
-            {},
-            "the town does not use",
-        ),
-        (lambda d: d["supplier"][4].update(effect="treatment"), {}, "Input should be 'food'"),
-        (
-            lambda d: d["dishes"][0]["ingredients"].update(coat=1),
-            {},
-            "the dish omelette is cooked from coat, not a food",
-        ),
-        (lambda d: d["dishes"][0].update(ingredients={}), {}, "at least 1 item"),
+        (lambda d: d["items"][7].update(nourishment=0), {}, "is a dish, which is food that is"),
+        (lambda d: d["places"][3].update(id="larder"), {}, "larder names a holder of items"),
         (
             lambda d: d["store"]["stock"].update(wine=3),
             {},
             "the Store's stock has wine, which the supplier lacks",
+        ),
+        (
+            lambda d: d["store"]["stock"].update(soup=3),
+            {},
+            "the Store's stock has soup, which the supplier lacks",
         ),
         (lambda d: d["store"]["stock"].update(bread=-1), {}, "greater than or equal to 0"),
         (lambda d: d.pop("needs"), {}, "needs\n  Field required"),

@@ -1,11 +1,12 @@
 """A small town for the world's tests: three residents, programmers at the workshop (the office),
 the shopkeeper and the chef that `TRADES` adds for the tests of the store and the café (the
 restaurant), and the doctor and the mayor that `CARE` adds for those of the clinic (the hospital)
-and the hall; two homes and a park; a catalogue with ready food, two ingredients and a durable of
-each effect, and two dishes; the real town's needs, with no illness unless a test asks for it;
-no task arriving unless a test schedules it (`opening` makes the whole pool arrive at 08:00 on
-the first day, as the towns of `make_town` have it); the fake work backend of `world.testing`;
-and a harness that runs the world on a manual clock and stands in for the residents' runtimes."""
+and the hall; two homes and a park; a catalogue of items with ready food, two ingredients, a
+durable of each effect and two dishes; the real town's needs, with no illness unless a test asks
+for it; no task arriving unless a test schedules it (`opening` makes the whole pool arrive at
+08:00 on the first day, as the towns of `make_town` have it); the fake work backend of
+`world.testing`; and a harness that runs the world on a manual clock and stands in for the
+residents' runtimes."""
 
 from __future__ import annotations
 
@@ -49,10 +50,10 @@ OCCUPATIONS = (
     {"id": "doctor", "title": "the doctor", "workplace": "clinic", "wage_per_hour": 9,
      "per_service": 4},
     {"id": "mayor", "title": "the mayor", "workplace": "hall", "wage_per_hour": 8,
-     "per_service": 0},
+     "per_service": 0, "duty": "anywhere"},
 )  # fmt: skip
 
-SUPPLIER = (
+ITEMS = (
     {"id": "bread", "name": "bread", "wholesale": 2, "price": 4, "kind": "consumable",
      "effect": "food", "nourishment": 34},
     {"id": "eggs", "name": "eggs", "wholesale": 1, "price": 2, "kind": "consumable",
@@ -65,13 +66,13 @@ SUPPLIER = (
      "effect": "messaging", "fee_per_day": 2},
     {"id": "coat", "name": "a coat", "wholesale": 20, "price": 30, "kind": "durable",
      "effect": "appearance", "phrase": "in a new coat"},
-)  # fmt: skip
-"""The test town's catalogue: ready food, two ingredients and a durable of each effect."""
-DISHES = (
     {"id": "omelette", "name": "an omelette", "ingredients": {"eggs": 2, "vegetables": 1},
-     "price": 10},
-    {"id": "soup", "name": "vegetable soup", "ingredients": {"vegetables": 2}, "price": 8},
+     "price": 10, "kind": "consumable", "effect": "food", "nourishment": 100, "perishes": True},
+    {"id": "soup", "name": "vegetable soup", "ingredients": {"vegetables": 2}, "price": 8,
+     "kind": "consumable", "effect": "food", "nourishment": 100, "perishes": True},
 )  # fmt: skip
+"""The test town's catalogue: ready food, two ingredients and a durable of each effect from the
+supplier, and two dishes from the kitchen."""
 STOCK = {"bread": 10, "eggs": 10, "vegetables": 10, "bicycle": 1, "phone": 2, "coat": 1}
 
 NEEDS = {
@@ -124,7 +125,7 @@ NEEDS = {
 def town_config(
     *,
     residents: tuple[dict[str, Any], ...] = RESIDENTS,
-    supplier: tuple[dict[str, Any], ...] = SUPPLIER,
+    items: tuple[dict[str, Any], ...] = ITEMS,
     needs: dict[str, Any] = NEEDS,
     **work: Any,
 ) -> TownConfig:
@@ -174,8 +175,7 @@ def town_config(
                 "acceptance_timeout_s": 600,
             }
             | work,
-            "supplier": list(supplier),
-            "dishes": list(DISHES),
+            "items": list(items),
             "store": {"stock": STOCK},
             "hospital": {"examination": 10, "treatment": 30, "restores": 25},
             "needs": needs,

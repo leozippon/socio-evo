@@ -9,7 +9,7 @@ Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way o
 refused task 2, as she holds one), then, the task's actions offered once it is held, runs two
 commands, writes the fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas,
 who claimed task 2, asks her privately how she runs the tests; she answers privately. He tells
-Aisha something privately in her presence and gives Mei $5; Mei leaves the conversation, then
+Aisha something privately in her presence and passes Mei $5; Mei leaves the conversation, then
 her work, for home at 09:20, waits there until 20:00 (her body speaks
 twice, at 12:00 and 20:00, and she waits on), goes to bed with her journal, reads the record of
 her day, writes her notes on people and fails to read a file she does not have. Tomas works until
@@ -135,7 +135,7 @@ def before_occupations(run_dir: Path, root: Path) -> Path:
     for resident in town["residents"]:
         del resident["occupation"]
         resident["ties"] = {}
-    for added in ("occupations", "fund", "supplier", "store", "hospital"):
+    for added in ("occupations", "fund", "items", "store", "hospital"):
         del town[added]
     town["goods"], town["work"]["board_size"], frozen["skills_writable"] = [], 4, True
     (copy / "config.yaml").write_text(yaml.safe_dump(frozen), encoding="utf-8")
@@ -201,7 +201,7 @@ async def live(root: Path) -> None:
         await settled("09:20")
         await tomas("say", text="Mei, how do you run the tests?", to=["Mei"])
         await tomas("say", text="Do not tell Mei about task 2.", to=["Aisha"])
-        await tomas("give", to="Mei", what="money", amount=5)
+        await tomas("pass", item="money", units=5, to="Mei")
         await settled("09:30")
         await settled("18:00")
         await tomas("leave_work")
@@ -217,7 +217,7 @@ async def live(root: Path) -> None:
             await does(name, "go", "You set off", place=place)
         await settled("20:10")
         await does("Olga", "order", "You ordered 5 helpings of bread", item="bread", quantity=5)
-        await does("Jonas", "buy", "for the kitchen", item="vegetables", quantity=2,
+        await does("Jonas", "buy", "for the kitchen", item="vegetables", units=2,
                    for_the_kitchen=True)  # fmt: skip
         await does("Vera", "buy", "You bought 1 helping of bread", item="bread")
         await does("Ravi", "assign", "You gave task 3", task=3, to="Aisha")

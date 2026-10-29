@@ -16,6 +16,7 @@ from world.events import (
     IDLE_TOOLS,
     OCCUPATION_TOOLS,
     SLEEP_TOOLS,
+    TALK,
     WORK_DONE,
     WORK_TOOLS,
     Bedridden,
@@ -53,7 +54,10 @@ ARCHITECTURE_TABLE = {
         "say",
         "message",
         "buy",
-        "give",
+        "get",
+        "put",
+        "pass",
+        "eat",
         "move_in",
         "sleep",
         "wait",
@@ -82,11 +86,25 @@ ARCHITECTURE_TABLE = {
         "say",
         "message",
         "buy",
-        "give",
+        "get",
+        "put",
+        "pass",
+        "eat",
         "wait",
         "leave_work",
     },
-    "conversation": {"look_around", "go", "wait", "say", "give", "leave_conversation"},
+    "conversation": {
+        "look_around",
+        "go",
+        "wait",
+        "say",
+        "buy",
+        "get",
+        "put",
+        "pass",
+        "eat",
+        "leave_conversation",
+    },
     "sleep": {"look_around", "review_day", "sleep"},
     "bedridden": {"look_around", "say", "sleep"},
 }
@@ -103,6 +121,8 @@ def test_every_occupation_has_its_workplace_its_work_and_its_words():
         set(WORKPLACE_OF) == set(OCCUPATION_TOOLS) == set(OWN_WORK) == set(SERVICE) == occupations
     )
     assert WORK_DONE <= IDLE_TOOLS and WORK_DONE <= WORK_TOOLS  # done at rest or at work
+    # What a conversation offers of its own is what idling and working offer, and talk.
+    assert CONVERSATION_TOOLS <= (IDLE_TOOLS | TALK) and CONVERSATION_TOOLS <= (WORK_TOOLS | TALK)
 
 
 def test_the_tool_sets_are_the_architecture_table():
@@ -158,7 +178,7 @@ async def test_each_event_refuses_what_it_does_not_offer_naming_the_condition(ma
     assert set(working) == {spec.name for spec in world.tool_specs} - WORK_TOOLS
 
 
-async def test_a_conversation_takes_the_place_of_work_and_gives_it_back_when_it_ends(make_town):
+async def test_a_conversation_covers_work_and_gives_it_back_when_it_ends(make_town):
     town = make_town()
     await awake_at(town)
     for name in ("Mei", "Tomas"):
@@ -177,14 +197,13 @@ async def test_a_conversation_takes_the_place_of_work_and_gives_it_back_when_it_
     assert port.interrupt.is_set()
     assert town.take("Mei") == ["Tomas said to you: “How is it going?”"]
     assert not port.interrupt.is_set()
-    assert mei.tools == CONVERSATION_TOOLS and world.activity(mei) == "work"  # the hours run on
-    assert [spec.name for spec in port.tool_specs()] == [
-        "help", "look_around", "how_am_i", "inventory", "go", "wait", "say", "give",
-        "leave_conversation",
-    ]  # fmt: skip
+    assert mei.tools == WORK_TOOLS | TALK and world.activity(mei) == "work"  # the hours run on
+    offered = [spec.name for spec in port.tool_specs()]
+    assert {"shell", "submit", "buy", "get", "put", "pass", "eat", "say"} <= set(offered)
+    assert offered[-1] == "leave_conversation"
     refused = await _refusals(town, "Mei")
-    assert refused["shell"] == "You are in a conversation; leave it first."
-    assert set(refused) == {spec.name for spec in world.tool_specs} - CONVERSATION_TOOLS
+    assert refused["move_in"] == "You are at work; leave work first."
+    assert set(refused) == {spec.name for spec in world.tool_specs} - WORK_TOOLS - TALK
     assert "You are at work at the workshop, in a conversation with Tomas." in port.situation()
     assert "Also here: Mei (working, in a conversation)." in world.ports["Tomas"].situation()
 
@@ -196,7 +215,18 @@ async def test_a_conversation_takes_the_place_of_work_and_gives_it_back_when_it_
     assert kinds.count("start_work") == 1 and "leave_work" not in kinds  # one stretch of work
     assert tomas.conversation is None
     assert town.take("Tomas") == [
-        "At 09:00 Mei left the conversation.",
+        "At 09:00 Mei went back to work.",
+        "At 09:00 the conversation ended.",
+    ]
+
+    # Doing her work while talking leaves the conversation first: one thing at a time.
+    await town.call("Tomas", "say", text="And the tests?", to=["Mei"])
+    town.take("Mei")
+    worked = await town.call("Mei", "shell", command="pytest")
+    assert worked.text == "You went back to work. ran pytest\nExit code 0."
+    assert mei.conversation is None and tomas.conversation is None
+    assert town.take("Tomas") == [
+        "At 09:00 Mei went back to work.",
         "At 09:00 the conversation ended.",
     ]
 
@@ -303,9 +333,10 @@ async def test_going_elsewhere_leaves_a_conversation_and_work_on_its_own(make_to
     await town.call("Tomas", "say", text="Coffee?", to=["Mei"])
     town.take("Tomas")
     assert isinstance(mei.base, Work) and mei.conversation is not None
-    assert (await town.call("Mei", "claim_task", task=2)).text == (  # not while talking
-        "You are in a conversation; leave it first."
+    assert (await town.call("Mei", "claim_task", task=2)).text == (  # her work: she goes back
+        "You went back to work. You already hold task 1; submit it or give it up first."
     )
+    assert mei.conversation is None
 
     await town.call("Tomas", "say", text="Coffee, really?", to=["Mei"])
     went = await town.call("Mei", "go", place="cafe")
@@ -316,19 +347,16 @@ async def test_going_elsewhere_leaves_a_conversation_and_work_on_its_own(make_to
     assert isinstance(mei.base, Movement) and mei.conversation is None
     assert town.take("Tomas")[-1] == "Mei left the workshop for the café on the square."
     kinds = [e["kind"] for e in town.world.log.entries() if e["actor"] == "Mei"]
-    assert kinds[-3:] == ["leave_conversation", "leave_work", "depart"]
+    assert kinds[-3:] == ["leave_work", "leave_conversation", "depart"]
 
 
-async def test_one_leaves_a_conversation_to_go_to_bed_which_is_refused_away_from_home(make_town):
+async def test_going_to_bed_leaves_a_conversation_and_is_refused_away_from_home(make_town):
     town = make_town()
     await awake_at(town)
     await town.call("Tomas", "go", place="workshop")
     await town.call("Aisha", "say", text="Tired already?", to=["Mei"])
-    refused = await town.call("Mei", "sleep", until="12:00", journal="Back to bed.")
-    assert refused.text == "You are in a conversation; leave it first." and not refused.ends_turn
-    assert (await town.call("Mei", "leave_conversation")).text == "You left the conversation."
     slept = await town.call("Mei", "sleep", until="12:00", journal="Back to bed.")
-    assert slept.ends_turn and slept.text == "You went to bed."
+    assert slept.ends_turn and slept.text == "You left the conversation. You went to bed."
     assert town.take("Aisha") == [
         "At 07:00 Mei left the conversation.",
         "At 07:00 the conversation ended.",
@@ -662,11 +690,11 @@ async def test_the_port_offers_what_applies_now_and_the_situation_tells_the_rest
     )  # what is for the resident to know; what it can do is offered, not told
     assert offered() == [
         "help", "look_around", "how_am_i", "inventory", "go", "wait", "sleep", "say", "buy",
-        "move_in", "give",
+        "get", "put", "pass", "eat", "move_in",
     ]  # fmt: skip
     # nothing to write with, no board here and no task held: no message, board or task
     town.world.residents["Mei"].inventory.items["phone"] = 1
-    assert offered()[-3:] == ["move_in", "message", "give"]
+    assert offered()[-2:] == ["move_in", "message"]
     await town.call("Mei", "go", place="park")
     assert port.situation().endswith(
         "You are on your way to the park and will arrive at 07:10. There is nothing to do until "

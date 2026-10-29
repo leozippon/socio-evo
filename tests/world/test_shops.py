@@ -1,9 +1,10 @@
-"""The Store and the Restaurant: the counter open only while the shopkeeper is at work there, a
-sale paid in cash and short of stock, an order paid to the supplier and delivered the next
-morning, prices set, the chef buying for the kitchen and for itself, cooking from the kitchen's
-stock and short of it, a dish served and eaten, what is unsold gone at
-midnight, the checkpoint that carries the Store and the kitchen, and the money that only clients
-bring into the town and only the supplier takes out of it."""
+"""The Store and the Restaurant: the counter open only while the shopkeeper is at work there, and
+its shelves seen by her always, a sale paid in cash and short of stock, an order paid to the
+supplier and delivered onto the shelves the next morning, prices set, the chef buying for the
+kitchen's larder and for itself, cooking from the larder and short of it, a dish served and
+eaten, or handed over by the chef and paid by nobody, what is unsold gone at midnight, the
+checkpoint that carries the Store, the kitchen and their holders, and the money that only
+clients bring into the town and only the supplier takes out of it."""
 
 from __future__ import annotations
 
@@ -48,8 +49,15 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
         "That is not your work: you are a programmer."
     )
     assert (await town.call("Mei", "start_work")).text == "Your work is at the workshop."
+    shelves = (
+        "bread $4 (10 left), eggs $2 (10 left), vegetables $3 (10 left), bicycle $50 (1 left), "
+        "phone $40 (2 left) and coat $30 (1 left)."
+    )
+    assert f"{closed} On the shelves: {shelves}" in world.ports["Olga"].situation()  # hers
+    assert f"On the shelves: {shelves}" in (await town.call("Olga", "look_around")).text
+    assert "On the shelves" not in world.ports["Mei"].situation()
     assert (await town.call("Olga", "start_work")).text == (
-        "You sat down to work. It is 07:10. The counter is open."
+        f"You sat down to work. It is 07:10. The counter is open. At the counter: {shelves}"
     )
     assert (await town.call("Olga", "start_work")).text == "You are at work already."
     assert (
@@ -62,7 +70,7 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
         )
     )
     town.take("Olga")
-    assert (await town.call("Mei", "buy", item="bread", quantity=2)).text == (
+    assert (await town.call("Mei", "buy", item="bread", units=2)).text == (
         "You bought 2 helpings of bread for $8. You have 2 helpings of bread. Your purse holds "
         "$112."
     )
@@ -76,23 +84,25 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
     assert (await town.call("Aisha", "buy", item="bread")).text == (
         "You do not have $4. Your purse holds $0."  # a purse never goes below zero
     )
-    assert (await town.call("Mei", "buy", item="coat")).text == "The store has none left."
-    assert (await town.call("Mei", "buy", item="bread", quantity=9)).text == (
-        "The store has 8 left."
+    assert (await town.call("Mei", "buy", item="coat")).text == "The store has no coat left."
+    assert (await town.call("Mei", "buy", item="bread", units=9)).text == (
+        "The store has only 8 helpings of bread left."
     )
-    assert (await town.call("Mei", "buy", item="phone", quantity=2)).text == (
-        "One phone is all you can have."
+    assert (await town.call("Mei", "buy", item="phone", units=2)).text == (
+        "You can have only one phone."
     )
-    assert world.store.stock == {"bread": 8, "eggs": 10, "vegetables": 10, "bicycle": 1, "phone": 2}
+    assert world.holders["shelves"].items == {
+        "bread": 8, "eggs": 10, "vegetables": 10, "bicycle": 1, "phone": 2,
+    }  # fmt: skip
     assert "sold out: coat." in world.ports["Mei"].situation()
-    sold = [e for e in world.log.entries() if e["kind"] == "sale"]
+    sold = [e for e in world.log.entries() if e["kind"] == "move"]
     assert [(e["actor"], e["text"], e["audience"]) for e in sold] == [
         ("Mei", "Mei bought 2 helpings of bread for $8.", ["Olga"]),
         ("Aisha", "Aisha bought a coat for $30.", ["Olga"]),
     ]
     assert sold[0]["payload"] == {
-        "item": "bread", "name": "bread", "quantity": 2, "price": 4, "amount": 8,
-        "seller": "Olga", "kitchen": False,
+        "item": "bread", "units": 2, "source": "shelves", "target": "Mei", "money": 8,
+        "reason": "buy", "seller": "Olga",
     }  # fmt: skip
     assert world.fund.ledger == {"sale": 38, "service": 4} and olga.inventory.money == 104
     # The shopkeeper buys at her own counter, and is paid nothing for serving herself; once she
@@ -137,9 +147,9 @@ async def test_an_order_is_paid_at_once_and_arrives_the_next_morning_and_prices_
     }  # fmt: skip
     town.rest()
     await town.until("07:59", day=2)
-    assert world.store.stock["bread"] == 10
+    assert world.holders["shelves"].units("bread") == 10
     await town.until("08:00", day=2)
-    assert world.store.stock["bread"] == 15 and world.store.pending == []
+    assert world.holders["shelves"].units("bread") == 15 and world.store.pending == []
     delivered = [e for e in world.log.entries() if e["kind"] == "delivery"]
     assert [(e["text"], e["audience"], e["payload"]) for e in delivered] == [
         (
@@ -163,7 +173,7 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
     await town.call("Olga", "start_work")
     # Without for_the_kitchen the chef buys for himself; with it, for the kitchen, and the fund
     # pays. Only the chef's buy takes it, and his work is not here.
-    assert (await town.call("Jonas", "buy", item="eggs", quantity=2)).text == (
+    assert (await town.call("Jonas", "buy", item="eggs", units=2)).text == (
         "You bought 2 units of eggs for $4. You have 2 units of eggs. Your purse holds $96."
     )
     assert "start_work" not in offered(town, "Jonas") and "cook" not in offered(town, "Jonas")
@@ -177,18 +187,17 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
     assert (await town.call("Olga", "buy", item="eggs", for_the_kitchen=True)).text == (
         "buy takes no for_the_kitchen."
     )
-    assert (
-        await town.call("Jonas", "buy", item="eggs", quantity=4, for_the_kitchen=True)
-    ).text == (
+    assert (await town.call("Jonas", "buy", item="eggs", units=4, for_the_kitchen=True)).text == (
         "You bought 4 units of eggs for the kitchen for $8, which the fund paid. The kitchen "
         "holds 4 units of eggs."
     )
-    await town.call("Jonas", "buy", item="vegetables", quantity=3, for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="vegetables", units=5, for_the_kitchen=True)
     assert (await town.call("Jonas", "buy", item="coat", for_the_kitchen=True)).text == (
         "A coat is nothing the kitchen cooks with."
     )
-    assert world.kitchen.stock == {"eggs": 4, "vegetables": 3} and jonas.inventory.money == 96
-    assert world.fund.ledger == {"sale": 4 + 8 + 9, "kitchen": 17, "service": 6}
+    assert world.holders["larder"].items == {"eggs": 4, "vegetables": 5}
+    assert jonas.inventory.money == 96
+    assert world.fund.ledger == {"sale": 4 + 8 + 15, "kitchen": 23, "service": 6}
     assert (await town.call("Jonas", "cook", dish="omelette", portions=1)).text == (
         "You can do that only at the café on the square."
     )
@@ -200,7 +209,7 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
         "needs 6 units of eggs, of which it holds 4."
     )
     assert (await town.call("Jonas", "cook", dish="omelette", portions=2)).text == (
-        "You cooked 2 portions of omelette; 2 ready to serve. The kitchen holds 1 unit of "
+        "You cooked 2 portions of omelette; 2 ready to serve. The kitchen holds 3 units of "
         "vegetables."
     )
     assert (await town.call("Jonas", "set_price", item="omelette", price=12)).text == (
@@ -217,10 +226,10 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
     assert "On the menu: omelette $12 (2 ready) and vegetable soup $8 (none ready)." in (
         world.ports["Mei"].situation()
     )
-    assert (await town.call("Mei", "buy", item="soup")).text == "There is no vegetable soup ready."
-    assert (await town.call("Mei", "buy", item="omelette", quantity=2)).text == (
-        "One dish at a time."
+    assert (await town.call("Mei", "buy", item="soup")).text == (
+        "The kitchen has no vegetable soup ready."
     )
+    assert (await town.call("Mei", "buy", item="omelette", units=2)).text == ("One dish at a time.")
     town.take("Jonas")
     mei.living.satiety = 40
     assert (await town.call("Mei", "buy", item="omelette")).text == (
@@ -231,34 +240,54 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
         "You served Mei an omelette for $12.",
         "You received $3 for a dish served.",
     ]
-    served = [e for e in world.log.entries() if e["kind"] == "served"]
-    assert served[0]["text"] == "Jonas served Mei an omelette for $12."
-    assert served[0]["payload"] == {
-        "dish": "omelette", "name": "an omelette", "amount": 12, "chef": "Jonas",
-    }  # fmt: skip
+    served = [e for e in world.log.entries() if e["kind"] == "move" and e["actor"] == "Mei"]
+    assert [e["text"] for e in served] == [
+        "Jonas served Mei an omelette for $12.",
+        "Mei ate an omelette.",  # out of her hands into nothing, there and then
+    ]
+    assert [e["payload"] for e in served] == [
+        {"item": "omelette", "units": 1, "source": "portions", "target": "Mei", "money": 12,
+         "reason": "buy", "seller": "Jonas"},
+        {"item": "omelette", "units": 1, "source": "Mei", "target": None, "money": 0,
+         "reason": "eat", "seller": None},
+    ]  # fmt: skip
     assert (await town.call("Jonas", "buy", item="omelette")).text == (
         "You cook the dishes here; you cannot buy them."
+    )
+    await town.call("Jonas", "cook", dish="soup", portions=1)
+    # On duty, the chef can hand a dish over: it is eaten there and then, and nobody pays.
+    assert (await town.call("Jonas", "pass", item="omelette", to="Mei")).text == (
+        "You served Mei an omelette, which nobody paid for."
+    )
+    assert mei.living.eaten == {"omelette": 2} and mei.inventory.money == 108
+    assert town.take("Mei")[-1] == "Jonas served you an omelette, which nobody paid for."
+    assert (await town.call("Jonas", "pass", item="omelette", to="Mei")).text == (
+        "The kitchen has no omelette ready."
     )
     await town.until("08:20")
     await town.call("Jonas", "leave_work")
     assert jonas.worked == 3600
     assert (await town.call("Mei", "buy", item="omelette")).text == "The kitchen is closed."
     assert "The kitchen is closed." in world.ports["Mei"].situation()
+    assert "On the menu" not in world.ports["Mei"].situation()
+    assert "On the menu" in world.ports["Jonas"].situation()  # the chef sees it, open or shut
     # At midnight the portion left is gone, and the chef's statement says so. The money in the
     # town changed by what the supplier was paid, nothing, and the clients, nothing: the rest
     # moved between the fund and the purses.
     for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
-    assert world.kitchen.portions == {} and world.kitchen.stock == {"vegetables": 1}
+    assert world.holders["portions"].items == {} and world.holders["larder"].items == {
+        "vegetables": 1
+    }
     statement = town.take("Jonas")[-1]
-    assert "What the kitchen did not sell is gone: 1 portion of omelette." in statement
+    assert "What the kitchen did not sell is gone: vegetable soup." in statement
     assert "received $3 for a dish served" in statement
     statement = town.take("Mei")[-1]
     assert statement.startswith(
         "Your statement for Monday 1 January: bought an omelette for $12; no time at work;"
     )
-    assert "You ate today: an omelette." in statement
+    assert "You ate today: 2 portions of omelette." in statement
     assert total(world) == before
 
 
@@ -274,7 +303,7 @@ async def test_the_checkpoint_keeps_the_store_and_the_kitchen_and_money_comes_on
     await town.until("07:10")
     await town.call("Olga", "order", item="eggs", quantity=6)
     await town.call("Olga", "set_price", item="vegetables", price=4)
-    await town.call("Jonas", "buy", item="vegetables", quantity=6, for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="vegetables", units=6, for_the_kitchen=True)
     await town.call("Tomas", "buy", item="phone")
     await town.call("Jonas", "go", place="cafe")
     await town.call("Mei", "go", place="workshop")
@@ -291,13 +320,15 @@ async def test_the_checkpoint_keeps_the_store_and_the_kitchen_and_money_comes_on
     await town.until("03:00", day=2)
     ((day, state),) = town.checkpoints
     assert state["store"] == {
-        "stock": {"bread": 10, "eggs": 10, "vegetables": 4, "bicycle": 1, "phone": 1, "coat": 1},
         "prices": {"bread": 4, "eggs": 2, "vegetables": 4, "bicycle": 50, "phone": 40, "coat": 30},
         "pending": [["eggs", 6, at("08:00", day=2)]],
     }
-    assert state["kitchen"] == {
-        "menu": {"omelette": 10, "soup": 9}, "stock": {"vegetables": 2}, "portions": {},
+    assert state["kitchen"] == {"menu": {"omelette": 10, "soup": 9}}
+    holders = state["holders"]
+    assert holders["shelves"] == {
+        "bread": 10, "eggs": 10, "vegetables": 4, "bicycle": 1, "phone": 1, "coat": 1,
     }  # fmt: skip
+    assert holders["larder"] == {"vegetables": 2} and holders["portions"] == {}  # the soup perished
     # Only the client's $50 came in and only the supplier's $6 went out; every other movement,
     # the sales, the dish, the kitchen's purchase, wages, rent and sums, stayed in the town.
     assert world.fund.yesterday["client"] == 50 and world.fund.yesterday["supplier"] == 6

@@ -75,3 +75,26 @@ def test_skills_cannot_be_written_by_any_path_when_read_only(directory):
     assert tools.call("write_file", {"path": "memory/notes.md", "content": "x"}).text.startswith(
         "Wrote"
     )
+
+
+def test_the_journal_is_read_but_never_written_or_changed_by_the_file_tools(directory):
+    journal = directory.root / "memory" / "journal"
+    journal.mkdir(parents=True, exist_ok=True)
+    (journal / "2026-10-29.md").write_text("Fixed task 717.\n", encoding="utf-8")
+    os.symlink(journal, directory.root / "memory" / "diary")
+    tools = FileTools(directory)
+    for name, args in (
+        ("write_file", {"path": "memory/journal/2026-10-29.md", "content": "A quiet day.\n"}),
+        ("write_file", {"path": "memory/journal/2026-10-30.md", "content": "Tomorrow.\n"}),
+        ("write_file", {"path": "memory/diary/2026-10-29.md", "content": "A quiet day.\n"}),
+        ("edit_file", {"path": "memory/journal/2026-10-29.md", "old_text": "717", "new_text": "1"}),
+    ):
+        assert tools.call(name, args).text == texts.JOURNAL_KEPT
+    assert tools.call("read_file", {"path": "memory/journal/2026-10-29.md"}).text == (
+        "Fixed task 717.\n"
+    )
+    assert sorted(p.name for p in journal.iterdir()) == ["2026-10-29.md"]
+    # A file of its own named after a journal is its own to write.
+    assert tools.call("write_file", {"path": "memory/journal.md", "content": "x"}).text == (
+        "Wrote memory/journal.md."
+    )

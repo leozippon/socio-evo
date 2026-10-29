@@ -2,8 +2,10 @@
 
 A path is relative to the agent directory and must name background.md or something under
 memory/ or skills/ once every symbolic link in it is followed; absolute paths and `..` are
-refused, and so is any write under skills/ when the directory keeps skills read-only. Every
-refusal is a result the resident reads, never an exception.
+refused, and so is any write under skills/ when the directory keeps skills read-only, and any
+write under memory/journal/, which the world writes, an entry each time the resident goes to bed
+with one, so that an entry is never changed afterwards. Every refusal is a result the resident
+reads, never an exception.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from agent import texts
-from agent.directory import AREAS, BACKGROUND, SKILLS, AgentDirectory
+from agent.directory import AREAS, BACKGROUND, JOURNAL, SKILLS, AgentDirectory
 from agent.port import ToolResult, ToolSpec
 
 
@@ -78,6 +80,7 @@ SPECS = (
     ),
 )
 NAMES = frozenset(spec.name for spec in SPECS)
+JOURNAL_PARTS = PurePosixPath(JOURNAL).parts
 
 
 class _Refusal(Exception):
@@ -175,6 +178,8 @@ class FileTools:
             raise _Refusal(texts.OUTSIDE.format(path=path))
         if writing and parts[0] == SKILLS and not self._directory.skills_writable:
             raise _Refusal(texts.SKILLS_READ_ONLY)
+        if writing and parts[: len(JOURNAL_PARTS)] == JOURNAL_PARTS:
+            raise _Refusal(texts.JOURNAL_KEPT)
         return target
 
 

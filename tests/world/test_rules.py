@@ -34,8 +34,9 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
         "You have $120 to begin with. The town's fund pays you $7 an hour for your time at work "
         "at the workshop, and $20 at once for each task of yours accepted. At midnight your "
         "wages are paid into your purse, with the rent for your room, $20 a day, taken out of "
-        "them. You pay for everything in cash from your purse, and with give you can hand money "
-        "or things to anyone with you."
+        "them. You pay for everything in cash from your purse. With pass you hand money or "
+        "things to anyone with you; put leaves something where you are for anyone, and get takes "
+        "what is left there."
     )
     assert sections["people"] == (
         "You live in the shared house on Mill Street with Aisha; Tomas, Olga, Jonas, Lucia and "
@@ -44,7 +45,8 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
         "store, Lucia is the doctor at the clinic and Vera is the mayor at the hall. You can "
         "speak to anyone awake where you are, to everyone there or only to the people you name, "
         "and the others notice that you said something but not what; a conversation lasts until "
-        "its people leave it or nobody speaks for 10 minutes."
+        "its people leave it or nobody speaks for 10 minutes. Talking, you can still buy, eat and "
+        "hand things over; doing your work leaves the talk."
     )
     assert (
         "Walking from one to another takes 10 minutes, 5 between the workshop and the café"
@@ -53,7 +55,7 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
     assert "Your home is the shared house on Mill Street." in sections["town"]
     assert "a dish, or 3 helpings of bread, is about a day's need" in sections["body"]
     assert sections["sleep"].endswith(
-        "At 02:00 anyone still up falls asleep where it is and wakes at home at 07:00."
+        "At 02:00 anyone still up falls asleep where they are and wakes at home at 07:00."
     )
     moved = {
         "mill-street-house": ["Mei"],
@@ -83,23 +85,28 @@ def test_each_occupation_is_told_its_own_work_and_sum():
     )
     assert "and $2 at once for each sale." in told["Olga"]["money"]
     assert (
-        "You buy what you cook with at the store with buy for_the_kitchen, and the fund pays."
-        in (told["Jonas"]["work"])
+        "who buys a dish, or is handed one with pass and pays nothing. You buy what you cook with "
+        "at the store with buy for_the_kitchen, and the fund pays." in (told["Jonas"]["work"])
     )
     assert (
         "Its surgery is open while you are at work there: you examine and treat patients"
         in (told["Lucia"]["work"])
     )
     assert "and $4 at once for each patient examined or treated." in told["Lucia"]["money"]
-    assert told["Vera"]["work"].startswith(
+    assert told["Vera"]["work"] == (
         "You are the mayor at the hall. There you read the town's report with report, and with "
-        "announce you tell every resident whatever you want them to know."
-    )
+        "announce you tell every resident whatever you want them to know. Your work is being "
+        "about the town, so once you have sat down to work it goes with you wherever you go. You "
+        "sit down to work there with start_work, or by doing your work, and are at work until "
+        "you stop with leave_work."
+    )  # the mayor's duty runs anywhere; everyone else's ends on leaving the workplace
     assert (
         told["Vera"]["money"].endswith(
-            "at the hall. At midnight your wages are paid into your purse, with the rent for your "
-            "room, $30 a day, taken out of them. You pay for everything in cash from your purse, "
-            "and with give you can hand money or things to anyone with you."
+            "for your time at work. At midnight your wages are paid into your purse, with the rent "
+            "for your room, $30 a day, taken out of them. You pay for everything in cash from your "
+            "purse. "
+            "With pass you hand money or things to anyone with you; put leaves something where "
+            "you are for anyone, and get takes what is left there."
         )
         and "at once" not in told["Vera"]["money"]
     )  # the mayor has no sum
@@ -125,7 +132,11 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
         "pays the one who handed it in $20 and the team leader $10.",
     ):
         assert told in office, told
-    assert "the goods arrive at 08:00 the next morning" in topics["store"]
+    assert "the order comes onto the shelves at 08:00 the next morning" in topics["store"]
+    assert "It sells from its shelves, which the shopkeeper sees whenever there" in topics["store"]
+    assert "or as the chef hands it over with pass, when nobody pays" in topics["restaurant"]
+    assert "With put you leave something where you are, for anyone to take" in topics["money"]
+    assert "or when you choose with eat" in topics["body"]
     assert "Each sale pays the shopkeeper $2." in topics["store"]
     assert (
         "an omelette from 2 units of eggs and 1 unit of vegetables; vegetable soup from 2 units "
