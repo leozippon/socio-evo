@@ -11,9 +11,11 @@ from evaluation import journals
 from evaluation.honesty import judged_text
 from evaluation.judge import Judge
 from evaluation.records import day_record, days_before, lived_days, town
+from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
-from tests.analysis.lived import MEI_JOURNAL, TOMAS_JOURNAL, live
+from simulation.config import ExperimentConfig
+from tests.analysis.lived import MEI_JOURNAL, TOMAS_JOURNAL, before_occupations, live
 
 from .scripting import section, verdict
 
@@ -76,7 +78,7 @@ def test_every_resident_day_is_a_row_and_every_claim_too(run_dir, tmp_path, scri
 
     days = json.loads((out / "days.json").read_text())
     by = {(row["resident"], row["day"]): row for row in days}
-    assert len(days) == 6
+    assert len(days) == 16  # eight residents, two days
     assert by["Mei", 1] == {
         "resident": "Mei", "day": 1, "date": "2001-01-01", "journal": True,
         "record_lines": len(day_record(run_dir, "Mei", 1).splitlines()), "claims": 3,
@@ -84,7 +86,7 @@ def test_every_resident_day_is_a_row_and_every_claim_too(run_dir, tmp_path, scri
     }  # fmt: skip
     assert by["Tomas", 1]["distortion"] == 0.5 and by["Tomas", 1]["contradicted"] == 1
     assert by["Mei", 2]["journal"] and by["Mei", 2]["distortion"] is None  # no checkable claim
-    for absent in (("Aisha", 1), ("Aisha", 2), ("Tomas", 2)):
+    for absent in set(by) - {("Mei", 1), ("Mei", 2), ("Tomas", 1)}:  # no journal written
         assert not by[absent]["journal"] and by[absent]["claims"] == 0
         assert by[absent]["distortion"] is None
 
@@ -124,9 +126,23 @@ def test_nothing_is_overwritten_and_bad_days_or_names_stop_before_the_judge(
     assert "would overwrite" in capsys.readouterr().err
     assert (out / "days.json").read_text() == written
 
-    for wrong in (["--days", "3"], ["--days", "1", "--residents", "Olga"]):
+    for wrong in (["--days", "3"], ["--days", "1", "--residents", "Kofi"]):
         elsewhere = tmp_path / "elsewhere"
         with pytest.raises(SystemExit):
             journals.main([str(run_dir), *wrong, "--out", str(elsewhere)])
         assert not elsewhere.exists()
     assert scripted_judge == []  # Aisha wrote no journal on day 1: nothing was asked
+
+
+def test_a_run_of_the_town_before_occupations_is_judged_as_well(run_dir, tmp_path, scripted_judge):
+    """A run of the earlier town, such as one still going beside this code, froze a configuration
+    that today's no longer reads: its journals are judged against the same records all the
+    same."""
+    before = before_occupations(run_dir, tmp_path / "before")
+    with pytest.raises(ConfigError, match="occupation: Field required"):
+        load_config(before / "config.yaml", ExperimentConfig, record=True)
+    for run, out in ((run_dir, tmp_path / "now"), (before, tmp_path / "then")):
+        journals.main([str(run), "--days", "1", "2", "--out", str(out)])
+    for name in ("days.json", "claims.json"):
+        assert (tmp_path / "then" / name).read_text() == (tmp_path / "now" / name).read_text()
+    assert json.loads((tmp_path / "then" / "days.json").read_text())[0]["claims"] == 3

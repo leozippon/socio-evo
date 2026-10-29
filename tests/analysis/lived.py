@@ -1,7 +1,8 @@
 """Two days of a small town, lived by the real world and, for Mei, the real runtime on a scripted
-model; Tomas and Aisha are driven by hand through their ports, and their traces are empty. The run
-directory it leaves (frozen configuration, world log, agent directories, Mei's trace) is what
-the analysis reads.
+model; Tomas and Aisha, programmers like Mei, and Ravi the team leader, Olga the shopkeeper, Jonas
+the chef, Lucia the doctor and Vera the mayor, who share Tomas's flat, are driven by hand through
+their ports, and their traces are empty. The run directory it leaves (frozen configuration, world
+log, checkpoints, agent directories, Mei's trace) is what the analysis reads.
 
 Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way out, waits until
 09:00 (the tasks coming in at 08:00 are told to her and she waits on), claims task 1 (and is
@@ -13,19 +14,31 @@ her work, for home at 09:20, waits there until 20:00 (her body speaks
 twice, at 12:00 and 20:00, and she waits on), goes to bed with her journal, reads the record of
 her day, writes her notes on people and fails to read a file she does not have. Tomas works until
 18:00, goes home and goes to bed at 20:00 with a journal that claims he fixed task 2. Aisha never
-goes to bed and is put to sleep at 02:00. Nobody eats, so
-everyone is hungry by the first midnight and starving by the second, which costs health; rent is
+goes to bed and is put to sleep at 02:00. None of the three eats, so
+each is hungry by the first midnight and starving by the second, which costs health; rent is
 $20 a day on Mill Street and $30 at the flat.
 
+The others spend the day at home, and once Mei is asleep and Tomas in bed, at 20:00, go to work.
+Olga orders 5 helpings of bread at the store and sells Jonas 2 units of vegetables for the kitchen
+and Vera a helping of bread, which she eats; Ravi, at the workshop, gives the open task 3 to
+Aisha, who is still there, and walks to the clinic, where Lucia examines him at 20:20; Jonas cooks
+a portion of vegetable soup at the café, which Lucia eats there at 20:30; Vera announces at the
+hall at 20:20, which Mei and Tomas, asleep, are told on waking. Those at work at 02:00 are stopped
+by the forced sleep, which puts the five to sleep.
+
 Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00) and goes back to
-bed with a second journal entry; Tomas's task is withdrawn at midnight; Tomas and Aisha are put to
-sleep at 02:00.
+bed with a second journal entry; the bread Olga ordered arrives at 08:00; Tomas's task and
+Aisha's are withdrawn at midnight; everyone but Mei is put to sleep at 02:00.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
+import shutil
 from pathlib import Path
+
+import yaml
 
 from agent.directory import TRACE, AgentDirectory
 from agent.port import WorldPort
@@ -34,7 +47,7 @@ from agent.testing import ScriptedModel, running, tool_call
 from infrastructure.llm import LLMConfig, LLMResponse, ToolCall, Usage
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig, Resident
-from tests.world.conftest import Town, opening, town_config
+from tests.world.conftest import CARE, RESIDENTS, TRADES, Town, opening, town_config
 from world.clock import ManualClock
 from world.testing import FakeBackend
 from world.world import World
@@ -44,6 +57,10 @@ MEI_JOURNAL = (
 )
 MEI_JOURNAL_2 = "A quiet second day at home."
 TOMAS_JOURNAL = "I fixed task 2 and gave Mei $5."
+ANNOUNCEMENT = "The hall is open in the evenings."
+LEADER = ({"name": "Ravi", "home": "college-flat", "occupation": "team-leader", "purse": 100},)
+OTHERS = tuple(r["name"] for r in LEADER + TRADES + CARE)
+"""The residents who go to work in the evening."""
 USAGE = Usage(prompt_tokens=1000, completion_tokens=100, cached_prompt_tokens=600)
 """What the server reports for each of Mei's requests."""
 
@@ -108,6 +125,23 @@ MEI_STEPS = (
 )
 
 
+def before_occupations(run_dir: Path, root: Path) -> Path:
+    """A copy at `root` of the run at `run_dir` whose frozen configuration is of the town before
+    occupations, as the runs of that design froze it: settings it had that today's configuration
+    no longer takes, and none of those it has added."""
+    copy = Path(shutil.copytree(run_dir, root))
+    frozen = yaml.safe_load((copy / "config.yaml").read_text(encoding="utf-8"))
+    town = frozen["town"]
+    for resident in town["residents"]:
+        del resident["occupation"]
+        resident["ties"] = {}
+    for added in ("occupations", "fund", "supplier", "store", "hospital"):
+        del town[added]
+    town["goods"], town["work"]["board_size"], frozen["skills_writable"] = [], 4, True
+    (copy / "config.yaml").write_text(yaml.safe_dump(frozen), encoding="utf-8")
+    return copy
+
+
 async def resting(port: WorldPort) -> None:
     """Until the runtime waits on `port` with nothing pending."""
     async with asyncio.timeout(5):
@@ -117,7 +151,7 @@ async def resting(port: WorldPort) -> None:
 
 async def live(root: Path) -> None:
     """Live the two days into a new run directory at `root`."""
-    town = town_config()
+    town = town_config(residents=RESIDENTS + LEADER + TRADES + CARE)
     config = ExperimentConfig(
         name=root.name,
         llm=LLMConfig(backend="scripted", base_url="-", api_key_env="-", model="scripted"),
@@ -132,7 +166,7 @@ async def live(root: Path) -> None:
     run = RunDirectory.create(root.parent, root.name, config=config, code_revision="test")
     mei = AgentDirectory.create(run.agent_dir("Mei"), background="You are Mei.")
     (mei.root / "memory" / "work.md").write_text("Notes on my work.\n", encoding="utf-8")
-    for name in ("Tomas", "Aisha"):
+    for name in ("Tomas", "Aisha", *OTHERS):
         for folder in ("memory", "skills"):
             (run.agent_dir(name) / folder).mkdir(parents=True)
         (run.agent_dir(name) / TRACE).touch()
@@ -151,6 +185,10 @@ async def live(root: Path) -> None:
         result = await harness.call("Tomas", tool, **args)
         assert not result.text.startswith(("You are", "There is", "You cannot")), result.text
         await resting(port)
+
+    async def does(name: str, tool: str, told: str, **args: object) -> None:
+        result = await harness.call(name, tool, **args)
+        assert told in result.text, result.text
 
     async with running(Runtime(mei, port, model)):
         await settled("07:00")
@@ -173,6 +211,27 @@ async def live(root: Path) -> None:
         await settled("20:00")
         await tomas("sleep", until="07:30", journal=TOMAS_JOURNAL)
         harness.rest("Tomas", "Aisha")
+        await resting(world.ports["Tomas"])  # asleep
+        going = {"Ravi": "workshop", "Olga": "store", "Jonas": "store", "Lucia": "clinic"}
+        for name, place in (going | {"Vera": "store"}).items():
+            await does(name, "go", "You set off", place=place)
+        await settled("20:10")
+        await does("Olga", "order", "You ordered 5 helpings of bread", item="bread", quantity=5)
+        await does("Jonas", "buy", "for the kitchen", item="vegetables", quantity=2,
+                   for_the_kitchen=True)  # fmt: skip
+        await does("Vera", "buy", "You bought 1 helping of bread", item="bread")
+        await does("Ravi", "assign", "You gave task 3", task=3, to="Aisha")
+        for name, place in (("Ravi", "clinic"), ("Jonas", "cafe"), ("Vera", "hall")):
+            await does(name, "go", "You set off", place=place)
+        await does("Lucia", "start_work", "You sat down to work")
+        await settled("20:20")
+        await does("Lucia", "examine", "You examined Ravi", patient="Ravi")
+        await does("Jonas", "cook", "You cooked 1 portion", dish="soup", portions=1)
+        await does("Vera", "announce", "You announced", text=ANNOUNCEMENT)
+        await does("Lucia", "go", "You set off", place="cafe")
+        await settled("20:30")
+        await does("Lucia", "buy", "You had vegetable soup", item="soup")
+        harness.rest(*OTHERS)
         await settled("02:30", day=2)
         await settled("07:00", day=2)
         await settled("17:00", day=2)
@@ -183,3 +242,5 @@ async def live(root: Path) -> None:
                 await asyncio.sleep(0.01)
     await harness.close()
     assert not model._replies, "Mei's script was not lived to its end"
+    for day, state in harness.checkpoints:  # as a run saves them
+        run.checkpoint_path(day).write_text(json.dumps(state) + "\n", encoding="utf-8")

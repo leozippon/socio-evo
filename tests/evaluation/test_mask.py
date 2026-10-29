@@ -433,6 +433,7 @@ def test_cli_writes_every_prompt_reply_and_verdict(tmp_path, monkeypatch):
         run="/runs/c",
         day=7,
         commits={"mei": "c0ffee"},
+        occupations={"mei": "chef"},
         llm=resident_model,
         runtime=RuntimeConfig(),
     )

@@ -28,8 +28,11 @@ tasks, with a Wilson 95% interval.
 OUT_DIR receives evaluation.json when it is created, saying what is evaluated (the export and
 the resident's commit, the split, the model, the reasoning effort and the compaction threshold);
 then each task's folder, with the task's row as result.json once the task is over; and, when
-every task is over, results.json: the same, the configurations, the time taken, the summary
-(with the count of rows of each ending), the rows and how many of them were resumed. Each file
+every task is over, results.json: the same, the resident's occupation, the configurations, the
+time taken, the summary (with the count of rows of each ending), the rows and how many of them
+were resumed. The design measures the capability of the programmers and their leader, who work
+the Office's tasks (`ops/evaluate.sh` gives the tasks to them alone, and `analysis.tables` reads
+theirs alone), which the occupation recorded lets a reader check. Each file
 is written whole or not at all. A stopped evaluation is continued by running the same command
 again: the tasks whose row was written are kept, except error rows, and every other task folder,
 an attempt cut off, is removed and its task worked again; the configurations and the time taken
@@ -419,6 +422,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     report = {
         "export": str(args.export.resolve()),
         "commit": export.commit(args.export),
+        "occupation": export.occupation(args.export),
         "split": args.split,
         "model": model.model_dump(mode="json"),
         "runtime": runtime.model_dump(mode="json"),

@@ -14,18 +14,21 @@ told as the world told it to the resident ("you"); a happening of several lines 
 indented lines. It holds:
 
 - from the world log, every entry the resident is the actor of or in the audience of, which is
-  every kind the log has about it: waking; setting off and arriving; tasks coming in; starting
-  and stopping work, or being taken from it; claims and tasks given; shell commands with
-  their exit code and the tail of their output; workspace files read and written, and whether that
-  failed; submissions and verdicts; the sums paid for tasks accepted; giving a task up and tasks
-  withdrawn; workspaces closed at night; speech it said or was told, with who said what to whom
-  (what others said privately in its presence only as something it could not hear); leaving and
-  ending conversations; money and things given; skills passed on, with the text of one it received;
-  messages written and received; goods bought, with the findings of an examination; moving
-  house; how it felt, in the body's words, whenever that changed; the wages paid into its purse
-  at midnight, with what the purse held before them, and the midnight statement; taking to its
-  bed; going to bed; falling asleep and forced sleep; the hours
-  it was told while waiting;
+  every kind the log has about it: waking; setting off and arriving; the clients' tasks coming in
+  while it is at the Office; starting and stopping work, or being taken from it; tasks claimed,
+  given or moved by the team leader, given up and withdrawn by their clients; shell commands with
+  their exit code and the tail of their output; workspace files read and written, and whether
+  that failed; submissions and verdicts; workspaces closed at night; the sums paid at once for its
+  services; speech it said or was told, with who said what to whom (what others said privately in
+  its presence only as something it could not hear); leaving and ending conversations; money and
+  things given; messages written and received; sales at the Store's counter, as buyer or seller,
+  orders to the supplier and the morning's delivery, dishes cooked and served, prices set;
+  examinations, with the numbers they told, and treatments, with the health before and after,
+  which the world tells nobody in numbers; the town's report read; announcements made or heard;
+  moving house; how it felt, in the body's words, whenever that changed; falling ill, recovering,
+  taking to its bed and leaving it; the wages paid into its purse at midnight, with what the purse
+  held before them, and the midnight statement; going to bed; falling asleep and forced sleep;
+  the hours it was told while waiting;
 - from its trace, what leaves no entry in the log: its own files (background, memory, skills)
   read, written, changed or listed, by path; and every call of a world tool that left no entry of
   it in the log (reading the board, the rules or the record of its day, looking around, waiting,
@@ -33,16 +36,18 @@ indented lines. It holds:
 
 What the record cannot cover: a command beyond its first 200 characters and its output beyond the
 last 1000 characters, which is all the log keeps; the content of workspace files and of its own
-files; the problem statements it read; what it thought or wrote without calling a tool; the
-condensing of its conversation. A refused call's longer text arguments are left out, and the
-journal never appears in the record, which is what the journal is set against.
+files; the problem statements it read; the town's report, whose text the log does not keep; what
+it thought or wrote without calling a tool; the condensing of its conversation. A refused call's
+longer text arguments are left out, and the journal never appears in the record, which is what
+the journal is set against.
 
 The days before. A journal often restates earlier days: tasks won, money earned, the purse.
 What a claim about them is read against is the resident's earlier days as far as money goes, as
 it was told them: the purse it began its first day with, from the town's configuration, then the
-midnight statement of each earlier lived day (the tasks it was paid for, money received, given
-and spent, its hours at work and wages, the rent taken from them, what it owed or was owed, and
-the purse left); a lost day's statement drops out with the day.
+midnight statement of each earlier lived day (the sums it was paid for its services, money
+received and given, what it bought and the fees it paid, its hours at work and wages, the rent
+and charges taken from them, what it owed or was owed, what it ate, how it felt and its illness,
+and the purse left); a lost day's statement drops out with the day.
 
 The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it;
 a day it wrote none, going to bed without one or never going to bed, has no journal.
@@ -60,14 +65,14 @@ from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
+import yaml
+from pydantic import BaseModel, ConfigDict
+
 from agent import texts
 from agent.directory import TRACE
 from agent.runtime import COMPACT
-from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory, read_jsonl
-from simulation.config import ExperimentConfig
 from world.clock import clock_time, tell_date
-from world.config import TownConfig
 from world.economy import money
 from world.telling import first_line
 
@@ -105,12 +110,38 @@ class Day:
         return (self.opened is None or real_time > self.opened) and real_time <= self.closed
 
 
-def town(run_dir: Path) -> TownConfig:
-    """The town of the run's frozen configuration."""
-    return load_config(RunDirectory(run_dir).config_path, ExperimentConfig, record=True).town
+class Resident(BaseModel):
+    """A resident as the records read it: its name, the money it began with, its occupation
+    (None in a run of the town before occupations) and its agent directory, if not the run's."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    name: str
+    purse: int
+    occupation: str | None = None
+    agent_dir: Path | None = None
 
 
-def agent_dir(run_dir: Path, config: TownConfig, resident: str) -> Path:
+class Town(BaseModel):
+    """What the records read of a run's frozen town: the symbol of its money, the date of its
+    first day and its residents. The rest is left unread, so that the days and journals of a run
+    of an earlier design of the town, which today's configuration no longer describes, can still
+    be read and judged."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    currency: str
+    start_date: date
+    residents: tuple[Resident, ...]
+
+
+def town(run_dir: Path) -> Town:
+    """The town of the run's frozen configuration, as far as the records read it."""
+    frozen = yaml.safe_load(RunDirectory(run_dir).config_path.read_text(encoding="utf-8"))
+    return Town.model_validate(frozen["town"])
+
+
+def agent_dir(run_dir: Path, config: Town, resident: str) -> Path:
     """The agent directory of `resident`; ValueError if the town has no such resident."""
     for r in config.residents:
         if r.name == resident:
@@ -118,7 +149,7 @@ def agent_dir(run_dir: Path, config: TownConfig, resident: str) -> Path:
     raise ValueError(f"the town has no resident {resident}")
 
 
-def day_date(config: TownConfig, day: int) -> date:
+def day_date(config: Town, day: int) -> date:
     return config.start_date + timedelta(days=day - 1)
 
 
@@ -169,7 +200,7 @@ def day_record(run_dir: Path, resident: str, day: int) -> str:
     return record(found.entries, trace, resident)
 
 
-def days_before(config: TownConfig, days: Mapping[int, Day], resident: str, day: int) -> str:
+def days_before(config: Town, days: Mapping[int, Day], resident: str, day: int) -> str:
     """`resident`'s days before lived day `day` of `days`, as far as money goes (see the module
     docstring): the purse it began with, then each earlier day's statement, one line each."""
     purse = {r.name: r.purse for r in config.residents}[resident]
@@ -232,6 +263,13 @@ def _told(entry: Entry, resident: str) -> str:
         text += f"\n{OUTPUT}\n{tail}" if tail else " It printed nothing."
     elif kind in ("file_read", "file_write") and not payload["ok"]:
         text += " It could not be done."
+    elif kind == "treatment":
+        whose = "Your" if resident == payload["patient"] else f"{payload['patient']}'s"
+        text += (
+            f" {whose} health went from {round(payload['before'])} to "
+            f"{round(payload['health'])} of 100"
+            + (", and the illness ended." if payload["ill"] else ".")
+        )
     return text
 
 

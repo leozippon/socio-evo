@@ -4,8 +4,9 @@
 
 Each resident's directory at its tag `day-NN` is written, without history, to `DIR/<name>`,
 without the session and the trace, and `DIR/export.json` records the run, the day, each
-resident's commit and the run's frozen model and runtime settings (`evaluation.exports`). Day 0
-is the residents as they started. Evaluation runs on such exports, never on the run itself.
+resident's commit and occupation and the run's frozen model and runtime settings
+(`evaluation.exports`). Day 0 is the residents as they started. Evaluation runs on such exports,
+never on the run itself.
 
 A DIR that holds the same export already is kept as it is, so the command can be run before
 every evaluation; one that holds an export of other commits or settings (a run created again
@@ -43,6 +44,7 @@ def manifest(run_dir: Path, day: int) -> Export:
             "run": str(run.root.resolve()),
             "day": day,
             "commits": commits,
+            "occupations": {r["name"]: r["occupation"] for r in frozen["town"]["residents"]},
             "llm": frozen["llm"],
             "runtime": frozen["runtime"],
         },

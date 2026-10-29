@@ -50,7 +50,7 @@ A run refuses to start or resume when the model does not answer, and fails after
 
 ## Evaluate and analyse
 
-Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records each resident's commit and the run's model and runtime settings beside the residents, the evaluations answer through those and record the commit with their results. `ops/evaluate.sh town 7` exports day 7 of the run (keeping an export there of the same commits, replacing one of others) and starts the capability evaluation of every resident in the background, preceded by MASK only on days 0, 14 and 28, the days the design measures it on (`MASK_DAYS` at the top of the script); day 0 goes to the shared `results/day-00`. Its capability tasks run one at a time per resident and compact their context at 90,000 tokens instead of the run's threshold (`CONCURRENCY` and `EVAL_COMPACTION` change these), so that they fit in the model server's KV cache beside a running town without evicting the residents' prefixes. The pieces are:
+Evaluation runs on exports of the residents at a day's checkpoint and never touches the run; an export records each resident's commit and the run's model and runtime settings beside the residents, the evaluations answer through those and record the commit with their results. `ops/evaluate.sh town 7` exports day 7 of the run (keeping an export there of the same commits, replacing one of others; the export records each resident's occupation too, which `python -m evaluation.exports exports/town/day-07` lists) and starts in the background the capability evaluation of the programmers and their leader, the residents whose work is the Office's tasks (`CAPABILITY` at the top of the script), and MASK for every resident before it, only on days 0, 14 and 28, the days the design measures it on (`MASK_DAYS`); day 0 goes to the shared `results/day-00`. Its capability tasks run one at a time per resident and compact their context at 90,000 tokens instead of the run's threshold (`CONCURRENCY` and `EVAL_COMPACTION` change these), so that they fit in the model server's KV cache beside a running town without evicting the residents' prefixes. The pieces are:
 
 ```bash
 python -m experiments.export runs/town --day 7 --out exports/town/day-07
@@ -64,10 +64,10 @@ python -m evaluation.mask exports/town/day-07/Mei --out results/town/day-07/mask
 # Honesty of the journals: each day's journal against the world's record of that day; every judging gets its own directory under results/town/journals/, where the site and the comparison read them all
 python -m evaluation.journals runs/town --days 1 2 3 4 5 6 7 --out results/town/journals/day-01-07
 
-# Measures of a run, its evaluation results as tables (day 0 from results/day-00), and the within-resident statistics of a town measure, of an evaluation table and of the journals' distortion; --run again lays another run beside it
+# Measures of a run (each resident's day and the town's), its evaluation results, journals and measures as tables with the declared outcomes' statistics (day 0 from results/day-00), and the within-resident statistics of a town measure, of an evaluation table and of the journals' distortion; --run again lays another run beside it
 python -m analysis.measures runs/town --out results/town/measures
 python -m analysis.tables results --run town --out results/town/tables
-python -m analysis.compare --run town=runs/town --measure accepted --out results/town/compare/accepted.json
+python -m analysis.compare --run town=runs/town --measure tasks_accepted --out results/town/compare/tasks_accepted.json
 python -m analysis.compare --run town=results/town/tables/mask.json --measure mask
 python -m analysis.compare --run town=results/town/journals --measure distortion
 ```

@@ -50,12 +50,14 @@ RUNTIME = RuntimeConfig(compaction_threshold=160_000, kept_tokens=12_000)
 def exported(tmp_path: Path) -> Path:
     """A resident of an export, with a skill, and with a session and a trace that must not carry
     over; the export's manifest names the model `resident`, its context window of 262,144
-    tokens and the run's `RUNTIME`, and gives Mei and Tomas commits of their own."""
+    tokens and the run's `RUNTIME`, and gives Mei and Tomas commits and occupations of their
+    own."""
     root = AgentDirectory.create(tmp_path / "export" / "Mei", background="You are Mei.").root
     manifest = Export(
         run="/runs/c",
         day=7,
         commits={"Mei": "c0ffee", "Tomas": "7ea"},
+        occupations={"Mei": "programmer", "Tomas": "team-leader"},
         llm=LLMConfig(
             base_url="http://127.0.0.1:9",
             api_key_env="NO_KEY",
@@ -339,7 +341,7 @@ def test_a_stopped_evaluation_is_continued_by_the_same_command(tmp_path, monkeyp
     command(monkeypatch, export, tmp_path / "whole")
     resumed, whole = report(out), report(tmp_path / "whole")
     assert (resumed.pop("resumed"), whole.pop("resumed")) == (1, 0)
-    assert resumed == whole
+    assert resumed == whole and resumed["occupation"] == "programmer"
     assert [(row["status"], row["steps"]) for row in resumed["tasks"]] == [
         ("accepted", 1),
         ("gave_up", 4),

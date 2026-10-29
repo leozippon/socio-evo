@@ -18,9 +18,10 @@ from evaluation.records import (
     journal,
     journal_of,
     lived_days,
+    record,
     town,
 )
-from tests.analysis.lived import MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
+from tests.analysis.lived import ANNOUNCEMENT, MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
 from world.clock import clock_time
 
 
@@ -42,8 +43,8 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "task_arrived", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "service", "speech", "gift",
-        "leave_conversation", "leave_work", "sleep", "fell_asleep", "wage", "settlement",
-        "condition",
+        "leave_conversation", "leave_work", "sleep", "fell_asleep", "announcement", "wage",
+        "settlement", "condition",
     }  # fmt: skip
 
     def head(e):
@@ -62,8 +63,9 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
-    assert lines[-3:] == [  # her twenty minutes at work did not cover the rent
+    assert lines[-4:] == [  # her twenty minutes at work did not cover the rent
         "20:00 You fell asleep.",
+        f"20:20 Vera announced at the hall: “{ANNOUNCEMENT}”",  # told to her on waking
         "00:00 At midnight your purse held $145; none of your wages went into it.",
         "00:00 Your statement for Monday 1 January: received $20 for task 1; received $5 from "
         "Tomas; 20 minutes at work, $2 in wages; rent for your room at the shared house on Mill "
@@ -107,6 +109,80 @@ def test_a_command_keeps_the_tail_of_its_output(run_dir):
     )
 
 
+def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
+    def told(name: str, day: int = 1) -> list[str]:
+        return heads(day_record(run_dir, name, day))
+
+    def follow(lines: list[str], expected: list[str]) -> None:
+        assert [line for line in lines if line in expected] == expected
+
+    sale, hall = "20:10 You received $2 for a sale.", f"announced at the hall: “{ANNOUNCEMENT}”"
+    follow(told("Olga"), [
+        "20:10 You sat down to work.",
+        "20:10 You ordered 5 helpings of bread from the supplier for $10.",
+        "20:10 Jonas bought 2 units of vegetables for the kitchen for $6.", sale,
+        "20:10 Vera bought 1 helping of bread for $4.", sale,
+    ])  # fmt: skip
+    assert "08:00 It is 08:00: the supplier delivered 5 helpings of bread to the store." in told(
+        "Olga", 2
+    )
+    follow(told("Jonas"), [
+        "20:10 You bought 2 units of vegetables for the kitchen for $6.",
+        "20:20 You sat down to work.",
+        "20:20 You cooked 1 portion of vegetable soup.",
+        "20:30 You served Lucia vegetable soup for $8.",
+        "20:30 You received $3 for a dish served.",
+    ])  # fmt: skip
+    ravi, lucia = told("Ravi"), told("Lucia")
+    follow(ravi, [
+        "09:00 You received $10 for task 1, which Mei handed in.",
+        "20:10 You gave task 3 (org/repo3) to Aisha.",
+    ])  # fmt: skip
+    # The examination with the numbers it told, to both.
+    (seen,) = [line for line in ravi if line.startswith("20:20 Lucia examined you for $10. Food: ")]
+    assert seen.endswith("Health: 100 of 100, you are in good health.")
+    (made,) = [line for line in lucia if line.startswith("20:20 You examined Ravi for $10. Food: ")]
+    assert made.endswith("Health: 100 of 100, Ravi is in good health.")
+    follow(lucia, [
+        made, "20:20 You received $4 for a patient examined.",
+        "20:30 Jonas served you vegetable soup for $8.",
+    ])  # fmt: skip
+    follow(told("Vera"), ["20:10 You bought 1 helping of bread for $4.", f"20:20 You {hall}"])
+    follow(told("Aisha"), ["20:10 Ravi gave task 3 (org/repo3) to you.", f"20:20 Vera {hall}"])
+    assert (
+        "00:00 At midnight the client withdrew task 3, which you held; its workspace is gone."
+        in told("Aisha", 2)
+    )
+    # A task coming in is told to those at the workshop, as Mei was at 08:00, and nobody else.
+    assert "08:00 It is 08:00: task 1 (org/repo1) came in on the board." in told("Mei")
+    assert not any("came in" in line for line in told("Olga"))
+    # The days before are the new statements, with what was earned and spent.
+    before = days_before(town(run_dir), lived_days(run_dir), "Lucia", 2).splitlines()
+    assert before[0] == "You began your first day, Monday 1 January, with $100."
+    assert before[1].startswith(
+        "Your statement for Monday 1 January: received $4 for a patient examined; bought "
+        "vegetable soup for $8;"
+    )
+
+
+def test_a_treatment_is_told_with_the_health_it_restored():
+    entry = {
+        "kind": "treatment", "sim_time": 36000, "real_time": 1.0, "actor": "Lucia",
+        "place": "clinic", "audience": ["Ravi"], "text": "Lucia treated Ravi for $30.",
+        "personal": {"Lucia": "You treated Ravi for $30.", "Ravi": "Lucia treated you for $30."},
+        "payload": {"patient": "Ravi", "fee": 30, "restores": 25.0, "before": 40.4,
+                    "health": 65.4, "ill": 3, "bedridden": False},
+    }  # fmt: skip
+    assert record([entry], [], "Lucia") == (
+        "10:00 You treated Ravi for $30. Ravi's health went from 40 to 65 of 100, and the illness "
+        "ended."
+    )
+    well = entry | {"payload": entry["payload"] | {"ill": 0}}
+    assert record([well], [], "Ravi") == (
+        "10:00 Lucia treated you for $30. Your health went from 40 to 65 of 100."
+    )
+
+
 def test_others_private_speech_their_days_and_the_journal_stay_out(run_dir):
     record = day_record(run_dir, "Mei", 1)
     assert "09:20 Tomas said something to Aisha that you could not hear." in record
@@ -143,8 +219,8 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)
-    with pytest.raises(ValueError, match="no resident Olga"):
-        day_record(run_dir, "Olga", 1)
+    with pytest.raises(ValueError, match="no resident Kofi"):
+        day_record(run_dir, "Kofi", 1)
 
 
 def test_the_days_before_are_the_purse_begun_with_and_each_earlier_statement(run_dir):

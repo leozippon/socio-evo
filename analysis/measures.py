@@ -1,18 +1,25 @@
-"""The measures of a run, per resident and lived day, from the world log and the residents'
-traces, with their daily totals and means.
+"""The measures of a run: per resident and lived day, from the world log and the residents'
+traces, with their daily totals and means; and per lived day for the town, from the world log
+and the day's checkpoint.
 
     python -m analysis.measures RUN_DIR --out DIR
 
 DIR receives `measures.csv` and `measures.json`, one row per resident and lived day with
-`resident`, `day`, `date` and every measure of `MEASURES`, and `daily.csv` and `daily.json`, one
-row per day and measure with the total over the residents (for counts and amounts) and the mean
-over the residents that have a value. They are derived from the run alone and replace what is
-there; DIR is given explicitly (by convention `results/<run>/measures`), since analysis writes
-nothing under the run. The days are those the world log has closed (`evaluation.records`), so a
-day lost to an interruption counts once, as it was lived again.
+`resident`, `occupation`, `day`, `date` and every measure of `MEASURES`; `daily.csv` and
+`daily.json`, one row per day and measure with the total over the residents (for counts and
+amounts) and the mean over the residents that have a value; and `town.csv` and `town.json`, one
+row per day with `day`, `date` and every measure of `TOWN`. They are derived from the run alone
+and replace what is there; DIR is given explicitly (by convention `results/<run>/measures`),
+since analysis writes nothing under the run. The days are those the world log has closed
+(`evaluation.records`), so a day lost to an interruption counts once, as it was lived again.
 
-A measure is None where it has no value: a cached share that no reply reported, or the purse
-and the health of a day without a midnight.
+The midnight that ends a lived day settles the calendar day: the hours at work, wages, rent and
+the fund's takings and payments of a day are those of its calendar day, so work after midnight
+counts on the next day. Who lies bedridden is carried from day to day: a resident takes to its
+bed at a midnight (`bedridden`) and leaves it when treated (`recovered`, for one bedridden), and a
+visit to it is any other resident's arrival at the home where it lies, a housemate's coming home
+included. A measure is None where it has no value: a cached share that no reply reported, or the
+money and the health of a day without a midnight.
 """
 
 from __future__ import annotations
@@ -20,31 +27,52 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from collections.abc import Iterable, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from statistics import fmean
 from typing import Any
 
 from agent.directory import TRACE
 from evaluation.records import Day, Entry, agent_dir, day_date, lived_days, town, trace_days
+from infrastructure.storage import RunDirectory
+from world.economy import PAID, TAKEN
 
 MEASURES = {
-    "claimed": "tasks claimed",
-    "submitted": "tasks handed in (acceptance runs)",
-    "accepted": "hand-ins accepted",
-    "earned": "the sums paid for its tasks accepted",
-    "wages": "its wages for its hours at work, settled at midnight",
-    "spent_rent": "rent taken from its wages at midnight",
-    "spent_fees": "the daily charges on what it owns, taken from its wages at midnight",
-    "spent_food": "money spent on food",
-    "spent_goods": "money spent on other goods",
+    "tasks_taken": "tasks it claimed from the Office's board",
+    "tasks_assigned_to": "tasks the team leader gave it, or moved to it from another",
+    "tasks_assigned_by": "tasks it gave to a programmer, or moved, as the team leader",
+    "tasks_handed_in": "hand-ins of its task (acceptance runs)",
+    "tasks_accepted": "hand-ins accepted while it still held the task, which the client paid for",
+    "tasks_given_up": "tasks it gave up",
+    "tasks_withdrawn": "tasks the client withdrew at midnight while it held them",
+    "hours_at_work": "hours at work at its workplace, as the midnight counted them for its wages",
+    "wages": "its wages for those hours",
+    "service_sums": "the sums due to it at once for its services: tasks, sales, dishes, patients",
+    "rent": "the rent taken from its wages at midnight",
+    "charges": "the daily charges on what it owns, taken from its wages at midnight",
+    "arrears": "the rent and charges its wages have not covered, owed to the fund after midnight",
+    "owed_wages": "what the fund owes it after midnight: wages and sums it could not pay",
+    "money": "its money after the midnight wages",
+    "spent": "money it paid for goods at the Store, dishes and the Hospital's fees",
+    "sales_made": "sales at the Store's counter while it kept it",
+    "bought": "purchases at the Store's counter for itself",
+    "bought_for_kitchen": "purchases at the Store's counter for the kitchen, which the fund paid",
+    "orders": "orders it placed with the supplier",
+    "portions_cooked": "portions of dishes it cooked",
+    "dishes_served": "dishes it served as the chef",
+    "dishes_eaten": "dishes it bought and ate at the Restaurant",
+    "examinations_given": "examinations it made as the doctor",
+    "examinations_received": "examinations of it, for which it paid",
+    "treatments_given": "treatments it gave as the doctor",
+    "treatments_received": "treatments of it, for which it paid",
     "hungry": "1 if it had nothing to eat that day",
     "starving": "1 if it was starving at midnight, which wore its health",
+    "ill_night": "1 if illness cost it health at midnight",
     "health": "its health at midnight, after the night's reckoning, 0 to 100",
-    "died": "1 if its health ran out that midnight",
-    "purse": "the purse after the midnight wages",
-    "arrears": "the rent its wages did not cover, owed after the midnight",
-    "work_hours": "simulated hours at work, from starting work to stopping it or being taken away",
+    "bedridden": "1 if it lay bedridden at some time of the day",
+    "announcements": "announcements it made as the mayor",
+    "reports_read": "times it read the town's report as the mayor",
     "said_public": "things said to everyone present",
     "said_private": "things said to named residents",
     "heard_public": "things said by others to everyone present, heard",
@@ -52,8 +80,12 @@ MEASURES = {
     "interlocutors": "distinct residents it spoke or wrote to, or was spoken or written to by",
     "messages_sent": "written messages it sent",
     "messages_received": "written messages it received",
+    "gifts_given": "hand-overs of money or things to others",
+    "gifts_received": "hand-overs of money or things from others",
     "money_given": "money handed to others",
     "money_received": "money received from others",
+    "bedside_visits": "its arrivals at a home where another resident lay bedridden",
+    "visited_in_bed": "others' arrivals at the home where it lay bedridden",
     "journal": "1 if it wrote a journal entry, going to bed",
     "forced_sleep": "1 if it was put to sleep at the forced hour",
     "requests": "model requests, retries and compactions included",
@@ -64,8 +96,19 @@ MEASURES = {
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
-LEVELS = frozenset({"health", "purse", "arrears", "cached_share"})
+LEVELS = frozenset({"arrears", "owed_wages", "money", "health", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
+TOWN = {
+    "tasks_arrived": "clients' tasks that came in on the Office's board",
+    "tasks_accepted": "tasks accepted, which the clients paid for",
+    "tasks_withdrawn": "tasks the clients withdrew at midnight, held or not",
+    "fund": "the fund's balance at the day's checkpoint",
+    "owed_wages": "what the fund owed the residents at the checkpoint, wages and sums",
+    "arrears": "the rent and charges the residents owed the fund at the checkpoint",
+    **{f"taken_{kind}": f"what the fund took {words} that day" for kind, words in TAKEN.items()},
+    **{f"paid_{kind}": f"what the fund paid {words} that day" for kind, words in PAID.items()},
+}
+"""Every measure of the town's day and what it counts."""
 
 Row = dict[str, Any]
 
@@ -73,7 +116,10 @@ Row = dict[str, Any]
 def measure(run_dir: Path) -> list[Row]:
     """One row per resident and lived day of the run at `run_dir`, by resident and day."""
     config = town(run_dir)
+    if any(resident.occupation is None for resident in config.residents):
+        raise ValueError(f"{run_dir} is a run of the town before occupations, which these are not")
     days = sorted(lived_days(run_dir).values(), key=lambda day: day.number)
+    lying = beds(days)
     rows = []
     for resident in config.residents:
         traces = trace_days(agent_dir(run_dir, config, resident.name) / TRACE, days)
@@ -81,17 +127,38 @@ def measure(run_dir: Path) -> list[Row]:
             rows.append(
                 {
                     "resident": resident.name,
+                    "occupation": resident.occupation,
                     "day": day.number,
                     "date": day_date(config, day.number).isoformat(),
-                    **world_measures(day, resident.name),
+                    **world_measures(day, resident.name, lying[day.number]),
                     **trace_measures(traces[day.number]),
                 }
             )
     return rows
 
 
-def world_measures(day: Day, name: str) -> Row:
-    """The measures of `name`'s lived `day` that the world log gives."""
+def beds(days: Sequence[Day]) -> dict[int, dict[str, str]]:
+    """Who lay bedridden at the start of each of `days`, given in order, and at which home."""
+    lying: dict[str, str] = {}
+    found = {}
+    for day in days:
+        found[day.number] = dict(lying)
+        for e in day.entries:
+            _turn(lying, e)
+    return found
+
+
+def _turn(lying: dict[str, str], e: Entry) -> None:
+    """`lying` after the entry `e`: one taken to its bed, or let up from it."""
+    if e["kind"] == "bedridden":
+        lying[e["actor"]] = e["payload"]["home"]
+    elif e["kind"] == "recovered" and e["payload"]["bedridden"]:
+        del lying[e["actor"]]
+
+
+def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
+    """The measures of `name`'s lived `day` that the world log gives, with `lying` those
+    bedridden when it began and where."""
 
     def mine(kind: str) -> list[Entry]:
         return [e for e in day.entries if e["kind"] == kind and e["actor"] == name]
@@ -100,32 +167,53 @@ def world_measures(day: Day, name: str) -> Row:
         return [e for e in day.entries if e["kind"] == kind and e["payload"][key] == name]
 
     settled, paid = mine("settlement"), mine("wage")
-    bought = mine("purchase")
+    sales, served = [e for e in day.entries if e["kind"] == "sale"], mine("served")
+    bought = [e for e in sales if e["actor"] == name and not e["payload"]["kitchen"]]
+    examined, treated = to_me("examination", "patient"), to_me("treatment", "patient")
     speech = [e for e in day.entries if e["kind"] == "speech"]
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
     sent, got = mine("message"), to_me("message", "to")
+    given, received = mine("gift"), to_me("gift", "to")
+    visits, visited = _visits(day, name, lying)
     return {
-        "claimed": len(mine("claim")),
-        "submitted": len(mine("submission")),
-        "accepted": sum(e["payload"]["resolved"] for e in mine("verdict")),
-        "earned": sum(e["payload"]["amount"] for e in mine("service")),
+        "tasks_taken": len(mine("claim")),
+        "tasks_assigned_to": len(to_me("assign", "to")),
+        "tasks_assigned_by": len(mine("assign")),
+        "tasks_handed_in": len(mine("submission")),
+        "tasks_accepted": sum(
+            e["payload"]["resolved"] and e["payload"]["held"] for e in mine("verdict")
+        ),
+        "tasks_given_up": len(mine("abandon")),
+        "tasks_withdrawn": len(to_me("task_withdrawn", "holder")),
+        "hours_at_work": sum(e["payload"]["hours"] for e in paid),
         "wages": sum(e["payload"]["wages"] for e in paid),
-        "spent_rent": sum(e["payload"]["rent"] for e in paid),
-        "spent_fees": sum(e["payload"]["charges"] for e in paid),
-        "spent_food": sum(
-            e["payload"]["amount"] for e in bought if e["payload"]["effect"] == "food"
-        ),
-        "spent_goods": sum(
-            e["payload"]["amount"] for e in bought if e["payload"]["effect"] != "food"
-        ),
+        "service_sums": sum(e["payload"]["amount"] for e in mine("service")),
+        "rent": sum(e["payload"]["rent"] for e in paid),
+        "charges": sum(e["payload"]["charges"] for e in paid),
+        "arrears": paid[-1]["payload"]["arrears"] if paid else None,
+        "owed_wages": paid[-1]["payload"]["owed"] if paid else None,
+        "money": paid[-1]["payload"]["money"] if paid else None,
+        "spent": sum(e["payload"]["amount"] for e in bought + served)
+        + sum(e["payload"]["fee"] for e in examined + treated),
+        "sales_made": sum(e["payload"]["seller"] == name for e in sales),
+        "bought": len(bought),
+        "bought_for_kitchen": sum(e["actor"] == name and e["payload"]["kitchen"] for e in sales),
+        "orders": len(mine("order")),
+        "portions_cooked": sum(e["payload"]["portions"] for e in mine("cook")),
+        "dishes_served": len(to_me("served", "chef")),
+        "dishes_eaten": len(served),
+        "examinations_given": len(mine("examination")),
+        "examinations_received": len(examined),
+        "treatments_given": len(mine("treatment")),
+        "treatments_received": len(treated),
         "hungry": int(bool(settled) and settled[-1]["payload"]["nourishment"] == 0),
         "starving": int(bool(settled) and "starving" in settled[-1]["payload"]["night"]),
+        "ill_night": int(bool(settled) and "illness" in settled[-1]["payload"]["night"]),
         "health": settled[-1]["payload"]["health"] if settled else None,
-        "died": int(bool(mine("death"))),
-        "purse": paid[-1]["payload"]["money"] if paid else None,
-        "arrears": paid[-1]["payload"]["arrears"] if paid else None,
-        "work_hours": _work_seconds(day, name) / 3600,
+        "bedridden": int(name in lying or bool(mine("bedridden"))),
+        "announcements": len(mine("announcement")),
+        "reports_read": len(mine("report")),
         "said_public": sum(not e["payload"]["private"] for e in said),
         "said_private": sum(e["payload"]["private"] for e in said),
         "heard_public": sum(not e["payload"]["private"] for e in heard),
@@ -138,26 +226,31 @@ def world_measures(day: Day, name: str) -> Row:
         ),
         "messages_sent": len(sent),
         "messages_received": len(got),
-        "money_given": sum(e["payload"].get("amount", 0) for e in mine("gift")),  # 0: a thing
-        "money_received": sum(e["payload"].get("amount", 0) for e in to_me("gift", "to")),
+        "gifts_given": len(given),
+        "gifts_received": len(received),
+        "money_given": sum(e["payload"].get("amount", 0) for e in given),  # 0: a thing
+        "money_received": sum(e["payload"].get("amount", 0) for e in received),
+        "bedside_visits": visits,
+        "visited_in_bed": visited,
         "journal": int(any(e["payload"]["journal"] for e in mine("sleep"))),
         "forced_sleep": len(mine("forced_sleep")),
     }
 
 
-def _work_seconds(day: Day, name: str) -> int:
-    """Simulated seconds `name` spent in Work on `day`: from each start of work to its leaving
-    work, by its own choice or the world's."""
-    seconds, started = 0, None
+def _visits(day: Day, name: str, lying: Mapping[str, str]) -> tuple[int, int]:
+    """`name`'s arrivals on `day` at a home where another lay bedridden, and others' arrivals
+    at the home where it lay, with `lying` those bedridden when the day began."""
+    lying, visits, visited = dict(lying), 0, 0
     for e in day.entries:
-        if e["kind"] == "start_work" and e["actor"] == name:
-            started = e["sim_time"]
-        elif started is not None and e["kind"] == "leave_work" and e["actor"] == name:
-            seconds += e["sim_time"] - started
-            started = None
-    if started is not None:
-        raise ValueError(f"{name} was still at work when day {day.number} closed")
-    return seconds
+        _turn(lying, e)
+        if e["kind"] != "arrive":
+            continue
+        place = e["payload"]["place"]
+        if e["actor"] == name:
+            visits += any(home == place for other, home in lying.items() if other != name)
+        elif lying.get(name) == place:
+            visited += 1
+    return visits, visited
 
 
 def trace_measures(trace: Sequence[Entry]) -> Row:
@@ -175,6 +268,35 @@ def trace_measures(trace: Sequence[Entry]) -> Row:
         "lapses": sum(r["kind"] == "lapse" for r in trace),
         "compactions": sum(r["kind"] == "compaction" for r in trace),
     }
+
+
+def town_days(run_dir: Path) -> list[Row]:
+    """One row per lived day of the run at `run_dir`, by day: the measures of `TOWN`, the tasks
+    from the world log and the fund from the day's checkpoint, which holds its balance, what it
+    owes and is owed, and its takings and payments of the calendar day its midnight closed."""
+    config, run = town(run_dir), RunDirectory(run_dir)
+    rows = []
+    for day in sorted(lived_days(run_dir).values(), key=lambda day: day.number):
+        fund = json.loads(run.checkpoint_path(day.number).read_text(encoding="utf-8"))["fund"]
+        kinds = Counter(e["kind"] for e in day.entries)
+        rows.append(
+            {
+                "day": day.number,
+                "date": day_date(config, day.number).isoformat(),
+                "tasks_arrived": kinds["task_arrived"],
+                "tasks_accepted": sum(
+                    e["kind"] == "verdict" and e["payload"]["resolved"] and e["payload"]["held"]
+                    for e in day.entries
+                ),
+                "tasks_withdrawn": kinds["task_withdrawn"],
+                "fund": fund["balance"],
+                "owed_wages": sum(fund["owed"].values()),
+                "arrears": sum(fund["arrears"].values()),
+                **{f"taken_{kind}": fund["yesterday"].get(kind, 0) for kind in TAKEN},
+                **{f"paid_{kind}": fund["yesterday"].get(kind, 0) for kind in PAID},
+            }
+        )
+    return rows
 
 
 def daily(rows: Sequence[Row]) -> list[Row]:
@@ -220,12 +342,16 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("run", type=Path, help="the run directory")
     parser.add_argument("--out", type=Path, required=True, help="where to write")
     args = parser.parse_args(argv)
-    rows = measure(args.run)
+    try:
+        rows = measure(args.run)
+    except ValueError as error:
+        parser.error(str(error))
     if not rows:
         parser.error(f"{args.run} has no lived day closed by a checkpoint")
     args.out.mkdir(parents=True, exist_ok=True)
     write(rows, args.out / "measures")
     write(daily(rows), args.out / "daily")
+    write(town_days(args.run), args.out / "town")
     days = sorted({row["day"] for row in rows})
     residents = len({row["resident"] for row in rows})
     print(f"{residents} residents, days {days[0]} to {days[-1]}: written to {args.out}")

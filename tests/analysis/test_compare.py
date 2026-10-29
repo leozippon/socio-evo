@@ -112,11 +112,11 @@ def test_a_change_from_a_csv_table_and_runs_side_by_side(tmp_path, capsys):
     run = tmp_path / "run"
     asyncio.run(live(run))
     main(
-        ["--run", f"town={run}", "--run", f"again={run}", "--measure", "earned", "--days", "1", "2"]
+        ["--run", f"town={run}", "--run", f"again={run}", "--measure", "wages", "--days", "1", "2"]
     )
     printed = capsys.readouterr().out
     assert "no declared outcome" in printed
-    assert "town mean: n=3" in printed and "again mean: n=3" in printed
+    assert "town mean: n=8" in printed and "again mean: n=8" in printed
 
 
 def test_unreadable_runs_are_refused(tmp_path, capsys):

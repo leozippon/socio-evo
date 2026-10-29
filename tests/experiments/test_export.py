@@ -1,6 +1,6 @@
 """Exporting a run's residents as they stood at a day's checkpoint, with each resident's commit
-and the run's model and runtime settings recorded beside them; an export of the run's present
-tags kept, and one of other commits replaced."""
+and occupation and the run's model and runtime settings recorded beside them; an export of the
+run's present tags kept, and one of other commits replaced."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ import yaml
 
 from agent.runtime import RuntimeConfig
 from evaluation.exports import MANIFEST, Export
+from evaluation.exports import main as listed
 from experiments.export import export_day, main
 from infrastructure.config import StrictModel
 from infrastructure.git import Repository
@@ -22,6 +23,9 @@ from infrastructure.storage import RunDirectory, day_tag
 
 LLM = LLMConfig(base_url="${VLLM_BASE_URL}", api_key_env="VLLM_API_KEY", model="qwen")
 RUNTIME = RuntimeConfig(reasoning_effort="low")
+OCCUPATIONS = {"Mei": "team-leader", "Tomas": "chef"}
+TOWN = {"residents": [{"name": name, "occupation": o} for name, o in OCCUPATIONS.items()]}
+"""What an export takes from the town: each resident's occupation."""
 
 
 class Frozen(StrictModel):
@@ -29,13 +33,14 @@ class Frozen(StrictModel):
 
     llm: LLMConfig
     runtime: RuntimeConfig
+    town: dict[str, list[dict[str, str]]]
 
 
 def make_run(runs: Path, start: str = "You are {name}") -> RunDirectory:
     """Run c of Mei and Tomas with the checkpoints of days 0 and 1, each resident's background
     `start`, then the day; and a day lost to an interruption after them."""
     run = RunDirectory.create(
-        runs, "c", config=Frozen(llm=LLM, runtime=RUNTIME), code_revision="abc"
+        runs, "c", config=Frozen(llm=LLM, runtime=RUNTIME, town=TOWN), code_revision="abc"
     )
     for name in ("Mei", "Tomas"):
         agent = run.agent_dir(name)
@@ -62,7 +67,7 @@ def tagged(run: RunDirectory, day: int) -> dict[str, str]:
     }
 
 
-def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
+def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path, capsys):
     run = make_run(tmp_path / "runs")
     exports = export_day(run.root, 0, tmp_path / "day-00")
     assert exports == {name: tmp_path / "day-00" / name for name in ("Mei", "Tomas")}
@@ -73,9 +78,20 @@ def test_a_day_is_exported_for_every_resident_from_its_tag(tmp_path):
         assert (path / "memory" / "notes.md").is_file() and (path / "skills" / "bake.md").is_file()
     export = Export.of(exports["Mei"])
     assert export == Export(
-        run=str(run.root.resolve()), day=0, commits=tagged(run, 0), llm=LLM, runtime=RUNTIME
+        run=str(run.root.resolve()),
+        day=0,
+        commits=tagged(run, 0),
+        occupations=OCCUPATIONS,
+        llm=LLM,
+        runtime=RUNTIME,
     )
     assert export.commit(exports["Tomas"]) == tagged(run, 0)["Tomas"] != tagged(run, 1)["Tomas"]
+    assert export.occupation(exports["Tomas"]) == "chef"
+    listed([str(tmp_path / "day-00")])  # as ops/evaluate.sh reads it
+    assert capsys.readouterr().out == "Mei team-leader\nTomas chef\n"
+    with pytest.raises(SystemExit):
+        listed([str(exports["Mei"])])
+    assert "export.json" in capsys.readouterr().err
     with pytest.raises(ValueError, match="no checkpoint of day 2"):
         export_day(run.root, 2, tmp_path / "day-02")
     with pytest.raises(FileExistsError):
