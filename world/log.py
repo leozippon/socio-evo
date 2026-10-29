@@ -68,7 +68,7 @@ KINDS = {
     "start_work": Kind(
         "a resident sat down to work: with start_work, or by doing its occupation's work where "
         "it works (claiming, assigning or acting in a task's workspace, cooking, ordering, "
-        "setting a price, examining or treating, reading the report, announcing, granting)"
+        "setting a price, examining or treating, announcing, granting)"
     ),
     "leave_work": Kind("a resident stopped work, or the forced sleep stopped it"),
     "claim": Kind("a resident claimed a task and got a workspace", ("task", "instance_id")),
@@ -150,7 +150,6 @@ KINDS = {
         "the doctor treated a patient, who paid the fee as for an examination",
         ("patient", "fee", "tax", "restores", "before", "health", "ill", "bedridden"),
     ),
-    "report": Kind("the mayor read the town's report (its text is not kept)"),
     "announcement": Kind(
         "the mayor announced something, told to every resident at once or on waking", ("text",)
     ),

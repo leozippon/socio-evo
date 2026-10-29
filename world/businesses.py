@@ -9,10 +9,9 @@ the surgery an examination and a treatment (`FEES`). What it sells comes off a h
 its place (`holds`: the Store's shelves; the kitchen's larder, which it cooks from, and its
 portions); the surgery sells its services and holds nothing. A business is its keeper's: what
 it takes goes into the keeper's purse, the tax withheld from it, as its `takings`, and what it
-buys the keeper pays for (the supplier, the kitchen's ingredients); the daybook counts its sales
-under `daybook`. A resident at its place is told whether it is open and what it sells at what
-price, its keeper what it holds even while it is shut (`counter_told`), and the mayor's report
-lists what each sells.
+buys the keeper pays for (the supplier, the kitchen's ingredients). A resident at its place is
+told whether it is open and what it sells at what price, and its keeper what it holds even while
+it is shut (`counter_told`).
 """
 
 from __future__ import annotations
@@ -38,20 +37,18 @@ class Business:
     """The business of the town's workplace of `kind` (see the module docstring), and its words:
     `takings`, what its keeper's statement calls what it took in; `opened`, what its keeper's
     sitting down to work there tells; `closed`, what one there is
-    told while it is shut (`{place}` its place's name); `selling`, `kept` and `listing`, what
-    heads what it sells and at what price, as one there reads it while it is open, as its
-    keeper reads it while it is shut (nothing, if None) and in the report; `sells`, how
-    `set_price` says that something is not among what it sells."""
+    told while it is shut (`{place}` its place's name); `selling` and `kept`, what heads what it
+    sells and at what price, as one there reads it while it is open and as its keeper reads it
+    while it is shut (nothing, if None); `sells`, how `set_price` says that something is not
+    among what it sells."""
 
     kind: str
     holds: tuple[str, ...]
-    daybook: str
     takings: str
     opened: str
     closed: str
     selling: str
     kept: str | None
-    listing: str
     sells: str
 
     def place(self, config: TownConfig) -> Place:
@@ -85,41 +82,35 @@ class Business:
 STORE = Business(
     kind="store",
     holds=(SHELVES,),
-    daybook="sales",
     takings="in sales",
     opened="The counter is open.",
     closed="{place} is closed: nobody is at the counter.",
     selling="At the counter: ",
     kept="On the shelves: ",
-    listing="In stock: ",
     sells="sold at",
 )
 KITCHEN = Business(
     kind="restaurant",
     holds=(LARDER, PORTIONS),
-    daybook="dishes",
     takings="for dishes",
     opened="The kitchen is open.",
     closed="The kitchen is closed.",
     selling="On the menu: ",
     kept="On the menu: ",
-    listing="On the menu: ",
     sells="on the menu of",
 )
 SURGERY = Business(
     kind="hospital",
     holds=(),
-    daybook="patients",
     takings="in fees",
     opened="The surgery is open.",
     closed="The surgery is closed.",
     selling="The surgery is open: ",
     kept=None,
-    listing="",
     sells="a service of",
 )
 BUSINESSES = {business.kind: business for business in (STORE, KITCHEN, SURGERY)}
-"""The town's businesses by the kind of their workplace, in the order the report lists them."""
+"""The town's businesses by the kind of their workplace."""
 
 
 def starting_prices(config: TownConfig) -> dict[str, dict[str, int]]:

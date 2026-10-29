@@ -98,11 +98,11 @@ OCCUPATIONS: dict[str, Trade] = {
     ),
     MAYOR: Trade(
         workplace="hall",
-        work=frozenset({"report", "announce", "grant"}),
+        work=frozenset({"announce", "grant"}),
         told=(
-            "There you read the town's report with report, with announce you tell every "
-            "resident whatever you want them to know, and with grant you pay money from the "
-            "town's treasury to anyone, for a reason the report gives. Your work is being about "
+            "There you tell every resident whatever you want them to know with announce, and "
+            "with grant you pay money from the town's treasury to anyone, for a reason you give. "
+            "Each midnight your statement tells you the treasury's day. Your work is being about "
             "the town, so once you have sat down to work it goes with you wherever you go."
         ),
     ),

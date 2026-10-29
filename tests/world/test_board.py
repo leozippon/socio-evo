@@ -95,4 +95,4 @@ async def test_a_task_is_given_or_moved_finished_or_withdrawn_at_the_end_of_its_
     assert board.withdraw(2) == [(first, "Tomas")]  # at the end of the day after it came
     assert "Tomas" not in board.claims and sorted(board.open) == [third]
     assert board.withdraw(3) == [(third, None)] and board.open == {}
-    assert board.saved() == {"arrived": 3, "schedule": [], "open": []}
+    assert board.saved() == {"arrived": 3, "schedule": [], "open": [], "accepted": []}

@@ -63,7 +63,6 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # his time buying for the kitchen at the Store not counted: hours counted at midnight that
     # earn nothing. The treasury took each one's rent from the purse.
     settled = {e["actor"]: e["payload"] for e in entries if e["kind"] == "settlement"}
-    worked = saved["daybook"]["days"][-1]["hours"]  # the exact seconds at work
     for name, rent, hours in (
         ("Mei", 10, (8, 9)),
         ("Olga", 10, (11.5, 12)),
@@ -71,7 +70,6 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     ):
         paid = settled[name]
         assert hours[0] < paid["hours"] < hours[1], name
-        assert paid["hours"] == round(worked[name] / 3600, 2)
         assert (paid["rent"], paid["rent_paid"], paid["arrears"]) == (rent, rent, 0), name
     # The client paid Mei, the team leader, the whole of her own task's payment, a tenth withheld.
     (share,) = [e["payload"] for e in entries if e["kind"] == "service"]
@@ -133,9 +131,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert re.search(  # the saved day names the treasury
-        rf"saved day 1 after .*\. The treasury holds \${treasury['balance']} now\. So far today it "
-        r"took in nothing and paid out nothing; yesterday it took in \$\d+ in taxes and \$35 in "
-        r"rent and daily charges and paid out nothing\.",
+        r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$35 in rent and daily "
+        rf"charges and paid out nothing, and holds \${treasury['balance']}\.",
         run.run_log_path.read_text(),
     )
 

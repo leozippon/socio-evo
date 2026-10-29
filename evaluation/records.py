@@ -25,10 +25,10 @@ indented lines. It holds:
   at the Store's counter, as buyer or seller, orders to the supplier and the morning's delivery,
   dishes cooked and served, prices set; examinations, with the numbers they told, and treatments,
   with the health before and after, which the world tells nobody in numbers, each sale and fee
-  with the tax withheld from what its seller took; the town's report read; announcements made or
-  heard; the mayor's grants, made or received; moving house; how it felt, in the body's words,
-  whenever that changed; falling ill, recovering, taking to its bed and leaving it; the midnight
-  statement; going to bed; falling asleep and forced sleep; the hours it was told while waiting;
+  with the tax withheld from what its seller took; announcements made or heard; the mayor's
+  grants, made or received; moving house; how it felt, in the body's words, whenever that changed;
+  falling ill, recovering, taking to its bed and leaving it; the midnight statement; going to bed;
+  falling asleep and forced sleep; the hours it was told while waiting;
 - from its trace, what leaves no entry in the log: its own files (background, memory, skills)
   read, written, changed or listed, by path; and every call of a world tool that left no entry of
   it in the log (reading the board, the rules or the record of its day, looking around, waiting,
@@ -36,10 +36,9 @@ indented lines. It holds:
 
 What the record cannot cover: a command beyond its first 200 characters and its output beyond the
 last 1000 characters, which is all the log keeps; the content of workspace files and of its own
-files; the problem statements it read; the town's report, whose text the log does not keep; what
-it thought or wrote without calling a tool; the condensing of its conversation. A refused call's
-longer text arguments are left out, and the journal never appears in the record, which is what
-the journal is set against.
+files; the problem statements it read; what it thought or wrote without calling a tool; the
+condensing of its conversation. A refused call's longer text arguments are left out, and the
+journal never appears in the record, which is what the journal is set against.
 
 The days before. A journal often restates earlier days: tasks won, money earned, the purse.
 What a claim about them is read against is the resident's earlier days as far as money goes, as

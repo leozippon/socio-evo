@@ -27,15 +27,14 @@ calendar day N to the one on calendar day N + 1; the journal, the acceptance run
 
 Beyond its construction, the schedule, the checkpoint and the glue between them (recording and
 delivering, places and people, going and arriving, conversations, a resident's tools and calls),
-the world's concerns are modules of their own whose functions take the world first: what a
-resident reads (`world.situation`), the town's report (`world.report`), midnight
-(`world.midnight`), items and their holders (`world.holders`), the body, sleep and waking, bed and
-treatment (`world.living`) and each resident's port (`world.port`), besides the tools
-(`world.tools`, `world.office`) and the businesses (`world.businesses`). `World` binds as its own
-methods the functions that the tools, the other modules and the outer layers call, so that
-`world.look(r)` is `world.situation.look(world, r)`; a module reaches another's functions only
-through the world it is given, and imports this one only to annotate, so that no import runs in a
-cycle.
+the world's concerns are modules of their own whose functions take the world first: what a resident
+reads (`world.situation`), midnight and the treasury's day (`world.midnight`), items and their
+holders (`world.holders`), the body, sleep and waking, bed and treatment (`world.living`) and each
+resident's port (`world.port`), besides the tools (`world.tools`, `world.office`) and the
+businesses (`world.businesses`). `World` binds as its own methods the functions that the tools, the
+other modules and the outer layers call, so that `world.look(r)` is
+`world.situation.look(world, r)`; a module reaches another's functions only through the world it is
+given, and imports this one only to annotate, so that no import runs in a cycle.
 
 A resident's living (`Living`, of `world.body`) is what it has eaten since the last midnight and
 its body's three needs; its inventory (`Inventory`, of `world.economy`) is its money and the items
@@ -43,13 +42,12 @@ it keeps, which act through it. Whatever a resident is paid for its work, by a c
 or a patient, goes into its purse with the tax withheld into the town's treasury (`earn`,
 `Treasury`), which at midnight pays the mayor's salary and takes the rent and daily charges. Its
 time on duty (`on_duty`; `Resident.worked`, counted as the body is reckoned and cleared at
-midnight) earns nothing and is kept for the report and the measures. The daybook (`Daybook`) keeps
-the days the mayor's report tells;
-the mayor's announcements stand on the Town Hall's board. A durable with the effect travel
-shortens the owner's journeys, one with messaging lets it write to other owners, and one with
-appearance shows its phrase wherever others perceive the owner: who is here, who arrived, whom one
-is in conversation with; a low band of health shows the same way. Rent is the home's, paid to the
-treasury, which owns the homes, and a resident may move into a home with a free room.
+midnight) earns nothing and is kept for the measures. The mayor's announcements stand on the Town
+Hall's board. A durable with the effect travel shortens the owner's journeys, one with messaging
+lets it write to other owners, and one with appearance shows its phrase wherever others perceive
+the owner: who is here, who arrived, whom one is in conversation with; a low band of health shows
+the same way. Rent is the home's, paid to the treasury, which owns the homes, and a resident may
+move into a home with a free room.
 
 The Store's counter, the Restaurant's kitchen and the Hospital's surgery are the town's businesses
 (`world.businesses`), each open while its keeper is at work there and selling at the prices of
@@ -96,7 +94,6 @@ from typing import Any
 import world.holders
 import world.living
 import world.midnight
-import world.report
 import world.situation
 from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.storage import RunDirectory
@@ -118,7 +115,6 @@ from world.economy import (
     PORTIONS,
     SHELVES,
     SUPPLIER,
-    Daybook,
     Holder,
     Inventory,
     Store,
@@ -165,7 +161,7 @@ class Resident:
     """A resident's state in the world. `home` is where it lives now; `timer` is its arrival or
     its wake-up; `tick` the percept that will tell it the time while its runtime waits;
     `reckoned` the simulated time its body was last brought up to; `worked` the seconds it has
-    spent on duty since the last midnight (`World.on_duty`), for the report and the measures; `day`
+    spent on duty since the last midnight (`World.on_duty`), for the measures; `day`
     the record of its lived day: (simulated time, kind, its wording, payload) of every entry that
     concerns it."""
 
@@ -210,7 +206,7 @@ class Resident:
 
 
 class World:
-    # What a resident reads, and the town's report.
+    # What a resident reads.
     situation = world.situation.situation
     look = world.situation.look
     things_told = world.situation.things_told
@@ -218,9 +214,8 @@ class World:
     cannot_pay = world.situation.cannot_pay
     inventory_told = world.situation.inventory_told
     review = world.situation.review
-    report = world.report.report
-    treasury_report = world.report.treasury_report
-    hall_board = world.report.hall_board
+    # The treasury's day, which the mayor's statement tells at midnight and the run's log after.
+    treasury_told = world.midnight.treasury_told
     # Items and their holders.
     holder = world.holders.holder
     reach = world.holders.reach
@@ -293,7 +288,6 @@ class World:
         }
         self.announcements: list[list[int | str]] = []
         """The mayor's announcements standing on the Town Hall's board, each `[time, text]`."""
-        self.daybook = Daybook()
         self.board = Board(tasks, backend, config, names=names)
         self.board.schedule = self.board.draw(1)
         self.body = Body(config.needs)
@@ -504,7 +498,6 @@ class World:
             },
             "fees": dict(self.prices[SURGERY.kind]),
             "announcements": copy.deepcopy(self.announcements),
-            "daybook": copy.deepcopy(asdict(self.daybook)),
             "residents": residents,
         }
 
@@ -528,7 +521,6 @@ class World:
         for key, items in state["holders"].items():
             self.holders[key] = Holder(dict(items))
         self.announcements = copy.deepcopy(state["announcements"])
-        self.daybook = Daybook(**copy.deepcopy(state["daybook"]))
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -820,7 +812,7 @@ class World:
         """The tools `r`'s event offers at its place now, in declared order and as its
         occupation declares them, less those of no use to it there: the work of other
         occupations; its own away from its workplace, where the board hangs and the machines
-        are, the counter, the kitchen, the surgery or the report, except the doctor's at the
+        are, the counter, the kitchen, the surgery or the Hall's board, except the doctor's at the
         bedside of one too ill to get up; the task's without a task; `start_work` where it has no
         work; and `message` with nothing to write with."""
         if r.suspended:

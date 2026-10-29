@@ -144,7 +144,9 @@ async def run(
                 )
                 for index, r in enumerate(config.residents)
             }
-            checkpoints = _Checkpoints(directory, config.town, world.treasury_report)
+            checkpoints = _Checkpoints(
+                directory, config.town, lambda: world.treasury_told(world.treasury.yesterday)
+            )
             await _live(world, runtimes, until, checkpoints)
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
         except asyncio.CancelledError:
@@ -244,8 +246,9 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, from the day's
-    entries in the world log, with the treasury's day as `treasury_report` tells it. The moves
-    are counted as `world.log.counted_move` names them: sales, dishes and gifts."""
+    entries in the world log, with the treasury's day as `World.treasury_told` tells it
+    (`treasury`). The moves are counted as `world.log.counted_move` names them: sales, dishes and
+    gifts."""
 
     COUNTED = (
         "task_arrived",
@@ -268,9 +271,9 @@ class _Checkpoints:
     )
 
     def __init__(
-        self, directory: RunDirectory, town: TownConfig, report: Callable[[], str]
+        self, directory: RunDirectory, town: TownConfig, treasury: Callable[[], str]
     ) -> None:
-        self._directory, self._town, self._report = directory, town, report
+        self._directory, self._town, self._treasury = directory, town, treasury
         self._started = time.monotonic()
 
     async def __call__(self, day: int, state: dict[str, Any]) -> None:
@@ -284,7 +287,7 @@ class _Checkpoints:
             counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
         took = timedelta(seconds=round(time.monotonic() - self._started))
         counted = ", ".join(f"{counts[kind]} {kind}" for kind in self.COUNTED)
-        log.info("saved day %d after %s: %s. %s", day, took, counted, self._report())
+        log.info("saved day %d after %s: %s. %s", day, took, counted, self._treasury())
         self._started = time.monotonic()
 
 

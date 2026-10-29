@@ -82,8 +82,19 @@ def look(world: World, r: Resident) -> str:
             text += f" It is the home of {listed(homes)}."
     text = " ".join([text, people_here(world, r), *counter_told(world, r), *_left_told(world, r)])
     if place.kind == "hall":
-        text += f"\n\n{world.hall_board()}"
+        text += f"\n\n{_hall_board(world)}"
     return text
+
+
+def _hall_board(world: World) -> str:
+    """The announcements standing on the Town Hall's board, each with when it was made."""
+    if not world.announcements:
+        return "Nothing is posted on the board."
+    lines = [
+        f"{tell_moment(int(t), world.config.start_date)}: “{text}”"
+        for t, text in world.announcements
+    ]
+    return "On the board, the mayor's announcements:\n" + "\n".join(lines)
 
 
 def people_here(world: World, r: Resident) -> str:

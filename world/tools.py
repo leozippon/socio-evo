@@ -12,7 +12,7 @@ refusal one line naming the condition, and act. Units of items change hands only
 `World.move`, which refuses what is out of reach or not held. The work of an occupation, done at
 its workplace, sits the resident down to work there as `start_work` does (`sit_down`,
 `working_at`): claiming, assigning or acting in a task's workspace, cooking, ordering, setting a
-price, examining and treating, reading the report, announcing and granting; the doctor at the
+price, examining and treating, announcing and granting; the doctor at the
 bedside of one too ill to get up examines and treats without sitting down to work. Whatever a
 resident is paid for its work goes into its purse with the tax withheld (`World.earn`): what a
 customer pays at the counter or for a dish (`_sell`), a patient's fee (`_charge`), a client's
@@ -43,7 +43,7 @@ from world.businesses import (
 )
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import Item, TownConfig
-from world.economy import LARDER, PORTIONS, SHELVES, add
+from world.economy import LARDER, PORTIONS, SHELVES
 from world.events import AT_HOME, EXHAUSTED, Work
 from world.rules import MAX_WAIT_MINUTES, TOPICS
 from world.telling import amount, bare, cap, counted, listed, you
@@ -184,14 +184,12 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("treat", f"Treat a patient at {hospital}, or at the bedside of one too ill to get "
              "up: the treatment restores some of the patient's health, ends an illness and gets "
              "one in bed up again. The patient pays the fee.", ("patient",), patient=patient),
-        spec("report", f"Read the town's report at {hall}: the treasury, the work at each place "
-             "of work, and how each resident is doing."),
         spec("announce", f"Announce something at {hall}: every resident is told it, at once or "
              "on waking, and it stays on the board there.", ("text",),
              text=_text("what you announce")),
         spec("grant", f"Grant money from the town's treasury at {hall} to a resident, yourself "
-             "among them, for a reason you give. It goes into their purse at once; they are "
-             "told, and the town's report shows it.", ("amount", "to", "reason"),
+             "among them, for a reason you give. It goes into their purse at once, and they are "
+             "told.", ("amount", "to", "reason"),
              amount=_number("how much money", 1), to=_text("their name"),
              reason=_text("what it is for")),
         spec("leave_work", "Stop working for now. You stay where you are and keep your task and "
@@ -553,9 +551,9 @@ def _sell(
     """`r` buys `units` of `thing` for `total` from `business`, served by `seller`: paid in cash
     from `r`'s purse into the seller's, the tax withheld (`World.earn`), unless `r` serves
     itself, which costs nothing; the units moved from the business's holder `source` to
-    `target`; counted in the daybook; the purchase logged as a `move`, told as `tell` to the
-    seller, with the tax; a dish eaten at once, and anything else bought for itself taken in by
-    the hungry. Returns the refusal, nothing bought, or None."""
+    `target`; the purchase logged as a `move`, told as `tell` to the seller, with the tax; a dish
+    eaten at once, and anything else bought for itself taken in by the hungry. Returns the
+    refusal, nothing bought, or None."""
     price = 0 if seller is r else total
     if refusal := world.cannot_pay(r, price):
         return refusal
@@ -567,7 +565,6 @@ def _sell(
         bought = amount(thing, units) + (" for the kitchen" if for_the_kitchen else "")
         r.inventory.spend(price, "bought", bought)
         tax = world.earn(seller, price, business.takings)
-    add(world.daybook.today[business.daybook], thing.id, units)
     withheld = f", of which {world.config.money(tax)} in tax." if tax else "."
 
     def told(w: str | None) -> str:
@@ -723,9 +720,8 @@ def _charge(
     world: World, doctor: Resident, patient: Resident, service: str
 ) -> tuple[int, int] | str:
     """`patient` pays the fee of `service` (`examination` or `treatment`) from its purse into
-    the `doctor`'s, the tax withheld (`World.earn`), unless it is the doctor, who pays nothing,
-    and is counted among the day's patients: the fee and the tax; or, in the doctor's words, why
-    it cannot pay."""
+    the `doctor`'s, the tax withheld (`World.earn`), unless it is the doctor, who pays nothing:
+    the fee and the tax; or, in the doctor's words, why it cannot pay."""
     fee = 0 if patient is doctor else SURGERY.prices(world)[service]
     if fee > patient.inventory.money:
         return f"{patient.name} does not have the {world.config.money(fee)} the {service} costs."
@@ -735,7 +731,6 @@ def _charge(
             fee, "paid", f"an {service}" if service[0] in "aeiou" else f"a {service}"
         )
         tax = world.earn(doctor, fee, SURGERY.takings)
-    world.daybook.today[SURGERY.daybook].append([patient.name, service])
     return fee, tax
 
 
@@ -806,14 +801,6 @@ def _see(world: World, r: Resident, name: str, service: str) -> ToolResult:
     return ToolResult(f"{sat}{told(r.name)}")
 
 
-async def _report(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    sat = working_at(world, r, "hall")
-    if isinstance(sat, ToolResult):
-        return sat
-    world.record("report", lambda w: f"{cap(you(r.name, w))} read the town's report.", actor=r)
-    return ToolResult(f"{sat}{world.report()}")
-
-
 async def _announce(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     text = args["text"].strip()
     if not text:
@@ -850,7 +837,6 @@ async def _grant(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         return ToolResult(f"{sat}The treasury holds only {money(treasury.balance)}.")
     treasury.pay("grant", amount_)
     other.inventory.receive(amount_, "granted", f"granted by {r.name}: “{reason}”")
-    world.daybook.today["grants"].append([other.name, amount_, reason])
     granted = f"{money(amount_)} from the treasury: “{reason}”"
     world.record(
         "grant",
@@ -1036,7 +1022,6 @@ HANDLERS: dict[str, Handler] = {  # and the Office's, `world.office.HANDLERS`
     "set_price": _set_price,
     "examine": _examine,
     "treat": _treat,
-    "report": _report,
     "announce": _announce,
     "grant": _grant,
     "leave_work": _leave_work,

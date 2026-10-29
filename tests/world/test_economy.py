@@ -1,10 +1,10 @@
 """Money: the inventory and the town's treasury. A client's payment shared between the one who
 handed the task in and the team leader, a tenth withheld into the treasury at receipt; the rent
 taken at midnight from the purse above a day's bread, the rest owed and taken later; the mayor's
-salary paid as far as the treasury holds and the rest owed; the mayor's grants; the statement
-and the treasury's report; money and things handed over; and the invariant that the purses and
-the treasury change only by what clients pay and the supplier is paid. The sales, the dishes and
-the supplier are in test_shops."""
+salary paid as far as the treasury holds and the rest owed; the mayor's grants; the statement,
+and the treasury's day in the mayor's; money and things handed over; and the invariant that the
+purses and the treasury change only by what clients pay and the supplier is paid. The sales, the
+dishes and the supplier are in test_shops."""
 
 from __future__ import annotations
 
@@ -111,11 +111,10 @@ async def test_rent_is_taken_at_midnight_from_the_purse_above_a_days_bread_and_t
     treasury = world.treasury
     assert treasury.balance == 1000 + 20 + 30 + 5 and treasury.ledger == {}
     assert treasury.yesterday == {"rent": 55} and treasury.arrears == {"Aisha": 15}
-    assert world.treasury_report() == (
-        "The treasury holds $1055 now. So far today it took in nothing and paid out nothing; "
-        "yesterday it took in $55 in rent and daily charges and paid out nothing. Owing rent "
-        "their purses could not spare: Aisha $15."
-    )
+    assert world.treasury_told(treasury.yesterday) == (
+        "The treasury took in $55 in rent and daily charges and paid out nothing, and holds "
+        "$1055. Owing rent their purses could not spare: Aisha $15."
+    )  # as the run's log tells the day; a town without a mayor has nobody else told it
     assert total(world) == before  # rent moves money within the town
     # The next day what she owes is taken with the day's rent, as far as her purse spares it.
     town.rest()
@@ -158,22 +157,24 @@ async def test_the_treasury_pays_the_mayors_salary_as_far_as_it_holds_and_owes_t
     assert payload["money"] == 100 + 20 - 30
     assert (treasury.balance, treasury.owed) == (30, {"Vera": 10})
     assert treasury.yesterday == {"rent": 50, "salary": 20}
-    assert world.treasury_report() == (
-        "The treasury holds $30 now. So far today it took in nothing and paid out nothing; "
-        "yesterday it took in $50 in rent and daily charges and paid out $20 in salary. It owes "
-        "in salary it could not pay: Vera $10."
+    # The mayor's statement ends with the treasury's whole day, his own salary and rent in it.
+    assert statements(town, "Vera")[-1].endswith(
+        "The treasury took in $50 in rent and daily charges and paid out $20 in salary, and holds "
+        "$30. It owes you $10 in salary it could not pay."
     )
+    assert "The treasury" not in statements(town, "Aisha")[-1]
     # What it owes is paid with the next salary, as far as it then holds the money.
     treasury.take("tax", 20)  # taxes meanwhile, which account for the balance as they come
-    assert world.treasury_report().startswith(
-        "The treasury holds $50 now. So far today it took in $20 in taxes and paid out nothing; "
-        "yesterday it took in $50"
-    )
     await town.until("00:00", day=3)
-    assert statements(town, "Vera")[-1].startswith(
+    told = statements(town, "Vera")[-1]
+    assert told.startswith(
         "Your statement for Tuesday 2 January: your salary $30 and $10 the treasury owed you, "
         "paid into your purse; rent for your room at the flat by the college gates $30; your "
         "purse paid it."
+    )
+    assert told.endswith(
+        "The treasury took in $20 in taxes and $30 in rent and daily charges and paid out $40 in "
+        "salary, and holds $40. Owing rent their purses could not spare: Aisha $20."
     )
     assert treasury.owed == {} and treasury.arrears == {"Aisha": 20}  # her purse spares nothing
     assert treasury.balance == 30 + 20 - 40 + 30
@@ -212,11 +213,6 @@ async def test_the_mayor_grants_money_from_the_treasury_at_the_hall_for_a_reason
         ([], {"to": "Vera", "amount": 5, "reason": "Stamps for the Hall.", "treasury": 980}),
     ]
     assert treasury.ledger == {"grant": 20} and total(world) == before
-    report = (await town.call("Vera", "report")).text
-    assert (
-        "granted $15 to Mei (“For the new roof.”) and $5 to Vera (“Stamps for the Hall.”)."
-        in report
-    )
     for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
@@ -224,10 +220,7 @@ async def test_the_mayor_grants_money_from_the_treasury_at_the_hall_for_a_reason
         "Your statement for Monday 1 January: received $15 from the treasury, granted by Vera: "
         "“For the new roof.”; rent for your room"
     )
-    assert world.daybook.yesterday["grants"] == [
-        ["Mei", 15, "For the new roof."],
-        ["Vera", 5, "Stamps for the Hall."],
-    ]
+    assert "and paid out $30 in salary and $20 in grants, and holds" in town.take("Vera")[-1]
 
 
 async def test_purses_and_the_treasury_change_only_by_the_clients_and_the_supplier(make_town):

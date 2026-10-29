@@ -184,7 +184,7 @@ class Rules:
         accepted, a fifth to the team leader and the rest to whoever handed it in; the chef, the
         shopkeeper and the doctor are paid by their customers and the mayor from the town's
         treasury`); and the tax withheld into the treasury, with what else the treasury takes
-        and pays, which to the mayor is what it is there for and where he sees it."""
+        and pays, which to the mayor is what it is there for."""
         c, money = self.config, self.config.money
         staffed = self._staffed()
         paid = []
@@ -214,8 +214,7 @@ class Rules:
             )
             pays = (
                 f" and is there to pay {salary}whatever you grant residents at "
-                f"{c.place(occupation.workplace).name}; your report shows what it holds and takes "
-                "in"
+                f"{c.place(occupation.workplace).name}"
             )
         else:
             paying = [f"{title}'s salary" for title in salaried]
@@ -356,16 +355,12 @@ class Rules:
         )
 
         hall_work = (
-            f"At {hall.name} the mayor reads the town's report with report: what the treasury "
-            "holds now, what it took in and paid out so far today and yesterday, the grants, what "
-            "it owes and who owes rent; the tasks open at "
-            f"{office.name} and those accepted, and by whom; the stock, prices and sales of "
-            f"{store.name}; the menu and the dishes served at {restaurant.name}; the patients of "
-            f"{hospital.name}; and each resident's occupation, time at work and health as others "
-            "see it, but nobody's purse. With announce the mayor tells every resident something, "
-            f"at once or on waking, and it stays on the board at {hall.name}, which anyone there "
-            "can read with look_around. With grant the mayor pays money from the treasury to "
-            "anyone, for a reason, which the report shows."
+            f"At {hall.name} the mayor tells every resident something with announce, at once or "
+            f"on waking, and it stays on the board at {hall.name}, which anyone there can read "
+            "with look_around. With grant the mayor pays money from the treasury to anyone, for "
+            "a reason, which the one paid is told. Each midnight the mayor's statement tells the "
+            "treasury's day: what it took in and paid out, what it holds, the salary it owes and "
+            "who owes it rent."
         )
 
         fees_charged = any(item.fee_per_day for item in c.items)

@@ -110,20 +110,19 @@ def test_each_occupation_is_told_its_own_work_and_what_it_is_paid_for():
         in (told["Lucia"]["work"])
     )
     assert told["Vera"]["work"] == (
-        "You are the mayor at the hall. There you read the town's report with report, with "
-        "announce you tell every resident whatever you want them to know, and with grant you pay "
-        "money from the town's treasury to anyone, for a reason the report gives. Your work is "
-        "being about the town, so once you have sat down to work it goes with you wherever you "
+        "You are the mayor at the hall. There you tell every resident whatever you want them to "
+        "know with announce, and with grant you pay money from the town's treasury to anyone, for "
+        "a reason you give. Each midnight your statement tells you the treasury's day. Your work "
+        "is being about the town, so once you have sat down to work it goes with you wherever you "
         "go. You sit down to work there with start_work, or by doing your work, and are at work "
         "until you stop with leave_work."
     )  # the mayor's duty runs anywhere; everyone else's ends on leaving the workplace
-    # The mayor is told what the treasury is for and where he sees it; the others whom it pays.
+    # The mayor is told what the treasury is for; the others whom it pays.
     assert told["Vera"]["money"] == (
         f"{economy} and is there to pay your salary of $30 a day at midnight, as far as it holds "
-        "the money, and whatever you grant residents at the hall; your report shows what it holds "
-        "and takes in. You have $100 to begin with. Your rent, $30 a day, is taken from your "
-        "purse at midnight, never its last $10, a day's bread; what cannot be taken you owe, to "
-        "be taken later."
+        "the money, and whatever you grant residents at the hall. You have $100 to begin with. "
+        "Your rent, $30 a day, is taken from your purse at midnight, never its last $10, a day's "
+        "bread; what cannot be taken you owe, to be taken later."
     )
     assert told["Olga"]["money"].startswith(
         f"{economy} and pays the mayor's salary and what the mayor grants. You have $100"
@@ -173,7 +172,6 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
     assert (
         "A treatment, $30 at the start, restores 25 of the patient's health" in (topics["hospital"])
     )
-    assert "but nobody's purse. With announce the mayor tells every resident" in topics["hall"]
     assert topics["hospital"].endswith("The patient pays the fee, which the doctor sets.")
     for told in (
         "The tax is withheld from each payment as it comes in, rounded down, and you are told how "
@@ -183,11 +181,14 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
         "money, owing the rest.",
     ):
         assert told in topics["money"], told
-    assert (
-        "what the treasury holds now, what it took in and paid out so far today and yesterday, "
-        "the grants"
-    ) in topics["hall"]
-    assert "With grant the mayor pays money from the treasury to anyone" in topics["hall"]
+    assert topics["hall"] == (
+        "At the hall the mayor tells every resident something with announce, at once or on "
+        "waking, and it stays on the board at the hall, which anyone there can read with "
+        "look_around. With grant the mayor pays money from the treasury to anyone, for a reason, "
+        "which the one paid is told. Each midnight the mayor's statement tells the treasury's "
+        "day: what it took in and paid out, what it holds, the salary it owes and who owes it "
+        "rent."
+    )  # nothing reports the town to the mayor beyond the treasury
     assert "At midnight the rent is taken, your health is reckoned" in topics["day"]
     assert "each night costs you 3 of your health and mends nothing" in topics["body"]
     assert "it passes after 5 nights, or when the doctor treats you" in topics["body"]

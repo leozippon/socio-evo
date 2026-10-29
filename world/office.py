@@ -101,6 +101,9 @@ class Board:
         """The times of the arrivals still to come today."""
         self.open: dict[int, int] = {}
         """The tasks open on the board, each with the calendar day it came."""
+        self.accepted: list[list[str | int]] = []
+        """The tasks accepted since the last midnight, each `[name, task]`, which the team
+        leader's statement tells."""
         self.claims: dict[str, Claim] = {}
         self.runs: dict[str, dict[int, int]] = {name: {} for name in names}
         self.orphans: list[Workspace] = []
@@ -288,17 +291,20 @@ class Board:
 
     def saved(self) -> dict[str, Any]:
         """What a checkpoint keeps of the board, beside the claims: how many tasks have come,
-        the arrivals still to come and the open tasks, each `[task, the day it came]`."""
+        the arrivals still to come, the open tasks, each `[task, the day it came]`, and those
+        accepted since the last midnight."""
         return {
             "arrived": self.arrived,
             "schedule": list(self.schedule),
             "open": [[number, day] for number, day in sorted(self.open.items())],
+            "accepted": [list(done) for done in self.accepted],
         }
 
     def restore(self, saved: dict[str, Any]) -> None:
         self.arrived = saved["arrived"]
         self.schedule = list(saved["schedule"])
         self.open = {number: day for number, day in saved["open"]}
+        self.accepted = [list(done) for done in saved["accepted"]]
 
 
 def arrival(world: World, t: int) -> None:
@@ -342,13 +348,11 @@ def withdrawals(world: World, day: int) -> None:
 def day_told(world: World, r: Resident, day: int) -> str:
     """The Office's day, as the team leader `r`'s statement tells it at the midnight that
     ends calendar day `day`, before the clients withdraw what is out of time: the tasks
-    accepted that day and by whom (the daybook's), those the clients withdraw at this
+    accepted that day and by whom (`Board.accepted`), those the clients withdraw at this
     midnight and who held them, and the tasks left open on the board, with those that came
     in that day and who holds each."""
     board = world.board
-    accepted = [
-        f"task {task} by {you(name, r.name)}" for name, task in world.daybook.today["accepted"]
-    ]
+    accepted = [f"task {task} by {you(str(name), r.name)}" for name, task in board.accepted]
     withdrawn, left = [], []
     for number in sorted(board.open):
         holder = board.holder(number)
@@ -622,7 +626,7 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
     finished = board.finish(r.name)
     if finished is not None:
         await finished.close()
-    world.daybook.today["accepted"].append([r.name, number])
+    board.accepted.append([r.name, number])
     told = ("Accepted.", _paid(world, r, number), world.purse(r), hour_told(world))
     return ToolResult(" ".join(told))
 

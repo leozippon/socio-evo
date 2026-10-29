@@ -272,7 +272,7 @@ async def test_an_accepted_task_is_paid_once_and_leaves_the_board_for_good(make_
             f"2. org/repo2: Problem 2 goes wrong. The client pays $50 {withdrawn}",
             f"3. org/repo3: Problem 3 goes wrong. The client pays $50 {withdrawn}",
         ]
-    assert town.world.daybook.today["accepted"] == [["Mei", 1]]
+    assert town.world.board.accepted == [["Mei", 1]]
     kinds = town.kinds()
     assert kinds.index("submission") < kinds.index("verdict") < kinds.index("service")
 

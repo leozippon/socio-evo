@@ -1,8 +1,8 @@
 """The Hospital and the Town Hall: the doctor's examination and treatment, at the surgery while
 at work there and at the bedside of one too ill to get up, for fees the patient pays into the
-doctor's purse, the tax withheld, and the doctor sets; the mayor's report of the town's day and
-the treasury's, and announcements told to everyone, kept on the hall's board and by the
-checkpoint. The mayor's grants are in test_economy."""
+doctor's purse, the tax withheld, and the doctor sets; the treasury's day in the mayor's
+statement, and announcements told to everyone, kept on the hall's board and by the checkpoint.
+The mayor's grants are in test_economy."""
 
 from __future__ import annotations
 
@@ -106,9 +106,7 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
     assert (await town.call("Lucia", "examine", patient="Lucia")).text.startswith(
         "You examined yourself. Food: "
     )
-    assert lucia.inventory.money == 136 and world.daybook.today["patients"] == [
-        ["Mei", "examination"], ["Mei", "treatment"], ["Lucia", "examination"],
-    ]  # fmt: skip
+    assert lucia.inventory.money == 136
     town.rest()
     await town.until("00:00", day=2)
     statement = [p.text for p in town.heard["Mei"] if p.kind == "settlement"][-1]
@@ -144,7 +142,9 @@ async def test_the_doctor_treats_one_too_ill_to_get_up_at_the_bedside(make_town)
     )
 
 
-async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, tmp_path):
+async def test_the_mayors_statement_tells_the_treasurys_day_and_he_announces_at_the_hall(
+    make_town, tmp_path
+):
     town = make_town(TOWN)
     await awake_at(town)
     stocked(town)
@@ -155,7 +155,7 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
         await town.call(name, "go", place="store")
     await town.call("Vera", "go", place="hall")
     await town.until("08:10")
-    assert (await town.call("Vera", "report")).text.startswith("You sat down to work.")
+    await town.call("Vera", "start_work")
     await town.call("Mei", "claim_task", task=1)
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     await town.call("Mei", "submit")
@@ -165,39 +165,20 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
     await town.until("16:10")
     for name in ("Mei", "Tomas", "Olga", "Vera"):
         await town.call(name, "leave_work")
-    world.residents["Aisha"].living.health = 30  # looking unwell
     town.rest()
     await town.until("09:00", day=2)
+    # Settled last, the mayor is told the treasury's whole day with his statement; nobody else is.
+    settled = [e for e in world.log.entries() if e["kind"] == "settlement"]
+    assert settled[-1]["actor"] == "Vera"
+    assert settled[-1]["personal"]["Vera"].endswith(
+        "Your purse holds $100. The treasury took in $5 in taxes and $182 in rent and daily "
+        "charges and paid out $30 in salary, and holds $1157. Owing rent their purses could not "
+        "spare: Aisha $8."
+    )
+    assert not any("The treasury took in" in e["personal"][e["actor"]] for e in settled[:-1])
     await town.call("Vera", "go", place="hall")
     await town.until("09:15", day=2)
-    report = (await town.call("Vera", "report")).text
-    assert report == (
-        "You sat down to work. It is 09:15. The town's report, Tuesday 2 January, 09:15.\n\n"
-        "The treasury. The treasury holds $1157 now. So far today it took in nothing and paid "
-        "out nothing; yesterday it took in $5 in taxes and $182 in rent and daily charges and "
-        "paid out $30 in salary. Owing rent their purses could not spare: Aisha $8.\n\n"
-        "The last days, as each closed at midnight:\n"
-        "Monday 1 January: the treasury held $1157 at midnight, up $157 on the day; accepted "
-        "task 1 by Mei; sold 2 helpings of bread; served nothing; nobody seen at the clinic.\n\n"
-        "Today.\n"
-        "The workshop. Open on the board: task 2 (org/repo2), held by nobody; task 3 "
-        "(org/repo3), held by Tomas.\n"
-        "The store. In stock: bread $4 (8 left), eggs $2 (10 left), vegetables $3 (10 left), "
-        "bicycle $50 (1 left), phone $40 (2 left) and coat $30 (1 left).\n"
-        "The café on the square. On the menu: omelette $10 (none ready) and vegetable soup $8 "
-        "(none ready).\n"
-        "The clinic. An examination costs $10, a treatment $30.\n"
-        "So far today: accepted nothing; sold nothing; served nothing; nobody seen at the "
-        "clinic.\n\n"
-        "The residents. Mei, a programmer: 8 hours at work yesterday. Tomas, a programmer: 8 "
-        "hours at work yesterday. Aisha, a programmer: no time at work yesterday, looking "
-        "unwell. Olga, the shopkeeper: 8 hours at work yesterday. Jonas, the chef: no time at "
-        "work yesterday. Lucia, the doctor: no time at work yesterday. Vera, the mayor: 8 hours "
-        "at work yesterday.\n\n"
-        "The hall. Nothing is posted on the board."
-    )
-    (read,) = [e for e in world.log.entries() if e["kind"] == "report"][-1:]
-    assert (read["text"], read["payload"]) == ("Vera read the town's report.", {})
+    await town.call("Vera", "start_work")
     # An announcement is told to everyone, asleep or awake, without drawing anyone from what it
     # is doing, and stays on the board at the hall.
     assert (await town.call("Mei", "announce", text="Hello.")).text == (
@@ -218,9 +199,7 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
         "On the board, the mayor's announcements:\n"
         "Tuesday 2 January, 09:15: “The well is dry; boil your water.”"
     )
-    assert world.report().endswith("Tuesday 2 January, 09:15: “The well is dry; boil your water.”")
-    assert (await town.call("Mei", "report")).text == "That is not your work: you are a programmer."
-    # The mayor's duty runs on wherever she goes, until she stops; the report is read at the hall.
+    # The mayor's duty runs on wherever she goes, until she stops; her work is done at the hall.
     vera = world.residents["Vera"]
     went = await town.call("Vera", "go", place="park")
     assert went.text == "You set off for the park and will arrive at 09:25."
@@ -232,18 +211,19 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
         .situation()
         .startswith("Tuesday 2 January, 09:30. You are at the park, at work.")
     )
-    assert (await town.call("Vera", "report")).text == "You can do that only at the hall."
+    assert (await town.call("Vera", "announce", text="Market day.")).text == (
+        "You can do that only at the hall."
+    )
     assert (await town.call("Vera", "leave_work")).text == "You stopped work. It is 09:30."
     assert vera.worked == 15 * 60  # from 09:15 at the hall, on the way and at the park
     await town.call("Vera", "how_am_i")  # the body reckoned: idle, the hours stand
     await town.until("10:00", day=2)
     await town.call("Vera", "how_am_i")
     assert vera.worked == 15 * 60
-    # The checkpoint keeps the announcements, the fees and the days the report tells.
+    # The checkpoint keeps the announcements.
     await town.until("03:00", day=3)
     (_, state) = town.checkpoints[-1]
     assert state["announcements"] == [[at("09:15", day=2), "The well is dry; boil your water."]]
-    assert len(state["daybook"]["days"]) == 2
     make_agent_dirs(tmp_path / "r", world.config)
     restored = World(world.config, tmp_path / "r", FakeBackend(), clock=ManualClock())
     restored.restore(json.loads(json.dumps(state)))

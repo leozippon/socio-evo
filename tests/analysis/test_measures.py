@@ -97,7 +97,6 @@ def test_the_evenings_trades_as_the_town_lived_them(rows):
     assert [rows[name, 1]["hungry"] for name in NAMES] == [1, 1, 1, 1, 1, 1, 0, 0]
     assert all(rows[name, 2]["hungry"] == 1 for name in NAMES)
     assert sum(rows[name, 1]["treatments_given"] for name in NAMES) == 0
-    assert all(rows[name, 1]["reports_read"] == 0 for name in NAMES)
     # Those still at work at midnight worked on until the forced sleep, two hours of the
     # second calendar day.
     assert [rows[name, 2]["hours_at_work"] for name in ("Olga", "Jonas", "Lucia", "Vera")] == [

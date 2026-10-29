@@ -73,18 +73,18 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     """Day 1 and day 2 until 18:05. The three tasks of the pool come in at 08:00. Olga opens the
     Store at 07:10 and sets the price of vegetables, of which Jonas buys some, and eggs, for the
     kitchen, paying her; she orders bread for the morning from her purse. Jonas cooks an omelette
-    and two soups at the café at 07:30. Vera reads the report at the hall, announces and grants
-    Aisha $5 from the treasury. Mei works, talks, passes Tomas money and is paid her share of the
-    client's payment; at 10:30 she leaves for the clinic, where Lucia examines and treats her, has
-    the omelette at the café, where Jonas serves her a soup unpaid, buys three helpings of bread at
-    the Store, leaves one there, which Olga takes and eats, goes home, eats one and leaves the last
-    there, where it lies. Tomas, the team leader, is paid his share of Mei's task, fails a task of
-    his own and gives the third to Aisha at home; he works until 18:00, and both keep their tasks
-    until the clients withdraw them at midnight. Every payment for work has a tenth withheld, none
-    of them falling on a half. The four at the trades leave work at 18:00 for the flat, and are put
-    to sleep at the forced hour with Aisha, who stays home and eats nothing; the soup nobody had is
-    gone at midnight, when the treasury pays Vera her salary and takes everyone's rent, of which
-    Aisha's purse spares only part, the rest owed."""
+    and two soups at the café at 07:30. Vera announces at the hall and grants Aisha $5 from the
+    treasury. Mei works, talks, passes Tomas money and is paid her share of the client's payment; at
+    10:30 she leaves for the clinic, where Lucia examines and treats her, has the omelette at the
+    café, where Jonas serves her a soup unpaid, buys three helpings of bread at the Store, leaves
+    one there, which Olga takes and eats, goes home, eats one and leaves the last there, where it
+    lies. Tomas, the team leader, is paid his share of Mei's task, fails a task of his own and gives
+    the third to Aisha at home; he works until 18:00, and both keep their tasks until the clients
+    withdraw them at midnight. Every payment for work has a tenth withheld, none of them falling on
+    a half. The four at the trades leave work at 18:00 for the flat, and are put to sleep at the
+    forced hour with Aisha, who stays home and eats nothing; the soup nobody had is gone at
+    midnight, when the treasury pays Vera her salary and takes everyone's rent, of which Aisha's
+    purse spares only part, the rest owed."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)
@@ -106,7 +106,6 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Jonas", "go", place="cafe")
     await town.call("Olga", "order", item="bread", quantity=5)
     await town.call("Lucia", "start_work")
-    await town.call("Vera", "report")
     await town.call("Vera", "announce", text="The hall is open every day.")
     await town.call("Vera", "grant", amount=5, to="Aisha", reason="For the rent.")
     await town.until("07:30")

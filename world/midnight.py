@@ -1,7 +1,7 @@
 """Midnight, the end of a calendar day: every resident settled (its body brought up to the hour,
 its health moved by the day, its illness passing or coming, its salary paid if it has one and its
-rent and daily charges taken by the treasury, and its statement told), the treasury's day and the
-daybook's closed, the clients' withdrawals, what perishes gone wherever it is, and the next day's
+rent and daily charges taken by the treasury, and its statement told), the Office's day and the
+treasury's closed, the clients' withdrawals, what perishes gone wherever it is, and the next day's
 arrivals drawn.
 """
 
@@ -15,9 +15,9 @@ from world import office
 from world.businesses import KITCHEN
 from world.clock import tell_date
 from world.config import A_DAYS_FOOD, Item, Place
-from world.economy import MOVES, PORTIONS, Inventory, Settled
-from world.occupations import TEAM_LEADER
-from world.telling import amount, bare, listed
+from world.economy import MOVES, PAID, PORTIONS, TAKEN, Inventory, Settled
+from world.occupations import MAYOR, TEAM_LEADER
+from world.telling import amount, bare, listed, you
 
 if TYPE_CHECKING:
     from world.world import Resident, World
@@ -39,15 +39,17 @@ def midnight(world: World, day: int) -> None:
 
 def _settle(world: World, day: int) -> None:
     """Midnight for every resident, in the configuration's order but with the salaried last,
-    once the day's rents are in the treasury: its body is brought up to the hour and its health
-    moves by the day (a resident whose health has reached its floor takes to its bed here), its
-    illness passes or comes (`_illness`), the day's food is reckoned, its salary is paid and its
-    rent, daily charges and arrears are taken from its purse above what it spares
-    (`Treasury.settle`), and the statement is told, the team leader's with the Office's day
-    (`office.day_told`); then the daybook's day and the treasury's are closed."""
+    once the day's rents are in the treasury, and the mayor after them, once the whole day is in
+    its ledger: its body is brought up to the hour and its health moves by the day (a resident
+    whose health has reached its floor takes to its bed here), its illness passes or comes
+    (`_illness`), the day's food is reckoned, its salary is paid and its rent, daily charges and
+    arrears are taken from its purse above what it spares (`Treasury.settle`), and the statement
+    is told, the team leader's with the Office's day (`office.day_told`) and the mayor's with the
+    treasury's (`treasury_told`); then the Office's day and the treasury's are closed."""
     date = tell_date(day, world.config.start_date)
-    hours: dict[str, int] = {}
-    residents = sorted(world.residents.values(), key=lambda r: r.occupation.salary > 0)
+    residents = sorted(
+        world.residents.values(), key=lambda r: (r.occupation.salary > 0, r.occupation.id == MAYOR)
+    )
     for r in residents:
         world.reckon(r)
         living, inventory = r.living, r.inventory
@@ -89,11 +91,16 @@ def _settle(world: World, day: int) -> None:
             f"You ate today: {listed(eaten)}." if nourishment else "You had nothing to eat today."
         )
         items = _moves_told(world, inventory) + _settled_told(world, settled, home, charged)
-        office_day = [office.day_told(world, r, day)] if r.occupation.id == TEAM_LEADER else []
+        if r.occupation.id == TEAM_LEADER:
+            work_day = [office.day_told(world, r, day)]
+        elif r.occupation.id == MAYOR:
+            work_day = [treasury_told(world, world.treasury.ledger, r.name)]
+        else:
+            work_day = []
         statement = " ".join(
             [f"Your statement for {date}: {'; '.join(items)}.", food, *stock]
             + ([illness] if illness else [])
-            + [world.body.condition(living), world.purse(r), *office_day]
+            + [world.body.condition(living), world.purse(r), *work_day]
         )
         world.record(
             "settlement",
@@ -115,10 +122,30 @@ def _settle(world: World, day: int) -> None:
                 "ill": living.ill,
             },
         )
-        hours[r.name] = r.worked
         living.eaten, inventory.moves, r.worked = {}, [], 0
-    world.daybook.close_day(day, hours, world.treasury)
+    world.board.accepted = []
     world.treasury.close_day()
+
+
+def treasury_told(world: World, moved: dict[str, int], reader: str | None = None) -> str:
+    """The treasury's day, `moved` being its movements of the day by kind: what it took in and
+    paid out, what it holds, the salary it owes and the rent owed to it, `reader` named "you".
+    The mayor's statement tells it at midnight from the ledger, before the day closes; the run's
+    log from the day closed (`Treasury.yesterday`), naming everyone."""
+    treasury, money = world.treasury, world.config.money
+    took = [f"{money(moved[kind])} {words}" for kind, words in TAKEN.items() if kind in moved]
+    paid = [f"{money(moved[kind])} {words}" for kind, words in PAID.items() if kind in moved]
+    told = [
+        f"The treasury took in {listed(took) or 'nothing'} and paid out "
+        f"{listed(paid) or 'nothing'}, and holds {money(treasury.balance)}."
+    ]
+    if treasury.owed:
+        owed = [f"{you(name, reader)} {money(n)}" for name, n in treasury.owed.items()]
+        told.append(f"It owes {listed(owed)} in salary it could not pay.")
+    if treasury.arrears:
+        owing = [f"{you(name, reader)} {money(n)}" for name, n in treasury.arrears.items()]
+        told.append(f"Owing rent their purses could not spare: {listed(owing)}.")
+    return " ".join(told)
 
 
 def _illness(world: World, r: Resident, day: int, was_ill: int, comfort: float) -> str | None:

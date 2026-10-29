@@ -155,10 +155,11 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["residents"]["Mei"]["claim"] == {"task": 2, "diff": json.dumps({"b.py": "half\n"})}
     assert state["residents"]["Mei"]["home"] == "mill-street-house"
     # Task 1 was accepted; 2 and 3, which came in on day 1, stay open until the end of day 2.
-    assert state["office"] == {"arrived": 3, "schedule": [], "open": [[2, 1], [3, 1]]}
+    # Task 1, accepted on day 1, was told in the leader's statement and the day closed at midnight.
+    assert state["office"] == {
+        "arrived": 3, "schedule": [], "open": [[2, 1], [3, 1]], "accepted": [],
+    }  # fmt: skip
     assert state["fees"] == {"examination": 10, "treatment": 30} and state["announcements"] == []
-    assert state["daybook"]["today"]["accepted"] == []
-    assert state["daybook"]["days"][-1]["accepted"] == [["Mei", 1]]
     mei_living = state["residents"]["Mei"]["living"]
     # Mei ate two helpings of her bread on day 1, when she could eat, and none yet today; she
     # was paid $50 for task 1, and the treasury took her rent from her purse at midnight.
@@ -302,7 +303,6 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Jonas", "buy", item="eggs", units=2, for_the_kitchen=True)
     await town.call("Jonas", "buy", item="vegetables", for_the_kitchen=True)
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
-    await town.call("Vera", "report")
     await town.call("Vera", "announce", text="The well is dry.")
     await town.call("Vera", "grant", amount=5, to="Mei", reason="For the phone.")
     for name in ("Mei", "Jonas"):

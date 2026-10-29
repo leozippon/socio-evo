@@ -1,5 +1,5 @@
 """The town's things and money: the holders of items, each resident's inventory, the town's
-treasury, the Store's orders, and the daybook of what the report tells.
+treasury and the Store's orders.
 
 Every unit of an item is held by exactly one `Holder`, which keeps the units of each item it
 holds: a resident, by its `Inventory`; a place, by what is left there for anyone to take and, at the
@@ -24,24 +24,23 @@ and, at midnight, the rent of the homes and the daily charges, from each purse o
 `spares` (`Treasury.settle`), the rest owed to it (`arrears`) and taken at later midnights; it pays
 each salaried occupation's salary at midnight as far as it holds the money, owing the rest
 (`owed`), and the mayor's grants. Its `ledger` keeps its movements since the last midnight by kind
-(`TAKEN` and `PAID`), and `yesterday` those of the day the last midnight closed.
+(`TAKEN` and `PAID`), which the mayor's statement tells at midnight, and `yesterday` those of the
+day the last midnight closed.
 
 The `Store` keeps the orders on their way, its shelves being a holder (the businesses' prices are
-`world.businesses`'). The `Daybook` keeps, day by day, the treasury's balance and its net, what the
-Store sold, the dishes served, the patients seen, the tasks accepted, the grants and the hours at
-work, for the mayor's report. All are checkpointed whole.
+`world.businesses`'). The inventories, the treasury and the Store are checkpointed whole.
 """
 
 from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Literal
 
 TAKEN = {"tax": "in taxes", "rent": "in rent and daily charges"}
-"""The kinds of money the treasury takes in, with how the report words each."""
+"""The kinds of money the treasury takes in, with how the mayor's statement words each."""
 PAID = {"salary": "in salary", "grant": "in grants"}
-"""The kinds of money the treasury pays out, with how the report words each."""
+"""The kinds of money the treasury pays out, with how the mayor's statement words each."""
 
 
 def add(stock: dict[str, int], item: str, units: int) -> None:
@@ -250,48 +249,3 @@ class Store:
                 waiting.append([item, units, t])
         self.pending = waiting
         return came
-
-
-WEEK = 7
-"""The closed days the daybook keeps."""
-
-
-def new_day() -> dict[str, Any]:
-    """A day of the daybook with nothing in it yet."""
-    return {"sales": {}, "dishes": {}, "patients": [], "accepted": [], "grants": [], "hours": {}}
-
-
-@dataclass
-class Daybook:
-    """What the report tells of the town's days, checkpointed whole: for the day since the last
-    midnight (`today`) and for each of the last `WEEK` days closed (`days`, the latest last), the
-    units of each item sold at the Store, for a resident or for the kitchen (`sales`), the
-    portions of each dish served (`dishes`), the patients the doctor saw, each `[name, service]`
-    with the service `examination` or `treatment` (`patients`), the tasks accepted, each `[name,
-    task]` (`accepted`), the mayor's grants, each `[name, amount, reason]` (`grants`), and, set as
-    the day closes, its calendar day (`day`), each resident's seconds at work (`hours`), the
-    treasury's balance (`treasury`) and what it took in less what it paid out that day
-    (`net`)."""
-
-    today: dict[str, Any] = field(default_factory=new_day)
-    days: list[dict[str, Any]] = field(default_factory=list)
-
-    def close_day(self, day: int, hours: dict[str, int], treasury: Treasury) -> None:
-        """Midnight that ends calendar day `day`, before the treasury's day closes: today, with
-        each resident's `hours` at work and the `treasury`'s balance and net, becomes the latest
-        closed day."""
-        taken = sum(treasury.ledger.get(kind, 0) for kind in TAKEN)
-        paid = sum(treasury.ledger.get(kind, 0) for kind in PAID)
-        self.today |= {
-            "day": day,
-            "hours": hours,
-            "treasury": treasury.balance,
-            "net": taken - paid,
-        }
-        self.days = [*self.days, self.today][-WEEK:]
-        self.today = new_day()
-
-    @property
-    def yesterday(self) -> dict[str, Any]:
-        """The day the last midnight closed; empty before the first."""
-        return self.days[-1] if self.days else new_day()

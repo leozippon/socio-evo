@@ -149,7 +149,6 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     texts.append((await town.call("Lucia", "examine", patient="Aisha")).text)  # cannot pay
     texts.append((await town.call("Vera", "announce", text="Market day.")).text)
     texts.append((await town.call("Vera", "look_around")).text)
-    texts.append((await town.call("Vera", "report")).text)
     texts.append((await town.call("Mei", "look_around")).text)
     texts.append((await town.call("Mei", "view_board")).text)
     texts.append((await town.call("Tomas", "assign", task=2, to="Aisha")).text)
@@ -181,7 +180,6 @@ async def test_every_rendered_text_passes_the_guard(make_town):
     texts.append((await town.call("Aisha", "look_around")).text)
     world_.treat(mei, 25)
     await town.until("18:00", day=2)
-    texts.append(world_.report())
     texts.append((await town.call("Mei", "how_am_i")).text)  # ill since the midnight
     for entry in world_.log.entries():
         if entry["audience"] or entry["personal"]:
