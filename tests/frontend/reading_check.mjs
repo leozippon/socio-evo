@@ -1,10 +1,12 @@
 // Checks how the viewer reads a published run (town/events.js, goods.js, replay.js): an entry
 // one resident alone knew of (a waking, a statement, sitting down to work, how the body felt) is
-// marked as known to that resident and something said to others is not; the person view's day
-// keeps the entries the resident perceived, what it did and what it was told, and nothing else,
-// so that another resident's waking never appears in it; every move reads by its reason and says where it happened, for the one
-// who made it and for the one it was made to; and what lies at a place is looked up from the
-// holders.
+// marked as known to that resident and something said to others is not, a remark said by name
+// included; whether an entry is private is decided from the whole entry, its actor and audience,
+// whoever reads it, and in a reader's wording a public entry it knew of names who else did; the
+// person view's day keeps the entries the resident perceived, what it did and what it was told,
+// and nothing else, so that another resident's waking never appears in it; every move reads by
+// its reason and says where it happened, for the one who made it and for the one it was made to;
+// and what lies at a place is looked up from the holders.
 //
 //   node tests/frontend/reading_check.mjs SITE RUN_PATH
 //
@@ -17,7 +19,7 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { describeMarker, knownOnlyTo, perceived } = await viewer("town/events.js");
+const { describeMarker, knewNote, knewOf, knownOnlyTo, perceived } = await viewer("town/events.js");
 const { itemsBrief } = await viewer("goods.js");
 const { lyingAt, shopsAt } = await viewer("replay.js");
 const { useCurrency } = await viewer("dom.js");
@@ -47,6 +49,37 @@ for (const e of entries) {
   if (e.kind === "speech") check(`speech ${e.seq} is known to more than its speaker`, knownOnlyTo(e), null);
 }
 check("wakings, statements, sitting down to work and conditions were read", Object.keys(seen).sort(), ["condition", "settlement", "start_work", "wake"]);
+
+// Whether an entry is private is decided from the whole entry, the same in the town's wording and
+// in every resident's, whichever entries a view keeps; a reader who knew of a public entry is told
+// who else did.
+for (const e of entries) {
+  for (const reader of [null, ...world.residents.map((r) => r.name)]) {
+    const note = knewNote(e, reader);
+    const knew = knewOf(e);
+    if (knew.length === 1) check(`entry ${e.seq} is private for ${reader ?? "the town"}`, note?.private, true);
+    else if (reader && knew.includes(reader)) check(`entry ${e.seq} names who else knew, for ${reader}`, [note?.private, note?.title], [false, `${knew.filter((name) => name !== reader).join(", ").replace(/, ([^,]*)$/, " and $1")} knew of this too`]);
+    else check(`entry ${e.seq} says nothing of who knew, for ${reader ?? "the town"}`, note, null);
+  }
+}
+const find = (keep) => {
+  const found = entries.find(keep);
+  if (!found) throw new Error(`no entry ${keep}`);
+  return found;
+};
+const notes = (e, ...readers) => readers.map((reader) => knewNote(e, reader)?.text ?? null);
+const toAll = find((e) => e.kind === "speech" && !e.payload.private);
+const byName = find((e) => e.kind === "speech" && e.payload.private);
+const sale = find((e) => e.kind === "move" && e.payload.reason === "buy" && e.actor === "Mei" && e.payload.seller === "Olga");
+const arrival = find((e) => e.kind === "arrive" && e.actor === "Jonas" && e.audience.includes("Olga"));
+const crowd = find((e) => e.kind === "arrive" && e.actor === "Tomas" && e.audience.length === 5);
+check("a remark to everyone, by the town, the hearer and the speaker", notes(toAll, null, "Mei", "Tomas"), [null, "Tomas knew too", "Mei knew too"]);
+check("a remark to everyone heard by two", notes({ ...toAll, audience: ["Mei", "Aisha"] }, null, "Mei"), [null, "Tomas and Aisha knew too"]);
+check("a remark said by name is not private", notes(byName, null, "Tomas", "Mei"), [null, "Mei knew too", "Tomas knew too"]);
+check("a sale told to the seller", notes(sale, null, "Olga", "Mei"), [null, "Mei knew too", "Olga knew too"]);
+check("an arrival told to those present", notes(arrival, null, "Olga", "Jonas"), [null, "Jonas knew too", "Olga knew too"]);
+check("an arrival told to many", [knewNote(crowd, "Olga").text, knewNote(crowd, "Olga").title], ["4 others knew too", "Tomas, Jonas, Lucia and Vera knew of this too"]);
+check("a waking, by the waker and by another", notes(find((e) => e.kind === "wake" && e.actor === "Olga"), "Olga", "Mei", null), ["only you knew", "only Olga knew", "only Olga knew"]);
 
 // The person view's day: what each resident did or was told, its own waking among it and nobody
 // else's; another's entry it was not told of is left out.

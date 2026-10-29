@@ -4,11 +4,13 @@
 //
 // A line reads as the town's people read it: an entry's own text, in the town's words. Where a
 // resident is chosen as the reader, what that resident was told reads in its own wording, as the
-// log keeps it ("You claimed task 13"): a private remark shows its words to those who heard it
-// and is something said out of earshot to a bystander, because that is what each was told. An
-// entry nobody but one resident knew of (its waking, its body, its sitting down to work, its
-// statement) says so. What a resident perceived is what it did and what the world told it: the
-// entries it is the actor of or among the audience of.
+// log keeps it ("You claimed task 13"): a remark said by name shows its words to those it was said
+// to and is something said out of earshot to a bystander, because that is what each was told.
+// Those who knew of an entry are its actor and its audience together, and they alone decide
+// whether it was private, wherever it is shown: an entry only one resident knew of (its waking,
+// its body, its sitting down to work, its statement) says so, and any other is public, a remark
+// said by name included; in a reader's wording, an entry the reader knew of says who else did.
+// What a resident perceived is what it knew of: what it did and what the world told it.
 
 import { hhmm, secondOfDay } from "../clock.js";
 import { fmt, h } from "../dom.js";
@@ -25,8 +27,11 @@ export const WORKSPACE = new Set(["command", "file_read", "file_write"]);
 /** Whether `name` was told the entry: in its own wording, or as one of the audience. */
 export const witnessed = (entry, name) => Boolean(entry.personal?.[name]) || entry.audience.includes(name);
 
-/** Whether `name` perceived the entry: it did it, or the world told it, as one of its audience. */
-export const perceived = (entry, name) => entry.actor === name || entry.audience.includes(name);
+/** The residents who knew of an entry: its actor and its whole audience together, the actor first. */
+export const knewOf = (entry) => [...new Set([entry.actor, ...entry.audience].filter(Boolean))];
+
+/** Whether `name` perceived the entry, that is knew of it: it did it, or the world told it. */
+export const perceived = (entry, name) => knewOf(entry).includes(name);
 
 /**
  * The one resident who knew of an entry when nobody else did: the actor or the one told, alone,
@@ -35,9 +40,25 @@ export const perceived = (entry, name) => entry.actor === name || entry.audience
  * of it, or nobody did.
  */
 export function knownOnlyTo(entry) {
-  const knew = new Set(entry.audience);
-  if (entry.actor) knew.add(entry.actor);
-  return knew.size === 1 ? [...knew][0] : null;
+  const knew = knewOf(entry);
+  return knew.length === 1 ? knew[0] : null;
+}
+
+/** Names in a few words: `Mei`, `Mei and Tomas`, `Mei, Tomas and Olga`. */
+const listed = (names) => (names.length > 1 ? `${names.slice(0, -1).join(", ")} and ${names.at(-1)}` : names.join(""));
+
+/**
+ * What a line says of who knew of an entry, for `reader` (null for the town's wording), as
+ * `{private, text, title}`: private, when one resident alone knew of it; else, when the reader
+ * knew of it, who else did; null otherwise.
+ */
+export function knewNote(entry, reader) {
+  const alone = knownOnlyTo(entry);
+  if (alone) return { private: true, text: `only ${alone === reader ? "you" : alone} knew`, title: `Nobody but ${alone} knew of this` };
+  const knew = knewOf(entry);
+  if (!reader || !knew.includes(reader)) return null;
+  const others = knew.filter((name) => name !== reader);
+  return { private: false, text: `${others.length > 3 ? `${others.length} others` : listed(others)} knew too`, title: `${listed(others)} knew of this too` };
 }
 
 /** The residents an entry concerns: its actor, its audience and the names its payload holds. */
@@ -115,7 +136,7 @@ function moveIcon(p) {
 }
 
 /** The icon of an entry, or of a marker given as `{kind, payload: marker}`. */
-export const iconFor = (entry) => (entry.kind === "move" ? moveIcon(entry.payload) : entry.kind === "speech" && entry.payload?.private ? "lock" : entry.kind === "verdict" ? (entry.payload.resolved ? "check" : "cross") : ICONS[entry.kind] ?? "spark");
+export const iconFor = (entry) => (entry.kind === "move" ? moveIcon(entry.payload) : entry.kind === "verdict" ? (entry.payload.resolved ? "check" : "cross") : ICONS[entry.kind] ?? "spark");
 
 /** The tone of an entry: good news, bad news, or none. */
 export function tone(entry) {
@@ -153,15 +174,13 @@ export const clockOf = (entry) => hhmm(secondOfDay(entry.sim_time));
 export const textFor = (entry, reader) => (reader && entry.personal?.[reader]) || entry.text || [entry.actor, words(entry.kind).toLowerCase()].filter(Boolean).join(" ");
 
 /**
- * The line of text the feed shows for an entry, as a node. `m` gives the cast and the chosen
- * reader (`reader`, or null for the town's wording).
+ * The line of text the feed shows for an entry, as a node, with what it says of who knew of it
+ * (`knewNote`). `m` gives the cast and the chosen reader (`reader`, or null for the town's wording).
  */
 export function line(entry, m) {
-  const text = textFor(entry, m.reader);
-  const alone = knownOnlyTo(entry);
-  const tag = entry.kind === "speech" && entry.payload.private ? "privately" : alone ? `only ${alone === m.reader ? "you" : alone} knew` : null;
-  const title = alone ? `Nobody but ${alone} knew of this` : null;
-  return h("span", { class: "feed-text" }, tag ? h("span", { class: "private-tag", title }, icon("lock", 11), tag) : null, m.cast.mention(text));
+  const note = knewNote(entry, m.reader);
+  const tag = note ? h("span", { class: note.private ? "private-tag" : "knew-tag", title: note.title }, note.private ? icon("lock", 11) : null, note.text) : null;
+  return h("span", { class: "feed-text" }, tag, m.cast.mention(textFor(entry, m.reader)));
 }
 
 /** What an entry carries beyond its line: a command's output, a journal entry. */
