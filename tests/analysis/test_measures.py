@@ -69,15 +69,16 @@ def test_the_evenings_trades_as_the_town_lived_them(rows):
     ravi, olga, jonas = rows["Ravi", 1], rows["Olga", 1], rows["Jonas", 1]
     lucia, vera = rows["Lucia", 1], rows["Vera", 1]
     # Olga, at the counter from 20:10, sold Jonas $6 of vegetables for the kitchen and Vera $4 of
-    # bread, $1 of it in tax, and paid the supplier $10; Jonas bought for the kitchen, cooked a
-    # portion and served it for $8, $1 in tax; Lucia examined Ravi for $10, $1 in tax, and paid
+    # bread, a tenth of each rounded down to nothing, and paid the supplier $10; Jonas bought for
+    # the kitchen, cooked a portion and served it for $8, untaxed alike; Lucia examined Ravi for
+    # $10, $1 in tax, and paid
     # $8 for her soup; Vera bought bread, announced and granted Aisha $5 from the treasury.
     assert [olga[k] for k in ("hours_at_work", "sales_made", "orders", "takings", "costs")] == [
         3.83, 2, 1, 10, 10,
     ]  # fmt: skip
-    assert [olga[k] for k in ("tax", "rent", "money", "arrears")] == [1, 30, 100 - 30 - 1, 0]
+    assert [olga[k] for k in ("tax", "rent", "money", "arrears")] == [0, 30, 100 - 30, 0]
     trade = ("bought_for_kitchen", "portions_cooked", "dishes_served", "takings", "costs", "tax")
-    assert [jonas[k] for k in trade] == [1, 1, 1, 8, 6, 1] and jonas["money"] == 100 - 6 + 7 - 30
+    assert [jonas[k] for k in trade] == [1, 1, 1, 8, 6, 0] and jonas["money"] == 100 - 6 + 8 - 30
     assert [lucia[k] for k in ("examinations_given", "dishes_eaten", "spent", "takings")] == [
         1, 1, 8, 10,
     ]  # fmt: skip
@@ -109,11 +110,12 @@ def test_the_town_s_days(run_dir):
     assert [list(row) for row in days] == [["day", "date", *TOWN]] * 2
     first, second = days
     # Task 1's client paid $50 into the town and the Store paid the supplier $10 out of it; the
-    # treasury took $8 in taxes ($5 of the client's payment, $1 each of the sales, the dish and
-    # the fee) and every room's rent, $220, and paid Vera's $30 and her grant of $5.
+    # treasury took $6 in taxes ($5 of the client's payment and $1 of the fee; the sales and the
+    # dish too small for a tenth rounded down) and every room's rent, $220, and paid Vera's $30
+    # and her grant of $5.
     assert {key: value for key, value in first.items() if value} == {
         "day": 1, "date": "2001-01-01", "tasks_arrived": 3, "tasks_accepted": 1, "clients": 50,
-        "supplier": 10, "money": 677, "treasury": 1000 + 8 + 220 - 30 - 5, "taken_tax": 8,
+        "supplier": 10, "money": 679, "treasury": 1000 + 6 + 220 - 30 - 5, "taken_tax": 6,
         "taken_rent": 220, "paid_salary": 30, "paid_grant": 5, "store_takings": 10,
         "kitchen_takings": 8, "kitchen_costs": 6, "surgery_takings": 10,
     }  # fmt: skip
@@ -132,7 +134,7 @@ def test_daily_totals_and_means(rows):
         "day": 1, "measure": "client_shares", "total": 50, "mean": 50 / 8, "residents": 8,
     }  # fmt: skip
     assert found[2, "arrears"]["total"] is None and found[2, "arrears"]["mean"] == 15 / 8
-    assert found[1, "tax"]["total"] == 4 + 1 + 1 + 1 + 1
+    assert found[1, "tax"]["total"] == 4 + 1 + 1
     assert found[1, "takings"]["total"] == 10 + 8 + 10
     assert found[2, "forced_sleep"]["total"] == 7 and found[1, "hungry"]["total"] == 6
     assert found[2, "starving"]["total"] == 8 and found[1, "starving"]["total"] == 0

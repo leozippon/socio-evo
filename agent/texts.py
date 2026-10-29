@@ -37,9 +37,9 @@ change it with write_file or edit_file, and see what you have with list_files; a
 like memory/notes.md."""
 
 SKILLS_READ_ONLY = "You can read the files in skills/ but not change them."
-JOURNAL_KEPT = (
-    "Your journal is kept as you wrote it: you can read it, and you add to it by giving the "
-    "day's entry as you go to bed."
+JOURNAL_NOT_WRITTEN = (
+    "That was not written: your journal is written only as you go to bed, as the entry you give "
+    "with sleep."
 )
 
 # Refusals and results of the file tools; how a file's text is told in part and changed by a

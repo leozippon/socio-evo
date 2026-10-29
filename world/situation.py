@@ -135,7 +135,7 @@ def _left_told(world: World, r: Resident) -> list[str]:
 def things_told(world: World, r: Resident) -> str:
     """What `r` owns and keeps, in its own words."""
     things = world.held_told(r.inventory.items)
-    return f"You have {listed(things)}." if things else "You have nothing of your own yet."
+    return f"You have {listed(things)}." if things else "You carry nothing but your money."
 
 
 def purse(world: World, r: Resident) -> str:

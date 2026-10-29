@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
+from world.businesses import BUSINESSES
 from world.config import A_DAYS_FOOD, Occupation, TownConfig
 from world.occupations import MAYOR, OCCUPATIONS, TEAM_LEADER
 from world.telling import (
@@ -109,32 +110,11 @@ class Rules:
         )
 
         assert my_home.rent is not None
-        if occupation.id == MAYOR:
-            taxed = (
-                f"It takes {share(c.tax)} of every payment anyone receives for work in tax, and "
-                if c.tax
-                else "It "
-            )
-            tax = f" {taxed}pays out what you grant."
-        else:
-            pays = [f"{o.title}'s salary" for o in self._staffed() if o.salary]
-            pays += ["what the mayor grants"] if self._staffed(MAYOR) else []
-            which = f", which pays {listed(pays)}." if pays else "."
-            tax = (
-                f" {cap(share(c.tax))} of every payment for your work is tax for the town's "
-                f"treasury{which}"
-                if c.tax
-                else f" The town's treasury pays {listed(pays)}."
-                if pays
-                else ""
-            )
         money_rules = (
-            f"You have {money(me.purse)} to begin with. {self._earnings(occupation)}{tax} At "
-            f"midnight the treasury takes your rent, {money(my_home.rent)} a day, from your "
-            f"purse, never its last {money(c.treasury.spares)}, a day's bread; what it cannot take "
-            "you owe, to be taken later. You pay for everything in cash; with pass you hand money "
-            "or things to anyone with you, put leaves something where you are for anyone, and "
-            "get takes what is left there."
+            f"{self._economy(occupation)} You have {money(me.purse)} to begin with. Your rent, "
+            f"{money(my_home.rent)} a day, is taken from your purse at midnight, never its last "
+            f"{money(c.treasury.spares)}, a day's bread; what cannot be taken you owe, to be taken "
+            "later."
         )
 
         food = self._a_days_food()
@@ -144,7 +124,7 @@ class Rules:
             "a day starving or exhausted, a home of little comfort and illness wear your health "
             f"down; eating and rest mend it, and the doctor at {c.workplace('hospital').name} "
             "treats illness. When your health is gone you keep to your bed at home until the "
-            "doctor treats you there. how_am_i tells you how you are."
+            "doctor treats you there."
         )
 
         people = (
@@ -198,17 +178,57 @@ class Rules:
         )
         return f"A client pays {money(payment)} for each task accepted: {shared}"
 
-    def _earnings(self, occupation: Occupation) -> str:
-        """What `occupation` is paid for and by whom, in a sentence of the money rules."""
-        money = self.config.money
-        payment, team = self._shares()
-        return OCCUPATIONS[occupation.id].earns.format(
-            split=self._split(),
-            payment=money(payment),
-            share=money(payment - team),
-            team=money(team),
-            salary=money(occupation.salary),
+    def _economy(self, occupation: Occupation) -> str:
+        """How the town's money goes, in two sentences told to `occupation` first among the money
+        rules: who is paid by whom, nobody for their time (`a client pays for each task
+        accepted, a fifth to the team leader and the rest to whoever handed it in; the chef, the
+        shopkeeper and the doctor are paid by their customers and the mayor from the town's
+        treasury`); and the tax withheld into the treasury, with what else the treasury takes
+        and pays, which to the mayor is what it is there for and where he sees it."""
+        c, money = self.config, self.config.money
+        staffed = self._staffed()
+        paid = []
+        if any(OCCUPATIONS[o.id].workplace == "office" for o in staffed):
+            shared = (
+                f"{share(c.work.leader_share)} to the team leader and the rest to whoever "
+                "handed it in"
+                if self._shares()[1]
+                else "all of it to whoever handed it in"
+            )
+            paid.append(f"a client pays for each task accepted, {shared}")
+        keepers = [o.title for o in staffed if any(b.keeps(o.id) for b in BUSINESSES.values())]
+        salaried = [o.title for o in staffed if o.salary]
+        by = ((keepers, "by their customers"), (salaried, "from the town's treasury"))
+        groups = [(titles, how) for titles, how in by if titles]
+        if groups:  # the verb told once: `X are paid by their customers and Y from the treasury`
+            (first, how), *rest = groups
+            verb = "is" if len(first) == 1 else "are"
+            told = [f"{listed(first)} {verb} paid {how}", *(f"{listed(t)} {h}" for t, h in rest)]
+            paid.append(listed(told))
+        if occupation.id == MAYOR:
+            salary = (
+                f"your salary of {money(occupation.salary)} a day at midnight, as far as it holds "
+                "the money, and "
+                if occupation.salary
+                else ""
+            )
+            pays = (
+                f" and is there to pay {salary}whatever you grant residents at "
+                f"{c.place(occupation.workplace).name}; your report shows what it holds and takes "
+                "in"
+            )
+        else:
+            paying = [f"{title}'s salary" for title in salaried]
+            paying += ["what the mayor grants"] if self._staffed(MAYOR) else []
+            pays = f" and pays {listed(paying)}" if paying else ""
+        named = "the treasury" if salaried else "the town's treasury"  # named once in full
+        treasury = (
+            f"{cap(share(c.tax))} of what clients and customers pay is withheld in tax into "
+            f"{named}, which also takes the rents{pays}."
+            if c.tax
+            else f"{cap(named)} takes the rents{pays}."
         )
+        return f"Nobody is paid for their time{': ' if paid else ''}{'; '.join(paid)}. {treasury}"
 
     def _who_lives(self, name: str, home_of: Mapping[str, str]) -> str:
         """Who lives where, in a sentence told to `name`."""
@@ -303,9 +323,8 @@ class Rules:
             f"sees whenever there, at the prices the shopkeeper sets: {self._goods()} What is "
             "sold out is gone until the shopkeeper orders more from the supplier outside the "
             "town, paying for it at once; the order comes onto the shelves at "
-            f"{day.delivery} the next morning. What customers pay goes to the shopkeeper, the "
-            "tax withheld. The chef buys for the kitchen with buy for_the_kitchen, and pays like "
-            "anyone else."
+            f"{day.delivery} the next morning. The chef buys for the kitchen with buy "
+            "for_the_kitchen, and pays like anyone else."
         )
 
         recipes = "; ".join(
@@ -319,9 +338,9 @@ class Rules:
             f"{store.name} with buy for_the_kitchen, paying for it, and cooks dishes from what "
             f"the kitchen holds, a portion of each from its ingredients: {recipes}. A dish is a "
             "day's food, eaten there as it is bought, at the price on the menu, which the chef "
-            "sets, the chef taking what is paid, the tax withheld; or as the chef hands it over "
-            "with pass, when nobody pays and the chef bears what it cost; the chef, at work "
-            "there, has one with eat and does not buy them. What is left at midnight is gone."
+            "sets; or as the chef hands it over with pass, when nobody pays and the chef bears "
+            "what it cost; the chef, at work there, has one with eat and does not buy them. What "
+            "is left at midnight is gone."
         )
 
         fees = c.hospital
@@ -332,15 +351,14 @@ class Rules:
             "the patient is ill, and why the patient's health moved the night before. A "
             f"treatment, {money(fees.treatment)} at the start, restores {fees.restores:g} of the "
             "patient's health, ends an illness and gets one too ill to get up out of bed; the "
-            "doctor goes to such a "
-            "patient's bedside. The patient pays the fee in cash to the doctor, the tax "
-            "withheld, and the doctor sets the fees."
+            "doctor goes to such a patient's bedside. The patient pays the fee, which the doctor "
+            "sets."
         )
 
         hall_work = (
             f"At {hall.name} the mayor reads the town's report with report: what the treasury "
-            "holds, took in and paid out, the grants, what it owes and who owes rent; the tasks "
-            "open at "
+            "holds now, what it took in and paid out so far today and yesterday, the grants, what "
+            "it owes and who owes rent; the tasks open at "
             f"{office.name} and those accepted, and by whom; the stock, prices and sales of "
             f"{store.name}; the menu and the dishes served at {restaurant.name}; the patients of "
             f"{hospital.name}; and each resident's occupation, time at work and health as others "
@@ -352,46 +370,36 @@ class Rules:
 
         fees_charged = any(item.fee_per_day for item in c.items)
 
-        salaried = [
-            f"{o.title} a salary of {money(o.salary)} a day" for o in self._staffed() if o.salary
-        ]
-        treasury = (
-            [f"The treasury pays {listed(salaried)}, as far as it holds the money, owing the rest."]
-            if salaried
-            else []
-        ) + (
-            ["The mayor may grant money from it to anyone, for a reason the town's report shows."]
-            if self._staffed(MAYOR)
-            else []
-        )
         withheld = (
-            f" {cap(share(c.tax))} of every payment anyone receives for work, from a client, a "
-            "customer or a patient, is withheld at once in tax for the treasury, and you are told "
+            " The tax is withheld from each payment as it comes in, rounded down, and you are told "
             "how much; money handed between people is not taxed."
             if c.tax
             else ""
         )
         charges = (
-            ", and the daily charge on anything you own that carries one," if fees_charged else ""
+            "; with the rent it takes the daily charge on anything you own that carries one"
+            if fees_charged
+            else ""
+        )
+        salary = "".join(
+            f" It pays {o.title} a salary of {money(o.salary)} a day, as far as it holds the "
+            "money, owing the rest."
+            for o in self._staffed()
+            if o.salary
         )
         money_detail = (
-            "Nobody is paid for their time. Money comes into the town only from the clients of "
-            f"{office.name}, and leaves it only when the shopkeeper pays the supplier. "
-            f"{self._split()}{own}. {cap(store.name)}, the kitchen of "
-            f"{restaurant.name} and the surgery at {hospital.name} are their keepers': what "
-            "customers and patients pay goes to the keeper, and the keeper pays for what the "
-            f"business buys.{withheld} The town's treasury owns the homes: at midnight it takes "
-            f"the rent for your room{charges} from your purse, but never its last "
-            f"{money(c.treasury.spares)}, a day's bread; what it cannot take you owe, and it is "
-            "taken at a later midnight. Your statement at midnight tells you each movement of "
-            f"your money that day and what your purse holds. {' '.join([*treasury, ''])}You pay "
-            "for everything in cash from your purse, and cannot pay more than it holds. With "
-            "pass you can hand "
-            "money, a thing you own (with any daily charge on it) or food you keep to anyone "
-            "awake where you are, as a gift or on terms you agree between you; the town keeps no "
-            "account of it. With put you leave something where you are, for anyone to take, and "
-            "with get you take what is left there; what a shop or a kitchen keeps is bought, not "
-            "taken. What you have, and how much of it is left, inventory tells you."
+            f"Money comes into the town only from the clients of {office.name}, and leaves it "
+            f"only when the shopkeeper pays the supplier. {cap(store.name)}, the kitchen of "
+            f"{restaurant.name} and the surgery at {hospital.name} are their keepers', who pay "
+            f"for what the business buys.{withheld} The town's treasury owns the homes{charges}."
+            f"{salary} Your statement at midnight tells you each movement of your money that day "
+            "and what your purse holds. You pay for everything in cash from your purse, and "
+            "cannot pay more than it holds. With pass you can hand money, a thing you own (with "
+            "any daily charge on it) or food you keep to anyone awake where you are, as a gift or "
+            "on terms you agree between you; the town keeps no account of it. With put you leave "
+            "something where you are, for anyone to take, and with get you take what is left "
+            "there; what a shop or a kitchen keeps is bought, not taken. What you have, and how "
+            "much of it is left, inventory tells you."
         )
 
         illness = c.needs.health.illness

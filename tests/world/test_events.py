@@ -307,6 +307,10 @@ async def test_waiting_in_a_conversation_listens_until_the_reply_or_the_silence(
         "That ended the wait you began at 07:00; it is now 07:02.",
     ]
     assert mei.conversation is town.world.residents["Aisha"].conversation is not None
+    # What is told as the wait begins, or before, ends it with no word of a wait.
+    await town.call("Mei", "wait", minutes=30)
+    await town.call("Aisha", "say", text="And you?")
+    assert [p.text for p in await port.wait()] == ["Aisha said: “And you?”"]
 
     await town.call("Mei", "wait", minutes=30)
     listening = asyncio.create_task(port.wait())
@@ -681,7 +685,7 @@ async def test_the_port_offers_what_applies_now_and_the_situation_tells_the_rest
     situation = port.situation()
     assert situation == (
         "Monday 1 January, 07:00. You are at the shared house on Mill Street. Also here: Aisha. "
-        "Your purse holds $120. You have nothing of your own yet."
+        "Your purse holds $120. You carry nothing but your money."
     )  # what is for the resident to know; what it can do is offered, not told
     assert offered() == [
         "help", "look_around", "how_am_i", "inventory", "go", "wait", "sleep", "say", "buy",

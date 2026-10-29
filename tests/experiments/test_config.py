@@ -11,6 +11,7 @@ import pytest
 from agent.wording import offences
 from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
+from world.body import Body, Living
 from world.config import A_DAYS_FOOD
 from world.occupations import OCCUPATIONS
 from world.rules import Rules
@@ -115,7 +116,8 @@ def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
 
 # The calibration of the closed economy (experiments/configs/town.yaml's notes): three tasks
 # arriving a day, half accepted; the town eating a dish a day each, the menu's in turn, seven sold
-# and the chef's own; one patient a day at the surgery, examined or treated.
+# and the chef's own; the cases of illness the town in good health sees a day, each examined and
+# treated at the surgery.
 ACCEPTED = 0.5
 
 
@@ -165,22 +167,29 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     shop = meals * (retail * (1 - tax) - wholesale)
     assert (round(chef, 2), round(shop, 2)) == (44.92, 41.87)
     assert chef >= dearest and shop >= dearest
-    # The doctor's fees at one patient a day, examined or treated, keep the cheapest life.
+    # The doctor's patients: the cases of illness the town in good health sees a day, by the
+    # chance of each resident's home, about one, each examined and treated (about two visits);
+    # their fees keep the cheapest life.
+    body, comfort = Body(config.needs), {place.id: place.comfort for place in config.places}
+    cases = sum(body.illness_chance(Living(), comfort[r.home]) for r in config.residents)
     fees = config.hospital
-    doctor = fmean((fees.examination, fees.treatment)) * (1 - tax)
-    assert (fees.examination, fees.treatment, doctor) == (25, 60, 38.25) and doctor >= cheapest
+    doctor = cases * (fees.examination + fees.treatment) * (1 - tax)
+    assert (round(cases, 2), fees.examination, fees.treatment, round(doctor, 2)) == (
+        1.0, 25, 60, 76.5,
+    )  # fmt: skip
+    assert doctor >= cheapest
 
     # The treasury's day: the rent of every room taken and the tax on the day's payments in,
     # the mayor's salary out. The plan asked for a surplus of at most a third of the intake;
     # with these rents and this salary it is three fifths, which holds below two thirds.
     rent = sum(rents[r.home] for r in config.residents)
     taxes = tax * (
-        clients + meals * retail + sold * menu + fmean((fees.examination, fees.treatment))
+        clients + meals * retail + sold * menu + cases * (fees.examination + fees.treatment)
     )
     salary = sum(config.occupation(r.occupation).salary for r in config.residents)
     intake = rent + taxes
-    assert (rent, round(taxes, 2), salary) == (105, 46.47, 60)
-    assert 0 < intake - salary <= 2 / 3 * intake and round((intake - salary) / intake, 2) == 0.6
+    assert (rent, round(taxes, 2), salary) == (105, 50.72, 60)
+    assert 0 < intake - salary <= 2 / 3 * intake and round((intake - salary) / intake, 1) == 0.6
     assert config.treasury.start >= 5 * salary
     # The town's money grows by what the clients pay less what the supplier is paid.
     supplier = meals * wholesale

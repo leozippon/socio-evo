@@ -128,8 +128,8 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
     follow(told("Olga"), [
         "20:10 You sat down to work.",
         "20:10 You ordered 5 helpings of bread from the supplier for $10.",
-        "20:10 Jonas bought 2 units of vegetables for the kitchen for $6, of which $1 in tax.",
-        "20:10 Vera bought 1 helping of bread for $4.",  # a tenth of $4 rounds to nothing
+        "20:10 Jonas bought 2 units of vegetables for the kitchen for $6.",  # a tenth rounded
+        "20:10 Vera bought 1 helping of bread for $4.",  # down is nothing of $6 or of $4
     ])  # fmt: skip
     assert "08:00 It is 08:00: the supplier delivered 5 helpings of bread to the store." in told(
         "Olga", 2
@@ -138,7 +138,7 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
         "20:10 You bought 2 units of vegetables for the kitchen for $6.",
         "20:20 You sat down to work.",
         "20:20 You cooked 1 portion of vegetable soup.",
-        "20:30 You served Lucia vegetable soup for $8, of which $1 in tax.",
+        "20:30 You served Lucia vegetable soup for $8.",
     ])  # fmt: skip
     ravi, lucia = told("Ravi"), told("Lucia")
     follow(ravi, [

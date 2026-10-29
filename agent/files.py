@@ -169,7 +169,7 @@ class FileTools:
         if writing and parts[0] == SKILLS and not self._directory.skills_writable:
             raise _Refusal(texts.SKILLS_READ_ONLY)
         if writing and parts[: len(JOURNAL_PARTS)] == JOURNAL_PARTS:
-            raise _Refusal(texts.JOURNAL_KEPT)
+            raise _Refusal(texts.JOURNAL_NOT_WRITTEN)
         return target
 
 

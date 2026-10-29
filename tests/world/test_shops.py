@@ -76,7 +76,7 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
         "You bought 2 helpings of bread for $8. You have 2 helpings of bread. Your purse holds "
         "$112."
     )
-    assert town.take("Olga") == ["Mei bought 2 helpings of bread for $8, of which $1 in tax."]
+    assert town.take("Olga") == ["Mei bought 2 helpings of bread for $8."]  # $0.80, rounded down
     assert (await town.call("Aisha", "buy", item="coat")).text == (
         "You bought a coat for $30. You have a coat. Your purse holds $0."
     )
@@ -101,17 +101,17 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
     ]
     assert sold[0]["payload"] == {
         "item": "bread", "units": 2, "source": "shelves", "target": "Mei", "money": 8,
-        "reason": "buy", "seller": "Olga", "tax": 1,
+        "reason": "buy", "seller": "Olga", "tax": 0,
     }  # fmt: skip
     # What customers pay is hers, a tenth withheld into the treasury.
-    assert world.treasury.ledger == {"tax": 1 + 3} and olga.inventory.money == 100 + 8 + 30 - 4
+    assert world.treasury.ledger == {"tax": 0 + 3} and olga.inventory.money == 100 + 8 + 30 - 3
     # Her goods are hers: she takes from her own shelves for nothing; once she stops work the
     # door is shut.
     assert (await town.call("Olga", "buy", item="bread")).text == (
         "You took 1 helping of bread from the shelves. You have 1 helping of bread. Your purse "
-        "holds $134."
+        "holds $135."
     )
-    assert world.treasury.ledger == {"tax": 4} and world.holders["shelves"].units("bread") == 7
+    assert world.treasury.ledger == {"tax": 3} and world.holders["shelves"].units("bread") == 7
     await town.call("Olga", "leave_work")
     assert (await town.call("Mei", "buy", item="bread")).text == closed
 
@@ -204,9 +204,13 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
     )  # ready food, which no dish uses
     assert world.holders["larder"].items == {"eggs": 4, "vegetables": 5}
     assert jonas.inventory.money == 100 - 4 - 8 - 15
-    # The shopkeeper took $27, of which $3 in tax ($0 of $4, $1 of $8 and $2 of $15).
-    assert world.residents["Olga"].inventory.money == 100 + 27 - 3
-    assert world.treasury.ledger == {"tax": 3}
+    # The shopkeeper took $27, of which $1 in tax: a tenth of each receipt rounded down, never up,
+    # $0 of $4 and of $8 and $1 of $15.
+    assert world.residents["Olga"].inventory.money == 100 + 27 - 1
+    assert world.treasury.ledger == {"tax": 1}
+    taxed = [(e["payload"]["money"], e["payload"]["tax"]) for e in world.log.entries()
+             if e["kind"] == "move" and e["payload"]["seller"] == "Olga"]  # fmt: skip
+    assert taxed == [(4, 0), (8, 0), (15, 1)]
     assert (await town.call("Jonas", "cook", dish="omelette", portions=1)).text == (
         "You can do that only at the café on the square."
     )

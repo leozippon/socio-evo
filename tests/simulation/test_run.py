@@ -133,8 +133,9 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert re.search(  # the saved day names the treasury
-        rf"saved day 1 after .*\. The treasury holds \${treasury['balance']}\. Yesterday it took "
-        r"in \$\d+ in taxes and \$35 in rent and daily charges and paid out nothing\.",
+        rf"saved day 1 after .*\. The treasury holds \${treasury['balance']} now\. So far today it "
+        r"took in nothing and paid out nothing; yesterday it took in \$\d+ in taxes and \$35 in "
+        r"rent and daily charges and paid out nothing\.",
         run.run_log_path.read_text(),
     )
 

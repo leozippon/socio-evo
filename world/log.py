@@ -53,7 +53,7 @@ KINDS = {
     ),
     "time": Kind(
         "a resident waiting was told the time, or that what it was just told ended its wait "
-        "(cut_short, then only)",
+        "after a minute or more (cut_short, then only)",
         ("waited_minutes", "cut_short"),
     ),
     "task_arrived": Kind(

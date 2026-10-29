@@ -17,14 +17,14 @@ if TYPE_CHECKING:
 
 
 def report(world: World) -> str:
-    """The town's report, as the mayor reads it at the Town Hall: what the treasury holds and
-    its day before (`treasury_report`); the last seven days the daybook has closed, a line each
-    (the treasury's balance and how it moved, the tasks accepted, the sales, the dishes served,
-    the patients, the grants); today so far (the Office's open tasks and who holds them, the
-    Store's shelves and the menu, what was accepted, sold, served, seen and granted today);
-    each resident's occupation, time at work the day before and health as others see it,
-    whether it is ill and whether it is in bed; and the announcements standing. No purse is
-    in it."""
+    """The town's report, as the mayor reads it at the Town Hall: what the treasury holds now,
+    and its takings and payments so far today and the day before (`treasury_report`); the last
+    seven days the daybook has closed, a line each (the treasury's balance and how it moved, the
+    tasks accepted, the sales, the dishes served, the patients, the grants); today so far (the
+    Office's open tasks and who holds them, the Store's shelves and the menu, what was accepted,
+    sold, served, seen and granted today); each resident's occupation, time at work the day
+    before and health as others see it, whether it is ill and whether it is in bed; and the
+    announcements standing. No purse is in it."""
     c, book = world.config, world.daybook
     parts = [f"The town's report, {tell_moment(world.clock.now(), c.start_date)}."]
     parts.append(f"The treasury. {treasury_report(world)}")
@@ -97,16 +97,19 @@ def _day_told(world: World, day: dict[str, Any], *, closed: bool = True) -> str:
 
 
 def treasury_report(world: World) -> str:
-    """The treasury's day, as the town tells it: what it holds, what it took in and paid out by
-    kind on the day the last midnight closed, what it owes in salary and who owes it rent."""
+    """The treasury as the town tells it: what it holds now; what it took in and paid out by
+    kind so far today, since the last midnight, and on the day that midnight closed, so that the
+    balance is accounted for; what it owes in salary and who owes it rent."""
     treasury, money = world.treasury, world.config.money
-    day = treasury.yesterday
-    took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
-    paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
+
+    def moved(day: dict[str, int]) -> str:
+        took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
+        paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
+        return f"took in {listed(took) or 'nothing'} and paid out {listed(paid) or 'nothing'}"
+
     parts = [
-        f"The treasury holds {money(treasury.balance)}.",
-        f"Yesterday it took in {listed(took) or 'nothing'} and paid out "
-        f"{listed(paid) or 'nothing'}.",
+        f"The treasury holds {money(treasury.balance)} now.",
+        f"So far today it {moved(treasury.ledger)}; yesterday it {moved(treasury.yesterday)}.",
     ]
     if treasury.owed:
         owed = listed([f"{name} {money(amount)}" for name, amount in treasury.owed.items()])

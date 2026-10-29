@@ -87,6 +87,7 @@ import itertools
 import math
 from collections.abc import Awaitable, Callable
 from dataclasses import asdict, dataclass, field
+from fractions import Fraction
 from functools import partial
 from pathlib import Path
 from types import EllipsisType
@@ -654,9 +655,10 @@ class World:
 
     def earn(self, r: Resident, amount: int, about: str) -> int:
         """`r` is paid `amount` for its work, `about` what for as its statement tells it ("for
-        task 3", "in sales"): `town.tax` of it, to the nearest whole, is withheld into the
-        treasury at once, and the rest stays in its purse. Returns the tax."""
-        tax = round(self.config.tax * amount)
+        task 3", "in sales"): `town.tax` of it, rounded down to the whole so that no receipt
+        pays more than the rate, is withheld into the treasury at once, and the rest stays in its
+        purse. Returns the tax."""
+        tax = math.floor(Fraction(str(self.config.tax)) * amount)  # the rate as written, exactly
         r.inventory.receive(amount, "earned", about)
         if tax:
             r.inventory.spend(tax, "tax", about)

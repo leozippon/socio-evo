@@ -132,9 +132,13 @@ class ResidentPort:
 
     def _end_wait(self, began: int) -> None:
         """The resident's wait for the minutes it asked, begun at `began`, was ended sooner by
-        what it has just been told: it is told so, and the time, after that."""
+        what it has just been told: it is told so, and the time, after that, unless not a minute
+        went by, when what it was told came as it began to wait, or before (news that came while
+        it was still deciding to wait), and there was no wait to speak of."""
         world, r = self._world, self._resident
         now = world.clock.now()
+        if now - began < 60:
+            return
         text = f"That ended the wait you began at {clock_time(began)}; it is now {clock_time(now)}."
         world.record(
             "time",

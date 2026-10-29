@@ -1,6 +1,6 @@
 """The occupations the world implements, by id: for each, the kind of place where it works, the
-work it adds to what everyone can do there, and the rules' words for that work and for what it
-lives on (`OCCUPATIONS`). A new occupation is code here and in the tools that do its work.
+work it adds to what everyone can do there, and the rules' words for that work (`OCCUPATIONS`).
+A new occupation is code here and in the tools that do its work.
 
 What else an occupation is belongs to the town's configuration (`world.config.Occupation`): its
 title, its workplace among the town's places, where its duty runs (at its workplace, or anywhere
@@ -39,14 +39,12 @@ class Trade:
     """What the world does for an occupation: `workplace`, the kind of place where it works;
     `work`, the tools it adds to what everyone can do, done at its workplace; `told`, what its
     work is, as the rules tell it after its workplace (`{office}`, `{store}` and `{withdrawn}`
-    filled in); `earns`, what it is paid for and by whom, as the money rules tell it (`{split}`,
-    how a client's payment is shared, `{payment}`, `{share}`, `{team}` and `{salary}` filled
-    in)."""
+    filled in). Who pays it the rules tell from the rest: the clients the Office's, the
+    customers the keeper of a business, the treasury one with a salary."""
 
     workplace: str
     work: frozenset[str]
     told: str
-    earns: str
 
 
 OCCUPATIONS: dict[str, Trade] = {
@@ -59,7 +57,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "machines are, and hand it in for the client's checks before the client withdraws "
             "it, at the end of {withdrawn}."
         ),
-        earns="{split}.",
     ),
     TEAM_LEADER: Trade(
         workplace="office",
@@ -71,10 +68,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "client's checks before the client withdraws it, at the end of {withdrawn}. Each "
             "midnight your statement tells you {office}'s day."
         ),
-        earns=(
-            "A client pays {payment} for each task accepted: {share} to the programmer who "
-            "handed it in and {team} to you, the whole for one you hand in."
-        ),
     ),
     CHEF: Trade(
         workplace="restaurant",
@@ -85,7 +78,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "handed one by you with pass and pays nothing; you have one yourself with eat. You "
             "buy what you cook with at {store} with buy for_the_kitchen, and pay for it."
         ),
-        earns="What diners pay for your dishes is yours, and you pay for what you cook with.",
     ),
     SHOPKEEPER: Trade(
         workplace="store",
@@ -95,10 +87,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "yours, at the prices you set, and order more from the supplier, which you pay for "
             "at once and which arrives the next morning."
         ),
-        earns=(
-            "The goods on the shelves are yours: what customers pay at the counter goes to you, "
-            "and you pay the supplier for what you order."
-        ),
     ),
     DOCTOR: Trade(
         workplace="hospital",
@@ -107,7 +95,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "Its surgery is open while you are at work there: you examine and treat patients, "
             "at fees you set, and you go to the bedside of anyone too ill to get up."
         ),
-        earns="The fees your patients pay are yours.",
     ),
     MAYOR: Trade(
         workplace="hall",
@@ -117,10 +104,6 @@ OCCUPATIONS: dict[str, Trade] = {
             "resident whatever you want them to know, and with grant you pay money from the "
             "town's treasury to anyone, for a reason the report gives. Your work is being about "
             "the town, so once you have sat down to work it goes with you wherever you go."
-        ),
-        earns=(
-            "The town's treasury pays you a salary of {salary} a day at midnight, as far as it "
-            "holds the money, and owes you the rest."
         ),
     ),
 }

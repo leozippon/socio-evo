@@ -18,10 +18,11 @@
 # patients pay and pay for what they buy: the shopkeeper the supplier, the chef the Store for the
 # kitchen's ingredients (a dish given away costs him its ingredients). A tenth of every payment a
 # resident receives for work, from a client, a customer, a patient or as the leader's share, is
-# withheld at once into the treasury. The treasury owns the homes and takes their rent at
-# midnight, with the daily charges, from each purse as far as it holds more than a day's bread
-# (20), the rest owed and taken at later midnights; it pays the mayor 60 a day, as far as it holds
-# the money, owing the rest, and whatever the mayor grants anyone at the Town Hall.
+# withheld at once into the treasury, rounded down to the whole. The treasury owns the homes and
+# takes their rent at midnight, with the daily charges, from each purse as far as it holds more
+# than a day's bread (20), the rest owed and taken at later midnights; it pays the mayor 60 a day,
+# as far as it holds the money, owing the rest, and whatever the mayor grants anyone at the Town
+# Hall.
 #
 # Calibration of the economy (tests/experiments/test_config.py asserts the relations; the figures
 # are where they stand). Rent is 10 a day for a room in a shared house, 15 a flat and 20 the
@@ -34,12 +35,13 @@
 # buys at the Store at a mean of 9.33 and the Store at the supplier's 3.17. The chef's margin on
 # his seven dishes after the tax is 44.92 a day and the shopkeeper's on the town's food 41.87,
 # each keeping the dearest life; the supplier's prices are low and the town's trade is where the
-# margin is. The doctor's fees, 25 an examination and 60 a treatment, bring 38.25 after the tax
-# at one patient a day examined or treated, which keeps the cheapest life (and hers, 35). The
-# treasury's day takes in 105 of rent and 46.47 of tax (22.50 from the clients, 7.47 from the
-# Store's sales, 12.25 from the dishes, 4.25 from the fees) and pays the mayor's 60: a surplus of
-# 91.47, three fifths of its intake, which is the mayor's to grant (the plan's third would take a
-# salary of 101). The town's money grows by the clients' 225 less the supplier's 25.33 a day.
+# margin is. The doctor's fees, 25 an examination and 60 a treatment, bring 76.50 after the tax
+# at the town's one case of illness a day (below), examined and treated, two visits a day, which
+# keeps the cheapest life (and hers, 35). The treasury's day takes in 105 of rent and 50.72 of
+# tax (22.50 from the clients, 7.47 from the Store's sales, 12.25 from the dishes, 8.50 from the
+# fees) and pays the mayor's 60: a surplus of 95.72, three fifths of its intake, which is the
+# mayor's to grant (the plan's third would take a salary of 104). The town's money grows by the
+# clients' 225 less the supplier's 25.33 a day.
 # Starting money is five to ten days of its owner's own life (its rent and a day's bread): 200
 # for the programmers, 250 the team leader, 200 the doctor, 150 the mayor; the chef's 300 and
 # the shopkeeper's 600 are working capital besides, the chef's a day of the kitchen's ingredients
@@ -49,7 +51,8 @@
 # durables are things to save for: the bicycle (360) costs more than any starting purse but the
 # shopkeeper's, which is the Store's, the phone 240 and then 5 a day, the coat 150 and the book 40,
 # one of each in stock. A treatment, which restores 25 health and ends an illness, costs 60, more
-# than two days of the cheapest life.
+# than two days of the cheapest life. The tax is reckoned here at a full tenth; rounded down on
+# each payment, it comes to a little less.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a dish at the Linde is a day's food, eaten there, and bread and fruit are helpings
@@ -78,9 +81,10 @@
 # the cottage, 5 a night, run down from the eighth and in bed at the twentieth); it is told
 # "exhausted", "run down" and "unwell" on the way. A run-down resident that eats and rests gains
 # 3 to 5 a night, and nobody is trapped: at any health a night's sleep gives half a day's energy,
-# well out of exhaustion. Illness comes at midnight by chance, 2% a night in good health, 5% run
-# down, 8% unwell or worse, and 2% more in a shared house, so that a resident in good health in a
-# shared house falls ill about once in the 28 days and one in a flat about every other run; ill,
+# well out of exhaustion. Illness comes at midnight by chance, 10% a night in good health, 15% run
+# down, 20% unwell or worse, and 5% more in a shared house, so that the town in good health, four
+# of the eight in shared houses, sees about one case a day, more as health falls: a resident in a
+# shared house falls ill about every seventh day and one in a flat about every tenth; ill,
 # it loses 3 health a night and mends nothing for five nights, 15 in all unless the doctor's
 # treatment (25 health) ends it sooner, and sleep restores half as much energy, so its days are
 # shorter. Health has a floor: at 0 a resident takes to its bed at home, carried there if it was
@@ -293,10 +297,10 @@ town:
       poor_home: 2
       recovery: 5 # a night neither starving, exhausted nor ill
       illness: # the chance a night of falling ill, by the band of health, and its course
-        chance: 0.02 # in good health
-        run_down: 0.05
-        unwell: 0.08 # and gravely ill
-        poor_home: 0.02 # more in a home of comfort below 1
+        chance: 0.10 # in good health
+        run_down: 0.15
+        unwell: 0.20 # and gravely ill
+        poor_home: 0.05 # more in a home of comfort below 1
         per_night: 3 # health lost a night while ill
         nights: 5
       bands:

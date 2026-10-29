@@ -112,8 +112,9 @@ async def test_rent_is_taken_at_midnight_from_the_purse_above_a_days_bread_and_t
     assert treasury.balance == 1000 + 20 + 30 + 5 and treasury.ledger == {}
     assert treasury.yesterday == {"rent": 55} and treasury.arrears == {"Aisha": 15}
     assert world.treasury_report() == (
-        "The treasury holds $1055. Yesterday it took in $55 in rent and daily charges and paid "
-        "out nothing. Owing rent their purses could not spare: Aisha $15."
+        "The treasury holds $1055 now. So far today it took in nothing and paid out nothing; "
+        "yesterday it took in $55 in rent and daily charges and paid out nothing. Owing rent "
+        "their purses could not spare: Aisha $15."
     )
     assert total(world) == before  # rent moves money within the town
     # The next day what she owes is taken with the day's rent, as far as her purse spares it.
@@ -158,11 +159,16 @@ async def test_the_treasury_pays_the_mayors_salary_as_far_as_it_holds_and_owes_t
     assert (treasury.balance, treasury.owed) == (30, {"Vera": 10})
     assert treasury.yesterday == {"rent": 50, "salary": 20}
     assert world.treasury_report() == (
-        "The treasury holds $30. Yesterday it took in $50 in rent and daily charges and paid "
-        "out $20 in salary. It owes in salary it could not pay: Vera $10."
+        "The treasury holds $30 now. So far today it took in nothing and paid out nothing; "
+        "yesterday it took in $50 in rent and daily charges and paid out $20 in salary. It owes "
+        "in salary it could not pay: Vera $10."
     )
     # What it owes is paid with the next salary, as far as it then holds the money.
-    treasury.take("tax", 20)  # taxes meanwhile
+    treasury.take("tax", 20)  # taxes meanwhile, which account for the balance as they come
+    assert world.treasury_report().startswith(
+        "The treasury holds $50 now. So far today it took in $20 in taxes and paid out nothing; "
+        "yesterday it took in $50"
+    )
     await town.until("00:00", day=3)
     assert statements(town, "Vera")[-1].startswith(
         "Your statement for Tuesday 2 January: your salary $30 and $10 the treasury owed you, "

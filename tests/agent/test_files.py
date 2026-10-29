@@ -92,7 +92,12 @@ def test_the_journal_is_read_but_never_written_or_changed_by_the_file_tools(dire
         ("write_file", {"path": "memory/diary/2026-10-29.md", "content": "A quiet day.\n"}),
         ("edit_file", {"path": "memory/journal/2026-10-29.md", "old_text": "717", "new_text": "1"}),
     ):
-        assert tools.call(name, args).text == texts.JOURNAL_KEPT
+        assert tools.call(name, args).text == texts.JOURNAL_NOT_WRITTEN
+    # The refusal says first that nothing was written, and where the day's entry goes instead.
+    assert texts.JOURNAL_NOT_WRITTEN == (
+        "That was not written: your journal is written only as you go to bed, as the entry you "
+        "give with sleep."
+    )
     assert tools.call("read_file", {"path": "memory/journal/2026-10-29.md"}).text == (
         "Fixed task 717.\n"
     )
