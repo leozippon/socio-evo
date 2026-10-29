@@ -10,53 +10,46 @@
 # last; clients' tasks come in at the Office at random between 08:00 and 18:00, about three a day,
 # drawn from the run's seed.
 #
-# Calibration of a life (tests/experiments/test_config.py asserts the relations; the figures are
-# where they stand). Rent runs from 30 a day for a room in a shared house to 55 for the flat by
-# the college gates or the cottage, and a day's food from 15 (three helpings of bread or fruit at
-# the Store's starting 5) to 20 (stew at the Linde), so the cheapest life costs 45 a day and the
-# dearest 75. Every occupation is paid 8 an hour for its time at work at its own workplace, up to
-# ten hours a day (work.paid_hours: what is longer is counted but not paid), by the town's fund,
-# or for the mayor by the fund's tax account. At midnight every resident pays 15% of its day's
-# wages and sums per service in tax into that account, out of its wages first, before the rent,
-# and what the wages leave of it out of its purse; what neither covers, like the rent the wages
-# do not cover, is owed and taken from later wages, so that a day without work leaves the purse
-# alone but for the tax on its sums. Eight hours earn 64, 54 after the tax, which keep the cheapest
-# life with 9 over and less than half as much again. Ten paid hours earn 80, 68 after the tax,
-# which fall 2 short of the dearest home with groceries (70) and 7 short of it with a dish a day
-# (75, eleven hours after the tax): the dearest life takes a sum per service besides, a patient
-# a day for the doctor. Starting purses of 180-300 are three to six days of the resident's own
-# life.
+# The closed economy. Nobody is paid for time. Money comes into the town only when a client pays
+# for a task accepted (150, four fifths to the one who handed it in and a fifth to the team leader,
+# the whole to the team leader for her own) and leaves it only when the shopkeeper pays the
+# supplier; everything else passes between the residents and the town's treasury. The Store, the
+# Linde's kitchen and the Hospital's surgery are their keepers', who take what customers and
+# patients pay and pay for what they buy: the shopkeeper the supplier, the chef the Store for the
+# kitchen's ingredients (a dish given away costs him its ingredients). A tenth of every payment a
+# resident receives for work, from a client, a customer, a patient or as the leader's share, is
+# withheld at once into the treasury. The treasury owns the homes and takes their rent at
+# midnight, with the daily charges, from each purse as far as it holds more than a day's bread
+# (20), the rest owed and taken at later midnights; it pays the mayor 60 a day, as far as it holds
+# the money, owing the rest, and whatever the mayor grants anyone at the Town Hall.
 #
-# The tax and the mayor. At the fund's day below, the seven others earn 560 in wages and 92 in
-# sums and pay 98 in tax (84 on the wages alone), which covers the mayor's ten paid hours, 80,
-# and so his eight; his own tax of 12 stays in the account besides, which so gathers about 30 a
-# day. What the account lacks it owes the mayor; the fund's own money never makes it up.
-#
-# Sums per service. Each is at most a fifth of the least the customer pays for the service: 30 a
-# programmer for each task of its own accepted, the leader's own included, and 15 the team leader
-# for each task the team has accepted (the client pays 150, of which 45 go to the team), 2 the
-# chef a dish served (the cheapest dish is 10), 1 the shopkeeper a sale (the cheapest unit at the
-# Store is 5, which is why no good starts below it), 4 the doctor a patient examined or treated
-# (an examination is 20).
-#
-# The fund starts at 1,900; its tax account is part of it, so that its day counts every wage
-# paid out, the mayor's included, and the tax on the day's wages and sums as money that stays
-# within it. Its day, with the ten hours the town pays each, three tasks arriving of which half
-# are accepted, and the town eating through the Store and the kitchen (a dish each a day, the
-# menu's in turn at a mean price of 14, their ingredients bought for the kitchen in a sale a dish
-# and the supplier paid their wholesale, a mean of 10): 225 from clients, 340 of rent and 115 for
-# dishes come in; 640 in wages, less the 110 of tax that stays in it, 68 for the tasks, 16 for
-# the dishes, 8 for the sales and 77 to the supplier go out, 19 short, under a seventieth of the
-# 1,379 that pass through it. With no task accepted it pays out 187 more than it takes, so the
-# starting fund lasts ten days (1,500 would last eight). The shopkeeper orders from the supplier
-# at the wholesale price and sets the Store's prices, which start at about half as much again;
-# the starting stock is a few days of the town's food. The chef buys for the kitchen at the
-# Store's prices, which the fund pays itself, so a dish costs the town the wholesale of its
-# ingredients: 8 the soup, 16 the stew, against 12 and 20 on the menu. The durables are things
-# to save for: the bicycle (360) costs more than any starting purse, the phone 240 and then 5 a
-# day, the coat 150 and the book 40, one of each in stock. The Hospital's fees start at 20 an
-# examination and 60 a treatment, which restores 25 health and ends an illness: a treatment is
-# about a day's wages.
+# Calibration of the economy (tests/experiments/test_config.py asserts the relations; the figures
+# are where they stand). Rent is 10 a day for a room in a shared house, 15 a flat and 20 the
+# cottage, and a day's food 15 (three helpings of bread or fruit at the Store's starting 5) to 20
+# (stew at the Linde), so the cheapest life costs 25 a day and the dearest 40. At three tasks a
+# day of which half are accepted, the clients pay 225 a day: a programmer's expected share, the
+# tasks among the three, is 54 after the tax and keeps the dearest life, and the team leader's
+# fifth of it all, 40.5, keeps it too. The town is set to eat a dish a day each, the menu's in
+# turn: seven sold, at a mean of 17.50, and the chef's own, eight dishes whose ingredients the chef
+# buys at the Store at a mean of 9.33 and the Store at the supplier's 3.17. The chef's margin on
+# his seven dishes after the tax is 44.92 a day and the shopkeeper's on the town's food 41.87,
+# each keeping the dearest life; the supplier's prices are low and the town's trade is where the
+# margin is. The doctor's fees, 25 an examination and 60 a treatment, bring 38.25 after the tax
+# at one patient a day examined or treated, which keeps the cheapest life (and hers, 35). The
+# treasury's day takes in 105 of rent and 46.47 of tax (22.50 from the clients, 7.47 from the
+# Store's sales, 12.25 from the dishes, 4.25 from the fees) and pays the mayor's 60: a surplus of
+# 91.47, three fifths of its intake, which is the mayor's to grant (the plan's third would take a
+# salary of 101). The town's money grows by the clients' 225 less the supplier's 25.33 a day.
+# Starting money is five to ten days of its owner's own life (its rent and a day's bread): 200
+# for the programmers, 250 the team leader, 200 the doctor, 150 the mayor; the chef's 300 and
+# the shopkeeper's 600 are working capital besides, the chef's a day of the kitchen's ingredients
+# at the Store (75) and the shopkeeper's the food on her starting shelves twice over at wholesale
+# (352), one stock selling and the next on order, which leave them 7.5 and 9.9 days; the stock on
+# the shelves is hers as well. The treasury starts at 300, five days of the mayor's salary. The
+# durables are things to save for: the bicycle (360) costs more than any starting purse but the
+# shopkeeper's, which is the Store's, the phone 240 and then 5 a day, the coat 150 and the book 40,
+# one of each in stock. A treatment, which restores 25 health and ends an illness, costs 60, more
+# than two days of the cheapest life.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a dish at the Linde is a day's food, eaten there, and bread and fruit are helpings
@@ -139,11 +132,11 @@ town:
   # and a comfort (0.9 a shared house, 1 a flat, 1.1 the cottage), which scales what sleep
   # restores and, below 1, wears health a little each night.
   places:
-    - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 30, rooms: 3, comfort: 0.9}
-    - {id: college-flat, name: the flat by the college gates, kind: home, rent: 55, rooms: 1, comfort: 1.0}
-    - {id: market-flat, name: the flat on the market square, kind: home, rent: 50, rooms: 2, comfort: 1.0}
-    - {id: river-cottage, name: the cottage by the river, kind: home, rent: 55, rooms: 1, comfort: 1.1}
-    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 35, rooms: 3, comfort: 0.9}
+    - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 10, rooms: 3, comfort: 0.9}
+    - {id: college-flat, name: the flat by the college gates, kind: home, rent: 15, rooms: 1, comfort: 1.0}
+    - {id: market-flat, name: the flat on the market square, kind: home, rent: 15, rooms: 2, comfort: 1.0}
+    - {id: river-cottage, name: the cottage by the river, kind: home, rent: 20, rooms: 1, comfort: 1.1}
+    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 10, rooms: 3, comfort: 0.9}
     - {id: office, name: the Office, kind: office}
     - {id: store, name: the Store, kind: store}
     - {id: linde, name: the Linde, kind: restaurant}
@@ -169,44 +162,43 @@ town:
     - {between: [hospital, town-hall], minutes: 10}
     - {between: [hospital, river-walk], minutes: 10}
     - {between: [town-hall, river-walk], minutes: 10}
-  # The six occupations, each at its workplace, paid for each hour at work and a sum at once for
-  # each service, as calibrated above. The mayor's work is no service to anyone in particular and
-  # has no sum; it is being about the town, so once he has sat down to work at the Town Hall his
-  # duty runs wherever he goes until he stops, where everyone else's work stops on leaving it, and
-  # his wages are paid from the fund's tax account.
+  # The six occupations, each at its workplace. The mayor's work is being about the town, so once
+  # he has sat down to work at the Town Hall his duty runs wherever he goes until he stops, where
+  # everyone else's work stops on leaving it; the treasury pays him a salary.
   occupations:
-    - {id: programmer, title: a programmer, workplace: office, wage_per_hour: 8, per_service: 30}
-    - {id: team-leader, title: the team leader, workplace: office, wage_per_hour: 8, per_service: 15}
-    - {id: chef, title: the chef, workplace: linde, wage_per_hour: 8, per_service: 2}
-    - {id: shopkeeper, title: the shopkeeper, workplace: store, wage_per_hour: 8, per_service: 1}
-    - {id: doctor, title: the doctor, workplace: hospital, wage_per_hour: 8, per_service: 4}
-    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0, duty: anywhere, paid_from: taxes}
-  fund:
-    start: 1900
-  tax: 0.15 # of each resident's day's wages and sums per service, into the fund's tax account
-  # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
-  # who spends before she counts. What each has with the others is in its own background.
+    - {id: programmer, title: a programmer, workplace: office}
+    - {id: team-leader, title: the team leader, workplace: office}
+    - {id: chef, title: the chef, workplace: linde}
+    - {id: shopkeeper, title: the shopkeeper, workplace: store}
+    - {id: doctor, title: the doctor, workplace: hospital}
+    - {id: mayor, title: the mayor, workplace: town-hall, duty: anywhere, salary: 60}
+  treasury:
+    start: 300
+    spares: 20 # what rent and daily charges leave in a purse at midnight: a day's bread
+  tax: 0.1 # of every payment received for work, withheld into the treasury
+  # Starting money, as calibrated above; the chef's and the shopkeeper's are their businesses'
+  # working capital besides. What each has with the others is in its own background.
   residents:
     - name: Mei
       home: mill-street-house
       occupation: team-leader
-      purse: 240
+      purse: 250
     - name: Tomas
       home: college-flat
       occupation: mayor
-      purse: 260
+      purse: 150
     - name: Aisha
       home: mill-street-house
       occupation: programmer
-      purse: 180
+      purse: 200
     - name: Jonas
       home: market-flat
       occupation: chef
-      purse: 210
+      purse: 300
     - name: Lucia
       home: river-cottage
       occupation: doctor
-      purse: 300
+      purse: 200
     - name: Ravi
       home: market-flat
       occupation: programmer
@@ -214,7 +206,7 @@ town:
     - name: Olga
       home: hill-road-house
       occupation: shopkeeper
-      purse: 230
+      purse: 600
     - name: Kofi
       home: hill-road-house
       occupation: programmer
@@ -228,13 +220,13 @@ town:
     arrive_from: "08:00"
     arrive_until: "18:00"
     expiry_days: 3
-    payment: 150 # to the fund, for a task accepted
-    paid_hours: 10 # the most hours of a day's work, at any workplace, the town pays; the rest are counted, unpaid
+    payment: 150 # by the client, for a task accepted
+    leader_share: 0.2 # of a payment, to the team leader; the rest to the one who handed the task in
     acceptance_runs: 2
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The catalogue of every kind of thing in the town (see world/config.py for the kinds and
-  # effects). Each unit of an item is held by one holder at a time: a resident, what is left at a
+  # effects), at the prices calibrated above. Each unit of an item is held by one holder at a time: a resident, what is left at a
   # place for anyone, the Store's shelves, the kitchen's larder or its portions, or the supplier
   # outside the town. What the supplier sells has its wholesale price and the Store's price at
   # the start, which the shopkeeper changes: ingredients, food of no nourishment of their own,
@@ -244,31 +236,31 @@ town:
   # portion takes, each a day's food that perishes at midnight, at the menu's price at the start,
   # which the chef changes. Names carry their article, as a sentence names them.
   items:
-    - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 4, price: 6}
-    - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
-    - {id: rice, name: rice, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
-    - {id: flour, name: flour, kind: consumable, effect: food, nourishment: 0, wholesale: 2, price: 5}
-    - {id: meat, name: meat, kind: consumable, effect: food, nourishment: 0, wholesale: 8, price: 12}
-    - {id: fish, name: fish, kind: consumable, effect: food, nourishment: 0, wholesale: 7, price: 11}
-    - {id: bread, name: bread, kind: consumable, effect: food, nourishment: 34, wholesale: 3, price: 5}
+    - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
+    - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
+    - {id: rice, name: rice, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
+    - {id: flour, name: flour, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
+    - {id: meat, name: meat, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 9}
+    - {id: fish, name: fish, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 8}
+    - {id: bread, name: bread, kind: consumable, effect: food, nourishment: 34, wholesale: 2, price: 5}
     - {id: fruit, name: fruit, kind: consumable, effect: food, nourishment: 34, wholesale: 2, price: 5}
     - {id: phone, name: a phone, kind: durable, effect: messaging, fee_per_day: 5, wholesale: 180, price: 240}
     - {id: coat, name: a coat, kind: durable, effect: appearance, phrase: in a new coat, wholesale: 110, price: 150}
     - {id: bicycle, name: a bicycle, kind: durable, effect: travel, factor: 0.5, wholesale: 270, price: 360}
     - {id: book, name: a book, kind: durable, effect: appearance, phrase: with a book under one arm, wholesale: 25, price: 40}
-    - {id: vegetable-soup, name: vegetable soup, kind: consumable, effect: food, nourishment: 100, ingredients: {vegetables: 2}, price: 12, perishes: true}
-    - {id: omelette, name: an omelette, kind: consumable, effect: food, nourishment: 100, ingredients: {eggs: 2, vegetables: 1}, price: 14, perishes: true}
-    - {id: rice-bowl, name: a rice bowl, kind: consumable, effect: food, nourishment: 100, ingredients: {rice: 2, vegetables: 1}, price: 12, perishes: true}
-    - {id: pancakes, name: pancakes, kind: consumable, effect: food, nourishment: 100, ingredients: {flour: 1, eggs: 1}, price: 10, perishes: true}
-    - {id: fish-pie, name: fish pie, kind: consumable, effect: food, nourishment: 100, ingredients: {fish: 1, flour: 1}, price: 18, perishes: true}
+    - {id: vegetable-soup, name: vegetable soup, kind: consumable, effect: food, nourishment: 100, ingredients: {vegetables: 2}, price: 16, perishes: true}
+    - {id: omelette, name: an omelette, kind: consumable, effect: food, nourishment: 100, ingredients: {eggs: 2, vegetables: 1}, price: 18, perishes: true}
+    - {id: rice-bowl, name: a rice bowl, kind: consumable, effect: food, nourishment: 100, ingredients: {rice: 2, vegetables: 1}, price: 17, perishes: true}
+    - {id: pancakes, name: pancakes, kind: consumable, effect: food, nourishment: 100, ingredients: {flour: 1, eggs: 1}, price: 15, perishes: true}
+    - {id: fish-pie, name: fish pie, kind: consumable, effect: food, nourishment: 100, ingredients: {fish: 1, flour: 1}, price: 19, perishes: true}
     - {id: stew, name: stew, kind: consumable, effect: food, nourishment: 100, ingredients: {meat: 1, vegetables: 2}, price: 20, perishes: true}
-  # The Store's shelves at the start; the kitchen's larder and portions start empty, and nothing
-  # is left anywhere.
+  # The Store's shelves at the start, the shopkeeper's; the kitchen's larder and portions start
+  # empty, and nothing is left anywhere.
   store:
     stock: {bread: 20, fruit: 20, vegetables: 20, eggs: 20, rice: 10, flour: 10, meat: 6, fish: 6, phone: 1, coat: 1, bicycle: 1, book: 1}
   # The Hospital's fees at the start, which the doctor changes, and what a treatment restores.
   hospital:
-    examination: 20
+    examination: 25
     treatment: 60
     restores: 25
   # The body: three needs from 0 to 100, each read in bands from the top down (a band's name

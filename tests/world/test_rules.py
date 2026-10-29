@@ -1,14 +1,14 @@
 """The rules as one resident is told them: six short sections, its own occupation and workplace
-first, then its money with the tax, the town's places, who lives and works where, its body and
-sleep; and `help`, which tells the detail by topic: the work of each place of work, money, the
-body, the day and the places."""
+first, then its money (what it is paid for and by whom, the tax, the rent and the treasury), the
+town's places, who lives and works where, its body and sleep; and `help`, which tells the detail
+by topic: the work of each place of work, money, the body, the day and the places."""
 
 from __future__ import annotations
 
 from tests.support.towns import CARE, RESIDENTS, TRADES, town_config
 from world.rules import SECTIONS, TOPICS, Rules
 
-TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1, paid_hours=10)
+TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1)
 
 
 def test_the_rules_are_six_short_sections_ones_own_work_first():
@@ -32,19 +32,19 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
     assert "the doctor at the clinic treats illness" in sections["body"]
     assert sections["town"].endswith("help tells more of the town, by topic.")
     assert sections["money"] == (
-        "You have $120 to begin with. The town's fund pays you $7 an hour for your time at work "
-        "at the workshop, up to 10 hours a day, and $20 at once for each task of yours accepted. "
-        "At midnight your "
-        "wages are paid into your purse, less the rent for your room, $20 a day, and a tenth of "
-        "all you earned that day in tax, from which the mayor is paid. You pay for everything in "
-        "cash from your purse; with pass you hand money or things to anyone with you, put leaves "
-        "something where you are for anyone, and get takes what is left there."
-    )
+        "You have $120 to begin with. A client pays $50 for each task accepted: all of it to the "
+        "one who handed it in. A tenth of every payment for your work is tax for the town's "
+        "treasury, which pays the mayor's salary and what the mayor grants. At midnight the "
+        "treasury takes your rent, $20 a day, from your purse, never its last $10, a day's "
+        "bread; what it cannot take you owe, to be taken later. You pay for everything in cash; "
+        "with pass you hand money or things to anyone with you, put leaves something where you "
+        "are for anyone, and get takes what is left there."
+    )  # no team leader in this town: the whole payment is the programmer's
     untaxed = Rules(town_config(residents=RESIDENTS)).sections("Mei")["money"]
     assert (
-        "At midnight your wages are paid into your purse, less the rent for your room, $20 a "
-        "day. You pay"
-    ) in untaxed
+        "all of it to the one who handed it in. At midnight the treasury takes your rent, $20 a "
+        "day,"
+    ) in untaxed  # no tax, and nobody the treasury pays
     assert sections["people"] == (
         "You live in the shared house on Mill Street with Aisha; Tomas, Olga, Jonas, Lucia and "
         "Vera live in the flat by the college gates. Tomas and Aisha are programmers at the "
@@ -74,9 +74,9 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
     )
 
 
-def test_each_occupation_is_told_its_own_work_and_sum():
+def test_each_occupation_is_told_its_own_work_and_what_it_is_paid_for():
     leader = dict(RESIDENTS[0], occupation="team-leader")
-    rules = Rules(town_config(residents=(leader, *TRADES, *CARE), tax=0.1, paid_hours=10))
+    rules = Rules(town_config(residents=(leader, RESIDENTS[1], *TRADES, *CARE), tax=0.1))
     told = {name: rules.sections(name) for name in ("Mei", "Olga", "Jonas", "Lucia", "Vera")}
     assert told["Mei"]["work"].startswith(
         "You are the team leader at the workshop. You lead its programmers. Clients' tasks come in "
@@ -87,40 +87,53 @@ def test_each_occupation_is_told_its_own_work_and_sum():
         "tells you the workshop's day. You sit down"
     ) in told["Mei"]["work"]
     assert (
-        "$10 at once for each task of the programmers' accepted and $20 for each task of your "
-        "own accepted."
+        "A client pays $50 for each task accepted: $40 to the programmer who handed it in and "
+        "$10 to you, the whole for one you hand in."
     ) in told["Mei"]["money"]
+    assert (
+        "A client pays $50 for each task accepted: $40 to the one who handed it in and $10 to "
+        "the team leader."
+    ) in rules.sections("Tomas")["money"]
     assert told["Olga"]["work"].startswith(
         "You are the shopkeeper at the store. Its counter is open while you are at work there: "
-        "you sell its goods at the prices you set,"
+        "you sell its goods, which are yours, at the prices you set, and order more from the "
+        "supplier, which you pay for at once"
     )
-    assert "and $2 at once for each sale." in told["Olga"]["money"]
+    assert (
+        "The goods on the shelves are yours: what customers pay at the counter goes to you, and "
+        "you pay the supplier for what you order."
+    ) in told["Olga"]["money"]
     assert (
         "whoever comes buys a dish, or is handed one by you with pass and pays nothing; you have "
         "one yourself with eat. You buy what you cook with at the store with buy "
-        "for_the_kitchen, and the fund pays."
+        "for_the_kitchen, and pay for it."
     ) in told["Jonas"]["work"]
+    assert (
+        "What diners pay for your dishes is yours, and you pay for what you cook with."
+        in told["Jonas"]["money"]
+    )
     assert (
         "Its surgery is open while you are at work there: you examine and treat patients"
         in (told["Lucia"]["work"])
     )
-    assert "and $4 at once for each patient examined or treated." in told["Lucia"]["money"]
+    assert "The fees your patients pay are yours. A tenth of" in told["Lucia"]["money"]
     assert told["Vera"]["work"] == (
-        "You are the mayor at the hall. There you read the town's report with report, and with "
-        "announce you tell every resident whatever you want them to know. Your work is being "
-        "about the town, so once you have sat down to work it goes with you wherever you go. You "
-        "sit down to work there with start_work, or by doing your work, and are at work until "
-        "you stop with leave_work."
+        "You are the mayor at the hall. There you read the town's report with report, with "
+        "announce you tell every resident whatever you want them to know, and with grant you pay "
+        "money from the town's treasury to anyone, for a reason the report gives. Your work is "
+        "being about the town, so once you have sat down to work it goes with you wherever you "
+        "go. You sit down to work there with start_work, or by doing your work, and are at work "
+        "until you stop with leave_work."
     )  # the mayor's duty runs anywhere; everyone else's ends on leaving the workplace
     assert told["Vera"]["money"] == (
-        "You have $100 to begin with. The tax everyone pays, a tenth of all they earn, pays you "
-        "$8 an hour for your time at work, up to 10 hours a day, as far as it goes, and what it "
-        "lacks is owed to you. "
-        "At midnight your wages are paid into your purse, less the rent for your room, $30 a day, "
-        "and your own tax. You pay for everything in cash from your purse; with pass you hand "
-        "money or things to anyone with you, put leaves something where you are for anyone, and "
-        "get takes what is left there."
-    )  # the mayor has no sum, and is paid from the tax
+        "You have $100 to begin with. The town's treasury pays you a salary of $30 a day at "
+        "midnight, as far as it holds the money, and owes you the rest. It takes a tenth of every "
+        "payment anyone receives for work in tax, and pays out what you grant. At midnight the "
+        "treasury takes your rent, $30 a day, from your purse, never its last $10, a day's bread; "
+        "what it cannot take you owe, to be taken later. You pay for everything in cash; with "
+        "pass you hand money or things to anyone with you, put leaves something where you are "
+        "for anyone, and get takes what is left there."
+    )
 
 
 def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
@@ -135,27 +148,30 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
     for told in (
         "their tasks come in on its board at random through the day, about 0 a day between 08:00 "
         "and 18:00, and whoever is there is told as one comes in",
-        "the client pays the town $50 once it is accepted",
+        "for which the client pays once it is accepted",
         "read_task gives the whole problem without taking it",
         "You can hand in each task at most 2 times a day.",
         "The team leader can give a task to any of the programmers with assign",
         "withdrawn by its client at the end of the first day after the one it came in, held or not",
-        "pays the one who handed it in $20 and the team leader $10.",
+        "A client pays $50 for each task accepted: all of it to the one who handed it in.",
     ):
         assert told in office, told
     assert "the order comes onto the shelves at 08:00 the next morning" in topics["store"]
     assert "It sells from its shelves, which the shopkeeper sees whenever there" in topics["store"]
     assert (
-        "or as the chef hands it over with pass, when nobody pays; the chef, at work there, has "
-        "one with eat and does not buy them."
+        "or as the chef hands it over with pass, when nobody pays and the chef bears what it "
+        "cost; the chef, at work there, has one with eat and does not buy them."
     ) in topics["restaurant"]
     assert (
-        "a wage for each hour at work at one's own place of work, from sitting down to work "
-        "until one stops, up to 10 hours a day, and a sum at once for each service."
+        "Nobody is paid for their time. Money comes into the town only from the clients of the "
+        "workshop, and leaves it only when the shopkeeper pays the supplier."
     ) in topics["money"]
     assert "With put you leave something where you are, for anyone to take" in topics["money"]
     assert "or when you choose with eat" in topics["body"]
-    assert "Each sale pays the shopkeeper $2." in topics["store"]
+    assert "What customers pay goes to the shopkeeper, the tax withheld." in topics["store"]
+    assert (
+        "orders more from the supplier outside the town, paying for it at once" in (topics["store"])
+    )
     assert (
         "an omelette from 2 units of eggs and 1 unit of vegetables; vegetable soup from 2 units "
         "of vegetables."
@@ -165,15 +181,24 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
         "A treatment, $30 at the start, restores 25 of the patient's health" in (topics["hospital"])
     )
     assert "but nobody's purse. With announce the mayor tells every resident" in topics["hall"]
-    assert "when the fund cannot pay you, it owes you the rest" in topics["money"]
     assert (
-        "Everyone pays a tenth of all they earn, wages and sums alike, in tax into the fund's "
-        "tax account, which pays the wages of the mayor instead of the fund, as far as it holds "
-        "the money, and owes the rest. It is taken from your wages and, where they do not cover "
-        "it, from your purse; what your purse lacks you owe, as you owe rent. At midnight your "
-        "wages for the day are paid into your purse with the tax and the rent for your room"
-    ) in topics["money"]
-    assert "what the fund and its tax account hold, took in and paid out" in topics["hall"]
+        "The patient pays the fee in cash to the doctor, the tax withheld" in (topics["hospital"])
+    )
+    for told in (
+        "A tenth of every payment anyone receives for work, from a client, a customer or a "
+        "patient, is withheld at once in tax for the treasury, and you are told how much; money "
+        "handed between people is not taxed.",
+        "The town's treasury owns the homes: at midnight it takes the rent for your room, and the "
+        "daily charge on anything you own that carries one, from your purse, but never its last "
+        "$10, a day's bread; what it cannot take you owe, and it is taken at a later midnight.",
+        "The treasury pays the mayor a salary of $30 a day, as far as it holds the money, owing "
+        "the rest. The mayor may grant money from it to anyone, for a reason the town's report "
+        "shows.",
+    ):
+        assert told in topics["money"], told
+    assert "what the treasury holds, took in and paid out, the grants" in topics["hall"]
+    assert "With grant the mayor pays money from the treasury to anyone" in topics["hall"]
+    assert "At midnight the rent is taken, your health is reckoned" in topics["day"]
     assert "each night costs you 3 of your health and mends nothing" in topics["body"]
     assert "it passes after 5 nights, or when the doctor treats you" in topics["body"]
     assert topics["day"].endswith(

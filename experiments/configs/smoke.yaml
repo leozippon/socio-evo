@@ -10,6 +10,6 @@ residents:
   - {name: Jonas, background: experiments/residents/jonas.md}
 town:
   residents:
-    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 240}
-    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 230}
-    - {name: Jonas, home: market-flat, occupation: chef, purse: 210}
+    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 250}
+    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 600}
+    - {name: Jonas, home: market-flat, occupation: chef, purse: 300}

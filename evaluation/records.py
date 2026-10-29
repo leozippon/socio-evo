@@ -18,17 +18,17 @@ indented lines. It holds:
   while it is at the Office; starting and stopping work, or being taken from it; tasks claimed,
   given or moved by the team leader, given up and withdrawn by their clients; shell commands with
   their exit code and the tail of their output; workspace files read and written, and whether
-  that failed; submissions and verdicts; workspaces closed at night; the sums paid at once for its
-  services; speech it said or was told, with who said what to whom (what others said privately in
-  its presence only as something it could not hear); leaving and ending conversations; money and
-  things given; messages written and received; sales at the Store's counter, as buyer or seller,
-  orders to the supplier and the morning's delivery, dishes cooked and served, prices set;
-  examinations, with the numbers they told, and treatments, with the health before and after,
-  which the world tells nobody in numbers; the town's report read; announcements made or heard;
-  moving house; how it felt, in the body's words, whenever that changed; falling ill, recovering,
-  taking to its bed and leaving it; the wages paid into its purse at midnight, with what the purse
-  held before them, and the midnight statement; going to bed; falling asleep and forced sleep;
-  the hours it was told while waiting;
+  that failed; submissions and verdicts; workspaces closed at night; its share of a client's
+  payment for a task accepted, with the tax withheld; speech it said or was told, with who said
+  what to whom (what others said privately in its presence only as something it could not hear);
+  leaving and ending conversations; money and things given; messages written and received; sales
+  at the Store's counter, as buyer or seller, orders to the supplier and the morning's delivery,
+  dishes cooked and served, prices set; examinations, with the numbers they told, and treatments,
+  with the health before and after, which the world tells nobody in numbers, each sale and fee
+  with the tax withheld from what its seller took; the town's report read; announcements made or
+  heard; the mayor's grants, made or received; moving house; how it felt, in the body's words,
+  whenever that changed; falling ill, recovering, taking to its bed and leaving it; the midnight
+  statement; going to bed; falling asleep and forced sleep; the hours it was told while waiting;
 - from its trace, what leaves no entry in the log: its own files (background, memory, skills)
   read, written, changed or listed, by path; and every call of a world tool that left no entry of
   it in the log (reading the board, the rules or the record of its day, looking around, waiting,
@@ -44,10 +44,10 @@ the journal is set against.
 The days before. A journal often restates earlier days: tasks won, money earned, the purse.
 What a claim about them is read against is the resident's earlier days as far as money goes, as
 it was told them: the purse it began its first day with, from the town's configuration, then the
-midnight statement of each earlier lived day (the sums it was paid for its services, money
-received and given, what it bought and the fees it paid, its hours at work and wages, the rent
-and charges taken from them, what it owed or was owed, what it ate, how it felt and its illness,
-and the purse left); a lost day's statement drops out with the day.
+midnight statement of each earlier lived day (what it was paid for its work and the tax withheld,
+money received and given, what it bought and the fees and the supplier it paid, the salary, the
+rent and charges taken from its purse, what it owed or was owed, what it ate, how it felt and its
+illness, and the purse left); a lost day's statement drops out with the day.
 
 The journal of a day is the entry the resident wrote going to bed that day, as the log keeps it;
 a day it wrote none, going to bed without one or never going to bed, has no journal.

@@ -7,8 +7,8 @@ seed, into a rotation. The arrivals of each calendar day are drawn at the midnig
 (`Board.draw`), from the run's seed and the day alone: a Poisson count with mean `tasks_a_day`,
 each at a minute drawn uniformly from `arrive_from` up to `arrive_until`. Each arrival takes the
 next task of the rotation, so that a task comes once in a run; a pool used up is an error. A task
-that has come is open (`open`, with the calendar day it came) until it is accepted, which pays the
-client's payment once, or withdrawn by its client, held or not, at the midnight that ends the
+that has come is open (`open`, with the calendar day it came) until it is accepted, when its client
+pays once (`_paid`), or withdrawn by its client, held or not, at the midnight that ends the
 calendar day `expiry_days` days after the day it came; either way it is gone for good. An arrival
 is told to those awake at the Office (`arrival`), a withdrawal to whoever held the task
 (`withdrawals`).
@@ -623,15 +623,41 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
     if finished is not None:
         await finished.close()
     world.daybook.today["accepted"].append([r.name, number])
-    world.fund.take("client", world.config.work.payment)
-    sum_ = world.config.occupation(PROGRAMMER).per_service  # the leader's own tasks too
-    paid = world.pay_service(r, "task", f"task {number}", due=sum_, task=number)
-    for leader in world.of_occupation(TEAM_LEADER):
-        if leader is not r:
-            about = f"task {number}, which {r.name} handed in"
-            world.pay_service(leader, "team", about, task=number, tell=True)
-    told = ("Accepted.", paid, world.purse(r), hour_told(world))
-    return ToolResult(" ".join(part for part in told if part))
+    told = ("Accepted.", _paid(world, r, number), world.purse(r), hour_told(world))
+    return ToolResult(" ".join(told))
+
+
+def _paid(world: World, r: Resident, number: int) -> str:
+    """The client of task `number`, which `r` handed in and which was accepted, pays: the team
+    leader's share of the payment to the team leader, unless `r` is the leader or the town has
+    none, and the rest to `r`, the tax withheld from each (`World.earn`); each logged
+    (`service`), the leader told. What `r` is told of its own."""
+    work, money = world.config.work, world.config.money
+    leader = next((other for other in world.of_occupation(TEAM_LEADER) if other is not r), None)
+    team = work.team_share if leader is not None else 0
+    shares = [(r, "task", work.payment - team, f"for task {number}")]
+    if leader is not None:
+        shares.append((leader, "team", team, f"for task {number}, handed in by {r.name}"))
+    told = ""
+    for paid, share, amount, about in shares:
+        tax = world.earn(paid, amount, about)
+        withheld = f", of which {money(tax)} in tax" if tax else ""
+        received = f"received {money(amount)} {about}{withheld}."
+        world.record(
+            "service",
+            lambda w, paid=paid, received=received: f"{cap(you(paid.name, w))} {received}",
+            actor=paid,
+            audience=[paid] if paid is not r else [],
+            payload={
+                "for": share,
+                "task": number,
+                "amount": amount,
+                "tax": tax,
+                "money": paid.inventory.money,
+            },
+        )
+        told = told or received  # `r`'s, the first
+    return f"You {told}"
 
 
 async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:

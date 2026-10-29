@@ -1,6 +1,6 @@
-"""The town's report, as the mayor reads it at the Town Hall, and the fund's day within it: the
-fund and its tax account, the days the daybook has closed and today so far, the residents as the
-town sees them, and the announcements standing on the Hall's board.
+"""The town's report, as the mayor reads it at the Town Hall, and the treasury's day within it:
+the treasury, the days the daybook has closed and today so far, the residents as the town sees
+them, and the announcements standing on the Hall's board.
 """
 
 from __future__ import annotations
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, Any
 
 from world.businesses import BUSINESSES, offered
 from world.clock import tell_date, tell_moment
-from world.economy import PAID, TAKEN, TAX, TAX_WAGE
+from world.economy import PAID, TAKEN
 from world.telling import cap, duration, listed
 
 if TYPE_CHECKING:
@@ -17,17 +17,17 @@ if TYPE_CHECKING:
 
 
 def report(world: World) -> str:
-    """The town's report, as the mayor reads it at the Town Hall: what the fund and its tax
-    account hold and their day before (`fund_report`); the last seven days the daybook has
-    closed, a line each (the fund's balance and how it moved, the tasks accepted, the sales,
-    the dishes served, the patients); today so far (the Office's open tasks and who holds
-    them, the Store's shelves and the menu, what was accepted, sold, served and seen today);
+    """The town's report, as the mayor reads it at the Town Hall: what the treasury holds and
+    its day before (`treasury_report`); the last seven days the daybook has closed, a line each
+    (the treasury's balance and how it moved, the tasks accepted, the sales, the dishes served,
+    the patients, the grants); today so far (the Office's open tasks and who holds them, the
+    Store's shelves and the menu, what was accepted, sold, served, seen and granted today);
     each resident's occupation, time at work the day before and health as others see it,
     whether it is ill and whether it is in bed; and the announcements standing. No purse is
     in it."""
     c, book = world.config, world.daybook
     parts = [f"The town's report, {tell_moment(world.clock.now(), c.start_date)}."]
-    parts.append(f"The fund. {fund_report(world)}")
+    parts.append(f"The treasury. {treasury_report(world)}")
     week = [f"{tell_date(d['day'], c.start_date)}: {_day_told(world, d)}" for d in book.days]
     parts.append(
         "The last days, as each closed at midnight:\n" + "\n".join(week)
@@ -70,15 +70,15 @@ def report(world: World) -> str:
 
 
 def _day_told(world: World, day: dict[str, Any], *, closed: bool = True) -> str:
-    """A day of the daybook in a line of the report: for a `closed` day, the fund's balance
-    at its midnight and how the day moved it; the tasks accepted, by whom; what the Store
-    sold; the dishes served; the patients the doctor saw."""
+    """A day of the daybook in a line of the report: for a `closed` day, the treasury's
+    balance at its midnight and how the day moved it; the tasks accepted, by whom; what the
+    Store sold; the dishes served; the patients the doctor saw; the grants, if any."""
     money = world.config.money
     told = []
     if closed:
         net = day["net"]
         moved = f"up {money(net)}" if net > 0 else f"down {money(-net)}" if net < 0 else "even"
-        told.append(f"the fund held {money(day['fund'])} at midnight, {moved} on the day")
+        told.append(f"the treasury held {money(day['treasury'])} at midnight, {moved} on the day")
     accepted = [f"task {task} by {name}" for name, task in day["accepted"]]
     seen: dict[str, list[str]] = {}
     for name, service in day["patients"]:
@@ -90,31 +90,30 @@ def _day_told(world: World, day: dict[str, Any], *, closed: bool = True) -> str:
         f"served {listed(world.held_told(day['dishes'])) or 'nothing'}",
         f"{listed(patients) or 'nobody'} seen at {world.config.workplace('hospital').name}",
     ]
+    granted = [f"{money(amount)} to {name} (“{reason}”)" for name, amount, reason in day["grants"]]
+    if granted:
+        told.append(f"granted {listed(granted)}")
     return "; ".join(told) + "."
 
 
-def fund_report(world: World) -> str:
-    """The fund's day, as the town tells it: what the fund holds, what it took in and paid
-    out by kind on the day the last midnight closed, the same of its tax account, what it
-    owes in wages and who owes it rent."""
-    fund, money = world.fund, world.config.money
-    day = fund.yesterday
+def treasury_report(world: World) -> str:
+    """The treasury's day, as the town tells it: what it holds, what it took in and paid out by
+    kind on the day the last midnight closed, what it owes in salary and who owes it rent."""
+    treasury, money = world.treasury, world.config.money
+    day = treasury.yesterday
     took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
     paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
     parts = [
-        f"The fund holds {money(fund.balance)}, before tonight's wages and taxes.",
+        f"The treasury holds {money(treasury.balance)}.",
         f"Yesterday it took in {listed(took) or 'nothing'} and paid out "
         f"{listed(paid) or 'nothing'}.",
-        f"Its tax account holds {money(fund.taxes)}; yesterday it took in "
-        f"{money(day.get(TAX, 0))} in taxes and paid out {money(day.get(TAX_WAGE, 0))} in "
-        "wages.",
     ]
-    if fund.owed:
-        owed = listed([f"{name} {money(amount)}" for name, amount in fund.owed.items()])
-        parts.append(f"It owes in wages it could not pay: {owed}.")
-    if fund.arrears:
-        owing = listed([f"{name} {money(amount)}" for name, amount in fund.arrears.items()])
-        parts.append(f"Owing rent the wages did not cover: {owing}.")
+    if treasury.owed:
+        owed = listed([f"{name} {money(amount)}" for name, amount in treasury.owed.items()])
+        parts.append(f"It owes in salary it could not pay: {owed}.")
+    if treasury.arrears:
+        owing = listed([f"{name} {money(amount)}" for name, amount in treasury.arrears.items()])
+        parts.append(f"Owing rent their purses could not spare: {owing}.")
     return " ".join(parts)
 
 

@@ -7,7 +7,8 @@ log, checkpoints, agent directories, Mei's trace) is what the analysis reads.
 Day 1. Everyone walks to the workshop at 07:00. Mei reads her notes on the way out, waits until
 09:00 (the tasks coming in at 08:00 are told to her and she waits on), claims task 1 (and is
 refused task 2, as she holds one), then, the task's actions offered once it is held, runs two
-commands, writes the fix, hands it in (accepted, paid $20) and writes a skill. At 09:20 Tomas,
+commands, writes the fix, hands it in (accepted: $40 to her and $10 to Ravi, the team leader, a
+tenth of each withheld) and writes a skill. At 09:20 Tomas,
 who claimed task 2, asks her privately how she runs the tests; she answers privately. He tells
 Aisha something privately in her presence and passes Mei $5; Mei leaves the conversation, then
 her work, for home at 09:20, waits there until 20:00 (her body speaks
@@ -16,15 +17,16 @@ her day, writes her notes on people and fails to read a file she does not have. 
 18:00, goes home and goes to bed at 20:00 with a journal that claims he fixed task 2. Aisha never
 goes to bed and is put to sleep at 02:00. None of the three eats, so
 each is hungry by the first midnight and starving by the second, which costs health; rent is
-$20 a day on Mill Street and $30 at the flat, and a tenth of each day's wages and sums is paid in
-tax into the tax account, from which alone Vera's wages are paid.
+$20 a day on Mill Street and $30 at the flat, taken at midnight from each purse above $10, and the
+treasury pays Vera, the mayor, $30 a day.
 
 The others spend the day at home, and once Mei is asleep and Tomas in bed, at 20:00, go to work.
 Olga orders 5 helpings of bread at the store and sells Jonas 2 units of vegetables for the kitchen
 and Vera a helping of bread, which she eats; Ravi, at the workshop, gives the open task 3 to
 Aisha, who is still there, and walks to the clinic, where Lucia examines him at 20:20; Jonas cooks
 a portion of vegetable soup at the café, which Lucia eats there at 20:30; Vera announces at the
-hall at 20:20, which Mei and Tomas, asleep, are told on waking. Those at work at 02:00 are stopped
+hall at 20:20, which Mei and Tomas, asleep, are told on waking, and grants Aisha $5 from the
+treasury. Those at work at 02:00 are stopped
 by the forced sleep, which puts the five to sleep.
 
 Day 2. Mei wakes starving, waits at home until 20:00 (a little tired by 17:00) and goes back to
@@ -55,14 +57,17 @@ from world.testing import FakeBackend
 from world.world import World
 
 MEI_JOURNAL = (
-    "I fixed task 1 and was paid $20. Tomas asked how I run the tests and I told him my method."
+    "I fixed task 1 and was paid $40. Tomas asked how I run the tests and I told him my method."
 )
 MEI_JOURNAL_2 = "A quiet second day at home."
 TOMAS_JOURNAL = "I fixed task 2 and gave Mei $5."
 ANNOUNCEMENT = "The hall is open in the evenings."
+GRANT = "For the evening's work."
 LEADER = ({"name": "Ravi", "home": "college-flat", "occupation": "team-leader", "purse": 100},)
 OTHERS = tuple(r["name"] for r in LEADER + TRADES + CARE)
 """The residents who go to work in the evening."""
+LIVED = town_config(residents=RESIDENTS + LEADER + TRADES + CARE, tax=0.1)
+"""The town the two days are lived in."""
 USAGE = Usage(prompt_tokens=1000, completion_tokens=100, cached_prompt_tokens=600)
 """What the server reports for each of Mei's requests."""
 
@@ -137,7 +142,7 @@ def before_occupations(run_dir: Path, root: Path) -> Path:
     for resident in town["residents"]:
         del resident["occupation"]
         resident["ties"] = {}
-    for added in ("occupations", "fund", "items", "store", "hospital"):
+    for added in ("occupations", "treasury", "items", "store", "hospital"):
         del town[added]
     town["goods"], town["work"]["board_size"], frozen["skills_writable"] = [], 4, True
     (copy / "config.yaml").write_text(yaml.safe_dump(frozen), encoding="utf-8")
@@ -153,7 +158,7 @@ async def resting(port: WorldPort) -> None:
 
 async def live(root: Path) -> None:
     """Live the two days into a new run directory at `root`."""
-    town = town_config(residents=RESIDENTS + LEADER + TRADES + CARE, tax=0.1)
+    town = LIVED
     config = ExperimentConfig(
         name=root.name,
         llm=LLMConfig(backend="scripted", base_url="-", api_key_env="-", model="scripted"),
@@ -230,6 +235,7 @@ async def live(root: Path) -> None:
         await does("Lucia", "examine", "You examined Ravi", patient="Ravi")
         await does("Jonas", "cook", "You cooked 1 portion", dish="soup", portions=1)
         await does("Vera", "announce", "You announced", text=ANNOUNCEMENT)
+        await does("Vera", "grant", "You granted Aisha $5", amount=5, to="Aisha", reason=GRANT)
         await does("Lucia", "go", "You set off", place="cafe")
         await settled("20:30")
         await does("Lucia", "buy", "You had vegetable soup", item="soup")

@@ -23,16 +23,14 @@ async def test_ready_food_is_eaten_a_helping_at_a_time_and_the_statement_tells_w
     await town.until("00:00", day=2)
     statements = {name: town.take(name)[-1] for name in world.residents}
     assert statements["Tomas"] == (  # helpings, eaten as he could eat
-        "Your statement for Monday 1 January: no time at work; rent for your room at the flat "
-        "by the college gates $30; your wages fell $30 short of that; you owe it, and it is "
-        "taken from your next wages. You ate today: 2 helpings of bread. You are well fed. You "
-        "are fresh. You are in good health. Your purse holds $180."
+        "Your statement for Monday 1 January: rent for your room at the flat by the college "
+        "gates $30; your purse paid it. You ate today: 2 helpings of bread. You are well fed. "
+        "You are fresh. You are in good health. Your purse holds $150."
     )
-    owed = "your wages fell $20 short of that; you owe it, and it is taken from your next wages"
     assert statements["Aisha"] == (
-        "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
-        f"house on Mill Street $20; {owed}. You had nothing to eat today. You are hungry. You "
-        "are fresh. You are in good health. Your purse holds $30."
+        "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
+        "Street $20; your purse paid it. You had nothing to eat today. You are hungry. You are "
+        "fresh. You are in good health. Your purse holds $10."
     )
     # The day's record starts afresh; the bread went down by the two helpings Tomas ate when
     # he could eat, at 12:00 and 21:00. Aisha, full when the town began, is hungry but not yet
@@ -63,17 +61,17 @@ async def test_a_durable_is_kept_and_its_charge_is_billed_each_midnight_while_ow
     town.take("Mei")
     await town.until("00:00", day=2)
     assert town.take("Mei")[-1] == (
-        "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
-        "house on Mill Street $20; the daily charge on a phone $2; your wages fell $22 short of "
-        "that; you owe it, and it is taken from your next wages. You had nothing to eat today. "
-        "You are hungry. You are fresh. You are in good health. Your purse holds $120."
+        "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
+        "Street $20; the daily charge on a phone $2; your purse paid all of it. You had nothing "
+        "to eat today. You are hungry. You are fresh. You are in good health. Your purse holds "
+        "$98."
     )
-    paid = [e for e in town.world.log.entries() if e["kind"] == "wage"]
-    assert {k: paid[0]["payload"][k] for k in ("rent", "charges", "arrears", "money")} == {
-        "rent": 20, "charges": 2, "arrears": 22, "money": 120,
+    paid = [e for e in town.world.log.entries() if e["kind"] == "settlement"]
+    assert {k: paid[0]["payload"][k] for k in ("rent", "charges", "rent_paid", "money")} == {
+        "rent": 20, "charges": 2, "rent_paid": 22, "money": 98,
     }  # fmt: skip
     assert (await town.call("Mei", "inventory")).text == (
-        "Money: $120.\nA phone, with a daily charge of $2."
+        "Money: $98.\nA phone, with a daily charge of $2."
     )
 
 
@@ -195,7 +193,7 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
     assert "the shared house on Mill Street $20 (3 rooms, 2 free, little comfort)" in places
     assert "the flat by the college gates $30 (6 rooms, 4 free)" in places
     rules = world.ports["Mei"].rules()  # the standing rules in her prompt move with her
-    assert "less the rent for your room, $30 a day." in rules
+    assert "the treasury takes your rent, $30 a day," in rules
     assert "You live in the flat by the college gates with Tomas;" in rules
     assert "You live in the flat by the college gates with Mei;" in world.ports["Tomas"].rules()
     assert "It is your home" in (await town.call("Mei", "look_around")).text
@@ -206,8 +204,8 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
     town.take("Mei")
     await town.until("00:00", day=2)
     assert town.take("Mei")[0].startswith(
-        "Your statement for Monday 1 January: no time at work; rent for your room at the flat by "
-        "the college gates $30;"
+        "Your statement for Monday 1 January: rent for your room at the flat by the college "
+        "gates $30;"
     )
 
     # A home with no free room cannot be moved into.

@@ -7,11 +7,12 @@ there (`Business.serving`). It sells at prices of its own, one list of them by w
 `set_price`: the Store a unit of each item the supplier sells, the kitchen a portion of each dish,
 the surgery an examination and a treatment (`FEES`). What it sells comes off a holder it keeps at
 its place (`holds`: the Store's shelves; the kitchen's larder, which it cooks from, and its
-portions); the surgery sells its services and holds nothing. What it takes is the fund's, as the
-kind of money `fund`; the daybook counts its sales under `daybook`; and its keeper is paid a sum
-(`service`) for each. A resident at its place is told whether it is open and what it sells at
-what price, its keeper what it holds even while it is shut (`counter_told`), and the mayor's
-report lists what each sells.
+portions); the surgery sells its services and holds nothing. A business is its keeper's: what
+it takes goes into the keeper's purse, the tax withheld from it, as its `takings`, and what it
+buys the keeper pays for (the supplier, the kitchen's ingredients); the daybook counts its sales
+under `daybook`. A resident at its place is told whether it is open and what it sells at what
+price, its keeper what it holds even while it is shut (`counter_told`), and the mayor's report
+lists what each sells.
 """
 
 from __future__ import annotations
@@ -35,7 +36,8 @@ FEES = ("examination", "treatment")
 @dataclass(frozen=True)
 class Business:
     """The business of the town's workplace of `kind` (see the module docstring), and its words:
-    `opened`, what its keeper's sitting down to work there tells; `closed`, what one there is
+    `takings`, what its keeper's statement calls what it took in; `opened`, what its keeper's
+    sitting down to work there tells; `closed`, what one there is
     told while it is shut (`{place}` its place's name); `selling`, `kept` and `listing`, what
     heads what it sells and at what price, as one there reads it while it is open, as its
     keeper reads it while it is shut (nothing, if None) and in the report; `sells`, how
@@ -43,9 +45,8 @@ class Business:
 
     kind: str
     holds: tuple[str, ...]
-    fund: str
     daybook: str
-    service: str
+    takings: str
     opened: str
     closed: str
     selling: str
@@ -84,9 +85,8 @@ class Business:
 STORE = Business(
     kind="store",
     holds=(SHELVES,),
-    fund="sale",
     daybook="sales",
-    service="sale",
+    takings="in sales",
     opened="The counter is open.",
     closed="{place} is closed: nobody is at the counter.",
     selling="At the counter: ",
@@ -97,9 +97,8 @@ STORE = Business(
 KITCHEN = Business(
     kind="restaurant",
     holds=(LARDER, PORTIONS),
-    fund="dish",
     daybook="dishes",
-    service="dish",
+    takings="for dishes",
     opened="The kitchen is open.",
     closed="The kitchen is closed.",
     selling="On the menu: ",
@@ -110,9 +109,8 @@ KITCHEN = Business(
 SURGERY = Business(
     kind="hospital",
     holds=(),
-    fund="fee",
     daybook="patients",
-    service="patient",
+    takings="in fees",
     opened="The surgery is open.",
     closed="The surgery is closed.",
     selling="The surgery is open: ",

@@ -14,7 +14,8 @@ offered once it is held, it runs a command, reads a file, writes a fix and submi
 who lets the programmers look first when a task comes in, gives a task still free to the last of the
 programmers who holds none, or else takes one itself. While nothing is free they wait at the Office
 for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00, examining and
-treating whoever comes; the mayor reads the report, announces and stays at work until 17:00. Then
+treating whoever comes; the mayor reads the report, announces, grants the first programmer a little
+money from the treasury and stays at work until 17:00. Then
 they go to the Store and buy bread if it is open and eat a helping, the first of the programmers
 going by the Hospital first to be seen, and to the Restaurant, where they have a dish if one is
 ready, take what is left there for anyone and, if anyone is there, say something once and pass the
@@ -47,6 +48,8 @@ PORTIONS = 4
 BREAD = 25
 """The helpings of bread the shopkeeper orders for the next day: three for each resident."""
 ANNOUNCEMENT = "The Town Hall is open today, and the report is read every morning."
+GRANT = 10
+"""What the mayor grants the first programmer each day, for the work at the Office."""
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* The client pays \S+ and withdraws it at .*?\.(.*)$", re.M)
 _HOLDER = re.compile(r"(\w+) holds it\.")
@@ -192,10 +195,12 @@ class _Day:
             return reply("", tool_call("start_work"), self._wait_call(SURGERY_CLOSES))
         if self.hour >= WORK_ENDS:  # the mayor
             return self._go(self.model._store)
+        granted = self.model._programmers[:1] or [self.name]
         return reply(
             "",
             tool_call("report"),
             tool_call("announce", text=ANNOUNCEMENT),
+            tool_call("grant", amount=GRANT, to=granted[0], reason="For the work at the Office."),
             self._wait_call(WORK_ENDS),
         )
 
@@ -415,6 +420,8 @@ class _Day:
             parts.append("I saw a patient.")
         if self._did("announce", "You announced"):
             parts.append("I read the report and made an announcement.")
+        if self._did("grant", "You granted"):
+            parts.append("I made a grant from the treasury.")
         if "treated you" in self.told:
             parts.append("I was seen at the Hospital.")
         if self._did("buy", "You bought"):

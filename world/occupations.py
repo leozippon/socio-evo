@@ -1,13 +1,13 @@
 """The occupations the world implements, by id: for each, the kind of place where it works, the
-work it adds to what everyone can do there, and the rules' words for that work and for its sum
-per service (`OCCUPATIONS`). A new occupation is code here and in the tools that do its work.
+work it adds to what everyone can do there, and the rules' words for that work and for what it
+lives on (`OCCUPATIONS`). A new occupation is code here and in the tools that do its work.
 
 What else an occupation is belongs to the town's configuration (`world.config.Occupation`): its
-title, its workplace among the town's places, its wage an hour and its sum per service, where its
-duty runs (at its workplace, or anywhere once it has sat down to work: the mayor's) and who pays
-its wages (the fund, or the fund's tax account: the mayor's). An occupation keeps the business of
-its workplace, if that place has one (`world.businesses`): the shopkeeper the Store's counter, the
-chef the Restaurant's kitchen, the doctor the Hospital's surgery.
+title, its workplace among the town's places, where its duty runs (at its workplace, or anywhere
+once it has sat down to work: the mayor's) and its salary from the treasury, if it has one (the
+mayor's). An occupation keeps the business of its workplace, if that place has one
+(`world.businesses`), and lives on what it takes: the shopkeeper the Store's counter, the chef the
+Restaurant's kitchen, the doctor the Hospital's surgery.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from typing import Literal
 OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
 PROGRAMMER: OccupationId = "programmer"
 TEAM_LEADER: OccupationId = "team-leader"
-"""The programmers' leader, who gives them tasks and is paid a sum for each of theirs accepted."""
+"""The programmers' leader, who gives them tasks and has a share of each payment for theirs."""
 CHEF: OccupationId = "chef"
 SHOPKEEPER: OccupationId = "shopkeeper"
 DOCTOR: OccupationId = "doctor"
@@ -39,12 +39,14 @@ class Trade:
     """What the world does for an occupation: `workplace`, the kind of place where it works;
     `work`, the tools it adds to what everyone can do, done at its workplace; `told`, what its
     work is, as the rules tell it after its workplace (`{office}`, `{store}` and `{withdrawn}`
-    filled in); `service`, what its sum per service is paid for, as the money rules tell it."""
+    filled in); `earns`, what it is paid for and by whom, as the money rules tell it (`{split}`,
+    how a client's payment is shared, `{payment}`, `{share}`, `{team}` and `{salary}` filled
+    in)."""
 
     workplace: str
     work: frozenset[str]
     told: str
-    service: str
+    earns: str
 
 
 OCCUPATIONS: dict[str, Trade] = {
@@ -57,7 +59,7 @@ OCCUPATIONS: dict[str, Trade] = {
             "machines are, and hand it in for the client's checks before the client withdraws "
             "it, at the end of {withdrawn}."
         ),
-        service="for each task of yours accepted",
+        earns="{split}.",
     ),
     TEAM_LEADER: Trade(
         workplace="office",
@@ -69,7 +71,10 @@ OCCUPATIONS: dict[str, Trade] = {
             "client's checks before the client withdraws it, at the end of {withdrawn}. Each "
             "midnight your statement tells you {office}'s day."
         ),
-        service="for each task of the programmers' accepted",
+        earns=(
+            "A client pays {payment} for each task accepted: {share} to the programmer who "
+            "handed it in and {team} to you, the whole for one you hand in."
+        ),
     ),
     CHEF: Trade(
         workplace="restaurant",
@@ -78,19 +83,22 @@ OCCUPATIONS: dict[str, Trade] = {
             "Its kitchen is open while you are at work there: you cook dishes from what the "
             "kitchen holds and set the menu's prices, and whoever comes buys a dish, or is "
             "handed one by you with pass and pays nothing; you have one yourself with eat. You "
-            "buy what you cook with at {store} with buy for_the_kitchen, and the fund pays."
+            "buy what you cook with at {store} with buy for_the_kitchen, and pay for it."
         ),
-        service="for each dish served",
+        earns="What diners pay for your dishes is yours, and you pay for what you cook with.",
     ),
     SHOPKEEPER: Trade(
         workplace="store",
         work=frozenset({"order", "set_price"}),
         told=(
-            "Its counter is open while you are at work there: you sell its goods at the prices "
-            "you set, and order more from the supplier, which the fund pays and which arrives "
-            "the next morning."
+            "Its counter is open while you are at work there: you sell its goods, which are "
+            "yours, at the prices you set, and order more from the supplier, which you pay for "
+            "at once and which arrives the next morning."
         ),
-        service="for each sale",
+        earns=(
+            "The goods on the shelves are yours: what customers pay at the counter goes to you, "
+            "and you pay the supplier for what you order."
+        ),
     ),
     DOCTOR: Trade(
         workplace="hospital",
@@ -99,17 +107,21 @@ OCCUPATIONS: dict[str, Trade] = {
             "Its surgery is open while you are at work there: you examine and treat patients, "
             "at fees you set, and you go to the bedside of anyone too ill to get up."
         ),
-        service="for each patient examined or treated",
+        earns="The fees your patients pay are yours.",
     ),
     MAYOR: Trade(
         workplace="hall",
-        work=frozenset({"report", "announce"}),
+        work=frozenset({"report", "announce", "grant"}),
         told=(
-            "There you read the town's report with report, and with announce you tell every "
-            "resident whatever you want them to know. Your work is being about the town, so "
-            "once you have sat down to work it goes with you wherever you go."
+            "There you read the town's report with report, with announce you tell every "
+            "resident whatever you want them to know, and with grant you pay money from the "
+            "town's treasury to anyone, for a reason the report gives. Your work is being about "
+            "the town, so once you have sat down to work it goes with you wherever you go."
         ),
-        service="for each service",
+        earns=(
+            "The town's treasury pays you a salary of {salary} a day at midnight, as far as it "
+            "holds the money, and owes you the rest."
+        ),
     ),
 }
 """Each occupation the world implements, by its id."""

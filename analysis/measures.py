@@ -13,9 +13,10 @@ and replace what is there; DIR is given explicitly (by convention `results/<run>
 since analysis writes nothing under the run. The days are those the world log has closed
 (`world.log.lived_days`), so a day lost to an interruption counts once, as it was lived again.
 
-The midnight that ends a lived day settles the calendar day: the hours at work, wages, rent and
-the fund's takings and payments of a day are those of its calendar day, so work after midnight
-counts on the next day. Who lies bedridden is carried from day to day: a resident takes to its
+The midnight that ends a lived day settles the calendar day: the hours at work, the rent, the
+salary and the treasury's takings and payments of a day are those of its calendar day, so work
+after midnight counts on the next day; what was paid and sold, and the money at the checkpoint, are
+the lived day's. Who lies bedridden is carried from day to day: a resident takes to its
 bed at a midnight (`bedridden`) and leaves it when treated (`recovered`, for one bedridden), and a
 visit to it is any other resident's arrival at the home where it lies, a housemate's coming home
 included. A measure is None where it has no value: a cached share that no reply reported, or the
@@ -36,7 +37,7 @@ from typing import Any
 from agent.directory import TRACE
 from evaluation.records import Entry, agent_dir, closed_days, day_date, town, trace_days
 from infrastructure.storage import RunDirectory
-from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN, TAX, TAX_WAGE
+from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN
 from world.log import Day
 
 MEASURES = {
@@ -47,19 +48,23 @@ MEASURES = {
     "tasks_accepted": "hand-ins accepted while it still held the task, which the client paid for",
     "tasks_given_up": "tasks it gave up",
     "tasks_withdrawn": "tasks the client withdrew at midnight while it held them",
-    "hours_at_work": "hours at work at its workplace, as the midnight counted them, paid or not",
-    "wages": "its wages for those hours, of which the town pays at most work.paid_hours a day",
-    "tax": "the tax taken from its wages at midnight into the fund's tax account",
-    "service_sums": "the sums due to it at once for its services: tasks, sales, dishes, patients",
-    "rent": "the rent taken from its wages at midnight",
-    "charges": "the daily charges on what it owns, taken from its wages at midnight",
-    "arrears": "the rent and charges its wages have not covered, owed to the fund after midnight",
-    "owed_wages": "what the fund owes it after midnight: wages and sums it could not pay",
-    "money": "its money after the midnight wages",
+    "hours_at_work": "hours at work at its workplace, as the midnight counted them",
+    "client_shares": "its shares of the clients' payments for tasks accepted, before the tax",
+    "takings": "what customers and patients paid it at its business, before the tax",
+    "costs": "what its business bought: the shopkeeper's orders, the chef's for the kitchen",
+    "tax": "the tax withheld into the treasury from what it was paid for its work",
+    "rent": "the rent, daily charges and arrears the treasury took from its purse at midnight",
+    "charges": "the daily charges on what it owns, due at midnight",
+    "arrears": "the rent and charges its purse could not spare, owed to the treasury after it",
+    "salary": "the salary the treasury paid it at midnight",
+    "salary_owed": "the salary the treasury owes it after midnight",
+    "granted": "money the mayor granted it from the treasury",
+    "grants_made": "money it granted from the treasury as the mayor",
+    "money": "its money after midnight",
     "spent": "money it paid at the Store's counter, for dishes and in the Hospital's fees",
     "sales_made": "sales at the Store's counter while it kept it",
     "bought": "purchases at the Store's counter for itself",
-    "bought_for_kitchen": "purchases at the Store's counter for the kitchen, which the fund paid",
+    "bought_for_kitchen": "purchases at the Store's counter for the kitchen",
     "orders": "orders it placed with the supplier",
     "portions_cooked": "portions of dishes it cooked",
     "dishes_served": "dishes it served as the chef, for which the diner paid",
@@ -99,20 +104,29 @@ MEASURES = {
     "compactions": "compactions of the context",
 }
 """Every measure of a resident-day and what it counts."""
-LEVELS = frozenset({"arrears", "owed_wages", "money", "health", "cached_share"})
+LEVELS = frozenset({"arrears", "salary_owed", "money", "health", "cached_share"})
 """The measures that are no count or amount, and so have no daily total."""
 TOWN = {
     "tasks_arrived": "clients' tasks that came in on the Office's board",
     "tasks_accepted": "tasks accepted, which the clients paid for",
     "tasks_withdrawn": "tasks the clients withdrew at midnight, held or not",
-    "fund": "the fund's balance at the day's checkpoint",
-    "owed_wages": "what the fund owed the residents at the checkpoint, wages and sums",
-    "arrears": "the rent and charges the residents owed the fund at the checkpoint",
-    **{f"taken_{kind}": f"what the fund took {words} that day" for kind, words in TAKEN.items()},
-    **{f"paid_{kind}": f"what the fund paid {words} that day" for kind, words in PAID.items()},
-    "taxes": "the fund's tax account's balance at the day's checkpoint",
-    f"taken_{TAX}": "what the tax account took in taxes that day",
-    f"paid_{TAX_WAGE}": "what the tax account paid in wages that day",
+    "clients": "what the clients paid for the tasks accepted, which came into the town",
+    "supplier": "what the shopkeeper paid the supplier, the Store's costs, which left the town",
+    "money": "the residents' money at the day's checkpoint",
+    "treasury": "the treasury's balance at the day's checkpoint",
+    "salary_owed": "the salary the treasury owed at the checkpoint",
+    "arrears": "the rent and charges the residents owed the treasury at the checkpoint",
+    **{
+        f"taken_{kind}": f"what the treasury took {words} that day" for kind, words in TAKEN.items()
+    },
+    **{
+        f"paid_{kind}": f"what the treasury paid out {words} that day"
+        for kind, words in PAID.items()
+    },
+    "store_takings": "what customers paid at the Store's counter, the kitchen's purchases included",
+    "kitchen_takings": "what diners paid for the kitchen's dishes",
+    "kitchen_costs": "what the kitchen's ingredients cost at the Store's counter",
+    "surgery_takings": "what patients paid in the Hospital's fees",
 }
 """Every measure of the town's day and what it counts."""
 
@@ -172,14 +186,18 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
     def to_me(kind: str, key: str) -> list[Entry]:
         return [e for e in day.entries if e["kind"] == kind and e["payload"][key] == name]
 
-    settled, paid = mine("settlement"), mine("wage")
+    settled, shares = mine("settlement"), mine("service")
+    last = settled[-1]["payload"] if settled else None
     moves = [e["payload"] | {"actor": e["actor"]} for e in day.entries if e["kind"] == "move"]
     bought = [m for m in moves if m["reason"] == "buy"]
     sales = [m for m in bought if m["source"] == SHELVES]  # at the Store's counter
     dishes = [m for m in bought if m["source"] == PORTIONS]
+    sold = [m for m in bought if m["seller"] == name]  # and the seller's, as their keeper
     own = [m for m in sales if m["actor"] == name and m["target"] == name]
     eaten = [m for m in dishes if m["actor"] == name]
+    kitchen = [m for m in sales if m["actor"] == name and m["target"] == LARDER]
     examined, treated = to_me("examination", "patient"), to_me("treatment", "patient")
+    seen = mine("examination") + mine("treatment")
     speech = [e for e in day.entries if e["kind"] == "speech"]
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
@@ -198,20 +216,25 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         ),
         "tasks_given_up": len(mine("abandon")),
         "tasks_withdrawn": len(to_me("task_withdrawn", "holder")),
-        "hours_at_work": sum(e["payload"]["hours"] for e in paid),
-        "wages": sum(e["payload"]["wages"] for e in paid),
-        "tax": sum(e["payload"]["tax"] for e in paid),
-        "service_sums": sum(e["payload"]["amount"] for e in mine("service")),
-        "rent": sum(e["payload"]["rent"] for e in paid),
-        "charges": sum(e["payload"]["charges"] for e in paid),
-        "arrears": paid[-1]["payload"]["arrears"] if paid else None,
-        "owed_wages": paid[-1]["payload"]["owed"] if paid else None,
-        "money": paid[-1]["payload"]["money"] if paid else None,
-        "spent": sum(m["money"] for m in own + eaten)
+        "hours_at_work": sum(e["payload"]["hours"] for e in settled),
+        "client_shares": sum(e["payload"]["amount"] for e in shares),
+        "takings": sum(m["money"] for m in sold) + sum(e["payload"]["fee"] for e in seen),
+        "costs": sum(e["payload"]["amount"] for e in mine("order"))
+        + sum(m["money"] for m in kitchen),
+        "tax": sum(e["payload"]["tax"] for e in shares + seen) + sum(m["tax"] for m in sold),
+        "rent": sum(e["payload"]["rent_paid"] for e in settled),
+        "charges": sum(e["payload"]["charges"] for e in settled),
+        "arrears": last["arrears"] if last else None,
+        "salary": sum(e["payload"]["salary_paid"] for e in settled),
+        "salary_owed": last["owed"] if last else None,
+        "granted": sum(e["payload"]["amount"] for e in to_me("grant", "to")),
+        "grants_made": sum(e["payload"]["amount"] for e in mine("grant")),
+        "money": last["money"] if last else None,
+        "spent": sum(m["money"] for m in own + eaten + kitchen)
         + sum(e["payload"]["fee"] for e in examined + treated),
         "sales_made": sum(m["seller"] == name for m in sales),
         "bought": len(own),
-        "bought_for_kitchen": sum(m["actor"] == name and m["target"] == LARDER for m in sales),
+        "bought_for_kitchen": len(kitchen),
         "orders": len(mine("order")),
         "portions_cooked": sum(e["payload"]["portions"] for e in mine("cook")),
         "dishes_served": sum(m["seller"] == name for m in dishes),
@@ -220,10 +243,10 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         "examinations_received": len(examined),
         "treatments_given": len(mine("treatment")),
         "treatments_received": len(treated),
-        "hungry": int(bool(settled) and settled[-1]["payload"]["nourishment"] == 0),
-        "starving": int(bool(settled) and "starving" in settled[-1]["payload"]["night"]),
-        "ill_night": int(bool(settled) and "illness" in settled[-1]["payload"]["night"]),
-        "health": settled[-1]["payload"]["health"] if settled else None,
+        "hungry": int(bool(last) and last["nourishment"] == 0),
+        "starving": int(bool(last) and "starving" in last["night"]),
+        "ill_night": int(bool(last) and "illness" in last["night"]),
+        "health": last["health"] if last else None,
         "bedridden": int(name in lying or bool(mine("bedridden"))),
         "announcements": len(mine("announcement")),
         "reports_read": len(mine("report")),
@@ -284,15 +307,18 @@ def trace_measures(trace: Sequence[Entry]) -> Row:
 
 
 def town_days(run_dir: Path) -> list[Row]:
-    """One row per lived day of the run at `run_dir`, by day: the measures of `TOWN`, the tasks
-    from the world log and the fund from the day's checkpoint, which holds its balance and its tax
-    account's, what it owes and is owed, and its takings and payments of the calendar day its
-    midnight closed."""
+    """One row per lived day of the run at `run_dir`, by day: the measures of `TOWN`, the tasks,
+    the clients' payments, the supplier's bills and the businesses' takings and costs from the
+    world log, and from the day's checkpoint the residents' money and the treasury's, what it owes
+    and is owed, and its takings and payments of the calendar day its midnight closed."""
     config, run = town(run_dir), RunDirectory(run_dir)
     rows = []
     for day in closed_days(run_dir).values():
-        fund = json.loads(run.checkpoint_path(day.number).read_text(encoding="utf-8"))["fund"]
+        state = json.loads(run.checkpoint_path(day.number).read_text(encoding="utf-8"))
+        treasury = state["treasury"]
         kinds = Counter(e["kind"] for e in day.entries)
+        bought = [e["payload"] for e in day.entries if e["kind"] == "move"]
+        bought = [m for m in bought if m["reason"] == "buy"]
         rows.append(
             {
                 "day": day.number,
@@ -303,17 +329,27 @@ def town_days(run_dir: Path) -> list[Row]:
                     for e in day.entries
                 ),
                 "tasks_withdrawn": kinds["task_withdrawn"],
-                "fund": fund["balance"],
-                "owed_wages": sum(fund["owed"].values()),
-                "arrears": sum(fund["arrears"].values()),
-                **{f"taken_{kind}": fund["yesterday"].get(kind, 0) for kind in TAKEN},
-                **{f"paid_{kind}": fund["yesterday"].get(kind, 0) for kind in PAID},
-                "taxes": fund["taxes"],
-                f"taken_{TAX}": fund["yesterday"].get(TAX, 0),
-                f"paid_{TAX_WAGE}": fund["yesterday"].get(TAX_WAGE, 0),
+                "clients": _summed(day, "service", "amount"),
+                "supplier": _summed(day, "order", "amount"),
+                "money": sum(r["inventory"]["money"] for r in state["residents"].values()),
+                "treasury": treasury["balance"],
+                "salary_owed": sum(treasury["owed"].values()),
+                "arrears": sum(treasury["arrears"].values()),
+                **{f"taken_{kind}": treasury["yesterday"].get(kind, 0) for kind in TAKEN},
+                **{f"paid_{kind}": treasury["yesterday"].get(kind, 0) for kind in PAID},
+                "store_takings": sum(m["money"] for m in bought if m["source"] == SHELVES),
+                "kitchen_takings": sum(m["money"] for m in bought if m["source"] == PORTIONS),
+                "kitchen_costs": sum(m["money"] for m in bought if m["target"] == LARDER),
+                "surgery_takings": _summed(day, "examination", "fee")
+                + _summed(day, "treatment", "fee"),
             }
         )
     return rows
+
+
+def _summed(day: Day, kind: str, field: str) -> int:
+    """The payloads' `field` summed over the entries of `kind` of `day`."""
+    return sum(e["payload"][field] for e in day.entries if e["kind"] == kind)
 
 
 def daily(rows: Sequence[Row]) -> list[Row]:

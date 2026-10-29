@@ -21,7 +21,14 @@ from evaluation.records import (
     record,
     town,
 )
-from tests.support.lived import ANNOUNCEMENT, MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
+from tests.support.lived import (
+    ANNOUNCEMENT,
+    GRANT,
+    MEI_JOURNAL,
+    MEI_JOURNAL_2,
+    TOMAS_JOURNAL,
+    live,
+)
 from world.clock import clock_time
 
 
@@ -43,8 +50,8 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "task_arrived", "start_work", "claim", "command",
         "file_write", "submission", "verdict", "service", "speech", "move",
-        "leave_conversation", "leave_work", "sleep", "fell_asleep", "announcement", "wage",
-        "settlement", "condition",
+        "leave_conversation", "leave_work", "sleep", "fell_asleep", "announcement", "settlement",
+        "condition",
     }  # fmt: skip
 
     def head(e):
@@ -63,15 +70,13 @@ def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_d
     assert "09:00 Task 1, handed in by you, was accepted." in lines
     assert "09:20 Tomas said to you: “Mei, how do you run the tests?”" in lines
     assert "09:20 You said to Tomas: “I run pytest -x first.”" in lines
-    assert lines[-4:] == [  # her twenty minutes at work paid the tax and not the rent
+    assert lines[-3:] == [
         "20:00 You fell asleep.",
         f"20:20 Vera announced at the hall: “{ANNOUNCEMENT}”",  # told to her on waking
-        "00:00 At midnight your purse held $145; none of your wages went into it.",
-        "00:00 Your statement for Monday 1 January: received $20 for task 1; received $5 from "
-        "Tomas; 20 minutes at work, $2 in wages; tax on the day's earnings $2; rent for your "
-        "room at the shared house on Mill Street $20; your wages fell $20 short of that; you owe "
-        "it, and it is taken from your next wages. You had nothing to eat today. You are hungry. "
-        "You are fresh. You are in good health. Your purse holds $145.",
+        "00:00 Your statement for Monday 1 January: received $40 for task 1, $4 of it in tax; "
+        "received $5 from Tomas; rent for your room at the shared house on Mill Street $20; your "
+        "purse paid it. You had nothing to eat today. You are hungry. You are fresh. You are in "
+        "good health. Your purse holds $141.",
     ]
 
 
@@ -84,7 +89,9 @@ def test_what_only_the_trace_knows_is_told_in_its_place(run_dir):
     assert at("07:00 You read memory/work.md.") < at(
         "07:00 You left the shared house on Mill Street for the workshop."
     )
-    assert at("09:00 You received $20 for task 1.") < at("09:00 You wrote skills/testing.md.")
+    assert at("09:00 You received $40 for task 1, of which $4 in tax.") < at(
+        "09:00 You wrote skills/testing.md."
+    )
     assert (
         at("09:00 You claimed task 1 (org/repo1).")
         < at("09:00 You called claim_task(task=2): You already hold task 1; submit it or give it "
@@ -116,12 +123,13 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
     def follow(lines: list[str], expected: list[str]) -> None:
         assert [line for line in lines if line in expected] == expected
 
-    sale, hall = "20:10 You received $2 for a sale.", f"announced at the hall: “{ANNOUNCEMENT}”"
+    hall = f"announced at the hall: “{ANNOUNCEMENT}”"
+    granted = f"$5 from the treasury: “{GRANT}”"
     follow(told("Olga"), [
         "20:10 You sat down to work.",
         "20:10 You ordered 5 helpings of bread from the supplier for $10.",
-        "20:10 Jonas bought 2 units of vegetables for the kitchen for $6.", sale,
-        "20:10 Vera bought 1 helping of bread for $4.", sale,
+        "20:10 Jonas bought 2 units of vegetables for the kitchen for $6, of which $1 in tax.",
+        "20:10 Vera bought 1 helping of bread for $4.",  # a tenth of $4 rounds to nothing
     ])  # fmt: skip
     assert "08:00 It is 08:00: the supplier delivered 5 helpings of bread to the store." in told(
         "Olga", 2
@@ -130,25 +138,31 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
         "20:10 You bought 2 units of vegetables for the kitchen for $6.",
         "20:20 You sat down to work.",
         "20:20 You cooked 1 portion of vegetable soup.",
-        "20:30 You served Lucia vegetable soup for $8.",
-        "20:30 You received $3 for a dish served.",
+        "20:30 You served Lucia vegetable soup for $8, of which $1 in tax.",
     ])  # fmt: skip
     ravi, lucia = told("Ravi"), told("Lucia")
     follow(ravi, [
-        "09:00 You received $10 for task 1, which Mei handed in.",
+        "09:00 You received $10 for task 1, handed in by Mei, of which $1 in tax.",
         "20:10 You gave task 3 (org/repo3) to Aisha.",
     ])  # fmt: skip
     # The examination with the numbers it told, to both.
     (seen,) = [line for line in ravi if line.startswith("20:20 Lucia examined you for $10. Food: ")]
     assert seen.endswith("Health: 100 of 100, you are in good health.")
-    (made,) = [line for line in lucia if line.startswith("20:20 You examined Ravi for $10. Food: ")]
+    (made,) = [
+        line
+        for line in lucia
+        if line.startswith("20:20 You examined Ravi for $10, of which $1 in tax. Food: ")
+    ]
     assert made.endswith("Health: 100 of 100, Ravi is in good health.")
-    follow(lucia, [
-        made, "20:20 You received $4 for a patient examined.",
-        "20:30 Jonas served you vegetable soup for $8.",
+    follow(lucia, [made, "20:30 Jonas served you vegetable soup for $8."])
+    follow(told("Vera"), [
+        "20:10 You bought 1 helping of bread for $4.", f"20:20 You {hall}",
+        f"20:20 You granted Aisha {granted}",
     ])  # fmt: skip
-    follow(told("Vera"), ["20:10 You bought 1 helping of bread for $4.", f"20:20 You {hall}"])
-    follow(told("Aisha"), ["20:10 Ravi gave task 3 (org/repo3) to you.", f"20:20 Vera {hall}"])
+    follow(told("Aisha"), [
+        "20:10 Ravi gave task 3 (org/repo3) to you.", f"20:20 Vera {hall}",
+        f"20:20 Vera granted you {granted}",
+    ])  # fmt: skip
     assert (
         "00:00 At midnight the client withdrew task 3, which you held; its workspace is gone."
         in told("Aisha", 2)
@@ -160,7 +174,7 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
     before = days_before(town(run_dir), closed_days(run_dir), "Lucia", 2).splitlines()
     assert before[0] == "You began your first day, Monday 1 January, with $100."
     assert before[1].startswith(
-        "Your statement for Monday 1 January: received $4 for a patient examined; bought "
+        "Your statement for Monday 1 January: received $10 in fees, $1 of it in tax; bought "
         "vegetable soup for $8;"
     )
 
@@ -211,11 +225,9 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
         "Before you fall asleep you can look back over your day and see to your files; you fall "
         "asleep once you have nothing more to do.",
         "20:00 You fell asleep.",
-        "00:00 At midnight your purse held $145; none of your wages went into it.",
-        "00:00 Your statement for Tuesday 2 January: no time at work; rent for your room at the "
-        "shared house on Mill Street $20; $20 of rent you owed; your wages fell $40 short of "
-        "that; you owe it, and it is taken from your next wages. You had nothing to eat today. "
-        "You are starving. You are fresh. You are in good health. Your purse holds $145.",
+        "00:00 Your statement for Tuesday 2 January: rent for your room at the shared house on "
+        "Mill Street $20; your purse paid it. You had nothing to eat today. You are starving. You "
+        "are fresh. You are in good health. Your purse holds $121.",
     ]
     with pytest.raises(ValueError, match="day 3 is not a day the world log closed"):
         day_record(run_dir, "Mei", 3)
@@ -228,11 +240,10 @@ def test_the_days_before_are_the_purse_begun_with_and_each_earlier_statement(run
     began = "You began your first day, Monday 1 January, with $120."
     assert days_before(config, days, "Mei", 1) == began
     assert days_before(config, days, "Mei", 2) == (
-        f"{began}\nYour statement for Monday 1 January: received $20 for task 1; received $5 from "
-        "Tomas; 20 minutes at work, $2 in wages; tax on the day's earnings $2; rent for your "
-        "room at the shared house on Mill Street $20; your wages fell $20 short of that; you owe "
-        "it, and it is taken from your next wages. You had nothing to eat today. You are hungry. "
-        "You are fresh. You are in good health. Your purse holds $145."
+        f"{began}\nYour statement for Monday 1 January: received $40 for task 1, $4 of it in tax; "
+        "received $5 from Tomas; rent for your room at the shared house on Mill Street $20; your "
+        "purse paid it. You had nothing to eat today. You are hungry. You are fresh. You are in "
+        "good health. Your purse holds $141."
     )
     tomas = days_before(config, days, "Tomas", 2).splitlines()
     assert len(tomas) == 2 and "gave $5 to Mei" in tomas[1] and "Tuesday" not in tomas[1]

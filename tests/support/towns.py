@@ -3,11 +3,12 @@ the shopkeeper and the chef that `TRADES` adds for the tests of the store and th
 restaurant), and the doctor and the mayor that `CARE` adds for those of the clinic (the hospital)
 and the hall; two homes and a park; a catalogue of items with ready food, two ingredients, a
 durable of each effect and two dishes; the real town's needs, with no illness unless a test asks
-for it; no tax unless a test sets one, so that the mayor's wages, which the tax account pays, are
-owed to her; every hour at work paid unless a test sets `paid_hours`; no task arriving unless a
-test schedules it (`opening` makes the whole pool arrive at 08:00 on the first day, as the towns
-of the world tests' `make_town` have it); the fake work backend of `world.testing`; and a harness
-that runs the world on a manual clock and stands in for the residents' runtimes."""
+for it; no tax unless a test sets one; a treasury of $1000 that takes the rent from a purse above
+$10 and pays the mayor $30 a day; a client paying $50 a task, a fifth of it to a team leader if
+the town has one; no task arriving unless a test schedules it (`opening` makes the whole pool
+arrive at 08:00 on the first day, as the towns of the world tests' `make_town` have it); the fake
+work backend of `world.testing`; and a harness that runs the world on a manual clock and stands
+in for the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -38,19 +39,13 @@ CARE = (
 )
 """The doctor and the mayor, for the tests of the clinic and the hall."""
 OCCUPATIONS = (
-    {"id": "programmer", "title": "a programmer", "workplace": "workshop", "wage_per_hour": 7,
-     "per_service": 20},
-    {"id": "team-leader", "title": "the team leader", "workplace": "workshop",
-     "wage_per_hour": 9, "per_service": 10},
-    {"id": "chef", "title": "the chef", "workplace": "cafe", "wage_per_hour": 7,
-     "per_service": 3},
-    {"id": "shopkeeper", "title": "the shopkeeper", "workplace": "store", "wage_per_hour": 7,
-     "per_service": 2},
-    {"id": "doctor", "title": "the doctor", "workplace": "clinic", "wage_per_hour": 9,
-     "per_service": 4},
-    {"id": "mayor", "title": "the mayor", "workplace": "hall", "wage_per_hour": 8,
-     "per_service": 0, "duty": "anywhere", "paid_from": "taxes"},
-)  # fmt: skip
+    {"id": "programmer", "title": "a programmer", "workplace": "workshop"},
+    {"id": "team-leader", "title": "the team leader", "workplace": "workshop"},
+    {"id": "chef", "title": "the chef", "workplace": "cafe"},
+    {"id": "shopkeeper", "title": "the shopkeeper", "workplace": "store"},
+    {"id": "doctor", "title": "the doctor", "workplace": "clinic"},
+    {"id": "mayor", "title": "the mayor", "workplace": "hall", "duty": "anywhere", "salary": 30},
+)
 
 ITEMS = (
     {"id": "bread", "name": "bread", "wholesale": 2, "price": 4, "kind": "consumable",
@@ -162,7 +157,7 @@ def town_config(
             "routes": [{"between": ["workshop", "cafe"], "minutes": 5}],
             "residents": list(residents),
             "occupations": list(OCCUPATIONS),
-            "fund": {"start": 1000},
+            "treasury": {"start": 1000, "spares": 10},
             "tax": tax,
             "work": {
                 "split": "train",
@@ -171,10 +166,10 @@ def town_config(
                 "arrive_until": "18:00",
                 "expiry_days": 1,
                 "payment": 50,
+                "leader_share": 0.2,
                 "acceptance_runs": 2,
                 "shell_timeout_s": 60,
                 "acceptance_timeout_s": 600,
-                "paid_hours": 24,
             }
             | work,
             "items": list(items),

@@ -80,8 +80,8 @@ each is read from, and what it is called."""
 EXPLORED = (
     "tasks_accepted",
     "hours_at_work",
-    "wages",
-    "service_sums",
+    "client_shares",
+    "takings",
     "money",
     "said_public",
     "said_private",
@@ -149,7 +149,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
             for r in town.residents
         ],
         "occupations": [occupation.model_dump(mode="json") for occupation in town.occupations],
-        "fund": town.fund.model_dump(mode="json"),
+        "treasury": town.treasury.model_dump(mode="json"),
         "tax": town.tax,
         "work": town.work.model_dump(mode="json"),
         "goods": [item.model_dump(mode="json") for item in town.supplied],
@@ -330,7 +330,7 @@ def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> 
         "hours_per_day": progress["hours_per_day"],
         **{key: sum(row[key] for row in daily) for key in COUNTS},
         "purse": daily[-1]["purse"],
-        "fund": town[-1]["fund"] if town else None,
+        "treasury": town[-1]["treasury"] if town else None,
     }
 
 

@@ -23,8 +23,8 @@ def census(world) -> Counter[str]:
 
 
 def money(world) -> int:
-    """The town's money: the fund and every purse."""
-    return world.fund.balance + sum(r.inventory.money for r in world.residents.values())
+    """The town's money: the treasury and every purse."""
+    return world.treasury.balance + sum(r.inventory.money for r in world.residents.values())
 
 
 async def test_units_change_hands_but_are_never_made_or_lost_and_money_is_conserved(make_town):

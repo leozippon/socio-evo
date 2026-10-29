@@ -480,11 +480,8 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     assert midnight == [
         ("leave_work", "Mei"),
         ("bedridden", "Mei"),
-        ("wage", "Mei"),
         ("settlement", "Mei"),
-        ("wage", "Tomas"),
         ("settlement", "Tomas"),
-        ("wage", "Aisha"),
         ("settlement", "Aisha"),
     ]
     bed = [e for e in world.log.entries() if e["kind"] == "bedridden"][0]
@@ -579,8 +576,8 @@ async def test_a_resident_taken_to_bed_while_its_checks_run_is_still_paid(make_t
     monkeypatch.setattr(world.board.backend, "accept", slow_accept)
     paid = await town.call("Mei", "submit")
     assert paid.text == (
-        "Accepted. You received $20 for task 1. Your purse holds $140. It is 00:05."
-    )
+        "Accepted. You received $50 for task 1. Your purse holds $150. It is 00:05."
+    )  # her rent of $20 taken at midnight
     assert mei.living.bedridden and mei.place == "mill-street-house"
     kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Mei"]
     assert kinds.index("bedridden") < kinds.index("verdict") < kinds.index("service")

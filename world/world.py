@@ -12,8 +12,8 @@ order of its times: arrivals, wake-ups, the end of a silent conversation, the pe
 waiting resident the time, and the day's schedule, which is all the fixed structure a day has. For
 day N (whose daytime is calendar day N): the arrival of each task drawn for the day, told to those
 at the Office, and the delivery of what the Store ordered the day before; midnight, when each
-resident's food and health are reckoned and illness comes or passes, its wages are paid with its
-tax, rent and daily charges taken out of them, with a statement, the clients withdraw the tasks
+resident's food and health are reckoned and illness comes or passes, the treasury pays the salary
+and takes the rent and daily charges, with a statement, the clients withdraw the tasks
 whose time has run out, the portions the kitchen did not sell are gone and the next day's arrivals
 are drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
 brought up to date (`world.living`). No place keeps hours, and residents go to bed and wake when
@@ -39,25 +39,28 @@ cycle.
 
 A resident's living (`Living`, of `world.body`) is what it has eaten since the last midnight and
 its body's three needs; its inventory (`Inventory`, of `world.economy`) is its money and the items
-it keeps, which act through it. The town's fund (`Fund`) pays each resident at once a sum for each
-service (`pay_service`) and, at midnight, its wages for its time on duty (`on_duty`;
-`Resident.worked`, counted as the body is reckoned and cleared at midnight), with its tax, rent and
-daily charges taken out of them. The daybook (`Daybook`) keeps the days the mayor's report tells;
+it keeps, which act through it. Whatever a resident is paid for its work, by a client, a customer
+or a patient, goes into its purse with the tax withheld into the town's treasury (`earn`,
+`Treasury`), which at midnight pays the mayor's salary and takes the rent and daily charges. Its
+time on duty (`on_duty`; `Resident.worked`, counted as the body is reckoned and cleared at
+midnight) earns nothing and is kept for the report and the measures. The daybook (`Daybook`) keeps
+the days the mayor's report tells;
 the mayor's announcements stand on the Town Hall's board. A durable with the effect travel
 shortens the owner's journeys, one with messaging lets it write to other owners, and one with
 appearance shows its phrase wherever others perceive the owner: who is here, who arrived, whom one
-is in conversation with; a low band of health shows the same way. Rent is the home's, and a
-resident may move into a home with a free room.
+is in conversation with; a low band of health shows the same way. Rent is the home's, paid to the
+treasury, which owns the homes, and a resident may move into a home with a free room.
 
 The Store's counter, the Restaurant's kitchen and the Hospital's surgery are the town's businesses
 (`world.businesses`), each open while its keeper is at work there and selling at the prices of
-`prices`. A sale at the Store moves the price to the fund and the units off its shelves and pays
-the shopkeeper its sum, and when the chef buys for the kitchen, the fund pays and the units are
-sent to the kitchen's larder; the shopkeeper's orders (`Store`) are paid to the supplier at once
-and the supplier's units come onto the shelves at the next morning's delivery. The chef cooks
-portions from the larder, a portion bought, or handed over by the chef, is eaten at once, and what
-perishes is gone at midnight, wherever it is. At each place the situation tells what is left
-there, what is for sale and at what price, and the keeper of a business what it holds.
+`prices`, and each is its keeper's. A sale at the Store moves the price from the buyer's purse to
+the shopkeeper's and the units off its shelves, and when the chef buys for the kitchen, the chef
+pays and the units are sent to the kitchen's larder; the shopkeeper pays the supplier for the
+orders (`Store`) at once, and the supplier's units come onto the shelves at the next morning's
+delivery. The chef cooks portions from the larder, a portion bought, or handed over by the chef,
+is eaten at once, and what perishes is gone at midnight, wherever it is. At each place the
+situation tells what is left there, what is for sale and at what price, and the keeper of a
+business what it holds.
 
 Each resident's port declares to its runtime the tools of its event at its place now that its
 occupation gives it (`usable`), so that what a request offers is what can be done; a call of one
@@ -115,11 +118,11 @@ from world.economy import (
     SHELVES,
     SUPPLIER,
     Daybook,
-    Fund,
     Holder,
     Inventory,
     Store,
     Supplier,
+    Treasury,
 )
 from world.events import (
     CONVERSATION_TOOLS,
@@ -161,7 +164,7 @@ class Resident:
     """A resident's state in the world. `home` is where it lives now; `timer` is its arrival or
     its wake-up; `tick` the percept that will tell it the time while its runtime waits;
     `reckoned` the simulated time its body was last brought up to; `worked` the seconds it has
-    spent on duty since the last midnight (`World.on_duty`), which its wages are paid for; `day`
+    spent on duty since the last midnight (`World.on_duty`), for the report and the measures; `day`
     the record of its lived day: (simulated time, kind, its wording, payload) of every entry that
     concerns it."""
 
@@ -215,7 +218,7 @@ class World:
     inventory_told = world.situation.inventory_told
     review = world.situation.review
     report = world.report.report
-    fund_report = world.report.fund_report
+    treasury_report = world.report.treasury_report
     hall_board = world.report.hall_board
     # Items and their holders.
     holder = world.holders.holder
@@ -275,7 +278,7 @@ class World:
         self.clock.set(start)
         self.log = WorldLog(run.world_log_path)
         names = [r.name for r in config.residents]
-        self.fund = Fund(config.fund.start)
+        self.treasury = Treasury(config.treasury.start)
         self.prices = starting_prices(config)
         """What each business sells, at its price now, by the business's kind."""
         self.store = Store()
@@ -492,7 +495,7 @@ class World:
         return {
             "time": self.clock.now(),
             "office": self.board.saved(),
-            "fund": asdict(self.fund),
+            "treasury": asdict(self.treasury),
             "store": {"prices": dict(self.prices[STORE.kind])} | asdict(self.store),
             "kitchen": {"menu": dict(self.prices[KITCHEN.kind])},
             "holders": {
@@ -512,7 +515,7 @@ class World:
             raise ValueError("the checkpoint's residents are not the configuration's")
         self.clock.set(state["time"])
         self.board.restore(state["office"])
-        self.fund = Fund(**copy.deepcopy(state["fund"]))
+        self.treasury = Treasury(**copy.deepcopy(state["treasury"]))
         self.prices = {
             STORE.kind: dict(state["store"]["prices"]),
             KITCHEN.kind: dict(state["kitchen"]["menu"]),
@@ -649,55 +652,16 @@ class World:
             left.append("stopped work")
         return f"You {' and '.join(left)}. " if left else ""
 
-    def pay_service(
-        self,
-        r: Resident,
-        service: str,
-        about: str,
-        *,
-        due: int | None = None,
-        task: int | None = None,
-        tell: bool = False,
-    ) -> str:
-        """`r` is paid a sum for a service rendered, told as being for `about`: its
-        occupation's sum unless `due` is given, into its inventory as far as the fund has it, the
-        rest owed. `service` names the service in the log: `task`, a task of one's own accepted;
-        `team`, one of the programmers' tasks accepted, to the team leader; `sale`; `dish`;
-        `patient`, a patient examined or treated. It is
-        told to `r` if `tell` (a result tells it otherwise); returns what `r` is told, nothing
-        when the sum is nothing."""
-        due = r.occupation.per_service if due is None else due
-        if not due:
-            return ""
-        paid = self.fund.service(r.name, due)
-        if paid:
-            r.inventory.receive(paid, "service", about)
-        owed, money = due - paid, self.config.money
-
-        def told(w: str | None) -> str:
-            who = cap(you(r.name, w))
-            if not owed:
-                return f"{who} received {money(paid)} for {about}."
-            return (
-                f"{who} received {money(paid)} of the {money(due)} for {about}; "
-                f"the fund owes {you(r.name, w)} the rest."
-            )
-
-        self.record(
-            "service",
-            told,
-            actor=r,
-            audience=[r] if tell else [],
-            payload={
-                "for": service,
-                "task": task,
-                "amount": due,
-                "paid": paid,
-                "owed": owed,
-                "money": r.inventory.money,
-            },
-        )
-        return told(r.name)
+    def earn(self, r: Resident, amount: int, about: str) -> int:
+        """`r` is paid `amount` for its work, `about` what for as its statement tells it ("for
+        task 3", "in sales"): `town.tax` of it, to the nearest whole, is withheld into the
+        treasury at once, and the rest stays in its purse. Returns the tax."""
+        tax = round(self.config.tax * amount)
+        r.inventory.receive(amount, "earned", about)
+        if tax:
+            r.inventory.spend(tax, "tax", about)
+            self.treasury.take("tax", tax)
+        return tax
 
     # Going and arriving -----------------------------------------------------------------------
 

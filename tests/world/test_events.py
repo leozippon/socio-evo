@@ -48,6 +48,7 @@ ARCHITECTURE_TABLE = {
         "treat",
         "report",
         "announce",
+        "grant",
         "say",
         "message",
         "buy",
@@ -80,6 +81,7 @@ ARCHITECTURE_TABLE = {
         "treat",
         "report",
         "announce",
+        "grant",
         "say",
         "message",
         "buy",
@@ -608,10 +610,9 @@ async def test_whoever_is_up_at_the_forced_hour_falls_asleep_without_a_journal(m
     ]
     assert mei.suspended
     assert town.take("Mei")[-2:] == [
-        "Your statement for Monday 1 January: no time at work; rent for your room at the shared "
-        "house on Mill Street $20; your wages fell $20 short of that; you owe it, and it is "
-        "taken from your next wages. You had nothing to eat today. You are hungry. You are "
-        "fresh. You are in good health. Your purse holds $120.",
+        "Your statement for Monday 1 January: rent for your room at the shared house on Mill "
+        "Street $20; your purse paid it. You had nothing to eat today. You are hungry. You are "
+        "fresh. You are in good health. Your purse holds $100.",
         "It is 02:00: you fell asleep.",
     ]
     assert not (tmp_path / "agents" / "Tomas" / "memory" / "journal").exists()

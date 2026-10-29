@@ -161,20 +161,18 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["daybook"]["days"][-1]["accepted"] == [["Mei", 1]]
     mei_living = state["residents"]["Mei"]["living"]
     # Mei ate two helpings of her bread on day 1, when she could eat, and none yet today; she
-    # was paid $20 for task 1, and the rent was not taken from her purse but is owed from her
-    # wages, as Tomas's and Aisha's are.
+    # was paid $50 for task 1, and the treasury took her rent from her purse at midnight.
     assert state["residents"]["Mei"]["inventory"] == {
-        "money": 120 + 20, "items": {"bread": 7, "coat": 1}, "moves": [],
+        "money": 120 + 50 - 20, "items": {"bread": 7, "coat": 1}, "moves": [],
     }  # fmt: skip
     assert mei_living["eaten"] == {}
     assert set(mei_living) == {"eaten", "satiety", "energy", "health", "night", "ill", "bedridden"}
-    assert state["fund"] == {
-        "balance": 1000 + 50 - 20,
+    assert state["treasury"] == {
+        "balance": 1000 + 20 + 30 + 20,
         "ledger": {},
-        "yesterday": {"client": 50, "service": 20},
+        "yesterday": {"rent": 70},
         "owed": {},
-        "arrears": {"Mei": 20, "Tomas": 30, "Aisha": 20},
-        "taxes": 0,
+        "arrears": {},
     }
     assert state["store"] == {"prices": {"bread": 4, "eggs": 2, "vegetables": 3, "bicycle": 50,
                                          "phone": 40, "coat": 30}, "pending": []}  # fmt: skip
@@ -185,7 +183,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         **{place.id: {} for place in town.world.config.places},
         "shelves": town.world.config.store.stock, "larder": {}, "portions": {},
     }  # fmt: skip
-    # Tomas's hour at work after midnight counts towards the coming day's wages.
+    # Tomas's hour at work after midnight counts on the coming day.
     assert state["residents"]["Tomas"]["worked"] == 3600
     assert state["residents"]["Mei"]["worked"] == 0
     assert mei_living["bedridden"] is False
@@ -306,6 +304,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
     await town.call("Vera", "report")
     await town.call("Vera", "announce", text="The well is dry.")
+    await town.call("Vera", "grant", amount=5, to="Mei", reason="For the phone.")
     for name in ("Mei", "Jonas"):
         await town.call(name, "go", place="cafe")
     await town.until("18:20")

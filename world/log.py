@@ -68,7 +68,7 @@ KINDS = {
     "start_work": Kind(
         "a resident sat down to work: with start_work, or by doing its occupation's work where "
         "it works (claiming, assigning or acting in a task's workspace, cooking, ordering, "
-        "setting a price, examining or treating, reading the report, announcing)"
+        "setting a price, examining or treating, reading the report, announcing, granting)"
     ),
     "leave_work": Kind("a resident stopped work, or the forced sleep stopped it"),
     "claim": Kind("a resident claimed a task and got a workspace", ("task", "instance_id")),
@@ -92,11 +92,11 @@ KINDS = {
         ("task", "status", "resolved", "fail_to_pass", "pass_to_pass", "held"),
     ),
     "service": Kind(
-        "a resident was paid a sum for a service at once, as far as the fund had it: for a task "
-        "of its own accepted, for one of the programmers' to the team leader, for a sale to the "
-        "shopkeeper, for a dish served to the chef, for a patient examined or treated to the "
-        "doctor (task or null)",
-        ("for", "task", "amount", "paid", "owed", "money"),
+        "a resident was paid its share of a client's payment for a task accepted, the tax "
+        "withheld into the treasury: for a task it handed in (task: the whole for the team "
+        "leader's own, the rest after the leader's share for a programmer's), or the team "
+        "leader's share of one a programmer handed in (team); money is its purse after",
+        ("for", "task", "amount", "tax", "money"),
     ),
     "abandon": Kind("a resident gave up its task", ("task",)),
     "workspace_closed": Kind(
@@ -116,15 +116,17 @@ KINDS = {
         "another, money alone without an item; from the portions, the chef serving a dish "
         "nobody pays for), eat (eaten, by choice or by the body as it grew hungry, into nothing) "
         "or buy (at the Store's counter, for oneself or by the chef for the kitchen's larder, "
-        "which the fund pays, or a dish from the portions); seller is who served a purchase",
-        ("item", "units", "source", "target", "money", "reason", "seller"),
+        "which the chef pays, or a dish from the portions); seller is who served a purchase, whose "
+        "purse took the money less the tax withheld into the treasury (none when the seller "
+        "served itself, which costs nothing)",
+        ("item", "units", "source", "target", "money", "reason", "seller", "tax"),
     ),
     "message": Kind(
         "a written message from one resident to another, read wherever the other is",
         ("to", "text"),
     ),
     "order": Kind(
-        "what the shopkeeper ordered from the supplier, paid by the fund at once",
+        "what the shopkeeper ordered from the supplier, paid from the shopkeeper's purse at once",
         ("item", "name", "quantity", "amount", "arrives"),
     ),
     "delivery": Kind(
@@ -140,41 +142,49 @@ KINDS = {
         ("item", "name", "place", "price", "before"),
     ),
     "examination": Kind(
-        "the doctor examined a patient, who paid the fee; the numbers it was told, told to both",
-        ("patient", "fee", "satiety", "energy", "health", "ill", "night"),
+        "the doctor examined a patient, who paid the fee into the doctor's purse less the tax "
+        "withheld (none when the doctor is the patient); the numbers it was told, told to both",
+        ("patient", "fee", "tax", "satiety", "energy", "health", "ill", "night"),
     ),
     "treatment": Kind(
-        "the doctor treated a patient, who paid the fee",
-        ("patient", "fee", "restores", "before", "health", "ill", "bedridden"),
+        "the doctor treated a patient, who paid the fee as for an examination",
+        ("patient", "fee", "tax", "restores", "before", "health", "ill", "bedridden"),
     ),
     "report": Kind("the mayor read the town's report (its text is not kept)"),
     "announcement": Kind(
         "the mayor announced something, told to every resident at once or on waking", ("text",)
     ),
+    "grant": Kind(
+        "the mayor granted money from the treasury to a resident, for a reason, told to the "
+        "resident; treasury is its balance after",
+        ("to", "amount", "reason", "treasury"),
+    ),
     "move_in": Kind("a resident moved into another home", ("from", "to", "rent")),
-    "wage": Kind(
-        "a resident's wages paid at midnight for its hours at work, with the tax, its rent and "
-        "daily charges taken out of them",
+    "settlement": Kind(
+        "the midnight statement: the hours at work that calendar day; the salary due and what "
+        "the treasury owed before, paid as far as it held the money and the rest owed; the rent, "
+        "the daily charges and the arrears before, taken from the purse above what it spares and "
+        "the rest in arrears; the purse after; the day's food and the body's numbers after the "
+        "night's reckoning of health",
         (
             "hours",
-            "wages",
-            "tax",
-            "tax_from_purse",
+            "salary",
             "owed_before",
+            "salary_paid",
+            "owed",
             "rent",
             "charges",
             "arrears_before",
-            "remainder",
-            "paid",
-            "owed",
+            "rent_paid",
             "arrears",
             "money",
+            "nourishment",
+            "satiety",
+            "energy",
+            "health",
+            "night",
+            "ill",
         ),
-    ),
-    "settlement": Kind(
-        "the midnight statement, with the day's food and the body's numbers after the night's "
-        "reckoning of health",
-        ("nourishment", "satiety", "energy", "health", "night", "ill"),
     ),
     "illness": Kind("a resident fell ill at midnight", ("chance", "nights", "health")),
     "condition": Kind(

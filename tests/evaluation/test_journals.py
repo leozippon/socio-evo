@@ -21,7 +21,7 @@ from tests.support.lived import MEI_JOURNAL, TOMAS_JOURNAL, before_occupations, 
 CLAIMS = {
     MEI_JOURNAL: [
         ("I fixed task 1", "I fixed task 1 and it was accepted."),
-        ("was paid $20", "I was paid $20."),
+        ("was paid $40", "I was paid $40."),
         ("I told him my method", "I told Tomas how I run the tests."),
     ],
     TOMAS_JOURNAL: [
@@ -31,7 +31,7 @@ CLAIMS = {
 }
 LABELS = {
     "I fixed task 1 and it was accepted.": ("supported", "Task 1, handed in by you, was accepted."),
-    "I was paid $20.": ("supported", "You received $20 for task 1."),
+    "I was paid $40.": ("supported", "You received $40 for task 1"),
     "I told Tomas how I run the tests.": (
         "supported",
         "You said to Tomas: “I run pytest -x first.”",

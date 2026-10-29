@@ -170,7 +170,6 @@ _FOLDED = frozenset(
         "recovered",
         "bedridden",
         "move_in",
-        "wage",
         "settlement",
         "condition",
         "checkpoint",
@@ -180,7 +179,7 @@ _FOLDED = frozenset(
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
 the time told, falling asleep) add nothing to it. The first of them is kept for the real time
 at which day 1 was begun; the checkpoints and resumptions cut the days."""
-_LEFT_OUT = {"service": "money", "wage": "money", "move_in": "rent"}
+_LEFT_OUT = {"service": "money", "settlement": "money", "move_in": "rent"}
 """What a marker leaves out of its entry's payload: the money held after a sum or the wages,
 which is a point of the purse, and the rent of a home moved into, which the town's places give."""
 _COPIED = {
@@ -203,7 +202,6 @@ _COPIED = {
         "bedridden",
         "move",
         "move_in",
-        "wage",
         "settlement",
         "condition",
     )
@@ -481,7 +479,7 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
                 found = task(payload["task"], entry["seq"])
                 found.update(accepted=t, by=lane.name)
                 found["holders"].append([t, None, None])
-        elif kind in ("service", "wage"):
+        elif kind in ("service", "settlement"):
             lane.purse.append([t, payload["money"]])
         elif kind == "speech":
             heard, members = payload["to"], payload["members"]  # no members: nobody drawn in

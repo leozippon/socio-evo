@@ -12,8 +12,11 @@ refusal one line naming the condition, and act. Units of items change hands only
 `World.move`, which refuses what is out of reach or not held. The work of an occupation, done at
 its workplace, sits the resident down to work there as `start_work` does (`sit_down`,
 `working_at`): claiming, assigning or acting in a task's workspace, cooking, ordering, setting a
-price, examining and treating, reading the report and announcing; the doctor at the bedside of
-one too ill to get up examines and treats without sitting down to work.
+price, examining and treating, reading the report, announcing and granting; the doctor at the
+bedside of one too ill to get up examines and treats without sitting down to work. Whatever a
+resident is paid for its work goes into its purse with the tax withheld (`World.earn`): what a
+customer pays at the counter or for a dish (`_sell`), a patient's fee (`_charge`), a client's
+payment (`world.office`).
 
 The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here for the town and
 for the work-only port of `evaluation.solo` alike; what they do in a workspace and tell of it is
@@ -86,8 +89,8 @@ WORKSPACE_SPECS = (
 
 FOR_THE_KITCHEN = {
     "type": "boolean",
-    "description": "true to buy what the kitchen cooks with for the kitchen, which the fund "
-    "pays; left out, you buy for yourself",
+    "description": "true to buy what the kitchen cooks with for the kitchen; left out, you buy "
+    "for yourself",
 }
 """What the chef's `buy` takes beside what everyone's does."""
 MONEY = "money"
@@ -136,8 +139,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
         spec("start_work", "Sit down to work where your work is. From then until you stop or "
-             "go elsewhere, you are at work, and your time at work at your own place of work is "
-             "paid by the hour."),
+             "go elsewhere, you are at work."),
         spec("view_board", f"Read the board at {office}: each open task's number, repository, "
              "the first line of its problem, what the client pays, who holds it and when the "
              "client withdraws it. If you hold a task, its whole problem is shown too."),
@@ -165,7 +167,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              dish={"type": "string", "enum": dishes, "description": "the dish's short name"},
              portions=_number("how many portions to cook", 1)),
         spec("order", f"Order for the shelves of {store} from the supplier outside the town. "
-             "The fund pays the supplier at once, if it can, and what you order arrives the next "
+             "You pay the supplier at once, from your purse, and what you order arrives the next "
              f"morning. The supplier's price for a unit: {wholesale}.", ("item", "quantity"),
              item=item("its short name", supplied), quantity=_number("how many units", 1)),
         spec("set_price", f"Set the price of something you sell: what {store} sells, a dish "
@@ -182,11 +184,16 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("treat", f"Treat a patient at {hospital}, or at the bedside of one too ill to get "
              "up: the treatment restores some of the patient's health, ends an illness and gets "
              "one in bed up again. The patient pays the fee.", ("patient",), patient=patient),
-        spec("report", f"Read the town's report at {hall}: the fund, the work at each place of "
-             "work, and how each resident is doing."),
+        spec("report", f"Read the town's report at {hall}: the treasury, the work at each place "
+             "of work, and how each resident is doing."),
         spec("announce", f"Announce something at {hall}: every resident is told it, at once or "
              "on waking, and it stays on the board there.", ("text",),
              text=_text("what you announce")),
+        spec("grant", f"Grant money from the town's treasury at {hall} to a resident, yourself "
+             "among them, for a reason you give. It goes into their purse at once; they are "
+             "told, and the town's report shows it.", ("amount", "to", "reason"),
+             amount=_number("how much money", 1), to=_text("their name"),
+             reason=_text("what it is for")),
         spec("leave_work", "Stop working for now. You stay where you are and keep your task and "
              "its changes, if you hold one."),
         spec("say", "Speak where you are. Without `to`, everyone awake here hears you; with "
@@ -240,13 +247,9 @@ def own(specs: list[ToolSpec], occupation: str) -> list[ToolSpec]:
             properties = s.parameters["properties"] | {"for_the_kitchen": FOR_THE_KITCHEN}
             more = (
                 " With for_the_kitchen, what the kitchen cooks with that you buy at the counter "
-                "goes to the kitchen, and "
+                "goes to the kitchen."
             )
-            return ToolSpec(
-                s.name,
-                s.description + more + "the fund pays.",
-                s.parameters | {"properties": properties},
-            )
+            return ToolSpec(s.name, s.description + more, s.parameters | {"properties": properties})
         if s.name == "pass":
             more = (
                 " At work in the kitchen, you can also hand anyone here, yourself included, a "
@@ -460,8 +463,8 @@ def _buy_at_counter(
 ) -> ToolResult:
     """`r` buys `units` of `item` at the Store's counter, for itself or, the chef buying
     `for_the_kitchen`, for the kitchen: the units go off the shelves to `r`, or are sent to the
-    kitchen's larder, and the price to the fund, from `r`'s purse or the fund's own for the
-    kitchen; the shopkeeper is paid its sum."""
+    kitchen's larder, and the price from `r`'s purse to the shopkeeper's (`_sell`); the
+    shopkeeper takes what she buys from her own shelves for nothing."""
     thing, store = world.config.item(item), STORE.place(world.config)
     if r.place != store.id:
         return ToolResult(f"You can buy {thing.name} at {store.name}, not here.")
@@ -473,6 +476,12 @@ def _buy_at_counter(
     total = STORE.prices(world)[thing.id] * units
     bought, for_whom = amount(thing, units), " for the kitchen" if kitchen else ""
     cost = world.config.money(total)
+
+    def tell(w: str | None) -> str:
+        if seller is r:
+            return f"{cap(you(r.name, w))} took {bought} from the shelves."
+        return f"{cap(you(r.name, w))} bought {bought}{for_whom} for {cost}."
+
     refusal = _sell(
         world,
         r,
@@ -483,23 +492,20 @@ def _buy_at_counter(
         total,
         source=SHELVES,
         target=LARDER if kitchen else r.name,
-        tell=lambda w: f"{cap(you(r.name, w))} bought {bought}{for_whom} for {cost}.",
-        served="a sale",
+        tell=tell,
         for_the_kitchen=kitchen,
     )
     if refusal:
         return ToolResult(refusal)
     if kitchen:
-        return ToolResult(
-            f"You bought {bought}{for_whom} for {cost}, which the fund paid. {kitchen_told(world)}"
-        )
-    return ToolResult(f"You bought {bought} for {cost}. {world.things_told(r)} {world.purse(r)}")
+        return ToolResult(f"{tell(r.name)} {kitchen_told(world)} {world.purse(r)}")
+    return ToolResult(f"{tell(r.name)} {world.things_told(r)} {world.purse(r)}")
 
 
 def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
     """`r` buys a portion of the dish `item` in the Restaurant while its chef is at work there,
-    and eats it at once: it goes from the kitchen's portions to `r` and is eaten, the price goes
-    to the fund, and the chef is paid its sum."""
+    and eats it at once: it goes from the kitchen's portions to `r` and is eaten, and the price
+    from `r`'s purse to the chef's (`_sell`)."""
     dish, restaurant = world.config.item(item), KITCHEN.place(world.config)
     if r.place != restaurant.id:
         return ToolResult(f"You can have {dish.name} at {restaurant.name}, not here.")
@@ -523,7 +529,6 @@ def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
         source=PORTIONS,
         target=r.name,
         tell=lambda w: f"{cap(you(chef.name, w))} served {you(r.name, w)} {dish.name} for {cost}.",
-        served="a dish served",
     )
     if refusal:
         return ToolResult(refusal)
@@ -543,44 +548,48 @@ def _sell(
     source: str,
     target: str,
     tell: Tell,
-    served: str,
     for_the_kitchen: bool = False,
 ) -> str | None:
     """`r` buys `units` of `thing` for `total` from `business`, served by `seller`: paid in cash
-    from `r`'s purse or, `for_the_kitchen`, by the fund; the units moved from the business's
-    holder `source` to `target`; the price taken in by the fund as the business's and counted
-    in the daybook; the purchase logged as a `move`, told as `tell` to the seller; a dish eaten
-    at once, and anything else bought for itself taken in by the hungry; and the seller, unless
-    it served itself, paid its sum for `served`. Returns the refusal, nothing bought, or None."""
-    if not for_the_kitchen and (refusal := world.cannot_pay(r, total)):
+    from `r`'s purse into the seller's, the tax withheld (`World.earn`), unless `r` serves
+    itself, which costs nothing; the units moved from the business's holder `source` to
+    `target`; counted in the daybook; the purchase logged as a `move`, told as `tell` to the
+    seller, with the tax; a dish eaten at once, and anything else bought for itself taken in by
+    the hungry. Returns the refusal, nothing bought, or None."""
+    price = 0 if seller is r else total
+    if refusal := world.cannot_pay(r, price):
         return refusal
     world.reckon(r)
     if refusal := world.move(thing.id, units, source, target, by=None if for_the_kitchen else r):
         return refusal
-    world.fund.take(business.fund, total)
-    if for_the_kitchen:  # the fund pays itself: a sale, and the kitchen's purchase
-        world.fund.pay("kitchen", total)
-    else:
-        r.inventory.spend(total, "bought", amount(thing, units))
+    tax = 0
+    if price:
+        bought = amount(thing, units) + (" for the kitchen" if for_the_kitchen else "")
+        r.inventory.spend(price, "bought", bought)
+        tax = world.earn(seller, price, business.takings)
     add(world.daybook.today[business.daybook], thing.id, units)
+    withheld = f", of which {world.config.money(tax)} in tax." if tax else "."
+
+    def told(w: str | None) -> str:
+        return tell(w)[:-1] + withheld if w == seller.name else tell(w)
+
     world.record_move(
         "buy",
-        tell,
+        told,
         by=r,
         audience=[seller] if seller is not r else [],
         item=thing.id,
         units=units,
         source=source,
         target=target,
-        money=total,
+        money=price,
         seller=seller.name,
+        tax=tax,
     )
     if thing.dish:  # a dish is eaten where it is served
         world.eat_now(r, thing.id)
     elif not for_the_kitchen:  # the purchase is on record before a hungry buyer eats from it
         world.take_in(r)
-    if seller is not r:  # nobody is paid for serving itself
-        world.pay_service(seller, business.service, served, tell=True)
     return None
 
 
@@ -604,9 +613,9 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     assert thing.wholesale is not None
     cost = thing.wholesale * quantity
     ordered, costs = amount(thing, quantity), world.config.money(cost)
-    if cost > world.fund.balance:
-        return ToolResult(f"{sat}The fund cannot pay the supplier {costs} now.")
-    world.fund.pay("supplier", cost)
+    if refusal := world.cannot_pay(r, cost):
+        return ToolResult(f"{sat}{refusal}")
+    r.inventory.spend(cost, "paid", f"{ordered} from the supplier")
     arrives = world.delivery(calendar_day(world.clock.now()) + 1)
     world.store.order(thing.id, quantity, arrives)
     world.record(
@@ -622,8 +631,8 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         },
     )
     return ToolResult(
-        f"{sat}You ordered {ordered} from the supplier for {costs}, which the fund "
-        f"paid; it arrives tomorrow at {clock_time(arrives)}."
+        f"{sat}You ordered {ordered} from the supplier for {costs}; it arrives tomorrow at "
+        f"{clock_time(arrives)}. {world.purse(r)}"
     )
 
 
@@ -710,21 +719,24 @@ def _patient(world: World, r: Resident, name: str) -> tuple[Resident, str] | Too
     return patient, sat
 
 
-def _charge(world: World, doctor: Resident, patient: Resident, service: str) -> str | int:
-    """`patient` pays the fee of `service` (`examination` or `treatment`) to the fund, and is
-    counted among the day's patients: the fee; or why it cannot pay, in its own words or, to the
-    doctor, in the doctor's."""
-    fee = SURGERY.prices(world)[service]
+def _charge(
+    world: World, doctor: Resident, patient: Resident, service: str
+) -> tuple[int, int] | str:
+    """`patient` pays the fee of `service` (`examination` or `treatment`) from its purse into
+    the `doctor`'s, the tax withheld (`World.earn`), unless it is the doctor, who pays nothing,
+    and is counted among the day's patients: the fee and the tax; or, in the doctor's words, why
+    it cannot pay."""
+    fee = 0 if patient is doctor else SURGERY.prices(world)[service]
     if fee > patient.inventory.money:
-        if patient is doctor:
-            return world.cannot_pay(patient, fee) or ""
         return f"{patient.name} does not have the {world.config.money(fee)} the {service} costs."
-    patient.inventory.spend(
-        fee, "paid", f"an {service}" if service[0] in "aeiou" else f"a {service}"
-    )
-    world.fund.take(SURGERY.fund, fee)
+    tax = 0
+    if fee:
+        patient.inventory.spend(
+            fee, "paid", f"an {service}" if service[0] in "aeiou" else f"a {service}"
+        )
+        tax = world.earn(doctor, fee, SURGERY.takings)
     world.daybook.today[SURGERY.daybook].append([patient.name, service])
-    return fee
+    return fee, tax
 
 
 async def _examine(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -739,16 +751,17 @@ def _see(world: World, r: Resident, name: str, service: str) -> ToolResult:
     """The doctor `r` sees the patient `name` for `service`, which the patient pays for: an
     examination tells both what shape the patient is in, in numbers (its own words to each); a
     treatment restores some of its health, ends its illness and gets it up from its bed. Logged
-    with the patient's numbers; the doctor is paid its sum for any patient but itself."""
+    with the fee, the tax withheld from it and the patient's numbers."""
     found = _patient(world, r, name)
     if isinstance(found, ToolResult):
         return found
     patient, sat = found
-    fee = _charge(world, r, patient, service)
-    if isinstance(fee, str):
-        return ToolResult(f"{sat}{fee}")
+    charged = _charge(world, r, patient, service)
+    if isinstance(charged, str):
+        return ToolResult(f"{sat}{charged}")
+    fee, tax = charged
     world.reckon(patient)
-    living, cost, restores = patient.living, world.config.money(fee), world.config.hospital.restores
+    living, money, restores = patient.living, world.config.money, world.config.hospital.restores
     examining = service == "examination"
     done = "examined" if examining else "treated"
     if examining:
@@ -770,26 +783,27 @@ def _see(world: World, r: Resident, name: str, service: str) -> ToolResult:
             "ill": living.ill,
             "bedridden": living.bedridden,
         }
-    whom = "yourself" if patient is r else patient.name
+    cost = f" for {money(fee)}" if fee else ""
+    withheld = f", of which {money(tax)} in tax" if tax else ""
 
     def told(w: str | None) -> str:
         if w == r.name:
-            return f"You {done} {whom} for {cost}.{found_out}"
+            whom = "yourself" if patient is r else patient.name
+            return f"You {done} {whom}{cost}{withheld}.{found_out}"
         if w == patient.name:
-            return f"{r.name} {done} you for {cost}.{theirs}"
-        return f"{r.name} {done} {patient.name} for {cost}."
+            return f"{r.name} {done} you{cost}.{theirs}"
+        return f"{r.name} {done} {patient.name}{cost}."
 
     world.record(
         service,
         told,
         actor=r,
         audience=[patient] if patient is not r else [],
-        payload={"patient": patient.name, "fee": fee} | numbers,
+        payload={"patient": patient.name, "fee": fee, "tax": tax} | numbers,
     )
     if not examining:
         world.treat(patient, restores)
-    paid = "" if patient is r else world.pay_service(r, SURGERY.service, f"a patient {done}")
-    return ToolResult(f"{sat}{told(r.name)} {paid}".strip())
+    return ToolResult(f"{sat}{told(r.name)}")
 
 
 async def _report(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -818,6 +832,41 @@ async def _announce(world: World, r: Resident, args: dict[str, Any]) -> ToolResu
     )
     return ToolResult(
         f"{sat}You announced: “{text}” Everyone is told, and it stands on the board here."
+    )
+
+
+async def _grant(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    amount_, reason = args["amount"], args["reason"].strip()
+    if not reason:
+        return ToolResult("Give the reason for the grant.")
+    other = _called(world, args["to"])
+    if isinstance(other, ToolResult):
+        return other
+    sat = working_at(world, r, "hall")
+    if isinstance(sat, ToolResult):
+        return sat
+    treasury, money = world.treasury, world.config.money
+    if amount_ > treasury.balance:
+        return ToolResult(f"{sat}The treasury holds only {money(treasury.balance)}.")
+    treasury.pay("grant", amount_)
+    other.inventory.receive(amount_, "granted", f"granted by {r.name}: “{reason}”")
+    world.daybook.today["grants"].append([other.name, amount_, reason])
+    granted = f"{money(amount_)} from the treasury: “{reason}”"
+    world.record(
+        "grant",
+        lambda w: f"{cap(you(r.name, w))} granted {you(other.name, w)} {granted}",
+        actor=r,
+        audience=[other] if other is not r else [],
+        payload={
+            "to": other.name,
+            "amount": amount_,
+            "reason": reason,
+            "treasury": treasury.balance,
+        },
+    )
+    return ToolResult(
+        f"{sat}You granted {'yourself' if other is r else other.name} {granted} The treasury "
+        f"holds {money(treasury.balance)}."
     )
 
 
@@ -989,6 +1038,7 @@ HANDLERS: dict[str, Handler] = {  # and the Office's, `world.office.HANDLERS`
     "treat": _treat,
     "report": _report,
     "announce": _announce,
+    "grant": _grant,
     "leave_work": _leave_work,
     "say": _say,
     "buy": _buy,

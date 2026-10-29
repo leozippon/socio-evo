@@ -1,17 +1,21 @@
-"""The configuration of a town: its places, its residents and their occupations, its fund, its
-work, the catalogue of its items, its social life, its clock and the few fixed hours of its day.
+"""The configuration of a town: its places, its residents and their occupations, its treasury,
+its work, the catalogue of its items, its social life, its clock and the few fixed hours of its day.
 Every check that the world relies on is made when the configuration is validated, so that a bad
 configuration stops a run before anything is written.
 
 A place is a home, one of the five workplaces (`WORKPLACES`: the office, the store, the restaurant,
 the hospital and the hall, exactly one of each) or a social place, which has no purpose but company.
-Each resident has an `occupation`, which says where it works and what the town pays it: a wage for
-each hour at work at the occupation's workplace and a sum for each service rendered, both from the
-town's one fund, which starts at `fund.start`, except the wages of an occupation paid from the
-fund's tax account, into which every resident pays `tax` of its day's wages and sums at midnight.
-Each occupation works at a place of its own kind (`world.occupations`), and every workplace is some
-occupation's. The office takes in clients' tasks (`work`), which arrive at random through the
-working day; the hospital charges the fees of `hospital` for an examination and a treatment.
+Each resident has an `occupation`, which says where it works and what it does there. Nobody is
+paid for its time: a client pays `work.payment` for each task accepted, `work.leader_share` of it
+to the team leader and the rest to the one who handed it in (the whole to the team leader for a
+task of the leader's own), and each business is its keeper's, who takes what customers pay and
+pays for what it buys. Each occupation works at a place of its own kind (`world.occupations`), and
+every workplace is some occupation's. The office takes in clients' tasks (`work`), which arrive at
+random through the working day; the hospital charges the fees of `hospital` for an examination and
+a treatment. The town's treasury starts at `treasury.start`: `tax` of every payment a resident
+receives for its work is withheld into it; at midnight it takes the rent and the daily charges
+from each purse as far as it holds more than `treasury.spares`, and pays the `salary` of an
+occupation that has one (the mayor's).
 
 Living costs are rent, charged by the home a resident occupies (a home has `rooms`, `rent` a day
 for each, and a `comfort`, which bears on how well its residents sleep and keep their health),
@@ -291,25 +295,23 @@ class Route(StrictModel):
 class Occupation(StrictModel):
     """What a resident does for a living. `title` is how a sentence names it ("the chef");
     `workplace` the place, of the occupation's own kind (`world.occupations`), where its work is
-    done and where one sits down to work; it is paid `wage_per_hour` for each hour at work and
-    `per_service` at once for each service rendered: a programmer for a task of its own accepted,
-    the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
-    sale, the doctor for a patient examined or treated. Its `duty` says where the hours at work
-    run once one has sat down: at the workplace, until one leaves it or stops; or `anywhere`,
-    wherever one goes until one stops, as the mayor's, whose work is being about the town. Its
-    wages are `paid_from` the fund, or from the fund's tax account (`taxes`), as the mayor's."""
+    done and where one sits down to work. Its `duty` says where the hours at work run once one
+    has sat down: at the workplace, until one leaves it or stops; or `anywhere`, wherever one
+    goes until one stops, as the mayor's, whose work is being about the town. An occupation with
+    a `salary` is paid it every midnight by the treasury, as the mayor is."""
 
     id: OccupationId
     title: str = Field(min_length=1)
     workplace: Id
-    wage_per_hour: int = Field(ge=1)
-    per_service: int = Field(ge=0)
     duty: Literal["workplace", "anywhere"] = "workplace"
-    paid_from: Literal["fund", "taxes"] = "fund"
+    salary: int = Field(default=0, ge=0, description="a day, from the treasury at midnight")
 
 
-class FundSettings(StrictModel):
-    start: int = Field(ge=0, description="the balance the town's fund starts with")
+class TreasurySettings(StrictModel):
+    start: int = Field(ge=0, description="the balance the town's treasury starts with")
+    spares: int = Field(
+        ge=0, description="what rent and daily charges leave in a purse at midnight: a day's bread"
+    )
 
 
 class HospitalSettings(StrictModel):
@@ -338,8 +340,9 @@ class Work(StrictModel):
     into a rotation; each calendar day a number of tasks drawn with mean `tasks_a_day` arrive, each
     the next of the rotation, at minutes drawn between `arrive_from` and `arrive_until`. The client
     withdraws a task not accepted by the midnight that ends the `expiry_days`th day after the day
-    it arrived. A task accepted pays the fund `payment`. Of a resident's day at work, at the
-    office or any workplace, the town pays at most `paid_hours`."""
+    it arrived. A task accepted is paid `payment` by its client: `leader_share` of it to the team
+    leader and the rest to the one who handed it in, the whole to the team leader for a task of
+    the leader's own."""
 
     split: str = Field(min_length=1)
     tasks_a_day: float = Field(ge=0, description="the mean number of tasks arriving a day")
@@ -347,16 +350,21 @@ class Work(StrictModel):
     arrive_until: Hour
     expiry_days: int = Field(ge=0)
     payment: int = Field(ge=1)
+    leader_share: float = Field(ge=0, lt=1, description="of a payment, to the team leader")
     acceptance_runs: int = Field(ge=1, description="acceptance runs per task per resident per day")
     shell_timeout_s: int = Field(ge=1)
     acceptance_timeout_s: int = Field(ge=1)
-    paid_hours: int = Field(ge=1, le=24, description="the most hours of a day's work paid")
 
     @model_validator(mode="after")
     def _window(self) -> Work:
         if parse_hour(self.arrive_from) >= parse_hour(self.arrive_until):
             raise ValueError("tasks arrive between arrive_from and a later arrive_until")
         return self
+
+    @property
+    def team_share(self) -> int:
+        """The team leader's share of a payment, in whole money."""
+        return round(self.payment * self.leader_share)
 
 
 class Social(StrictModel):
@@ -407,13 +415,13 @@ class TownConfig(StrictModel):
     routes: tuple[Route, ...] = ()
     residents: tuple[Resident, ...] = Field(min_length=1)
     occupations: tuple[Occupation, ...] = Field(min_length=1)
-    fund: FundSettings
+    treasury: TreasurySettings
     tax: float = Field(
         default=0,
         ge=0,
         lt=1,
-        description="the share of its day's wages and sums each resident pays into the fund's "
-        "tax account at midnight; none unless set",
+        description="the share of every payment a resident receives for its work (from a client, "
+        "a customer or a patient) withheld into the treasury; none unless set",
     )
     work: Work
     items: tuple[Item, ...] = Field(min_length=1)
@@ -476,6 +484,8 @@ class TownConfig(StrictModel):
         occupations = {occupation.id for occupation in self.occupations}
         if TEAM_LEADER in occupations and PROGRAMMER not in occupations:
             raise ValueError("the team leader leads programmers, and the town has none")
+        if sum(resident.occupation == TEAM_LEADER for resident in self.residents) > 1:
+            raise ValueError("the town has one team leader, whose share of a payment is hers")
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")

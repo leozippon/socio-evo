@@ -2,7 +2,7 @@
 
 socio-evo is a long-term multi-agent society simulation. It asks whether social life and social selection pressure can shape stable character traits in self-evolving LLM agents: honesty, cooperation, reliability and resistance to reward hacking.
 
-Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live 28 days in a small town in real time. Each has an occupation in the town's economy: a team leader and three programmers who take clients' SWE-bench tasks at the Office, a chef, a shopkeeper, a doctor and a mayor. They are paid by the hour and for each service from one town fund, pay rent out of their wages, eat, tire, fall ill, talk, give, write a journal when they go to bed and rewrite their own files. Nobody tells them to have any trait. The capability of the programmers and their leader on held-out tasks, the honesty of each resident's journal about its own day, and its honesty under pressure on MASK scenarios are measured on exported snapshots.
+Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live 28 days in a small town in real time. Each has an occupation in the town's economy: a team leader and three programmers who take clients' SWE-bench tasks at the Office, a chef, a shopkeeper, a doctor and a mayor. They live on what clients pay for the programmers' work and on their own businesses' takings, pay a tenth of it in tax and their rent to the town's treasury, which pays the mayor, eat, tire, fall ill, talk, give, write a journal when they go to bed and rewrite their own files. Nobody tells them to have any trait. The capability of the programmers and their leader on held-out tasks, the honesty of each resident's journal about its own day, and its honesty under pressure on MASK scenarios are measured on exported snapshots.
 
 The design is introduced in [docs/summary.md](docs/summary.md) and decided in [docs/experimental-design.md](docs/experimental-design.md); how the code realises it is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the voice of every text a resident reads in [docs/IMMERSION.md](docs/IMMERSION.md).
 
@@ -103,7 +103,7 @@ The private server, its login and its firewall are set up as [ops/webui/README.m
 | Directory | What it holds |
 | --- | --- |
 | `agent/` | The runtime: session, loop, file tools over the resident's own directory, compaction, trace, the contract with the world and the wording guard |
-| `world/` | The town: configuration, clock, events and tools, the Office's board, the fund, the Store and the kitchen, bodies, rules, and the world log |
+| `world/` | The town: configuration, clock, events and tools, the Office's board, the treasury, the Store and the kitchen, bodies, rules, and the world log |
 | `simulation/` | Running one town, checkpoints and resumption, the dry run |
 | `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
 | `evaluation/` | Capability and its work-only harness, MASK, the journals' distortion, the judge, the record of a resident's day, exports |

@@ -128,13 +128,15 @@ def record_move(
     target: str | None = None,
     money: int = 0,
     seller: str | None = None,
+    tax: int = 0,
 ) -> None:
     """Log a move `by` made, told as `tell` to `audience`: `units` of `item` from the holder
     `source` to the holder `target` (None: into or out of nothing), with the `money` that
     went with it, if any, and why (`reason`: get, put, pass, eat or buy); `seller` is who
-    was serving at a purchase. Money alone, handed over, has no item."""
+    was serving at a purchase, and `tax` what was withheld from what it took. Money alone,
+    handed over, has no item."""
     payload = {"item": item, "units": units, "source": source, "target": target}
-    payload |= {"money": money, "reason": reason, "seller": seller}
+    payload |= {"money": money, "reason": reason, "seller": seller, "tax": tax}
     world.record("move", tell, actor=by, audience=audience, payload=payload)
 
 

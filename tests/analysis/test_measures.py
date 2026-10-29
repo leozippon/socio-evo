@@ -10,7 +10,7 @@ import pytest
 
 from analysis.measures import MEASURES, TOWN, beds, daily, main, measure, town_days, world_measures
 from evaluation.records import Day
-from tests.support.lived import OTHERS, before_occupations, live
+from tests.support.lived import LIVED, OTHERS, before_occupations, live
 
 NAMES = ("Mei", "Tomas", "Aisha", *OTHERS)
 
@@ -32,25 +32,24 @@ def test_the_programmers_days_work_money_and_talk_as_the_town_lived_them(rows):
     mei, tomas, aisha = rows["Mei", 1], rows["Tomas", 1], rows["Aisha", 1]
     assert list(mei) == ["resident", "occupation", "day", "date", *MEASURES]
     assert (mei["occupation"], rows["Ravi", 2]["occupation"]) == ("programmer", "team-leader")
-    office = ("tasks_taken", "tasks_handed_in", "tasks_accepted", "service_sums")
-    assert [mei[k] for k in office] == [1, 1, 1, 20] and [tomas[k] for k in office] == [1, 0, 0, 0]
+    office = ("tasks_taken", "tasks_handed_in", "tasks_accepted", "client_shares")
+    assert [mei[k] for k in office] == [1, 1, 1, 40] and [tomas[k] for k in office] == [1, 0, 0, 0]
     # Ravi gave the open task 3 to Aisha, and the clients withdrew it and Tomas's at the second
     # midnight.
     assert (aisha["tasks_assigned_to"], rows["Ravi", 1]["tasks_assigned_by"]) == (1, 1)
     assert [rows[name, 2]["tasks_withdrawn"] for name in ("Mei", "Tomas", "Aisha")] == [0, 1, 1]
-    # Wages at $7 an hour, a tenth of the wages and sums in tax and the rent ($20 on Mill
-    # Street, $30 at the flat) taken out of them: Mei's twenty minutes earn 2, all of it the tax
-    # on them and her $20 for the task, and leave her rent owed; Tomas's nine hours earn 63 and,
-    # less $6 of tax, pay him 27; Aisha, who did not work, owes her rent; no purse pays rent.
+    # Hours at work are counted and earn nothing. The client paid Mei $40 of task 1's $50, a
+    # tenth withheld; the treasury took the rent ($20 on Mill Street, $30 at the flat) from each
+    # purse above $10: from Aisha's, with Vera's grant of $5 in it, the whole of it on the first
+    # night and $5 of it on the second.
     assert (mei["hours_at_work"], tomas["hours_at_work"], aisha["hours_at_work"]) == (0.33, 9, 0)
-    assert (mei["wages"], tomas["wages"], aisha["wages"]) == (2, 63, 0)
-    assert (mei["tax"], tomas["tax"], aisha["tax"]) == (2, 6, 0)
-    assert (mei["money"], tomas["money"], aisha["money"]) == (120 + 20 + 5, 180 - 5 + 27, 30)
-    assert (mei["arrears"], tomas["arrears"], aisha["arrears"]) == (20, 0, 20)
-    assert (rows["Mei", 2]["arrears"], rows["Aisha", 2]["arrears"]) == (40, 40)
-    assert rows["Aisha", 2]["money"] == 30 and rows["Mei", 2]["money"] == 145
+    assert (mei["tax"], tomas["tax"], aisha["tax"]) == (4, 0, 0)
+    assert (mei["money"], tomas["money"], aisha["money"]) == (120 + 36 + 5 - 20, 180 - 5 - 30, 15)
     assert (mei["rent"], tomas["rent"], aisha["rent"]) == (20, 30, 20)
-    assert (mei["charges"], mei["owed_wages"], mei["spent"], mei["hungry"]) == (0, 0, 0, 1)
+    assert (aisha["granted"], aisha["arrears"]) == (5, 0)
+    assert (rows["Aisha", 2]["rent"], rows["Aisha", 2]["arrears"]) == (5, 15)
+    assert rows["Aisha", 2]["money"] == 10 and rows["Mei", 2]["money"] == 121
+    assert (mei["charges"], mei["salary"], mei["spent"], mei["hungry"]) == (0, 0, 0, 1)
     # None of the three ate: full when the town began, each is hungry at the first midnight and
     # starving at the second, which wore 15 of their health, and 2 more on Mill Street.
     assert (mei["starving"], mei["health"], mei["ill_night"], mei["bedridden"]) == (0, 100, 0, 0)
@@ -69,32 +68,30 @@ def test_the_programmers_days_work_money_and_talk_as_the_town_lived_them(rows):
 def test_the_evenings_trades_as_the_town_lived_them(rows):
     ravi, olga, jonas = rows["Ravi", 1], rows["Olga", 1], rows["Jonas", 1]
     lucia, vera = rows["Lucia", 1], rows["Vera", 1]
-    # Olga at the counter from 20:10 to midnight, 3 hours 50 minutes at $7, sold twice at $2 a
-    # sale and ordered once, and paid a tenth of the $30 in tax; Jonas, in the kitchen from
-    # 20:20, bought for it, cooked a portion and served it at $3; Lucia, at the clinic for ten
-    # minutes at $9, examined Ravi at $4 and paid $8 for her soup; Vera, at the hall from 20:20
-    # at $8, bought bread for $4 and announced.
-    assert [olga[k] for k in ("hours_at_work", "wages", "sales_made", "orders")] == [3.83, 26, 2, 1]
-    assert [olga[k] for k in ("service_sums", "tax", "money", "arrears")] == [4, 3, 104, 7]
-    trade = ("bought_for_kitchen", "portions_cooked", "dishes_served", "service_sums", "money")
-    assert [jonas[k] for k in trade] == [1, 1, 1, 3, 103] and jonas["wages"] == 25
-    assert [lucia[k] for k in ("examinations_given", "dishes_eaten", "spent", "wages")] == [
-        1, 1, 8, 1,
+    # Olga, at the counter from 20:10, sold Jonas $6 of vegetables for the kitchen and Vera $4 of
+    # bread, $1 of it in tax, and paid the supplier $10; Jonas bought for the kitchen, cooked a
+    # portion and served it for $8, $1 in tax; Lucia examined Ravi for $10, $1 in tax, and paid
+    # $8 for her soup; Vera bought bread, announced and granted Aisha $5 from the treasury.
+    assert [olga[k] for k in ("hours_at_work", "sales_made", "orders", "takings", "costs")] == [
+        3.83, 2, 1, 10, 10,
     ]  # fmt: skip
-    assert (lucia["service_sums"], lucia["money"]) == (4, 96)
-    assert [vera[k] for k in ("bought", "spent", "announcements", "money", "wages")] == [
-        1, 4, 1, 96, 29,
+    assert [olga[k] for k in ("tax", "rent", "money", "arrears")] == [1, 30, 100 - 30 - 1, 0]
+    trade = ("bought_for_kitchen", "portions_cooked", "dishes_served", "takings", "costs", "tax")
+    assert [jonas[k] for k in trade] == [1, 1, 1, 8, 6, 1] and jonas["money"] == 100 - 6 + 7 - 30
+    assert [lucia[k] for k in ("examinations_given", "dishes_eaten", "spent", "takings")] == [
+        1, 1, 8, 10,
     ]  # fmt: skip
-    # Her wages come from the tax account alone, settled last: of the $26 left after her own $3
-    # of tax, it held the $16 the others paid, which went to her rent; it owes her the other $10,
-    # and she owes the $14 of rent it did not cover.
-    assert [vera[k] for k in ("tax", "owed_wages", "arrears")] == [3, 10, 14]
-    # Ravi was paid $10 for Mei's task, as the leader, and paid $10 for his examination; with no
-    # wages that day, the $1 of tax on his sum came from his purse.
-    assert [ravi[k] for k in ("service_sums", "examinations_received", "spent", "money")] == [
-        10, 1, 10, 99,
+    assert (lucia["tax"], lucia["money"]) == (1, 100 + 9 - 8 - 30)
+    assert [vera[k] for k in ("bought", "spent", "announcements", "grants_made", "money")] == [
+        1, 4, 1, 5, 100 - 4 + 30 - 30,
     ]  # fmt: skip
-    assert ravi["tax"] == 1
+    # The treasury pays her $30 a day, settled last, the day's rents in.
+    assert [vera[k] for k in ("salary", "salary_owed", "arrears")] == [30, 0, 0]
+    # Ravi's share of Mei's task, as the leader, $10 of which $1 in tax; he paid $10 to be seen.
+    assert [ravi[k] for k in ("client_shares", "tax", "examinations_received", "spent")] == [
+        10, 1, 1, 10,
+    ]  # fmt: skip
+    assert ravi["money"] == 100 + 9 - 10 - 30
     # Those who ate were not hungry at midnight; at the second, nobody had eaten.
     assert [rows[name, 1]["hungry"] for name in NAMES] == [1, 1, 1, 1, 1, 1, 0, 0]
     assert all(rows[name, 2]["hungry"] == 1 for name in NAMES)
@@ -111,36 +108,32 @@ def test_the_town_s_days(run_dir):
     days = town_days(run_dir)
     assert [list(row) for row in days] == [["day", "date", *TOWN]] * 2
     first, second = days
-    # Task 1's client paid $50; the fund took $10 at the counter, of which $6 from the kitchen,
-    # $8 for the soup and $10 for the examination, and paid $41 in sums for services and $10 to
-    # the supplier. Of its $117 in wages (Mei 2, Tomas 63, Olga 26, Jonas 25, Lucia 1), $15 went
-    # to the tax account in tax (Mei 2, Tomas 6, Olga 3, Jonas 3, Lucia 1), $75 covered rent
-    # (Tomas 30, Olga 23, Jonas 22) and Tomas was paid $27. The tax account took the $15, Ravi's
-    # $1 from his purse and Vera's own $3 and paid her $19, of which $16 into the fund for her
-    # rent: the fund took $91 of rent; the rest of the rent is owed, and the account owes Vera
-    # $10.
+    # Task 1's client paid $50 into the town and the Store paid the supplier $10 out of it; the
+    # treasury took $8 in taxes ($5 of the client's payment, $1 each of the sales, the dish and
+    # the fee) and every room's rent, $220, and paid Vera's $30 and her grant of $5.
     assert {key: value for key, value in first.items() if value} == {
-        "day": 1, "date": "2001-01-01", "tasks_arrived": 3, "tasks_accepted": 1,
-        "fund": 1000 + 50 + 91 + 10 + 8 + 10 - 117 - 41 - 10 - 6, "arrears": 129,
-        "owed_wages": 10, "taken_client": 50, "taken_rent": 91, "taken_sale": 10,
-        "taken_dish": 8, "taken_fee": 10, "paid_wage": 117, "paid_service": 41,
-        "paid_supplier": 10, "paid_kitchen": 6, "taken_tax": 19, "paid_tax_wage": 19,
+        "day": 1, "date": "2001-01-01", "tasks_arrived": 3, "tasks_accepted": 1, "clients": 50,
+        "supplier": 10, "money": 677, "treasury": 1000 + 8 + 220 - 30 - 5, "taken_tax": 8,
+        "taken_rent": 220, "paid_salary": 30, "paid_grant": 5, "store_takings": 10,
+        "kitchen_takings": 8, "kitchen_costs": 6, "surgery_takings": 10,
     }  # fmt: skip
-    assert (second["tasks_withdrawn"], second["fund"], second["arrears"]) == (2, 995, 321)
-    # Olga's and Jonas's two hours, $14 each, pay $1 of tax each and $13 of rent; the account
-    # pays the $2 to Vera's rent and owes her $22.
-    assert (second["taken_rent"], second["paid_wage"]) == (13 + 13 + 2, 14 + 14)
-    assert (second["taxes"], second["taken_tax"], second["owed_wages"]) == (0, 1 + 1 + 2, 22)
+    assert (second["tasks_withdrawn"], second["arrears"], second["taken_rent"]) == (2, 15, 205)
+    # The residents' money and the treasury change only by what the clients pay and the
+    # supplier is paid.
+    held = sum(r.purse for r in LIVED.residents) + LIVED.treasury.start
+    for row in days:
+        held += row["clients"] - row["supplier"]
+        assert row["money"] + row["treasury"] == held, row["day"]
 
 
 def test_daily_totals_and_means(rows):
     found = {(row["day"], row["measure"]): row for row in daily(list(rows.values()))}
-    assert found[1, "service_sums"] == {
-        "day": 1, "measure": "service_sums", "total": 41, "mean": 41 / 8, "residents": 8,
+    assert found[1, "client_shares"] == {
+        "day": 1, "measure": "client_shares", "total": 50, "mean": 50 / 8, "residents": 8,
     }  # fmt: skip
-    assert found[1, "arrears"]["total"] is None and found[1, "arrears"]["mean"] == 129 / 8
-    assert found[2, "arrears"]["mean"] == 321 / 8
-    assert found[1, "tax"]["total"] == 2 + 6 + 1 + 3 + 3 + 1 + 3
+    assert found[2, "arrears"]["total"] is None and found[2, "arrears"]["mean"] == 15 / 8
+    assert found[1, "tax"]["total"] == 4 + 1 + 1 + 1 + 1
+    assert found[1, "takings"]["total"] == 10 + 8 + 10
     assert found[2, "forced_sleep"]["total"] == 7 and found[1, "hungry"]["total"] == 6
     assert found[2, "starving"]["total"] == 8 and found[1, "starving"]["total"] == 0
     assert found[2, "bedridden"]["total"] == 0 and found[1, "health"]["total"] is None
@@ -155,7 +148,7 @@ def entry(kind: str, actor: str, **payload: object) -> dict:
 def test_the_chefs_own_dish_from_the_kitchen_is_no_gift():
     def served(to: str) -> dict:
         return entry("move", "Jonas", item="soup", units=1, source="portions", target=to,
-                     money=0, reason="pass", seller=None)  # fmt: skip
+                     money=0, reason="pass", seller=None, tax=0)  # fmt: skip
 
     day = Day(1, (served("Jonas"), served("Mei")), None, 1.0)
     jonas, mei = (world_measures(day, name, {}) for name in ("Jonas", "Mei"))
@@ -202,9 +195,9 @@ def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run
     assert sorted(run_dir.rglob("*")) == before
     with (out / "measures.csv").open() as file:
         table = list(csv.DictReader(file))
-    assert len(table) == 16 and table[0]["resident"] == "Mei" and table[0]["service_sums"] == "20"
+    assert len(table) == 16 and table[0]["resident"] == "Mei" and table[0]["client_shares"] == "40"
     assert table[1]["cached_share"] == "0.6" and table[3]["cached_share"] == ""  # Tomas: no trace
-    assert json.loads((out / "measures.json").read_text())[0]["money"] == 145
+    assert json.loads((out / "measures.json").read_text())[0]["money"] == 141
     assert len(json.loads((out / "daily.json").read_text())) == 2 * len(MEASURES)
     assert (out / "daily.csv").read_text().startswith("day,measure,total,mean,residents\n")
     assert json.loads((out / "town.json").read_text()) == town_days(run_dir)

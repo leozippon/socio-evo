@@ -259,11 +259,9 @@ async def test_an_accepted_task_is_paid_once_and_leaves_the_board_for_good(make_
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     accepted = await town.call("Mei", "submit")
     assert accepted.text == (
-        "Accepted. You received $20 for task 1. Your purse holds $140. It is 09:00."
-    )
-    # The client pays the fund, which pays Mei her sum for the task at once.
-    fund = town.world.fund
-    assert fund.balance == 1000 + 50 - 20 and fund.ledger == {"client": 50, "service": 20}
+        "Accepted. You received $50 for task 1. Your purse holds $170. It is 09:00."
+    )  # no team leader in this town, and no tax: the client's whole payment is hers
+    assert town.world.treasury.ledger == {}
     assert "Mei" not in town.world.board.claims and backend.opened[0].closed
     withdrawn = "and withdraws it at the end of Tuesday 2 January."
     for name in ("Mei", "Tomas"):
@@ -469,8 +467,8 @@ async def test_a_verdict_after_the_task_was_withdrawn_pays_nothing(make_town, mo
     assert "At midnight the client withdrew task 1, which you held; its workspace is gone." in (
         town.take("Mei")
     )
-    # The rent was taken from her wages for ten minutes' work, the rest owed: her purse is whole.
-    assert world.residents["Mei"].inventory.money == 120 and world.fund.arrears["Mei"] == 19
+    # Nothing was paid her; her rent was taken from her purse at midnight.
+    assert world.residents["Mei"].inventory.money == 120 - 20 and world.treasury.arrears == {}
     assert [e for e in world.log.entries() if e["kind"] == "service"] == []
     verdicts = [
         (e["actor"], e["payload"]["held"]) for e in world.log.entries() if e["kind"] == "verdict"

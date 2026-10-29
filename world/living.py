@@ -3,7 +3,7 @@ to its bed and treatment.
 
 The body (`world.body`) is reckoned lazily and exactly: `reckon` brings a resident up to the moment
 at the rates of what it has been doing since it was last reckoned (`activity`), counting its time on
-duty towards its wages (`on_duty`), and is called every hour on the hour, before every change of
+duty (`on_duty`), and is called every hour on the hour, before every change of
 activity (sitting down to work, setting off, arriving, going to bed, falling asleep, waking) and at
 the checkpoint, so that a checkpoint carries the body as of its moment. A resident awake and able
 to eat eats the ready food in its inventory, a helping at a time, as it is reckoned; a dish is eaten
@@ -39,7 +39,7 @@ if TYPE_CHECKING:
 
 def reckon(world: World, r: Resident) -> None:
     """Bring `r`'s body up to the moment at the rates of what it has been doing since it was
-    last reckoned, counting its time on duty towards its wages, let it eat from its stock if
+    last reckoned, counting its time on duty, let it eat from its stock if
     it is awake and could eat, and note each need that crossed into another band, telling `r`
     if it is awake at a place; if `r` is at work and exhausted, its work stops."""
     now = world.clock.now()

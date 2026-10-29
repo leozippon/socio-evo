@@ -1,7 +1,8 @@
 """The Hospital and the Town Hall: the doctor's examination and treatment, at the surgery while
-at work there and at the bedside of one too ill to get up, for fees the patient pays and the
-doctor sets; the mayor's report of the town's day and announcements told to everyone, kept on
-the hall's board and by the checkpoint."""
+at work there and at the bedside of one too ill to get up, for fees the patient pays into the
+doctor's purse, the tax withheld, and the doctor sets; the mayor's report of the town's day and
+the treasury's, and announcements told to everyone, kept on the hall's board and by the
+checkpoint. The mayor's grants are in test_economy."""
 
 from __future__ import annotations
 
@@ -22,7 +23,7 @@ from world.events import Idle, Work
 from world.testing import FakeBackend
 from world.world import World
 
-TOWN = town_config(residents=RESIDENTS + TRADES + CARE)
+TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1)
 
 
 def offered(town, name: str) -> list[str]:
@@ -67,32 +68,31 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
         "{who} run down. {Who} ill; untreated, it passes after 5 more nights."
     )
     assert examined == (
-        "You examined Mei for $10. "
+        "You examined Mei for $10, of which $1 in tax. "
         + numbers.format(who="Mei is", Who="Mei is")
-        + " You received $4 for a patient examined."
     )
     assert town.take("Mei") == [
         "Lucia examined you for $10. " + numbers.format(who="you are", Who="You are")
     ]
     treated = await town.call("Lucia", "treat", patient="Mei")
-    assert treated.text == "You treated Mei for $30. You received $4 for a patient treated."
+    assert treated.text == "You treated Mei for $30, of which $3 in tax."
     assert town.take("Mei") == ["Lucia treated you for $30.", "Your illness is over."]
     assert mei.living.health == 75 and mei.living.ill == 0 and mei.inventory.money == 80
-    assert world.fund.ledger == {"fee": 40, "service": 8} and lucia.inventory.money == 108
+    assert world.treasury.ledger == {"tax": 4} and lucia.inventory.money == 100 + 40 - 4
     entries = {e["kind"]: e for e in world.log.entries()}
     assert entries["examination"]["payload"] == {
-        "patient": "Mei", "fee": 10, "satiety": 81.9, "energy": 98.5, "health": 50.0, "ill": 5,
-        "night": {},
+        "patient": "Mei", "fee": 10, "tax": 1, "satiety": 81.9, "energy": 98.5, "health": 50.0,
+        "ill": 5, "night": {},
     }  # fmt: skip
     assert entries["treatment"]["payload"] == {
-        "patient": "Mei", "fee": 30, "restores": 25.0, "before": 50.0, "health": 75.0, "ill": 5,
-        "bedridden": False,
+        "patient": "Mei", "fee": 30, "tax": 3, "restores": 25.0, "before": 50.0, "health": 75.0,
+        "ill": 5, "bedridden": False,
     }  # fmt: skip
     assert entries["recovered"]["payload"] == {
         "illness": True, "bedridden": False, "treated": True, "health": 75.0,
     }  # fmt: skip
     # The doctor sets the fees; a patient who cannot pay is not seen; the doctor may see herself,
-    # and is paid nothing for it.
+    # for nothing.
     assert (await town.call("Lucia", "set_price", item="examination", price=12)).text == (
         "The price of examination is now $12; it was $10."
     )
@@ -104,9 +104,9 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
         "Aisha does not have the $12 the examination costs."
     )
     assert (await town.call("Lucia", "examine", patient="Lucia")).text.startswith(
-        "You examined yourself for $12. Food: "
+        "You examined yourself. Food: "
     )
-    assert lucia.inventory.money == 96 and world.daybook.today["patients"] == [
+    assert lucia.inventory.money == 136 and world.daybook.today["patients"] == [
         ["Mei", "examination"], ["Mei", "treatment"], ["Lucia", "examination"],
     ]  # fmt: skip
     town.rest()
@@ -132,7 +132,7 @@ async def test_the_doctor_treats_one_too_ill_to_get_up_at_the_bedside(make_town)
     assert {"examine", "treat"} <= set(offered(town, "Lucia"))
     assert "start_work" not in offered(town, "Lucia")
     assert (await town.call("Lucia", "treat", patient="Mei")).text == (
-        "You treated Mei for $30. You received $4 for a patient treated."
+        "You treated Mei for $30, of which $3 in tax."
     )
     assert isinstance(lucia.base, Idle) and lucia.worked == 0  # no hours at a bedside
     assert not mei.living.bedridden and isinstance(mei.base, Idle) and mei.living.health == 25
@@ -173,14 +173,12 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
     report = (await town.call("Vera", "report")).text
     assert report == (
         "You sat down to work. It is 09:15. The town's report, Tuesday 2 January, 09:15.\n\n"
-        "The fund. The fund holds $948, before tonight's wages and taxes. Yesterday it took in "
-        "$50 from clients, $80 in rent and daily charges and $8 in sales and paid out $168 in "
-        "wages and $22 in sums for services. Its tax account holds $0; yesterday it took in $0 "
-        "in taxes and paid out $0 in wages. It owes in wages it could not pay: Vera $64. Owing "
-        "rent the wages did not cover: Aisha $20, Jonas $30, Lucia $30 and Vera $30.\n\n"
+        "The treasury. The treasury holds $1158. Yesterday it took in $6 in taxes and $182 in "
+        "rent and daily charges and paid out $30 in salary. Owing rent their purses could not "
+        "spare: Aisha $8.\n\n"
         "The last days, as each closed at midnight:\n"
-        "Monday 1 January: the fund held $948 at midnight, down $52 on the day; accepted task 1 "
-        "by Mei; sold 2 helpings of bread; served nothing; nobody seen at the clinic.\n\n"
+        "Monday 1 January: the treasury held $1158 at midnight, up $158 on the day; accepted "
+        "task 1 by Mei; sold 2 helpings of bread; served nothing; nobody seen at the clinic.\n\n"
         "Today.\n"
         "The workshop. Open on the board: task 2 (org/repo2), held by nobody; task 3 "
         "(org/repo3), held by Tomas.\n"

@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import os
 import re
 import signal
@@ -61,27 +60,22 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     entries = list(read_jsonl(root / "world.jsonl"))
     # Mei worked at the Office from about 08:15 to 17:00, waiting there for the tasks to come in,
     # Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde until 20:00,
-    # his time buying for the kitchen at the Store not counted; each was paid its wages at
-    # midnight for at most the hours the town pays a day, the rest counted all the same, 15% of
-    # them and of its sums in tax (the sums being the service entries' paid) and its rent taken
-    # out of them.
-    wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
+    # his time buying for the kitchen at the Store not counted: hours counted at midnight that
+    # earn nothing. The treasury took each one's rent from the purse.
+    settled = {e["actor"]: e["payload"] for e in entries if e["kind"] == "settlement"}
     worked = saved["daybook"]["days"][-1]["hours"]  # the exact seconds at work
-    paid_day = smoke().town.work.paid_hours * 3600
     for name, rent, hours in (
-        ("Mei", 30, (8, 9)),
-        ("Olga", 35, (11.5, 12)),
-        ("Jonas", 50, (11.5, 12.5)),
+        ("Mei", 10, (8, 9)),
+        ("Olga", 10, (11.5, 12)),
+        ("Jonas", 15, (11.5, 12.5)),
     ):
-        paid = wages[name]
+        paid = settled[name]
         assert hours[0] < paid["hours"] < hours[1], name
         assert paid["hours"] == round(worked[name] / 3600, 2)
-        assert paid["wages"] == min(worked[name], paid_day) * 8 // 3600, name
-        sums = sum(
-            e["payload"]["paid"] for e in entries if e["kind"] == "service" and e["actor"] == name
-        )
-        assert paid["tax"] == math.floor(0.15 * (paid["wages"] + sums) + 0.5), name
-        assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - paid["tax"] - rent)
+        assert (paid["rent"], paid["rent_paid"], paid["arrears"]) == (rent, rent, 0), name
+    # The client paid Mei, the team leader, the whole of her own task's payment, a tenth withheld.
+    (share,) = [e["payload"] for e in entries if e["kind"] == "service"]
+    assert (share["for"], share["amount"], share["tax"]) == ("task", 150, 15)
     # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
     # the next morning; the chef bought for the kitchen there, cooked and served, and handed a
     # dish to the first who came, unpaid; Mei bought bread and ate a helping, had a dish and took
@@ -98,16 +92,18 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     assert saved["store"]["pending"] == [[o["item"], o["quantity"], o["arrives"]] for o in orders]
     assert {o["item"] for o in orders} == {"bread", "vegetables", "eggs"}
     assert saved["holders"]["portions"] == {} and saved["holders"]["larder"] == {}
-    fund = saved["fund"]
+    treasury = saved["treasury"]
     money = sum(r["inventory"]["money"] for r in saved["residents"].values())
-    # Only the client's money came in and only the supplier's went out; the tax, with no mayor
-    # in this town to pay, stays in the tax account.
+    # Only the client's money came in and only the supplier's went out; the tax withheld from
+    # the payments and the rent, with no mayor in this town to pay, stay in the treasury.
     supplier = sum(o["amount"] for o in orders)
-    start = smoke().town.fund.start
-    assert fund["balance"] + fund["taxes"] + money == start + 240 + 230 + 210 + 150 - supplier
-    assert fund["taxes"] == sum(paid["tax"] for paid in wages.values()) > 0
-    assert fund["yesterday"]["client"] == 150 and fund["yesterday"]["supplier"] == supplier
-    assert fund["owed"] == fund["arrears"] == {} and fund["ledger"] == {}
+    town = smoke().town
+    start = town.treasury.start + sum(r.purse for r in town.residents)
+    assert treasury["balance"] + money == start + 150 - supplier
+    taxed = ("service", "move", "examination", "treatment")
+    taxes = sum(e["payload"]["tax"] for e in entries if e["kind"] in taxed)
+    assert treasury["yesterday"] == {"tax": taxes, "rent": 10 + 10 + 15} and taxes > 15
+    assert treasury["owed"] == treasury["arrears"] == {} and treasury["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]
     # Fed by a dish and a helping of bread in the evening, rested, in good health.
     assert living["eaten"] == {}
@@ -116,7 +112,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     log = kinds(root)
     lived = (
         "wake", "task_arrived", "start_work", "claim", "verdict", "service", "order", "price",
-        "move", "cook", "speech", "sleep", "wage",
+        "move", "cook", "speech", "sleep", "settlement",
     )  # fmt: skip
     # The next day's arrivals, drawn at midnight, are saved with the tasks still open.
     office = saved["office"]
@@ -136,9 +132,9 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert set(repository.tree("day-00")) == {"background.md"}  # memory and skills empty
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
-    assert re.search(  # the saved day names the fund
-        rf"saved day 1 after .*\. The fund holds \${fund['balance']}, before tonight's wages "
-        r"and taxes\. Yesterday it took in",
+    assert re.search(  # the saved day names the treasury
+        rf"saved day 1 after .*\. The treasury holds \${treasury['balance']}\. Yesterday it took "
+        r"in \$\d+ in taxes and \$35 in rent and daily charges and paid out nothing\.",
         run.run_log_path.read_text(),
     )
 

@@ -144,7 +144,7 @@ async def run(
                 )
                 for index, r in enumerate(config.residents)
             }
-            checkpoints = _Checkpoints(directory, config.town, world.fund_report)
+            checkpoints = _Checkpoints(directory, config.town, world.treasury_report)
             await _live(world, runtimes, until, checkpoints)
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
         except asyncio.CancelledError:
@@ -244,8 +244,8 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, from the day's
-    entries in the world log, with the fund's day as `fund_report` tells it. The moves are counted
-    as `world.log.counted_move` names them: sales, dishes and gifts."""
+    entries in the world log, with the treasury's day as `treasury_report` tells it. The moves
+    are counted as `world.log.counted_move` names them: sales, dishes and gifts."""
 
     COUNTED = (
         "task_arrived",
@@ -258,6 +258,7 @@ class _Checkpoints:
         "examination",
         "treatment",
         "announcement",
+        "grant",
         "speech",
         "gift",
         "journal",
