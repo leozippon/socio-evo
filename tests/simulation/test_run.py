@@ -65,6 +65,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # midnight, 15% of them and of its sums in tax (the sums being the service entries' paid)
     # and its rent taken out of them.
     wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
+    worked = saved["daybook"]["days"][-1]["hours"]  # the exact seconds the wages were paid for
     for name, rent, hours in (
         ("Mei", 30, (8, 9)),
         ("Olga", 35, (11.5, 12)),
@@ -72,7 +73,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     ):
         paid = wages[name]
         assert hours[0] < paid["hours"] < hours[1], name
-        assert abs(paid["wages"] - paid["hours"] * 8) < 1
+        assert paid["hours"] == round(worked[name] / 3600, 2)
+        assert paid["wages"] == worked[name] * 8 // 3600, name
         sums = sum(
             e["payload"]["paid"] for e in entries if e["kind"] == "service" and e["actor"] == name
         )

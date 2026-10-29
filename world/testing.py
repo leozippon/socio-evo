@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
-from world.board import KEPT_CHANGES
+from world.office import KEPT_CHANGES
 
 
 @dataclass(frozen=True)

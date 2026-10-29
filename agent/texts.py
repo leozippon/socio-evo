@@ -42,7 +42,8 @@ JOURNAL_KEPT = (
     "day's entry as you go to bed."
 )
 
-# Refusals and results of the file tools.
+# Refusals and results of the file tools; how a file's text is told in part and changed by a
+# passage (`agent.filetext`) the world's repository tools share.
 OUTSIDE = (
     "{path} is not one of your own files; yours are background.md and those in memory/ and "
     "skills/. The files of a task's repository you read and change with read_repo_file, "
@@ -53,6 +54,7 @@ A_FOLDER = "{path} is a folder, not a file."
 NO_FILES = "There are no files in {path}."
 EMPTY_FILE = "{path} is empty."
 PART_OF_FILE = "Lines {first} to {last} of {total} in {path}:\n\n{text}"
+NO_LINE = "{path} has {count}; there is no line {first}."
 WROTE = "Wrote {path}."
 EDITED = "Changed {path}."
 PASSAGE_MISSING = "The passage to replace does not appear in {path}."

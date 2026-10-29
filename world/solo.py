@@ -4,11 +4,11 @@
 town's work tools: the town's workspace tools (`world.tools.WORKSPACE_SPECS`: `shell` and the
 reading, writing and editing of repository files) act in a workspace of the task, opened on
 first use through the same `Backend` as the town's, and answer as the town's do, being the same
-code, except that a command stopped by its limit is told in seconds, there being no clock;
-`submit` runs the official acceptance in a fresh container, at most `max_submissions` times;
-`give_up` ends the work. There is no clock, place, purse or other resident. The resident is told
-how the work goes in place of the town's rules, and the situation tells the task's problem and
-repository and the verdict of the last submission.
+code (`world.workspace`), except that a command stopped by its limit is told in seconds, there
+being no clock; `submit` runs the official acceptance in a fresh container, at most
+`max_submissions` times; `give_up` ends the work. There is no clock, place, purse or other
+resident. The resident is told how the work goes in place of the town's rules, and the situation
+tells the task's problem and repository and the verdict of the last submission.
 
 The task ends when a submission is accepted, when the last submission allowed is not, when the
 resident gives up, when a budget is spent, or when the machinery fails: an `error`, never the
@@ -40,17 +40,9 @@ from pydantic import PositiveFloat, PositiveInt
 from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.config import StrictModel
 from world.backend import Backend, Task, Verdict, Workspace
-from world.board import failure
 from world.telling import counted
-from world.tools import (
-    WORKSPACE_SPECS,
-    check,
-    edit_repo,
-    read_repo,
-    spec,
-    told_command,
-    write_repo,
-)
+from world.tools import WORKSPACE_SPECS, check, spec
+from world.workspace import edit_repo, failure, read_repo, told_command, write_repo
 
 Ending = Literal["accepted", "rejected", "gave_up", "requests", "budget", "error"]
 """How a task ended: accepted; the last submission allowed not accepted; given up; the budget

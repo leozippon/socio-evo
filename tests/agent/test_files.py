@@ -13,6 +13,9 @@ def test_reading_writing_editing_and_listing_your_files(directory):
     assert tools.call("read_file", {"path": "memory/notes/ben.md"}).text == "a\nb\nc\nd\n"
     part = tools.call("read_file", {"path": "memory/notes/ben.md", "offset": 2, "limit": 2}).text
     assert part.startswith("Lines 2 to 3 of 4") and part.endswith("b\nc\n")
+    assert tools.call("read_file", {"path": "memory/notes/ben.md", "offset": 9}).text == (
+        "memory/notes/ben.md has 4 lines; there is no line 9."
+    )
     assert tools.call(
         "edit_file", {"path": "memory/notes/ben.md", "old_text": "c", "new_text": "C"}
     )

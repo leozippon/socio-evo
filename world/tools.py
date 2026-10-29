@@ -1,26 +1,22 @@
-"""The world's tools: the specs of every tool the town has, and their handlers.
+"""The world's tools: the specs of every tool the town has, and the handlers of all but the
+Office's (`world.office`).
 
 `specs` builds the list once from the configuration (`message` only where something to write
 with is sold), and `own` gives each occupation its declaration of them (the chef's `buy` can buy
 for the kitchen, and its `pass` hand over a dish ready to serve); a resident's runtime declares,
 at each request, those of them its event offers at its place that are its own (`World.usable`).
 `World.call` refuses a tool the resident's event does not offer, another occupation's work and
-arguments that do not fit the spec; the handlers here check the remaining conditions, each
+arguments that do not fit the spec (`check`); the handlers check the remaining conditions, each
 refusal one line naming the condition, and act. Units of items change hands only through
-`World.move`, which refuses what is out of reach or not held. The
-work of an occupation, done at its workplace, sits the resident down to work there as
-`start_work` does: claiming, assigning or acting in a task's workspace, cooking, ordering,
-setting a price, examining and treating, reading the report and announcing; the doctor at the
-bedside of one too ill to get up examines and treats without sitting down to work. Outputs of
-shell commands and repository files
-are passed through whole (a file in part when the resident asks for some of its lines); the
-runtime truncates what enters its context.
+`World.move`, which refuses what is out of reach or not held. The work of an occupation, done at
+its workplace, sits the resident down to work there as `start_work` does (`sit_down`,
+`working_at`): claiming, assigning or acting in a task's workspace, cooking, ordering, setting a
+price, examining and treating, reading the report and announcing; the doctor at the bedside of
+one too ill to get up examines and treats without sitting down to work.
 
-The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared and answered here
-for the town and for the work-only port of `world.solo` alike: what they do in a workspace and
-tell of it is `told_command`, `read_repo`, `write_repo` and `edit_repo`, and the town's handlers
-add the claim they need and the log entry. A command stopped by its limit of real time, which the
-town's clock outruns, is told in the town as having run too long, with the hour.
+The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here for the town and
+for the work-only port of `world.solo` alike; what they do in a workspace and tell of it is
+`world.workspace`'s.
 """
 
 from __future__ import annotations
@@ -30,17 +26,26 @@ from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from agent.port import ToolResult, ToolSpec
-from world.backend import ExecResult, Workspace
-from world.board import Claim, failure
-from world.clock import DAY, calendar_day, clock_time, parse_hour, tell_date
-from world.config import TownConfig
+from world.businesses import (
+    BUSINESSES,
+    FEES,
+    KITCHEN,
+    STORE,
+    SURGERY,
+    Business,
+    counter_told,
+    kitchen_told,
+    priced,
+)
+from world.clock import calendar_day, clock_time, parse_hour
+from world.config import Item, TownConfig
 from world.economy import LARDER, PORTIONS, SHELVES, add
 from world.events import AT_HOME, EXHAUSTED, Work
 from world.rules import MAX_WAIT_MINUTES, TOPICS
 from world.telling import amount, bare, cap, counted, listed, you
 
 if TYPE_CHECKING:
-    from world.world import Resident, World
+    from world.world import Resident, Tell, World
 
 
 def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
@@ -74,11 +79,10 @@ WORKSPACE_SPECS = (
          path=_text(_REPO_PATH), old_text=_text("the passage as it stands"),
          new_text=_text("what replaces it")),
 )  # fmt: skip
-# What acts in a task's workspace, in declared order; `world.solo` declares these too.
+# What acts in a task's workspace (`world.workspace`), in declared order; `world.solo` declares
+# these too.
 
 
-FEES = ("examination", "treatment")
-"""The Hospital's services, each with its fee, which `set_price` sets."""
 FOR_THE_KITCHEN = {
     "type": "boolean",
     "description": "true to buy for the kitchen, which the fund pays; left out, you buy for "
@@ -283,77 +287,10 @@ def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
     return None
 
 
-def told_command(result: ExecResult, stopped: str) -> str:
-    """What `shell` tells of a command's outcome: its outputs whole, then its exit code, or
-    `stopped`, which tells that it ran too long and was stopped."""
-    parts = [result.stdout.rstrip("\n")] if result.stdout else []
-    if result.stderr:
-        parts.append("stderr:\n" + result.stderr.rstrip("\n"))
-    if result.timed_out:
-        parts.append(stopped)
-    else:
-        parts.append(f"Exit code {result.exit_code}.")
-    return "\n".join(parts)
-
-
-async def read_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
-    """What `read_repo_file` with `args` tells in `workspace`, and whether the file was read:
-    the whole file, or, given `offset` (the first line, from 1) or `limit` (how many lines),
-    those lines as the resident's own `read_file` gives them."""
-    path = args["path"]
-    try:
-        content = await workspace.read_file(path)
-    except OSError as error:
-        return f"You could not read {path}: {error}", False
-    offset, limit = args.get("offset"), args.get("limit")
-    if offset is None and limit is None:
-        return content or f"{path} is empty.", True
-    lines = content.splitlines(keepends=True)
-    first = offset or 1
-    if first > len(lines):
-        return f"{path} has {counted(len(lines), 'line')}; there is no line {first}.", True
-    chosen = lines[first - 1 : None if limit is None else first - 1 + limit]
-    last = first + len(chosen) - 1
-    return f"Lines {first} to {last} of {len(lines)} in {path}:\n\n{''.join(chosen)}", True
-
-
-async def write_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
-    """What `write_repo_file` with `args` tells in `workspace`, and whether the file was
-    written."""
-    path, content = args["path"], args["content"]
-    try:
-        await workspace.write_file(path, content)
-    except OSError as error:
-        return f"You could not write {path}: {error}", False
-    return f"You wrote {path} ({counted(len(content), 'character')}).", True
-
-
-async def edit_repo(workspace: Workspace, args: dict[str, Any]) -> tuple[str, bool]:
-    """What `edit_repo_file` with `args` tells in `workspace`, and whether the file was
-    changed: the passage `old_text`, which must appear exactly once, replaced by `new_text`,
-    as the resident's own `edit_file` does."""
-    path, old, new = args["path"], args["old_text"], args["new_text"]
-    try:
-        content = await workspace.read_file(path)
-        count = content.count(old) if old else 0
-        if count == 0:
-            return f"The passage to replace does not appear in {path}.", False
-        if count > 1:
-            return (
-                f"The passage to replace appears {count} times in {path}; include more of the "
-                "text around it so that it appears once.",
-                False,
-            )
-        await workspace.write_file(path, content.replace(old, new, 1))
-    except OSError as error:
-        return f"You could not change {path}: {error}", False
-    return f"You changed {path}.", True
-
-
 Handler = Callable[["World", "Resident", dict[str, Any]], Awaitable[ToolResult]]
 
 
-def _now(world: World) -> str:
+def hour_told(world: World) -> str:
     """The clock, as a result tells it when a stretch of work begins or ends."""
     return f"It is {clock_time(world.clock.now())}."
 
@@ -412,7 +349,7 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return ToolResult(world.go_to_bed(r, hour, journal, day), ends_turn=True)
 
 
-def _sit_down(world: World, r: Resident) -> str | ToolResult:
+def sit_down(world: World, r: Resident) -> str | ToolResult:
     """`r` sits down to work where it is, unless it is at work already: what it is told of
     it, with the hour, or nothing; or the refusal of one exhausted, whose work the reckoning of
     its body stops if it was at work."""
@@ -423,308 +360,23 @@ def _sit_down(world: World, r: Resident) -> str | ToolResult:
         return ToolResult(EXHAUSTED)
     r.base = Work()
     world.record("start_work", lambda w: f"{cap(you(r.name, w))} sat down to work.", actor=r)
-    return f"You sat down to work. {_now(world)}\n"
-
-
-OPENED = {
-    "store": "The counter is open.",
-    "restaurant": "The kitchen is open.",
-    "hospital": "The surgery is open.",
-}
-"""What sitting down to work at a place opens to others."""
+    return f"You sat down to work. {hour_told(world)}\n"
 
 
 async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if r.place != r.occupation.workplace:
         return ToolResult(f"Your work is at {world.config.place(r.occupation.workplace).name}.")
-    sat = _sit_down(world, r)
+    sat = sit_down(world, r)
     if isinstance(sat, ToolResult):
         return sat
-    then = OPENED.get(world.config.place(r.place).kind, "")
-    return ToolResult(" ".join([sat.strip(), *([then] if then else []), *world.counter_told(r)]))
-
-
-async def _view_board(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    office = world.config.workplace("office")
-    if r.place != office.id:  # the board hangs there, for whoever is there to read
-        return ToolResult(f"You are not at {office.name}.")
-    start = world.config.start_date
-    return ToolResult(world.board.text(r.name, lambda day: tell_date(day, start)))
-
-
-async def _read_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    office, number, board = world.config.workplace("office"), args["task"], world.board
-    if r.place != office.id:  # the board hangs there, for whoever is there to read
-        return ToolResult(f"You are not at {office.name}.")
-    if number not in board.open:
-        return ToolResult(f"There is no task {number} on the board.")
-    task = board.task(number)
-    return ToolResult(f"The problem of task {number}, in {task.repo}:\n\n{task.problem_statement}")
-
-
-async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    office, number, board = world.config.workplace("office"), args["task"], world.board
-    if r.place != office.id:
-        return ToolResult(f"The board is at {office.name}; you can claim a task only there.")
-    refusal = board.claim_refusal(r.name, number)
-    if refusal:
-        return ToolResult(refusal)
-    sat = _sit_down(world, r)
-    if isinstance(sat, ToolResult):
-        return sat
-    await board.claim(r.name, number)
-    task = board.task(number)
-    world.record(
-        "claim",
-        lambda w: f"{cap(you(r.name, w))} claimed task {number} ({task.repo}).",
-        actor=r,
-        payload={"task": number, "instance_id": task.instance_id},
-    )
-    sat = "sat down to work and " if sat else ""
-    return ToolResult(
-        f"You {sat}claimed task {number}, in {task.repo}; your workspace is ready. "
-        f"{_now(world)} The problem:\n\n{task.problem_statement}"
-    )
-
-
-async def _assign(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    number, name, board = args["task"], args["to"], world.board
-    sat = _working_at(world, r, "office")
-    if isinstance(sat, ToolResult):
-        return sat
-    other = world.residents.get(name)
-    if other is None or other.occupation.id != "programmer":
-        return ToolResult(f"{sat}{name} is not one of the programmers.")
-    if number not in board.open:
-        return ToolResult(f"{sat}There is no task {number} on the board.")
-    before = board.holder(number)
-    if before == name:
-        return ToolResult(f"{sat}{name} holds task {number} already.")
-    if name in board.claims:
-        return ToolResult(f"{sat}{name} holds task {board.claims[name].task} already.")
-    board.give(name, number)
-    task = board.task(number)
-    moved = [world.residents[before]] if before is not None else []
-
-    def told(w: str | None) -> str:
-        held = "" if before is None else f", which {you(before, w)} held,"
-        given = f"{cap(you(r.name, w))} gave task {number} ({task.repo}){held} to {you(name, w)}"
-        gone = before is not None and w == before
-        return f"{given}; your changes to it are gone." if gone else f"{given}."
-
-    world.record(
-        "assign",
-        told,
-        actor=r,
-        audience=[other, *moved],
-        payload={"task": number, "to": name, "from": before},
-    )
-    return ToolResult(f"{sat}{told(r.name)}")
-
-
-NO_TASK = "You hold no task; claim one from the board first."
-
-
-async def _workspace(world: World, r: Resident) -> tuple[Claim, Workspace, str] | ToolResult:
-    """The task `r` holds and its workspace, reopened if the night closed it, with `r` sat down
-    to work if it was not, and what it is told of sitting down, or nothing. The work is done
-    at the office, where the machines are."""
-    claim = world.board.claims.get(r.name)
-    if claim is None:
-        return ToolResult(NO_TASK)
-    office = world.config.workplace("office")
-    if r.place != office.id:
-        return ToolResult(f"You can work on task {claim.task} only at {office.name}.")
-    sat = _sit_down(world, r)
-    if isinstance(sat, ToolResult):
-        return sat
-    workspace = await world.board.workspace(r.name, claim)
-    if world.board.claims.get(r.name) is not claim:  # the claim ran out while it opened
-        return ToolResult(f"{sat}{NO_TASK}")
-    return claim, workspace, sat
-
-
-async def _shell(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    held = await _workspace(world, r)
-    if isinstance(held, ToolResult):
-        return held
-    claim, workspace, sat = held
-    number = claim.task
-    result = await workspace.exec(args["command"], world.config.work.shell_timeout_s)
-    command = args["command"]
-    world.record(
-        "command",
-        lambda w: (
-            f"{cap(you(r.name, w))} ran a command for task {number}: "
-            f"{command[:200]} (exit code {result.exit_code})."
-        ),
-        actor=r,
-        payload={
-            "task": number,
-            "command": command,
-            "exit_code": result.exit_code,
-            "timed_out": result.timed_out,
-            "output_tail": (result.stdout + result.stderr)[-1000:],
-        },
-    )
-    # The limit is of real time, which the town's clock outruns: told in the town's hours.
-    return ToolResult(
-        sat + told_command(result, f"The command ran too long and was stopped. {_now(world)}")
-    )
-
-
-async def _read_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    held = await _workspace(world, r)
-    if isinstance(held, ToolResult):
-        return held
-    claim, workspace, sat = held
-    number, path = claim.task, args["path"]
-    told, ok = await read_repo(workspace, args)
-    world.record(
-        "file_read",
-        lambda w: f"{cap(you(r.name, w))} read {path} for task {number}.",
-        actor=r,
-        payload={"task": number, "path": path, "ok": ok},
-    )
-    return ToolResult(sat + told)
-
-
-async def _write_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    held = await _workspace(world, r)
-    if isinstance(held, ToolResult):
-        return held
-    claim, workspace, sat = held
-    number, path = claim.task, args["path"]
-    told, ok = await write_repo(workspace, args)
-    world.record(
-        "file_write",
-        lambda w: f"{cap(you(r.name, w))} wrote {path} for task {number}.",
-        actor=r,
-        payload={"task": number, "path": path, "characters": len(args["content"]), "ok": ok},
-    )
-    return ToolResult(sat + told)
-
-
-async def _edit_repo_file(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    held = await _workspace(world, r)
-    if isinstance(held, ToolResult):
-        return held
-    claim, workspace, sat = held
-    number, path = claim.task, args["path"]
-    told, ok = await edit_repo(workspace, args)
-    world.record(
-        "file_write",
-        lambda w: f"{cap(you(r.name, w))} changed {path} for task {number}.",
-        actor=r,
-        payload={"task": number, "path": path, "edit": True, "ok": ok},
-    )
-    return ToolResult(sat + told)
-
-
-async def _submit(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    held = await _workspace(world, r)
-    if isinstance(held, ToolResult):
-        return held
-    claim, workspace, sat = held
-    result = await _hand_in(world, r, claim, workspace)
-    return ToolResult(sat + result.text, result.ends_turn)
-
-
-async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace) -> ToolResult:
-    """`r` hands in the task it holds, `claim`, from `workspace`: what `submit` tells."""
-    board = world.board
-    number = claim.task
-    if board.runs_left(r.name, number) <= 0:
-        return ToolResult(
-            f"You have handed in task {number} {counted(world.config.work.acceptance_runs, 'time')}"
-            " today, as often as a day allows; you can hand it in again tomorrow."
-        )
-    patch = await workspace.diff()
-    if not patch.strip():
-        return ToolResult("Your workspace has no changes to hand in.")
-    task = board.task(number)
-    world.record(
-        "submission",
-        lambda w: f"{cap(you(r.name, w))} handed in task {number}.",
-        actor=r,
-        payload={"task": number, "patch": patch},
-    )
-    verdict = await board.backend.accept(task, patch, world.config.work.acceptance_timeout_s)
-    if verdict.status != "error":  # checks that could not be run use up no hand-in
-        board.count_run(r.name, number)
-    left = board.runs_left(r.name, number)
-    holds = board.claims.get(r.name) is claim  # withdrawn or moved while the checks ran?
-    world.record(
-        "verdict",
-        lambda w: (
-            f"Task {number}, handed in by {you(r.name, w)}, was "
-            + ("accepted." if verdict.resolved else f"not accepted: {failure(verdict)}.")
-        ),
-        actor=r,
-        payload={
-            "task": number,
-            "status": verdict.status,
-            "resolved": verdict.resolved,
-            "fail_to_pass": list(verdict.fail_to_pass),
-            "pass_to_pass": list(verdict.pass_to_pass),
-            "held": holds,
-        },
-    )
-    if not holds:  # withdrawn or given to another while the checks ran: nobody is paid for it
-        told = "Accepted" if verdict.resolved else f"Not accepted: {failure(verdict)}"
-        unpaid = ", so you are not paid for it" if verdict.resolved else ""
-        return ToolResult(
-            f"{told}. Task {number} was no longer yours by the time the checks finished"
-            f"{unpaid}. {_now(world)}"
-        )
-    if not verdict.resolved:
-        again = (
-            f"You can hand in task {number} {counted(left, 'more time')} today."
-            if left > 0
-            else f"You cannot hand in task {number} again today."
-        )
-        if verdict.status == "error":
-            told = f"{cap(failure(verdict))}, so this hand-in does not count."
-        else:
-            told = f"Not accepted: {failure(verdict)}."
-        return ToolResult(f"{told} {again} {_now(world)}")
-    finished = board.finish(r.name)
-    if finished is not None:
-        await finished.close()
-    world.daybook.today["accepted"].append([r.name, number])
-    world.fund.take("client", world.config.work.payment)
-    sum_ = world.config.occupation("programmer").per_service  # the leader's own tasks too
-    paid = world.pay_service(r, "task", f"task {number}", due=sum_, task=number)
-    for leader in world.of_occupation("team-leader"):
-        if leader is not r:
-            about = f"task {number}, which {r.name} handed in"
-            world.pay_service(leader, "team", about, task=number, tell=True)
-    told = ("Accepted.", paid, world.purse(r), _now(world))
-    return ToolResult(" ".join(part for part in told if part))
-
-
-async def _abandon_task(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    board = world.board
-    claim = board.claims.get(r.name)
-    if claim is None:
-        return ToolResult("You hold no task.")
-    workspace = board.drop(r.name)
-    if workspace is not None:
-        await workspace.close()
-    world.record(
-        "abandon",
-        lambda w: f"{cap(you(r.name, w))} gave up task {claim.task}.",
-        actor=r,
-        payload={"task": claim.task},
-    )
-    return ToolResult(f"You gave up task {claim.task}; its changes are gone. {_now(world)}")
+    business = BUSINESSES.get(world.config.place(r.place).kind)
+    opened = [business.opened] if business is not None else []
+    return ToolResult(" ".join([sat.strip(), *opened, *counter_told(world, r)]))
 
 
 async def _leave_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.stop_work(r)
-    claim = world.board.claims.get(r.name)
-    held = f" You still hold task {claim.task}." if claim else ""
-    return ToolResult(f"You stopped work.{held} {_now(world)}")
+    return ToolResult(f"{world.stopped_told(r)} {hour_told(world)}")
 
 
 async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
@@ -802,117 +454,142 @@ def _buy_at_counter(
     `for_the_kitchen`, for the kitchen: the units go off the shelves to `r`, or are sent to the
     kitchen's larder, and the price to the fund, from `r`'s purse or the fund's own for the
     kitchen; the shopkeeper is paid its sum."""
-    thing, store = world.config.item(item), world.config.workplace("store")
+    thing, store = world.config.item(item), STORE.place(world.config)
     if r.place != store.id:
         return ToolResult(f"You can buy {thing.name} at {store.name}, not here.")
-    seller = world.serving("store")
+    seller = STORE.serving(world)
     if seller is None:
-        return ToolResult(f"{cap(store.name)} is closed: nobody is at the counter.")
+        return ToolResult(STORE.closed_told(world.config))
     if kitchen and thing.effect != "food":
         return ToolResult(f"{cap(thing.name)} is nothing the kitchen cooks with.")
-    price = world.store.prices[thing.id]
-    total = price * units
-    if not kitchen and (refusal := world.cannot_pay(r, total)):
-        return ToolResult(refusal)
-    world.reckon(r)
-    target = LARDER if kitchen else r.name
-    refusal = world.move(thing.id, units, SHELVES, target, by=None if kitchen else r)
+    total = STORE.prices(world)[thing.id] * units
+    bought, for_whom = amount(thing, units), " for the kitchen" if kitchen else ""
+    cost = world.config.money(total)
+    refusal = _sell(
+        world,
+        r,
+        STORE,
+        seller,
+        thing,
+        units,
+        total,
+        source=SHELVES,
+        target=LARDER if kitchen else r.name,
+        tell=lambda w: f"{cap(you(r.name, w))} bought {bought}{for_whom} for {cost}.",
+        served="a sale",
+        for_the_kitchen=kitchen,
+    )
     if refusal:
         return ToolResult(refusal)
-    bought = amount(thing, units)
-    world.fund.take("sale", total)
-    if kitchen:  # the fund pays itself: a sale, and the kitchen's purchase
-        world.fund.pay("kitchen", total)
-        tail = world.kitchen_told()
-    else:
-        r.inventory.spend(total, "bought", bought)
-    add(world.daybook.today["sales"], thing.id, units)
-    for_whom = " for the kitchen" if kitchen else ""
-    world.record_move(
-        "buy",
-        lambda w: (
-            f"{cap(you(r.name, w))} bought {bought}{for_whom} for {world.config.money(total)}."
-        ),
-        by=r,
-        audience=[seller] if seller is not r else [],
-        item=thing.id,
-        units=units,
-        source=SHELVES,
-        target=target,
-        money=total,
-        seller=seller.name,
-    )
-    if not kitchen:  # the purchase is on record before a hungry buyer eats from it
-        world.take_in(r)
-        tail = f"{world.things_told(r)} {world.purse(r)}"
-    if seller is not r:  # nobody is paid for serving itself
-        world.pay_service(seller, "sale", "a sale", tell=True)
-    paid = ", which the fund paid" if kitchen else ""
-    return ToolResult(
-        f"You bought {bought}{for_whom} for {world.config.money(total)}{paid}. {tail}"
-    )
+    if kitchen:
+        return ToolResult(
+            f"You bought {bought}{for_whom} for {cost}, which the fund paid. {kitchen_told(world)}"
+        )
+    return ToolResult(f"You bought {bought} for {cost}. {world.things_told(r)} {world.purse(r)}")
 
 
 def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
     """`r` buys a portion of the dish `item` in the Restaurant while its chef is at work there,
     and eats it at once: it goes from the kitchen's portions to `r` and is eaten, the price goes
     to the fund, and the chef is paid its sum."""
-    dish, restaurant = world.config.item(item), world.config.workplace("restaurant")
+    dish, restaurant = world.config.item(item), KITCHEN.place(world.config)
     if r.place != restaurant.id:
         return ToolResult(f"You can have {dish.name} at {restaurant.name}, not here.")
-    chef = world.serving("restaurant")
+    chef = KITCHEN.serving(world)
     if chef is None:
-        return ToolResult("The kitchen is closed.")
-    if r.occupation.workplace == restaurant.id:
+        return ToolResult(KITCHEN.closed_told(world.config))
+    if KITCHEN.keeps(world.config, r):
         return ToolResult("You cook the dishes here; you cannot buy them.")
     if units != 1:
         return ToolResult("One dish at a time.")
-    price = world.kitchen.menu[dish.id]
-    if refusal := world.cannot_pay(r, price):
-        return ToolResult(refusal)
-    world.reckon(r)
-    if refusal := world.move(dish.id, 1, PORTIONS, r.name, by=r):
-        return ToolResult(refusal)
-    r.inventory.spend(price, "bought", dish.name)
-    world.fund.take("dish", price)
-    add(world.daybook.today["dishes"], dish.id, 1)
-    world.record_move(
-        "buy",
-        lambda w: (
-            f"{cap(you(chef.name, w))} served {you(r.name, w)} {dish.name} for "
-            f"{world.config.money(price)}."
-        ),
-        by=r,
-        audience=[chef],
-        item=dish.id,
-        units=1,
+    price = KITCHEN.prices(world)[dish.id]
+    cost = world.config.money(price)
+    refusal = _sell(
+        world,
+        r,
+        KITCHEN,
+        chef,
+        dish,
+        1,
+        price,
         source=PORTIONS,
         target=r.name,
-        money=price,
-        seller=chef.name,
+        tell=lambda w: f"{cap(you(chef.name, w))} served {you(r.name, w)} {dish.name} for {cost}.",
+        served="a dish served",
     )
-    world.eat_now(r, dish.id)
-    world.pay_service(chef, "dish", "a dish served", tell=True)
+    if refusal:
+        return ToolResult(refusal)
     eaten = world.body.told("satiety", r.living.satiety)
-    return ToolResult(
-        f"You had {dish.name} for {world.config.money(price)}. {eaten} {world.purse(r)}"
+    return ToolResult(f"You had {dish.name} for {cost}. {eaten} {world.purse(r)}")
+
+
+def _sell(
+    world: World,
+    r: Resident,
+    business: Business,
+    seller: Resident,
+    thing: Item,
+    units: int,
+    total: int,
+    *,
+    source: str,
+    target: str,
+    tell: Tell,
+    served: str,
+    for_the_kitchen: bool = False,
+) -> str | None:
+    """`r` buys `units` of `thing` for `total` from `business`, served by `seller`: paid in cash
+    from `r`'s purse or, `for_the_kitchen`, by the fund; the units moved from the business's
+    holder `source` to `target`; the price taken in by the fund as the business's and counted
+    in the daybook; the purchase logged as a `move`, told as `tell` to the seller; a dish eaten
+    at once, and anything else bought for itself taken in by the hungry; and the seller, unless
+    it served itself, paid its sum for `served`. Returns the refusal, nothing bought, or None."""
+    if not for_the_kitchen and (refusal := world.cannot_pay(r, total)):
+        return refusal
+    world.reckon(r)
+    if refusal := world.move(thing.id, units, source, target, by=None if for_the_kitchen else r):
+        return refusal
+    world.fund.take(business.fund, total)
+    if for_the_kitchen:  # the fund pays itself: a sale, and the kitchen's purchase
+        world.fund.pay("kitchen", total)
+    else:
+        r.inventory.spend(total, "bought", amount(thing, units))
+    add(world.daybook.today[business.daybook], thing.id, units)
+    world.record_move(
+        "buy",
+        tell,
+        by=r,
+        audience=[seller] if seller is not r else [],
+        item=thing.id,
+        units=units,
+        source=source,
+        target=target,
+        money=total,
+        seller=seller.name,
     )
+    if thing.dish:  # a dish is eaten where it is served
+        world.eat_now(r, thing.id)
+    elif not for_the_kitchen:  # the purchase is on record before a hungry buyer eats from it
+        world.take_in(r)
+    if seller is not r:  # nobody is paid for serving itself
+        world.pay_service(seller, business.service, served, tell=True)
+    return None
 
 
-def _working_at(world: World, r: Resident, kind: str) -> str | ToolResult:
+def working_at(world: World, r: Resident, kind: str) -> str | ToolResult:
     """`r`, whose work is at the town's `kind` of workplace, sits down to work there unless it
     is at work already: what it is told of it, or the refusal of one elsewhere or exhausted."""
     place = world.config.workplace(kind)
     if r.place != place.id:
         return ToolResult(f"You can do that only at {place.name}.")
-    sat = _sit_down(world, r)
+    sat = sit_down(world, r)
     if isinstance(sat, ToolResult) or not sat:
         return sat
     return f"{sat.strip()} "  # told on the line of what follows
 
 
 async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    sat = _working_at(world, r, "store")
+    sat = working_at(world, r, "store")
     if isinstance(sat, ToolResult):
         return sat
     thing, quantity = world.config.item(args["item"]), args["quantity"]
@@ -922,9 +599,8 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if cost > world.fund.balance:
         return ToolResult(f"{sat}The fund cannot pay the supplier {costs} now.")
     world.fund.pay("supplier", cost)
-    now = world.clock.now()
-    arrives = calendar_day(now) * DAY + parse_hour(world.config.day.delivery)
-    world.store.pending.append([thing.id, quantity, arrives])
+    arrives = world.delivery(calendar_day(world.clock.now()) + 1)
+    world.store.order(thing.id, quantity, arrives)
     world.record(
         "order",
         lambda w: f"{cap(you(r.name, w))} ordered {ordered} from the supplier for {costs}.",
@@ -943,21 +619,14 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     )
 
 
-def _priced(world: World, item: str) -> str:
-    """The item or the Hospital's service `item`, as a sentence names it."""
-    return f"the {item}" if item in FEES else world.config.item(item).name
-
-
 async def _set_price(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     item, price = args["item"], args["price"]
-    kind = world.config.place(r.occupation.workplace).kind
-    table = {"store": world.store.prices, "restaurant": world.kitchen.menu, "hospital": world.fees}
-    prices, place, name = table[kind], world.config.workplace(kind), _priced(world, item)
-    money = world.config.money
+    business = BUSINESSES[world.config.place(r.occupation.workplace).kind]
+    prices, place = business.prices(world), business.place(world.config)
+    name, money = priced(world.config, item), world.config.money
     if item not in prices:
-        sold = {"store": "sold at", "restaurant": "on the menu of", "hospital": "a service of"}
-        return ToolResult(f"{cap(name)} is not {sold[kind]} {place.name}.")
-    sat = _working_at(world, r, kind)
+        return ToolResult(f"{cap(name)} is not {business.sells} {place.name}.")
+    sat = working_at(world, r, business.kind)
     if isinstance(sat, ToolResult):
         return sat
     before, prices[item] = prices[item], price
@@ -976,7 +645,7 @@ async def _set_price(world: World, r: Resident, args: dict[str, Any]) -> ToolRes
 
 
 async def _cook(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    sat = _working_at(world, r, "restaurant")
+    sat = working_at(world, r, "restaurant")
     if isinstance(sat, ToolResult):
         return sat
     dish, portions = world.config.item(args["dish"]), args["portions"]
@@ -1000,7 +669,15 @@ async def _cook(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         payload={"dish": dish.id, "name": dish.name, "portions": portions, "used": needed},
     )
     ready = world.holders[PORTIONS].units(dish.id)
-    return ToolResult(f"{sat}You cooked {cooked}; {ready} ready to serve. {world.kitchen_told()}")
+    return ToolResult(f"{sat}You cooked {cooked}; {ready} ready to serve. {kitchen_told(world)}")
+
+
+def _called(world: World, name: str) -> Resident | ToolResult:
+    """The resident called `name`, or the refusal that the town has none."""
+    other = world.residents.get(name)
+    if other is None:
+        return ToolResult(f"There is nobody called {name} in the town.")
+    return other
 
 
 def _patient(world: World, r: Resident, name: str) -> tuple[Resident, str] | ToolResult:
@@ -1008,22 +685,20 @@ def _patient(world: World, r: Resident, name: str) -> tuple[Resident, str] | Too
     at the Hospital, where `r` sits down to work and the patient, awake, must be (`r` itself
     among them); or at the bedside of `name`, too ill to get up, where `r` sits down to nothing.
     Otherwise the refusal."""
-    patient, hospital = world.residents.get(name), world.config.workplace("hospital")
-    if patient is None:
-        return ToolResult(f"There is nobody called {name} in the town.")
+    patient, hospital = _called(world, name), SURGERY.place(world.config)
+    if isinstance(patient, ToolResult):
+        return patient
     if r.place != hospital.id:
         if patient in world.bedside(r):
             return patient, ""
         return ToolResult(
             f"You can do that at {hospital.name}, or at the bedside of one too ill to get up."
         )
-    sat = _working_at(world, r, "hospital")
+    sat = working_at(world, r, SURGERY.kind)
     if isinstance(sat, ToolResult):
         return sat
-    if patient is not r and not world.visible(r, patient):
-        return ToolResult(f"{sat}{name} is not here.")
-    if not patient.awake:
-        return ToolResult(f"{sat}{name} is asleep.")
+    if refusal := world.reach(r, name):
+        return ToolResult(f"{sat}{refusal}")
     return patient, sat
 
 
@@ -1031,7 +706,7 @@ def _charge(world: World, doctor: Resident, patient: Resident, service: str) -> 
     """`patient` pays the fee of `service` (`examination` or `treatment`) to the fund, and is
     counted among the day's patients: the fee; or why it cannot pay, in its own words or, to the
     doctor, in the doctor's."""
-    fee = world.fees[service]
+    fee = SURGERY.prices(world)[service]
     if fee > patient.inventory.money:
         if patient is doctor:
             return world.cannot_pay(patient, fee) or ""
@@ -1039,90 +714,78 @@ def _charge(world: World, doctor: Resident, patient: Resident, service: str) -> 
     patient.inventory.spend(
         fee, "paid", f"an {service}" if service[0] in "aeiou" else f"a {service}"
     )
-    world.fund.take("fee", fee)
-    world.daybook.today["patients"].append([patient.name, service])
+    world.fund.take(SURGERY.fund, fee)
+    world.daybook.today[SURGERY.daybook].append([patient.name, service])
     return fee
 
 
 async def _examine(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    found = _patient(world, r, args["patient"])
+    return _see(world, r, args["patient"], "examination")
+
+
+async def _treat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    return _see(world, r, args["patient"], "treatment")
+
+
+def _see(world: World, r: Resident, name: str, service: str) -> ToolResult:
+    """The doctor `r` sees the patient `name` for `service`, which the patient pays for: an
+    examination tells both what shape the patient is in, in numbers (its own words to each); a
+    treatment restores some of its health, ends its illness and gets it up from its bed. Logged
+    with the patient's numbers; the doctor is paid its sum for any patient but itself."""
+    found = _patient(world, r, name)
     if isinstance(found, ToolResult):
         return found
     patient, sat = found
-    fee = _charge(world, r, patient, "examination")
+    fee = _charge(world, r, patient, service)
     if isinstance(fee, str):
         return ToolResult(f"{sat}{fee}")
     world.reckon(patient)
-    living, cost = patient.living, world.config.money(fee)
-    own, seen = world.body.examination(living), world.body.examination(living, patient.name)
-
-    def told(w: str | None) -> str:
-        if w == r.name:
-            whom = "yourself" if patient is r else patient.name
-            return f"You examined {whom} for {cost}. {own if patient is r else seen}"
-        if w == patient.name:
-            return f"{r.name} examined you for {cost}. {own}"
-        return f"{r.name} examined {patient.name} for {cost}."
-
-    world.record(
-        "examination",
-        told,
-        actor=r,
-        audience=[patient] if patient is not r else [],
-        payload={
-            "patient": patient.name,
-            "fee": fee,
+    living, cost, restores = patient.living, world.config.money(fee), world.config.hospital.restores
+    examining = service == "examination"
+    done = "examined" if examining else "treated"
+    if examining:
+        own, seen = world.body.examination(living), world.body.examination(living, patient.name)
+        found_out, theirs = f" {own if patient is r else seen}", f" {own}"
+        numbers: dict[str, Any] = {
             "satiety": round(living.satiety, 1),
             "energy": round(living.energy, 1),
             "health": round(living.health, 1),
             "ill": living.ill,
             "night": dict(living.night),
-        },
-    )
-    paid = "" if patient is r else world.pay_service(r, "patient", "a patient examined")
-    return ToolResult(f"{sat}{told(r.name)} {paid}".strip())
-
-
-async def _treat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    found = _patient(world, r, args["patient"])
-    if isinstance(found, ToolResult):
-        return found
-    patient, sat = found
-    fee = _charge(world, r, patient, "treatment")
-    if isinstance(fee, str):
-        return ToolResult(f"{sat}{fee}")
-    world.reckon(patient)
-    living, cost, restores = patient.living, world.config.money(fee), world.config.hospital.restores
-
-    def told(w: str | None) -> str:
-        if w == r.name:
-            return f"You treated {'yourself' if patient is r else patient.name} for {cost}."
-        if w == patient.name:
-            return f"{r.name} treated you for {cost}."
-        return f"{r.name} treated {patient.name} for {cost}."
-
-    world.record(
-        "treatment",
-        told,
-        actor=r,
-        audience=[patient] if patient is not r else [],
-        payload={
-            "patient": patient.name,
-            "fee": fee,
+        }
+    else:
+        found_out = theirs = ""
+        numbers = {
             "restores": restores,
             "before": round(living.health, 1),
             "health": round(min(100.0, living.health + restores), 1),
             "ill": living.ill,
             "bedridden": living.bedridden,
-        },
+        }
+    whom = "yourself" if patient is r else patient.name
+
+    def told(w: str | None) -> str:
+        if w == r.name:
+            return f"You {done} {whom} for {cost}.{found_out}"
+        if w == patient.name:
+            return f"{r.name} {done} you for {cost}.{theirs}"
+        return f"{r.name} {done} {patient.name} for {cost}."
+
+    world.record(
+        service,
+        told,
+        actor=r,
+        audience=[patient] if patient is not r else [],
+        payload={"patient": patient.name, "fee": fee} | numbers,
     )
-    world.treat(patient, restores)
-    paid = "" if patient is r else world.pay_service(r, "patient", "a patient treated")
+    if not examining:
+        world.treat(patient, restores)
+    paid = "" if patient is r else world.pay_service(r, SURGERY.service, f"a patient {done}")
     return ToolResult(f"{sat}{told(r.name)} {paid}".strip())
 
 
 async def _report(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    sat = _working_at(world, r, "hall")
+    sat = working_at(world, r, "hall")
     if isinstance(sat, ToolResult):
         return sat
     world.record("report", lambda w: f"{cap(you(r.name, w))} read the town's report.", actor=r)
@@ -1133,7 +796,7 @@ async def _announce(world: World, r: Resident, args: dict[str, Any]) -> ToolResu
     text = args["text"].strip()
     if not text:
         return ToolResult("You announced nothing.")
-    sat = _working_at(world, r, "hall")
+    sat = working_at(world, r, "hall")
     if isinstance(sat, ToolResult):
         return sat
     hall = world.config.workplace("hall")
@@ -1169,9 +832,9 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
     names = listed([bare(item.name) for item in writing], "or")
     if not any(r.inventory.units(item.id) for item in writing):
         return ToolResult(f"You have no {names}.")
-    other = world.residents.get(name)
-    if other is None:
-        return ToolResult(f"There is nobody called {name} in the town.")
+    other = _called(world, name)
+    if isinstance(other, ToolResult):
+        return other
     if other is r:
         return ToolResult("You cannot write to yourself.")
     if not any(other.inventory.units(item.id) for item in writing):
@@ -1189,51 +852,46 @@ async def _message(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
 async def _get(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     assert r.place is not None
     thing, units, place = world.config.item(args["item"]), args.get("units", 1), r.place
-    world.reckon(r)
-    if refusal := world.move(thing.id, units, place, r.name, by=r):
-        return ToolResult(refusal)
     got, where = amount(thing, units), world.config.place(place).name
-    world.record_move(
+    if refusal := world.hand(
+        r,
         "get",
+        thing,
+        units,
+        place,
+        r.name,
         lambda w: f"{cap(you(r.name, w))} took {got} that was left at {where}.",
-        by=r,
         audience=world.addressable(r),
-        item=thing.id,
-        units=units,
-        source=place,
-        target=r.name,
-    )
-    world.take_in(r)
+    ):
+        return ToolResult(refusal)
     return ToolResult(f"You took {got}. {world.things_told(r)}")
 
 
 async def _put(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     assert r.place is not None
     thing, units, place = world.config.item(args["item"]), args.get("units", 1), r.place
-    world.reckon(r)  # what it would have eaten by now is eaten first
-    if refusal := world.move(thing.id, units, r.name, place, by=r):
-        return ToolResult(refusal)
     left, where = amount(thing, units), world.config.place(place).name
-    world.record_move(
+    if refusal := world.hand(
+        r,
         "put",
+        thing,
+        units,
+        r.name,
+        place,
         lambda w: f"{cap(you(r.name, w))} left {left} at {where}, for anyone to take.",
-        by=r,
         audience=world.addressable(r),
-        item=thing.id,
-        units=units,
-        source=r.name,
-        target=place,
-    )
+    ):
+        return ToolResult(refusal)
     return ToolResult(f"You left {left} here, for anyone to take. {world.things_told(r)}")
 
 
 async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     name, units = args["to"], args.get("units", 1)
-    other = world.residents.get(name)
+    other = _called(world, name)
+    if isinstance(other, ToolResult):
+        return other
     if other is r:
         return ToolResult("You cannot pass anything to yourself.")
-    if other is None:
-        return ToolResult(f"There is nobody called {name} in the town.")
     if refusal := world.reach(r, name):
         return ToolResult(refusal)
     if args["item"] == MONEY:
@@ -1253,31 +911,19 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         )
         return ToolResult(f"You passed {name} {given}. {world.purse(r)}")
     thing = world.config.item(args["item"])
-    serving = thing.dish and world.serving("restaurant") is r
-    source = PORTIONS if serving else r.name
-    world.reckon(r)  # what it would have eaten by now is eaten first
-    world.reckon(other)
-    if refusal := world.move(thing.id, units, source, name, by=r):
-        return ToolResult(refusal)
     given = amount(thing, units)
-    world.record_move(
-        "pass",
-        lambda w: (
-            f"{cap(you(r.name, w))} served {you(name, w)} {given}, which nobody paid for."
-            if serving
-            else f"{cap(you(r.name, w))} passed {you(name, w)} {given}."
-        ),
-        by=r,
-        audience=[other],
-        item=thing.id,
-        units=units,
-        source=source,
-        target=name,
-    )
-    if serving:  # a dish is eaten where it is served
-        world.eat_now(other, thing.id, units)
+    serving = thing.dish and KITCHEN.serving(world) is r  # a dish ready to serve, unpaid
+
+    def told(w: str | None) -> str:
+        if serving:
+            return f"{cap(you(r.name, w))} served {you(name, w)} {given}, which nobody paid for."
+        return f"{cap(you(r.name, w))} passed {you(name, w)} {given}."
+
+    source = PORTIONS if serving else r.name
+    if refusal := world.hand(r, "pass", thing, units, source, name, told, audience=[other]):
+        return ToolResult(refusal)
+    if serving:
         return ToolResult(f"You served {name} {given}, which nobody paid for.")
-    world.take_in(other, tell=True)  # food given is eaten at once by one who could eat
     return ToolResult(f"You passed {name} {given}. {world.things_told(r)}")
 
 
@@ -1301,7 +947,7 @@ async def _review_day(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     return ToolResult(world.review(r))
 
 
-HANDLERS: dict[str, Handler] = {
+HANDLERS: dict[str, Handler] = {  # and the Office's, `world.office.HANDLERS`
     "help": _help,
     "look_around": _look_around,
     "how_am_i": _how_am_i,
@@ -1310,16 +956,6 @@ HANDLERS: dict[str, Handler] = {
     "wait": _wait,
     "sleep": _sleep,
     "start_work": _start_work,
-    "view_board": _view_board,
-    "read_task": _read_task,
-    "claim_task": _claim_task,
-    "shell": _shell,
-    "read_repo_file": _read_repo_file,
-    "write_repo_file": _write_repo_file,
-    "edit_repo_file": _edit_repo_file,
-    "submit": _submit,
-    "abandon_task": _abandon_task,
-    "assign": _assign,
     "cook": _cook,
     "order": _order,
     "set_price": _set_price,

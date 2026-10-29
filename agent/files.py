@@ -15,6 +15,7 @@ from typing import Any
 
 from agent import texts
 from agent.directory import AREAS, BACKGROUND, JOURNAL, SKILLS, AgentDirectory
+from agent.filetext import passage_refusal, told_lines
 from agent.port import ToolResult, ToolSpec
 
 
@@ -109,15 +110,7 @@ class FileTools:
         file = self._file(path, writing=False)
         text = file.read_text(encoding="utf-8", errors="replace")
         offset, limit = _number(args, "read_file", "offset"), _number(args, "read_file", "limit")
-        if offset is None and limit is None:
-            return text or texts.EMPTY_FILE.format(path=path)
-        lines = text.splitlines(keepends=True)
-        first = offset or 1
-        chosen = lines[first - 1 : None if limit is None else first - 1 + limit]
-        last = first + len(chosen) - 1
-        return texts.PART_OF_FILE.format(
-            first=first, last=last, total=len(lines), path=path, text="".join(chosen)
-        )
+        return told_lines(text, path, offset, limit)
 
     def _write_file(self, args: dict[str, Any]) -> str:
         path = _text(args, "write_file", "path")
@@ -134,11 +127,8 @@ class FileTools:
         old, new = _text(args, "edit_file", "old_text"), _text(args, "edit_file", "new_text")
         file = self._file(path, writing=True)
         text = file.read_text(encoding="utf-8")
-        count = text.count(old) if old else 0
-        if count == 0:
-            raise _Refusal(texts.PASSAGE_MISSING.format(path=path))
-        if count > 1:
-            raise _Refusal(texts.PASSAGE_REPEATED.format(count=count, path=path))
+        if refusal := passage_refusal(text, old, path):
+            raise _Refusal(refusal)
         file.write_text(text.replace(old, new, 1), encoding="utf-8")
         return texts.EDITED.format(path=path)
 

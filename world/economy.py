@@ -1,5 +1,5 @@
 """The town's things and money: the holders of items, each resident's inventory, the town's one
-fund, the Store and the Restaurant's kitchen, and the daybook of what the report tells.
+fund, the Store's orders, and the daybook of what the report tells.
 
 Every unit of an item is held by exactly one `Holder`, which keeps the units of each item it
 holds: a resident, by its `Inventory`; a place, by what is left there for anyone to take and, at the
@@ -36,10 +36,10 @@ resident's tax goes into it, and it pays the wages of the occupations paid from 
 mayor's), as far as it has them; what it lacks it owes them, and the fund's own money never makes
 it up.
 
-The `Store` keeps its prices and the orders on their way, its shelves being a holder; the
-`Kitchen` keeps the menu's prices, its larder and portions being holders. The `Daybook` keeps, day
-by day, the fund's balance and its net, what the Store sold, the dishes served, the patients seen,
-the tasks accepted and the hours at work, for the mayor's report. All are checkpointed whole.
+The `Store` keeps the orders on their way, its shelves being a holder (the businesses' prices are
+`world.businesses`'). The `Daybook` keeps, day by day, the fund's balance and its net, what the
+Store sold, the dishes served, the patients seen, the tasks accepted and the hours at work, for
+the mayor's report. All are checkpointed whole.
 """
 
 from __future__ import annotations
@@ -290,11 +290,14 @@ class Fund:
 
 @dataclass
 class Store:
-    """The Store (see the module docstring): the price of a unit of each item it sells in
-    `prices`, and the orders `pending`, each `[item, units, the time it arrives]`."""
+    """The Store's orders from the supplier (see the module docstring): `pending`, each `[item,
+    units, the time it arrives]`."""
 
-    prices: dict[str, int]
     pending: list[list[str | int]] = field(default_factory=list)
+
+    def order(self, item: str, units: int, arrives: int) -> None:
+        """`units` of `item` ordered, to arrive at `arrives`."""
+        self.pending.append([item, units, arrives])
 
     def due(self, now: int) -> dict[str, int]:
         """The orders that have arrived by `now`, no longer pending: the units of each item."""
@@ -308,14 +311,6 @@ class Store:
                 waiting.append([item, units, t])
         self.pending = waiting
         return came
-
-
-@dataclass
-class Kitchen:
-    """The Restaurant's kitchen (see the module docstring): the price of a portion of each dish
-    on the `menu`."""
-
-    menu: dict[str, int]
 
 
 WEEK = 7

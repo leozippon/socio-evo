@@ -184,9 +184,7 @@ async def test_a_task_is_claimed_at_the_board_and_worked_on_there_only(make_town
         "You can work on task 1 only at the workshop."
     )
     assert isinstance(mei.base, Idle) and world.activity(mei) == "awake"
-    assert (await town.call("Mei", "claim_task", task=2)).text == (
-        "The board is at the workshop; you can claim a task only there."
-    )
+    assert (await town.call("Mei", "claim_task", task=2)).text == "You are not at the workshop."
     await town.call("Mei", "go", place="workshop")
     await town.until("09:15")
     assert (await town.call("Mei", "shell", command="ls")).text == (
