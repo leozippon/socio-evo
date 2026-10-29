@@ -38,13 +38,13 @@ const ROW_OF = {
   report: 0,
   announcement: 0,
   service: 1,
-  wage: 1,
+  grant: 1,
+  settlement: 1,
   speech: 2,
   message: 2,
   move_in: 2,
   journal: 2,
   forced_sleep: 2,
-  settlement: 2,
   condition: 2,
   illness: 2,
   recovered: 2,
@@ -159,9 +159,13 @@ export function drawMarker(g, m, cx, cy, C) {
       g.lineTo(cx + 3, cy - 3);
       g.stroke();
       break;
-    case "service": // a filled diamond: paid for a service
+    case "service": // a filled diamond: a client's share of a payment
       diamond(g, cx, cy);
       paint(g, C.good);
+      break;
+    case "grant": // a diamond in the town's colour: money granted from the treasury
+      diamond(g, cx, cy);
+      paint(g, C.accent);
       break;
     case "move":
       if (m.source === PORTIONS) {
@@ -183,14 +187,6 @@ export function drawMarker(g, m, cx, cy, C) {
         g.rect(cx - 3, cy - 3, 6, 6);
         paint(g, m.reason === "get" ? C.o5 : C.surface, C.o5);
       }
-      break;
-    case "wage": // a disc with a bar: the midnight's wages, the rent taken out
-      g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
-      paint(g, C.surface, C["ink-2"]);
-      g.beginPath();
-      g.moveTo(cx - 2.5, cy);
-      g.lineTo(cx + 2.5, cy);
-      g.stroke();
       break;
     case "order": // a parcel on its way
     case "delivery": // a parcel come
@@ -270,7 +266,7 @@ export function drawMarker(g, m, cx, cy, C) {
       g.lineTo(cx - 4, cy + 4);
       g.stroke();
       break;
-    case "settlement": // a small square: the midnight statement
+    case "settlement": // a small square: the midnight statement, the rent taken
       g.rect(cx - 3, cy - 3, 6, 6);
       paint(g, C.surface, C.muted);
       break;
@@ -373,8 +369,8 @@ export function legend(C) {
     row("Town", item(glyph({ kind: "task_arrived" }), "a task came in"), item(glyph({ kind: "task_withdrawn" }), "a task withdrawn by its client"), item(glyph({ kind: "delivery" }), "the Store's order delivered")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "assign" }), "given by the team leader"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up")),
     row("Work", item(glyph({ kind: "order" }), "ordered from the supplier"), item(glyph({ kind: "price" }), "a price set"), item(glyph({ kind: "cook" }), "cooked"), item(glyph({ kind: "examination" }), "examined a patient"), item(glyph({ kind: "treatment" }), "treated a patient"), item(glyph({ kind: "report" }), "read the report"), item(glyph({ kind: "announcement" }), "announced")),
-    row("Money", item(glyph({ kind: "service" }), "paid for a service"), item(glyph({ kind: "wage" }), "wages at midnight, rent taken"), item(glyph({ kind: "move", reason: "pass" }), "money or a thing passed"), item(glyph({ kind: "move", reason: "buy" }), "bought at the Store"), item(glyph({ kind: "move", reason: "buy", source: PORTIONS }), "a dish, bought or the chef's")),
-    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move", reason: "get" }), "taken where it was left"), item(glyph({ kind: "move", reason: "put" }), "left for anyone"), item(glyph({ kind: "move", reason: "eat" }), "eaten"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep"), item(glyph({ kind: "settlement" }), "the midnight statement")),
+    row("Money", item(glyph({ kind: "service" }), "a client's share, the tax withheld"), item(glyph({ kind: "move", reason: "pass" }), "money or a thing passed"), item(glyph({ kind: "move", reason: "buy" }), "bought at the Store"), item(glyph({ kind: "move", reason: "buy", source: PORTIONS }), "a dish, bought or the chef's"), item(glyph({ kind: "grant" }), "granted from the treasury"), item(glyph({ kind: "settlement" }), "the midnight statement: rent taken, a salary paid")),
+    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move", reason: "get" }), "taken where it was left"), item(glyph({ kind: "move", reason: "put" }), "left for anyone"), item(glyph({ kind: "move", reason: "eat" }), "eaten"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
     row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "illness" }), "fell ill"), item(glyph({ kind: "recovered" }), "well again"), item(glyph({ kind: "bedridden" }), "took to bed")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "money in hand, one scale for all")),
   );

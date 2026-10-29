@@ -1,9 +1,10 @@
 """The publisher: the bundle it writes matches its contract in frontend/README.md, references
-carry hashes and stay inside the site, agents are published as their repositories and traces
-hold them, settled days are kept, a run in progress and a run just created are published, an
-unreadable configuration is skipped and said so, nothing is written into a run, unsafe targets
-are refused, the evaluation and the comparison are read from the results root, and the push
-script switches a release atomically."""
+carry hashes and stay inside the site, the treasury's books the money dashboard reads are the
+checkpoint's, agents are published as their repositories and traces hold them, settled days are
+kept, a run in progress and a run just created are published, an unreadable configuration is
+skipped and said so, nothing is written into a run, unsafe targets are refused, the evaluation
+and the comparison are read from the results root, and the push script switches a release
+atomically."""
 
 from __future__ import annotations
 
@@ -45,9 +46,9 @@ PUSH = PROJECT / "frontend" / "deploy" / "push.sh"
 RESIDENTS = ("Mei", "Tomas", "Aisha", "Olga", "Jonas", "Lucia", "Vera")
 MARKERS = (
     "claim", "assign", "submission", "abandon", "service", "speech", "message", "move", "order",
-    "cook", "price", "examination", "treatment", "report", "announcement", "illness",
-    "recovered", "bedridden", "move_in", "journal", "forced_sleep", "wage", "settlement",
-    "condition", "task_arrived", "task_withdrawn", "delivery",
+    "cook", "price", "examination", "treatment", "report", "announcement", "grant", "illness",
+    "recovered", "bedridden", "move_in", "journal", "forced_sleep", "settlement", "condition",
+    "task_arrived", "task_withdrawn", "delivery",
 )  # fmt: skip
 """The kinds of marker the timeline publishes, on a resident's lane or the town's."""
 
@@ -150,8 +151,6 @@ def test_every_file_has_exactly_the_documented_fields(published):
     for row in measures["rows"]:
         assert set(row) == {"resident", "occupation", "day", "date", *MEASURES}
     assert [set(row) for row in measures["town"]] == [{"day", "date", *TOWN}]
-    [town] = measures["town"]  # the day's taxes all paid out to Vera, the mayor
-    assert (town["taxes"], town["taken_tax"], town["paid_tax_wage"]) == (0, 47, 47)
     kinds = set()
     for path in (site / RUN / "events").iterdir():
         for found in json.loads(path.read_bytes())["entries"]:
@@ -159,6 +158,43 @@ def test_every_file_has_exactly_the_documented_fields(published):
             assert found["kind"] in LOG_KINDS
             assert not set(found["payload"]) & bundle.OMITTED
     assert {"submission", "checkpoint", "speech", "move"} <= kinds
+
+
+def test_the_treasury_s_books_are_the_checkpoint_s_and_the_markers_add_up_to_them(published):
+    """What the money dashboard reads of the treasury (`measures.json` `town` and the residents'
+    rows) is what the checkpoint saved: its balance, the rent owed to it and the salary it owes,
+    and what it took in and paid out by kind on the day its midnight closed, which the markers
+    of that calendar day add up to: the tax withheld from the shares, the sales, the dish and the
+    fees, the rent and the salary of the statements, and the grant. Each business's books are the
+    fixture's day: Olga's sales against her order, Jonas's omelette against his ingredients, and
+    Lucia's fees."""
+    runs, _, site = published
+    measures = read(site, f"{RUN}/measures.json")
+    timeline = read(site, f"{RUN}/timeline.json")
+    saved = json.loads((runs / "town" / "checkpoints" / "day-01.json").read_text())
+    treasury, [town] = saved["treasury"], measures["town"]
+    books = (town["treasury"], town["salary_owed"], town["arrears"])
+    assert books == (treasury["balance"], 0, 5) and treasury["owed"] == {}
+    assert {row["resident"]: row["arrears"] for row in measures["rows"] if row["arrears"]} == (
+        treasury["arrears"]
+    ) == {"Aisha": 5}  # fmt: skip
+    ledger = {"tax": town["taken_tax"], "rent": town["taken_rent"]}
+    ledger |= {"salary": town["paid_salary"], "grant": town["paid_grant"]}
+    assert ledger == treasury["yesterday"] == {"tax": 13, "rent": 185, "salary": 30, "grant": 5}
+    assert town["money"] == sum(r["inventory"]["money"] for r in saved["residents"].values())
+
+    day = [m for lane in timeline["residents"] for m in lane["markers"] if m["t"] <= DAY]
+    statements = [m for m in day if m["kind"] == "settlement"]
+    taxed = ("service", "move", "examination", "treatment")
+    assert sum(m["tax"] for m in day if m["kind"] in taxed) == ledger["tax"]
+    assert sum(m["rent_paid"] for m in statements) == ledger["rent"]
+    assert sum(m["salary_paid"] for m in statements) == ledger["salary"]
+    assert sum(m["amount"] for m in day if m["kind"] == "grant") == ledger["grant"]
+
+    assert (town["clients"], town["supplier"]) == (50, 10)
+    assert town["store_takings"] == 4 + 20 + 12  # the eggs and vegetables, and Mei's bread
+    assert (town["kitchen_takings"], town["kitchen_costs"]) == (10, 4 + 20)
+    assert town["surgery_takings"] == 10 + 30
 
 
 def test_references_carry_the_hash_of_files_inside_the_site(published):
@@ -198,7 +234,7 @@ def test_the_index_names_the_runs_and_the_comparison(published):
         "max": purses[-1],
     }
     checkpoint = json.loads((runs / "town" / "checkpoints" / "day-01.json").read_text())
-    assert headline["fund"] == checkpoint["fund"]["balance"]
+    assert headline["treasury"] == checkpoint["treasury"]["balance"]
     assert index["skipped"] == []
     [comparison] = index["comparisons"]
     assert (comparison["name"], comparison["runs"]) == ("runs", ["town", "twin"])
@@ -242,14 +278,14 @@ def test_the_world_lays_the_town_out(published):
         ("soup", {"vegetables": 2}, 8),
     ]
     assert world["hospital"] == {"examination": 10, "treatment": 30, "restores": 25}
-    assert world["fund"] == {"start": 1000} and world["store"]["stock"]["bread"] == 10
-    assert world["tax"] == 0.1
+    assert world["treasury"] == {"start": 1000, "spares": 10}
+    assert world["store"]["stock"]["bread"] == 10 and world["tax"] == 0.1
+    assert (world["work"]["payment"], world["work"]["leader_share"]) == (50, 0.2)
     occupations = {o["id"]: o for o in world["occupations"]}
     assert occupations["chef"] == {
-        "id": "chef", "title": "the chef", "workplace": "cafe", "wage_per_hour": 7,
-        "per_service": 3, "duty": "workplace", "paid_from": "fund",
+        "id": "chef", "title": "the chef", "workplace": "cafe", "duty": "workplace", "salary": 0,
     }  # fmt: skip
-    assert occupations["mayor"]["duty"] == "anywhere"
+    assert (occupations["mayor"]["duty"], occupations["mayor"]["salary"]) == ("anywhere", 30)
     assert [(r["name"], r["occupation"]) for r in world["residents"]][3:] == [
         ("Olga", "shopkeeper"), ("Jonas", "chef"), ("Lucia", "doctor"), ("Vera", "mayor"),
     ]  # fmt: skip

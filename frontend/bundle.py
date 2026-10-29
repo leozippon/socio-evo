@@ -320,9 +320,9 @@ def _record(points: list[list[Any]], t: int, state: Mapping[str, int]) -> None:
 
 def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
     """A few numbers for the home page: the day reached and the counts of `frontend.progress`
-    summed over the lived days, with the purses at the end of the last of them and the fund's
-    balance at the last checkpoint, from the town's days of `analysis.measures` (null before
-    any)."""
+    summed over the lived days, with the purses at the end of the last of them and the
+    treasury's balance at the last checkpoint, from the town's days of `analysis.measures` (null
+    before any)."""
     daily = progress["daily"]
     return {
         "day": progress["day"],

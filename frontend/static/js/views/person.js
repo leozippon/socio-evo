@@ -11,9 +11,9 @@ import { append, emptyState, fill, fmt, h } from "../dom.js";
 import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { markdown } from "../markdown.js";
-import { boughtAtCounter, bodyAt, dishServed, handedOver, illAt, markersBetween, purseAt, settlementAt, spentOn, thingsAt } from "../replay.js";
+import { PORTIONS, boughtAtCounter, bodyAt, dishServed, handedOver, illAt, markersBetween, moneyMoved, moneySince, purseAt, settlementAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { detail, feedItems, glyph, line, perceived } from "../town/events.js";
+import { detail, feedItems, glyph, line, midnightMoney, perceived } from "../town/events.js";
 import { jobOf, placeById } from "../world.js";
 import { areasOf, stat } from "./overview.js";
 
@@ -26,6 +26,21 @@ const TABS = [
 ];
 const LONG = 700; // characters of a trace text shown before the rest folds
 const AREA_LABEL = { memory: "memory", skills: "skills", journal: "journal", background: "background" };
+/** The parts of the money line (`moneySince`), in the order it tells them, with their words. */
+const MONEY_PARTS = [
+  ["salary", "salary"],
+  ["rent", "rent"],
+  ["share", "from clients"],
+  ["takings", "in takings"],
+  ["granted", "granted"],
+  ["received", "received"],
+  ["passed", "passed"],
+  ["spent", "spent"],
+  ["kitchen", "for the kitchen"],
+  ["orders", "in orders"],
+];
+/** What a payment for work was, by its marker, in the words of the person view's count. */
+const paidFor = (m) => (m.kind === "service" ? "share" : m.kind === "move" ? (m.source === PORTIONS ? "dish" : "sale") : "patient");
 
 export function mountPerson(root, ctx) {
   const { source, world, cast } = ctx;
@@ -149,24 +164,18 @@ export function mountPerson(root, ctx) {
     const ill = illAt(me, moment.time);
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     const midnight = settlementAt(me, moment.time);
-    const wage = mine.filter((m) => m.kind === "wage").at(-1) ?? null;
-    // The money since the second of the last midnight's wages (or the start), move by move: what
-    // it held then, the sums paid it, the money passed to it and by it, and what it paid for what
-    // it bought and to the doctor; together they make the money it holds.
-    const atMidnight = wage ? purseAt(me, wage.t) : me.purse[0][1];
-    const since = data.residents.flatMap((r) => markersBetween(r, wage?.t ?? null, moment.time).map((m) => [r.name, m]));
-    const total = (keep, value) => since.filter(([by, m]) => keep(by, m)).reduce((a, [, m]) => a + value(m), 0);
-    const own = (by) => by === agentName();
-    const cash = (m) => m.kind === "move" && m.reason === "pass" && m.item === null;
-    const sums = total((by, m) => own(by) && m.kind === "service", (m) => m.paid);
-    const received = total((by, m) => cash(m) && m.target === agentName(), (m) => m.money);
-    const passedOn = total((by, m) => own(by) && cash(m), (m) => m.money);
-    const fees = total((by, m) => (m.kind === "examination" || m.kind === "treatment") && m.patient === agentName(), (m) => m.fee);
-    const spent = total(own, spentOn) + fees;
-    const moneyLine = [`${fmt.money(atMidnight)} ${wage ? "after the midnight's wages" : "at the start"}`, sums ? `+${fmt.money(sums)} in sums` : null, received ? `+${fmt.money(received)} received` : null, passedOn ? `−${fmt.money(passedOn)} passed` : null, spent ? `−${fmt.money(spent)} spent` : null].filter(Boolean).join(" · ");
-    const services = mine.filter((m) => m.kind === "service");
-    const kinds = { task: "tasks accepted", team: "team tasks accepted", sale: "sales", dish: "dishes served", patient: "patients seen" };
-    const byKind = Object.entries(kinds).map(([kind, words]) => [services.filter((m) => m.for === kind).length, words]).filter(([n]) => n).map(([n, words]) => `${fmt.int(n)} ${words}`);
+    // The money since the last midnight statement (or the start), part by part: what the purse held
+    // before the statement, its salary and rent, and every sum since; together they make the money
+    // it holds.
+    const { settled, start, parts } = moneySince(data, agentName(), moment.time);
+    const moneyLine = [`${fmt.money(start)} ${settled ? "at the last midnight" : "at the start"}`, ...MONEY_PARTS.filter(([part]) => parts[part]).map(([part, words]) => `${parts[part] > 0 ? "+" : "−"}${fmt.money(Math.abs(parts[part]))} ${words}`)].join(" · ");
+    // What it was paid for its work so far, after the tax: its shares of the clients' payments and
+    // what its customers and patients paid it, from every lane.
+    const earnings = data.residents.flatMap((r) => markersBetween(r, null, moment.time).flatMap((m) => moneyMoved(m, r.name).filter(([who, , part]) => who === agentName() && (part === "share" || part === "takings")).map(([, change]) => [m, change])));
+    const earned = earnings.reduce((a, [, change]) => a + change, 0);
+    const taxed = earnings.reduce((a, [m]) => a + m.tax, 0);
+    const counted = (kind) => earnings.filter(([m]) => paidFor(m) === kind).length;
+    const byKind = [["share", "client's payment", "clients' payments"], ["sale", "sale", "sales"], ["dish", "dish", "dishes"], ["patient", "patient", "patients"]].filter(([kind]) => counted(kind)).map(([kind, one, many]) => fmt.plural(counted(kind), one, many));
     const moved = midnight ? Object.entries(midnight.night).map(([cause, change]) => `${fmt.signed(change)} ${{ starving: "for a day ended starving", exhausted: "for a day ended exhausted", poor_home: "for a home of little comfort", recovery: "for a day fed and rested", illness: "for illness" }[cause] ?? cause}`) : [];
     return [
       h("p", { class: "note" }, `How ${agentName()} has fared up to the moment shown, at work and with money, and with whom. The other tabs hold the day as the world told it, every journal entry, the files at every version, and the raw trace of the runtime.`),
@@ -174,8 +183,8 @@ export function mountPerson(root, ctx) {
         "div",
         { class: "stats" },
         stat("Money", fmt.money(purseAt(me, moment.time)), moneyLine),
-        stat("Hours at work", fmt.num(hoursAtWork(me, data.start, moment.time), 1), `at its workplace · rent ${fmt.money(sumOf("wage", "rent"))} taken from the wages`),
-        stat("Services", fmt.int(services.length), byKind.join(" · ") || "none paid for yet"),
+        stat("Hours at work", fmt.num(hoursAtWork(me, data.start, moment.time), 1), `at its workplace · ${fmt.money(sumOf("settlement", "rent_paid"))} of rent paid at midnight`),
+        stat("Earned", fmt.money(earned), `${byKind.join(" · ") || "nothing paid for its work yet"}${taxed ? ` · ${fmt.money(taxed)} withheld in tax` : ""}`),
         stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(mine.filter(handedOver).length, "gift")} given`),
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
       ),
@@ -190,7 +199,7 @@ export function mountPerson(root, ctx) {
           h("p", { class: "note" }, `Food in the body, energy and health, each read in the bands the town tells; a bar fills to the band's top, and hovering it gives the last number the world told.${ill ? " Ill now, which others cannot see." : ""}`),
           needBars(world, bodyAt(me, moment.time)),
           midnight
-            ? h("p", { class: "note midnight-note" }, `Last midnight: ${wage ? `${fmt.num(wage.hours, 1)} h at work, ${fmt.money(wage.wages)} in wages, ${fmt.money(wage.tax)} in tax${wage.tax_from_purse ? ` (${fmt.money(wage.tax_from_purse)} of it from the purse)` : ""}, ${fmt.money(wage.rent)} rent${wage.charges ? ` and ${fmt.money(wage.charges)} in daily charges` : ""} taken out, ${fmt.money(wage.paid)} paid${wage.owed ? `, ${fmt.money(wage.owed)} owed by the fund` : ""}${wage.arrears ? `, ${fmt.money(wage.arrears)} of rent owed` : ""}; ` : ""}ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; health ${moved.length ? moved.join(", ") : "unchanged"}.`)
+            ? h("p", { class: "note midnight-note" }, `Last midnight: ${midnightMoney(midnight)} Ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; health ${moved.length ? moved.join(", ") : "unchanged"}.`)
             : h("p", { class: "note midnight-note" }, "No midnight statement yet: the first comes at the end of the first day."),
         ),
         h(

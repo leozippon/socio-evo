@@ -41,35 +41,28 @@ def write(run: RunDirectory, lines: list[tuple]) -> None:
             log.write(entry(seq, kind, t, actor, real_time=real_time, **payload) + "\n")
 
 
-def wage(money: int) -> dict:
-    """The midnight's wages: no time at work and no tax, the rent owed, the money held as it
-    stood."""
+def settlement(money: int) -> dict:
+    """The midnight statement: no time at work and no salary, the rent owed, the purse as it
+    stood, nothing eaten and the body as it stood."""
     return {
         "hours": 0.0,
-        "wages": 0,
-        "tax": 0,
-        "tax_from_purse": 0,
+        "salary": 0,
         "owed_before": 0,
+        "salary_paid": 0,
+        "owed": 0,
         "rent": 20,
         "charges": 0,
         "arrears_before": 0,
-        "remainder": -20,
-        "paid": 0,
-        "owed": 0,
+        "rent_paid": 0,
         "arrears": 20,
         "money": money,
+        "nourishment": 0,
+        "satiety": 20.0,
+        "energy": 70.0,
+        "health": 100.0,
+        "night": {"poor_home": -2.0, "recovery": 5.0},
+        "ill": 0,
     }
-
-
-SETTLEMENT = {
-    "nourishment": 0,
-    "satiety": 20.0,
-    "energy": 70.0,
-    "health": 100.0,
-    "night": {"poor_home": -2.0, "recovery": 5.0},
-    "ill": 0,
-}
-"""The midnight statement's payload: nothing eaten, the body as it stood."""
 
 
 def verdict(task: int, resolved: bool) -> dict:
@@ -94,28 +87,32 @@ def speech(text: str, to: list[str], members: list[str]) -> dict:
 def move(reason: str, source: str, target: str, **fields) -> dict:
     """A move's payload: units of an item, or money alone, from `source` to `target`."""
     found = {"item": None, "units": 0, "source": source, "target": target, "money": 0}
-    return found | {"reason": reason, "seller": None} | fields
+    return found | {"reason": reason, "seller": None, "tax": 0} | fields
 
 
-def sale(item: str, units: int, price: int, buyer: str, kitchen: bool) -> dict:
+def sale(item: str, units: int, price: int, buyer: str, kitchen: bool, tax: int) -> dict:
+    """A purchase at Olga's counter, paid to her less the tax."""
     target, money = "larder" if kitchen else buyer, units * price
-    return move("buy", "shelves", target, item=item, units=units, money=money, seller="Olga")
+    return move("buy", "shelves", target, item=item, units=units, money=money, seller="Olga",
+                tax=tax)  # fmt: skip
 
 
 EXAMINATION = {
-    "patient": "Mei", "fee": 10, "satiety": 50.0, "energy": 60.0, "health": 100.0, "ill": 0,
-    "night": {},
+    "patient": "Mei", "fee": 10, "tax": 1, "satiety": 50.0, "energy": 60.0, "health": 100.0,
+    "ill": 0, "night": {},
 }  # fmt: skip
 TREATMENT = {
-    "patient": "Mei", "fee": 30, "restores": 25.0, "before": 100.0, "health": 100.0, "ill": 0,
-    "bedridden": False,
+    "patient": "Mei", "fee": 30, "tax": 3, "restores": 25.0, "before": 100.0, "health": 100.0,
+    "ill": 0, "bedridden": False,
 }  # fmt: skip
+ORDER = {"item": "bread", "name": "bread", "quantity": 5, "amount": 10, "arrives": at("08:00", 2)}
+GRANT = {"to": "Aisha", "amount": 5, "reason": "For the rent.", "treasury": 995}
 BEDRIDDEN = {"day": 2, "home": "mill-street-house", "from": None, "carried": False, "task": None}
 
 
 async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tmp_path):
-    run, _ = new_town(tmp_path)  # Mei $120, Tomas $180, Aisha $30, the four trades $100 each
-    served = move("buy", "portions", "Mei", item="soup", units=1, money=8, seller="Jonas")
+    run, _ = new_town(tmp_path)  # Mei $120, Tomas $180, Aisha $20, the four trades $100 each
+    served = move("buy", "portions", "Mei", item="soup", units=1, money=8, seller="Jonas", tax=1)
     cook = {"dish": "soup", "name": "vegetable soup", "portions": 1, "used": {"vegetables": 2}}
     write(
         run,
@@ -135,14 +132,15 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
                 at("10:00"),
                 "Mei",
                 1009.0,
-                {"for": "task", "task": 1, "amount": 20, "paid": 20, "owed": 0, "money": 135},
+                {"for": "task", "task": 1, "amount": 20, "tax": 2, "money": 133},
             ),
             ("submission", at("11:00"), "Aisha", 1010.0, {"task": 2}),
             ("verdict", at("11:00"), "Aisha", 1011.0, verdict(2, False)),
-            ("move", at("11:30"), "Jonas", 1011.1, sale("vegetables", 2, 3, "Jonas", kitchen=True)),
+            ("move", at("11:30"), "Jonas", 1011.1, sale("vegetables", 2, 3, "Jonas", True, tax=1)),
+            ("order", at("11:35"), "Olga", 1011.15, ORDER),
             ("cook", at("11:40"), "Jonas", 1011.2, cook),
             ("move", at("12:00"), "Mei", 1011.3, served),
-            ("move", at("12:10"), "Mei", 1011.4, sale("bread", 1, 4, "Mei", kitchen=False)),
+            ("move", at("12:10"), "Mei", 1011.4, sale("bread", 1, 4, "Mei", False, tax=0)),
             ("examination", at("13:00"), "Lucia", 1011.5, EXAMINATION),
             ("treatment", at("13:01"), "Lucia", 1011.6, TREATMENT),
             ("announcement", at("14:00"), "Vera", 1011.7, {"text": "Hello"}),
@@ -154,13 +152,10 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
                 1013.5,
                 {"journal": None, "day": 1, "wake": 0},
             ),
-            ("wage", DAY, "Mei", 1014.0, wage(83)),
-            ("settlement", DAY, "Mei", 1014.1, SETTLEMENT),
-            ("wage", DAY, "Tomas", 1015.0, wage(185)),
-            ("settlement", DAY, "Tomas", 1015.1, SETTLEMENT),
+            ("settlement", DAY, "Mei", 1014.1, settlement(81)),
+            ("settlement", DAY, "Tomas", 1015.1, settlement(185)),
             ("illness", DAY, "Aisha", 1015.5, {"chance": 0.05, "nights": 5, "health": 100.0}),
-            ("wage", DAY, "Aisha", 1016.0, wage(30)),
-            ("settlement", DAY, "Aisha", 1016.1, SETTLEMENT),
+            ("settlement", DAY, "Aisha", 1016.1, settlement(20)),
             ("task_withdrawn", DAY, None, 1016.2, {"task": 2, "holder": "Aisha"}),
             # Past midnight, but still the first lived day: it ends at its checkpoint.
             ("forced_sleep", at("02:00", day=2), "Aisha", 1017.0, {"wake": at("07:00", day=2)}),
@@ -170,6 +165,7 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
             ("claim", at("09:00", day=2), "Mei", 9101.0, {"task": 3, "instance_id": "t3"}),
             ("submission", at("09:20", day=2), "Mei", 9102.0, {"task": 3}),  # awaiting the verdict
             ("move", at("09:30", day=2), "Tomas", 9103.0, move("pass", "Tomas", "Aisha", money=10)),
+            ("grant", at("10:00", day=2), "Vera", 9103.5, GRANT),
             ("bedridden", 2 * DAY, "Aisha", 9104.0, BEDRIDDEN),
         ],
     )
@@ -186,11 +182,14 @@ async def test_each_lived_day_counts_its_markers_and_ends_with_the_money_then(tm
             | {"rejected": 1, "withdrawn": 1, "sales": 2, "dishes": 1, "examinations": 1}
             | {"treatments": 1, "announcements": 1, "speeches": 2, "gifts": 1}
             | {"journals": 1, "illnesses": 1, "forced_sleeps": 1}
-            | {"purse": {"min": 30, "median": 100, "max": 185}},
+            # Mei $81, Tomas $185, Aisha $20, Olga $99 (her takings less the tax and her order),
+            # Jonas $101, Lucia $136 (the fees less the tax), Vera $100.
+            | {"purse": {"min": 20, "median": 100, "max": 185}},
             {"day": 2, "date": "2001-01-02", "in_progress": True, "hours": None}
             | NOTHING
             | {"arrived": 1, "claims": 1, "submissions": 1, "gifts": 1, "bedridden": 1}
-            | {"purse": {"min": 40, "median": 100, "max": 175}},
+            # Aisha $35, with Tomas's $10 and Vera's grant of $5 from the treasury.
+            | {"purse": {"min": 35, "median": 100, "max": 175}},
         ],
     }
 
@@ -202,7 +201,7 @@ async def test_a_day_lived_again_is_timed_from_the_resumption(tmp_path):
     assert before["daily"] == [
         {"day": 1, "date": "2001-01-01", "in_progress": True, "hours": None}
         | NOTHING
-        | {"purse": {"min": 30, "median": 100, "max": 180}}
+        | {"purse": {"min": 20, "median": 100, "max": 180}}
     ]
 
     write(

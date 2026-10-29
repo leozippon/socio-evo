@@ -11,7 +11,7 @@ import { DAY, parseHHMM, parseStamp, secondOfDay, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
 import { inventory, itemsBrief, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { bodyAt, lowerBound, lyingAt, markersBetween, moment as momentOf, purseAt, spentOn, thingsAt } from "../replay.js";
+import { bodyAt, lowerBound, lyingAt, markersBetween, moment as momentOf, moneyMoved, purseAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { ICONS, describeMarker, iconFor, textFor, tone } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
@@ -35,7 +35,7 @@ const DEFAULT_PANEL = "people";
 /** The entries the map shows as a notice for a while: what the whole town would notice. */
 const NOTICES = new Set(["task_arrived", "task_withdrawn", "delivery", "announcement", "bedridden", "forced_sleep"]);
 /** The markers the map shows by the resident for a while: what it just did, earned or felt. */
-const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "report", "announcement", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
+const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "report", "announcement", "grant", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -522,18 +522,9 @@ export function mountTown(root, ctx) {
     const before = view.time;
     view.time = time;
     const effects = [];
-    const gain = (agent, amount) => amount && effects.push({ agent, text: `+${amount}`, tone: "good" });
-    const loss = (agent, amount) => amount && effects.push({ agent, text: `−${amount}`, tone: "muted" });
     for (const lane of data.residents)
-      for (const mk of markersBetween(lane, before, time)) {
-        if (mk.kind === "service" || mk.kind === "wage") gain(lane.name, mk.paid);
-        if (mk.kind === "move" && mk.reason === "pass" && mk.item === null) {
-          loss(lane.name, mk.money);
-          gain(mk.target, mk.money);
-        }
-        loss(lane.name, spentOn(mk));
-        if (mk.kind === "examination" || mk.kind === "treatment") loss(mk.patient, mk.fee);
-      }
+      for (const mk of markersBetween(lane, before, time))
+        for (const [agent, change] of moneyMoved(mk, lane.name)) effects.push(change > 0 ? { agent, text: `+${change}`, tone: "good" } : { agent, text: `−${-change}`, tone: "muted" });
     paint(effects);
   }
 

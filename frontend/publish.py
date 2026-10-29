@@ -47,7 +47,7 @@ from infrastructure.storage import RunDirectory, day_tag
 from simulation.config import ExperimentConfig
 from world.log import lived_days
 
-FORMAT = 10
+FORMAT = 11
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,
@@ -347,7 +347,7 @@ def publish_run(
     headline = progress(data)
     rows = measure(root) if settled_day else []
     # The world logs a day's checkpoint before the run writes its file; while the latest is
-    # being saved, the town's days, which read the fund from the files, wait for it.
+    # being saved, the town's days, which read the treasury from the files, wait for it.
     saving = settled_day and not run.checkpoint_path(settled_day).is_file()
     town = town_days(root) if settled_day and not saving else []
     measures = {

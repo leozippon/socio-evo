@@ -21,7 +21,7 @@ export function shortName(place) {
 /** The home of each resident, by name. */
 export const homes = (world) => Object.fromEntries(world.residents.map((r) => [r.name, r.home]));
 
-/** A resident's occupation as the world configures it: `{id, title, workplace, wage_per_hour, per_service}`. */
+/** A resident's occupation as the world configures it: `{id, title, workplace, duty, salary}`. */
 export function occupationOf(world, name) {
   const resident = world.residents.find((r) => r.name === name);
   return world.occupations.find((occupation) => occupation.id === resident.occupation);

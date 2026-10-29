@@ -1,8 +1,9 @@
 // The town at any moment, from the run's timeline (frontend.timeline) and nothing else: where
 // each resident is, what it is in (idle, on the way, at work on a task, asleep, in bed, in
 // conversation), what task it holds, what it owns and how its body stands, the state of the
-// Office, the Store, the kitchen and the Hospital, and what lies at each place; and what a move
-// of the timeline was, in the terms the town counts. Pure: no DOM, no fetching, so it runs under
+// Office, the Store, the kitchen and the Hospital, and what lies at each place; what a move of
+// the timeline was, in the terms the town counts, and the money each marker moved between purses,
+// which adds up to every purse. Pure: no DOM, no fetching, so it runs under
 // node as well as in the browser. The timeline is the server's reading of the world log; the viewer adds no reading
 // of its own, only looks up moments in it. The timeline's times are whole seconds, but a moment
 // looked up need not be: the town plays through the seconds between them.
@@ -151,8 +152,61 @@ export const dishServed = (m) => m.kind === "move" && m.source === PORTIONS;
 /** Whether a marker is money or a thing one resident passed another (the chef's dish is served, not passed). */
 export const handedOver = (m) => m.kind === "move" && m.reason === "pass" && m.source !== PORTIONS;
 
-/** The money a move took from the resident who made it: what it bought for itself; the fund pays for the kitchen. */
+/** The money a move took from the resident who made it for itself: what it bought for itself or ate there; what the chef buys for the kitchen is the kitchen's cost. */
 export const spentOn = (m) => (m.kind === "move" && m.reason === "buy" && m.target !== LARDER ? m.money : 0);
+
+/**
+ * The money a marker on `by`'s lane moved into and out of purses, as `[name, change, part]`, the
+ * part one of: `share`, a client's share of a payment for a task accepted, and `takings`, what a
+ * customer or a patient paid the keeper of a business, each less the tax withheld; `granted`,
+ * from the treasury; `received` and `passed`, money handed over; `spent`, a purchase for oneself,
+ * a dish or a fee; `kitchen`, the chef's purchase for the kitchen; `orders`, the shopkeeper's to
+ * the supplier; and at the midnight statement `salary`, paid by the treasury, and `rent`, the
+ * rent, the daily charges and the arrears it took. A marker that moved no money moves none.
+ */
+export function moneyMoved(m, by) {
+  const found = (() => {
+    switch (m.kind) {
+      case "service":
+        return [[by, m.amount - m.tax, "share"]];
+      case "grant":
+        return [[m.to, m.amount, "granted"]];
+      case "order":
+        return [[by, -m.amount, "orders"]];
+      case "examination":
+      case "treatment":
+        return [[m.patient, -m.fee, "spent"], [by, m.fee - m.tax, "takings"]];
+      case "settlement":
+        return [[by, m.salary_paid, "salary"], [by, -m.rent_paid, "rent"]];
+      case "move":
+        if (m.reason === "pass" && m.item === null) return [[by, -m.money, "passed"], [m.target, m.money, "received"]];
+        if (m.reason === "buy") return [[by, -m.money, m.target === LARDER ? "kitchen" : "spent"], [m.seller, m.money - m.tax, "takings"]];
+        return [];
+      default:
+        return [];
+    }
+  })();
+  return found.filter(([, change]) => change);
+}
+
+/**
+ * A resident's money between midnights, as the person view tells it: the last midnight statement
+ * at or before `t` (null before the first), what the purse held before it (`start`: the starting
+ * money before any), and by part (`moneyMoved`) the statement's salary and rent and every sum since,
+ * up to `t`. `start` and the parts add up to the purse at `t`.
+ */
+export function moneySince(timeline, name, t) {
+  const lane = timeline.residents.find((found) => found.name === name);
+  const settled = settlementAt(lane, t);
+  const parts = {};
+  const add = ([who, change, part]) => {
+    if (who === name) parts[part] = (parts[part] ?? 0) + change;
+  };
+  if (settled) moneyMoved(settled, name).forEach(add);
+  for (const other of timeline.residents) for (const m of markersBetween(other, settled?.t ?? null, t)) moneyMoved(m, other.name).forEach(add);
+  const start = settled ? purseAt(lane, settled.t) - (parts.salary ?? 0) - (parts.rent ?? 0) : lane.purse[0][1];
+  return { settled, start, parts };
+}
 
 /** Who had a dish served: the diner who bought it, `by`, or the one the chef passed it to. */
 export const dinerOf = (m, by) => (m.reason === "buy" ? by : m.target);

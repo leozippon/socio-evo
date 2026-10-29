@@ -113,8 +113,8 @@ export const ICONS = {
   treatment: "pill",
   report: "report",
   announcement: "megaphone",
+  grant: "coin",
   move_in: "home",
-  wage: "coin",
   settlement: "book",
   illness: "thermometer",
   condition: "eye",
@@ -145,6 +145,7 @@ export function tone(entry) {
     case "verdict":
       return p.resolved ? "good" : "serious";
     case "service":
+    case "grant":
     case "recovered":
       return "good";
     case "move":
@@ -231,8 +232,8 @@ function spellSummary(item) {
   return `${item.actor} worked on task ${item.task}: ${parts.join(", ")}${span}`;
 }
 
-/** What a sum per service was for, in words. */
-const SERVICE = { task: (m) => `task ${m.task}, accepted`, team: (m) => `the team's task ${m.task}, accepted`, sale: () => "a sale", dish: () => "a dish served", patient: () => "a patient seen" };
+/** The tax withheld from a payment for work, in a few words after it; nothing when none was. */
+const withheld = (tax) => (tax ? `, of which ${fmt.money(tax)} in tax` : "");
 
 /** A quantity of a good in a few words: `2 × bread`, `a phone`. */
 const some = (m) => `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}`;
@@ -263,13 +264,12 @@ function moveWords(m, by, who, world) {
     case "buy": {
       const paid = fmt.money(m.money);
       if (m.source === PORTIONS) {
-        if (!own && who === m.seller) return [`served ${by} ${what} for ${paid} ${at}`];
+        if (!own && who === m.seller) return [`served ${by} ${what} for ${paid} ${at}${withheld(m.tax)}`];
         return [`${subject}had ${what} for ${paid} ${at}, served by ${m.seller}`];
       }
       const kitchen = m.target === LARDER ? " for the kitchen" : "";
-      const fund = kitchen ? ", which the fund paid" : "";
-      if (!own && who === m.seller) return [`sold ${by} ${what}${kitchen} for ${paid} ${at}${fund}`];
-      return [`${subject}bought ${what}${kitchen} for ${paid} ${at}${fund}`];
+      if (!own && who === m.seller) return [`sold ${by} ${what}${kitchen} for ${paid} ${at}${withheld(m.tax)}`];
+      return [`${subject}bought ${what}${kitchen} for ${paid} ${at}`];
     }
     default:
       return [`${subject}moved ${what} ${at}`];
@@ -281,6 +281,17 @@ const goodsIn = (items) => Object.entries(items).map(([id, units]) => `${units} 
 
 /** The body's numbers an examination told, in a line. */
 const numbers = (m) => `Food ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int(Math.round(m.energy))}, health ${fmt.int(Math.round(m.health))} of 100${m.ill ? `; ill, ${fmt.plural(m.ill, "night")} to go` : ""}.`;
+
+/**
+ * What a midnight statement settled with the treasury, in a sentence or two: the hours at work, the
+ * salary paid and owed, the rent and daily charges paid and what is left owing.
+ */
+export function midnightMoney(m) {
+  const salary = m.salary || m.owed_before ? ` Salary ${fmt.money(m.salary_paid)} paid${m.owed ? `, ${fmt.money(m.owed)} owed by the treasury` : ""}.` : "";
+  const due = m.rent + m.charges + m.arrears_before;
+  const rent = due ? ` Rent${m.charges ? " and daily charges" : ""} ${fmt.money(m.rent_paid)} paid${m.arrears ? `, ${fmt.money(m.arrears)} owed to the treasury` : ""}.` : "";
+  return `${fmt.num(m.hours, 1)} h at work.${salary}${rent}`;
+}
 
 /**
  * A marker of the timeline in words, as [label, text]: `by` is the resident whose lane holds it
@@ -316,7 +327,8 @@ export function describeMarker(m, by, who, world) {
       return [`${subject}handed in ${task}: ${m.resolved ? "accepted" : `not accepted (${m.status})`}`, counts];
     }
     case "service":
-      return [`${subject}was paid ${fmt.money(m.paid)} for ${SERVICE[m.for]?.(m) ?? m.for}${m.owed ? `; the fund owes the other ${fmt.money(m.owed)}` : ""}`];
+      if (m.for === "team") return [`${subject}was paid ${fmt.money(m.amount)}, the team leader's share of the client's payment for task ${m.task}${withheld(m.tax)}`];
+      return [`${subject}was paid ${fmt.money(m.amount)} by the client for task ${m.task}, accepted${withheld(m.tax)}`];
     case "abandon":
       return [`${subject}gave up task ${m.task}`];
     case "message":
@@ -331,30 +343,28 @@ export function describeMarker(m, by, who, world) {
       return [`${subject}set the price of ${m.name} to ${fmt.money(m.price)}, from ${fmt.money(m.before)}`];
     case "examination":
       if (!own && who === m.patient) return [`was examined by ${by} for ${fmt.money(m.fee)}`, numbers(m)];
-      return [`${subject}examined ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}`, numbers(m)];
+      return [`${subject}examined ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}${withheld(m.tax)}`, numbers(m)];
     case "treatment": {
       const restored = `Health ${fmt.int(Math.round(m.before))} to ${fmt.int(Math.round(m.health))} of 100${m.ill ? ", the illness ended" : ""}${m.bedridden ? ", out of bed" : ""}.`;
       if (!own && who === m.patient) return [`was treated by ${by} for ${fmt.money(m.fee)}`, restored];
-      return [`${subject}treated ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}`, restored];
+      return [`${subject}treated ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}${withheld(m.tax)}`, restored];
     }
     case "report":
       return [`${subject}read the town's report`];
     case "announcement":
       return [`${subject}announced`, m.text];
+    case "grant":
+      if (!own && who === m.to) return [`was granted ${fmt.money(m.amount)} from the treasury by ${by}`, m.reason];
+      return [`${subject}granted ${m.to === by ? "themself" : m.to} ${fmt.money(m.amount)} from the treasury`, m.reason];
     case "illness":
       return [`${subject}fell ill`, `For ${fmt.plural(m.nights, "night")} at most, unless treated.`];
     case "recovered":
       return [`${subject}${m.bedridden ? "left the bed, treated" : m.treated ? "was well again, treated" : "was well again: the illness passed"}`];
     case "bedridden":
       return [`${subject}${m.carried ? "was carried home to bed" : "took to bed"}, too ill to go on`];
-    case "wage": {
-      const owing = [m.owed ? `the fund owes ${fmt.money(m.owed)}` : null, m.arrears ? `owes ${fmt.money(m.arrears)} of rent` : null].filter(Boolean);
-      const tax = `tax ${fmt.money(m.tax)}${m.tax_from_purse ? `, ${fmt.money(m.tax_from_purse)} of it from the purse` : ""}`;
-      return [`${subject}was paid ${fmt.money(m.paid)} at midnight for ${fmt.num(m.hours, 1)} h at work`, `Wages ${fmt.money(m.wages)}, ${tax}, rent ${fmt.money(m.rent)}${m.charges ? `, daily charges ${fmt.money(m.charges)}` : ""}${owing.length ? `; ${owing.join(", ")}` : ""}.`];
-    }
     case "settlement": {
       const night = Object.entries(m.night ?? {}).map(([cause, change]) => `${fmt.signed(change)} ${cause.replaceAll("_", " ")}`);
-      return [`${subject}had the midnight statement`, `Ate ${m.nourishment ? `${fmt.int(m.nourishment)}% of a day's food` : "nothing"}. Food in the body ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int(Math.round(m.energy))}, health ${fmt.int(Math.round(m.health))} of 100${night.length ? ` (${night.join(", ")})` : ""}${m.ill ? `; ill, ${fmt.plural(m.ill, "night")} to go` : ""}.`];
+      return [`${subject}had the midnight statement`, `${midnightMoney(m)} Ate ${m.nourishment ? `${fmt.int(m.nourishment)}% of a day's food` : "nothing"}. Food in the body ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int(Math.round(m.energy))}, health ${fmt.int(Math.round(m.health))} of 100${night.length ? ` (${night.join(", ")})` : ""}${m.ill ? `; ill, ${fmt.plural(m.ill, "night")} to go` : ""}.`];
     }
     case "move_in":
       return [`${subject}moved house, into ${world.places.find((place) => place.id === m.to)?.name ?? m.to}`];
@@ -379,6 +389,8 @@ export function concerns(m, by, who) {
       return m.to === who;
     case "move":
       return m.target === who || m.seller === who;
+    case "grant":
+      return m.to === who;
     case "assign":
       return m.to === who || m.from === who;
     case "examination":

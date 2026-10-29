@@ -1,17 +1,18 @@
 // A run's dashboard: the run itself, a few key figures, each lived day, and the rules it ran
 // under; then one section at a time: work at the Office and everyone's hours, money (the
-// town's fund, wages, sums per service, what was spent), the Store and the kitchen, the body
-// and the Hospital, social life, evolution (what residents rewrote each night), the evaluation
-// of their exports, and model usage. The sections read the timeline, so the day in progress
-// counts too; the fund is read at each checkpoint, and model usage and the file rewrites wait
-// for a closed day.
+// town's treasury, the businesses' books, what each resident earned and spent), the Store and
+// the kitchen, the body and the Hospital, social life, evolution (what residents rewrote each
+// night), the evaluation of their exports, and model usage. The sections read the timeline, so
+// the day in progress counts too; the treasury and the businesses' books are read at each
+// checkpoint from the town's measures, and model usage and the file rewrites wait for a closed
+// day.
 
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
 import { dateOf, duration, hhmm, parseHHMM, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h, s } from "../dom.js";
 import { amountOf, dishCard, goodEffect, goodName, inventory, itemOf, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { LARDER, bodyAt, boughtAtCounter, dishServed, handedOver, holderAt, markersBetween, purseAt, shopsAt, spentOn, thingsAt } from "../replay.js";
+import { LARDER, bodyAt, boughtAtCounter, dishServed, handedOver, holderAt, markersBetween, moneyMoved, purseAt, shopsAt, spentOn, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { placeOfKind } from "../world.js";
 import { evaluationFigures } from "./evaluation.js";
@@ -30,24 +31,17 @@ const SECTIONS = [
 /** Sections whose charts draw one mark per resident, so the emphasis legend applies. */
 const BY_RESIDENT = new Set(["work", "money", "body", "social", "usage", "evaluation"]);
 const AREAS = { memory: ["memory", /^memory\/(?!journal\/)/], skills: ["skills", /^skills\//], journal: ["journal", /^memory\/journal\//], background: ["background", /^background\.md$/] };
-/** What the fund takes in and pays out, by the kinds its ledger keeps, with a colour each. */
+/** What the treasury takes in and pays out, by the kinds its ledger keeps, with a colour each. */
 const TAKEN = [
-  ["client", "from clients", "var(--o5)"],
-  ["rent", "rent and charges", "var(--o4)"],
-  ["sale", "sales", "var(--o3)"],
-  ["dish", "dishes", "var(--o2)"],
-  ["fee", "the Hospital's fees", "var(--o1)"],
+  ["tax", "taxes", "var(--o5)"],
+  ["rent", "rent and charges", "var(--o3)"],
 ];
 const PAID = [
-  ["wage", "wages", "var(--o5)"],
-  ["service", "sums for services", "var(--o4)"],
-  ["supplier", "the supplier", "var(--o3)"],
-  ["kitchen", "for the kitchen", "var(--o2)"],
+  ["salary", "the salary", "var(--o2)"],
+  ["grant", "grants", "var(--o1)"],
 ];
-/** Whom the tax account pays: the occupations paid from taxes, by title, such as `the mayor`. */
-const paidFromTaxes = (world) => world.occupations.filter((occupation) => occupation.paid_from === "taxes").map((occupation) => occupation.title).join(" and ") || "nobody";
-/** What each occupation is paid a sum for, in words. */
-const PER_SERVICE = { programmer: "a task of its own accepted", "team-leader": "a task the team has accepted", chef: "a dish served", shopkeeper: "a sale", doctor: "a patient seen", mayor: "" };
+/** A name with its first letter capitalised, to begin a sentence or a title. */
+const cap = (text) => `${text[0].toUpperCase()}${text.slice(1)}`;
 
 export const stat = (label, value, sub = null, cls = "") => h("div", { class: `stat ${cls}` }, h("div", { class: "stat-label" }, label), h("div", { class: "stat-value" }, value), sub ? h("div", { class: "stat-sub" }, sub) : null);
 const sum = (rows, field) => rows.reduce((total, row) => total + (row[field] ?? 0), 0);
@@ -129,7 +123,7 @@ export function mountOverview(root, ctx) {
   const total = (value) => cast.names.reduce((a, name) => a + data.days.reduce((b, day, i) => b + (value(laneOf(name), i, day) ?? 0), 0), 0);
   /** Every marker of `kind` (or that it keeps) on every lane over the run so far, each with its resident. */
   const everywhere = (kind) => data.residents.flatMap((lane) => lane.markers.filter(of(kind)).map((m) => [lane.name, m]));
-  /** The town's days of the measures, by day: the fund as each closed day's checkpoint saved it. */
+  /** The town's days of the measures, by day: the treasury as each closed day's checkpoint saved it, and the businesses' books. */
   const saved = () => new Map(measures.town.map((row) => [row.day, row]));
   const moment = (t) => `day ${data.days.find((day) => day.end === null || t <= day.end)?.day ?? data.days.at(-1).day}, ${hhmm(secondOfDay(t))}`;
 
@@ -188,7 +182,7 @@ export function mountOverview(root, ctx) {
         { class: "run-title" },
         h("p", { class: "eyebrow" }, "Run"),
         h("h1", {}, doc.name),
-        h("p", { class: "lede" }, `${fmt.plural(world.residents.length, "resident")} live in a small town for ${fmt.plural(world.days, "day")}, each at its occupation: programmers and their team leader at ${office.name}, a shopkeeper at ${store.name}, a chef at ${restaurant.name}, a doctor at ${hospital.name} and a mayor at ${placeOfKind(world, "hall").name}. The town's fund pays them by the hour and for each service, takes their rent and keeps the shops; they buy food and things, eat out, fall ill, meet and talk, and rewrite their own notes and skills as they go. Nobody tells them how to behave. This page has the numbers; the town shows it happening, and each resident's story holds its journal, files and raw trace.`),
+        h("p", { class: "lede" }, `${fmt.plural(world.residents.length, "resident")} live in a small town for ${fmt.plural(world.days, "day")}, each at its occupation: programmers and their team leader at ${office.name}, a shopkeeper at ${store.name}, a chef at ${restaurant.name}, a doctor at ${hospital.name} and a mayor at ${placeOfKind(world, "hall").name}. Clients pay for the Office's tasks, the shops and the Hospital keep what they take, and the town's treasury takes a tax on every payment and the rent, pays the mayor and grants what the mayor decides; they buy food and things, eat out, fall ill, meet and talk, and rewrite their own notes and skills as they go. Nobody tells them how to behave. This page has the numbers; the town shows it happening, and each resident's story holds its journal, files and raw trace.`),
         h("p", { class: "run-meta" }, `${world.model.name}${entry.dry_run ? " (dry run: a stand-in answered)" : ""}`),
         h(
           "p",
@@ -214,6 +208,15 @@ export function mountOverview(root, ctx) {
     const first = world.residents[0];
     const range = (amounts) => (Math.min(...amounts) === Math.max(...amounts) ? fmt.money(amounts[0]) : `${fmt.money(Math.min(...amounts))}–${fmt.money(Math.max(...amounts))}`);
     const work = world.work;
+    const team = Math.round(work.payment * work.leader_share);
+    /** What each occupation without a salary earns, in words; nobody is paid for its time. */
+    const earns = {
+      programmer: `${fmt.money(work.payment - team)} of a client's ${fmt.money(work.payment)} for a task of its own accepted`,
+      "team-leader": `${fmt.money(team)} of a task a programmer has accepted, the whole of its own`,
+      shopkeeper: "what the Store sells for, paying the supplier for its orders",
+      chef: "what the dishes sell for, paying for the kitchen's ingredients",
+      doctor: "the fees",
+    };
     const item = (label, value) => h("li", {}, h("span", { class: "muted" }, label), " ", h("b", {}, value));
     return h(
       "section",
@@ -227,16 +230,15 @@ export function mountOverview(root, ctx) {
           { class: "cond-list" },
           world.occupations.map((occupation) => {
             const who = world.residents.filter((r) => r.occupation === occupation.id).map((r) => r.name);
-            const per = PER_SERVICE[occupation.id] && occupation.per_service ? ` and ${fmt.money(occupation.per_service)} for ${PER_SERVICE[occupation.id]}` : "";
-            return item(`${occupation.title}${who.length ? ` (${who.join(", ")})` : ""} is paid`, `${fmt.money(occupation.wage_per_hour)} an hour at work${per}`);
+            const pay = occupation.salary ? `a salary of ${fmt.money(occupation.salary)} a day from the treasury` : (earns[occupation.id] ?? "no salary");
+            return item(`${occupation.title}${who.length ? ` (${who.join(", ")})` : ""} earns`, pay);
           }),
-          item("the fund starts with", fmt.money(world.fund.start)),
-          item("the tax at midnight", `${fmt.pct(world.tax)} of the day's wages and sums, into the tax account that pays ${paidFromTaxes(world)}`),
-          item("a client's task pays the fund", fmt.money(work.payment)),
+          item("the treasury starts with", fmt.money(world.treasury.start)),
+          item("the tax", `${fmt.pct(world.tax)} of every payment for work, withheld into the treasury as it is received`),
           item("tasks come in", `about ${fmt.num(work.tasks_a_day, 0)} a day, ${work.arrive_from}–${work.arrive_until}`),
           item("a task not accepted is withdrawn", `${fmt.plural(work.expiry_days, "day")} after the day it came in`),
           item("hand-ins per task", `${work.acceptance_runs} a day`),
-          item("rent for a room", `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day, out of the wages`),
+          item("rent for a room", `${range(world.places.filter((p) => p.kind === "home").map((p) => p.rent))} a day, to the treasury at midnight from what a purse holds above ${fmt.money(world.treasury.spares)}, the rest owed`),
           item("for sale at the Store", `${fmt.plural(world.goods.length, "good")}, ${range(world.goods.map((g) => g.price))}`),
           world.dishes.length ? item(`on ${restaurant.name}'s menu`, `${fmt.plural(world.dishes.length, "dish", "dishes")}, ${range(world.dishes.map((d) => d.price))}`) : null,
           item("the Hospital charges", `${fmt.money(world.hospital.examination)} an examination, ${fmt.money(world.hospital.treatment)} a treatment, which restores ${fmt.int(world.hospital.restores)} health`),
@@ -251,13 +253,13 @@ export function mountOverview(root, ctx) {
   function keyFigures() {
     const head = progressDoc.daily;
     const all = (field) => sum(head, field);
-    const fund = measures.town.at(-1);
+    const books = measures.town.at(-1);
     const cooked = everywhere("cook").reduce((a, [, m]) => a + m.portions, 0);
     const kitchen = everywhere((m) => boughtAtCounter(m) && m.target === LARDER).length;
     return h(
       "div",
       { class: "stats" },
-      stat("The fund", fund ? fmt.money(fund.fund) : fmt.money(world.fund.start), fund ? `at the checkpoint of day ${fund.day} · tax account ${fmt.money(fund.taxes)} · started at ${fmt.money(world.fund.start)}` : "at the start; read at each checkpoint"),
+      stat("The treasury", fmt.money(books ? books.treasury : world.treasury.start), books ? `at the checkpoint of day ${books.day} · started at ${fmt.money(world.treasury.start)}${books.arrears ? ` · ${fmt.money(books.arrears)} of rent owed to it` : ""}` : "at the start; read at each checkpoint"),
       stat("Tasks accepted", fmt.int(all("accepted")), `${fmt.int(all("arrived"))} came in · ${fmt.int(all("claims"))} claimed · ${fmt.int(all("assigned"))} assigned · ${fmt.int(all("withdrawn"))} withdrawn`),
       stat("Sales at the Store", fmt.int(all("sales")), `${fmt.int(kitchen)} for the kitchen`),
       stat("Dishes served", fmt.int(all("dishes")), `${fmt.plural(cooked, "portion")} cooked`),
@@ -428,12 +430,19 @@ export function mountOverview(root, ctx) {
     return plain("The Office's tasks", "Every client's task that came in, newest first: when, who held it (from whom, when the team leader gave it) and what came of it.", rows.length ? table(["Task", "Repository", "Came in", "Held by", "Outcome"], rows) : emptyState("No task has come in yet.", `Tasks come in at ${office.name} between ${world.work.arrive_from} and ${world.work.arrive_until}.`));
   }
 
-  /** The fund's books at the last checkpoint: what it owes each resident and who owes it rent. */
+  /** The treasury's books at the last checkpoint: the rent each resident owes it and the salary it owes. */
   function owing() {
-    const fund = measures.town.at(-1);
-    if (!fund) return plain("What the fund owes and is owed", null, emptyState("No day's checkpoint has been saved yet.", "The fund's books are read at each checkpoint."));
-    const rows = measures.rows.filter((row) => row.day === fund.day && (row.owed_wages || row.arrears)).map((row) => [cast.mention(row.resident), row.owed_wages ? fmt.money(row.owed_wages) : "", row.arrears ? fmt.money(row.arrears) : ""]);
-    return plain("What the fund owes and is owed", `At the checkpoint of day ${fund.day}: wages and sums the fund could not pay, owed to the resident and paid with the next wages, and rent the wages did not cover, owed to the fund and taken from the next.`, rows.length ? table(["Resident", "The fund owes", "Owes the fund"], rows) : h("p", { class: "muted small-text" }, "Nothing is owed either way."));
+    const books = measures.town.at(-1);
+    if (!books) return plain("Who owes what", null, emptyState("No day's checkpoint has been saved yet.", "The treasury's books are read at each checkpoint."));
+    const rows = measures.rows.filter((row) => row.day === books.day && (row.arrears || row.salary_owed)).map((row) => [cast.mention(row.resident), row.arrears ? fmt.money(row.arrears) : "", row.salary_owed ? fmt.money(row.salary_owed) : ""]);
+    return plain("Who owes what", `At the checkpoint of day ${books.day}: the rent and charges a purse could not spare, owed to the treasury and taken at a later midnight, and the salary the treasury could not pay, owed to the resident and paid at a later one.`, rows.length ? table(["Resident", "Owes the treasury", "The treasury owes"], rows) : h("p", { class: "muted small-text" }, "Nothing is owed either way."));
+  }
+
+  /** The mayor's grants from the treasury, newest first: when, by whom, to whom, how much and why. */
+  function grants() {
+    const made = everywhere("grant").reverse();
+    const rows = made.map(([name, m]) => [moment(m.t), cast.mention(name), cast.mention(m.to), fmt.money(m.amount), `“${m.reason}”`]);
+    return plain("Grants", "What the mayor granted from the treasury, newest first, with the reason given.", rows.length ? table(["When", "By", "To", "Amount", "Reason"], rows) : h("p", { class: "muted small-text" }, "Nothing granted yet."));
   }
 
   /** The mayor's announcements, newest first, each with its hour. */
@@ -458,8 +467,11 @@ export function mountOverview(root, ctx) {
       const rejected = count("submission", (m) => m.resolved === false);
       const taken = (lane, i) => count("claim")(lane, i) + count("assign")(lane, i);
       const arrived = ownPoints("task_arrived");
+      // What a resident did for others at its work on a lived day: its own tasks accepted, and the
+      // times it served another (a sale, a dish, a patient), as the social graph counts them.
+      const served = (lane, i, day) => count("service", (m) => m.for === "task")(lane, i) + measures.graph.filter((edge) => edge.day === day.day && edge.source === lane.name).reduce((a, edge) => a + edge.served, 0);
       return [
-        h("p", { class: "note section-note" }, `Clients' tasks come in at ${office.name} through the working day, about ${fmt.num(world.work.tasks_a_day, 0)} a day; a programmer takes one at a time, or the team leader gives it, and hands it in for the client's checks, which pay the town ${fmt.money(world.work.payment)} when they pass. Everyone works at its own workplace, paid by the hour there and a sum for each service. ${fmt.plural(arrived.reduce((a, [, n]) => a + n, 0), "task")} came in so far, ${fmt.int(total(accepted))} accepted.`),
+        h("p", { class: "note section-note" }, `Clients' tasks come in at ${office.name} through the working day, about ${fmt.num(world.work.tasks_a_day, 0)} a day; a programmer takes one at a time, or the team leader gives it, and hands it in for the client's checks, and the client pays ${fmt.money(world.work.payment)} when they pass, shared between whoever handed it in and the team leader. Nobody is paid for its time: everyone works at its own workplace, and the shopkeeper, the chef and the doctor keep what their customers and patients pay. ${fmt.plural(arrived.reduce((a, [, n]) => a + n, 0), "task")} came in so far, ${fmt.int(total(accepted))} accepted.`),
         h(
           "div",
           { class: "figures" },
@@ -479,58 +491,60 @@ export function mountOverview(root, ctx) {
           }),
           dayFigure({ title: "Hours at work", note: "Hours a resident spent at work at its workplace each day, on average over the residents.", lines: [{ key: "hours", label: "mean hours at work", color: "var(--ink-2)", points: townPoints(workHours).map(([day, hours]) => [day, hours / cast.names.length]) }], format: (v) => fmt.num(v, 1) }),
           agentFigure({ title: "Hours at work", note: "Each resident's hours at work at its workplace per day.", points: residentPoints(workHours), format: (v) => fmt.num(v, 1), zero: true }),
-          agentFigure({ title: "Services rendered", note: "Each resident's services per day that the fund pays a sum for: a task accepted, a sale, a dish served, a patient seen.", points: residentPoints(count("service")), zero: true }),
+          agentFigure({ title: "Served at work", note: "What each resident did for others at its work per day: a task of its own accepted, a sale at the counter, a dish served, a patient seen.", points: residentPoints(served), zero: true }),
           tasks(),
         ),
       ];
     },
     money() {
       const books = saved();
-      const fundDays = data.days.filter((day) => books.has(day.day));
-      const ledger = (side, kinds) => kinds.map(([kind, label, color]) => ({ key: kind, label, color, values: new Map(fundDays.map((day) => [day.day, books.get(day.day)[`${side}_${kind}`]])) }));
-      const rent = amount("wage", "rent");
-      const charges = amount("wage", "charges");
+      const closed = data.days.filter((day) => books.has(day.day));
+      const points = (field) => closed.map((day) => [day.day, books.get(day.day)[field]]);
+      const ledger = (side, kinds) => kinds.map(([kind, label, color]) => ({ key: kind, label, color, values: new Map(points(`${side}_${kind}`)) }));
+      /** A business's books over the closed days: each of `kinds` a line, `[label, field of the town's days, colour]`. */
+      const booksOf = (title, note, kinds) => dayFigure({ title, note, lines: kinds.map(([label, field, color]) => ({ key: field, label, color, points: points(field) })), legend: swatchLegend(kinds.map(([label, , color]) => [label, color, "line"])), zero: true });
+      /** What a lane's purse took in or gave out on its lived day `i` by the parts of `moneyMoved` given, from every lane's markers. */
+      const moved = (parts) => (lane, i) => data.residents.reduce((a, other) => a + markersIn(other, i, () => true).reduce((b, m) => b + moneyMoved(m, other.name).reduce((c, [who, change, part]) => c + (who === lane.name && parts.includes(part) ? change : 0), 0), 0), 0);
+      const rent = amount("settlement", "rent_paid");
       const food = bought(isFood);
       const goods = bought((m) => !isFood(m));
       const fees = (lane, i) => data.residents.reduce((a, other) => a + markersIn(other, i, "examination").concat(markersIn(other, i, "treatment")).filter((m) => m.patient === lane.name).reduce((b, m) => b + m.fee, 0), 0);
+      const salaried = world.occupations.filter((occupation) => occupation.salary).map((occupation) => `${occupation.title}'s salary of ${fmt.money(occupation.salary)} a day`);
+      const team = Math.round(world.work.payment * world.work.leader_share);
       return [
-        h("p", { class: "note section-note" }, `The town's money is one fund, the employer, the landlord and the owner of the Store, ${restaurant.name} and ${hospital.name}. It pays wages at midnight for the day's hours at work, with the rent and the daily charges taken out of them, and a sum at once for each service; it takes in what clients pay for tasks accepted, the sales, the dishes and the fees, and pays the supplier. Money in hand never goes below zero: rent the wages do not cover is owed to the fund, and what the fund cannot pay it owes. The residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
+        h("p", { class: "note section-note" }, `Money is held by the residents and by the town's treasury, and by nothing else. It comes into the town only when a client pays ${fmt.money(world.work.payment)} for a task accepted, ${fmt.money(team)} of it to the team leader and the rest to whoever handed it in, and leaves it only when the shopkeeper pays the supplier for the Store's orders; everything else passes between purses and the treasury. The Store's sales are the shopkeeper's, the dishes the chef's and the fees the doctor's, and each pays for what its business buys. ${fmt.pct(world.tax)} of every payment for work is withheld into the treasury as it is received; at midnight the treasury takes the rent from what a purse holds above ${fmt.money(world.treasury.spares)}, the rest owed, and pays ${salaried.join(" and ") || "no salary"} as far as it holds the money; the mayor grants from it at will. The residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}, the treasury with ${fmt.money(world.treasury.start)}.`),
         h(
           "div",
           { class: "figures" },
-          fundDays.length
+          closed.length
             ? [
-                dayFigure({ title: "The fund", note: `Its balance at each day's checkpoint; it started at ${fmt.money(world.fund.start)}.`, lines: [{ key: "balance", label: "balance", color: "var(--ink)", points: fundDays.map((day) => [day.day, books.get(day.day).fund]) }], zero: true }),
-                dayFigure({
-                  title: "The tax account",
-                  note: `The fund's money apart, which pays ${paidFromTaxes(world)}: its balance at each day's checkpoint, and what it took in taxes (${fmt.pct(world.tax)} of each resident's day's wages and sums) and paid in wages on the calendar day each checkpoint's midnight closed.`,
-                  lines: [
-                    { key: "balance", label: "balance", color: "var(--ink)", points: fundDays.map((day) => [day.day, books.get(day.day).taxes]) },
-                    { key: "taken", label: "taken in taxes", color: "var(--o5)", points: fundDays.map((day) => [day.day, books.get(day.day).taken_tax]) },
-                    { key: "paid", label: "paid in wages", color: "var(--o2)", points: fundDays.map((day) => [day.day, books.get(day.day).paid_tax_wage]) },
-                  ],
-                  legend: swatchLegend([["balance", "var(--ink)", "line"], ["taken in taxes", "var(--o5)", "line"], ["paid in wages", "var(--o2)", "line"]]),
-                  zero: true,
-                }),
-                dayFigure({ title: "What the fund took in", note: "By kind, on the calendar day each checkpoint's midnight closed; what the wages covered of the rent is counted as rent taken in and as wages paid out.", stacks: ledger("taken", TAKEN), legend: swatchLegend(TAKEN.map(([, label, color]) => [label, color])) }),
-                dayFigure({ title: "What the fund paid out", note: "By kind, on the same days; what the chef bought for the kitchen is a sale the fund paid itself.", stacks: ledger("paid", PAID), legend: swatchLegend(PAID.map(([, label, color]) => [label, color])) }),
+                dayFigure({ title: "The treasury", note: `Its balance at each day's checkpoint; it started at ${fmt.money(world.treasury.start)}.`, lines: [{ key: "balance", label: "balance", color: "var(--ink)", points: points("treasury") }], zero: true }),
+                dayFigure({ title: "What the treasury took in", note: "By kind, on the calendar day each checkpoint's midnight closed: the tax withheld from every payment for work, and the rent and daily charges taken at midnight, arrears recovered among them.", stacks: ledger("taken", TAKEN), legend: swatchLegend(TAKEN.map(([, label, color]) => [label, color])) }),
+                dayFigure({ title: "What the treasury paid out", note: "By kind, on the same days: the salary, and the mayor's grants, listed with their reasons below.", stacks: ledger("paid", PAID), legend: swatchLegend(PAID.map(([, label, color]) => [label, color])) }),
+                dayFigure({ title: "What is owed", note: "At each day's checkpoint: the rent and charges the residents' purses could not spare, owed to the treasury, and the salary the treasury could not pay.", lines: [{ key: "arrears", label: "owed to the treasury", color: "var(--serious)", points: points("arrears") }, { key: "salary_owed", label: "owed by the treasury", color: "var(--o2)", points: points("salary_owed") }], legend: swatchLegend([["owed to the treasury", "var(--serious)", "line"], ["owed by the treasury", "var(--o2)", "line"]]), zero: true }),
               ]
-            : plain("The fund", null, emptyState("No day's checkpoint has been saved yet.", `The fund is read at each checkpoint, the first at ${world.day.checkpoint} after the first day; it started at ${fmt.money(world.fund.start)}.`), false),
+            : plain("The treasury", null, emptyState("No day's checkpoint has been saved yet.", `The treasury is read at each checkpoint, the first at ${world.day.checkpoint} after the first day; it started at ${fmt.money(world.treasury.start)}.`), false),
+          grants(),
           owing(),
+          closed.length
+            ? [
+                booksOf(cap(store.name), "What customers paid at the counter each day, the kitchen's purchases among them, before the tax, against what the shopkeeper paid the supplier for the orders.", [["sales", "store_takings", "var(--good)"], ["orders", "supplier", "var(--serious)"]]),
+                booksOf(cap(restaurant.name), "What diners paid for the dishes each day, before the tax, against what the chef paid at the counter for the kitchen's ingredients.", [["dishes", "kitchen_takings", "var(--good)"], ["ingredients", "kitchen_costs", "var(--serious)"]]),
+                booksOf(cap(hospital.name), "What patients paid in fees each day, before the tax.", [["fees", "surgery_takings", "var(--good)"]]),
+              ]
+            : null,
           agentFigure({ title: "Money in hand", note: "Each resident's money at the end of each day, or now for the day in progress.", points: residentPoints((lane, i, day) => purseAt(lane, endOf(day))), zero: true }),
-          agentFigure({ title: "Wages", note: "Each resident's wages at the day's midnight for its hours at work, before the rent was taken out.", points: residentPoints((lane, i) => markersIn(lane, i, "wage")[0]?.wages ?? null), zero: true }),
-          agentFigure({ title: "Sums for services", note: "What each resident was paid at once for its services each day.", points: residentPoints(amount("service", "paid")), zero: true }),
+          agentFigure({ title: "Earned", note: "What each resident was paid for its work each day, after the tax: its shares of the clients' payments, and what its customers and patients paid it.", points: residentPoints(moved(["share", "takings"])), zero: true }),
           dayFigure({
             title: "What the residents spent",
-            note: "Rent and the daily charges taken from the wages, food (at the counter and dishes), other goods and the Hospital's fees, per day.",
+            note: "The rent and daily charges the treasury took at midnight, food (at the counter and dishes), other goods and the Hospital's fees, per day; what a business bought is in its books above.",
             stacks: [
-              { key: "rent", label: "rent", color: "var(--o5)", values: townValues(rent) },
-              { key: "charges", label: "daily charges", color: "var(--o4)", values: townValues(charges) },
+              { key: "rent", label: "rent and charges", color: "var(--o5)", values: townValues(rent) },
               { key: "food", label: "food", color: "var(--o3)", values: townValues(food) },
               { key: "goods", label: "other goods", color: "var(--o2)", values: townValues(goods) },
               { key: "fees", label: "fees", color: "var(--o1)", values: townValues(fees) },
             ],
-            legend: swatchLegend([["rent", "var(--o5)"], ["daily charges", "var(--o4)"], ["food", "var(--o3)"], ["other goods", "var(--o2)"], ["fees", "var(--o1)"]]),
+            legend: swatchLegend([["rent and charges", "var(--o5)"], ["food", "var(--o3)"], ["other goods", "var(--o2)"], ["fees", "var(--o1)"]]),
           }),
         ),
       ];
@@ -538,7 +552,7 @@ export function mountOverview(root, ctx) {
     trade() {
       const units = (keep) => (lane, i) => markersIn(lane, i, boughtAtCounter).filter(keep).reduce((a, m) => a + m.units, 0);
       return [
-        h("p", { class: "note section-note" }, `${store.name[0].toUpperCase()}${store.name.slice(1)} sells the supplier's goods while the shopkeeper is at work there, at prices the shopkeeper sets, from what it orders, which comes the next morning. ${restaurant.name[0].toUpperCase()}${restaurant.name.slice(1)}'s chef buys ingredients for the kitchen, which the fund pays, cooks dishes from them and serves them while at work. ${fmt.plural(sum(progressDoc.daily, "sales"), "sale")} and ${fmt.plural(sum(progressDoc.daily, "dishes"), "dish", "dishes")} served so far.`),
+        h("p", { class: "note section-note" }, `${store.name[0].toUpperCase()}${store.name.slice(1)} sells the supplier's goods while the shopkeeper is at work there, at prices the shopkeeper sets, from what it orders, which comes the next morning. ${restaurant.name[0].toUpperCase()}${restaurant.name.slice(1)}'s chef buys ingredients for the kitchen at the counter, paying for them, cooks dishes from them and serves them while at work. ${fmt.plural(sum(progressDoc.daily, "sales"), "sale")} and ${fmt.plural(sum(progressDoc.daily, "dishes"), "dish", "dishes")} served so far.`),
         h(
           "div",
           { class: "figures" },

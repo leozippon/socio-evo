@@ -60,26 +60,31 @@ The markers, each on the lane of the resident who acted, with their own fields:
     submission    task; and once the verdict is in: resolved, status, fail_to_pass, pass_to_pass
                   (passed and total counts)
     abandon       task                    the resident gave its task up
-    service       for, task, amount, paid, owed   a sum paid at once for a service: for `task`
-                                          (one's own task accepted), `team` (the team leader's
-                                          for the programmers'), `sale`, `dish` or `patient`
+    service       for, task, amount, tax   a share of a client's payment for a task accepted,
+                                          received less the tax withheld: for `task` (one's own
+                                          task) or `team` (the team leader's share of another's)
     speech        text, to, private       "to" is the addressees, who heard the words: those
                                           named, or everyone there for a remark to all; the
                                           bystanders of a private remark are not among them
     message       to, text                a written message, read by "to" alone
-    move          item, units, source, target, money, reason, seller   the log's `move` as
-                                          recorded: units of an item, or money alone (item
+    move          item, units, source, target, money, reason, seller, tax   the log's `move`
+                                          as recorded: units of an item, or money alone (item
                                           null), from one holder to another, by reason: get,
-                                          put, pass, eat or buy
-    order         item, name, quantity, amount, arrives   the shopkeeper's order, paid by the fund
+                                          put, pass, eat or buy; a purchase's money goes to its
+                                          seller less the tax
+    order         item, name, quantity, amount, arrives   the shopkeeper's order, paid from her
+                                          purse
     cook          dish, name, portions, used   portions the chef cooked from the kitchen's stock
     price         item, name, place, price, before   a price set at the Store, the restaurant
                                           or the Hospital
-    examination   patient, fee, satiety, energy, health, ill, night   the doctor's examination
-                                          and the numbers it told
-    treatment     patient, fee, restores, before, health, ill, bedridden
+    examination   patient, fee, tax, satiety, energy, health, ill, night   the doctor's
+                                          examination and the numbers it told; the fee goes to
+                                          the doctor less the tax
+    treatment     patient, fee, tax, restores, before, health, ill, bedridden
     report                                the mayor read the town's report
     announcement  text                    the mayor's announcement, told to everyone
+    grant         to, amount, reason, treasury   money the mayor granted `to` from the treasury,
+                                          for `reason`; `treasury` is its balance after
     illness       chance, nights, health  the resident fell ill at midnight
     recovered     illness, bedridden, treated, health   an illness passed or was treated, or a
                                           bed was left
@@ -88,12 +93,13 @@ The markers, each on the lane of the resident who acted, with their own fields:
     journal       text, day, wake         going to bed with the day's journal entry (a bedtime
                                           without one has no marker)
     forced_sleep  wake
-    wage          hours, wages, tax, tax_from_purse, owed_before, rent, charges, arrears_before,
-                  remainder, paid, owed, arrears   the midnight's wages for the day's hours at
-                                          work, with the tax (what the wages did not cover of it
-                                          from the purse), the rent and charges taken out of
-                                          them (the money after them is a point of "purse")
-    settlement    nourishment, satiety, energy, health, night, ill   the midnight statement:
+    settlement    hours, salary, owed_before, salary_paid, owed, rent, charges, arrears_before,
+                  rent_paid, arrears, nourishment, satiety, energy, health, night, ill   the
+                                          midnight statement: the day's hours at work; the
+                                          salary and what the treasury owed, paid as far as it
+                                          held the money; the rent, the daily charges and the
+                                          arrears, taken from the purse above what it spares,
+                                          the rest owed (the purse after is a point of "purse");
                                           the day's food as a share of a day's need, the body's
                                           numbers after the night's reckoning, how health moved,
                                           by cause, and the nights of illness to come
@@ -105,10 +111,11 @@ and those of no resident, under "markers":
     task_withdrawn  task, holder              a client withdrew a task not accepted in time
     delivery        items                     what the Store ordered arrived ({item: units})
 
-The purse moves with every sum of money the log records: the money after a service and after
-the midnight's wages, money passed and received, what a resident paid for what it bought for
-itself (at the Store's counter, or a dish), and the Hospital's fee a patient paid; what the chef
-buys for the kitchen the fund pays.
+The purse moves with every sum of money the log records: the money after a client's share and
+after the midnight statement, as the log records them; money passed and received; a purchase,
+paid by the buyer (for itself, a dish, or the chef for the kitchen) and received by the seller
+less the tax; the Hospital's fee, paid by the patient and received by the doctor less the tax;
+an order, paid by the shopkeeper; and a grant, received from the treasury.
 
 The log is the only source, read by day as `world.log.Days` cuts it: the entries a lost day
 left after the checkpoint a `resume` went back to (or the start, for day 0) are set aside. A
@@ -166,6 +173,7 @@ _FOLDED = frozenset(
         "treatment",
         "report",
         "announcement",
+        "grant",
         "illness",
         "recovered",
         "bedridden",
@@ -180,8 +188,9 @@ _FOLDED = frozenset(
 the time told, falling asleep) add nothing to it. The first of them is kept for the real time
 at which day 1 was begun; the checkpoints and resumptions cut the days."""
 _LEFT_OUT = {"service": "money", "settlement": "money", "move_in": "rent"}
-"""What a marker leaves out of its entry's payload: the money held after a sum or the wages,
-which is a point of the purse, and the rent of a home moved into, which the town's places give."""
+"""What a marker leaves out of its entry's payload: the money held after a share or the midnight
+statement, which is a point of the purse, and the rent of a home moved into, which the town's
+places give."""
 _COPIED = {
     kind: tuple(field for field in KINDS[kind].payload if field != _LEFT_OUT.get(kind))
     for kind in (
@@ -197,6 +206,7 @@ _COPIED = {
         "treatment",
         "report",
         "announcement",
+        "grant",
         "illness",
         "recovered",
         "bedridden",
@@ -339,7 +349,9 @@ class _Lane:
         return marker
 
     def credit(self, t: int, amount: int) -> None:
-        self.purse.append([t, self.purse[-1][1] + amount])
+        """`amount` into the purse at `t`, or out of it when negative; nothing when none."""
+        if amount:
+            self.purse.append([t, self.purse[-1][1] + amount])
 
     def data(self, now: int) -> dict[str, Any]:
         for span in (self.segments[-1], self.talk):
@@ -492,13 +504,15 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
         elif kind == "move":
-            paid, target = payload["money"], payload["target"]
+            paid = payload["money"]
             if payload["reason"] == "pass" and payload["item"] is None:  # money handed over
                 lane.credit(t, -paid)
-                lanes[target].credit(t, paid)
-            elif payload["reason"] == "buy" and target == lane.name:  # paid from its own money
+                lanes[payload["target"]].credit(t, paid)
+            elif payload["reason"] == "buy":  # nothing when the seller served itself
                 lane.credit(t, -paid)
+                lanes[payload["seller"]].credit(t, paid - payload["tax"])
         elif kind == "order":
+            lane.credit(t, -payload["amount"])
             add(on_order.state, payload["item"], payload["quantity"])
             on_order.changed(t)
         elif kind == "delivery":
@@ -510,8 +524,11 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             series = priced[kinds[payload["place"]]]
             series.state[payload["item"]] = payload["price"]
             series.changed(t)
-        elif kind in ("examination", "treatment"):
+        elif kind in ("examination", "treatment"):  # nothing when the doctor is the patient
             lanes[payload["patient"]].credit(t, -payload["fee"])
+            lane.credit(t, payload["fee"] - payload["tax"])
+        elif kind == "grant":
+            lanes[payload["to"]].credit(t, payload["amount"])
         elif kind == "bedridden":
             lane.bedridden = True
             if lane.segments[-1]["kind"] != "sleep":  # one asleep is bedridden on waking

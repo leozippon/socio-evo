@@ -99,12 +99,12 @@ function runRow(entry, index) {
   const head = entry.headline;
   const open = { view: "overview", run: entry.name, query: {} };
   const cast = new Cast({ residents: entry.residents.map((name) => ({ name })) });
-  // The index gives no currency; the run's progress document does, so the fund reads as a
+  // The index gives no currency; the run's progress document does, so the treasury reads as a
   // plain number until it arrives.
-  const fund = figure("the town's fund", fmt.int(head.fund), head.fund === null ? "Read at each checkpoint; none has been saved yet" : "At the last checkpoint");
+  const treasury = figure("the town's treasury", fmt.int(head.treasury), head.treasury === null ? "Read at each checkpoint; none has been saved yet" : "At the last checkpoint");
   readProgress(index, entry).then(
     (doc) => {
-      if (head.fund !== null) fund.firstChild.textContent = money(head.fund, doc.currency);
+      if (head.treasury !== null) treasury.firstChild.textContent = money(head.treasury, doc.currency);
     },
     () => {},
   );
@@ -124,7 +124,7 @@ function runRow(entry, index) {
     h(
       "div",
       { class: "run-stats" },
-      fund,
+      treasury,
       figure("tasks accepted", fmt.int(head.accepted), `${fmt.int(head.arrived)} came in, ${fmt.int(head.submissions)} handed in, ${fmt.int(head.withdrawn)} withdrawn`),
       figure("sales · dishes · patients", `${fmt.int(head.sales)} · ${fmt.int(head.dishes)} · ${fmt.int(head.examinations + head.treatments)}`, "Sales at the Store's counter, dishes served, examinations and treatments"),
       figure("things said", fmt.int(head.speeches), `${fmt.int(head.gifts)} gifts, ${fmt.int(head.messages)} messages`),
@@ -163,7 +163,7 @@ export function mountLanding(root, ctx) {
         "header",
         { class: "page-head" },
         h("h1", {}, "A small town"),
-        h("p", { class: "lede" }, "Each run is one town of residents living their days, each at its occupation: the programmers and their team leader take on clients' tasks at the Office, the shopkeeper keeps the Store, the chef cooks for the restaurant, the doctor sees patients and the mayor reads the town's report and makes announcements. The town's fund pays their wages and takes their rent; they buy food and things, eat out, fall ill, meet and talk, and keep their own notes. Nobody tells them how to behave; what they become is the question. Watch a town as it happens, read each resident's story, or open the dashboard for the numbers. Live runs update as they go."),
+        h("p", { class: "lede" }, "Each run is one town of residents living their days, each at its occupation: the programmers and their team leader take on clients' tasks at the Office, the shopkeeper keeps the Store, the chef cooks for the restaurant, the doctor sees patients and the mayor reads the town's report and makes announcements. Clients pay for the tasks, the shops and the doctor keep what they take, and the town's treasury takes a tax on every payment and the rent, pays the mayor and grants what the mayor decides; they buy food and things, eat out, fall ill, meet and talk, and keep their own notes. Nobody tells them how to behave; what they become is the question. Watch a town as it happens, read each resident's story, or open the dashboard for the numbers. Live runs update as they go."),
       ),
       index.runs.length || index.skipped.length ? null : h("div", { class: "card" }, emptyState("No runs are published yet.", "Runs appear here once one has been started and the runs root is published; a run just created shows up before its first entry.")),
       sets.map((set) => section(set.name, set.runs, set.name)),

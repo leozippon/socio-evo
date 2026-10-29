@@ -12,6 +12,8 @@ row per day with `day`, `date` and every measure of `TOWN`. They are derived fro
 and replace what is there; DIR is given explicitly (by convention `results/<run>/measures`),
 since analysis writes nothing under the run. The days are those the world log has closed
 (`world.log.lived_days`), so a day lost to an interruption counts once, as it was lived again.
+A run of the town before occupations, or from before the closed economy (with a fund and wages
+instead of the treasury), is refused (`_measured`).
 
 The midnight that ends a lived day settles the calendar day: the hours at work, the rent, the
 salary and the treasury's takings and payments of a day are those of its calendar day, so work
@@ -34,8 +36,10 @@ from pathlib import Path
 from statistics import fmean
 from typing import Any
 
+import yaml
+
 from agent.directory import TRACE
-from evaluation.records import Entry, agent_dir, closed_days, day_date, town, trace_days
+from evaluation.records import Entry, Town, agent_dir, closed_days, day_date, town, trace_days
 from infrastructure.storage import RunDirectory
 from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN
 from world.log import Day
@@ -135,9 +139,7 @@ Row = dict[str, Any]
 
 def measure(run_dir: Path) -> list[Row]:
     """One row per resident and lived day of the run at `run_dir`, by resident and day."""
-    config = town(run_dir)
-    if any(resident.occupation is None for resident in config.residents):
-        raise ValueError(f"{run_dir} is a run of the town before occupations, which these are not")
+    config = _measured(run_dir)
     days = list(closed_days(run_dir).values())
     lying = beds(days)
     rows = []
@@ -155,6 +157,21 @@ def measure(run_dir: Path) -> list[Row]:
                 }
             )
     return rows
+
+
+def _measured(run_dir: Path) -> Town:
+    """The town of the run at `run_dir`, which these measures read; ValueError for a run of the
+    town before occupations, and for one from before the closed economy, whose frozen town has
+    no treasury (it had the fund and the wages)."""
+    config = town(run_dir)
+    if any(resident.occupation is None for resident in config.residents):
+        raise ValueError(f"{run_dir} is a run of the town before occupations, which these are not")
+    frozen = yaml.safe_load(RunDirectory(run_dir).config_path.read_text(encoding="utf-8"))
+    if "treasury" not in frozen["town"]:
+        raise ValueError(
+            f"{run_dir} predates the closed economy: its town has no treasury, which these read"
+        )
+    return config
 
 
 def beds(days: Sequence[Day]) -> dict[int, dict[str, str]]:
@@ -311,7 +328,7 @@ def town_days(run_dir: Path) -> list[Row]:
     the clients' payments, the supplier's bills and the businesses' takings and costs from the
     world log, and from the day's checkpoint the residents' money and the treasury's, what it owes
     and is owed, and its takings and payments of the calendar day its midnight closed."""
-    config, run = town(run_dir), RunDirectory(run_dir)
+    config, run = _measured(run_dir), RunDirectory(run_dir)
     rows = []
     for day in closed_days(run_dir).values():
         state = json.loads(run.checkpoint_path(day.number).read_text(encoding="utf-8"))

@@ -6,7 +6,10 @@
 // person view's day keeps the entries the resident perceived, what it did and what it was told,
 // and nothing else, so that another resident's waking never appears in it; every move reads by
 // its reason and says where it happened, for the one who made it and for the one it was made to;
-// and what lies at a place is looked up from the holders.
+// money paid for work reads with the tax withheld from it, by the one paid: a share of a client's
+// payment, a sale, a fee; a grant reads with its reason, to the mayor and to the one granted;
+// the midnight statement tells the rent paid and owed and the salary; and what lies at a place is
+// looked up from the holders.
 //
 //   node tests/frontend/reading_check.mjs SITE RUN_PATH
 //
@@ -19,7 +22,7 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { describeMarker, knewNote, knewOf, knownOnlyTo, perceived } = await viewer("town/events.js");
+const { concerns, describeMarker, knewNote, knewOf, knownOnlyTo, perceived } = await viewer("town/events.js");
 const { itemsBrief } = await viewer("goods.js");
 const { lyingAt, shopsAt } = await viewer("replay.js");
 const { useCurrency } = await viewer("dom.js");
@@ -117,7 +120,23 @@ check("a dish the chef served unpaid", words("Jonas", "Mei", (m) => m.reason ===
 check("bread left at home", words("Mei", "Mei", (m) => m.reason === "put" && m.target === "mill-street-house"), "left 1 helping of bread at the shared house on Mill Street, for anyone to take");
 check("bread taken at the store", words("Olga", "Mei", (m) => m.reason === "get"), "Olga took 1 helping of bread left at the store");
 check("money passed", words("Mei", "Tomas", (m) => m.reason === "pass"), "received $5 from Mei at the workshop");
-check("eggs sold for the kitchen", words("Jonas", "Olga", (m) => m.reason === "buy"), "sold Jonas 2 units of eggs for the kitchen for $4 at the store, which the fund paid");
+check("eggs sold for the kitchen, too little to tax", words("Jonas", "Olga", (m) => m.item === "eggs"), "sold Jonas 2 units of eggs for the kitchen for $4 at the store");
+check("vegetables sold for the kitchen, the tax withheld", words("Jonas", "Olga", (m) => m.item === "vegetables"), "sold Jonas 5 units of vegetables for the kitchen for $20 at the store, of which $2 in tax");
+check("vegetables bought for the kitchen, by the chef", words("Jonas", "Jonas", (m) => m.item === "vegetables"), "bought 5 units of vegetables for the kitchen for $20 at the store");
+check("a dish served, by the chef", words("Mei", "Jonas", (m) => m.reason === "buy" && m.source === "portions"), "served Mei an omelette for $10 at the café on the square, of which $1 in tax");
+
+// Money paid for work, a grant and the midnight statement.
+const marker = (name, kind) => lane(name).markers.find((m) => m.kind === kind);
+const said = (name, kind, who) => describeMarker(marker(name, kind), name, who, world);
+check("a programmer's share of a client's payment", said("Mei", "service", "Mei")[0], "was paid $40 by the client for task 1, accepted, of which $4 in tax");
+check("the team leader's share", said("Tomas", "service", "Tomas")[0], "was paid $10, the team leader's share of the client's payment for task 1, of which $1 in tax");
+check("a fee, by the doctor", said("Lucia", "examination", "Lucia")[0], "examined Mei for $10, of which $1 in tax");
+check("a fee, by the patient", said("Lucia", "examination", "Mei")[0], "was examined by Lucia for $10");
+check("a grant, by the mayor", said("Vera", "grant", "Vera"), ["granted Aisha $5 from the treasury", "For the rent."]);
+check("a grant, by the one granted", said("Vera", "grant", "Aisha"), ["was granted $5 from the treasury by Vera", "For the rent."]);
+check("a grant concerns the one granted", [concerns(marker("Vera", "grant"), "Vera", "Aisha"), concerns(marker("Vera", "grant"), "Vera", "Mei")], [true, false]);
+check("a statement with rent owed", said("Aisha", "settlement", "Aisha")[1].split(" Ate ")[0], "0.0 h at work. Rent $15 paid, $5 owed to the treasury.");
+check("a statement with a salary", said("Vera", "settlement", "Vera")[1].split(" h at work. ")[1].split(" Ate ")[0], "Salary $30 paid. Rent $30 paid.");
 
 // What lies at each place, and the kitchen's portions, from the holders.
 check("what lies at Mei's home now", itemsBrief(world, lyingAt(timeline, "mill-street-house", timeline.now)), "1 bread");

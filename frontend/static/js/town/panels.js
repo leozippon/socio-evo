@@ -183,7 +183,7 @@ const table = (head, rows, empty) => (rows.length ? h("div", { class: "table-wra
  * open, who holds each and since when, and the day's arrivals, acceptances and withdrawals),
  * the Store's shelves, prices and orders, the kitchen's menu and larder, the Hospital's fees,
  * the day's patients and who is ill or in bed, and the Town Hall's board of announcements with
- * the fund as the last checkpoint saved it.
+ * the treasury as the last checkpoint saved it and the day's grants.
  */
 export class WorkPanel {
   constructor() {
@@ -213,7 +213,7 @@ export class WorkPanel {
           ];
         });
         return [
-          h("p", { class: "note" }, `Today ${fmt.plural(arrived, "task")} came in, ${accepted.length} ${accepted.length === 1 ? "was" : "were"} accepted (${accepted.map((task) => `${task.task} by ${task.by}`).join(", ") || "none"}) and ${withdrawn} withdrawn. A client pays the town ${fmt.money(m.world.work.payment)} for a task accepted.`),
+          h("p", { class: "note" }, `Today ${fmt.plural(arrived, "task")} came in, ${accepted.length} ${accepted.length === 1 ? "was" : "were"} accepted (${accepted.map((task) => `${task.task} by ${task.by}`).join(", ") || "none"}) and ${withdrawn} withdrawn. A client pays ${fmt.money(m.world.work.payment)} for a task accepted, shared between whoever handed it in and the team leader.`),
           table(["Task", "Repository", "Held by", "Withdrawn after"], rows, "Nothing is open on the board."),
         ];
       },
@@ -245,13 +245,15 @@ export class WorkPanel {
       hall: () => {
         const said = m.timeline.residents.flatMap((lane) => markersBetween(lane, null, m.time).filter((mk) => mk.kind === "announcement").map((mk) => [lane.name, mk])).reverse();
         const reports = today(m, "report").length;
-        // The fund as the last checkpoint before the moment saved it, from the town's days.
+        // The treasury as the last checkpoint before the moment saved it, from the town's days.
         const closed = m.timeline.days.filter((day) => day.end !== null && day.end <= m.time).map((day) => day.day);
-        const fund = m.measures?.town.filter((row) => closed.includes(row.day)).at(-1);
-        const owing = (field) => (fund ? m.measures.rows.filter((row) => row.day === fund.day && row[field]).map((row) => `${row.resident} ${fmt.money(row[field])}`) : []);
-        const books = fund ? `The fund held ${fmt.money(fund.fund)} and its tax account ${fmt.money(fund.taxes)} at the checkpoint of day ${fund.day}${owing("owed_wages").length ? `, owing ${owing("owed_wages").join(", ")}` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
+        const saved = m.measures?.town.filter((row) => closed.includes(row.day)).at(-1);
+        const owing = (field) => (saved ? m.measures.rows.filter((row) => row.day === saved.day && row[field]).map((row) => `${row.resident} ${fmt.money(row[field])}`) : []);
+        const books = saved ? `The treasury held ${fmt.money(saved.treasury)} at the checkpoint of day ${saved.day}${owing("salary_owed").length ? `, owing ${owing("salary_owed").join(", ")} in salary` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
+        const granted = today(m, "grant").map(([, mk]) => `${fmt.money(mk.amount)} to ${mk.to}, “${mk.reason}”`);
+        const grants = granted.length ? `Granted today: ${granted.join("; ")}. ` : "";
         return [
-          h("p", { class: "note" }, `${books}The report was read ${fmt.plural(reports, "time")} today.`),
+          h("p", { class: "note" }, m.cast.mention(`${books}${grants}The report was read ${fmt.plural(reports, "time")} today.`)),
           said.length ? h("ul", { class: "outcomes" }, said.slice(0, 6).map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${dateOf(m.timeline.start_date, mk.t)} ${hhmm(secondOfDay(mk.t))}, ${name}: `), `“${mk.text}”`))) : h("p", { class: "muted small-text" }, "Nothing is posted on the board."),
         ];
       },

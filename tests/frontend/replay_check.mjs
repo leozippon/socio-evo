@@ -1,6 +1,8 @@
 // Checks the viewer's replay module against a published run: what it looks up in the timeline
 // at the end of every lived day (the money held) and over each day (the markers counted, the
-// residents' and the town's) must equal what the bundle's progress document says, the task
+// residents' and the town's) must equal what the bundle's progress document says, the money each
+// marker moved must add up to every purse and the money in the town must change only by what the
+// clients paid and the supplier was paid, on the bundle's own data, the task
 // each holds must follow its claims, assignments and their ends, the lanes must be contiguous and
 // distinct, a moment looked up at any time must be consistent with itself, also between whole
 // seconds as the town plays, and where the town shows its residents (town/plan.js) must be a
@@ -17,14 +19,16 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { conversationAt, heldAt, markersBetween, moment, openAt, purseAt, segmentAt } = await viewer("replay.js");
+const { conversationAt, heldAt, markersBetween, moment, moneySince, openAt, purseAt, segmentAt } = await viewer("replay.js");
 const { DAY, daylight, livedDay, secondOfDay } = await viewer("clock.js");
 const { standing, townPlan, walkways } = await viewer("town/plan.js");
 
 const read = (path) => JSON.parse(readFileSync(join(site, runPath, path.split("?")[0]), "utf8"));
 const run = read("run.json");
+const world = read(run.world);
 const timeline = read(run.timeline);
 const progress = read(run.progress);
+const measures = read(run.measures);
 
 const failures = [];
 let checks = 0;
@@ -60,6 +64,28 @@ for (const [i, row] of progress.daily.entries()) {
       if (m.kind === "submission" && "resolved" in m) counts[m.resolved ? "accepted" : "rejected"] += 1;
     }
   check(`markers of day ${row.day}`, counts, Object.fromEntries(Object.keys(counts).map((key) => [key, row[key]])));
+}
+
+// The money, on the bundle's own data. From a resident's last midnight statement on, what its
+// purse held before the statement and the money each marker moved, the statement's salary and
+// rent among it, add up to the purse at every change and at the end of every day, as the person
+// view tells it, and no purse goes below zero. The purses at each checkpoint are the residents'
+// money of the town's days (`measures.json`, from the checkpoint), and the purses and the
+// treasury together change only by what the clients paid less what the supplier was paid.
+for (const lane of timeline.residents) {
+  check(`${lane.name}'s purse never goes below zero`, lane.purse.every(([, money]) => money >= 0), true);
+  const times = new Set([...lane.purse.map(([t]) => t), ...timeline.days.map((day) => day.end ?? timeline.now)]);
+  for (const t of times) {
+    const { start, parts } = moneySince(timeline, lane.name, t);
+    check(`${lane.name}'s money since the last midnight adds up to the purse at ${t}`, start + Object.values(parts).reduce((a, b) => a + b, 0), purseAt(lane, t));
+  }
+}
+let inTown = world.residents.reduce((a, resident) => a + resident.purse, 0) + world.treasury.start;
+for (const row of measures.town) {
+  const end = timeline.days.find((day) => day.day === row.day).end;
+  check(`the purses at the checkpoint of day ${row.day}`, timeline.residents.reduce((a, lane) => a + purseAt(lane, end), 0), row.money);
+  inTown += row.clients - row.supplier;
+  check(`the money in the town at the checkpoint of day ${row.day}`, row.money + row.treasury, inTown);
 }
 
 // Lanes are contiguous from the start to now, each segment distinct from the next.
@@ -123,7 +149,6 @@ for (const lane of timeline.residents) {
 // one, a copy fetched again, or the one published earlier while the run went on, which held the
 // same past with its open spans ending then. A resident on the way is left out of the last: how
 // far along its road it is depends on when an open way ends, which is not known until it does.
-const world = read(run.world);
 const plan = townPlan(world);
 const walk = walkways(plan);
 const names = world.residents.map((resident) => resident.name);
