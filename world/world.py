@@ -428,7 +428,8 @@ class World:
         takes to its bed here), its illness passes or comes (`_illness`), the day's food is
         reckoned, its wages for its time at work are paid with its rent and daily charges taken
         out of them (`Fund.settle`: when the fund runs short, those settled first are paid first),
-        and the statement is told; then the fund's day and the daybook's are closed."""
+        and the statement is told, the team leader's with the Office's day (`_office_told`); then
+        the fund's day and the daybook's are closed."""
         date = tell_date(day, self.config.start_date)
         hours: dict[str, int] = {}
         for r in self.residents.values():
@@ -494,10 +495,11 @@ class World:
             )
             moves = self._moves_told(inventory)
             items = moves + self._wages_told(r, settled, home, charged)
+            office = [self._office_told(r, day)] if r.occupation.id == "team-leader" else []
             statement = " ".join(
                 [f"Your statement for {date}: {'; '.join(items)}.", food, *stock]
                 + ([illness] if illness else [])
-                + [self.body.condition(living), self.purse(r)]
+                + [self.body.condition(living), self.purse(r), *office]
             )
             self.record(
                 "settlement",
@@ -620,6 +622,35 @@ class World:
                 f"{money(left)} left of your wages, which the fund could not pay and owes you"
             )
         return items
+
+    def _office_told(self, r: Resident, day: int) -> str:
+        """The Office's day, as the team leader `r`'s statement tells it at the midnight that
+        ends calendar day `day`, before the clients withdraw what is out of time: the tasks
+        accepted that day and by whom (the daybook's), those the clients withdraw at this
+        midnight and who held them, and the tasks left open on the board, with those that came
+        in that day and who holds each."""
+        board = self.board
+        accepted = [
+            f"task {task} by {you(name, r.name)}" for name, task in self.daybook.today["accepted"]
+        ]
+        withdrawn, left = [], []
+        for number in sorted(board.open):
+            holder = board.holder(number)
+            if board.withdrawn_on(number) <= day:
+                held = f", which {you(holder, r.name)} held" if holder is not None else ""
+                withdrawn.append(f"task {number}{held}")
+                continue
+            came = ", which came in today" if board.open[number] == day else ""
+            held = f"held by {you(holder, r.name)}" if holder is not None else "held by nobody"
+            left.append(f"task {number} ({board.task(number).repo}){came}, {held}")
+        told = [
+            f"{cap(self.config.workplace('office').name)} today. Accepted: "
+            f"{listed(accepted) or 'none'}."
+        ]
+        if withdrawn:
+            told.append(f"Withdrawn by the clients at midnight: {'; '.join(withdrawn)}.")
+        told.append(f"Open on the board: {'; '.join(left) or 'nothing'}.")
+        return " ".join(told)
 
     def _take_to_bed(self, r: Resident, day: int) -> None:
         """`r`'s health has reached its floor at the midnight that ends calendar day `day`: it
@@ -1374,8 +1405,8 @@ class World:
             self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
 
     def break_off(self, r: Resident) -> str:
-        """`r` leaves its conversation and stops work, if it is in them, as going elsewhere or
-        to bed does on its own; what it is told of it, a sentence or nothing."""
+        """`r` leaves its conversation and stops work, if it is in them, as going elsewhere does
+        on its own; what it is told of it, a sentence or nothing."""
         left = []
         if r.conversation is not None:
             self.leave_conversation(r)

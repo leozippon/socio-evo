@@ -26,7 +26,7 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
         "on it there, where the machines are, and hand it in for the client's checks before the "
         "client withdraws it, at the end of the first day after the one it came in. You sit down "
         "to work there with start_work, or by doing your work, and are at work until you stop "
-        "with leave_work, go elsewhere or go to sleep."
+        "with leave_work or go elsewhere."
     )
     assert "the doctor at the clinic treats illness" in sections["body"]
     assert sections["town"].endswith("help tells more of the town, by topic.")

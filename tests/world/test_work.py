@@ -529,6 +529,35 @@ async def test_the_team_leader_gives_a_task_or_moves_it_and_both_are_told(make_t
     ]
 
 
+async def test_the_team_leaders_statement_tells_the_offices_day(make_town):
+    leader = dict(RESIDENTS[1], occupation="team-leader")
+    town = make_town(town_config(residents=(RESIDENTS[0], leader, RESIDENTS[2])))
+    await at_the_workshop(town, "Mei", "Tomas")
+    stocked(town)
+    await town.call("Mei", "claim_task", task=1)
+    await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
+    await town.call("Mei", "submit")
+    await town.call("Tomas", "assign", task=2, to="Aisha")
+    await town.call("Tomas", "claim_task", task=3)
+    town.rest()
+    await town.until("00:00", day=3)
+
+    def statements(name: str) -> list[str]:
+        return [p.text for p in town.heard[name] if p.kind == "settlement"]
+
+    first, second = statements("Tomas")
+    assert first.endswith(
+        "The workshop today. Accepted: task 1 by Mei. Open on the board: task 2 (org/repo2), "
+        "which came in today, held by Aisha; task 3 (org/repo3), which came in today, held by "
+        "you."
+    )
+    assert second.endswith(  # told before the clients withdraw, which only the holders hear
+        "The workshop today. Accepted: none. Withdrawn by the clients at midnight: task 2, "
+        "which Aisha held; task 3, which you held. Open on the board: nothing."
+    )
+    assert not any("The workshop today" in told for told in statements("Mei"))
+
+
 async def test_acceptance_runs_count_afresh_each_day(make_town):
     backend = FakeBackend()
     town = make_town(town_config(acceptance_runs=1), backend)

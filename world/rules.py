@@ -173,7 +173,7 @@ class Rules:
         work = (
             f"You are {occupation.title} at {workplace.name}. {own} You sit down to work there "
             "with start_work, or by doing your work, and are at work until you stop with "
-            "leave_work, go elsewhere or go to sleep."
+            "leave_work or go elsewhere."
         )
 
         assert my_home.rent is not None

@@ -55,8 +55,8 @@ class WorldPort(Protocol):
     """The world as one resident reaches it."""
 
     def rules(self) -> str:
-        """The standing rules of the town, told to this resident; constant for the run and part
-        of the system prompt."""
+        """The standing rules of the town, told to this resident, as they stand: part of the
+        system prompt, they change only when someone moves house."""
         ...
 
     def tool_specs(self) -> list[ToolSpec]:

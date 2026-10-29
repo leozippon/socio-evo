@@ -23,7 +23,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 class Resident(StrictModel):
     """A resident's identity: its name and its background file, relative to the project root
-    (or absolute), written in the second person."""
+    (or absolute), written in the first person ("I am Mei, 34, ...")."""
 
     name: Name
     background: Path

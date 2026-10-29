@@ -33,7 +33,7 @@ from world.board import Claim, failure
 from world.clock import DAY, calendar_day, clock_time, parse_hour, tell_date
 from world.config import TownConfig
 from world.economy import add, take
-from world.events import EXHAUSTED, Work
+from world.events import AT_HOME, EXHAUSTED, Work
 from world.rules import MAX_WAIT_MINUTES, TOPICS, amount, bare
 from world.telling import cap, counted, listed, you
 
@@ -120,9 +120,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              ("until",),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
              journal=_text("the day's entry in your own journal, in your own words")),
-        spec("start_work", "Sit down to work where your work is. From then until you stop, go "
-             "elsewhere or go to sleep, you are at work, and your time at work at your own "
-             "place of work is paid by the hour."),
+        spec("start_work", "Sit down to work where your work is. From then until you stop or "
+             "go elsewhere, you are at work, and your time at work at your own place of work is "
+             "paid by the hour."),
         spec("view_board", f"Read the board at {office}: each open task's number, repository, "
              "the first line of its problem, what the client pays, who holds it and when the "
              "client withdraws it. If you hold a task, its whole problem is shown too."),
@@ -373,7 +373,7 @@ async def _wait(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if r.place != r.home:
-        return ToolResult("You can sleep only at home.")
+        return ToolResult(AT_HOME)
     try:
         hour = parse_hour(args["until"].strip())
     except ValueError:
@@ -387,9 +387,7 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
         with path.open("a", encoding="utf-8") as file:
             file.write(entry)
-    told = world.break_off(r)
-    went = world.go_to_bed(r, hour, journal, day)
-    return ToolResult(f"{told}{went}", ends_turn=True)
+    return ToolResult(world.go_to_bed(r, hour, journal, day), ends_turn=True)
 
 
 def _sit_down(world: World, r: Resident) -> str | ToolResult:

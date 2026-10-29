@@ -71,7 +71,6 @@ WORK_TOOLS = frozenset(
         "how_am_i",
         "inventory",
         "go",
-        "sleep",
         "view_board",
         "read_task",
         "claim_task",
@@ -197,6 +196,8 @@ BEDRIDDEN = (
     "You are in bed, too ill to get up; you can only look around, take stock of how you feel "
     "and of what you have, speak to whoever comes, read how the town works and sleep."
 )
+AT_HOME = "You can sleep only at home."
+"""Why `sleep` is refused away from home, as at work, which is never at home."""
 
 
 def refusal(event: Base | Conversation, tool: str, *, destination: str) -> str:
@@ -212,6 +213,8 @@ def refusal(event: Base | Conversation, tool: str, *, destination: str) -> str:
         return "You are in a conversation; leave it first."
     if tool == "leave_conversation":
         return "You are not in a conversation."
+    if tool == "sleep":
+        return AT_HOME
     if tool in SLEEP_TOOLS:
         return "You can do that only once you have gone to bed."
     if isinstance(event, Work):

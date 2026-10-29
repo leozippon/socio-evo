@@ -62,7 +62,6 @@ ARCHITECTURE_TABLE = {
     "work": {
         "look_around",
         "go",
-        "sleep",
         "view_board",
         "read_task",
         "claim_task",
