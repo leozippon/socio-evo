@@ -4,10 +4,10 @@ restaurant), and the doctor and the mayor that `CARE` adds for those of the clin
 and the hall; two homes and a park; a catalogue of items with ready food, two ingredients, a
 durable of each effect and two dishes; the real town's needs, with no illness unless a test asks
 for it; no tax unless a test sets one, so that the mayor's wages, which the tax account pays, are
-owed to her; no task arriving unless a test schedules it (`opening` makes the whole pool arrive at
-08:00 on the first day, as the towns of the world tests' `make_town` have it); the fake work
-backend of `world.testing`; and a harness that runs the world on a manual clock and stands in for
-the residents' runtimes."""
+owed to her; every hour at work paid unless a test sets `paid_hours`; no task arriving unless a
+test schedules it (`opening` makes the whole pool arrive at 08:00 on the first day, as the towns
+of the world tests' `make_town` have it); the fake work backend of `world.testing`; and a harness
+that runs the world on a manual clock and stands in for the residents' runtimes."""
 
 from __future__ import annotations
 
@@ -174,6 +174,7 @@ def town_config(
                 "acceptance_runs": 2,
                 "shell_timeout_s": 60,
                 "acceptance_timeout_s": 600,
+                "paid_hours": 24,
             }
             | work,
             "items": list(items),

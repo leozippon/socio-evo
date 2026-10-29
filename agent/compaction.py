@@ -1,6 +1,8 @@
 """Compaction: what the resident is asked for when its context is condensed, and what is kept.
 
-The runtime compacts when the context exceeds its threshold or the resident calls `compact`.
+The runtime compacts when the context exceeds its threshold or the resident calls `compact`;
+a call is answered that there is nothing to set aside yet, and no notes are asked for, when the
+exchanges kept whole would hold the whole context, the call's own reply with it (`sets_aside`).
 It asks the model, in the same session (same system prompt, tools and messages, so that the
 cached prefix serves) but with `tool_choice` "none", for notes under fixed headings, then
 records in the session the notes and the ids of every message they replace. The context is
@@ -52,6 +54,15 @@ def exchanges(entries: Sequence[Entry]) -> list[list[Entry]]:
         else:
             cut.append([entry])
     return cut
+
+
+def sets_aside(entries: Sequence[Entry], reply: Sequence[Message], budget: int) -> bool:
+    """Whether a compaction keeping `budget` tokens would set aside any of `entries`, the
+    context, once `reply` (the reply that asks for it and the answers to its calls so far)
+    follows it."""
+    last = max((entry.id for entry in entries), default=0)
+    coming = [Entry(last + n, message) for n, message in enumerate(reply, start=1)]
+    return len(kept([*entries, *coming], budget)) < len(entries) + len(coming)
 
 
 def kept(entries: Sequence[Entry], budget: int) -> list[int]:

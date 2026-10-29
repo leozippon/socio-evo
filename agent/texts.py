@@ -76,6 +76,7 @@ UNREADABLE = "What you meant to do could not be made out, so nothing was done."
 FAILED = "This could not be carried out."
 NOT_CARRIED_OUT = "Not carried out: something came up first."
 CONDENSING = "You stop to write down what you will want to remember."
+NOTHING_TO_SET_ASIDE = "There is nothing to set aside yet."
 CUT_OFF = "You broke off above, having gone on too long; nothing in it was done."
 SHORTENED = "[... {count} characters left out here ...]"
 

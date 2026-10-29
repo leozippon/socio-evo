@@ -38,8 +38,8 @@ BEDSIDE = frozenset({"examine", "treat"})
 class Trade:
     """What the world does for an occupation: `workplace`, the kind of place where it works;
     `work`, the tools it adds to what everyone can do, done at its workplace; `told`, what its
-    work is, as the rules tell it after its workplace (`{store}` and `{withdrawn}` filled in);
-    `service`, what its sum per service is paid for, as the money rules tell it."""
+    work is, as the rules tell it after its workplace (`{office}`, `{store}` and `{withdrawn}`
+    filled in); `service`, what its sum per service is paid for, as the money rules tell it."""
 
     workplace: str
     work: frozenset[str]
@@ -66,7 +66,8 @@ OCCUPATIONS: dict[str, Trade] = {
             "You lead its programmers. Clients' tasks come in on its board through the day: you "
             "can give any of them a task with assign, and, like them, take one at a time "
             "yourself, work on it there, where the machines are, and hand it in for the "
-            "client's checks before the client withdraws it, at the end of {withdrawn}."
+            "client's checks before the client withdraws it, at the end of {withdrawn}. Each "
+            "midnight your statement tells you {office}'s day."
         ),
         service="for each task of the programmers' accepted",
     ),
@@ -76,8 +77,8 @@ OCCUPATIONS: dict[str, Trade] = {
         told=(
             "Its kitchen is open while you are at work there: you cook dishes from what the "
             "kitchen holds and set the menu's prices, and whoever comes buys a dish, or is "
-            "handed one by you with pass and pays nothing. You buy what you cook with at {store} "
-            "with buy for_the_kitchen, and the fund pays."
+            "handed one by you with pass and pays nothing; you have one yourself with eat. You "
+            "buy what you cook with at {store} with buy for_the_kitchen, and the fund pays."
         ),
         service="for each dish served",
     ),

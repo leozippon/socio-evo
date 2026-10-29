@@ -52,7 +52,7 @@ from typing import Any, Literal
 from pydantic import PositiveFloat, PositiveInt
 
 from agent import files, texts
-from agent.compaction import INSTRUCTION, flaw, kept
+from agent.compaction import INSTRUCTION, flaw, kept, sets_aside
 from agent.directory import AgentDirectory
 from agent.port import Percept, ToolResult, ToolSpec, WorldPort
 from agent.session import Session
@@ -185,10 +185,10 @@ class Runtime:
         if reply is None:
             return True
         calls = () if reply.truncated else reply.tool_calls
-        answers, ends, condense = await self._carry_out_all(calls)
+        said = Message(role="assistant", content=reply.text, tool_calls=calls)
+        answers, ends, condense = await self._carry_out_all(said)
         self._session.append(
-            Message(role="assistant", content=reply.text, tool_calls=calls),
-            prompt_tokens=None if reply.usage is None else reply.usage.prompt_tokens,
+            said, prompt_tokens=None if reply.usage is None else reply.usage.prompt_tokens
         )
         for answer in answers:
             self._session.append(answer)
@@ -313,14 +313,16 @@ class Runtime:
         if self._lapses >= self._config.max_consecutive_lapses:
             raise RuntimeError(f"{self._lapses} requests in a row lapsed; the last: {errors}")
 
-    async def _carry_out_all(self, calls: Sequence[ToolCall]) -> tuple[list[Message], bool, bool]:
-        """Carry out `calls` in order; the answer to each, led by the percepts pending when it
-        was carried out, whether one ended the turn, and whether the resident asked to compact.
-        Once an interrupting percept is pending, the remaining calls are answered as not
+    async def _carry_out_all(self, said: Message) -> tuple[list[Message], bool, bool]:
+        """Carry out the calls of the reply `said` in order; the answer to each, led by the
+        percepts pending when it was carried out, whether one ended the turn, and whether the
+        resident asked to compact when there was something to set aside (`sets_aside`, with
+        `said` and the answers so far after the context); asked when there was nothing, it is
+        told so. Once an interrupting percept is pending, the remaining calls are answered as not
         carried out."""
         answers: list[Message] = []
         ends = condense = interrupted = False
-        for call in calls:
+        for call in said.tool_calls:
             unreadable = {} if call.unreadable is None else {"unreadable": call.unreadable}
             self._trace.write(
                 "tool_call", id=call.id, name=call.name, arguments=call.arguments, **unreadable
@@ -333,9 +335,14 @@ class Runtime:
             else:
                 before = self._port.pending()
                 self._traced(before)
-                result, error = await self._carry_out(call)
+                if call.name == COMPACT.name and not unreadable:
+                    context = self._session.context()
+                    asked = sets_aside(context, [said, *answers], self._config.kept_tokens)
+                    result = ToolResult(texts.CONDENSING if asked else texts.NOTHING_TO_SET_ASIDE)
+                    condense = condense or asked
+                else:
+                    result, error = await self._carry_out(call)
                 ends = ends or result.ends_turn
-                condense = condense or (call.name == COMPACT.name and not unreadable)
             self._trace.write(
                 "tool_result",
                 id=call.id,
@@ -355,8 +362,6 @@ class Runtime:
         """The result of `call`, and the error raised in carrying it out, if one was."""
         if call.unreadable is not None:
             return ToolResult(texts.UNREADABLE), {}
-        if call.name == COMPACT.name:
-            return ToolResult(texts.CONDENSING), {}
         if call.name not in files.NAMES and not self._port.knows(call.name):
             return ToolResult(texts.UNKNOWN_TOOL.format(name=call.name)), {}
         try:

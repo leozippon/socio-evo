@@ -102,7 +102,7 @@ def fund_report(world: World) -> str:
     took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
     paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
     parts = [
-        f"The fund holds {money(fund.balance)}.",
+        f"The fund holds {money(fund.balance)}, before tonight's wages and taxes.",
         f"Yesterday it took in {listed(took) or 'nothing'} and paid out "
         f"{listed(paid) or 'nothing'}.",
         f"Its tax account holds {money(fund.taxes)}; yesterday it took in "

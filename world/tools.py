@@ -3,7 +3,8 @@ Office's (`world.office`).
 
 `specs` builds the list once from the configuration (`message` only where something to write
 with is sold), and `own` gives each occupation its declaration of them (the chef's `buy` can buy
-for the kitchen, and its `pass` hand over a dish ready to serve); a resident's runtime declares,
+for the kitchen, its `pass` hand over a dish ready to serve and its `eat` eat one); a resident's
+runtime declares,
 at each request, those of them its event offers at its place that are its own (`World.usable`).
 `World.call` refuses a tool the resident's event does not offer, another occupation's work and
 arguments that do not fit the spec (`check`); the handlers check the remaining conditions, each
@@ -85,8 +86,8 @@ WORKSPACE_SPECS = (
 
 FOR_THE_KITCHEN = {
     "type": "boolean",
-    "description": "true to buy for the kitchen, which the fund pays; left out, you buy for "
-    "yourself",
+    "description": "true to buy what the kitchen cooks with for the kitchen, which the fund "
+    "pays; left out, you buy for yourself",
 }
 """What the chef's `buy` takes beside what everyone's does."""
 MONEY = "money"
@@ -229,14 +230,18 @@ def specs(config: TownConfig) -> list[ToolSpec]:
 
 def own(specs: list[ToolSpec], occupation: str) -> list[ToolSpec]:
     """`specs` as a resident of `occupation` has them: the chef's `buy` can buy for the
-    kitchen, and its `pass` hand over a dish ready to serve."""
+    kitchen, its `pass` hand over a dish ready to serve, to anyone there or itself, and its
+    `eat` eat one."""
     if not KITCHEN.keeps(occupation):
         return specs
 
     def chef(s: ToolSpec) -> ToolSpec:
         if s.name == "buy":
             properties = s.parameters["properties"] | {"for_the_kitchen": FOR_THE_KITCHEN}
-            more = " With for_the_kitchen, what you buy at the counter goes to the kitchen, and "
+            more = (
+                " With for_the_kitchen, what the kitchen cooks with that you buy at the counter "
+                "goes to the kitchen, and "
+            )
             return ToolSpec(
                 s.name,
                 s.description + more + "the fund pays.",
@@ -244,9 +249,12 @@ def own(specs: list[ToolSpec], occupation: str) -> list[ToolSpec]:
             )
         if s.name == "pass":
             more = (
-                " At work in the kitchen, you can also hand anyone here a dish ready to serve, "
-                "which they eat there and then, and nobody pays."
+                " At work in the kitchen, you can also hand anyone here, yourself included, a "
+                "dish ready to serve, which they eat there and then, and nobody pays."
             )
+            return ToolSpec(s.name, s.description + more, s.parameters)
+        if s.name == "eat":
+            more = " At work in the kitchen, you can also eat a dish ready to serve; nobody pays."
             return ToolSpec(s.name, s.description + more, s.parameters)
         return s
 
@@ -460,7 +468,7 @@ def _buy_at_counter(
     seller = STORE.serving(world)
     if seller is None:
         return ToolResult(STORE.closed_told(world.config))
-    if kitchen and thing.effect != "food":
+    if kitchen and not any(thing.id in dish.ingredients for dish in world.config.dishes):
         return ToolResult(f"{cap(thing.name)} is nothing the kitchen cooks with.")
     total = STORE.prices(world)[thing.id] * units
     bought, for_whom = amount(thing, units), " for the kitchen" if kitchen else ""
@@ -499,7 +507,7 @@ def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
     if chef is None:
         return ToolResult(KITCHEN.closed_told(world.config))
     if KITCHEN.keeps(r.occupation.id):
-        return ToolResult("You cook the dishes here; you cannot buy them.")
+        return ToolResult("You cook the dishes here and do not buy them; you eat one with eat.")
     if units != 1:
         return ToolResult("One dish at a time.")
     price = KITCHEN.prices(world)[dish.id]
@@ -890,11 +898,15 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     other = _called(world, name)
     if isinstance(other, ToolResult):
         return other
+    thing = None if args["item"] == MONEY else world.config.item(args["item"])
+    serving = thing is not None and thing.dish and KITCHEN.serving(world) is r  # unpaid
     if other is r:
+        if thing is not None and serving:  # the chef's own, from the kitchen
+            return _own_dish(world, r, thing, units)
         return ToolResult("You cannot pass anything to yourself.")
     if refusal := world.reach(r, name):
         return ToolResult(refusal)
-    if args["item"] == MONEY:
+    if thing is None:
         if refusal := world.cannot_pay(r, units):
             return ToolResult(refusal)
         r.inventory.spend(units, "gave", name)
@@ -910,9 +922,7 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             money=units,
         )
         return ToolResult(f"You passed {name} {given}. {world.purse(r)}")
-    thing = world.config.item(args["item"])
     given = amount(thing, units)
-    serving = thing.dish and KITCHEN.serving(world) is r  # a dish ready to serve, unpaid
 
     def told(w: str | None) -> str:
         if serving:
@@ -929,12 +939,28 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 async def _eat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     thing = world.config.item(args["item"])
+    if thing.dish and KITCHEN.serving(world) is r:
+        return _own_dish(world, r, thing, 1)
     world.reckon(r)  # what it would have eaten by now is eaten first
     if not r.inventory.units(thing.id):
         return ToolResult(f"You have no {bare(thing.name)}.")
     world.eat_now(r, thing.id)
     eaten = world.body.told("satiety", r.living.satiety)
     return ToolResult(f"You ate {amount(thing, 1)}. {eaten} {world.things_told(r)}")
+
+
+def _own_dish(world: World, r: Resident, dish: Item, units: int) -> ToolResult:
+    """The chef `r`, at work in the kitchen, has `units` of `dish` from the portions itself, as
+    it hands one to anyone there: passed to itself unpaid, logged as such, and eaten there and
+    then. Told to nobody else."""
+    had = amount(dish, units)
+
+    def told(w: str | None) -> str:
+        return f"{cap(you(r.name, w))} had {had} from the kitchen, which nobody paid for."
+
+    if refusal := world.hand(r, "pass", dish, units, PORTIONS, r.name, told, audience=[]):
+        return ToolResult(refusal)
+    return ToolResult(f"{told(r.name)} {world.body.told('satiety', r.living.satiety)}")
 
 
 async def _leave_conversation(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:

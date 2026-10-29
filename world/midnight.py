@@ -42,12 +42,12 @@ def _settle(world: World, day: int) -> None:
     the tax account last, once the day's taxes are in it: its body is brought up to the hour
     and its health moves by the day (a resident whose health has reached its floor takes to
     its bed here), its illness passes or comes (`_illness`), the day's food is reckoned, its
-    wages for its time at work are paid with its tax, rent and daily charges taken out of
-    them (`Fund.settle`: the tax is `town.tax` of the day's wages and the sums paid it that
-    day, to the nearest whole, and what the wages leave of it is paid from the purse, or
-    owed; when the fund runs short, those settled first are paid first), and the statement
-    is told, the team leader's with the Office's day (`office.day_told`); then the fund's day
-    and the daybook's are closed."""
+    wages for its time at work, of which the town pays at most `work.paid_hours`, are paid
+    with its tax, rent and daily charges taken out of them (`Fund.settle`: the tax is
+    `town.tax` of the day's wages and the sums paid it that day, to the nearest whole, and
+    what the wages leave of it is paid from the purse, or owed; when the fund runs short,
+    those settled first are paid first), and the statement is told, the team leader's with
+    the Office's day (`office.day_told`); then the fund's day and the daybook's are closed."""
     date, money = tell_date(day, world.config.start_date), world.config.money
     hours: dict[str, int] = {}
     residents = sorted(world.residents.values(), key=lambda r: r.occupation.paid_from == "taxes")
@@ -77,7 +77,8 @@ def _settle(world: World, day: int) -> None:
         if KITCHEN.keeps(r.occupation.id) and unsold:
             stock.append(f"What the kitchen did not sell is gone: {listed(unsold)}.")
         charged = [i for i in world.config.items if i.fee_per_day and inventory.units(i.id)]
-        wages = r.worked * r.occupation.wage_per_hour // 3600
+        paid_time = min(r.worked, world.config.work.paid_hours * 3600)  # the rest unpaid
+        wages = paid_time * r.occupation.wage_per_hour // 3600
         sums = sum(int(paid) for kind, paid, _ in inventory.moves if kind == "service")
         settled = world.fund.settle(
             r.name,
@@ -118,7 +119,7 @@ def _settle(world: World, day: int) -> None:
             f"You ate today: {listed(eaten)}." if nourishment else "You had nothing to eat today."
         )
         moves = _moves_told(world, inventory)
-        items = moves + _wages_told(world, r, settled, home, charged)
+        items = moves + _wages_told(world, r, paid_time, settled, home, charged)
         office_day = [office.day_told(world, r, day)] if r.occupation.id == TEAM_LEADER else []
         statement = " ".join(
             [f"Your statement for {date}: {'; '.join(items)}.", food, *stock]
@@ -211,16 +212,18 @@ def _moves_told(world: World, inventory: Inventory) -> list[str]:
 
 
 def _wages_told(
-    world, r: Resident, settled: Settled, home: Place, charged: list[Item]
+    world, r: Resident, paid_time: int, settled: Settled, home: Place, charged: list[Item]
 ) -> list[str]:
-    """The statement's items on `r`'s wages as `settled` at midnight: its time at work and
-    what it earned, what its payer (the fund, or the tax account) owed it, the tax, the rent
-    for its room at `home`, the daily charges on the items `charged` and the rent it owed,
-    and what came of them."""
+    """The statement's items on `r`'s wages as `settled` at midnight: its time at work, the
+    time paid (`paid_time`, in seconds) when it is less, and what it earned, what its payer (the
+    fund, or the tax account) owed it, the tax, the rent for its room at `home`, the daily
+    charges on the items `charged` and the rent it owed, and what came of them."""
     worked = duration(r.worked)
     money = world.config.money
     payer = "the tax account" if r.occupation.paid_from == "taxes" else "the fund"
-    items = [f"{worked} at work, {money(settled.wages)} in wages" if worked else "no time at work"]
+    capped = f", {duration(paid_time)} of it paid" if paid_time < r.worked else ""
+    wages = f"{worked} at work{capped}, {money(settled.wages)} in wages"
+    items = [wages if worked else "no time at work"]
     if settled.owed_before:
         items.append(f"{money(settled.owed_before)} {payer} owed you")
     tax, from_purse = settled.tax, settled.tax_from_purse

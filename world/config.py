@@ -338,7 +338,8 @@ class Work(StrictModel):
     into a rotation; each calendar day a number of tasks drawn with mean `tasks_a_day` arrive, each
     the next of the rotation, at minutes drawn between `arrive_from` and `arrive_until`. The client
     withdraws a task not accepted by the midnight that ends the `expiry_days`th day after the day
-    it arrived. A task accepted pays the fund `payment`."""
+    it arrived. A task accepted pays the fund `payment`. Of a resident's day at work, at the
+    office or any workplace, the town pays at most `paid_hours`."""
 
     split: str = Field(min_length=1)
     tasks_a_day: float = Field(ge=0, description="the mean number of tasks arriving a day")
@@ -349,6 +350,7 @@ class Work(StrictModel):
     acceptance_runs: int = Field(ge=1, description="acceptance runs per task per resident per day")
     shell_timeout_s: int = Field(ge=1)
     acceptance_timeout_s: int = Field(ge=1)
+    paid_hours: int = Field(ge=1, le=24, description="the most hours of a day's work paid")
 
     @model_validator(mode="after")
     def _window(self) -> Work:

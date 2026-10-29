@@ -152,6 +152,16 @@ def entry(kind: str, actor: str, **payload: object) -> dict:
     return {"kind": kind, "actor": actor, "audience": [], "payload": payload}
 
 
+def test_the_chefs_own_dish_from_the_kitchen_is_no_gift():
+    def served(to: str) -> dict:
+        return entry("move", "Jonas", item="soup", units=1, source="portions", target=to,
+                     money=0, reason="pass", seller=None)  # fmt: skip
+
+    day = Day(1, (served("Jonas"), served("Mei")), None, 1.0)
+    jonas, mei = (world_measures(day, name, {}) for name in ("Jonas", "Mei"))
+    assert (jonas["gifts_given"], jonas["gifts_received"], mei["gifts_received"]) == (1, 0, 1)
+
+
 def test_who_lies_bedridden_is_carried_over_the_days_and_visits_to_it_are_counted():
     days = [
         Day(1, (entry("bedridden", "Aisha", home="mill-street-house"),), None, 1.0),

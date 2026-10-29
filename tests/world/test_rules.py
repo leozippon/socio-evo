@@ -8,7 +8,7 @@ from __future__ import annotations
 from tests.support.towns import CARE, RESIDENTS, TRADES, town_config
 from world.rules import SECTIONS, TOPICS, Rules
 
-TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1)
+TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1, paid_hours=10)
 
 
 def test_the_rules_are_six_short_sections_ones_own_work_first():
@@ -33,7 +33,8 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
     assert sections["town"].endswith("help tells more of the town, by topic.")
     assert sections["money"] == (
         "You have $120 to begin with. The town's fund pays you $7 an hour for your time at work "
-        "at the workshop, and $20 at once for each task of yours accepted. At midnight your "
+        "at the workshop, up to 10 hours a day, and $20 at once for each task of yours accepted. "
+        "At midnight your "
         "wages are paid into your purse, less the rent for your room, $20 a day, and a tenth of "
         "all you earned that day in tax, from which the mayor is paid. You pay for everything in "
         "cash from your purse; with pass you hand money or things to anyone with you, put leaves "
@@ -75,12 +76,16 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
 
 def test_each_occupation_is_told_its_own_work_and_sum():
     leader = dict(RESIDENTS[0], occupation="team-leader")
-    rules = Rules(town_config(residents=(leader, *TRADES, *CARE), tax=0.1))
+    rules = Rules(town_config(residents=(leader, *TRADES, *CARE), tax=0.1, paid_hours=10))
     told = {name: rules.sections(name) for name in ("Mei", "Olga", "Jonas", "Lucia", "Vera")}
     assert told["Mei"]["work"].startswith(
         "You are the team leader at the workshop. You lead its programmers. Clients' tasks come in "
         "on its board through the day: you can give any of them a task with assign,"
     )
+    assert (
+        "at the end of the first day after the one it came in. Each midnight your statement "
+        "tells you the workshop's day. You sit down"
+    ) in told["Mei"]["work"]
     assert (
         "$10 at once for each task of the programmers' accepted and $20 for each task of your "
         "own accepted."
@@ -91,8 +96,9 @@ def test_each_occupation_is_told_its_own_work_and_sum():
     )
     assert "and $2 at once for each sale." in told["Olga"]["money"]
     assert (
-        "whoever comes buys a dish, or is handed one by you with pass and pays nothing. You buy "
-        "what you cook with at the store with buy for_the_kitchen, and the fund pays."
+        "whoever comes buys a dish, or is handed one by you with pass and pays nothing; you have "
+        "one yourself with eat. You buy what you cook with at the store with buy "
+        "for_the_kitchen, and the fund pays."
     ) in told["Jonas"]["work"]
     assert (
         "Its surgery is open while you are at work there: you examine and treat patients"
@@ -108,7 +114,8 @@ def test_each_occupation_is_told_its_own_work_and_sum():
     )  # the mayor's duty runs anywhere; everyone else's ends on leaving the workplace
     assert told["Vera"]["money"] == (
         "You have $100 to begin with. The tax everyone pays, a tenth of all they earn, pays you "
-        "$8 an hour for your time at work, as far as it goes, and what it lacks is owed to you. "
+        "$8 an hour for your time at work, up to 10 hours a day, as far as it goes, and what it "
+        "lacks is owed to you. "
         "At midnight your wages are paid into your purse, less the rent for your room, $30 a day, "
         "and your own tax. You pay for everything in cash from your purse; with pass you hand "
         "money or things to anyone with you, put leaves something where you are for anyone, and "
@@ -138,7 +145,14 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
         assert told in office, told
     assert "the order comes onto the shelves at 08:00 the next morning" in topics["store"]
     assert "It sells from its shelves, which the shopkeeper sees whenever there" in topics["store"]
-    assert "or as the chef hands it over with pass, when nobody pays" in topics["restaurant"]
+    assert (
+        "or as the chef hands it over with pass, when nobody pays; the chef, at work there, has "
+        "one with eat and does not buy them."
+    ) in topics["restaurant"]
+    assert (
+        "a wage for each hour at work at one's own place of work, from sitting down to work "
+        "until one stops, up to 10 hours a day, and a sum at once for each service."
+    ) in topics["money"]
     assert "With put you leave something where you are, for anyone to take" in topics["money"]
     assert "or when you choose with eat" in topics["body"]
     assert "Each sale pays the shopkeeper $2." in topics["store"]

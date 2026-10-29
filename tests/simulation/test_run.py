@@ -62,10 +62,12 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # Mei worked at the Office from about 08:15 to 17:00, waiting there for the tasks to come in,
     # Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde until 20:00,
     # his time buying for the kitchen at the Store not counted; each was paid its wages at
-    # midnight, 15% of them and of its sums in tax (the sums being the service entries' paid)
-    # and its rent taken out of them.
+    # midnight for at most the hours the town pays a day, the rest counted all the same, 15% of
+    # them and of its sums in tax (the sums being the service entries' paid) and its rent taken
+    # out of them.
     wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
-    worked = saved["daybook"]["days"][-1]["hours"]  # the exact seconds the wages were paid for
+    worked = saved["daybook"]["days"][-1]["hours"]  # the exact seconds at work
+    paid_day = smoke().town.work.paid_hours * 3600
     for name, rent, hours in (
         ("Mei", 30, (8, 9)),
         ("Olga", 35, (11.5, 12)),
@@ -74,7 +76,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         paid = wages[name]
         assert hours[0] < paid["hours"] < hours[1], name
         assert paid["hours"] == round(worked[name] / 3600, 2)
-        assert paid["wages"] == worked[name] * 8 // 3600, name
+        assert paid["wages"] == min(worked[name], paid_day) * 8 // 3600, name
         sums = sum(
             e["payload"]["paid"] for e in entries if e["kind"] == "service" and e["actor"] == name
         )
@@ -101,7 +103,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # Only the client's money came in and only the supplier's went out; the tax, with no mayor
     # in this town to pay, stays in the tax account.
     supplier = sum(o["amount"] for o in orders)
-    assert fund["balance"] + fund["taxes"] + money == 1500 + 240 + 230 + 210 + 150 - supplier
+    start = smoke().town.fund.start
+    assert fund["balance"] + fund["taxes"] + money == start + 240 + 230 + 210 + 150 - supplier
     assert fund["taxes"] == sum(paid["tax"] for paid in wages.values()) > 0
     assert fund["yesterday"]["client"] == 150 and fund["yesterday"]["supplier"] == supplier
     assert fund["owed"] == fund["arrears"] == {} and fund["ledger"] == {}
@@ -134,7 +137,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert re.search(  # the saved day names the fund
-        rf"saved day 1 after .*\. The fund holds \${fund['balance']}\. Yesterday it took in",
+        rf"saved day 1 after .*\. The fund holds \${fund['balance']}, before tonight's wages "
+        r"and taxes\. Yesterday it took in",
         run.run_log_path.read_text(),
     )
 

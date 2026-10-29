@@ -96,8 +96,10 @@ class Rules:
             + "; on the way nobody can speak to you. help tells more of the town, by topic."
         )
 
-        store, withdrawn = c.workplace("store").name, self._withdrawn()
-        own = OCCUPATIONS[occupation.id].told.format(store=store, withdrawn=withdrawn)
+        office, store = c.workplace("office").name, c.workplace("store").name
+        own = OCCUPATIONS[occupation.id].told.format(
+            office=office, store=store, withdrawn=self._withdrawn()
+        )
         until = "you stop with leave_work" + (
             "" if occupation.duty == "anywhere" else " or go elsewhere"
         )
@@ -112,7 +114,10 @@ class Rules:
             programmer = c.occupation(PROGRAMMER)
             sums.append(f"{money(programmer.per_service)} for each task of your own accepted")
         at = "" if occupation.duty == "anywhere" else f" at {workplace.name}"
-        wage = f"{money(occupation.wage_per_hour)} an hour for your time at work{at}"
+        wage = (
+            f"{money(occupation.wage_per_hour)} an hour for your time at work{at}, up to "
+            f"{counted(c.work.paid_hours, 'hour')} a day"
+        )
         if occupation.paid_from == "taxes":
             paid = (
                 f"The tax everyone pays, {share(c.tax)} of all they earn, pays you {wage}, as far "
@@ -279,9 +284,9 @@ class Rules:
             "buy for_the_kitchen, the fund paying, and cooks dishes from what the kitchen holds, "
             f"a portion of each from its ingredients: {recipes}. A dish is a day's food, eaten "
             "there as it is bought, at the price on the menu, which the chef sets, or as the chef "
-            "hands it over with pass, when nobody pays; the chef does not buy the kitchen's "
-            "dishes. What is left at midnight is gone. Each dish bought pays the chef "
-            f"{money(chef.per_service)}."
+            "hands it over with pass, when nobody pays; the chef, at work there, has one with eat "
+            "and does not buy them. What is left at midnight is gone. Each dish bought pays the "
+            f"chef {money(chef.per_service)}."
         )
 
         doctor, fees = c.occupation(DOCTOR), c.hospital
@@ -328,8 +333,9 @@ class Rules:
         money_detail = (
             "The town keeps one fund, which takes in what clients pay for the work, the rent, "
             "what is sold and the fees, and pays everyone who works: a wage for each hour at "
-            "work at one's own place of work, from sitting down to work until one stops, and a "
-            f"sum at once for each service.{tax_detail} At midnight your wages for the day are "
+            "work at one's own place of work, from sitting down to work until one stops, up to "
+            f"{counted(work.paid_hours, 'hour')} a day, and a sum at once for each service."
+            f"{tax_detail} At midnight your wages for the day are "
             "paid into your purse with "
             + ("the tax and " if c.tax else "")
             + "the rent for your room"

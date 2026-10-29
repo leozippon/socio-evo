@@ -47,8 +47,8 @@ MEASURES = {
     "tasks_accepted": "hand-ins accepted while it still held the task, which the client paid for",
     "tasks_given_up": "tasks it gave up",
     "tasks_withdrawn": "tasks the client withdrew at midnight while it held them",
-    "hours_at_work": "hours at work at its workplace, as the midnight counted them for its wages",
-    "wages": "its wages for those hours",
+    "hours_at_work": "hours at work at its workplace, as the midnight counted them, paid or not",
+    "wages": "its wages for those hours, of which the town pays at most work.paid_hours a day",
     "tax": "the tax taken from its wages at midnight into the fund's tax account",
     "service_sums": "the sums due to it at once for its services: tasks, sales, dishes, patients",
     "rent": "the rent taken from its wages at midnight",
@@ -184,8 +184,8 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
     said = [e for e in speech if e["actor"] == name]
     heard = [e for e in speech if e["actor"] != name and name in e["payload"]["to"]]
     sent, got = mine("message"), to_me("message", "to")
-    passed = [m for m in moves if m["reason"] == "pass"]
-    given = [m for m in passed if m["actor"] == name]
+    passed = [m for m in moves if m["reason"] == "pass" and m["actor"] != m["target"]]
+    given = [m for m in passed if m["actor"] == name]  # not the chef's own dish
     received = [m for m in passed if m["target"] == name]
     visits, visited = _visits(day, name, lying)
     return {

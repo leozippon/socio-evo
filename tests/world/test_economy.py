@@ -86,10 +86,10 @@ async def test_wages_for_the_hours_at_work_are_paid_at_midnight_with_the_rent_ta
     assert world.fund.yesterday == {"client": 50, "service": 20, "rent": 20, "wage": 56}
     assert world.fund.arrears == {"Tomas": 30, "Aisha": 20} and world.fund.owed == {}
     assert world.fund_report() == (
-        "The fund holds $994. Yesterday it took in $50 from clients and $20 in rent and daily "
-        "charges and paid out $56 in wages and $20 in sums for services. Its tax account holds "
-        "$0; yesterday it took in $0 in taxes and paid out $0 in wages. Owing rent the wages did "
-        "not cover: Tomas $30 and Aisha $20."
+        "The fund holds $994, before tonight's wages and taxes. Yesterday it took in $50 from "
+        "clients and $20 in rent and daily charges and paid out $56 in wages and $20 in sums "
+        "for services. Its tax account holds $0; yesterday it took in $0 in taxes and paid out "
+        "$0 in wages. Owing rent the wages did not cover: Tomas $30 and Aisha $20."
     )
 
     # The next day Aisha works, and the rent she owed is taken from her wages with the day's.
@@ -108,6 +108,31 @@ async def test_wages_for_the_hours_at_work_are_paid_at_midnight_with_the_rent_ta
     )
     assert world.residents["Aisha"].inventory.money == 45 + 16
     assert world.fund.arrears == {"Mei": 20, "Tomas": 60}
+
+
+async def test_the_town_pays_at_most_its_paid_hours_a_day_and_counts_the_rest(make_town):
+    town = make_town(town_config(paid_hours=2))
+    await awake_at(town)
+    world = town.world
+    for name in ("Mei", "Tomas"):
+        await town.call(name, "go", place="workshop")
+    await town.until("08:00")
+    await town.call("Mei", "start_work")
+    await town.until("09:00")
+    await town.call("Tomas", "start_work")
+    await town.until("10:30")
+    await town.call("Tomas", "leave_work")  # within the paid hours
+    await town.until("11:30")
+    await town.call("Mei", "leave_work")
+    for name in world.residents:
+        town.take(name)
+    await town.until("00:00", day=2)
+    mei, tomas = town.take("Mei")[-1], town.take("Tomas")[-1]
+    assert ": 3 hours and 30 minutes at work, 2 hours of it paid, $14 in wages; rent" in mei
+    assert ": 1 hour and 30 minutes at work, $10 in wages; rent" in tomas
+    paid = {e["actor"]: e["payload"] for e in world.log.entries() if e["kind"] == "wage"}
+    assert (paid["Mei"]["hours"], paid["Mei"]["wages"]) == (3.5, 14)  # counted, if not paid
+    assert world.daybook.yesterday["hours"]["Mei"] == 3.5 * 3600
 
 
 async def test_a_fund_that_runs_short_pays_what_it_has_and_owes_the_rest(make_town):
@@ -138,10 +163,10 @@ async def test_a_fund_that_runs_short_pays_what_it_has_and_owes_the_rest(make_to
     )
     assert world.fund.balance == 0
     assert world.fund_report() == (
-        "The fund holds $0. Yesterday it took in $40 in rent and daily charges and paid out $60 "
-        "in wages. Its tax account holds $0; yesterday it took in $0 in taxes and paid out $0 in "
-        "wages. It owes in wages it could not pay: Mei $16 and Aisha $36. Owing rent the wages "
-        "did not cover: Tomas $30."
+        "The fund holds $0, before tonight's wages and taxes. Yesterday it took in $40 in rent "
+        "and daily charges and paid out $60 in wages. Its tax account holds $0; yesterday it "
+        "took in $0 in taxes and paid out $0 in wages. It owes in wages it could not pay: Mei "
+        "$16 and Aisha $36. Owing rent the wages did not cover: Tomas $30."
     )
     # What the fund owes is paid with the next wages, as far as it has the money then.
     town.rest()
@@ -201,10 +226,11 @@ async def test_everyone_pays_a_tenth_into_the_tax_account_which_alone_pays_the_m
     assert fund.balance == 1000 + 50 - 20 - 8 - 28 - 6 - 20 + 14
     assert total(world) == before + 50  # the account's money is the town's like any other
     assert world.fund_report() == (
-        "The fund holds $982. Yesterday it took in $50 from clients and $64 in rent and daily "
-        "charges and paid out $112 in wages and $20 in sums for services. Its tax account holds "
-        "$0; yesterday it took in $20 in taxes and paid out $20 in wages. It owes in wages it "
-        "could not pay: Vera $44. Owing rent the wages did not cover: Aisha $20 and Vera $16."
+        "The fund holds $982, before tonight's wages and taxes. Yesterday it took in $50 from "
+        "clients and $64 in rent and daily charges and paid out $112 in wages and $20 in sums "
+        "for services. Its tax account holds $0; yesterday it took in $20 in taxes and paid out "
+        "$20 in wages. It owes in wages it could not pay: Vera $44. Owing rent the wages did not "
+        "cover: Aisha $20 and Vera $16."
     )
 
 

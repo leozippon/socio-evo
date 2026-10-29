@@ -116,7 +116,7 @@ def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
 # The work the fund's day is set against: the tasks arriving a day, half of them accepted.
 ACCEPTED = 0.5
 HOURS = 8
-"""A day's work at one's workplace."""
+"""A day's work at one's workplace, which the town pays whole."""
 
 
 def test_wages_tax_rent_food_and_the_fund_are_set_against_one_another():
@@ -133,22 +133,24 @@ def test_wages_tax_rent_food_and_the_fund_are_set_against_one_another():
     )
     a_day = round(A_DAYS_FOOD / food.nourishment) * food.price
     # A day's work at the lowest wage, after its tax, keeps the cheapest life with something
-    # over and less than half as much again; the dearest life, the dearest home and the dearest
-    # dish every day, takes twelve to fourteen hours at the highest wage after its tax.
+    # over and less than half as much again, and the town pays it whole; the dearest life, the
+    # dearest home and the dearest dish every day, takes more than the town pays a day at the
+    # highest wage after its tax, so it takes a sum per service besides.
     wages = [o.wage_per_hour * (1 - tax) for o in occupations.values()]
     cheapest = min(rents.values()) + a_day
     assert cheapest < HOURS * min(wages) < 1.5 * cheapest
     dearest = max(rents.values()) + max(dish.price for dish in config.dishes)
-    assert 12 <= dearest / max(wages) <= 14
+    assert HOURS < config.work.paid_hours < dearest / max(wages)
     for resident in config.residents:  # a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
-    # The fund's day, its tax account being part of it: everyone at work for a day, half the tasks
-    # arriving accepted from the programmers, and the town eating through the Store and the
-    # kitchen, a dish each, the menu's in turn, its ingredients bought for the kitchen in a sale
-    # a dish and the supplier paid their wholesale. Clients, rent and dishes come in; wages, the
-    # mayor's from the tax account among them, the sums for tasks, dishes and sales and the
-    # supplier go out, and the tax moves within it: within a tenth of what passes through it.
+    # The fund's day, its tax account being part of it: everyone paid the most hours the town
+    # pays a day, half the tasks arriving accepted from the programmers, and the town eating
+    # through the Store and the kitchen, a dish each, the menu's in turn, its ingredients bought
+    # for the kitchen in a sale a dish and the supplier paid their wholesale. Clients, rent and
+    # dishes come in; wages, the mayor's from the tax account among them, the sums for tasks,
+    # dishes and sales and the supplier go out, less the tax on the wages and sums, which stays
+    # in it: within a tenth of what passes through it.
     office = sum(r.occupation in ("programmer", "team-leader") for r in config.residents)
     assert config.work.tasks_a_day < office  # fewer than those who take them on
     accepted = config.work.tasks_a_day * ACCEPTED
@@ -158,22 +160,23 @@ def test_wages_tax_rent_food_and_the_fund_are_set_against_one_another():
         for d in config.dishes
     )
     rent = sum(rents[resident.home] for resident in config.residents)
-    wages = HOURS * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
+    day = config.work.paid_hours
+    wages = day * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
     tasks = accepted * (
         occupations["programmer"].per_service + occupations["team-leader"].per_service
     )
     meals = n * (occupations["chef"].per_service + occupations["shopkeeper"].per_service)
     taken = accepted * config.work.payment + rent + n * dish
-    paid = wages + tasks + meals + n * wholesale
+    paid = wages + tasks + meals + n * wholesale - tax * (wages + tasks + meals)
     assert abs(taken - paid) <= (taken + paid) / 10
     # With no task accepted, the fund pays out more than it takes, and its start lasts ten days.
-    short = wages + meals + n * wholesale - rent - n * dish
+    short = wages + meals + n * wholesale - tax * (wages + meals) - rent - n * dish
     assert short > 0 and config.fund.start >= 10 * short
-    # The tax of a day of eight hours by the seven others, on their wages and their sums of the
-    # fund's day, covers the mayor's eight hours, without his own.
+    # The tax of the paid day by the seven others, on their wages and their sums of the fund's
+    # day, covers the mayor's paid day, without his own.
     paid_from_taxes = [o.id for o in occupations.values() if o.paid_from == "taxes"]
     assert paid_from_taxes == ["mayor"]
-    mayor = HOURS * occupations["mayor"].wage_per_hour
+    mayor = day * occupations["mayor"].wage_per_hour
     assert tax * (wages - mayor + tasks + meals) >= mayor
 
 

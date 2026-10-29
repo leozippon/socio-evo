@@ -495,9 +495,26 @@ async def test_the_resident_can_compact_on_its_own(directory):
     assert after[2].tool_calls == (compact,) and after[3].content == texts.CONDENSING
 
 
+async def test_compact_with_nothing_to_set_aside_is_answered_without_a_request(directory):
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
+    compact = tool_call("compact")
+    model = ScriptedModel(reply("", tool_call("look_around")), reply("", compact), reply("On."))
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):  # 20,000 tokens kept: all of it
+        await settle(port)
+
+    assert len(model.requests) == 3 and all(r.tool_choice is None for r in model.requests)
+    assert not [r for r in trace(directory) if r["kind"] == "compaction"]
+    messages = context(directory)
+    assert messages[0].content.startswith("Your alarm rings.")  # nothing replaced
+    assert messages[3].tool_calls == (compact,)
+    assert messages[4].content == texts.NOTHING_TO_SET_ASIDE
+
+
 async def test_notes_that_are_empty_hold_a_call_or_lack_a_heading_are_never_kept(directory):
     as_text = "<tool_call>\n<function=write_file>\n<parameter=path>\nmemory/notes.md\n"
     model = ScriptedModel(
+        reply("", tool_call("look_around")),  # an exchange the notes would replace
         reply("", tool_call("compact")),
         reply("\n\n"),  # what vLLM leaves of a call it strips
         reply(as_text + NOTES),
@@ -507,7 +524,7 @@ async def test_notes_that_are_empty_hold_a_call_or_lack_a_heading_are_never_kept
         reply(NOTES),
         reply("Fresh."),
     )
-    port = FakePort()
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
     port.deliver("Your alarm rings.")
     async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
         await settle(port)
