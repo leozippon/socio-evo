@@ -10,6 +10,7 @@ From the repository root:
 set -a; . ./.env; set +a
 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &                 # all eight GPUs
 GPUS=0,1,2,3 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # four GPUs
+GPUS=0,1,2,3 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # the uncensored checkpoint, which the town of occupations runs on
 ```
 
 The script runs vLLM in the foreground, so it can also sit under systemd or a terminal; extra arguments are passed to `vllm serve` and override its defaults. It takes the port from `VLLM_BASE_URL`, and vLLM reads the key from `VLLM_API_KEY` in its environment, so the key never appears on a command line. The server answers after two to five minutes; the first start after a vLLM or kernel change takes longer because it compiles. Each start writes its log to `runs/vllm/serve-<time>.log`.

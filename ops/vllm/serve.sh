@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# Serve Qwen3.8-27B-FP8 with vLLM as an OpenAI-compatible API, in the foreground.
+# Serve the residents' model with vLLM as an OpenAI-compatible API, in the foreground.
 # Usage (from the repository root):
-#   set -a; . ./.env; set +a; [GPUS=0,1,2,3] ops/vllm/serve.sh [extra vllm serve flags]
+#   set -a; . ./.env; set +a; [GPUS=0,1,2,3] [MODEL_PATH=...] [SERVED_NAME=...] ops/vllm/serve.sh [extra vllm serve flags]
+# MODEL_PATH and SERVED_NAME default to the official FP8 checkpoint of Qwen3.8-27B and its name
+# in the configuration; the uncensored checkpoint is served by naming its path and `qwen3.8-27b-uncensored-fp8`.
 # GPUS defaults to all eight GPUs. Each consecutive pair runs one tensor-parallel replica (TP2) and
 # vLLM balances requests across the replicas, so 8 GPUs serve as TP2 x DP4 and 4 GPUs as TP2 x DP2.
 # The port comes from VLLM_BASE_URL; vLLM itself requires VLLM_API_KEY on every request.
@@ -40,8 +42,8 @@ unset VLLM_BASE_URL  # not a vLLM variable; vLLM reads VLLM_API_KEY directly
 
 echo "vLLM log: $log" >&2
 exec > >(tee -a "$log") 2>&1
-exec "$vllm_env/bin/vllm" serve /Data2/lzp/models/Qwen3.8-27B-FP8 \
-  --served-model-name qwen3.8-27b-fp8 \
+exec "$vllm_env/bin/vllm" serve "${MODEL_PATH:-/Data2/lzp/models/Qwen3.8-27B-FP8}" \
+  --served-model-name "${SERVED_NAME:-qwen3.8-27b-fp8}" \
   --host "$host" --port "$port" \
   --tensor-parallel-size 2 --data-parallel-size $(( ${#gpu_list[@]} / 2 )) --numa-bind \
   --max-model-len 262144 \
