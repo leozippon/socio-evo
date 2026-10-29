@@ -73,8 +73,7 @@ from agent.directory import TRACE
 from agent.runtime import COMPACT
 from infrastructure.storage import RunDirectory, read_jsonl
 from world.clock import clock_time, tell_date
-from world.economy import money
-from world.telling import first_line
+from world.telling import first_line, money
 
 INDENT = " " * 6
 """Where the further lines of a happening start: under its text, past the time."""
@@ -126,7 +125,8 @@ class Town(BaseModel):
     """What the records read of a run's frozen town: the symbol of its money, the date of its
     first day and its residents. The rest is left unread, so that the days and journals of a run
     of an earlier design of the town, which today's configuration no longer describes, can still
-    be read and judged."""
+    be read and judged. It is the one lenient reader of a frozen configuration: everywhere else
+    one that today's models do not describe is refused."""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 

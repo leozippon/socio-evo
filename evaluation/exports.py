@@ -7,9 +7,7 @@ each resident's tag of that day, each resident's occupation, and the run's froze
 `runtime` sections, the residents' model and the runtime's settings as the run used them, all
 from the run's frozen configuration. An evaluation of an exported resident answers through that
 model with those settings, never through a configuration of its own, so that it measures the
-resident the run made, and records the resident's commit with its results. A manifest is read as
-a record (`infrastructure.config.RECORD`), so that an export, or a run, made by an earlier
-version of the code can still be evaluated, as far as it records what the evaluation needs.
+resident the run made, and records the resident's commit with its results.
 
     python -m evaluation.exports EXPORT_DIR
 
@@ -24,7 +22,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from agent.runtime import RuntimeConfig
-from infrastructure.config import RECORD, StrictModel
+from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig
 
 MANIFEST = "export.json"
@@ -55,8 +53,8 @@ class Export(StrictModel):
 
     @classmethod
     def read(cls, path: Path) -> Export:
-        """The manifest written at `path`, read as a record."""
-        return cls.model_validate_json(path.read_text(encoding="utf-8"), context=RECORD)
+        """The manifest written at `path`."""
+        return cls.model_validate_json(path.read_text(encoding="utf-8"))
 
     def commit(self, resident: Path) -> str:
         """The commit the agent directory `resident` of this export was exported from."""

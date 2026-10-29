@@ -193,9 +193,8 @@ class Bedridden:
 
 @dataclass(eq=False)
 class Conversation:
-    """`silence` is the world's timer that ends it."""
+    """The conversation held at `place`; `silence` is the world's timer that ends it."""
 
-    room: str
     place: str
     members: set[str]
     last_speech: int

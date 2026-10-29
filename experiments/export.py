@@ -23,7 +23,6 @@ from pathlib import Path
 import yaml
 
 from evaluation.exports import MANIFEST, Export
-from infrastructure.config import RECORD
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag
 
@@ -47,8 +46,7 @@ def manifest(run_dir: Path, day: int) -> Export:
             "occupations": {r["name"]: r["occupation"] for r in frozen["town"]["residents"]},
             "llm": frozen["llm"],
             "runtime": frozen["runtime"],
-        },
-        context=RECORD,
+        }
     )
 
 

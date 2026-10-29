@@ -41,7 +41,6 @@ def test_the_speed_falls_linearly_from_one_busy_resident_to_all():
     speeds = []
     for k in range(len(EIGHT) + 1):
         make_busy(clock, EIGHT[:k])
-        assert clock.busy_count == k
         speeds.append(clock.speed)
     assert speeds == [100, 36, 32, 28, 24, 20, 16, 12, 8]
     with clock.hold():
@@ -82,9 +81,9 @@ def test_telling_the_clock_twice_changes_nothing():
     clock.set_busy("A", True)
     clock.set_busy("A", True)
     clock.set_busy("B", False)
-    assert clock.busy_count == 1 and clock.speed == 36
+    assert clock.speed == 36
     clock.set_busy("A", False)
-    assert clock.busy_count == 0 and clock.speed == 100
+    assert clock.speed == 100
 
 
 async def test_a_sleeper_reconsiders_its_wait_when_the_speed_changes():

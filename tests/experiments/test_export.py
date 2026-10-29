@@ -4,13 +4,11 @@ run's present tags kept, and one of other commits replaced."""
 
 from __future__ import annotations
 
-import json
 import shutil
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-import yaml
 
 from agent.runtime import RuntimeConfig
 from evaluation.exports import MANIFEST, Export
@@ -129,23 +127,3 @@ def test_the_command_keeps_an_export_of_the_present_tags_and_replaces_another(tm
         main([str(run.root), "--day", "0", "--out", str(tmp_path / "plain")])
     assert "holds no export.json: it is no export to replace" in capsys.readouterr().err
     assert (tmp_path / "plain" / "Mei").is_dir()
-
-
-def test_a_run_and_its_export_made_before_kept_tokens_are_read_and_the_export_kept(
-    tmp_path, capsys
-):
-    run, out = make_run(tmp_path / "runs"), tmp_path / "exports" / "day-00"
-    frozen = yaml.safe_load(run.config_path.read_text())  # as frozen before kept_tokens
-    del frozen["llm"]["context_window"], frozen["runtime"]["kept_tokens"]
-    frozen["runtime"]["kept_exchanges"] = 6
-    run.config_path.write_text(yaml.safe_dump(frozen))
-    command = [str(run.root), "--day", "0", "--out", str(out)]
-    main(command)
-    written = json.loads((out / MANIFEST).read_text())  # and its export, as written then
-    written["llm"], written["runtime"] = frozen["llm"], frozen["runtime"]
-    (out / MANIFEST).write_text(json.dumps(written))
-    capsys.readouterr()
-    main(command)
-    assert capsys.readouterr().out == f"{out} holds this export already\n"
-    assert json.loads((out / MANIFEST).read_text()) == written
-    assert Export.of(out / "Mei").runtime == RUNTIME  # the count set aside: kept_tokens by default

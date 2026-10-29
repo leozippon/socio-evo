@@ -12,7 +12,6 @@ import signal
 from datetime import UTC, datetime
 
 import pytest
-import yaml
 
 import simulation.run as simulation
 from agent.runtime import Runtime, RuntimeConfig
@@ -43,16 +42,6 @@ def smoke_run(tmp_path_factory):
 
 def kinds(root) -> list[str]:
     return [entry["kind"] for entry in read_jsonl(root / "world.jsonl")]
-
-
-def frozen_as_before(root) -> None:
-    """Rewrite the configuration frozen in the run at `root` as a run frozen before the settings
-    added since (`simulation.ADDED`) existed would have frozen it."""
-    path = RunDirectory(root).config_path
-    frozen = yaml.safe_load(path.read_text(encoding="utf-8"))
-    del frozen["llm"]["context_window"], frozen["runtime"]["kept_tokens"]
-    frozen["runtime"]["kept_exchanges"] = 6  # the count kept_tokens replaced
-    path.write_text(yaml.safe_dump(frozen, sort_keys=False), encoding="utf-8")
 
 
 def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
@@ -179,11 +168,8 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
         lost[name] = repository.commit("day-02", date=datetime.now(UTC), allow_empty=True)
         repository.tag("day-02")
 
-    frozen_as_before(root)  # a run frozen before the settings added since resumes with them
     root, status = await simulation.run(config, tmp_path, resume=True, dry_run=True)
     assert status == "completed"
-    adopted = "frozen before llm.context_window, runtime.kept_tokens existed"
-    assert adopted in (root / "run.log").read_text()
     entries = list(read_jsonl(root / "world.jsonl"))
     assert [entry["seq"] for entry in entries] == list(range(1, len(entries) + 1))
     resume = entries[first]

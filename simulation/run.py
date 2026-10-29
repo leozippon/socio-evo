@@ -3,10 +3,10 @@ resident around one model client, and lives the days until a day's checkpoint.
 
 Everything that can be checked is checked before anything is written: the backgrounds, the
 model client and its key, that the model answers a small request, the task split and its
-images, and on resumption the configuration frozen in the run, which must be the one given but
-for the settings added since it was frozen (`ADDED`). A new run then freezes the
-configuration, creates each resident's directory from its background, with its memory and
-skills empty, makes it a git repository, and saves the world's starting state as day 0.
+images, and on resumption the configuration frozen in the run, which must be the one given. A
+new run then freezes the configuration, creates each resident's directory from its background,
+with its memory and skills empty, makes it a git repository, and saves the world's starting
+state as day 0.
 
 Every runtime shares the one client. A resident's requests name, as their replica, its place in
 the configuration's list of residents, which is frozen with the run: on a server of several
@@ -72,10 +72,6 @@ DRY_RUN_TASKS = 250
 """A dry run's pool of tasks: more than a 28-day run of the town draws."""
 DRY_RUN_SPEEDS = {"speed_idle": 10_000.0, "speed_busy_one": 600.0, "speed_busy_all": 600.0}
 """A dry run's clock: a day in seconds."""
-ADDED = {"llm": ("context_window",), "runtime": ("kept_tokens",)}
-"""The settings, by section, added after runs were frozen without them: a frozen configuration
-that does not name one was frozen before it existed, and its run, resumed, takes it from the
-configuration given, with a warning."""
 
 
 async def run(
@@ -104,12 +100,9 @@ async def run(
     backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
     backend.require_images(backend.load_split(config.town.work.split))
     revision = code_revision()
-    adopted: list[str] = []
     if resume:
         directory = RunDirectory.open(runs_root / config.name)
-        frozen = load_config(directory.config_path, ExperimentConfig, record=True)
-        frozen, adopted = _adopting(frozen, config)
-        if frozen != config:
+        if load_config(directory.config_path, ExperimentConfig) != config:
             raise ValueError(f"the configuration differs from the one frozen in {directory.root}")
         day = directory.latest_checkpoint()
         if day is None:
@@ -137,11 +130,6 @@ async def run(
                 log.info("resuming %s from day %d at %s", directory.root, day, revision)
                 if created != revision:
                     log.warning("the run was created at %s", created)
-                if adopted:
-                    log.warning(
-                        "the run was frozen before %s existed and goes on with them as given",
-                        ", ".join(adopted),
-                    )
                 world = _resume(directory, config, backend, day)
             else:
                 log.info("created %s at %s", directory.root, revision)
@@ -183,22 +171,6 @@ def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
             "town": town.model_copy(update={"clock": town.clock.model_copy(update=DRY_RUN_SPEEDS)}),
         }
     )
-
-
-def _adopting(
-    frozen: ExperimentConfig, config: ExperimentConfig
-) -> tuple[ExperimentConfig, list[str]]:
-    """`frozen` with each setting of `ADDED` that it does not name taken from `config`, and the
-    names of those taken."""
-    update: dict[str, Any] = {}
-    adopted: list[str] = []
-    for section, names in ADDED.items():
-        held, given = getattr(frozen, section), getattr(config, section)
-        missing = [name for name in names if name not in held.model_fields_set]
-        if missing:
-            update[section] = held.model_copy(update={n: getattr(given, n) for n in missing})
-            adopted += [f"{section}.{name}" for name in missing]
-    return frozen.model_copy(update=update), adopted
 
 
 def code_revision() -> str:

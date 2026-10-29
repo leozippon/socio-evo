@@ -7,8 +7,10 @@ test_shops."""
 
 from __future__ import annotations
 
+import pytest
+
 from tests.world.conftest import CARE, RESIDENTS, awake_at, town_config
-from world.economy import Fund
+from world.economy import Fund, Inventory
 
 OWED = "you owe it, and it is taken from your next wages"
 
@@ -324,6 +326,16 @@ def test_the_tax_account_takes_the_tax_from_the_wages_and_pays_only_what_it_hold
         except ValueError:
             continue
         raise AssertionError("a movement of the wrong kind was taken")
+
+
+def test_a_purse_records_what_goes_in_and_out_and_is_never_spent_below_nothing():
+    purse = Inventory(money=10)
+    purse.receive(5, "received", "Mei")
+    purse.spend(15, "bought", "a coat")
+    assert (purse.money, purse.moves) == (0, [["received", 5, "Mei"], ["bought", 15, "a coat"]])
+    with pytest.raises(ValueError, match="only 0 in the purse"):
+        purse.spend(1, "gave", "Mei")
+    assert (purse.money, len(purse.moves)) == (0, 2)
 
 
 async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_town):

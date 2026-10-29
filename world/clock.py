@@ -104,11 +104,6 @@ class Clock:
         """Whether `name` is waiting on the model or on a command."""
         return name in self._busy
 
-    @property
-    def busy_count(self) -> int:
-        """How many residents are busy, now."""
-        return len(self._busy)
-
     def now(self) -> int:
         return int(self._exact())
 

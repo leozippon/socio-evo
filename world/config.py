@@ -44,13 +44,15 @@ from __future__ import annotations
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal, get_args
+from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field, model_validator
 
 from agent.wording import offences
 from infrastructure.config import StrictModel
-from world.clock import DAY, parse_hour
+from world import telling
+from world.clock import parse_hour
+from world.economy import LARDER, PORTIONS, SHELVES, SUPPLIER
 
 
 def _hour(text: str) -> str:
@@ -66,7 +68,6 @@ Name = Annotated[str, Field(pattern=r"^[A-Z][A-Za-z'-]*$")]
 Effect = Literal["food", "travel", "messaging", "appearance"]
 """What an item does in the world: the one enumeration of effects, each implemented by the
 world."""
-EFFECTS: tuple[str, ...] = get_args(Effect)
 PlaceKind = Literal["home", "office", "store", "restaurant", "hospital", "hall", "social"]
 WORKPLACES = ("office", "store", "restaurant", "hospital", "hall")
 """The kinds of place where an occupation works, exactly one place of each."""
@@ -82,9 +83,6 @@ WORKPLACE_OF: dict[str, str] = {
 """The kind of place where each occupation works."""
 A_DAYS_FOOD = 100
 """A day's need of food, which nourishment is a share of."""
-HOLDERS = ("shelves", "larder", "portions", "supplier")
-"""The holders of items that are neither a resident nor what is left at a place (see
-`world.economy`), by the names no place may take."""
 
 
 class Place(StrictModel):
@@ -171,6 +169,12 @@ class Item(StrictModel):
     def dish(self) -> bool:
         """Whether the kitchen cooks it, a portion at a time, and serves it to be eaten there."""
         return bool(self.ingredients)
+
+    @property
+    def unit(self) -> str:
+        """What a unit of it is called where it is counted: a dish's `portion`, ready food's
+        `helping`, and otherwise `unit`."""
+        return "portion" if self.dish else "helping" if self.ready else "unit"
 
 
 class StoreSettings(StrictModel):
@@ -401,12 +405,6 @@ class DayHours(StrictModel):
     delivery: Hour
     sleep_at_most: Hour
 
-    def of_day(self, hour: str) -> int:
-        """`hour` in seconds from the midnight that begins the lived day; an hour earlier than
-        the checkpoint falls after the next midnight."""
-        t = parse_hour(hour)
-        return t + DAY if t < parse_hour(self.checkpoint) else t
-
 
 class TownConfig(StrictModel):
     currency: str = Field(min_length=1, description="the symbol money is written with")
@@ -444,7 +442,7 @@ class TownConfig(StrictModel):
         _unique("route", [frozenset(route.between) for route in self.routes])
         _unique("item id", [item.id for item in self.items])
         for place in self.places:
-            if place.id in HOLDERS:
+            if place.id in (SHELVES, LARDER, PORTIONS, SUPPLIER):
                 raise ValueError(f"{place.id} names a holder of items and cannot name a place")
         for dish in self.dishes:
             for item_id in dish.ingredients:
@@ -467,8 +465,7 @@ class TownConfig(StrictModel):
             found = [place.id for place in self.places if place.kind == kind]
             if len(found) > 1:
                 raise ValueError(f"a town has at most one {kind}, not {len(found)}")
-        for kind in WORKPLACES:
-            if not any(place.kind == kind for place in self.places):
+            if not found:
                 raise ValueError(f"the town has no {kind}")
         _unique("occupation id", [occupation.id for occupation in self.occupations])
         for occupation in self.occupations:
@@ -513,6 +510,10 @@ class TownConfig(StrictModel):
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
         return self
+
+    def money(self, amount: int) -> str:
+        """`amount` of the town's money, as the town writes it (`telling.money`): `$40`."""
+        return telling.money(self.currency, amount)
 
     def workplace(self, kind: str) -> Place:
         """The town's place of the workplace kind `kind`."""

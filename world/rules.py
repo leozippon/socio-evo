@@ -14,12 +14,19 @@ topic (`TOPICS`): the work of each place of work, money, the body, the day and t
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from functools import partial
 
-from world import economy
-from world.clock import parse_hour
-from world.config import A_DAYS_FOOD, DayHours, Item, TownConfig
-from world.telling import cap, counted, duration, listed
+from world.config import A_DAYS_FOOD, TownConfig
+from world.telling import (
+    amount,
+    bare,
+    cap,
+    comfort_word,
+    counted,
+    fraction,
+    listed,
+    longest_sleep,
+    share,
+)
 
 SECTIONS = ("work", "money", "town", "people", "body", "sleep")
 """The sections of the standing rules, in their order: one's own work first."""
@@ -85,56 +92,9 @@ Homes = Mapping[str, Sequence[str]]
 """Who lives where: the names of the residents of each home, by the home's id."""
 
 
-def bare(name: str) -> str:
-    """An item's name without its article: `a phone` is `phone`."""
-    for article in ("a ", "an ", "the "):
-        if name.startswith(article):
-            return name[len(article) :]
-    return name
-
-
-def amount(item: Item, units: int) -> str:
-    """`units` of `item` as a sentence names them: `a phone`, `2 phones`, `3 helpings of bread`,
-    `4 units of rice`, `stew`, `2 portions of stew`."""
-    if item.kind == "durable" or (item.dish and units == 1):
-        return item.name if units == 1 else counted(units, bare(item.name))
-    each = "portion" if item.dish else "helping" if item.ready else "unit"
-    return f"{counted(units, each)} of {bare(item.name)}"
-
-
-def fraction(factor: float) -> str:
-    """`half`, `a quarter of`, `70% of`: the share of the time a journey takes."""
-    if factor == 0.5:
-        return "half"
-    if factor == 0.25:
-        return "a quarter of"
-    return f"{round(factor * 100)}% of"
-
-
-def comfort_word(comfort: float) -> str | None:
-    """How a home's comfort is told beside its rent: `little comfort` below an ordinary home's,
-    `comfortable` above it, nothing for an ordinary home."""
-    if comfort < 1:
-        return "little comfort"
-    if comfort > 1:
-        return "comfortable"
-    return None
-
-
-def share(rate: float) -> str:
-    """`a tenth`, `a fifth`, `12%`: a share of money, as the town tells it."""
-    return {0.5: "half", 0.25: "a quarter", 0.2: "a fifth", 0.1: "a tenth"}.get(rate, f"{rate:.0%}")
-
-
-def longest_sleep(day: DayHours) -> str:
-    """How long one sleep lasts at most, told: `12 hours`."""
-    return duration(parse_hour(day.sleep_at_most))
-
-
 class Rules:
     def __init__(self, config: TownConfig) -> None:
         self.config = config
-        self._money = partial(economy.money, config.currency)
 
     def text(self, name: str, homes: Homes | None = None) -> str:
         """The whole of the rules told to `name`, with `homes` as they stand (at the start if not
@@ -162,7 +122,7 @@ class Rules:
     def sections(self, name: str, homes: Homes | None = None) -> dict[str, str]:
         """The rules by section, told to `name`, with `homes` as they stand (at the start if not
         given)."""
-        c, money = self.config, self._money
+        c, money = self.config, self.config.money
         me = next(resident for resident in c.residents if resident.name == name)
         homes = homes if homes is not None else self.homes()
         home_of = {who: place for place, people in homes.items() for who in people}
@@ -310,7 +270,7 @@ class Rules:
     def topics(self, homes: Homes | None = None) -> dict[str, str]:
         """What `help` tells on each topic, with `homes` as they stand (at the start if not
         given)."""
-        c, money = self.config, self._money
+        c, money = self.config, self.config.money
         office, store = c.workplace("office"), c.workplace("store")
         restaurant, hospital, hall = (c.workplace(k) for k in ("restaurant", "hospital", "hall"))
         work, day = c.work, c.day
@@ -517,7 +477,7 @@ class Rules:
 
     def _goods(self) -> str:
         """What the Store sells, and what each item does, from the catalogue."""
-        c, money = self.config, self._money
+        c, money = self.config, self.config.money
         ready = [bare(item.name) for item in c.supplied if item.ready]
         raw = [bare(item.name) for item in c.supplied if item.effect == "food" and not item.ready]
         kept = [item.name for item in c.supplied if item.kind == "durable"]

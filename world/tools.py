@@ -36,8 +36,8 @@ from world.clock import DAY, calendar_day, clock_time, parse_hour, tell_date
 from world.config import TownConfig
 from world.economy import LARDER, PORTIONS, SHELVES, add
 from world.events import AT_HOME, EXHAUSTED, Work
-from world.rules import MAX_WAIT_MINUTES, TOPICS, amount, bare
-from world.telling import cap, counted, listed, you
+from world.rules import MAX_WAIT_MINUTES, TOPICS
+from world.telling import amount, bare, cap, counted, listed, you
 
 if TYPE_CHECKING:
     from world.world import Resident, World
@@ -96,8 +96,7 @@ def specs(config: TownConfig) -> list[ToolSpec]:
     supplied = [item.id for item in config.supplied]
     dishes = [dish.id for dish in config.dishes]
     everything = [item.id for item in config.items]
-    money = config.currency
-    wholesale = listed([f"{bare(i.name)} {money}{i.wholesale}" for i in config.supplied])
+    wholesale = listed([f"{bare(i.name)} {config.money(i.wholesale)}" for i in config.supplied])
     recipes = "; ".join(
         f"{dish.name} ({dish.id}) from "
         + listed([amount(config.item(item), units) for item, units in dish.ingredients.items()])
@@ -782,7 +781,7 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
             "to": heard,
             "private": private,
             "bystanders": sorted(unheard),
-            "conversation": conversation.room if conversation else None,
+            "conversation": conversation.place if conversation else None,
             "members": sorted(conversation.members) if conversation else [],
         },
     )
@@ -826,13 +825,14 @@ def _buy_at_counter(
         world.fund.pay("kitchen", total)
         tail = world.kitchen_told()
     else:
-        r.inventory.money -= total
-        r.inventory.moves.append(["bought", total, bought])
+        r.inventory.spend(total, "bought", bought)
     add(world.daybook.today["sales"], thing.id, units)
     for_whom = " for the kitchen" if kitchen else ""
     world.record_move(
         "buy",
-        lambda w: f"{cap(you(r.name, w))} bought {bought}{for_whom} for {world.money(total)}.",
+        lambda w: (
+            f"{cap(you(r.name, w))} bought {bought}{for_whom} for {world.config.money(total)}."
+        ),
         by=r,
         audience=[seller] if seller is not r else [],
         item=thing.id,
@@ -848,7 +848,9 @@ def _buy_at_counter(
     if seller is not r:  # nobody is paid for serving itself
         world.pay_service(seller, "sale", "a sale", tell=True)
     paid = ", which the fund paid" if kitchen else ""
-    return ToolResult(f"You bought {bought}{for_whom} for {world.money(total)}{paid}. {tail}")
+    return ToolResult(
+        f"You bought {bought}{for_whom} for {world.config.money(total)}{paid}. {tail}"
+    )
 
 
 def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
@@ -871,15 +873,14 @@ def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
     world.reckon(r)
     if refusal := world.move(dish.id, 1, PORTIONS, r.name, by=r):
         return ToolResult(refusal)
-    r.inventory.money -= price
-    r.inventory.moves.append(["bought", price, dish.name])
+    r.inventory.spend(price, "bought", dish.name)
     world.fund.take("dish", price)
     add(world.daybook.today["dishes"], dish.id, 1)
     world.record_move(
         "buy",
         lambda w: (
             f"{cap(you(chef.name, w))} served {you(r.name, w)} {dish.name} for "
-            f"{world.money(price)}."
+            f"{world.config.money(price)}."
         ),
         by=r,
         audience=[chef],
@@ -890,10 +891,12 @@ def _buy_dish(world: World, r: Resident, item: str, units: int) -> ToolResult:
         money=price,
         seller=chef.name,
     )
-    world.served(r, dish.id)
+    world.eat_now(r, dish.id)
     world.pay_service(chef, "dish", "a dish served", tell=True)
     eaten = world.body.told("satiety", r.living.satiety)
-    return ToolResult(f"You had {dish.name} for {world.money(price)}. {eaten} {world.purse(r)}")
+    return ToolResult(
+        f"You had {dish.name} for {world.config.money(price)}. {eaten} {world.purse(r)}"
+    )
 
 
 def _working_at(world: World, r: Resident, kind: str) -> str | ToolResult:
@@ -915,18 +918,16 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     thing, quantity = world.config.item(args["item"]), args["quantity"]
     assert thing.wholesale is not None
     cost = thing.wholesale * quantity
-    ordered = amount(thing, quantity)
+    ordered, costs = amount(thing, quantity), world.config.money(cost)
     if cost > world.fund.balance:
-        return ToolResult(f"{sat}The fund cannot pay the supplier {world.money(cost)} now.")
+        return ToolResult(f"{sat}The fund cannot pay the supplier {costs} now.")
     world.fund.pay("supplier", cost)
     now = world.clock.now()
     arrives = calendar_day(now) * DAY + parse_hour(world.config.day.delivery)
     world.store.pending.append([thing.id, quantity, arrives])
     world.record(
         "order",
-        lambda w: (
-            f"{cap(you(r.name, w))} ordered {ordered} from the supplier for {world.money(cost)}."
-        ),
+        lambda w: f"{cap(you(r.name, w))} ordered {ordered} from the supplier for {costs}.",
         actor=r,
         payload={
             "item": thing.id,
@@ -937,7 +938,7 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         },
     )
     return ToolResult(
-        f"{sat}You ordered {ordered} from the supplier for {world.money(cost)}, which the fund "
+        f"{sat}You ordered {ordered} from the supplier for {costs}, which the fund "
         f"paid; it arrives tomorrow at {clock_time(arrives)}."
     )
 
@@ -952,6 +953,7 @@ async def _set_price(world: World, r: Resident, args: dict[str, Any]) -> ToolRes
     kind = world.config.place(r.occupation.workplace).kind
     table = {"store": world.store.prices, "restaurant": world.kitchen.menu, "hospital": world.fees}
     prices, place, name = table[kind], world.config.workplace(kind), _priced(world, item)
+    money = world.config.money
     if item not in prices:
         sold = {"store": "sold at", "restaurant": "on the menu of", "hospital": "a service of"}
         return ToolResult(f"{cap(name)} is not {sold[kind]} {place.name}.")
@@ -963,13 +965,13 @@ async def _set_price(world: World, r: Resident, args: dict[str, Any]) -> ToolRes
         "price",
         lambda w: (
             f"{cap(you(r.name, w))} set the price of {bare(name)} at {place.name} to "
-            f"{world.money(price)}."
+            f"{money(price)}."
         ),
         actor=r,
         payload={"item": item, "name": name, "place": place.id, "price": price, "before": before},
     )
     return ToolResult(
-        f"{sat}The price of {bare(name)} is now {world.money(price)}; it was {world.money(before)}."
+        f"{sat}The price of {bare(name)} is now {money(price)}; it was {money(before)}."
     )
 
 
@@ -1033,10 +1035,9 @@ def _charge(world: World, doctor: Resident, patient: Resident, service: str) -> 
     if fee > patient.inventory.money:
         if patient is doctor:
             return world.cannot_pay(patient, fee) or ""
-        return f"{patient.name} does not have the {world.money(fee)} the {service} costs."
-    patient.inventory.money -= fee
-    patient.inventory.moves.append(
-        ["paid", fee, f"an {service}" if service[0] in "aeiou" else f"a {service}"]
+        return f"{patient.name} does not have the {world.config.money(fee)} the {service} costs."
+    patient.inventory.spend(
+        fee, "paid", f"an {service}" if service[0] in "aeiou" else f"a {service}"
     )
     world.fund.take("fee", fee)
     world.daybook.today["patients"].append([patient.name, service])
@@ -1052,7 +1053,7 @@ async def _examine(world: World, r: Resident, args: dict[str, Any]) -> ToolResul
     if isinstance(fee, str):
         return ToolResult(f"{sat}{fee}")
     world.reckon(patient)
-    living, cost = patient.living, world.money(fee)
+    living, cost = patient.living, world.config.money(fee)
     own, seen = world.body.examination(living), world.body.examination(living, patient.name)
 
     def told(w: str | None) -> str:
@@ -1091,7 +1092,7 @@ async def _treat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if isinstance(fee, str):
         return ToolResult(f"{sat}{fee}")
     world.reckon(patient)
-    living, cost, restores = patient.living, world.money(fee), world.config.hospital.restores
+    living, cost, restores = patient.living, world.config.money(fee), world.config.hospital.restores
 
     def told(w: str | None) -> str:
         if w == r.name:
@@ -1238,11 +1239,9 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     if args["item"] == MONEY:
         if refusal := world.cannot_pay(r, units):
             return ToolResult(refusal)
-        r.inventory.money -= units
-        other.inventory.money += units
-        r.inventory.moves.append(["gave", units, name])
-        other.inventory.moves.append(["received", units, r.name])
-        given = world.money(units)
+        r.inventory.spend(units, "gave", name)
+        other.inventory.receive(units, "received", r.name)
+        given = world.config.money(units)
         world.record_move(
             "pass",
             lambda w: f"{cap(you(r.name, w))} passed {you(name, w)} {given}.",
@@ -1276,7 +1275,7 @@ async def _pass(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         target=name,
     )
     if serving:  # a dish is eaten where it is served
-        world.served(other, thing.id, units)
+        world.eat_now(other, thing.id, units)
         return ToolResult(f"You served {name} {given}, which nobody paid for.")
     world.take_in(other, tell=True)  # food given is eaten at once by one who could eat
     return ToolResult(f"You passed {name} {given}. {world.things_told(r)}")
@@ -1287,9 +1286,7 @@ async def _eat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     world.reckon(r)  # what it would have eaten by now is eaten first
     if not r.inventory.units(thing.id):
         return ToolResult(f"You have no {bare(thing.name)}.")
-    before = world.body.bands(r.living)
-    world.eat(r, thing.id)
-    world.note_bands(r, before, tell=False)
+    world.eat_now(r, thing.id)
     eaten = world.body.told("satiety", r.living.satiety)
     return ToolResult(f"You ate {amount(thing, 1)}. {eaten} {world.things_told(r)}")
 

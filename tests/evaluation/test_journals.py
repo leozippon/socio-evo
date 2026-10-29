@@ -140,7 +140,7 @@ def test_a_run_of_the_town_before_occupations_is_judged_as_well(run_dir, tmp_pat
     same."""
     before = before_occupations(run_dir, tmp_path / "before")
     with pytest.raises(ConfigError, match="occupation: Field required"):
-        load_config(before / "config.yaml", ExperimentConfig, record=True)
+        load_config(before / "config.yaml", ExperimentConfig)
     for run, out in ((run_dir, tmp_path / "now"), (before, tmp_path / "then")):
         journals.main([str(run), "--days", "1", "2", "--out", str(out)])
     for name in ("days.json", "claims.json"):

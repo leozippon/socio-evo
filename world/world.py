@@ -124,6 +124,7 @@ from world.clock import (
 from world.config import A_DAYS_FOOD, Band, Item, Occupation, Place, TownConfig
 from world.economy import (
     LARDER,
+    MOVES,
     PAID,
     PORTIONS,
     SHELVES,
@@ -140,7 +141,6 @@ from world.economy import (
     Store,
     Supplier,
     add,
-    money,
 )
 from world.events import (
     BEDSIDE,
@@ -160,20 +160,12 @@ from world.events import (
     refusal,
 )
 from world.log import Entry, WorldLog
-from world.rules import Rules, amount, bare, longest_sleep
-from world.telling import cap, counted, duration, listed, you
+from world.rules import Rules
+from world.telling import amount, bare, cap, counted, duration, listed, longest_sleep, you
 
 Tell = Callable[[str | None], str]
 """A text as told to a witness (None: to nobody in particular)."""
 OnCheckpoint = Callable[[int, dict[str, Any]], Awaitable[None]]
-MOVES = {
-    "service": "received {money} for {about}",
-    "received": "received {money} from {about}",
-    "gave": "gave {money} to {about}",
-    "bought": "bought {about} for {money}",
-    "paid": "paid {money} for {about}",
-}
-"""How the statement tells each kind of movement of an inventory's money (`Inventory.moves`)."""
 
 
 @dataclass(order=True)
@@ -272,7 +264,6 @@ class World:
         self.clock.set(start)
         self.log = WorldLog(run.world_log_path)
         names = [r.name for r in config.residents]
-        self.money: Callable[[int], str] = partial(money, config.currency)
         self.fund = Fund(config.fund.start)
         self.store = Store({item.id: item.price for item in config.supplied})
         self.kitchen = Kitchen({dish.id: dish.price for dish in config.dishes})
@@ -289,9 +280,7 @@ class World:
         self.announcements: list[list[int | str]] = []
         """The mayor's announcements standing on the Town Hall's board, each `[time, text]`."""
         self.daybook = Daybook()
-        self.board = Board(
-            tasks, backend, config.work, seed=config.seed, names=names, money=self.money
-        )
+        self.board = Board(tasks, backend, config, names=names)
         self.board.schedule = self.board.draw(1)
         self.body = Body(config.needs)
         self.rules = Rules(config)
@@ -470,7 +459,7 @@ class World:
         owed; when the fund runs short, those settled first are paid first), and the statement
         is told, the team leader's with the Office's day (`_office_told`); then the fund's day
         and the daybook's are closed."""
-        date = tell_date(day, self.config.start_date)
+        date, money = tell_date(day, self.config.start_date), self.config.money
         hours: dict[str, int] = {}
         residents = sorted(self.residents.values(), key=lambda r: r.occupation.paid_from == "taxes")
         for r in residents:
@@ -515,16 +504,16 @@ class World:
             self.record(
                 "wage",
                 lambda w, r=r, held=held, paid=settled.paid, taxed=settled.tax_from_purse: (
-                    f"At midnight your purse held {self.money(held)}"
+                    f"At midnight your purse held {money(held)}"
                     + (
-                        f", and {self.money(paid)} of your wages went into it."
+                        f", and {money(paid)} of your wages went into it."
                         if paid
-                        else f", and {self.money(taxed)} of it went in tax."
+                        else f", and {money(taxed)} of it went in tax."
                         if taxed
                         else "; none of your wages went into it."
                     )
                     if w == r.name
-                    else f"{r.name} was paid {self.money(paid) if paid else 'nothing'} at midnight."
+                    else f"{r.name} was paid {money(paid) if paid else 'nothing'} at midnight."
                 ),
                 actor=r,
                 place=None,
@@ -625,7 +614,7 @@ class World:
             key = (str(kind), int(paid), str(about))
             times[key] = times.get(key, 0) + 1
         return [
-            MOVES[kind].format(money=self.money(paid), about=about)
+            MOVES[kind].format(money=self.config.money(paid), about=about)
             + (f", {n} times" if n > 1 else "")
             for (kind, paid, about), n in times.items()
         ]
@@ -638,7 +627,7 @@ class World:
         for its room at `home`, the daily charges on the items `charged` and the rent it owed,
         and what came of them."""
         worked = duration(r.worked)
-        money = self.money
+        money = self.config.money
         payer = "the tax account" if r.occupation.paid_from == "taxes" else "the fund"
         items = [
             f"{worked} at work, {money(settled.wages)} in wages" if worked else "no time at work"
@@ -1018,11 +1007,13 @@ class World:
         self.feed(r)
         self.note_bands(r, before, tell=tell)
 
-    def served(self, r: Resident, dish: str, units: int = 1) -> None:
-        """`r` eats the `units` of `dish` it has just been served, there and then, as a dish is
-        eaten; the result or what it is told of the serving tells it."""
+    def eat_now(self, r: Resident, item: str, units: int = 1) -> None:
+        """`r` eats `units` of the ready food or the dish `item` it holds, there and then: by its
+        own choice (`eat`), or a dish it has just been served, which is eaten where it is served.
+        Each need that crossed into another band is noted, untold, since the result or what `r`
+        is told of the serving tells it. `take_in` is the body's own eating, as hunger asks."""
         before = self.body.bands(r.living)
-        self.eat(r, dish, units)
+        self.eat(r, item, units)
         self.note_bands(r, before, tell=False)
 
     def held_told(self, held: dict[str, int]) -> list[str]:
@@ -1176,9 +1167,7 @@ class World:
             r.inventory = Inventory(**copy.deepcopy(saved["inventory"]))
             r.worked = saved["worked"]
             r.reckoned = state["time"]
-            # A checkpoint from before the body woke anyone early has no `longest`.
-            longest = saved.get("longest", False)
-            self._put_to_sleep(r, saved["wake"], suspended=True, longest=longest)
+            self._put_to_sleep(r, saved["wake"], suspended=True, longest=saved["longest"])
             if saved["claim"] is not None:
                 self.board.hold(name, saved["claim"])
             r.port.held = [Percept(**percept) for percept in saved["held"]]
@@ -1272,10 +1261,10 @@ class World:
             if self.serving("hospital") is None:
                 told.append("The surgery is closed.")
             else:
-                fees = self.fees
+                fees, money = self.fees, self.config.money
                 told.append(
-                    f"The surgery is open: an examination costs {self.money(fees['examination'])}"
-                    f", a treatment {self.money(fees['treatment'])}."
+                    f"The surgery is open: an examination costs {money(fees['examination'])}"
+                    f", a treatment {money(fees['treatment'])}."
                 )
         if r.place == store.id:
             keeper = r.occupation.workplace == store.id
@@ -1306,7 +1295,7 @@ class World:
         shelves = self.holders[SHELVES]
         for item in self.config.supplied:
             left = shelves.units(item.id)
-            price = self.money(self.store.prices[item.id])
+            price = self.config.money(self.store.prices[item.id])
             if left:
                 stocked.append(f"{bare(item.name)} {price} ({left} left)")
             else:
@@ -1318,7 +1307,7 @@ class World:
         """The menu: each dish with its price and how many portions are ready."""
         portions = self.holders[PORTIONS]
         menu = [
-            f"{bare(dish.name)} {self.money(self.kitchen.menu[dish.id])} "
+            f"{bare(dish.name)} {self.config.money(self.kitchen.menu[dish.id])} "
             f"({portions.units(dish.id) or 'none'} ready)"
             for dish in self.config.dishes
         ]
@@ -1390,27 +1379,26 @@ class World:
 
     def purse(self, r: Resident) -> str:
         """The money `r` has, in its own words."""
-        return f"Your purse holds {self.money(r.inventory.money)}."
+        return f"Your purse holds {self.config.money(r.inventory.money)}."
 
     def cannot_pay(self, r: Resident, amount: int) -> str | None:
         """Why `r` cannot pay `amount` now, or None if it can."""
         if amount > r.inventory.money:
-            return f"You do not have {self.money(amount)}. {self.purse(r)}"
+            return f"You do not have {self.config.money(amount)}. {self.purse(r)}"
         return None
 
     def inventory_told(self, r: Resident) -> str:
         """What `r` has, as `inventory` tells it: its money, then each thing it keeps, a line
         each, with how much is left of a stock and any daily charge."""
-        lines = [f"Money: {self.money(r.inventory.money)}."]
+        lines = [f"Money: {self.config.money(r.inventory.money)}."]
         for item in self.config.items:
             units = r.inventory.units(item.id)
             if not units:
                 continue
             if item.kind == "consumable":
-                each = "portion" if item.dish else "helping" if item.ready else "unit"
-                lines.append(f"{cap(bare(item.name))}: {counted(units, each)}.")
+                lines.append(f"{cap(bare(item.name))}: {counted(units, item.unit)}.")
             elif item.fee_per_day:
-                charge = self.money(item.fee_per_day)
+                charge = self.config.money(item.fee_per_day)
                 lines.append(f"{cap(item.name)}, with a daily charge of {charge}.")
             else:
                 lines.append(f"{cap(item.name)}.")
@@ -1437,17 +1425,16 @@ class World:
         if not due:
             return ""
         paid = self.fund.service(r.name, due)
-        r.inventory.money += paid
         if paid:
-            r.inventory.moves.append(["service", paid, about])
-        owed = due - paid
+            r.inventory.receive(paid, "service", about)
+        owed, money = due - paid, self.config.money
 
         def told(w: str | None) -> str:
             who = cap(you(r.name, w))
             if not owed:
-                return f"{who} received {self.money(paid)} for {about}."
+                return f"{who} received {money(paid)} for {about}."
             return (
-                f"{who} received {self.money(paid)} of the {self.money(due)} for {about}; "
+                f"{who} received {money(paid)} of the {money(due)} for {about}; "
                 f"the fund owes {you(r.name, w)} the rest."
             )
 
@@ -1499,7 +1486,7 @@ class World:
             f"{cap(c.workplace('store').name)}. {self._counter('In stock')}",
             f"{cap(c.workplace('restaurant').name)}. {self._menu()}",
             f"{cap(c.workplace('hospital').name)}. An examination costs "
-            f"{self.money(fees['examination'])}, a treatment {self.money(fees['treatment'])}.",
+            f"{c.money(fees['examination'])}, a treatment {c.money(fees['treatment'])}.",
             f"So far today: {self._day_told(book.today, closed=False)}",
         ]
         parts.append("Today.\n" + "\n".join(today))
@@ -1524,7 +1511,7 @@ class World:
         """A day of the daybook in a line of the report: for a `closed` day, the fund's balance
         at its midnight and how the day moved it; the tasks accepted, by whom; what the Store
         sold; the dishes served; the patients the doctor saw."""
-        money = self.money
+        money = self.config.money
         told = []
         if closed:
             net = day["net"]
@@ -1557,7 +1544,7 @@ class World:
         """The fund's day, as the town tells it: what the fund holds, what it took in and paid
         out by kind on the day the last midnight closed, the same of its tax account, what it
         owes in wages and who owes it rent."""
-        fund, money = self.fund, self.money
+        fund, money = self.fund, self.config.money
         day = fund.yesterday
         took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
         paid = [f"{money(day[kind])} {words}" for kind, words in PAID.items() if kind in day]
@@ -1626,7 +1613,7 @@ class World:
         )
         return (
             f"You moved into {home.name}; your room at {old.name} is given up. From the next "
-            f"midnight your rent is {self.money(home.rent)} a day."
+            f"midnight your rent is {self.config.money(home.rent)} a day."
         )
 
     def stop_work(self, r: Resident) -> None:
@@ -1701,11 +1688,10 @@ class World:
         """The conversation `speaker` speaks in, with it and `recipients` in it: the one held
         at its place."""
         assert speaker.place is not None
-        room = speaker.place
-        conversation = self._rooms.get(room)
+        conversation = self._rooms.get(speaker.place)
         if conversation is None:
-            conversation = Conversation(room, speaker.place, set(), self.clock.now())
-            self._rooms[room] = conversation
+            conversation = Conversation(speaker.place, set(), self.clock.now())
+            self._rooms[speaker.place] = conversation
         for r in (speaker, *recipients):
             if r.conversation is not conversation:
                 r.conversation = conversation
@@ -1760,14 +1746,14 @@ class World:
         conversation.members.clear()
         if conversation.silence is not None:
             conversation.silence.cancel()
-        del self._rooms[conversation.room]
+        del self._rooms[conversation.place]
         if members:
             self.record(
                 "conversation_end",
                 lambda w: text,
                 place=conversation.place,
                 audience=members,
-                payload={"room": conversation.room},
+                payload={"room": conversation.place},
             )
 
     # Sleep, waking and waiting --------------------------------------------------------------

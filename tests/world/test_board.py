@@ -14,8 +14,8 @@ START = town_config().start_date
 
 def make_board(pool: int, seed: int = 7, **work) -> Board:
     backend = FakeBackend(pool)
-    config = town_config(**work).work
-    return Board(backend.tasks, backend, config, seed=seed, names=["Mei", "Tomas"], money=str)
+    config = town_config(**work).model_copy(update={"seed": seed})
+    return Board(backend.tasks, backend, config, names=["Mei", "Tomas"])
 
 
 def date(day: int) -> str:
@@ -61,11 +61,11 @@ async def test_the_board_lists_the_open_tasks_who_holds_each_and_when_it_is_with
         name: board.text(name, date).split("\n\n")[0].splitlines()[1:] for name in ("Mei", "Tomas")
     }
     mine = (
-        f"{first}. org/repo{first}: Problem {first} goes wrong. The client pays 50 and withdraws "
+        f"{first}. org/repo{first}: Problem {first} goes wrong. The client pays $50 and withdraws "
         f"it at the end of {date(4)}."
     )
     other = (
-        f"{second}. org/repo{second}: Problem {second} goes wrong. The client pays 50 and "
+        f"{second}. org/repo{second}: Problem {second} goes wrong. The client pays $50 and "
         f"withdraws it at the end of {date(5)}."
     )
     expected = sorted([(first, mine), (second, other)])

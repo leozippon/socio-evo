@@ -8,12 +8,12 @@ Store and the Restaurant, by what the business keeps there (`SHELVES`, the Store
 `Supplier`, outside the town, who holds whatever it sells without end. Units change hands only by
 the world's move (`World.move`), which refuses what the source does not hold.
 
-Money is a whole number of the town's currency (`money` writes it), and no item: a resident's
-`Inventory` is its money, never below zero, besides its items (one of a durable, the helpings of
-ready food, the units of an ingredient), with `moves`, the movements of its money since its last
-midnight statement, which the statement tells. A purchase is paid in cash from the inventory, and
-the world refuses one that its money does not cover; money and items pass between residents as
-they hand them over, of which the world keeps no account beyond the hand-over.
+Money is a whole number of the town's currency (`TownConfig.money` writes it), and no item: a
+resident's `Inventory` is its money, never below zero, besides its items (one of a durable, the
+helpings of ready food, the units of an ingredient), with `moves`, the movements of its money since
+its last midnight statement, which the statement tells. A purchase is paid in cash from the
+inventory, and the world refuses one that its money does not cover; money and items pass between
+residents as they hand them over, of which the world keeps no account beyond the hand-over.
 
 The `Fund` is the town's money: the employer, the landlord and the owner of the Store, the
 Restaurant and the Hospital. Money enters the town only from clients, whose payment for a task
@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import sys
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 TAKEN = {
     "client": "from clients",
@@ -67,11 +67,6 @@ TAX, TAX_WAGE = "tax", "tax_wage"
 """The tax account's kinds in the ledger: the taxes it takes in and the wages it pays out."""
 
 
-def money(currency: str, amount: int) -> str:
-    """`amount` of `currency`, as the town writes it: `$40`."""
-    return f"{currency}{amount}"
-
-
 def add(stock: dict[str, int], item: str, units: int) -> None:
     """Put `units` of `item` into `stock`."""
     stock[item] = stock.get(item, 0) + units
@@ -90,7 +85,7 @@ def take(stock: dict[str, int], item: str, units: int) -> None:
 
 SHELVES, LARDER, PORTIONS, SUPPLIER = "shelves", "larder", "portions", "supplier"
 """The holders that are neither a resident nor what is left at a place, by their names in the
-log and the checkpoint (`world.config.HOLDERS`)."""
+log and the checkpoint, which no place may take."""
 
 
 @dataclass
@@ -124,14 +119,41 @@ class Supplier(Holder):
         pass
 
 
+Move = Literal["service", "received", "gave", "bought", "paid"]
+"""The kinds of movement of a resident's money: a sum for a service, money received from and
+given to another resident, a purchase, and a fee paid at the Hospital."""
+MOVES: dict[Move, str] = {
+    "service": "received {money} for {about}",
+    "received": "received {money} from {about}",
+    "gave": "gave {money} to {about}",
+    "bought": "bought {about} for {money}",
+    "paid": "paid {money} for {about}",
+}
+"""How the statement tells each kind of movement of an inventory's money (`Inventory.moves`)."""
+
+
 @dataclass
 class Inventory(Holder):
     """What a resident has, checkpointed whole (see the module docstring); `moves` holds each
-    movement of its money as `[kind, amount, about]`: `service`, `received`, `gave`, `bought` or
-    `paid` (a fee at the Hospital)."""
+    movement of its money since the last statement as `[kind, amount, about]`, of a kind of
+    `Move`. Money moves in and out of a purse only by `receive` and `spend`, which record it, but
+    for the midnight's wages and tax, which the statement tells apart."""
 
     money: int = 0
     moves: list[list[str | int]] = field(default_factory=list)
+
+    def receive(self, amount: int, kind: Move, about: str) -> None:
+        """`amount` into the purse, recorded as a movement of `kind` concerning `about`."""
+        self.money += amount
+        self.moves.append([kind, amount, about])
+
+    def spend(self, amount: int, kind: Move, about: str) -> None:
+        """`amount` out of the purse, which must hold it, recorded as a movement of `kind`
+        concerning `about`."""
+        if amount > self.money:
+            raise ValueError(f"only {self.money} in the purse to spend {amount} from")
+        self.money -= amount
+        self.moves.append([kind, amount, about])
 
 
 @dataclass(frozen=True)

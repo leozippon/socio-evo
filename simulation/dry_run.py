@@ -36,7 +36,7 @@ from agent.texts import NOTES_HEADINGS
 from infrastructure.llm import LLMRequest, LLMResponse, Message, ToolCall
 from world.clock import parse_hour
 from world.config import TownConfig
-from world.rules import bare
+from world.telling import bare
 
 WORK_ENDS = parse_hour("17:00")
 SURGERY_CLOSES = parse_hour("18:00")

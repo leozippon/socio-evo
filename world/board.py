@@ -33,7 +33,7 @@ from typing import Any
 
 from world.backend import Backend, Task, Verdict, Workspace
 from world.clock import DAY, parse_hour
-from world.config import Work
+from world.config import TownConfig
 from world.telling import counted, first_line
 
 KEPT_CHANGES = "/tmp/kept-changes.patch"
@@ -67,25 +67,23 @@ class Board:
         self,
         tasks: Sequence[Task],
         backend: Backend,
-        work: Work,
+        town: TownConfig,
         *,
-        seed: int,
         names: Iterable[str],
-        money: Callable[[int], str],
     ) -> None:
         self.tasks = list(tasks)
         self.backend = backend
-        self.work = work
-        self.seed = seed
+        self.town = town
+        self.work = town.work
+        self.seed = town.seed
         self.rotation = list(range(1, len(self.tasks) + 1))
-        random.Random(f"{seed}:board").shuffle(self.rotation)
+        random.Random(f"{self.seed}:board").shuffle(self.rotation)
         self.arrived = 0
         """How many tasks of the rotation have come."""
         self.schedule: list[int] = []
         """The times of the arrivals still to come today."""
         self.open: dict[int, int] = {}
         """The tasks open on the board, each with the calendar day it came."""
-        self.money = money
         self.claims: dict[str, Claim] = {}
         self.runs: dict[str, dict[int, int]] = {name: {} for name in names}
         self.orphans: list[Workspace] = []
@@ -133,7 +131,7 @@ class Board:
     def _line(self, name: str, number: int, date: Callable[[int], str]) -> str:
         """Task `number` as `name` reads it on the board."""
         task = self.task(number)
-        pays = self.money(self.work.payment)
+        pays = self.town.money(self.work.payment)
         problem = first_line(task.problem_statement)
         until = date(self.withdrawn_on(number))
         line = (

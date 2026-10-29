@@ -19,8 +19,7 @@ counts on the next day. Who lies bedridden is carried from day to day: a residen
 bed at a midnight (`bedridden`) and leaves it when treated (`recovered`, for one bedridden), and a
 visit to it is any other resident's arrival at the home where it lies, a housemate's coming home
 included. A measure is None where it has no value: a cached share that no reply reported, or the
-money and the health of a day without a midnight. A run from before the tax had none: its tax and
-its tax account's figures read 0.
+money and the health of a day without a midnight.
 """
 
 from __future__ import annotations
@@ -200,7 +199,7 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         "tasks_withdrawn": len(to_me("task_withdrawn", "holder")),
         "hours_at_work": sum(e["payload"]["hours"] for e in paid),
         "wages": sum(e["payload"]["wages"] for e in paid),
-        "tax": sum(e["payload"].get("tax", 0) for e in paid),
+        "tax": sum(e["payload"]["tax"] for e in paid),
         "service_sums": sum(e["payload"]["amount"] for e in mine("service")),
         "rent": sum(e["payload"]["rent"] for e in paid),
         "charges": sum(e["payload"]["charges"] for e in paid),
@@ -308,7 +307,7 @@ def town_days(run_dir: Path) -> list[Row]:
                 "arrears": sum(fund["arrears"].values()),
                 **{f"taken_{kind}": fund["yesterday"].get(kind, 0) for kind in TAKEN},
                 **{f"paid_{kind}": fund["yesterday"].get(kind, 0) for kind in PAID},
-                "taxes": fund.get("taxes", 0),
+                "taxes": fund["taxes"],
                 f"taken_{TAX}": fund["yesterday"].get(TAX, 0),
                 f"paid_{TAX_WAGE}": fund["yesterday"].get(TAX_WAGE, 0),
             }

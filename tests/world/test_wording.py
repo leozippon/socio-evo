@@ -74,7 +74,7 @@ async def test_every_rendered_text_passes_the_guard(make_town):
         Sleep(0),
         Sleep(0, True),
         Bedridden(),
-        Conversation("cafe", "cafe", set(), 0),
+        Conversation("cafe", set(), 0),
     ]
     texts += [
         refusal(event, spec.name, destination="the café")

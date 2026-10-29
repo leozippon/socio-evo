@@ -49,7 +49,7 @@ from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, Literal
 
-from pydantic import PositiveFloat, PositiveInt, ValidationInfo, model_validator
+from pydantic import PositiveFloat, PositiveInt
 
 from agent import files, texts
 from agent.compaction import INSTRUCTION, flaw, kept
@@ -57,7 +57,7 @@ from agent.directory import AgentDirectory
 from agent.port import Percept, ToolResult, ToolSpec, WorldPort
 from agent.session import Session
 from agent.trace import Trace
-from infrastructure.config import StrictModel, is_record
+from infrastructure.config import StrictModel
 from infrastructure.llm import (
     LLMContextOverflowError,
     LLMError,
@@ -121,22 +121,6 @@ class RuntimeConfig(StrictModel):
     model_attempts: PositiveInt = 3
     retry_wait: PositiveFloat = 10.0
     max_consecutive_lapses: PositiveInt = 5
-
-    @model_validator(mode="before")
-    @classmethod
-    def _no_count_of_exchanges(cls, data: Any, info: ValidationInfo) -> Any:
-        """`kept_exchanges`, the count of exchanges kept that `kept_tokens` replaced, is refused
-        in a new configuration. A record made before (`infrastructure.config.RECORD`) names it:
-        there it is set aside, and `kept_tokens` takes its default, or, on resumption, the
-        value given (`simulation.run.ADDED`)."""
-        if isinstance(data, dict) and "kept_exchanges" in data:
-            if not is_record(info):
-                raise ValueError(
-                    "kept_exchanges is no longer a setting: kept_tokens replaced it, and a "
-                    "compaction keeps whole the most recent exchanges within that many tokens"
-                )
-            data = {key: value for key, value in data.items() if key != "kept_exchanges"}
-        return data
 
     def ceiling(self, window: int) -> int:
         """The highest compaction threshold a context window of `window` tokens allows: a
@@ -402,7 +386,6 @@ class Runtime:
                 percept_sim_time=percept.sim_time,
                 percept_real_time=percept.real_time,
             )
-        return "\n\n".join(percept.text for percept in percepts)
 
     def _context(
         self, only: Collection[int] | None = None
