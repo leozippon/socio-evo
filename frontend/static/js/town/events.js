@@ -111,7 +111,6 @@ export const ICONS = {
   price: "tag",
   examination: "clinic",
   treatment: "pill",
-  report: "report",
   announcement: "megaphone",
   grant: "coin",
   move_in: "home",
@@ -349,8 +348,6 @@ export function describeMarker(m, by, who, world) {
       if (!own && who === m.patient) return [`was treated by ${by} for ${fmt.money(m.fee)}`, restored];
       return [`${subject}treated ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}${withheld(m.tax)}`, restored];
     }
-    case "report":
-      return [`${subject}read the town's report`];
     case "announcement":
       return [`${subject}announced`, m.text];
     case "grant":

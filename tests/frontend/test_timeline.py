@@ -223,7 +223,6 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("treatment", "Mei", 30, 3),
     ]
     assert markers("Vera") == [
-        ("report", at("07:10")),
         ("announcement", at("07:10")),
         ("grant", at("07:10")),
         ("settlement", DAY),

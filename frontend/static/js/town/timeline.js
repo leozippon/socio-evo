@@ -3,7 +3,7 @@
 // the next, with the fixed hours of the night and what happened when. Both strips are scrubbed
 // by dragging, with a finger as well as a mouse.
 
-import { DAY, dateOf, formatTime, hhmm, livedDay, parseHHMM, secondOfDay } from "../clock.js";
+import { DAY, calendarDay, dateOf, formatTime, hhmm, livedDay, parseHHMM, secondOfDay } from "../clock.js";
 import { fill, h, onWidth, s } from "../dom.js";
 import { icon } from "../icons.js";
 
@@ -17,7 +17,7 @@ export class Timeline {
     this.cast = cast;
     this.hours = { ...world.day, midnight: "00:00" };
     this.handlers = { onSeek, onSpeed };
-    this.run = { planned: world.days, days: [], last: null, running: false, loaded: new Set() };
+    this.run = { planned: world.days, days: [], last: null, running: false };
     this.marks = { rewrites: [], forced: [] };
     this.dayEntries = [];
     this.time = 0;
@@ -150,8 +150,10 @@ export class Timeline {
       this.speedButton.title = `Playback: ${speed} simulated minute${speed > 1 ? "s" : ""} per second. Tap for ${SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]}×.`;
       this.speedButton.setAttribute("aria-label", this.speedButton.title);
     }
+    // The hour first, which a phone's width never cuts; the day, the date and the phase after it.
     const text = this.run.days.length ? formatTime(time, this.run.days) : formatTime(time);
-    fill(this.clock, h("b", {}, text), h("span", {}, `${dateOf(this.world.start_date, time)}${phase ? ` · ${phase}` : ""}`));
+    const day = this.run.days.length ? livedDay(this.run.days, time).day : calendarDay(time);
+    fill(this.clock, h("b", {}, hhmm(secondOfDay(time))), h("span", {}, `Day ${day} · ${dateOf(this.world.start_date, time)}${phase ? ` · ${phase}` : ""}`));
     this.runWrap.setAttribute("aria-valuetext", text);
     this.dayWrap.setAttribute("aria-valuetext", text);
     if (moved) this.renderDay();
@@ -180,7 +182,7 @@ export class Timeline {
       const x = (day - 1) * dw;
       const entry = lived.get(day);
       const cls = entry ? (entry.end !== null ? "day settled" : "day partial") : "day planned";
-      parts.push(s("rect", { class: `${cls}${entry && !this.run.loaded.has(day) ? " unloaded" : ""}`, x: x + 1, y: 12, width: Math.max(1, dw - 2), height: height - 14, rx: Math.min(3, dw / 4) }));
+      parts.push(s("rect", { class: cls, x: x + 1, y: 12, width: Math.max(1, dw - 2), height: height - 14, rx: Math.min(3, dw / 4) }));
       if (day === 1 || day % every === 0) parts.push(s("text", { class: "tick", x: x + dw / 2, y: 8, "text-anchor": "middle" }, String(day)));
     }
     // Rewrites of memory (squares) and skills (diamonds) at the end of their day, in the

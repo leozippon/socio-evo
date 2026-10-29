@@ -81,7 +81,6 @@ The markers, each on the lane of the resident who acted, with their own fields:
                                           examination and the numbers it told; the fee goes to
                                           the doctor less the tax
     treatment     patient, fee, tax, restores, before, health, ill, bedridden
-    report                                the mayor read the town's report
     announcement  text                    the mayor's announcement, told to everyone
     grant         to, amount, reason, treasury   money the mayor granted `to` from the treasury,
                                           for `reason`; `treasury` is its balance after
@@ -171,7 +170,6 @@ _FOLDED = frozenset(
         "price",
         "examination",
         "treatment",
-        "report",
         "announcement",
         "grant",
         "illness",
@@ -204,7 +202,6 @@ _COPIED = {
         "price",
         "examination",
         "treatment",
-        "report",
         "announcement",
         "grant",
         "illness",

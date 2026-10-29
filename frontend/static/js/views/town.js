@@ -24,6 +24,9 @@ import { areasOf } from "./overview.js";
 const QUIET = 12 * 60; // simulated seconds without a moment that playback crosses quickly
 const SKIP_SPEED = 240 * 60; // simulated seconds per second across quiet stretches
 const RECENT = 10 * 60; // seconds of speech and deeds the map keeps in view
+const SCRUB_MS = 150; // how long a moment dragged to must stay in an unloaded day before the day is fetched
+const HOLD_MS = 1500; // how long a finger put down on the panels holds off their refreshes, at most
+const TAP_MS = 350; // ...and how long after it lifts, until the tap has landed
 const PANELS = [
   ["people", "People"],
   ["feed", "Feed"],
@@ -35,7 +38,7 @@ const DEFAULT_PANEL = "people";
 /** The entries the map shows as a notice for a while: what the whole town would notice. */
 const NOTICES = new Set(["task_arrived", "task_withdrawn", "delivery", "announcement", "bedridden", "forced_sleep"]);
 /** The markers the map shows by the resident for a while: what it just did, earned or felt. */
-const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "report", "announcement", "grant", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
+const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "announcement", "grant", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -75,7 +78,10 @@ export function mountTown(root, ctx) {
   let last = performance.now();
   let lastPanels = 0;
   let lastUrl = 0;
-  let shownKey = null;
+  let shownKey = null; // the moment the selected resident and the panel show
+  let shownDay = null; // the lived day the timeline details, and its entries
+  let shownEntries = null;
+  let intent = 0; // counts the reader's choices of time, so a playback waiting for a day resumes only if none came since
   let destroyed = false;
   let ready = false; // the moment asked for has been shown, so the URL may follow the view
 
@@ -124,6 +130,21 @@ export function mountTown(root, ctx) {
   const dock = h("div", { class: "town-dock" }, grip, timeline.el, side);
   const page = h("div", { class: "town" }, map.el, dock);
   root.append(page);
+
+  // A tap lands only on the node it began on (Safari drops it otherwise), so nothing in the
+  // panels is made again while a finger may be on them and until a tap there has landed: the
+  // moment's refreshes of the selected resident and the panel wait, then catch up.
+  let quietUntil = 0;
+  let quietTimer = 0;
+  function hold(ms) {
+    quietUntil = performance.now() + ms;
+    clearTimeout(quietTimer);
+    quietTimer = setTimeout(() => !destroyed && data && paint(), ms + 20);
+  }
+  side.addEventListener("pointerdown", () => hold(HOLD_MS));
+  const lift = () => performance.now() < quietUntil && hold(TAP_MS);
+  document.addEventListener("pointerup", lift, true);
+  document.addEventListener("pointercancel", lift, true);
 
   // The sheet (narrow screens only) -------------------------------------------------------------
   const sheet = { state: "peek", height: 0, full: 0, peek: 0, drag: null };
@@ -325,8 +346,7 @@ export function mountTown(root, ctx) {
     sync();
   }
 
-  function refreshPanel(force = false) {
-    const m = moment();
+  function refreshPanel(force = false, m = moment()) {
     const panel = panels[view.panel];
     if (view.panel === "ties") {
       if (!measures) {
@@ -338,22 +358,28 @@ export function mountTown(root, ctx) {
     if (panelBody.firstChild !== panel.el) panelBody.replaceChildren(panel.el);
   }
 
-  /** Draw the current moment. */
+  /**
+   * Draw the current moment: the map and the timeline every time; the selected resident and the
+   * panel when the moment changed, at most four times a second while playing, and not while a
+   * finger may be on them.
+   */
   function paint(effects = []) {
     const m = moment();
-    const key = `${m.time}|${m.dayEntries.length}`;
-    const changed = key !== shownKey;
     timeline.setCursor(view.time, { playing: view.playing, follow: view.follow && running(), speed: view.speed, phase: m.phase });
     map.update(mapFrame(m, effects));
-    if (changed) {
-      renderSelected(m);
-      if (!shownKey || m.day.day !== Number(shownKey.split("|")[2])) timeline.setDay(loaded.get(m.day.day) ?? []);
-      shownKey = `${key}|${m.day.day}`;
+    if (m.day.day !== shownDay || loaded.get(m.day.day) !== shownEntries) {
+      shownDay = m.day.day;
+      shownEntries = loaded.get(m.day.day);
+      timeline.setDay(shownEntries ?? []);
+      prefetch(m.day.day);
     }
+    const key = `${m.time}|${m.dayEntries.length}`;
     const now = performance.now();
-    if (changed && (!view.playing || now - lastPanels > 250)) {
+    if (key !== shownKey && (!view.playing || now - lastPanels > 250) && now >= quietUntil) {
+      shownKey = key;
       lastPanels = now;
-      refreshPanel();
+      renderSelected(m);
+      refreshPanel(false, m);
     }
     if (!view.playing || now - lastUrl > 1000) {
       lastUrl = now;
@@ -387,9 +413,7 @@ export function mountTown(root, ctx) {
         source
           .eventDay(day)
           .then((entries) => {
-            if (destroyed) return;
-            loaded.set(day, entries);
-            timeline.setRun({ loaded: new Set(loaded.keys()) });
+            if (!destroyed) loaded.set(day, entries);
           })
           .finally(() => inflight.delete(day)),
       );
@@ -410,34 +434,9 @@ export function mountTown(root, ctx) {
     else if (!message) refreshPanel(true);
   }
 
-  /** Load the entries of the lived day of `time`, covering the map meanwhile; false if that failed. */
-  async function ensure(time) {
-    if (hasDay(time)) return true;
-    const day = dayOf(time);
-    unavailable(`Loading the entries of day ${day.day}…`);
-    try {
-      await fetchDay(day.day);
-      unavailable(null);
-      return true;
-    } catch (error) {
-      unavailable(`Could not load the entries of day ${day.day}: ${error.message}`, true);
-      ctx.fail(error);
-      return false;
-    }
-  }
-
-  async function prefetch() {
-    for (const found of source.doc.event_days) {
-      if (destroyed) return;
-      if (!loaded.has(found.day)) {
-        try {
-          await fetchDay(found.day);
-        } catch (error) {
-          ctx.fail(error);
-          return;
-        }
-      }
-    }
+  /** Fetch the entries of the days either side of `day` ahead of need, so that playing on and stepping back find them. */
+  function prefetch(day) {
+    for (const near of [day + 1, day - 1]) if (!loaded.has(near) && source.doc.event_days.some((found) => found.day === near)) fetchDay(near).catch(ctx.fail);
   }
 
   function marks() {
@@ -460,22 +459,49 @@ export function mountTown(root, ctx) {
   // Moving through time -------------------------------------------------------------------------
   const clampTime = (time) => Math.max(data.start, Math.min(liveEnd(), time));
 
+  /**
+   * Show the moment `time`; resolves to whether it was shown. A lived day's entries are fetched
+   * when a moment first falls in it, the map covered meanwhile; a drag of the reader's that passes
+   * over a day without stopping there fetches nothing.
+   */
   async function seek(time, user = false) {
+    if (!data) return false;
     time = clampTime(time);
     view.time = time;
-    if (user) view.follow = time >= liveEnd();
-    if (!hasDay(time)) {
-      view.playing = false;
-      timeline.setCursor(time, { playing: false, follow: view.follow && running(), speed: view.speed, phase: "" });
-      if (!(await ensure(time)) || view.time !== time || destroyed) return;
-    } else if (page.classList.contains("failed")) unavailable(null);
+    if (user) {
+      view.follow = time >= liveEnd();
+      intent += 1;
+    }
+    if (hasDay(time)) {
+      if (page.classList.contains("stale")) unavailable(null);
+      paint();
+      return true;
+    }
+    const day = dayOf(time).day;
+    view.playing = false;
+    timeline.setCursor(time, { playing: false, follow: view.follow && running(), speed: view.speed, phase: "" });
+    unavailable(`Loading the entries of day ${day}…`);
+    if (user && !inflight.has(day)) await new Promise((done) => setTimeout(done, SCRUB_MS));
+    if (destroyed || view.time !== time) return false;
+    try {
+      await fetchDay(day);
+    } catch (error) {
+      if (destroyed || view.time !== time) return false;
+      unavailable(`Could not load the entries of day ${day}: ${error.message}`, true);
+      ctx.fail(error);
+      return false;
+    }
+    if (destroyed || view.time !== time) return false;
+    unavailable(null);
     paint();
+    return true;
   }
 
   const nextMoment = (time) => moments[lowerBound(moments, Math.floor(time) + 1, (t) => t)] ?? null;
   const previousMoment = (time) => moments[lowerBound(moments, time, (t) => t) - 1] ?? null;
 
   function step(unit, direction) {
+    intent += 1;
     view.playing = false;
     if (unit === "moment") {
       const target = direction > 0 ? nextMoment(view.time) : previousMoment(view.time);
@@ -488,11 +514,24 @@ export function mountTown(root, ctx) {
     seek(target, true);
   }
 
-  function togglePlay() {
-    if (!view.playing && view.time >= liveEnd() && !running()) seek(data.start);
-    view.playing = !view.playing;
+  /** Play on once the moment asked for is shown, unless the reader has chosen another since. */
+  function resume(shown, asked) {
+    if (!shown || asked !== intent || destroyed) return;
+    view.playing = true;
     last = performance.now();
     paint();
+  }
+
+  /** Play or pause; at the end of a finished run, play from its start. */
+  function togglePlay() {
+    if (!data) return;
+    intent += 1;
+    if (view.playing) {
+      view.playing = false;
+      return paint();
+    }
+    const asked = intent;
+    Promise.resolve(view.time >= liveEnd() && !running() ? seek(data.start) : true).then((shown) => resume(shown, asked));
   }
 
   function frame(now) {
@@ -512,11 +551,8 @@ export function mountTown(root, ctx) {
       else view.playing = false;
     }
     if (!hasDay(time)) {
-      view.playing = false;
-      seek(time).then(() => {
-        view.playing = true;
-        last = performance.now();
-      });
+      const asked = intent;
+      seek(time).then((shown) => resume(shown, asked));
       return;
     }
     const before = view.time;
@@ -551,6 +587,7 @@ export function mountTown(root, ctx) {
   }
 
   function onKey(event) {
+    if (!data) return;
     const target = event.target instanceof Element ? event.target : document.body;
     if (target.closest("input, select, textarea") || event.metaKey || event.ctrlKey || event.altKey) return;
     const keys = {
@@ -585,7 +622,7 @@ export function mountTown(root, ctx) {
       return;
     }
     moments = momentsOf(data);
-    timeline.setRun({ days: data.days, last: data.now, running: running(), loaded: new Set() });
+    timeline.setRun({ days: data.days, last: data.now, running: running() });
     marks();
     if (!source.doc.event_days.length) {
       view.time = data.start;
@@ -607,7 +644,6 @@ export function mountTown(root, ctx) {
       measures = found;
       if (view.panel === "ties" || view.panel === "work") refreshPanel(true);
     }, ctx.fail);
-    prefetch();
   }
 
   document.addEventListener("keydown", onKey);
@@ -637,7 +673,7 @@ export function mountTown(root, ctx) {
           moments = momentsOf(data);
           marks();
         }
-        timeline.setRun({ days: data.days, last: data.now, running: running(), loaded: new Set(loaded.keys()) });
+        timeline.setRun({ days: data.days, last: data.now, running: running() });
         for (const day of changes.dropped) loaded.delete(day);
         await Promise.all(changes.days.filter((day) => loaded.has(day)).map((day) => fetchDay(day)));
         if (changes.measures) measures = await source.measures();
@@ -652,7 +688,10 @@ export function mountTown(root, ctx) {
     destroy() {
       destroyed = true;
       cancelAnimationFrame(raf);
+      clearTimeout(quietTimer);
       document.removeEventListener("keydown", onKey);
+      document.removeEventListener("pointerup", lift, true);
+      document.removeEventListener("pointercancel", lift, true);
       WIDE.removeEventListener("change", onMedia);
       layout.disconnect();
       map.destroy();

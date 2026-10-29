@@ -71,7 +71,6 @@ const PATHS = {
   pot: "M4.5 10.5h15v6.5a3 3 0 0 1-3 3h-9a3 3 0 0 1-3-3zM2.5 10.5h19M9 7.5c0-1 1-1.5 1-2.5M14 7.5c0-1 1-1.5 1-2.5",
   megaphone: "M3.5 10v4h3l9 5V5l-9 5zM18.5 9a4 4 0 0 1 0 6M6.5 14l1.5 5.5h3L9.5 15",
   thermometer: "M10 14.5V5a2 2 0 0 1 4 0v9.5a4 4 0 1 1-4 0zM12 17v-6",
-  report: "M6 3.5h8.5L18 7v13.5H6zM14.5 3.5V7H18M9 11h6M9 14.5h6M9 18h4",
 };
 
 export function icon(name, size = 18, label = null) {

@@ -108,7 +108,8 @@ export class FeedPanel {
   }
 
   update(m, force = false) {
-    const key = `${m.time}|${m.selected}|${m.follow}|${m.reader}|${m.dayEntries.length}`;
+    // The day's entries up to the moment are all it shows: made again only when they change.
+    const key = `${m.day.day}|${m.dayEntries.length}|${m.selected}|${m.follow}|${m.reader}`;
     if (key === this.key && !force) return;
     this.key = key;
     fill(
@@ -244,16 +245,15 @@ export class WorkPanel {
       },
       hall: () => {
         const said = m.timeline.residents.flatMap((lane) => markersBetween(lane, null, m.time).filter((mk) => mk.kind === "announcement").map((mk) => [lane.name, mk])).reverse();
-        const reports = today(m, "report").length;
         // The treasury as the last checkpoint before the moment saved it, from the town's days.
         const closed = m.timeline.days.filter((day) => day.end !== null && day.end <= m.time).map((day) => day.day);
         const saved = m.measures?.town.filter((row) => closed.includes(row.day)).at(-1);
         const owing = (field) => (saved ? m.measures.rows.filter((row) => row.day === saved.day && row[field]).map((row) => `${row.resident} ${fmt.money(row[field])}`) : []);
         const books = saved ? `The treasury held ${fmt.money(saved.treasury)} at the checkpoint of day ${saved.day}${owing("salary_owed").length ? `, owing ${owing("salary_owed").join(", ")} in salary` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
         const granted = today(m, "grant").map(([, mk]) => `${fmt.money(mk.amount)} to ${mk.to}, “${mk.reason}”`);
-        const grants = granted.length ? `Granted today: ${granted.join("; ")}. ` : "";
+        const grants = granted.length ? `Granted today: ${granted.join("; ")}.` : "Nothing granted today.";
         return [
-          h("p", { class: "note" }, m.cast.mention(`${books}${grants}The report was read ${fmt.plural(reports, "time")} today.`)),
+          h("p", { class: "note" }, m.cast.mention(`${books}${grants}`)),
           said.length ? h("ul", { class: "outcomes" }, said.slice(0, 6).map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${dateOf(m.timeline.start_date, mk.t)} ${hhmm(secondOfDay(mk.t))}, ${name}: `), `“${mk.text}”`))) : h("p", { class: "muted small-text" }, "Nothing is posted on the board."),
         ];
       },
@@ -281,19 +281,22 @@ const NOTABLE_MOVES = new Set(["pass", "get", "put"]);
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {
   constructor({ onJump }) {
-    this.el = h("div", { class: "panel chronicle" });
+    this.note = h("p", { class: "note" });
+    this.list = h("div");
+    this.el = h("div", { class: "panel chronicle" }, this.note, this.list);
     this.onJump = onJump;
     this.key = null;
   }
 
   update(m) {
-    const key = `${m.time}|${m.reader}|${m.dayEntries.length}`;
+    this.note.textContent = `Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}, in its notable moments. Pick one to go there.`;
+    // The list is made again only when the day's entries up to the moment change.
+    const key = `${m.day.day}|${m.dayEntries.length}|${m.reader}`;
     if (key === this.key) return;
     this.key = key;
     const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || (e.kind === "move" && NOTABLE_MOVES.has(e.payload.reason)) || (e.kind === "speech" && e.payload.private) || (e.kind === "condition" && e.payload.lowest));
     fill(
-      this.el,
-      h("p", { class: "note" }, `Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}, in its notable moments. Pick one to go there.`),
+      this.list,
       notes.length
         ? h(
             "ol",

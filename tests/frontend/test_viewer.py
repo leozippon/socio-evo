@@ -2,8 +2,9 @@
 timeline as the progress document counts it, also between whole seconds, and the town stands its
 residents where the moment alone says; entries one resident alone knew of read so, a person's day
 is what it perceived, and every move reads by its reason and where it happened; the town plan
-holds for published and made-up worlds; and every route renders at a desktop and a phone width
-without an error in the console or horizontal overflow."""
+holds for published and made-up worlds; and every route renders at a desktop, a tablet and a
+phone width without an error in the console or horizontal overflow, the town also played with a
+finger at the touch widths."""
 
 from __future__ import annotations
 
@@ -90,7 +91,7 @@ def test_the_town_plan_holds_for_published_and_made_up_worlds(site):
     assert len(summary["worlds"]) > 5 and summary["checks"] > 100
 
 
-def test_every_route_renders_without_errors_or_overflow_at_both_widths(site):
+def test_every_route_renders_and_the_town_plays_by_touch_at_every_width(site):
     result = subprocess.run(
         [NODE, str(RENDER_CHECK), str(site)], capture_output=True, text=True, timeout=900
     )
@@ -99,4 +100,5 @@ def test_every_route_renders_without_errors_or_overflow_at_both_widths(site):
     if result.returncode == 2:
         pytest.skip(summary["skipped"])
     assert result.returncode == 0, summary["failures"]
-    assert summary["widths"] == 2 and summary["routes"] >= 20
+    assert summary["widths"] == 3 and summary["routes"] >= 20
+    assert summary["interactions"] == 2  # the town played by touch at the tablet and phone widths

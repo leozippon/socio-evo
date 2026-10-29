@@ -5,7 +5,7 @@ import { FormatError, RunSource, comparisonOf, readIndex, readManifest } from ".
 import { fill, fmt, h, useCurrency } from "./dom.js";
 import { icon } from "./icons.js";
 import { Cast } from "./identity.js";
-import { href, navigate, parse, remember, sibling } from "./router.js";
+import { flush, href, navigate, parse, remember, sibling } from "./router.js";
 import { mountCompare } from "./views/compare.js";
 import { mountEvaluation } from "./views/evaluation.js";
 import { mountLanding, statusPill } from "./views/landing.js";
@@ -36,8 +36,8 @@ const clearAlert = () => ($("alert").hidden = true);
 
 function fatal(title, message) {
   fill($("main"), h("div", { class: "fatal" }, h("h1", {}, title), h("p", {}, message)));
-  fill($("tabs"));
-  fill($("status"));
+  keep($("tabs"), "", () => []);
+  keep($("status"), "", () => []);
 }
 
 /** Report an error that stops a view: the view stays as it was, the alert says what failed. */
@@ -47,28 +47,58 @@ function fail(error) {
   showAlert(error.message ?? String(error), () => route(true));
 }
 
+/** Fill `element` from `build()` only when `key` changed, so that a link under a finger is not made again on every poll. */
+function keep(element, key, build) {
+  if (element.dataset.key === key) return;
+  element.dataset.key = key;
+  fill(element, build());
+}
+
+const TABS = [
+  ["town", "Town", "map"],
+  ["person", "People", "people"],
+  ["lanes", "Timeline", "lines"],
+  ["overview", "Dashboard", "chart"],
+  ["evaluation", "Evaluation", "scale"],
+];
+
+/** The run's views as tabs, made once per run and pointed at the moment shown whenever it changes. */
+function tabs() {
+  const r = app.route;
+  const inRun = Boolean(r.run && app.index?.runs.some((run) => run.name === r.run));
+  keep($("tabs"), inRun ? "run" : "", () => (inRun ? TABS.map(([view, label, glyph]) => h("a", { "data-view": view }, icon(glyph, 16), h("span", {}, label))) : []));
+  for (const link of $("tabs").children) {
+    const view = link.dataset.view;
+    link.setAttribute("href", href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})));
+    if (r.view === view) link.setAttribute("aria-current", "page");
+    else link.removeAttribute("aria-current");
+  }
+}
+
 function header() {
   const r = app.route;
   const entry = r.run ? app.index?.runs.find((run) => run.name === r.run) : null;
-  const crumbs = [];
-  if (r.view === "compare") crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", comparison: r.comparison }) }, r.comparison));
-  else if (r.run) {
-    const comparison = comparisonOf(app.index, r.run);
-    if (comparison) crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", comparison: comparison.name }) }, comparison.name));
-    crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: r.run }, r.run));
-  }
-  fill($("crumbs"), crumbs);
+  const comparison = r.run ? comparisonOf(app.index, r.run) : null;
+  keep($("crumbs"), JSON.stringify([r.view === "compare" ? r.comparison : null, comparison?.name ?? null, r.run ?? null]), () => {
+    const crumbs = [];
+    if (r.view === "compare") crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", comparison: r.comparison }) }, r.comparison));
+    else if (r.run) {
+      if (comparison) crumbs.push(h("span", { class: "sep exp-sep" }, "/"), h("a", { class: "exp-crumb", href: href({ view: "compare", comparison: comparison.name }) }, comparison.name));
+      crumbs.push(h("span", { class: "sep" }, "/"), h("a", { class: "run-crumb", href: href(sibling(r, "overview")), title: r.run }, r.run));
+    }
+    return crumbs;
+  });
   document.body.classList.toggle("in-run", Boolean(r.run && entry));
   document.body.dataset.view = r.view;
   document.title = r.run ? `${r.run} · socio-evo` : r.comparison ? `${r.comparison} · socio-evo` : "socio-evo";
-  if (r.run && entry) {
-    const tab = (view, label, glyph) => h("a", { href: href(sibling(r, view, view === "person" ? { agent: r.agent ?? app.run?.cast.names[0] } : {})), "aria-current": r.view === view ? "page" : null }, icon(glyph, 16), h("span", {}, label));
-    fill($("tabs"), tab("town", "Town", "map"), tab("person", "People", "people"), tab("lanes", "Timeline", "lines"), tab("overview", "Dashboard", "chart"), tab("evaluation", "Evaluation", "scale"));
-    fill($("status"), statusPill(entry), h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`), entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null);
-  } else {
-    fill($("tabs"));
-    fill($("status"), app.index ? h("span", {}, fmt.plural(app.index.runs.length, "run")) : null);
-  }
+  tabs();
+  if (r.run && entry)
+    keep($("status"), JSON.stringify([entry.status, entry.last_day, entry.days, entry.dry_run]), () => [
+      statusPill(entry),
+      h("span", { class: "day" }, entry.last_day ? `Day ${entry.last_day} of ${entry.days}` : `${entry.days} days planned`),
+      entry.dry_run ? h("span", { class: "pill dry", title: "A scripted stand-in answered instead of a model; its behaviour means nothing" }, "dry run") : null,
+    ]);
+  else keep($("status"), String(app.index?.runs.length ?? ""), () => (app.index ? h("span", {}, fmt.plural(app.index.runs.length, "run")) : null));
 }
 
 /** The open run's source, world and cast, opened again only when the run changes. */
@@ -113,6 +143,7 @@ async function route(force = false) {
       remember: (next) => {
         app.route = next;
         remember(next);
+        tabs();
       },
       fail,
       clearAlert,
@@ -158,6 +189,8 @@ async function boot() {
     return fatal("The data bundle could not be loaded", `${error.message}. The viewer expects the published site's data/ directory next to this page.`);
   }
   window.addEventListener("hashchange", () => route());
+  // A link followed leaves the address of the moment shown behind it, for the Back button.
+  document.addEventListener("click", (event) => event.target instanceof Element && event.target.closest("a[href]") && flush(), true);
   document.addEventListener("visibilitychange", () => !document.hidden && poll());
   await route();
   schedule();

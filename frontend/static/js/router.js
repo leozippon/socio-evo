@@ -42,11 +42,35 @@ export function sibling(route, view, extra = {}) {
 
 /** Go to a route: a new history entry, and the app re-renders on hashchange. */
 export function navigate(route) {
+  flush();
   location.hash = href(route);
+}
+
+// Browsers refuse a page that rewrites its address too often: Chromium ignores every navigation,
+// links followed among them, after 200 in ten seconds, and Safari throws an error after 100 in
+// a short span. A view remembers its state on every step of a drag or of playback, so the
+// address is written at most twice a second, the newest state last, and before a link is
+// followed or another route taken.
+const WRITE_MS = 500;
+let written = -Infinity; // when the address was last written
+let pending = null; // {from, to}: the address to write over `from`, unless the reader has gone elsewhere since
+let timer = 0;
+
+/** Write the address remembered last, if the reader is still where it was remembered. */
+export function flush() {
+  clearTimeout(timer);
+  timer = 0;
+  if (pending && location.hash === pending.from && pending.to !== pending.from) {
+    history.replaceState(null, "", pending.to);
+    written = performance.now();
+  }
+  pending = null;
 }
 
 /** Record a route in the address bar without a new history entry or a re-render. */
 export function remember(route) {
-  const target = href(route);
-  if (location.hash !== target) history.replaceState(null, "", target);
+  pending = { from: pending?.from ?? location.hash, to: href(route) };
+  const wait = written + WRITE_MS - performance.now();
+  if (wait <= 0) flush();
+  else timer ||= setTimeout(flush, wait);
 }

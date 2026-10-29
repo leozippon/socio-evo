@@ -46,7 +46,7 @@ PUSH = PROJECT / "frontend" / "deploy" / "push.sh"
 RESIDENTS = ("Mei", "Tomas", "Aisha", "Olga", "Jonas", "Lucia", "Vera")
 MARKERS = (
     "claim", "assign", "submission", "abandon", "service", "speech", "message", "move", "order",
-    "cook", "price", "examination", "treatment", "report", "announcement", "grant", "illness",
+    "cook", "price", "examination", "treatment", "announcement", "grant", "illness",
     "recovered", "bedridden", "move_in", "journal", "forced_sleep", "settlement", "condition",
     "task_arrived", "task_withdrawn", "delivery",
 )  # fmt: skip
