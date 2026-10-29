@@ -528,6 +528,36 @@ async def test_the_team_leader_gives_a_task_or_moves_it_and_both_are_told(make_t
     ]
 
 
+async def test_a_claim_moved_while_its_workspace_opens_is_refused_and_not_logged(
+    make_town, monkeypatch
+):
+    leader = dict(RESIDENTS[1], occupation="team-leader")
+    town = make_town(town_config(residents=(RESIDENTS[0], leader, RESIDENTS[2], *TRADES)))
+    await at_the_workshop(town, "Mei", "Tomas")
+    world, board = town.world, town.world.board
+    backend, open_ = board.backend, board.backend.open
+
+    async def slow_open(*args):  # the leader gives the task to Aisha while Mei's workspace opens
+        await town.until("09:03")
+        given = await town.call("Tomas", "assign", task=1, to="Aisha")
+        assert given.text.endswith("You gave task 1 (org/repo1), which Mei held, to Aisha.")
+        return await open_(*args)
+
+    monkeypatch.setattr(backend, "open", slow_open)
+    assert (await town.call("Mei", "claim_task", task=1)).text == (
+        "You sat down to work. It is 09:00.\nTask 1 was no longer yours by the time your "
+        "workspace was ready; Aisha holds it now."
+    )
+    assert "Mei" not in board.claims and board.claims["Aisha"].task == 1
+    assert [w.closed for w in backend.opened] == [True] and board.orphans == []  # closed at once
+    office = [e for e in world.log.entries() if e["kind"] in ("claim", "assign")]
+    assert [(e["kind"], e["payload"]["from"]) for e in office] == [("assign", "Mei")]
+    monkeypatch.setattr(backend, "open", open_)
+    assert (await town.call("Mei", "claim_task", task=2)).text.startswith(
+        "You claimed task 2, in org/repo2; your workspace is ready."
+    )
+
+
 async def test_the_team_leaders_statement_tells_the_offices_day(make_town):
     leader = dict(RESIDENTS[1], occupation="team-leader")
     town = make_town(town_config(residents=(RESIDENTS[0], leader, RESIDENTS[2])))

@@ -19,6 +19,7 @@ keeps the task wherever it goes until it is accepted, given up, moved or withdra
 a workspace when its holder first works on it. When its holder gives the claim up or is paid, the
 workspace is closed at once; when the task is moved or withdrawn, the workspace may be in use by a
 command still running, so it is set aside and closed at the checkpoint, its changes gone with it.
+A claim moved or withdrawn while its workspace opens is refused, and the workspace closed at once.
 At the checkpoint every workspace is closed and the changes of each held task are kept; the next
 `workspace` starts a fresh one and reapplies them. Acceptance runs on the submitted diff in a
 fresh container, at most `acceptance_runs` a day for each resident and task; a run whose checks
@@ -175,16 +176,21 @@ class Board:
             return f"Task {number} is held by {holder}."
         return None
 
-    async def claim(self, name: str, number: int) -> Claim:
-        """Hold task `number` for `name` and open its workspace."""
+    async def claim(self, name: str, number: int) -> Claim | None:
+        """Hold task `number` for `name` and open its workspace; None, the workspace closed, if
+        the claim ended while it opened (the task moved to another or withdrawn)."""
         claim = Claim(number)
         self.claims[name] = claim
         try:
-            await self.workspace(name, claim)
+            workspace = await self._open(name, claim)
         except BaseException:
             if self.claims.get(name) is claim:
                 del self.claims[name]
             raise
+        if self.claims.get(name) is not claim:
+            await workspace.close()
+            return None
+        claim.workspace = workspace
         return claim
 
     def give(self, name: str, number: int) -> str | None:
@@ -407,7 +413,12 @@ async def _claim_task(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
     sat = sit_down(world, r)
     if isinstance(sat, ToolResult):
         return sat
-    await board.claim(r.name, number)
+    if await board.claim(r.name, number) is None:  # moved or withdrawn while it opened
+        holder = board.holder(number)
+        now = f"; {holder} holds it now" if holder not in (None, r.name) else ""
+        return ToolResult(
+            f"{sat}Task {number} was no longer yours by the time your workspace was ready{now}."
+        )
     task = board.task(number)
     world.record(
         "claim",
