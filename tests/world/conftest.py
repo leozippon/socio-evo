@@ -3,7 +3,8 @@ the shopkeeper and the chef that `TRADES` adds for the tests of the store and th
 restaurant), and the doctor and the mayor that `CARE` adds for those of the clinic (the hospital)
 and the hall; two homes and a park; a catalogue of items with ready food, two ingredients, a
 durable of each effect and two dishes; the real town's needs, with no illness unless a test asks
-for it; no task arriving unless a test schedules it (`opening` makes the whole pool arrive at
+for it; no tax unless a test sets one, so that the mayor's wages, which the tax account pays, are
+owed to her; no task arriving unless a test schedules it (`opening` makes the whole pool arrive at
 08:00 on the first day, as the towns of `make_town` have it); the fake work backend of
 `world.testing`; and a harness that runs the world on a manual clock and stands in for the
 residents' runtimes."""
@@ -50,7 +51,7 @@ OCCUPATIONS = (
     {"id": "doctor", "title": "the doctor", "workplace": "clinic", "wage_per_hour": 9,
      "per_service": 4},
     {"id": "mayor", "title": "the mayor", "workplace": "hall", "wage_per_hour": 8,
-     "per_service": 0, "duty": "anywhere"},
+     "per_service": 0, "duty": "anywhere", "paid_from": "taxes"},
 )  # fmt: skip
 
 ITEMS = (
@@ -127,6 +128,7 @@ def town_config(
     residents: tuple[dict[str, Any], ...] = RESIDENTS,
     items: tuple[dict[str, Any], ...] = ITEMS,
     needs: dict[str, Any] = NEEDS,
+    tax: float = 0,
     **work: Any,
 ) -> TownConfig:
     return TownConfig.model_validate(
@@ -163,6 +165,7 @@ def town_config(
             "residents": list(residents),
             "occupations": list(OCCUPATIONS),
             "fund": {"start": 1000},
+            "tax": tax,
             "work": {
                 "split": "train",
                 "tasks_a_day": 0,

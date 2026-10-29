@@ -19,7 +19,8 @@ counts on the next day. Who lies bedridden is carried from day to day: a residen
 bed at a midnight (`bedridden`) and leaves it when treated (`recovered`, for one bedridden), and a
 visit to it is any other resident's arrival at the home where it lies, a housemate's coming home
 included. A measure is None where it has no value: a cached share that no reply reported, or the
-money and the health of a day without a midnight.
+money and the health of a day without a midnight. A run from before the tax had none: its tax and
+its tax account's figures read 0.
 """
 
 from __future__ import annotations
@@ -36,7 +37,7 @@ from typing import Any
 from agent.directory import TRACE
 from evaluation.records import Day, Entry, agent_dir, day_date, lived_days, town, trace_days
 from infrastructure.storage import RunDirectory
-from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN
+from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN, TAX, TAX_WAGE
 
 MEASURES = {
     "tasks_taken": "tasks it claimed from the Office's board",
@@ -48,6 +49,7 @@ MEASURES = {
     "tasks_withdrawn": "tasks the client withdrew at midnight while it held them",
     "hours_at_work": "hours at work at its workplace, as the midnight counted them for its wages",
     "wages": "its wages for those hours",
+    "tax": "the tax taken from its wages at midnight into the fund's tax account",
     "service_sums": "the sums due to it at once for its services: tasks, sales, dishes, patients",
     "rent": "the rent taken from its wages at midnight",
     "charges": "the daily charges on what it owns, taken from its wages at midnight",
@@ -108,6 +110,9 @@ TOWN = {
     "arrears": "the rent and charges the residents owed the fund at the checkpoint",
     **{f"taken_{kind}": f"what the fund took {words} that day" for kind, words in TAKEN.items()},
     **{f"paid_{kind}": f"what the fund paid {words} that day" for kind, words in PAID.items()},
+    "taxes": "the fund's tax account's balance at the day's checkpoint",
+    f"taken_{TAX}": "what the tax account took in taxes that day",
+    f"paid_{TAX_WAGE}": "what the tax account paid in wages that day",
 }
 """Every measure of the town's day and what it counts."""
 
@@ -195,6 +200,7 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
         "tasks_withdrawn": len(to_me("task_withdrawn", "holder")),
         "hours_at_work": sum(e["payload"]["hours"] for e in paid),
         "wages": sum(e["payload"]["wages"] for e in paid),
+        "tax": sum(e["payload"].get("tax", 0) for e in paid),
         "service_sums": sum(e["payload"]["amount"] for e in mine("service")),
         "rent": sum(e["payload"]["rent"] for e in paid),
         "charges": sum(e["payload"]["charges"] for e in paid),
@@ -279,8 +285,9 @@ def trace_measures(trace: Sequence[Entry]) -> Row:
 
 def town_days(run_dir: Path) -> list[Row]:
     """One row per lived day of the run at `run_dir`, by day: the measures of `TOWN`, the tasks
-    from the world log and the fund from the day's checkpoint, which holds its balance, what it
-    owes and is owed, and its takings and payments of the calendar day its midnight closed."""
+    from the world log and the fund from the day's checkpoint, which holds its balance and its tax
+    account's, what it owes and is owed, and its takings and payments of the calendar day its
+    midnight closed."""
     config, run = town(run_dir), RunDirectory(run_dir)
     rows = []
     for day in sorted(lived_days(run_dir).values(), key=lambda day: day.number):
@@ -301,6 +308,9 @@ def town_days(run_dir: Path) -> list[Row]:
                 "arrears": sum(fund["arrears"].values()),
                 **{f"taken_{kind}": fund["yesterday"].get(kind, 0) for kind in TAKEN},
                 **{f"paid_{kind}": fund["yesterday"].get(kind, 0) for kind in PAID},
+                "taxes": fund.get("taxes", 0),
+                f"taken_{TAX}": fund["yesterday"].get(TAX, 0),
+                f"paid_{TAX_WAGE}": fund["yesterday"].get(TAX_WAGE, 0),
             }
         )
     return rows

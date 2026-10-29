@@ -13,35 +13,46 @@
 # Calibration of a life (tests/experiments/test_config.py asserts the relations; the figures are
 # where they stand). Rent runs from 30 a day for a room in a shared house to 70 for the cottage,
 # and a day's food from 15 (three helpings of bread or fruit at the Store's starting 5) to 20
-# (stew at the Linde), so the cheapest life costs 45 a day and the dearest 90. The town's fund
-# pays each resident by the hour for its time at work at its own workplace, at its occupation's
-# rate (7 a programmer, the chef and the shopkeeper, 8 the mayor, 9 the team leader and the
-# doctor). Eight hours at the lowest wage earn 56, which keep the cheapest life with 11 over and
-# less than half as much again; the dearest takes ten hours at the highest wage. Wages are paid at
-# midnight with the rent and daily charges taken out of them, so that a day without work leaves
-# the purse alone and is owed from later wages, and starting purses of 180-300 are three to six
-# days of the resident's own life.
+# (stew at the Linde), so the cheapest life costs 45 a day and the dearest 90. Every occupation
+# is paid 8 an hour for its time at work at its own workplace, by the town's fund, or for the
+# mayor by the fund's tax account. At midnight every resident pays 15% of its day's wages and
+# sums per service in tax into that account, out of its wages first, before the rent, and what
+# the wages leave of it out of its purse; what neither covers, like the rent the wages do not
+# cover, is owed and taken from later wages, so that a day without work leaves the purse alone
+# but for the tax on its sums. Eight hours earn 64, 54 after the tax, which keep the cheapest
+# life with 9 over and less than half as much again. The dearest life, the cottage and a dish a
+# day, takes eleven hours and a quarter of wages, thirteen after the tax: the cottage's price is
+# a long day or a sum per service. Starting purses of 180-300 are three to six days of the
+# resident's own life.
 #
-# Sums per service. Each is at most a fifth of the least a customer pays for the service: 2 the
+# The tax and the mayor. At the fund's day below, the seven others earn 448 in wages and 92 in
+# sums and pay 81 in tax (67 on the wages alone), which covers the mayor's eight hours, 64; his
+# own tax of 10 stays in the account besides, which so gathers about 26 a day. What the account
+# lacks it owes the mayor; the fund's own money never makes it up.
+#
+# Sums per service. Each is at most a fifth of the least the customer pays for the service: 30 a
+# programmer for each task of its own accepted, the leader's own included, and 15 the team leader
+# for each task the team has accepted (the client pays 150, of which 45 go to the team), 2 the
 # chef a dish served (the cheapest dish is 10), 1 the shopkeeper a sale (the cheapest unit at the
 # Store is 5, which is why no good starts below it), 4 the doctor a patient examined or treated
-# (an examination is 20), 20 the team leader a task the programmers have accepted (the client
-# pays 150). The programmers' is the exception, a share of the client's payment: 40 for a task of
-# one's own accepted, the leader's own included, so that two fifths of the 150 go to the team.
+# (an examination is 20).
 #
-# The fund starts at 1,500. Its day, with eight hours' work each, three tasks arriving of which
-# half are accepted, and everyone living on three helpings of bread bought in one sale: 225 from
-# clients, 355 of rent and 120 in sales come in; 488 in wages, 90 for the tasks, 8 for the sales
-# and 72 to the supplier for the bread the town eats go out, 42 over, within a tenth of the 1,358
-# that pass through it. With no task accepted it pays out 93 more than it takes, so the starting
-# fund lasts sixteen days. The shopkeeper orders from the supplier at the wholesale price and sets
-# the Store's prices, which start at about half as much again; the starting stock is a few days of
-# the town's food. The chef buys for the kitchen at the Store's prices, which the fund pays
-# itself, so a dish costs the town the wholesale of its ingredients: 8 the soup, 16 the stew,
-# against 12 and 20 on the menu. The durables are things to save for: the bicycle (360) costs more
-# than any starting purse, the phone 240 and then 5 a day, the coat 150 and the book 40, one of
-# each in stock. The Hospital's fees start at 20 an examination and 60 a treatment, which
-# restores 25 health and ends an illness: a treatment is about a day's wages.
+# The fund starts at 1,500; its tax account is part of it, so that its day counts the mayor's
+# wages paid out and the tax as money moving within it. Its day, with eight hours' work each,
+# three tasks arriving of which half are accepted, and the town eating through the Store and the
+# kitchen (a dish each a day, the menu's in turn at a mean price of 14, their ingredients bought
+# for the kitchen in a sale a dish and the supplier paid their wholesale, a mean of 10): 225 from
+# clients, 355 of rent and 115 for dishes come in; 512 in wages, the mayor's included, 68 for the
+# tasks, 16 for the dishes, 8 for the sales and 77 to the supplier go out, 14 over, a hundredth
+# of the 1,376 that pass through it. With no task accepted it pays out 144 more than it takes, so
+# the starting fund lasts ten days. The shopkeeper orders from the supplier at the wholesale
+# price and sets the Store's prices, which start at about half as much again; the starting stock
+# is a few days of the town's food. The chef buys for the kitchen at the Store's prices, which the
+# fund pays itself, so a dish costs the town the wholesale of its ingredients: 8 the soup, 16 the
+# stew, against 12 and 20 on the menu. The durables are things to save for: the bicycle (360)
+# costs more than any starting purse, the phone 240 and then 5 a day, the coat 150 and the book
+# 40, one of each in stock. The Hospital's fees start at 20 an examination and 60 a treatment,
+# which restores 25 health and ends an illness: a treatment is about a day's wages.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
 # full day: a dish at the Linde is a day's food, eaten there, and bread and fruit are helpings
@@ -157,16 +168,18 @@ town:
   # The six occupations, each at its workplace, paid for each hour at work and a sum at once for
   # each service, as calibrated above. The mayor's work is no service to anyone in particular and
   # has no sum; it is being about the town, so once he has sat down to work at the Town Hall his
-  # duty runs wherever he goes until he stops, where everyone else's work stops on leaving it.
+  # duty runs wherever he goes until he stops, where everyone else's work stops on leaving it, and
+  # his wages are paid from the fund's tax account.
   occupations:
-    - {id: programmer, title: a programmer, workplace: office, wage_per_hour: 7, per_service: 40}
-    - {id: team-leader, title: the team leader, workplace: office, wage_per_hour: 9, per_service: 20}
-    - {id: chef, title: the chef, workplace: linde, wage_per_hour: 7, per_service: 2}
-    - {id: shopkeeper, title: the shopkeeper, workplace: store, wage_per_hour: 7, per_service: 1}
-    - {id: doctor, title: the doctor, workplace: hospital, wage_per_hour: 9, per_service: 4}
-    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0, duty: anywhere}
+    - {id: programmer, title: a programmer, workplace: office, wage_per_hour: 8, per_service: 30}
+    - {id: team-leader, title: the team leader, workplace: office, wage_per_hour: 8, per_service: 15}
+    - {id: chef, title: the chef, workplace: linde, wage_per_hour: 8, per_service: 2}
+    - {id: shopkeeper, title: the shopkeeper, workplace: store, wage_per_hour: 8, per_service: 1}
+    - {id: doctor, title: the doctor, workplace: hospital, wage_per_hour: 8, per_service: 4}
+    - {id: mayor, title: the mayor, workplace: town-hall, wage_per_hour: 8, per_service: 0, duty: anywhere, paid_from: taxes}
   fund:
     start: 1500
+  tax: 0.15 # of each resident's day's wages and sums per service, into the fund's tax account
   # Starting purses, as calibrated above: more for Lucia, who saved for her year, least for Aisha,
   # who spends before she counts. What each has with the others is in its own background.
   residents:

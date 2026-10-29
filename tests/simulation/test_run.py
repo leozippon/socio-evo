@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import re
 import signal
@@ -72,17 +73,22 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # Mei worked at the Office from about 08:15 to 17:00, waiting there for the tasks to come in,
     # Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde until 20:00,
     # his time buying for the kitchen at the Store not counted; each was paid its wages at
-    # midnight, its rent taken out of them.
+    # midnight, 15% of them and of its sums in tax (the sums being the service entries' paid)
+    # and its rent taken out of them.
     wages = {e["actor"]: e["payload"] for e in entries if e["kind"] == "wage"}
-    for name, rent, wage, hours in (
-        ("Mei", 30, 9, (8, 9)),
-        ("Olga", 35, 7, (11.5, 12)),
-        ("Jonas", 50, 7, (11.5, 12.5)),
+    for name, rent, hours in (
+        ("Mei", 30, (8, 9)),
+        ("Olga", 35, (11.5, 12)),
+        ("Jonas", 50, (11.5, 12.5)),
     ):
         paid = wages[name]
         assert hours[0] < paid["hours"] < hours[1], name
-        assert abs(paid["wages"] - paid["hours"] * wage) < 1
-        assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - rent)
+        assert abs(paid["wages"] - paid["hours"] * 8) < 1
+        sums = sum(
+            e["payload"]["paid"] for e in entries if e["kind"] == "service" and e["actor"] == name
+        )
+        assert paid["tax"] == math.floor(0.15 * (paid["wages"] + sums) + 0.5), name
+        assert (paid["rent"], paid["paid"]) == (rent, paid["wages"] - paid["tax"] - rent)
     # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
     # the next morning; the chef bought for the kitchen there, cooked and served, and handed a
     # dish to the first who came, unpaid; Mei bought bread and ate a helping, had a dish and took
@@ -101,9 +107,11 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     assert saved["holders"]["portions"] == {} and saved["holders"]["larder"] == {}
     fund = saved["fund"]
     money = sum(r["inventory"]["money"] for r in saved["residents"].values())
-    # Only the client's money came in and only the supplier's went out.
+    # Only the client's money came in and only the supplier's went out; the tax, with no mayor
+    # in this town to pay, stays in the tax account.
     supplier = sum(o["amount"] for o in orders)
-    assert fund["balance"] + money == 1500 + 240 + 230 + 210 + 150 - supplier
+    assert fund["balance"] + fund["taxes"] + money == 1500 + 240 + 230 + 210 + 150 - supplier
+    assert fund["taxes"] == sum(paid["tax"] for paid in wages.values()) > 0
     assert fund["yesterday"]["client"] == 150 and fund["yesterday"]["supplier"] == supplier
     assert fund["owed"] == fund["arrears"] == {} and fund["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]

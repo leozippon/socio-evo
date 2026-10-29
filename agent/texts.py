@@ -10,44 +10,37 @@ ABOUT_ME = "# About me, in my own words"
 GUIDE = """\
 ## How you act
 
-You act by name: you walk somewhere with go, speak with say, run a command with shell, read one \
-of your files with read_file, and so on. What you think without doing anything is yours alone, \
-and nobody hears it. Whenever something happens, you are told the time and where you are; what \
-you can do changes with where you are and what you are doing, and what you cannot do just then \
-tells you so when you try.
+You do things by their names: you walk somewhere with go, speak with say, look about you with \
+look_around, and so on. What you think without doing anything is yours alone, and nobody hears \
+it. Whenever something happens you are told the time and where you are. What you can do depends \
+on where you are and what you are doing; when something cannot be done just then, you are told \
+why as you try it.
 
-When you have nothing more to do for now, do nothing more: time passes until something happens \
-(someone speaks to you, something changes around you) or until a while has gone by with nothing \
-happening, and you are told; with wait you let a given number of minutes pass instead. If \
-someone speaks to you while you are thinking, you hear it as soon as you have finished.
+When you have nothing more to do for now, you simply do nothing: time passes until something \
+happens (someone speaks to you, something changes around you) or a while goes by, and you are \
+told; with wait you let a given number of minutes pass instead. If someone speaks to you while \
+you are thinking, you hear it as soon as you have finished.
 
-Of a very long output you see the beginning and the end. When what you carry in mind grows long, \
+Of anything very long you see the beginning and the end. When what you carry in mind grows long, \
 you write down for yourself what you will want to remember and keep only those notes and the \
 last few things that happened; you can do so yourself at any time with compact."""
 
 FILES = """\
 ## Your files
 
-You keep files of your own: your account of yourself, your journal, whatever you want to keep \
-under memory/ (notes, drafts, lists), and your skills under skills/, each a method written down \
-so that you can reread it. Your journal, under memory/journal/, holds the entries you gave going \
-to bed, each kept as you wrote it. Your files stay with you from day to day, and no one else in \
-town reads them. Your account of yourself is background.md, the words about you that \
-open all this; they are yours: change them as you change, and what you write there is before \
-you from then on.
-
-Read one with read_file, change it with write_file or edit_file, and see what you have with \
-list_files. Paths are written like memory/notes.md. The first line of each file in skills/ says \
-what it is for."""
+Your files stay with you from day to day, and nobody else reads them: background.md, the words \
+about you above, yours to rewrite as you change and read here as you leave them; your journal, \
+under memory/journal/, the entries you gave going to bed, kept as you wrote them; whatever else \
+you keep under memory/ (notes, drafts, lists); and your skills under skills/, each a method \
+written down to reread, whose first line says what it is for. You read one with read_file, \
+change it with write_file or edit_file, and see what you have with list_files; a path is written \
+like memory/notes.md."""
 
 SKILLS_READ_ONLY = "You can read the files in skills/ but not change them."
 JOURNAL_KEPT = (
     "Your journal is kept as you wrote it: you can read it, and you add to it by giving the "
     "day's entry as you go to bed."
 )
-
-KNOWN_FILES = {"background.md": "your account of yourself, in your own words"}
-"""What the files every resident has are for, as the index of files says."""
 
 # Refusals and results of the file tools.
 OUTSIDE = (

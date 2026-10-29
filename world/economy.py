@@ -18,16 +18,23 @@ they hand them over, of which the world keeps no account beyond the hand-over.
 The `Fund` is the town's money: the employer, the landlord and the owner of the Store, the
 Restaurant and the Hospital. Money enters the town only from clients, whose payment for a task
 accepted goes to the fund, and leaves it only to the supplier, whom the fund pays at once for what
-the Store orders; everything else moves between the fund and the residents, so that the fund and
-the inventories together change only by what clients pay and the supplier is paid. What the chef
+the Store orders; everything else moves between the fund and the residents, so that the fund, its
+tax account and the inventories together change only by what clients pay and the supplier is
+paid. What the chef
 buys at the Store for the kitchen is taken in as a sale and paid out for the kitchen, a movement
 within the fund. The fund pays what it has. A sum per service goes into the inventory at once
-(`Fund.service`); the day's wages are paid at midnight with the rent and the daily charges taken
-out of them (`Fund.settle`), so that money in hand is never touched by rent. What the fund cannot
-pay it owes (`owed`) and pays with the next wages; the rent and charges the wages did not cover are
-owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its movements since the
-last midnight by kind (`TAKEN` and `PAID`), and `yesterday` those of the day the last midnight
-closed.
+(`Fund.service`); the day's wages are paid at midnight with the tax, the rent and the daily
+charges taken out of them (`Fund.settle`), so that money in hand is never touched by rent, and
+only by the tax the wages do not cover. What
+the fund cannot pay it owes (`owed`) and pays with the next wages; the rent and charges the wages
+did not cover are owed to it (`arrears`) and taken from the next wages. Its `ledger` keeps its
+movements since the last midnight by kind (`TAKEN` and `PAID`, and the tax account's `TAX` and
+`TAX_WAGE`), and `yesterday` those of the day the last midnight closed.
+
+The fund's tax account (`Fund.taxes`) is money apart from the fund's own `balance`: every
+resident's tax goes into it, and it pays the wages of the occupations paid from taxes (the
+mayor's), as far as it has them; what it lacks it owes them, and the fund's own money never makes
+it up.
 
 The `Store` keeps its prices and the orders on their way, its shelves being a holder; the
 `Kitchen` keeps the menu's prices, its larder and portions being holders. The `Daybook` keeps, day
@@ -56,6 +63,8 @@ PAID = {
     "kitchen": "for the kitchen",
 }
 """The kinds of money the fund pays out, with how the report words each."""
+TAX, TAX_WAGE = "tax", "tax_wage"
+"""The tax account's kinds in the ledger: the taxes it takes in and the wages it pays out."""
 
 
 def money(currency: str, amount: int) -> str:
@@ -127,12 +136,16 @@ class Inventory(Holder):
 
 @dataclass(frozen=True)
 class Settled:
-    """What one resident's midnight settled: the day's `wages` and what the fund `owed_before`
-    are set against the `rent`, the daily `charges` and the `arrears_before`; the `remainder`,
-    if positive, is `paid` into the inventory as far as the fund has it and the rest is `owed`,
-    and if negative becomes the `arrears`."""
+    """What one resident's midnight settled: the day's `wages` and what its payer `owed_before`,
+    less the day's `tax` but for what was paid of it from the purse (`tax_from_purse`), are set
+    against the `rent`, the daily `charges` and the `arrears_before`; the `remainder`, if
+    positive, is `paid` into the inventory as far as the payer has it and the rest is `owed`,
+    and if negative becomes the `arrears`. A tax account short even of what the rent and charges
+    take leaves both `owed` and `arrears`."""
 
     wages: int
+    tax: int
+    tax_from_purse: int
     owed_before: int
     rent: int
     charges: int
@@ -145,13 +158,14 @@ class Settled:
 
 @dataclass
 class Fund:
-    """The town's fund, checkpointed whole (see the module docstring)."""
+    """The town's fund and its tax account, checkpointed whole (see the module docstring)."""
 
     balance: int
     ledger: dict[str, int] = field(default_factory=dict)
     yesterday: dict[str, int] = field(default_factory=dict)
     owed: dict[str, int] = field(default_factory=dict)
     arrears: dict[str, int] = field(default_factory=dict)
+    taxes: int = 0
 
     def take(self, kind: str, amount: int) -> None:
         """Money of `kind` into the fund: a client's payment, a sale or a dish."""
@@ -176,27 +190,64 @@ class Fund:
         self._owe(name, amount - paid)
         return paid
 
-    def settle(self, name: str, wages: int, rent: int, charges: int) -> Settled:
-        """`name`'s midnight: its `wages` for the day and what the fund owed it, less its `rent`,
-        its daily `charges` and its arrears (see the module docstring). What the wages cover of
-        the rent and charges is noted as taken in rent and paid in wages; it moves no money."""
+    def settle(
+        self,
+        name: str,
+        *,
+        wages: int,
+        tax: int,
+        purse: int,
+        rent: int,
+        charges: int,
+        from_taxes: bool,
+    ) -> Settled:
+        """`name`'s midnight: its `wages` for the day and what its payer owed it, less its `tax`,
+        its `rent`, its daily `charges` and its arrears (see the module docstring). The tax comes
+        out of the wages first, as far as they go: the fund pays it into the tax account as far
+        as it has the money; the tax account, paying `name` itself (`from_taxes`), keeps it.
+        What the wages leave of the tax is paid into the account from the `purse`, and what the
+        purse lacks joins the arrears, as unpaid rent does. What the wages cover of the rent and
+        charges is noted as taken in rent and paid in wages; from the fund it moves no money,
+        while the tax account pays it into the fund, and pays the rest of the wages into the
+        inventory, only as far as it has the money."""
         owed_before, arrears_before = self.owed.pop(name, 0), self.arrears.pop(name, 0)
-        earned, due = wages + owed_before, rent + charges + arrears_before
-        covered = min(earned, due)
+        earned = wages + owed_before
+        if from_taxes:
+            taxed = min(tax, earned)
+            self._note(TAX_WAGE, taxed)
+        else:
+            taxed = min(tax, earned, self.balance)
+            self.balance -= taxed
+            self._note("wage", taxed)
+        from_purse = min(tax - taxed, purse)
+        self.taxes += taxed * (not from_taxes) + from_purse
+        self._note(TAX, taxed + from_purse)
+        due = tax - taxed - from_purse + rent + charges + arrears_before
+        if from_taxes:
+            got = min(earned - taxed, self.taxes)
+        else:
+            got = min(earned - taxed, due + self.balance)  # the rent is the fund's own
+        covered, paid = min(got, due), max(got - due, 0)
         self._note("rent", covered)
-        self._note("wage", covered)
-        remainder = earned - due
-        paid = self.pay("wage", remainder) if remainder > 0 else 0
-        self._owe(name, max(remainder, 0) - paid)
-        if remainder < 0:
-            self.arrears[name] = -remainder
+        if from_taxes:
+            self.taxes -= covered + paid
+            self.balance += covered
+            self._note(TAX_WAGE, covered + paid)
+        else:
+            self.balance -= paid
+            self._note("wage", covered + paid)
+        self._owe(name, earned - taxed - got)
+        if due > covered:
+            self.arrears[name] = due - covered
         return Settled(
             wages=wages,
+            tax=tax,
+            tax_from_purse=from_purse,
             owed_before=owed_before,
             rent=rent,
             charges=charges,
             arrears_before=arrears_before,
-            remainder=remainder,
+            remainder=earned - taxed - due,
             paid=paid,
             owed=self.owed.get(name, 0),
             arrears=self.arrears.get(name, 0),

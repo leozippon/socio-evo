@@ -16,7 +16,8 @@ her day, writes her notes on people and fails to read a file she does not have. 
 18:00, goes home and goes to bed at 20:00 with a journal that claims he fixed task 2. Aisha never
 goes to bed and is put to sleep at 02:00. None of the three eats, so
 each is hungry by the first midnight and starving by the second, which costs health; rent is
-$20 a day on Mill Street and $30 at the flat.
+$20 a day on Mill Street and $30 at the flat, and a tenth of each day's wages and sums is paid in
+tax into the tax account, from which alone Vera's wages are paid.
 
 The others spend the day at home, and once Mei is asleep and Tomas in bed, at 20:00, go to work.
 Olga orders 5 helpings of bread at the store and sells Jonas 2 units of vegetables for the kitchen
@@ -151,7 +152,7 @@ async def resting(port: WorldPort) -> None:
 
 async def live(root: Path) -> None:
     """Live the two days into a new run directory at `root`."""
-    town = town_config(residents=RESIDENTS + LEADER + TRADES + CARE)
+    town = town_config(residents=RESIDENTS + LEADER + TRADES + CARE, tax=0.1)
     config = ExperimentConfig(
         name=root.name,
         llm=LLMConfig(backend="scripted", base_url="-", api_key_env="-", model="scripted"),

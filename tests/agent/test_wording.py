@@ -13,7 +13,6 @@ def test_nothing_the_runtime_puts_before_a_resident_names_a_trait_or_the_machine
         for name, value in vars(texts).items()
         if isinstance(value, str) and not name.startswith("__")
     ]
-    fixed += texts.KNOWN_FILES.values()
     fixed += [
         json.dumps([spec.name, spec.description, spec.parameters])
         for spec in (*files.SPECS, COMPACT)

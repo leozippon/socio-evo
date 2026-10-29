@@ -7,7 +7,9 @@ A place is a home, one of the five workplaces (`WORKPLACES`: the office, the sto
 restaurant, the hospital and the hall, exactly one of each) or a social place, which has no
 purpose but company. Each resident has an `occupation`, which says where it works and what the
 town pays it: a wage for each hour at work at the occupation's workplace and a sum for each
-service rendered, both from the town's one fund, which starts at `fund.start`. Each occupation
+service rendered, both from the town's one fund, which starts at `fund.start`, except the wages
+of an occupation paid from the fund's tax account, into which every resident pays `tax` of its
+day's wages and sums at midnight. Each occupation
 works at a place of its own kind (`WORKPLACE_OF`), and every workplace is some occupation's. The
 office takes in clients' tasks (`work`), which arrive at random through the working day; the
 hospital charges the fees of `hospital` for an examination and a treatment.
@@ -300,7 +302,8 @@ class Occupation(StrictModel):
     the team leader for one of the programmers', the chef for a dish served, the shopkeeper for a
     sale, the doctor for a patient examined or treated. Its `duty` says where the hours at work
     run once one has sat down: at the workplace, until one leaves it or stops; or `anywhere`,
-    wherever one goes until one stops, as the mayor's, whose work is being about the town."""
+    wherever one goes until one stops, as the mayor's, whose work is being about the town. Its
+    wages are `paid_from` the fund, or from the fund's tax account (`taxes`), as the mayor's."""
 
     id: OccupationId
     title: str = Field(min_length=1)
@@ -308,6 +311,7 @@ class Occupation(StrictModel):
     wage_per_hour: int = Field(ge=1)
     per_service: int = Field(ge=0)
     duty: Literal["workplace", "anywhere"] = "workplace"
+    paid_from: Literal["fund", "taxes"] = "fund"
 
 
 class FundSettings(StrictModel):
@@ -414,6 +418,13 @@ class TownConfig(StrictModel):
     residents: tuple[Resident, ...] = Field(min_length=1)
     occupations: tuple[Occupation, ...] = Field(min_length=1)
     fund: FundSettings
+    tax: float = Field(
+        default=0,
+        ge=0,
+        lt=1,
+        description="the share of its day's wages and sums each resident pays into the fund's "
+        "tax account at midnight; none unless set",
+    )
     work: Work
     items: tuple[Item, ...] = Field(min_length=1)
     store: StoreSettings

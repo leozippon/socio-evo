@@ -174,6 +174,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
         "yesterday": {"client": 50, "service": 20},
         "owed": {},
         "arrears": {"Mei": 20, "Tomas": 30, "Aisha": 20},
+        "taxes": 0,
     }
     assert state["store"] == {"prices": {"bread": 4, "eggs": 2, "vegetables": 3, "bicycle": 50,
                                          "phone": 40, "coat": 30}, "pending": []}  # fmt: skip

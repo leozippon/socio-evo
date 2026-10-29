@@ -4,6 +4,7 @@ rule, and the residents' backgrounds."""
 from __future__ import annotations
 
 import re
+from statistics import fmean
 
 import pytest
 import yaml
@@ -126,75 +127,83 @@ def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
         text = rules.text(resident.name)
         assert 2500 <= len(text) <= 3500, (resident.name, len(text))
         assert offences(text) == [], (resident.name, offences(text))
-        assert text.split("\n\n")[2].startswith("Work. You are ")  # its occupation and workplace
+        assert text.split("\n\n")[1].startswith("Work. You are ")  # its occupation and workplace
 
 
 # The work the fund's day is set against: the tasks arriving a day, half of them accepted.
 ACCEPTED = 0.5
 HOURS = 8
 """A day's work at one's workplace."""
-TEAMS_SHARE = 2 / 5
-"""The share of a client's payment that goes to the team: the programmer's and the leader's sums."""
 
 
-def test_wages_rent_food_and_the_fund_are_set_against_one_another():
+def test_wages_tax_rent_food_and_the_fund_are_set_against_one_another():
     config = town().town
     occupations = {occupation.id: occupation for occupation in config.occupations}
     assert set(occupations) == set(WORKPLACE_OF)  # the six of the design
-    n = len(config.residents)
+    n, tax = len(config.residents), config.tax
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
-    wages = [occupation.wage_per_hour for occupation in occupations.values()]
     # The cheapest day's food: the helpings of ready food that make a day's need, at the price
     # the Store starts with.
     food = min(
         (item for item in config.supplied if item.ready),
         key=lambda good: good.price * round(A_DAYS_FOOD / good.nourishment),
     )
-    helpings = round(A_DAYS_FOOD / food.nourishment)
-    a_day = helpings * food.price
+    a_day = round(A_DAYS_FOOD / food.nourishment) * food.price
+    # A day's work at the lowest wage, after its tax, keeps the cheapest life with something
+    # over and less than half as much again; the dearest life, the dearest home and the dearest
+    # dish every day, takes twelve to fourteen hours at the highest wage after its tax.
+    wages = [o.wage_per_hour * (1 - tax) for o in occupations.values()]
     cheapest = min(rents.values()) + a_day
-    # A day's work at the lowest wage keeps the cheapest life with something over, and less than
-    # half as much again; the dearest life, the dearest home and the dearest dish every day,
-    # takes ten hours at the highest wage.
     assert cheapest < HOURS * min(wages) < 1.5 * cheapest
     dearest = max(rents.values()) + max(dish.price for dish in config.dishes)
-    assert 9 * max(wages) < dearest <= 10 * max(wages)
+    assert 12 <= dearest / max(wages) <= 14
     for resident in config.residents:  # a purse lasts three to six days of one's own life
         own = rents[resident.home] + a_day
         assert 3 * own <= resident.purse <= 6 * own, resident.name
-    # The fund's day, everyone at work for a day, half the tasks arriving accepted from the
-    # programmers, and everyone living on the cheapest food, bought in one sale each: clients,
-    # rent and sales in; wages, the sums for tasks and sales and the supplier's price of the
-    # food the town eats out; within a tenth of what passes through it.
+    # The fund's day, its tax account being part of it: everyone at work for a day, half the tasks
+    # arriving accepted from the programmers, and the town eating through the Store and the
+    # kitchen, a dish each, the menu's in turn, its ingredients bought for the kitchen in a sale
+    # a dish and the supplier paid their wholesale. Clients, rent and dishes come in; wages, the
+    # mayor's from the tax account among them, the sums for tasks, dishes and sales and the
+    # supplier go out, and the tax moves within it: within a tenth of what passes through it.
     office = sum(r.occupation in ("programmer", "team-leader") for r in config.residents)
     assert config.work.tasks_a_day < office  # fewer than those who take them on
     accepted = config.work.tasks_a_day * ACCEPTED
-    task = occupations["programmer"].per_service + occupations["team-leader"].per_service
+    dish = fmean(d.price for d in config.dishes)
+    wholesale = fmean(
+        sum(units * config.item(i).wholesale for i, units in d.ingredients.items())  # type: ignore[operator]
+        for d in config.dishes
+    )
     rent = sum(rents[resident.home] for resident in config.residents)
-    paid_wages = HOURS * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
-    sales, supplier = n * a_day, n * helpings * food.wholesale
-    sale_sums = n * occupations["shopkeeper"].per_service
-    taken = accepted * config.work.payment + rent + sales
-    paid = paid_wages + accepted * task + sale_sums + supplier
+    wages = HOURS * sum(occupations[r.occupation].wage_per_hour for r in config.residents)
+    tasks = accepted * (
+        occupations["programmer"].per_service + occupations["team-leader"].per_service
+    )
+    meals = n * (occupations["chef"].per_service + occupations["shopkeeper"].per_service)
+    taken = accepted * config.work.payment + rent + n * dish
+    paid = wages + tasks + meals + n * wholesale
     assert abs(taken - paid) <= (taken + paid) / 10
     # With no task accepted, the fund pays out more than it takes, and its start lasts ten days.
-    short = paid_wages + sale_sums + supplier - rent - sales
+    short = wages + meals + n * wholesale - rent - n * dish
     assert short > 0 and config.fund.start >= 10 * short
+    # The tax of a day of eight hours by the seven others, on their wages and their sums of the
+    # fund's day, covers the mayor's eight hours, without his own.
+    paid_from_taxes = [o.id for o in occupations.values() if o.paid_from == "taxes"]
+    assert paid_from_taxes == ["mayor"]
+    mayor = HOURS * occupations["mayor"].wage_per_hour
+    assert tax * (wages - mayor + tasks + meals) >= mayor
 
 
 def test_a_sum_per_service_is_at_most_a_fifth_of_what_the_customer_pays():
     config = town().town
     sums = {occupation.id: occupation.per_service for occupation in config.occupations}
     least = {
-        "shopkeeper": min(item.price for item in config.supplied),
-        "chef": min(dish.price for dish in config.dishes),
-        "doctor": min(config.hospital.examination, config.hospital.treatment),
+        "programmer": config.work.payment,
         "team-leader": config.work.payment,
-        "mayor": 0,
+        "chef": min(dish.price for dish in config.dishes),
+        "shopkeeper": min(item.price for item in config.supplied),
+        "doctor": min(config.hospital.examination, config.hospital.treatment),
     }
     for occupation, paid in least.items():
-        assert sums[occupation] <= paid / 5, occupation
-    assert sums["mayor"] == 0 and all(sums[o] > 0 for o in least if o != "mayor")
-    # The programmers' sum is the exception, a share of the client's payment: with the leader's,
-    # two fifths of it.
-    assert sums["programmer"] + sums["team-leader"] <= TEAMS_SHARE * config.work.payment
+        assert 0 < sums[occupation] <= paid / 5, occupation
+    assert sums["mayor"] == 0

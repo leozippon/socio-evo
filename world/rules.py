@@ -2,11 +2,12 @@
 
 The rules are derived from the configuration and from who lives where, which the world passes
 in as it stands: a move changes the homes, the free rooms and one's own rent, and nothing else
-in them changes during a run. They are part of the system prompt. They describe
+in them changes during a run. They are part of the system prompt, what the resident knows of
+its own work and its town, told in the second person as the town speaks to it. They describe
 what can be done and what follows from it, in plain words, and nothing else: not the length of
 the run, not the machinery, not how anyone ought to behave. Their six sections (`SECTIONS`) are
-short: the town's places, the resident's own occupation and workplace, its money, its body, the
-others (who lives and works where, and how speech goes) and sleep. `help` tells the detail by
+short: the resident's own occupation and workplace, its money, the town's places, the others
+(who lives and works where, and how speech goes), its body and sleep. `help` tells the detail by
 topic (`TOPICS`): the work of each place of work, money, the body, the day and the places.
 """
 
@@ -20,8 +21,10 @@ from world.clock import parse_hour
 from world.config import A_DAYS_FOOD, DayHours, Item, TownConfig
 from world.telling import cap, counted, duration, listed
 
-SECTIONS = ("town", "work", "money", "body", "people", "sleep")
-"""The sections of the standing rules, in their order."""
+SECTIONS = ("work", "money", "town", "people", "body", "sleep")
+"""The sections of the standing rules, in their order: one's own work first."""
+HEADING = "## Your work and your town"
+"""What the rules are headed with where the resident reads them."""
 TOPICS = ("office", "store", "restaurant", "hospital", "hall", "money", "body", "day", "places")
 """What `help` tells more of."""
 MAX_WAIT_MINUTES = 600
@@ -48,14 +51,15 @@ OWN_WORK = {
         "client withdraws it, at the end of {withdrawn}."
     ),
     "chef": (
-        "You cook dishes in its kitchen from what the kitchen holds, set the menu's prices and "
-        "serve whoever comes while you are at work there, who buys a dish, or is handed one with "
-        "pass and pays nothing. You buy what you cook with at {store} with buy for_the_kitchen, "
-        "and the fund pays."
+        "Its kitchen is open while you are at work there: you cook dishes from what the kitchen "
+        "holds and set the menu's prices, and whoever comes buys a dish, or is handed one by you "
+        "with pass and pays nothing. You buy what you cook with at {store} with buy "
+        "for_the_kitchen, and the fund pays."
     ),
     "shopkeeper": (
-        "It is open while you are at work there: you sell its goods at the prices you set, and "
-        "order more from the supplier, which the fund pays and which arrives the next morning."
+        "Its counter is open while you are at work there: you sell its goods at the prices you "
+        "set, and order more from the supplier, which the fund pays and which arrives the next "
+        "morning."
     ),
     "doctor": (
         "Its surgery is open while you are at work there: you examine and treat patients, at "
@@ -117,6 +121,11 @@ def comfort_word(comfort: float) -> str | None:
     return None
 
 
+def share(rate: float) -> str:
+    """`a tenth`, `a fifth`, `12%`: a share of money, as the town tells it."""
+    return {0.5: "half", 0.25: "a quarter", 0.2: "a fifth", 0.1: "a tenth"}.get(rate, f"{rate:.0%}")
+
+
 def longest_sleep(day: DayHours) -> str:
     """How long one sleep lasts at most, told: `12 hours`."""
     return duration(parse_hour(day.sleep_at_most))
@@ -132,7 +141,7 @@ class Rules:
         given)."""
         sections = self.sections(name, homes)
         body = "\n\n".join(f"{_HEADINGS[s]}. {sections[s]}" for s in SECTIONS)
-        return f"How the town works.\n\n{body}"
+        return f"{HEADING}\n\n{body}"
 
     def help(self, topic: str, homes: Homes | None = None) -> str:
         """More on `topic`, with `homes` as they stand now, or what one can ask about."""
@@ -167,8 +176,7 @@ class Rules:
             f"The places, with the short name you go there by: {names}. Walking from one to "
             f"another takes {c.travel_minutes} minutes"
             + (f", {routes}" if routes else "")
-            + "; on the way nobody can speak to you. Your home is "
-            f"{my_home.name}. help tells more of the town, by topic."
+            + "; on the way nobody can speak to you. help tells more of the town, by topic."
         )
 
         store, withdrawn = c.workplace("store").name, self._withdrawn()
@@ -187,14 +195,27 @@ class Rules:
             programmer = c.occupation("programmer")
             sums.append(f"{money(programmer.per_service)} for each task of your own accepted")
         at = "" if occupation.duty == "anywhere" else f" at {workplace.name}"
+        wage = f"{money(occupation.wage_per_hour)} an hour for your time at work{at}"
+        if occupation.paid_from == "taxes":
+            paid = (
+                f"The tax everyone pays, {share(c.tax)} of all they earn, pays you {wage}, as far "
+                "as it goes, and what it lacks is owed to you"
+            )
+            tax = "your own tax"
+        else:
+            paid = f"The town's fund pays you {wage}"
+            tax = f"{share(c.tax)} of all you earned that day in tax"
+            taxed = [o.title for o in c.occupations if o.paid_from == "taxes"]
+            tax += f", from which {listed(taxed)} is paid" if taxed else ""
         money_rules = (
-            f"You have {money(me.purse)} to begin with. The town's fund pays you "
-            f"{money(occupation.wage_per_hour)} an hour for your time at work{at}"
+            f"You have {money(me.purse)} to begin with. {paid}"
             + (f", and {listed(sums)}" if occupation.per_service else "")
-            + ". At midnight your wages are paid into your purse, with the rent for your room, "
-            f"{money(my_home.rent)} a day, taken out of them. You pay for everything in cash from "
-            "your purse. With pass you hand money or things to anyone with you; put leaves "
-            "something where you are for anyone, and get takes what is left there."
+            + ". At midnight your wages are paid into your purse, less the rent for your room, "
+            + money(my_home.rent)
+            + (f" a day, and {tax}." if c.tax else " a day.")
+            + " You pay for everything in cash from your purse; with pass you hand money or "
+            "things to anyone with you, put leaves something where you are for anyone, and get "
+            "takes what is left there."
         )
 
         food = self._a_days_food()
@@ -217,19 +238,19 @@ class Rules:
 
         day = c.day
         sleep = (
-            "Go to bed at home at any hour with sleep, giving the hour you want to wake and, if "
-            "you write one, the day's entry in your journal; an entry given again the same day "
-            f"is added to it. You cannot sleep longer than {longest_sleep(day)} at a stretch. In "
-            "bed, before you fall asleep, you can look back over your day and see to your files. "
-            f"At {day.forced_sleep} anyone still up falls asleep where they are and wakes at home "
+            "You go to bed at home with sleep, at any hour, giving the hour you want to wake and, "
+            "if you write one, the day's entry for your journal; an entry given again the same "
+            f"day is added to it. One sleep lasts at most {longest_sleep(day)}. In bed, before "
+            "you fall asleep, you can look back over your day and see to your files. At "
+            f"{day.forced_sleep} whoever is still up falls asleep where they are and wakes at home "
             f"at {day.forced_wake}."
         )
         return {
-            "town": town,
             "work": work,
             "money": money_rules,
-            "body": body,
+            "town": town,
             "people": people,
+            "body": body,
             "sleep": sleep,
         }
 
@@ -360,8 +381,9 @@ class Rules:
         )
 
         hall_work = (
-            f"At {hall.name} the mayor reads the town's report with report: what the fund "
-            "holds, took in and paid out, what it owes and who owes rent; the tasks open at "
+            f"At {hall.name} the mayor reads the town's report with report: what the fund and "
+            "its tax account hold, took in and paid out, what it owes and who owes rent; the "
+            "tasks open at "
             f"{office.name} and those accepted, and by whom; the stock, prices and sales of "
             f"{store.name}; the menu and the dishes served at {restaurant.name}; the patients of "
             f"{hospital.name}; and each resident's occupation, time at work and health as others "
@@ -371,12 +393,29 @@ class Rules:
         )
 
         fees_charged = any(item.fee_per_day for item in c.items)
+        taxed = [o.title for o in c.occupations if o.paid_from == "taxes"]
+        tax_detail = (
+            f" Everyone pays {share(c.tax)} of all they earn, wages and sums alike, in tax into "
+            "the fund's tax account"
+            + (
+                f", which pays the wages of {listed(taxed)} instead of the fund, as far as it "
+                "holds the money, and owes the rest"
+                if taxed
+                else ""
+            )
+            + ". It is taken from your wages and, where they do not cover it, from your purse; "
+            "what your purse lacks you owe, as you owe rent."
+            if c.tax
+            else ""
+        )
         money_detail = (
             "The town keeps one fund, which takes in what clients pay for the work, the rent, "
             "what is sold and the fees, and pays everyone who works: a wage for each hour at "
             "work at one's own place of work, from sitting down to work until one stops, and a "
-            "sum at once for each service. At midnight your wages for the day are paid into your "
-            "purse with the rent for your room"
+            f"sum at once for each service.{tax_detail} At midnight your wages for the day are "
+            "paid into your purse with "
+            + ("the tax and " if c.tax else "")
+            + "the rent for your room"
             + (
                 ", and the daily charge on anything you own that carries one,"
                 if fees_charged

@@ -73,13 +73,11 @@ class AgentDirectory:
         return sorted(found)
 
     def index(self) -> str:
-        """One line per file: its path, and what it is for where that is known; for a skill,
-        the first line of the file."""
+        """One line per file: its path, and for a skill the first line of the file, which says
+        what it is for."""
         lines = []
         for name in self.files():
-            description = texts.KNOWN_FILES.get(name)
-            if name.startswith(f"{SKILLS}/"):
-                description = _first_line(self.root / name)
+            description = _first_line(self.root / name) if name.startswith(f"{SKILLS}/") else ""
             lines.append(f"- {name}: {description}" if description else f"- {name}")
         return "\n".join(lines)
 

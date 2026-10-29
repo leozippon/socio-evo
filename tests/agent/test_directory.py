@@ -13,7 +13,7 @@ def test_the_system_prompt_opens_with_the_residents_own_account_and_follows_the_
     first = directory.system_prompt(rules)
     assert first == directory.system_prompt(rules)
     assert first.startswith(f"{texts.ABOUT_ME}\n\n{BACKGROUND}\n\n{rules}\n\n")
-    assert first.endswith("- background.md: your account of yourself, in your own words\n")
+    assert first.endswith(f"{texts.FILES}\n\n- background.md\n")
 
     directory.session_path.write_text("{}\n", encoding="utf-8")
     assert directory.system_prompt(rules) == first

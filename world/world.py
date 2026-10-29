@@ -13,9 +13,9 @@ waiting resident the time, and the day's schedule, which is all the fixed struct
 day N (whose daytime is calendar day N): the arrival of each task drawn for the day, told to those
 at the Office, and the delivery of what the Store ordered the day before; midnight, when each
 resident's food and health are reckoned and illness comes or passes, its wages are paid with its
-rent and daily charges taken out of them, with a statement, the clients withdraw the tasks whose
-time has run out, the portions the kitchen did not sell are gone and the next day's arrivals are
-drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
+tax, rent and daily charges taken out of them, with a statement, the clients withdraw the tasks
+whose time has run out, the portions the kitchen did not sell are gone and the next day's arrivals
+are drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
 brought up to date (see below). No place keeps hours, and residents go to bed and wake when they
 choose, except that one sleep lasts at most a configured span and that nobody wakes between the
 forced sleep and the checkpoint. At the checkpoint the world waits until every resident is asleep
@@ -37,7 +37,8 @@ rent, the Store's sales, the dishes served and the Hospital's fees, pays the sup
 Store's orders, and pays each resident at once a sum for each service and, at midnight, its wages
 for its time on duty (`on_duty`: at work, which it sits down to at its own workplace, or on its way
 at work for the mayor, whose duty runs anywhere; `Resident.worked`, counted as the body is reckoned
-and cleared at midnight), with its rent and daily charges taken out of them. The daybook
+and cleared at midnight), with its tax, rent and daily charges taken out of them; the tax goes into
+the fund's tax account, which pays the mayor's wages instead of the fund. The daybook
 (`Daybook`) keeps the days the mayor's `report` tells, with the fund's (`fund_report`), the
 Office's, the Store's, the kitchen's, the Hospital's and the residents'; the mayor's announcements
 stand on the Town Hall's board.
@@ -128,6 +129,8 @@ from world.economy import (
     SHELVES,
     SUPPLIER,
     TAKEN,
+    TAX,
+    TAX_WAGE,
     Daybook,
     Fund,
     Holder,
@@ -457,16 +460,20 @@ class World:
             )
 
     def _settle(self, day: int) -> None:
-        """Midnight for every resident, in the configuration's order: its body is brought up to
-        the hour and its health moves by the day (a resident whose health has reached its floor
-        takes to its bed here), its illness passes or comes (`_illness`), the day's food is
-        reckoned, its wages for its time at work are paid with its rent and daily charges taken
-        out of them (`Fund.settle`: when the fund runs short, those settled first are paid first),
-        and the statement is told, the team leader's with the Office's day (`_office_told`); then
-        the fund's day and the daybook's are closed."""
+        """Midnight for every resident, in the configuration's order but with those paid from
+        the tax account last, once the day's taxes are in it: its body is brought up to the hour
+        and its health moves by the day (a resident whose health has reached its floor takes to
+        its bed here), its illness passes or comes (`_illness`), the day's food is reckoned, its
+        wages for its time at work are paid with its tax, rent and daily charges taken out of
+        them (`Fund.settle`: the tax is `town.tax` of the day's wages and the sums paid it that
+        day, to the nearest whole, and what the wages leave of it is paid from the purse, or
+        owed; when the fund runs short, those settled first are paid first), and the statement
+        is told, the team leader's with the Office's day (`_office_told`); then the fund's day
+        and the daybook's are closed."""
         date = tell_date(day, self.config.start_date)
         hours: dict[str, int] = {}
-        for r in self.residents.values():
+        residents = sorted(self.residents.values(), key=lambda r: r.occupation.paid_from == "taxes")
+        for r in residents:
             self.reckon(r)
             living, inventory = r.living, r.inventory
             home = self.config.place(r.home)
@@ -493,17 +500,27 @@ class World:
                 stock.append(f"What the kitchen did not sell is gone: {listed(unsold)}.")
             charged = [i for i in self.config.items if i.fee_per_day and inventory.units(i.id)]
             wages = r.worked * r.occupation.wage_per_hour // 3600
-            charges = sum(item.fee_per_day for item in charged)
-            settled = self.fund.settle(r.name, wages, home.rent, charges)
+            sums = sum(int(paid) for kind, paid, _ in inventory.moves if kind == "service")
+            settled = self.fund.settle(
+                r.name,
+                wages=wages,
+                tax=math.floor(self.config.tax * (wages + sums) + 0.5),
+                purse=inventory.money,
+                rent=home.rent,
+                charges=sum(item.fee_per_day for item in charged),
+                from_taxes=r.occupation.paid_from == "taxes",
+            )
             held = inventory.money
-            inventory.money += settled.paid
+            inventory.money += settled.paid - settled.tax_from_purse
             self.record(
                 "wage",
-                lambda w, r=r, held=held, paid=settled.paid: (
+                lambda w, r=r, held=held, paid=settled.paid, taxed=settled.tax_from_purse: (
                     f"At midnight your purse held {self.money(held)}"
                     + (
                         f", and {self.money(paid)} of your wages went into it."
                         if paid
+                        else f", and {self.money(taxed)} of it went in tax."
+                        if taxed
                         else "; none of your wages went into it."
                     )
                     if w == r.name
@@ -617,21 +634,36 @@ class World:
         self, r: Resident, settled: Settled, home: Place, charged: list[Item]
     ) -> list[str]:
         """The statement's items on `r`'s wages as `settled` at midnight: its time at work and
-        what it earned, what the fund owed it, the rent for its room at `home`, the daily
-        charges on the items `charged` and the rent it owed, and what came of them."""
+        what it earned, what its payer (the fund, or the tax account) owed it, the tax, the rent
+        for its room at `home`, the daily charges on the items `charged` and the rent it owed,
+        and what came of them."""
         worked = duration(r.worked)
         money = self.money
+        payer = "the tax account" if r.occupation.paid_from == "taxes" else "the fund"
         items = [
             f"{worked} at work, {money(settled.wages)} in wages" if worked else "no time at work"
         ]
         if settled.owed_before:
-            items.append(f"{money(settled.owed_before)} the fund owed you")
+            items.append(f"{money(settled.owed_before)} {payer} owed you")
+        tax, from_purse = settled.tax, settled.tax_from_purse
+        if tax:
+            items.append(
+                f"tax on the day's earnings {money(tax)}"
+                + (", paid from your purse" if from_purse == tax else "")
+                + (f", {money(from_purse)} of it from your purse" if 0 < from_purse < tax else "")
+            )
         items.append(f"rent for your room at {home.name} {money(settled.rent)}")
         items += [f"the daily charge on {item.name} {money(item.fee_per_day)}" for item in charged]
         if settled.arrears_before:
             items.append(f"{money(settled.arrears_before)} of rent you owed")
-        left, paid = settled.remainder, settled.paid
-        if left < 0:
+        left, paid, owed, arrears = settled.remainder, settled.paid, settled.owed, settled.arrears
+        if owed and arrears:  # the tax account short even of what the rent took
+            items.append(
+                f"{payer} could not pay {money(owed)} of your wages and owes it to you, and what "
+                f"it paid fell {money(arrears)} short of that; you owe it, and it is taken from "
+                "your next wages"
+            )
+        elif left < 0:
             items.append(
                 f"your wages fell {money(-left)} short of that; you owe it, and it is taken from "
                 "your next wages"
@@ -643,11 +675,11 @@ class World:
         elif paid:
             items.append(
                 f"{money(left)} left of your wages, of which {money(paid)} paid into your purse; "
-                f"the fund could not pay the other {money(settled.owed)} and owes it to you"
+                f"{payer} could not pay the other {money(owed)} and owes it to you"
             )
         else:
             items.append(
-                f"{money(left)} left of your wages, which the fund could not pay and owes you"
+                f"{money(left)} left of your wages, which {payer} could not pay and owes you"
             )
         return items
 
@@ -1436,13 +1468,14 @@ class World:
         return told(r.name)
 
     def report(self) -> str:
-        """The town's report, as the mayor reads it at the Town Hall: what the fund holds and its
-        day before (`fund_report`); the last seven days the daybook has closed, a line each (the
-        fund's balance and how it moved, the tasks accepted, the sales, the dishes served, the
-        patients); today so far (the Office's open tasks and who holds them, the Store's shelves
-        and the menu, what was accepted, sold, served and seen today); each resident's
-        occupation, time at work the day before and health as others see it, whether it is ill
-        and whether it is in bed; and the announcements standing. No purse is in it."""
+        """The town's report, as the mayor reads it at the Town Hall: what the fund and its tax
+        account hold and their day before (`fund_report`); the last seven days the daybook has
+        closed, a line each (the fund's balance and how it moved, the tasks accepted, the sales,
+        the dishes served, the patients); today so far (the Office's open tasks and who holds
+        them, the Store's shelves and the menu, what was accepted, sold, served and seen today);
+        each resident's occupation, time at work the day before and health as others see it,
+        whether it is ill and whether it is in bed; and the announcements standing. No purse is
+        in it."""
         c, book = self.config, self.daybook
         parts = [f"The town's report, {tell_moment(self.clock.now(), c.start_date)}."]
         parts.append(f"The fund. {self.fund_report()}")
@@ -1522,8 +1555,8 @@ class World:
 
     def fund_report(self) -> str:
         """The fund's day, as the town tells it: what the fund holds, what it took in and paid
-        out by kind on the day the last midnight closed, what it owes in wages and who owes it
-        rent."""
+        out by kind on the day the last midnight closed, the same of its tax account, what it
+        owes in wages and who owes it rent."""
         fund, money = self.fund, self.money
         day = fund.yesterday
         took = [f"{money(day[kind])} {words}" for kind, words in TAKEN.items() if kind in day]
@@ -1532,6 +1565,9 @@ class World:
             f"The fund holds {money(fund.balance)}.",
             f"Yesterday it took in {listed(took) or 'nothing'} and paid out "
             f"{listed(paid) or 'nothing'}.",
+            f"Its tax account holds {money(fund.taxes)}; yesterday it took in "
+            f"{money(day.get(TAX, 0))} in taxes and paid out {money(day.get(TAX_WAGE, 0))} in "
+            "wages.",
         ]
         if fund.owed:
             owed = listed([f"{name} {money(amount)}" for name, amount in fund.owed.items()])

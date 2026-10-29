@@ -173,11 +173,13 @@ async def test_the_mayor_reads_the_report_and_announces_at_the_hall(make_town, t
     report = (await town.call("Vera", "report")).text
     assert report == (
         "You sat down to work. It is 09:15. The town's report, Tuesday 2 January, 09:15.\n\n"
-        "The fund. The fund holds $914. Yesterday it took in $50 from clients, $110 in rent and "
-        "daily charges and $8 in sales and paid out $232 in wages and $22 in sums for services. "
-        "Owing rent the wages did not cover: Aisha $20, Jonas $30 and Lucia $30.\n\n"
+        "The fund. The fund holds $948. Yesterday it took in $50 from clients, $80 in rent and "
+        "daily charges and $8 in sales and paid out $168 in wages and $22 in sums for services. "
+        "Its tax account holds $0; yesterday it took in $0 in taxes and paid out $0 in wages. It "
+        "owes in wages it could not pay: Vera $64. Owing rent the wages did not cover: Aisha $20, "
+        "Jonas $30, Lucia $30 and Vera $30.\n\n"
         "The last days, as each closed at midnight:\n"
-        "Monday 1 January: the fund held $914 at midnight, down $86 on the day; accepted task 1 "
+        "Monday 1 January: the fund held $948 at midnight, down $52 on the day; accepted task 1 "
         "by Mei; sold 2 helpings of bread; served nothing; nobody seen at the clinic.\n\n"
         "Today.\n"
         "The workshop. Open on the board: task 2 (org/repo2), held by nobody; task 3 "
