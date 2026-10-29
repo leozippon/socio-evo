@@ -1,15 +1,17 @@
-# A check of the whole loop against the model before a run: Mei, the team leader, Olga, the
-# shopkeeper, and Jonas, the chef, in the town for one day, so that the Office, the Store and the
-# Linde all work.
+# A check of the whole loop against the model before a run: Mei, the team leader, Aisha, a
+# programmer, Olga, the shopkeeper, and Jonas, the chef, in the town for one day, so that the
+# Office, the Store and the Linde all work.
 base: town.yaml
 name: smoke
 days: 1
 residents:
   - {name: Mei, background: experiments/residents/mei.md}
+  - {name: Aisha, background: experiments/residents/aisha.md}
   - {name: Olga, background: experiments/residents/olga.md}
   - {name: Jonas, background: experiments/residents/jonas.md}
 town:
   residents:
-    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 250}
-    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 600}
-    - {name: Jonas, home: market-flat, occupation: chef, purse: 300}
+    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 200}
+    - {name: Aisha, home: mill-street-house, occupation: programmer, purse: 200}
+    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 500}
+    - {name: Jonas, home: market-flat, occupation: chef, purse: 250}

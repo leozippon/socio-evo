@@ -99,9 +99,9 @@ def test_evaluate_runs_capability_for_the_programmers_and_mask_for_all_on_its_da
     stub.chmod(0o755)
     calls = tmp_path / "calls"
     env = os.environ | {"PYTHON": str(stub), "CALLS": str(calls)}
-    chains = {
-        7: {"Mei": ["capability"], "Jonas": [], "Aisha": ["capability"]},
-        14: {"Mei": ["mask", "capability"], "Jonas": ["mask"], "Aisha": ["mask", "capability"]},
+    chains = {  # the team leader, who takes no task, is no programmer
+        7: {"Mei": [], "Jonas": [], "Aisha": ["capability"]},
+        14: {"Mei": ["mask"], "Jonas": ["mask"], "Aisha": ["mask", "capability"]},
     }
     for day, chain in chains.items():
         calls.write_text("")

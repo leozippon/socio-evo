@@ -75,7 +75,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("idle", at("07:00", day=2), now, home, None),
     ]
     assert spans(data, "Tomas")[3:7] == [
-        ("work", at("10:00"), at("18:00"), "workshop", 2),
+        ("work", at("10:00"), at("18:00"), "workshop", None),  # the leader holds no task
         ("idle", at("18:00"), at("22:00"), "workshop", None),  # after leaving work
         ("movement", at("22:00"), at("22:10"), flat, None),
         ("idle", at("22:10"), at("23:00"), flat, None),
@@ -153,7 +153,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         (home, move("bread", 1, "Mei", home, "put")),
         ("store", move("eggs", 2, "shelves", "larder", "buy", money=4, seller="Olga")),
         ("store", move("vegetables", 5, "shelves", "larder", "buy", 20, seller="Olga", tax=2)),
-        ("cafe", move("soup", 1, "portions", "Mei", "pass")),  # the chef's, unpaid
+        ("cafe", move("soup", 1, "portions", "Mei", "pass", seller="Jonas")),  # unpaid
         ("store", move("bread", 1, "store", "Olga", "get")),
         ("store", move("bread", 1, "Olga", None, "eat")),
     ]
@@ -164,11 +164,9 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         "rent_paid": 20,
         "arrears": 0,
     }
-    assert markers("Tomas") == [
+    assert markers("Tomas") == [  # the leader hands tasks out and takes none
         ("speech", at("09:30")),
         ("service", at("10:00")),
-        ("claim", at("10:00")),
-        ("submission", at("10:00")),
         ("assign", at("10:00")),
         ("journal", at("23:00")),
         ("settlement", DAY),
@@ -176,9 +174,6 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     tomas = {m["kind"]: m for m in lane(data, "Tomas")["markers"]}
     assert fields(tomas["service"]) == {"for": "team", "task": 1, "amount": 10, "tax": 1}
     assert fields(tomas["assign"]) == {"task": 3, "to": "Aisha", "from": None}
-    assert tomas["submission"]["resolved"] is False
-    assert tomas["submission"]["status"] == "failed_tests"
-    assert tomas["submission"]["fail_to_pass"] == [1, 3]
     assert markers("Aisha") == [("settlement", DAY), ("forced_sleep", at("02:00", day=2))]
     felt = [m for m in lane(data, "Aisha")["markers"] if m["kind"] == "condition"]
     assert [(m["need"], m["band"], m["lowest"]) for m in felt][:3] == [
@@ -287,7 +282,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("delivery", at("08:00", day=2)),
     ]
     withdrawn = {m["task"]: m["holder"] for m in data["markers"] if m["kind"] == "task_withdrawn"}
-    assert withdrawn == {2: "Tomas", 3: "Aisha"}
+    assert withdrawn == {2: None, 3: "Aisha"}  # the second, which nobody took
     tasks = {task["task"]: task for task in data["tasks"]}
     assert tasks[1] == {
         "task": 1,
@@ -300,7 +295,7 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         "by": "Mei",
         "withdrawn": None,
     }
-    assert tasks[2]["holders"] == [[at("10:00"), "Tomas", None], [DAY, None, None]]
+    assert tasks[2]["holders"] == []  # nobody took it
     assert (tasks[2]["accepted"], tasks[2]["withdrawn"]) == (None, DAY)
     assert tasks[3]["holders"] == [[at("10:00"), "Aisha", "Tomas"], [DAY, None, None]]
     assert tasks[3]["withdrawn"] == DAY

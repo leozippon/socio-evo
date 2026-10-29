@@ -11,19 +11,19 @@ pays for. Everyone else waits at home until tasks start to come in and goes to i
 programmer sits down to work there and reads the board; the first of the programmers claims a free
 task, one of its own a day, and the others wait to be given one; with a task, the task's actions
 offered once it is held, it runs a command, reads a file, writes a fix and submits. The team leader,
-who lets the programmers look first when a task comes in, gives a task still free to the last of the
-programmers who holds none, or else takes one itself. While nothing is free they wait at the Office
-for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00, examining and
-treating whoever comes; the mayor announces, grants the first programmer a little money from the
-treasury and stays at work until 17:00. Then they go to the Store and buy bread if it is open and
-eat a helping, the first of the programmers going by the Hospital first to be seen, and to the
-Restaurant, where they have a dish if one is ready, take what is left there for anyone and, if
-anyone is there, say something once and pass the first of them a little money. At 20:00 everyone
-goes home and to bed with a journal entry, to wake at the town's forced waking hour; in bed, it
-reviews the day, notes it in memory/notes.md and falls asleep. Spoken to, it answers once a day and
-leaves the conversation. It keeps no state of its own: the resident's name comes from the system
-prompt, and the day so far from the messages since the last wake-up, so it continues a resumed run
-as it would have continued the run.
+who lets the programmers look first when a task comes in and takes no task herself, gives a task
+still free to the last of the programmers who holds none. While nothing is free they wait at the
+Office for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00,
+examining and treating whoever comes; the mayor announces, grants the first programmer a little
+money from the treasury and stays at work until 17:00. Then they go to the Store and buy bread if
+it is open and eat a helping, the first of the programmers going by the Hospital first to be seen,
+and to the Restaurant, where they have a dish if one is ready, take what is left there for anyone
+and, if anyone is there, say something once and pass the first of them a little money. At 20:00
+everyone goes home and to bed with a journal entry, to wake at the town's forced waking hour; in
+bed, it reviews the day, notes it in memory/notes.md and falls asleep. Spoken to, it answers once a
+day and leaves the conversation, at the Restaurant going back to its evening there. It keeps no
+state of its own: the resident's name comes from the system prompt, and the day so far from the
+messages since the last wake-up, so it continues a resumed run as it would have continued the run.
 """
 
 from __future__ import annotations
@@ -348,23 +348,26 @@ class _Day:
             return self._fix() if claimed else reply("", tool_call("view_board"))
         if "review_day" in names:
             return reply("Good night.")
+        if "leave_conversation" in names and self._place() == self.model._restaurant:
+            if self.hour < EVENING:  # back to the evening, and to what was left meanwhile
+                return self._dine()
         return reply("")
 
     def _work(self, board: str) -> LLMResponse:
         """At the board: go on with the task held; the leader gives a free task to a free
-        programmer; or claim a free task, one a day, the first programmer or the leader; or wait
-        for the next to come in. The task's actions come with the next request, once the task is
-        held."""
+        programmer; or claim a free task, one a day, the first programmer; or wait for the next
+        to come in. The task's actions come with the next request, once the task is held."""
         lines = [(int(number), rest) for number, rest in _BOARD_LINE.findall(board)]
         if any("You hold it" in rest for _, rest in lines):
             return self._fix()
         free = [number for number, rest in lines if "holds it" not in rest]
-        if free and self.occupation == "team-leader":
+        if self.occupation == "team-leader":
             holders = {found[1] for _, rest in lines if (found := _HOLDER.search(rest))}
             idle = [name for name in self.model._programmers if name not in holders]
-            if idle:
+            if free and idle:
                 return reply("", tool_call("assign", task=free[0], to=idle[-1]))
-        given = self.occupation == "programmer" and self.name != self.model._programmers[0]
+            return self._wait_until(WORK_ENDS)
+        given = self.name != self.model._programmers[0]
         if not free or given or self._did("submit", "ccepted"):  # one task of one's own a day
             return self._wait_until(WORK_ENDS)
         start = self.model._index[self.name] % len(lines)

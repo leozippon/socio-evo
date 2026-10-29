@@ -133,8 +133,8 @@ def record_move(
     """Log a move `by` made, told as `tell` to `audience`: `units` of `item` from the holder
     `source` to the holder `target` (None: into or out of nothing), with the `money` that
     went with it, if any, and why (`reason`: get, put, pass, eat or buy); `seller` is who
-    was serving at a purchase, and `tax` what was withheld from what it took. Money alone,
-    handed over, has no item."""
+    was serving, at a purchase or as the chef handing a dish over from the portions, and `tax`
+    what was withheld from what it took. Money alone, handed over, has no item."""
     payload = {"item": item, "units": units, "source": source, "target": target}
     payload |= {"money": money, "reason": reason, "seller": seller, "tax": tax}
     world.record("move", tell, actor=by, audience=audience, payload=payload)
@@ -151,14 +151,17 @@ def hand(
     tell: Tell,
     *,
     audience: list[Resident],
+    seller: str | None = None,
 ) -> str | None:
     """`r` moves `units` of `thing` from the holder `source` to the holder `target` for
-    `reason` (`get`, `put` or `pass`), told as `tell` to `audience`: the bodies of `r` and of
+    `reason` (`get`, `put` or `pass`), served by `seller` if it is the chef handing a dish
+    over from the portions, told as `tell` to `audience`: the bodies of `r` and of
     the resident it hands them to are reckoned first, so that what either would have eaten
     by now is eaten; the move (`move`, which needs `r` where the holders are) is logged
     (`record_move`); and a resident who receives them takes them in, a dish eaten where it
-    is served (`eat_now`), food eaten at once if it could eat (`take_in`, told to a receiver
-    other than `r`). Returns the refusal, nothing moved, or None."""
+    is served (`eat_now`), and another than `r` eating food at once if it could eat
+    (`take_in`, told to it); what `r` takes for itself, it eats of as its caller tells it.
+    Returns the refusal, nothing moved, or None."""
     receiver = world.residents.get(target)
     world.reckon(r)
     if receiver is not None and receiver is not r:
@@ -175,11 +178,12 @@ def hand(
         units=units,
         source=source,
         target=target,
+        seller=seller,
     )
     if receiver is not None and thing.dish:
         eat_now(world, receiver, thing.id, units)
-    elif receiver is not None:
-        world.take_in(receiver, tell=receiver is not r)
+    elif receiver is not None and receiver is not r:
+        world.take_in(receiver, tell=True)
     return None
 
 

@@ -11,47 +11,49 @@
 # drawn from the run's seed.
 #
 # The closed economy. Nobody is paid for time. Money comes into the town only when a client pays
-# for a task accepted (150, four fifths to the one who handed it in and a fifth to the team leader,
-# the whole to the team leader for her own) and leaves it only when the shopkeeper pays the
-# supplier; everything else passes between the residents and the town's treasury. The Store, the
-# Linde's kitchen and the Hospital's surgery are their keepers', who take what customers and
-# patients pay and pay for what they buy: the shopkeeper the supplier, the chef the Store for the
-# kitchen's ingredients (a dish given away costs him its ingredients). A tenth of every payment a
-# resident receives for work, from a client, a customer, a patient or as the leader's share, is
-# withheld at once into the treasury, rounded down to the whole. The treasury owns the homes and
-# takes their rent at midnight, with the daily charges, from each purse as far as it holds more
-# than a day's bread (20), the rest owed and taken at later midnights; it pays the mayor 60 a day,
-# as far as it holds the money, owing the rest, and whatever the mayor grants anyone at the Town
-# Hall.
+# for a task accepted (150, four fifths to the programmer who handed it in and a fifth to the team
+# leader, who hands the tasks out and takes none herself) and leaves it only when the shopkeeper
+# pays the supplier; everything else passes between the residents and the town's treasury. The
+# Store, the Linde's kitchen and the Hospital's surgery are their keepers', who take what customers
+# and patients pay and pay for what they buy: the shopkeeper the supplier, the chef the Store for
+# the kitchen's ingredients (a dish given away costs him its ingredients). A tenth of every
+# payment a resident receives for work, from a client, a customer, a patient or as the leader's
+# share, is withheld at once into the treasury, rounded down to the whole. The treasury owns the homes and takes their rent
+# at midnight, with the daily charges, from each purse as far as it holds more than a day's bread
+# (20), the rest owed and taken at later midnights; it pays the mayor 60 a day, as far as it holds
+# the money, owing the rest, and whatever the mayor grants anyone at the Town Hall.
 #
 # Calibration of the economy (tests/experiments/test_config.py asserts the relations; the figures
-# are where they stand). Rent is 10 a day for a room in a shared house, 15 a flat and 20 the
-# cottage, and a day's food 15 (three helpings of bread or fruit at the Store's starting 5) to 20
-# (stew at the Linde), so the cheapest life costs 25 a day and the dearest 40. At three tasks a
-# day of which half are accepted, the clients pay 225 a day: a programmer's expected share, the
-# tasks among the three, is 54 after the tax and keeps the dearest life, and the team leader's
-# fifth of it all, 40.5, keeps it too. The town is set to eat a dish a day each, the menu's in
-# turn: seven sold, at a mean of 17.50, and the chef's own, eight dishes whose ingredients the chef
-# buys at the Store at a mean of 9.33 and the Store at the supplier's 3.17. The chef's margin on
-# his seven dishes after the tax is 44.92 a day and the shopkeeper's on the town's food 41.87,
-# each keeping the dearest life; the supplier's prices are low and the town's trade is where the
-# margin is. The doctor's fees, 25 an examination and 60 a treatment, bring 76.50 after the tax
-# at the town's one case of illness a day (below), examined and treated, two visits a day, which
-# keeps the cheapest life (and hers, 35). The treasury's day takes in 105 of rent and 50.72 of
-# tax (22.50 from the clients, 7.47 from the Store's sales, 12.25 from the dishes, 8.50 from the
-# fees) and pays the mayor's 60: a surplus of 95.72, three fifths of its intake, which is the
-# mayor's to grant (the plan's third would take a salary of 104). The town's money grows by the
-# clients' 225 less the supplier's 25.33 a day.
+# are where they stand, recalibrated after the first three days of the run of 29 October). Rent is
+# 5 a day for a room in a shared house, 8 a flat and 10 the cottage, and a day's food 15 (three
+# helpings of bread or fruit at the Store's starting 5) to 20 (stew at the Linde), so the cheapest
+# life costs 20 a day and the dearest 30. At three tasks a day of which half are accepted, the
+# clients pay 225 a day: a programmer's expected share, the tasks among the three, is 54 after the
+# tax, and the team leader's fifth of it all 40.5; each keeps the dearest life. The town is set
+# to buy five dishes a day at the Linde, as it did in those three days, at the menu's mean of
+# 17.50, and the chef has his own: six dishes whose ingredients the chef buys at the Store at a
+# mean of 6 (4 to 9, about half again over wholesale) and the Store at the supplier's 3.17; the two
+# who do not eat at the Linde eat three helpings of bread each. The chef's margin on his five
+# dishes after the tax is 48.75 a day and keeps the dearest life. The shopkeeper's on the town's
+# food, 13.40 on the six dishes' ingredients and 15 on the bread, is 28.40: it keeps the cheapest
+# life, which is hers, a room in a shared house, and falls 1.60 short of the dearest, which only
+# a dearer loaf would reach. The doctor's fees, 20 an examination and 40 a treatment, bring 54
+# after the tax at the town's one case of illness a day (below), examined and treated, which
+# keeps the dearest life. The treasury's day takes in 54 of rent and 43.85 of tax (22.50 from the
+# clients, 6.60 from the Store's sales, 8.75 from the dishes, 6 from the fees) and pays the
+# mayor's 60: its intake is near the salary, and what is left, 37.85, the mayor's to grant back,
+# is less than the salary. The town's money grows by the clients' 225 less the supplier's 31 a
+# day.
 # Starting money is five to ten days of its owner's own life (its rent and a day's bread): 200
-# for the programmers, 250 the team leader, 200 the doctor, 150 the mayor; the chef's 300 and
-# the shopkeeper's 600 are working capital besides, the chef's a day of the kitchen's ingredients
-# at the Store (75) and the shopkeeper's the food on her starting shelves twice over at wholesale
-# (352), one stock selling and the next on order, which leave them 7.5 and 9.9 days; the stock on
+# for the programmers, the team leader and the doctor, 150 the mayor; the chef's 250 and the
+# shopkeeper's 500 are working capital besides, the chef's a day of the kitchen's ingredients at
+# the Store (36) and the shopkeeper's the food on her starting shelves twice over at wholesale
+# (352), one stock selling and the next on order, which leave them 9.3 and 7.4 days; the stock on
 # the shelves is hers as well. The treasury starts at 300, five days of the mayor's salary. The
 # durables are things to save for: the bicycle (360) costs more than any starting purse but the
 # shopkeeper's, which is the Store's, the phone 240 and then 5 a day, the coat 150 and the book 40,
-# one of each in stock. A treatment, which restores 25 health and ends an illness, costs 60, more
-# than two days of the cheapest life. The tax is reckoned here at a full tenth; rounded down on
+# one of each in stock. A treatment, which restores 25 health and ends an illness at once, costs
+# 40, two days of the cheapest life. The tax is reckoned here at a full tenth; rounded down on
 # each payment, it comes to a little less.
 #
 # Calibration of the body (needs below). Nourishment is a food's share of a day's need, 100 a
@@ -85,9 +87,10 @@
 # down, 20% unwell or worse, and 5% more in a shared house, so that the town in good health, four
 # of the eight in shared houses, sees about one case a day, more as health falls: a resident in a
 # shared house falls ill about every seventh day and one in a flat about every tenth; ill,
-# it loses 3 health a night and mends nothing for five nights, 15 in all unless the doctor's
-# treatment (25 health) ends it sooner, and sleep restores half as much energy, so its days are
-# shorter. Health has a floor: at 0 a resident takes to its bed at home, carried there if it was
+# it loses 5 health a night and mends nothing for up to seven nights, 35 in all, and sleep
+# restores half as much energy, so its days are shorter, unless the doctor's treatment (25
+# health) ends it at once: an illness left to run costs a third of one's health and a week of
+# short days, which the treatment's 40 spares. Health has a floor: at 0 a resident takes to its bed at home, carried there if it was
 # elsewhere, where it can do little but speak to whoever comes and eat what it is given, until the
 # doctor's treatment lets it up.
 
@@ -136,11 +139,11 @@ town:
   # and a comfort (0.9 a shared house, 1 a flat, 1.1 the cottage), which scales what sleep
   # restores and, below 1, wears health a little each night.
   places:
-    - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 10, rooms: 3, comfort: 0.9}
-    - {id: college-flat, name: the flat by the college gates, kind: home, rent: 15, rooms: 1, comfort: 1.0}
-    - {id: market-flat, name: the flat on the market square, kind: home, rent: 15, rooms: 2, comfort: 1.0}
-    - {id: river-cottage, name: the cottage by the river, kind: home, rent: 20, rooms: 1, comfort: 1.1}
-    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 10, rooms: 3, comfort: 0.9}
+    - {id: mill-street-house, name: the shared house on Mill Street, kind: home, rent: 5, rooms: 3, comfort: 0.9}
+    - {id: college-flat, name: the flat by the college gates, kind: home, rent: 8, rooms: 1, comfort: 1.0}
+    - {id: market-flat, name: the flat on the market square, kind: home, rent: 8, rooms: 2, comfort: 1.0}
+    - {id: river-cottage, name: the cottage by the river, kind: home, rent: 10, rooms: 1, comfort: 1.1}
+    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 5, rooms: 3, comfort: 0.9}
     - {id: office, name: the Office, kind: office}
     - {id: store, name: the Store, kind: store}
     - {id: linde, name: the Linde, kind: restaurant}
@@ -186,7 +189,7 @@ town:
     - name: Mei
       home: mill-street-house
       occupation: team-leader
-      purse: 250
+      purse: 200
     - name: Tomas
       home: college-flat
       occupation: mayor
@@ -198,7 +201,7 @@ town:
     - name: Jonas
       home: market-flat
       occupation: chef
-      purse: 300
+      purse: 250
     - name: Lucia
       home: river-cottage
       occupation: doctor
@@ -210,7 +213,7 @@ town:
     - name: Olga
       home: hill-road-house
       occupation: shopkeeper
-      purse: 600
+      purse: 500
     - name: Kofi
       home: hill-road-house
       occupation: programmer
@@ -220,7 +223,7 @@ town:
   # withdrawn at the midnight that ends the expiry_days-th day after the day it came in.
   work:
     split: train
-    tasks_a_day: 3 # fewer than the four at the Office who take them on
+    tasks_a_day: 3 # about one for each of the three programmers who take them on
     arrive_from: "08:00"
     arrive_until: "18:00"
     expiry_days: 3
@@ -234,18 +237,18 @@ town:
   # place for anyone, the Store's shelves, the kitchen's larder or its portions, or the supplier
   # outside the town. What the supplier sells has its wholesale price and the Store's price at
   # the start, which the shopkeeper changes: ingredients, food of no nourishment of their own,
-  # cooked at the Linde; bread and fruit, ready food, a helping a third of a day's; and durables,
+  # cooked at the Linde, which keep in its larder; bread and fruit, ready food, a helping a third of a day's; and durables,
   # each doing something in the world: shortening journeys, letting owners write to one another,
   # or showing on its owner wherever others see it. The Linde's dishes are cooked from what a
   # portion takes, each a day's food that perishes at midnight, at the menu's price at the start,
   # which the chef changes. Names carry their article, as a sentence names them.
   items:
-    - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
-    - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
-    - {id: rice, name: rice, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
-    - {id: flour, name: flour, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 3}
-    - {id: meat, name: meat, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 9}
-    - {id: fish, name: fish, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 8}
+    - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}
+    - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}
+    - {id: rice, name: rice, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}
+    - {id: flour, name: flour, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}
+    - {id: meat, name: meat, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
+    - {id: fish, name: fish, kind: consumable, effect: food, nourishment: 0, wholesale: 3, price: 5}
     - {id: bread, name: bread, kind: consumable, effect: food, nourishment: 34, wholesale: 2, price: 5}
     - {id: fruit, name: fruit, kind: consumable, effect: food, nourishment: 34, wholesale: 2, price: 5}
     - {id: phone, name: a phone, kind: durable, effect: messaging, fee_per_day: 5, wholesale: 180, price: 240}
@@ -264,8 +267,8 @@ town:
     stock: {bread: 20, fruit: 20, vegetables: 20, eggs: 20, rice: 10, flour: 10, meat: 6, fish: 6, phone: 1, coat: 1, bicycle: 1, book: 1}
   # The Hospital's fees at the start, which the doctor changes, and what a treatment restores.
   hospital:
-    examination: 25
-    treatment: 60
+    examination: 20
+    treatment: 40
     restores: 25
   # The body: three needs from 0 to 100, each read in bands from the top down (a band's name
   # follows "you are"; `seen` is what others see on a resident in that band). The lowest band is
@@ -301,8 +304,8 @@ town:
         run_down: 0.15
         unwell: 0.20 # and gravely ill
         poor_home: 0.05 # more in a home of comfort below 1
-        per_night: 3 # health lost a night while ill
-        nights: 5
+        per_night: 5 # health lost a night while ill
+        nights: 7
       bands:
         - {floor: 65, name: in good health}
         - {floor: 35, name: run down}

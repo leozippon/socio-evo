@@ -65,7 +65,7 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
     examined = (await town.call("Lucia", "examine", patient="Mei")).text
     numbers = (
         "Food: 82 of 100, {who} well fed. Energy: 98 of 100, {who} fresh. Health: 50 of 100, "
-        "{who} run down. {Who} ill; untreated, it passes after 5 more nights."
+        "{who} run down. {Who} ill; untreated, it passes after 7 more nights."
     )
     assert examined == (
         "You examined Mei for $10, of which $1 in tax. "
@@ -82,11 +82,11 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
     entries = {e["kind"]: e for e in world.log.entries()}
     assert entries["examination"]["payload"] == {
         "patient": "Mei", "fee": 10, "tax": 1, "satiety": 81.9, "energy": 98.5, "health": 50.0,
-        "ill": 5, "night": {},
+        "ill": 7, "night": {},
     }  # fmt: skip
     assert entries["treatment"]["payload"] == {
         "patient": "Mei", "fee": 30, "tax": 3, "restores": 25.0, "before": 50.0, "health": 75.0,
-        "ill": 5, "bedridden": False,
+        "ill": 7, "bedridden": False,
     }  # fmt: skip
     assert entries["recovered"]["payload"] == {
         "illness": True, "bedridden": False, "treated": True, "health": 75.0,

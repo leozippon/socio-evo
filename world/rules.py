@@ -110,10 +110,12 @@ class Rules:
         )
 
         assert my_home.rent is not None
+        restaurant = c.workplace("restaurant").name
         money_rules = (
-            f"{self._economy(occupation)} You have {money(me.purse)} to begin with. Your rent, "
-            f"{money(my_home.rent)} a day, is taken from your purse at midnight, never its last "
-            f"{money(c.treasury.spares)}, a day's bread; what cannot be taken you owe, to be taken "
+            f"{self._economy(occupation)} {cap(store)} and {restaurant} sell only while their "
+            f"keepers are at work, so bread is bought ahead. You have {money(me.purse)} to begin "
+            f"with. Your rent, {money(my_home.rent)} a day, is taken from your purse at midnight, "
+            f"never its last {money(c.treasury.spares)}, a day's bread; the rest you owe, taken "
             "later."
         )
 
@@ -212,10 +214,7 @@ class Rules:
                 if occupation.salary
                 else ""
             )
-            pays = (
-                f" and is there to pay {salary}whatever you grant residents at "
-                f"{c.place(occupation.workplace).name}"
-            )
+            pays = f" and is there to pay {salary}whatever you grant residents"
         else:
             paying = [f"{title}'s salary" for title in salaried]
             paying += ["what the mayor grants"] if self._staffed(MAYOR) else []
@@ -289,11 +288,6 @@ class Rules:
         office, store = c.workplace("office"), c.workplace("store")
         restaurant, hospital, hall = (c.workplace(k) for k in ("restaurant", "hospital", "hall"))
         work, day = c.work, c.day
-        own = (
-            " (the whole to the team leader for a task of the leader's own)"
-            if self._shares()[1]
-            else ""
-        )
         office_work = (
             f"{cap(office.name)} takes in programming work from clients elsewhere: their tasks "
             f"come in on its board at random through the day, about {work.tasks_a_day:g} a day "
@@ -309,11 +303,11 @@ class Rules:
             "accepted and the client pays at once. You can hand in each task at most "
             f"{counted(work.acceptance_runs, 'time')} a day. You hold one task at a time and "
             "keep it wherever you go, your changes kept overnight; you can give it up with "
-            "abandon_task, and its changes are gone. The team leader can give a task to any of "
-            "the programmers with assign, or move it from one to another, whose changes to it "
-            "are then gone. A task not accepted in time is withdrawn by its client at the end of "
-            f"{self._withdrawn()}, held or not, and its workspace with it. "
-            + f"{self._split()}{own}."
+            "abandon_task, and its changes are gone. The team leader takes no task but can give "
+            "one to any of the programmers with assign, or move it from one to another, whose "
+            "changes to it are then gone. A task not accepted in time is withdrawn by its client "
+            f"at the end of {self._withdrawn()}, held or not, and its workspace with it. "
+            f"{self._split()}."
         )
 
         store_work = (
@@ -338,8 +332,8 @@ class Rules:
             f"the kitchen holds, a portion of each from its ingredients: {recipes}. A dish is a "
             "day's food, eaten there as it is bought, at the price on the menu, which the chef "
             "sets; or as the chef hands it over with pass, when nobody pays and the chef bears "
-            "what it cost; the chef, at work there, has one with eat and does not buy them. What "
-            "is left at midnight is gone."
+            "what it cost; the chef, at work there, has one with eat and does not buy them. The "
+            "portions left at midnight are gone; what the kitchen holds to cook with keeps."
         )
 
         fees = c.hospital
@@ -421,7 +415,7 @@ class Rules:
             f"every place can be visited at any hour. Clients' tasks come in at {office.name} "
             f"between {work.arrive_from} and {work.arrive_until}, and what {store.name} ordered "
             f"the day before arrives at {day.delivery}. At midnight the rent is taken, your "
-            "health is reckoned from the day, and what the kitchen did not sell is gone. When "
+            "health is reckoned from the day, and the portions left in the kitchen are gone. When "
             "you do nothing, time passes until something happens or "
             f"{counted(c.clock.idle_minutes, 'minute')} have gone by, and you are told the hour; "
             f"with wait you let up to {counted(MAX_WAIT_MINUTES, 'minute')} pass."

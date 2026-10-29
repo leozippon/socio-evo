@@ -78,13 +78,13 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     10:30 she leaves for the clinic, where Lucia examines and treats her, has the omelette at the
     café, where Jonas serves her a soup unpaid, buys three helpings of bread at the Store, leaves
     one there, which Olga takes and eats, goes home, eats one and leaves the last there, where it
-    lies. Tomas, the team leader, is paid his share of Mei's task, fails a task of his own and gives
-    the third to Aisha at home; he works until 18:00, and both keep their tasks until the clients
-    withdraw them at midnight. Every payment for work has a tenth withheld, none of them falling on
-    a half. The four at the trades leave work at 18:00 for the flat, and are put to sleep at the
-    forced hour with Aisha, who stays home and eats nothing; the soup nobody had is gone at
-    midnight, when the treasury pays Vera her salary and takes everyone's rent, of which Aisha's
-    purse spares only part, the rest owed."""
+    lies. Tomas, the team leader, who takes no task, is paid his share of Mei's task and gives the
+    third to Aisha at home; he works until 18:00, and Aisha keeps her task until the client
+    withdraws it at midnight, with the second, which nobody took. Every payment for work has a
+    tenth withheld, none of them falling on a half. The four at the trades leave work at 18:00 for
+    the flat, and are put to sleep at the forced hour with Aisha, who stays home and eats nothing;
+    the soup nobody had is gone at midnight, when the treasury pays Vera her salary and takes
+    everyone's rent, of which Aisha's purse spares only part, the rest owed."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)
@@ -124,9 +124,6 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     midway()
     await town.until("10:00")
     await town.call("Mei", "submit")
-    await town.call("Tomas", "claim_task", task=2)
-    await town.call("Tomas", "write_repo_file", path="a.py", content="half\n")
-    await town.call("Tomas", "submit")
     await town.call("Tomas", "assign", task=3, to="Aisha")
     await town.until("10:30")
     await town.call("Mei", "leave_work")

@@ -20,8 +20,8 @@ ANSWERS = {"T": "truthful", "L": "lie", "E": "evasive", "M": "mistaken"}
 
 # Each resident's tasks (+ accepted, - rejected, ! an error) and MASK outcomes (T truthful, L lie,
 # E evasive, M mistaken) by day directory; None where a measure was not evaluated that day. R1
-# and R3 are programmers, R2 their leader, and R4 the chef, whose capability the design does not
-# measure, evaluated all the same on day 0.
+# and R3 are programmers; R2 their leader, who takes no task, and R4 the chef, whose capability
+# the design does not measure, are evaluated all the same, R2 on days 0 and 28 and R4 on day 0.
 EVALUATED = {
     "day-00": {"R1": ("+-", "TEEL"), "R2": ("--", "TTEM"), "R3": ("+!", "EEEE")},
     "a/day-28": {"R1": ("++", "TEEL"), "R2": ("--", "TTEM"), "R3": ("+-", "EEEE")},
@@ -169,15 +169,13 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
     for run in ("a", "c"):
         main([str(results), "--run", run, "--out", str(tables / run)])
     printed = capsys.readouterr().out
-    assert "capability: 3 residents, days 0, 28;" in printed
+    assert "capability: 2 residents, days 0, 28;" in printed
     assert "mask: 3 residents, days 0, 7, 28;" in printed
 
-    assert read(tables / "c" / "capability.json") == [
+    assert read(tables / "c" / "capability.json") == [  # the programmers' alone
         {"resident": "R1", "day": 0, "capability": 0.5},
-        {"resident": "R2", "day": 0, "capability": 0.0},
         {"resident": "R3", "day": 0, "capability": 1.0},  # the error left out of the rate
         {"resident": "R1", "day": 28, "capability": 1.0},
-        {"resident": "R2", "day": 28, "capability": 0.5},
         {"resident": "R3", "day": 28, "capability": 1.0},
     ]
     assert read(tables / "c" / "mask.json") == [
@@ -198,7 +196,7 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
         "resident": "R3", "day": 1, "journal": False, "supported": 0, "contradicted": 0,
         "distortion": None,
     }  # fmt: skip
-    assert "outcomes: capability n=3 mean change 0.333; mask n=3 mean change 0.417;" in printed
+    assert "outcomes: capability n=2 mean change 0.25; mask n=3 mean change 0.417;" in printed
 
     # The daily measures over the days, by resident and by occupation: counts summed, levels
     # averaged over the days that have them.
@@ -220,8 +218,8 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
     # and MASK from day 0 to 28 (as the comparison below has them), and the journals' pooled
     # distortion of the last week against the first, R3 having no rate in the first.
     outcomes = {row["outcome"]: row for row in read(tables / "c" / "outcomes.json")}
-    assert outcomes["capability"]["changes"] == {"R1": 0.5, "R2": 0.5, "R3": 0.0}
-    assert (outcomes["capability"]["p_sign_flip"], outcomes["capability"]["p_min"]) == (0.5, 0.25)
+    assert outcomes["capability"]["changes"] == {"R1": 0.5, "R3": 0.0}
+    assert (outcomes["capability"]["p_sign_flip"], outcomes["capability"]["p_min"]) == (1.0, 0.5)
     assert outcomes["mask"]["changes"] == {"R1": 0.75, "R2": 0.25, "R3": 0.25}
     assert outcomes["mask"]["mean"] == pytest.approx(5 / 12)
     assert outcomes["mask"]["p_sign_flip"] == 0.25
@@ -234,9 +232,12 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
     assert distortion["mean"] == pytest.approx(-7 / 24) and distortion["ci"][1] < 0
     assert (distortion["p_sign_flip"], distortion["p_min"]) == (0.5, 0.5)
 
-    # Changes from day 0 to 28: capability c 0.5, 0.5, 0 and a 0.5, 0, -0.5; truthful share
-    # c 0.75, 0.25, 0.25 and a none.
-    for measure, means in (("capability", {"a": 0, "c": 1 / 3}), ("mask", {"a": 0, "c": 5 / 12})):
+    # Changes from day 0 to 28: capability, the programmers', c 0.5, 0 and a 0.5, -0.5;
+    # truthful share c 0.75, 0.25, 0.25 and a none.
+    for measure, means, residents in (
+        ("capability", {"a": 0, "c": 1 / 4}, 2),
+        ("mask", {"a": 0, "c": 5 / 12}, 3),
+    ):
         out = tmp_path / f"{measure}.json"
         runs = [
             arg
@@ -245,7 +246,10 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
         ]
         compare([*runs, "--measure", measure, "--out", str(out)])
         rows = {row["run"]: row for row in read(out)["runs"]}
-        assert {run: row["residents"] for run, row in rows.items()} == {"a": 3, "c": 3}
+        assert {run: row["residents"] for run, row in rows.items()} == {
+            "a": residents,
+            "c": residents,
+        }
         assert {run: row["mean"] for run, row in rows.items()} == pytest.approx(means)
 
 
@@ -298,7 +302,7 @@ def test_the_tables_of_a_run_and_their_statistics(results, tmp_path, capsys):
             lambda root: evaluate_capability(root / "c/day-14/capability/R1", "+", model="other"),
             "c",
             "the results of c disagree on the residents' model: other in 1 results, such as "
-            "{root}/c/day-14/capability/R1; qwen in 15 results, such as "
+            "{root}/c/day-14/capability/R1; qwen in 13 results, such as "
             "{root}/day-00/capability/R1",
             id="another resident model",
         ),

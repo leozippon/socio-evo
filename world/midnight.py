@@ -72,9 +72,12 @@ def _settle(world: World, day: int) -> None:
                 stock.append(f"You have used up your {bare(item.name)}.")
             elif left * item.nourishment < A_DAYS_FOOD:  # less than a day's food
                 stock.append(f"You have {amount(item, left)} left.")
-        unsold = world.held_told(world.holders[PORTIONS].items)
-        if KITCHEN.keeps(r.occupation.id) and unsold:
-            stock.append(f"What the kitchen did not sell is gone: {listed(unsold)}.")
+        perished = world.held_told(world.holders[PORTIONS].items)
+        if KITCHEN.keeps(r.occupation.id) and perished:
+            stock.append(
+                f"The dishes left in the kitchen are gone: {listed(perished)}; what it holds "
+                "to cook with keeps."
+            )
         charged = [i for i in world.config.items if i.fee_per_day and inventory.units(i.id)]
         settled = world.treasury.settle(
             r.name,

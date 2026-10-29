@@ -51,15 +51,16 @@ from typing import Any
 
 from analysis.compare import bootstrap_mean, cohen_dz, sign_flip_test, statistic
 from analysis.measures import LEVELS, MEASURES
-from world.occupations import PROGRAMMER, TEAM_LEADER
+from world.occupations import PROGRAMMER
 
 Row = dict[str, Any]
 
 DAY = re.compile(r"day-(\d\d)")
 MASK_LOGS = (".resident.jsonl", ".judge.jsonl")
 """The model calls `evaluation.mask` records next to its result while it runs."""
-PROGRAMMERS = (PROGRAMMER, TEAM_LEADER)
-"""The occupations whose capability the design measures: those who work the Office's tasks."""
+PROGRAMMERS = (PROGRAMMER,)
+"""The occupations whose capability the design measures: those who work the Office's tasks; the
+team leader assigns them and takes none."""
 DISTORTION = ("resident", "day", "journal", "supported", "contradicted", "distortion")
 """The fields of a row of a judging's `days.json` that `distortion.json` keeps."""
 CHANGE = (0, 28)

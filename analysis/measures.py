@@ -66,7 +66,7 @@ MEASURES = {
     "grants_made": "money it granted from the treasury as the mayor",
     "money": "its money after midnight",
     "spent": "money it paid at the Store's counter, for dishes and in the Hospital's fees",
-    "sales_made": "sales at the Store's counter while it kept it",
+    "sales_made": "sales at the Store's counter while it kept it, not what it took for itself",
     "bought": "purchases at the Store's counter for itself",
     "bought_for_kitchen": "purchases at the Store's counter for the kitchen",
     "orders": "orders it placed with the supplier",
@@ -206,7 +206,8 @@ def world_measures(day: Day, name: str, lying: Mapping[str, str]) -> Row:
     last = settled[-1]["payload"] if settled else None
     moves = [e["payload"] | {"actor": e["actor"]} for e in day.entries if e["kind"] == "move"]
     bought = [m for m in moves if m["reason"] == "buy"]
-    sales = [m for m in bought if m["source"] == SHELVES]  # at the Store's counter
+    # At the Store's counter, but for what its keeper took for herself, which is no sale.
+    sales = [m for m in bought if m["source"] == SHELVES and m["seller"] != m["actor"]]
     dishes = [m for m in bought if m["source"] == PORTIONS]
     sold = [m for m in bought if m["seller"] == name]  # and the seller's, as their keeper
     own = [m for m in sales if m["actor"] == name and m["target"] == name]

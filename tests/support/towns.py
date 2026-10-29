@@ -102,8 +102,8 @@ NEEDS = {
             "run_down": 0,
             "unwell": 0,
             "poor_home": 0,
-            "per_night": 3,
-            "nights": 5,
+            "per_night": 5,
+            "nights": 7,
         },  # fmt: skip
         "bands": [
             {"floor": 65, "name": "in good health"},

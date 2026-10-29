@@ -14,6 +14,7 @@ import json
 
 from tests.support.towns import RESIDENTS, TRADES, at, awake_at, make_agent_dirs, town_config
 from world.clock import ManualClock
+from world.log import counted_move
 from world.testing import FakeBackend
 from world.world import World
 
@@ -112,8 +113,36 @@ async def test_the_store_sells_while_its_shopkeeper_is_at_the_counter_and_from_i
         "holds $135."
     )
     assert world.treasury.ledger == {"tax": 3} and world.holders["shelves"].units("bread") == 7
+    # What she takes for herself is no sale.
+    moves = [e["payload"] for e in world.log.entries() if e["kind"] == "move"]
+    assert [counted_move(move) for move in moves] == ["sale", "sale", None]
     await town.call("Olga", "leave_work")
     assert (await town.call("Mei", "buy", item="bread")).text == closed
+
+
+async def test_a_hungry_buyer_eats_of_what_it_bought_at_once_and_is_told(make_town):
+    town = make_town(SHOPS)
+    await awake_at(town)
+    world, mei = town.world, town.world.residents["Mei"]
+    for name in ("Olga", "Mei"):
+        await town.call(name, "go", place="store")
+    await town.until("07:10")
+    await town.call("Olga", "start_work")
+    mei.living.satiety = 0
+    assert (await town.call("Mei", "buy", item="bread", units=3)).text == (
+        "You bought 3 helpings of bread for $12 and ate 2 helpings at once, being hungry. You "
+        "have 1 helping of bread. Your purse holds $108."
+    )
+    eaten = [e["payload"] for e in world.log.entries() if e["kind"] == "move"][-2:]
+    assert [(m["reason"], m["item"], m["units"]) for m in eaten] == [("eat", "bread", 1)] * 2
+    mei.living.satiety = 10
+    assert (await town.call("Mei", "buy", item="bread")).text == (
+        "You bought 1 helping of bread for $4 and ate a helping at once, being hungry. You carry "
+        "nothing but your money. Your purse holds $104."
+    )  # the helping it held eaten first, as the body would have eaten it by now
+    assert (await town.call("Mei", "buy", item="bread")).text == (
+        "You bought 1 helping of bread for $4. You have 1 helping of bread. Your purse holds $100."
+    )  # well fed, it keeps it
 
 
 async def test_an_order_is_paid_at_once_and_arrives_the_next_morning_and_prices_are_set(make_town):
@@ -272,6 +301,12 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
     )
     assert mei.living.eaten == {"omelette": 2} and mei.inventory.money == 108
     assert town.take("Mei")[-1] == "Jonas served you an omelette, which nobody paid for."
+    handed = [e for e in world.log.entries() if e["kind"] == "move" and e["actor"] == "Jonas"]
+    assert handed[-1]["payload"]["seller"] == "Jonas"  # the chef serving, unpaid
+    assert [counted_move(m) for m in (served[0]["payload"], handed[-1]["payload"])] == [
+        "dish",
+        "dish",
+    ]
     assert (await town.call("Jonas", "pass", item="omelette", to="Mei")).text == (
         "The kitchen has no omelette ready."
     )
@@ -292,7 +327,10 @@ async def test_the_chef_buys_for_the_kitchen_cooks_and_serves_and_what_is_left_g
         "vegetables": 1
     }
     statement = town.take("Jonas")[-1]
-    assert "What the kitchen did not sell is gone: vegetable soup." in statement
+    assert (
+        "The dishes left in the kitchen are gone: vegetable soup; what it holds to cook with "
+        "keeps." in statement
+    )
     assert statement.startswith(
         "Your statement for Monday 1 January: received $12 for dishes, $1 of it in tax; bought 2 "
         "units of eggs for $4; bought 4 units of eggs for the kitchen for $8; bought 5 units of "
@@ -346,8 +384,9 @@ async def test_the_chef_at_work_has_a_dish_from_the_kitchen_himself_and_nobody_p
     ]
     assert own[0]["payload"] == {
         "item": "soup", "units": 1, "source": "portions", "target": "Jonas", "money": 0,
-        "reason": "pass", "seller": None, "tax": 0,
+        "reason": "pass", "seller": "Jonas", "tax": 0,
     }  # fmt: skip
+    assert counted_move(own[0]["payload"]) is None  # his own is no dish served
     # Nothing else passes to oneself; a diner eats only what it has; off duty the kitchen's
     # dishes are nobody's to eat.
     assert (await town.call("Jonas", "pass", item="money", units=1, to="Jonas")).text == (

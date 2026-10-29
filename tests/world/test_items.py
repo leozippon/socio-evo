@@ -106,6 +106,17 @@ async def test_get_takes_only_what_is_left_and_put_leaves_it_for_anyone(make_tow
         "You took a phone. You have a phone."
     )
     assert world.holders["mill-street-house"].items == {} and aisha.inventory.items == {"phone": 1}
+    # Food taken by one who could eat is eaten at once, as far as it could eat, and told.
+    await town.call("Mei", "put", item="bread", units=2)
+    town.take("Mei")
+    aisha.living.satiety = 40
+    assert (await town.call("Aisha", "get", item="bread", units=2)).text == (
+        "You took 2 helpings of bread and ate a helping at once, being hungry. You have 1 helping "
+        "of bread and a phone."
+    )
+    assert town.take("Mei") == [
+        "Aisha took 2 helpings of bread left at the shared house on Mill Street."
+    ]
     # The Store's shelves are the business's: they are bought from, not taken from.
     await town.call("Mei", "go", place="store")
     await town.until("07:10")

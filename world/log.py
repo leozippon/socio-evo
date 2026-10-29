@@ -93,9 +93,9 @@ KINDS = {
     ),
     "service": Kind(
         "a resident was paid its share of a client's payment for a task accepted, the tax "
-        "withheld into the treasury: for a task it handed in (task: the whole for the team "
-        "leader's own, the rest after the leader's share for a programmer's), or the team "
-        "leader's share of one a programmer handed in (team); money is its purse after",
+        "withheld into the treasury: for a task it handed in as a programmer (task: the payment "
+        "less the team leader's share, if the town has a leader), or the team leader's share of "
+        "one a programmer handed in (team); money is its purse after",
         ("for", "task", "amount", "tax", "money"),
     ),
     "abandon": Kind("a resident gave up its task", ("task",)),
@@ -118,7 +118,8 @@ KINDS = {
         "or buy (at the Store's counter, for oneself or by the chef for the kitchen's larder, "
         "which the chef pays, or a dish from the portions); seller is who served a purchase, whose "
         "purse took the money less the tax withheld into the treasury (none when the seller "
-        "served itself, which costs nothing)",
+        "served itself, which costs nothing), or the chef who handed a dish over from the "
+        "portions",
         ("item", "units", "source", "target", "money", "reason", "seller", "tax"),
     ),
     "message": Kind(
@@ -368,7 +369,10 @@ def counted_move(payload: Mapping[str, Any]) -> str | None:
     """What a `move` counts as among a day's counts: `dish`, a portion from the kitchen, bought
     or handed over by the chef; `sale`, anything else bought, at the Store's counter; `gift`,
     anything else passed from one resident to another, money among it; None for what was taken,
-    left or eaten."""
+    left or eaten, and for what a keeper took from its own business for itself, the shopkeeper's
+    helpings from her shelves and the chef's own dishes, which are neither sales nor dishes."""
+    if payload["seller"] is not None and payload["seller"] == payload["target"]:
+        return None
     if payload["source"] == PORTIONS:
         return "dish"
     return {"buy": "sale", "pass": "gift"}.get(payload["reason"])

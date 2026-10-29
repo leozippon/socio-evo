@@ -102,26 +102,26 @@ def test_illness_comes_by_the_band_of_health_costs_its_nights_and_ends_with_trea
     assert body.illness_chance(Living(), 0.9) == pytest.approx(0.04)  # a home of little comfort
     living = Living(energy=40)
     body.fall_ill(living)
-    assert living.ill == 5 and body.condition(living).endswith(
+    assert living.ill == 7 and body.condition(living).endswith(
         "You are in good health. You are ill."
     )
     body.elapse(living, 3600, "sleep", 1.0)
     assert living.energy == 46  # half of 12 an hour
     assert body.examination(living, "Mei").endswith(
-        "Mei is ill; untreated, it passes after 5 more nights."
+        "Mei is ill; untreated, it passes after 7 more nights."
     )
-    for night in range(1, 6):  # each night costs 3 and mends nothing, rested and fed as it is
-        assert body.night(living, 1.0) == {"illness": -3} and living.ill == 5 - night
-    assert living.health == 85 and "ill" not in body.condition(living)
+    for night in range(1, 8):  # each night costs 5 and mends nothing, rested and fed as it is
+        assert body.night(living, 1.0) == {"illness": -5} and living.ill == 7 - night
+    assert living.health == 65 and "ill" not in body.condition(living)
     assert body.night(living, 1.0) == {"recovery": 5}  # well again
     body.fall_ill(living)
-    body.treat(living, 25)
-    assert living.ill == 0 and living.health == 100
+    body.treat(living, 25)  # ends it at once
+    assert living.ill == 0 and living.health == 95
 
 
 async def test_illness_at_midnight_is_drawn_from_the_seed_told_and_passes(make_town, tmp_path):
     needs = copy.deepcopy(NEEDS)
-    needs["health"]["illness"]["chance"] = 0.5
+    needs["health"]["illness"].update(chance=0.5, nights=5)  # over within the town's days
     config = town_config(needs=needs)
     town = make_town(config)
     await awake_at(town)

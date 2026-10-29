@@ -482,6 +482,9 @@ async def test_the_team_leader_gives_a_task_or_moves_it_and_both_are_told(make_t
     await at_the_workshop(town, "Mei", "Tomas")
     world, board = town.world, town.world.board
     assert "assign" in offered(town, "Tomas") and "assign" not in offered(town, "Mei")
+    # The leader reads the board and hands tasks out; she takes none herself.
+    assert {"view_board", "read_task"} <= set(offered(town, "Tomas"))
+    assert "claim_task" not in offered(town, "Tomas") and "claim_task" in offered(town, "Mei")
     assert (await town.call("Mei", "assign", task=1, to="Aisha")).text == (
         "That is not your work: you are a programmer."
     )
@@ -534,7 +537,7 @@ async def test_the_team_leaders_statement_tells_the_offices_day(make_town):
     await town.call("Mei", "write_repo_file", path="a.py", content="FIX\n")
     await town.call("Mei", "submit")
     await town.call("Tomas", "assign", task=2, to="Aisha")
-    await town.call("Tomas", "claim_task", task=3)
+    await town.call("Tomas", "assign", task=3, to="Mei")
     town.rest()
     await town.until("00:00", day=3)
 
@@ -545,11 +548,11 @@ async def test_the_team_leaders_statement_tells_the_offices_day(make_town):
     assert first.endswith(
         "The workshop today. Accepted: task 1 by Mei. Open on the board: task 2 (org/repo2), "
         "which came in today, held by Aisha; task 3 (org/repo3), which came in today, held by "
-        "you."
+        "Mei."
     )
     assert second.endswith(  # told before the clients withdraw, which only the holders hear
         "The workshop today. Accepted: none. Withdrawn by the clients at midnight: task 2, "
-        "which Aisha held; task 3, which you held. Open on the board: nothing."
+        "which Aisha held; task 3, which Mei held. Open on the board: nothing."
     )
     assert not any("The workshop today" in told for told in statements("Mei"))
 

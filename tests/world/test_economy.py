@@ -39,10 +39,14 @@ async def test_a_client_pays_four_fifths_to_the_one_who_handed_it_in_and_a_fifth
     await awake_at(town)
     world = town.world
     before = total(world)
-    for name in ("Mei", "Tomas"):
+    for name in ("Mei", "Tomas", "Aisha"):
         await town.call(name, "go", place="workshop")
     await town.until("09:00")
-    for name, task in (("Mei", 1), ("Tomas", 2)):
+    # The team leader takes no task: she hands them out.
+    assert (await town.call("Tomas", "claim_task", task=3)).text == (
+        "That is not your work: you are the team leader."
+    )
+    for name, task in (("Mei", 1), ("Aisha", 2)):
         await town.call(name, "claim_task", task=task)
         await town.call(name, "write_repo_file", path="fix.py", content="FIX\n")
         town.take("Tomas")
@@ -54,15 +58,16 @@ async def test_a_client_pays_four_fifths_to_the_one_who_handed_it_in_and_a_fifth
     assert town.take("Tomas") == [
         "You received $10 for task 1, handed in by Mei, of which $1 in tax."
     ]
-    assert (await town.call("Tomas", "submit")).text == (  # the leader's own: the whole
-        "Accepted. You received $50 for task 2, of which $5 in tax. Your purse holds $234. It is "
+    assert (await town.call("Aisha", "submit")).text == (
+        "Accepted. You received $40 for task 2, of which $4 in tax. Your purse holds $66. It is "
         "09:00."
     )
     paid = [(e["actor"], e["payload"]) for e in world.log.entries() if e["kind"] == "service"]
     assert paid == [
         ("Mei", {"for": "task", "task": 1, "amount": 40, "tax": 4, "money": 156}),
         ("Tomas", {"for": "team", "task": 1, "amount": 10, "tax": 1, "money": 189}),
-        ("Tomas", {"for": "task", "task": 2, "amount": 50, "tax": 5, "money": 234}),
+        ("Aisha", {"for": "task", "task": 2, "amount": 40, "tax": 4, "money": 66}),
+        ("Tomas", {"for": "team", "task": 2, "amount": 10, "tax": 1, "money": 198}),
     ]
     assert world.treasury.ledger == {"tax": 10} and world.treasury.balance == 1010
     assert total(world) == before + 100  # the clients' payments, and nothing else, came in
@@ -72,8 +77,8 @@ async def test_a_client_pays_four_fifths_to_the_one_who_handed_it_in_and_a_fifth
     await town.until("00:00", day=2)
     assert town.take("Tomas")[-1].startswith(
         "Your statement for Monday 1 January: received $10 for task 1, handed in by Mei, $1 of "
-        "it in tax; received $50 for task 2, $5 of it in tax; rent for your room at the flat by "
-        "the college gates $30; your purse paid it."
+        "it in tax; received $10 for task 2, handed in by Aisha, $1 of it in tax; rent for your "
+        "room at the flat by the college gates $30; your purse paid it."
     )
 
 

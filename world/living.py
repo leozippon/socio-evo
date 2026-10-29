@@ -87,14 +87,17 @@ def activity(world: World, r: Resident) -> Activity:
     return "awake"
 
 
-def _feed(world: World, r: Resident) -> None:
+def _feed(world: World, r: Resident) -> dict[str, int]:
     """Awake and able to eat, `r` eats the ready food in its inventory, a helping at a time,
-    until it could eat no more."""
+    until it could eat no more. Returns the helpings it ate, by item."""
+    ate: dict[str, int] = {}
     if not r.awake:
-        return
+        return ate
     for item in world.config.items:
         while item.ready and world.body.hungry(r.living) and r.inventory.units(item.id):
             eat(world, r, item.id, 1)
+            ate[item.id] = ate.get(item.id, 0) + 1
+    return ate
 
 
 def note_bands(world: World, r: Resident, before: dict[str, Band], *, tell: bool) -> None:
@@ -150,13 +153,14 @@ def eat(world: World, r: Resident, item: str, units: int = 1) -> None:
     )
 
 
-def take_in(world: World, r: Resident, *, tell: bool = False) -> None:
+def take_in(world: World, r: Resident, *, tell: bool = False) -> dict[str, int]:
     """`r` has just been handed something: the ready food it could eat is eaten at once, and
     each need that crossed into another band is noted, told to it if `tell` (a result tells
-    one who took it itself)."""
+    one who took it itself). Returns the helpings eaten, by item, for the result to tell."""
     before = world.body.bands(r.living)
-    _feed(world, r)
+    ate = _feed(world, r)
     note_bands(world, r, before, tell=tell)
+    return ate
 
 
 def take_to_bed(world: World, r: Resident, day: int) -> None:

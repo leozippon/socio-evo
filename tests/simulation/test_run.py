@@ -56,35 +56,52 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         "day-01.json",
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
-    assert set(saved["residents"]) == {"Mei", "Olga", "Jonas"}
+    assert set(saved["residents"]) == {"Mei", "Aisha", "Olga", "Jonas"}
     entries = list(read_jsonl(root / "world.jsonl"))
-    # Mei worked at the Office from about 08:15 to 17:00, waiting there for the tasks to come in,
-    # Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde until 20:00,
-    # his time buying for the kitchen at the Store not counted: hours counted at midnight that
-    # earn nothing. The treasury took each one's rent from the purse.
+    # Mei and Aisha worked at the Office from about 08:15 to 17:00, waiting there for the tasks
+    # to come in, Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde
+    # until 20:00, his time buying for the kitchen at the Store not counted: hours counted at
+    # midnight that earn nothing. The treasury took each one's rent from the purse.
     settled = {e["actor"]: e["payload"] for e in entries if e["kind"] == "settlement"}
     for name, rent, hours in (
-        ("Mei", 10, (8, 9)),
-        ("Olga", 10, (11.5, 12)),
-        ("Jonas", 15, (11.5, 12.5)),
+        ("Mei", 5, (8, 9)),
+        ("Aisha", 5, (8, 9)),
+        ("Olga", 5, (11.5, 12)),
+        ("Jonas", 8, (11.5, 12.5)),
     ):
         paid = settled[name]
         assert hours[0] < paid["hours"] < hours[1], name
         assert (paid["rent"], paid["rent_paid"], paid["arrears"]) == (rent, rent, 0), name
-    # The client paid Mei, the team leader, the whole of her own task's payment, a tenth withheld.
-    (share,) = [e["payload"] for e in entries if e["kind"] == "service"]
-    assert (share["for"], share["amount"], share["tax"]) == ("task", 150, 15)
+    # Aisha took a task and was given the next by Mei, the team leader, who takes none: for each
+    # the client paid Aisha four fifths and Mei a fifth, a tenth withheld.
+    office = [(e["actor"], e["kind"]) for e in entries if e["kind"] in ("claim", "assign")]
+    assert office == [("Aisha", "claim"), ("Mei", "assign")]
+    shares = [e for e in entries if e["kind"] == "service"]
+    paid = {
+        (e["actor"], e["payload"]["for"], e["payload"]["amount"], e["payload"]["tax"])
+        for e in shares
+    }
+    assert paid == {("Aisha", "task", 120, 12), ("Mei", "team", 30, 3)} and len(shares) == 4
+    clients = sum(e["payload"]["amount"] for e in shares)
     # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
     # the next morning; the chef bought for the kitchen there, cooked and served, and handed a
-    # dish to the first who came, unpaid; Mei bought bread and ate a helping, had a dish and took
-    # the bread Olga left at the Linde for anyone, and they passed one another a little money.
+    # dish to the first who came, unpaid; Mei bought bread and ate a helping and had a dish, one
+    # of the programmers took the bread Olga left at the Linde for anyone, and they passed one
+    # another a little money.
     moves = [e["payload"] | {"actor": e["actor"]} for e in entries if e["kind"] == "move"]
     sold = {(m["actor"], m["item"], m["target"]) for m in moves if m["source"] == "shelves"}
     assert ("Mei", "bread", "Mei") in sold and ("Jonas", "vegetables", "larder") in sold
     served = {(m["actor"], m["target"], m["seller"]) for m in moves if m["source"] == "portions"}
-    assert served == {("Mei", "Mei", "Jonas"), ("Olga", "Olga", "Jonas"), ("Jonas", "Mei", None)}
+    assert served == {
+        ("Mei", "Mei", "Jonas"),
+        ("Aisha", "Aisha", "Jonas"),
+        ("Olga", "Olga", "Jonas"),
+        ("Jonas", "Mei", "Jonas"),  # handed over, unpaid
+    }
     done = {(m["actor"], m["reason"], m["item"]) for m in moves}
-    assert {("Mei", "eat", "bread"), ("Olga", "put", "bread"), ("Mei", "get", "bread")} <= done
+    assert {("Mei", "eat", "bread"), ("Olga", "put", "bread")} <= done
+    taken = {actor for actor, reason, item in done if (reason, item) == ("get", "bread")}
+    assert len(taken) == 1 and taken <= {"Mei", "Aisha"}
     assert ("Mei", "pass", None) in done
     orders = [e["payload"] for e in entries if e["kind"] == "order"]
     assert saved["store"]["pending"] == [[o["item"], o["quantity"], o["arrives"]] for o in orders]
@@ -97,10 +114,10 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     supplier = sum(o["amount"] for o in orders)
     town = smoke().town
     start = town.treasury.start + sum(r.purse for r in town.residents)
-    assert treasury["balance"] + money == start + 150 - supplier
+    assert treasury["balance"] + money == start + clients - supplier
     taxed = ("service", "move", "examination", "treatment")
     taxes = sum(e["payload"]["tax"] for e in entries if e["kind"] in taxed)
-    assert treasury["yesterday"] == {"tax": taxes, "rent": 10 + 10 + 15} and taxes > 15
+    assert treasury["yesterday"] == {"tax": taxes, "rent": 5 + 5 + 5 + 8} and taxes > 30
     assert treasury["owed"] == treasury["arrears"] == {} and treasury["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]
     # Fed by a dish and a helping of bread in the evening, rested, in good health.
@@ -109,7 +126,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
     lived = (
-        "wake", "task_arrived", "start_work", "claim", "verdict", "service", "order", "price",
+        "wake", "task_arrived", "start_work", "claim", "assign", "verdict", "service", "order",
+        "price",
         "move", "cook", "speech", "sleep", "settlement",
     )  # fmt: skip
     # The next day's arrivals, drawn at midnight, are saved with the tasks still open.
@@ -118,7 +136,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     for kind in lived:
         assert kind in log, kind
     assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log
-    for name in ("Mei", "Olga", "Jonas"):
+    for name in ("Mei", "Aisha", "Olga", "Jonas"):
         agent = run.agent_dir(name)
         repository = Repository(agent)
         assert [c.subject for c in repository.log()] == [
@@ -131,7 +149,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert re.search(  # the saved day names the treasury
-        r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$35 in rent and daily "
+        r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$23 in rent and daily "
         rf"charges and paid out nothing, and holds \${treasury['balance']}\.",
         run.run_log_path.read_text(),
     )
@@ -163,7 +181,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
     assert (root / "run.log").read_text() == log
     lost = {}  # a save of day 2 killed after its tags and before its checkpoint
-    for name in ("Mei", "Olga", "Jonas"):
+    for name in ("Mei", "Aisha", "Olga", "Jonas"):
         repository = Repository(RunDirectory(root).agent_dir(name))
         lost[name] = repository.commit("day-02", date=datetime.now(UTC), allow_empty=True)
         repository.tag("day-02")
@@ -175,7 +193,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     resume = entries[first]
     assert resume["kind"] == "resume" and resume["payload"]["day"] == 1
     assert [entry["kind"] for entry in entries].count("checkpoint") == 2
-    for name in ("Mei", "Olga", "Jonas"):
+    for name in ("Mei", "Aisha", "Olga", "Jonas"):
         agent = RunDirectory(root).agent_dir(name)
         repository = Repository(agent)
         assert repository.tree("day-02") and lost[name] not in {c.id for c in repository.log()}
@@ -218,7 +236,7 @@ async def test_a_runtime_that_ends_fails_the_run_instead_of_hanging_it(tmp_path,
 
     monkeypatch.setattr(simulation, "Runtime", SecondDies)
     async with asyncio.timeout(60):
-        with pytest.raises(RuntimeError, match="the runtime of Olga ended") as raised:
+        with pytest.raises(RuntimeError, match="the runtime of Aisha ended") as raised:
             await simulation.run(smoke(), tmp_path, dry_run=True)
     assert isinstance(raised.value.__cause__, OSError)
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
@@ -247,14 +265,17 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
         runtime=RuntimeConfig(model_attempts=1, max_consecutive_lapses=2),
     )
     async with asyncio.timeout(60):
-        with pytest.raises(RuntimeError, match="the runtime of (Mei|Olga|Jonas) ended") as raised:
+        with pytest.raises(
+            RuntimeError, match="the runtime of (Mei|Aisha|Olga|Jonas) ended"
+        ) as raised:
             await simulation.run(config, tmp_path, dry_run=True)
     assert "2 requests in a row lapsed" in str(raised.value.__cause__)
     run = RunDirectory.open(tmp_path / "smoke-dry-run")
     assert run.read_manifest().status == "failed"
     log = run.run_log_path.read_text()
     assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
-    assert replicas == {"check": {2}, "Mei": {0}, "Olga": {1}, "Jonas": {2}}  # its place
+    # Each names its place, which the client takes modulo the replicas.
+    assert replicas == {"check": {2}, "Mei": {0}, "Aisha": {1}, "Olga": {2}, "Jonas": {3}}
 
 
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(

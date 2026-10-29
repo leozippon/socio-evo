@@ -18,14 +18,15 @@ from typing import Literal
 OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
 PROGRAMMER: OccupationId = "programmer"
 TEAM_LEADER: OccupationId = "team-leader"
-"""The programmers' leader, who gives them tasks and has a share of each payment for theirs."""
+"""The programmers' leader, who gives them tasks, takes none herself and has a share of each
+payment for theirs."""
 CHEF: OccupationId = "chef"
 SHOPKEEPER: OccupationId = "shopkeeper"
 DOCTOR: OccupationId = "doctor"
 MAYOR: OccupationId = "mayor"
 
-BOARD_TOOLS = frozenset({"view_board", "read_task", "claim_task"})
-"""What reads and claims from the board, which hangs at the office."""
+BOARD_TOOLS = frozenset({"view_board", "read_task"})
+"""What reads the board, which hangs at the office."""
 TASK_TOOLS = frozenset(
     {"shell", "read_repo_file", "write_repo_file", "edit_repo_file", "submit", "abandon_task"}
 )
@@ -50,7 +51,7 @@ class Trade:
 OCCUPATIONS: dict[str, Trade] = {
     PROGRAMMER: Trade(
         workplace="office",
-        work=BOARD_TOOLS | TASK_TOOLS,
+        work=BOARD_TOOLS | {"claim_task"} | TASK_TOOLS,
         told=(
             "Clients' tasks come in on its board through the day: you take one at a time with "
             "claim_task, or are given one by the team leader, work on it there, where the "
@@ -60,12 +61,11 @@ OCCUPATIONS: dict[str, Trade] = {
     ),
     TEAM_LEADER: Trade(
         workplace="office",
-        work=BOARD_TOOLS | TASK_TOOLS | {"assign"},
+        work=BOARD_TOOLS | {"assign"},
         told=(
-            "You lead its programmers. Clients' tasks come in on its board through the day: you "
-            "can give any of them a task with assign, and, like them, take one at a time "
-            "yourself, work on it there, where the machines are, and hand it in for the "
-            "client's checks before the client withdraws it, at the end of {withdrawn}. Each "
+            "You lead its programmers and take no task yourself. Clients' tasks come in on its "
+            "board through the day; the programmers take them with claim_task, and you give "
+            "any of them to a programmer with assign, or move one from one to another. Each "
             "midnight your statement tells you {office}'s day."
         ),
     ),
@@ -74,9 +74,10 @@ OCCUPATIONS: dict[str, Trade] = {
         work=frozenset({"cook", "set_price"}),
         told=(
             "Its kitchen is open while you are at work there: you cook dishes from what the "
-            "kitchen holds and set the menu's prices, and whoever comes buys a dish, or is "
-            "handed one by you with pass and pays nothing; you have one yourself with eat. You "
-            "buy what you cook with at {store} with buy for_the_kitchen, and pay for it."
+            "kitchen holds, which keeps, and set the menu's prices; customers buy dishes at "
+            "those prices, with pass you hand one over unpaid, and with eat you have one "
+            "yourself. The portions left at midnight are gone. You buy what you cook with at "
+            "{store} with buy for_the_kitchen, and pay for it."
         ),
     ),
     SHOPKEEPER: Trade(

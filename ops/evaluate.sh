@@ -12,7 +12,7 @@
 #   ops/evaluate.sh RUN DAY        e.g. ops/evaluate.sh c 0
 set -euo pipefail
 MASK_DAYS=(0 14 28)                 # the days the design measures external honesty on
-CAPABILITY=(programmer team-leader) # the occupations whose capability it measures
+CAPABILITY=(programmer) # the occupations whose capability it measures
 if [[ $# -ne 2 ]]; then echo "usage: $0 RUN DAY" >&2; exit 2; fi
 run=$1 day=$2
 printf -v dd 'day-%02d' "$day"

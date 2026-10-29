@@ -277,13 +277,10 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Mei", "read_repo_file", path="README")
     await town.call("Mei", "write_repo_file", path="fix.py", content="FIX\n")
     await town.call("Mei", "submit")
-    await town.call("Tomas", "claim_task", task=2)
-    await town.call("Tomas", "write_repo_file", path="fix.py", content="FIX\n")
-    await town.call("Tomas", "submit")
-    await town.call("Mei", "claim_task", task=3)
+    await town.call("Tomas", "assign", task=2, to="Mei")
     await town.call("Mei", "abandon_task")
     await town.call("Tomas", "assign", task=3, to="Aisha")  # hers until it is withdrawn
-    await town.call("Tomas", "claim_task", task=4)  # open until the night closes it
+    await town.call("Mei", "claim_task", task=4)  # open until the night closes it
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
     await town.call("Mei", "pass", item="money", units=5, to="Tomas")
     await town.call("Mei", "leave_conversation")

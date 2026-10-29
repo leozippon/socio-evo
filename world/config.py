@@ -7,9 +7,9 @@ A place is a home, one of the five workplaces (`WORKPLACES`: the office, the sto
 the hospital and the hall, exactly one of each) or a social place, which has no purpose but company.
 Each resident has an `occupation`, which says where it works and what it does there. Nobody is
 paid for its time: a client pays `work.payment` for each task accepted, `work.leader_share` of it
-to the team leader and the rest to the one who handed it in (the whole to the team leader for a
-task of the leader's own), and each business is its keeper's, who takes what customers pay and
-pays for what it buys. Each occupation works at a place of its own kind (`world.occupations`), and
+to the team leader, who hands tasks out and takes none herself, and the rest to the programmer who
+handed it in, and each business is its keeper's, who takes what customers pay and pays for what
+it buys. Each occupation works at a place of its own kind (`world.occupations`), and
 every workplace is some occupation's. The office takes in clients' tasks (`work`), which arrive at
 random through the working day; the hospital charges the fees of `hospital` for an examination and
 a treatment. The town's treasury starts at `treasury.start`: `tax` of every payment a resident
@@ -341,8 +341,7 @@ class Work(StrictModel):
     the next of the rotation, at minutes drawn between `arrive_from` and `arrive_until`. The client
     withdraws a task not accepted by the midnight that ends the `expiry_days`th day after the day
     it arrived. A task accepted is paid `payment` by its client: `leader_share` of it to the team
-    leader and the rest to the one who handed it in, the whole to the team leader for a task of
-    the leader's own."""
+    leader, if the town has one, and the rest to the programmer who handed it in."""
 
     split: str = Field(min_length=1)
     tasks_a_day: float = Field(ge=0, description="the mean number of tasks arriving a day")

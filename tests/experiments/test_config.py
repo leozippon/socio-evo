@@ -37,14 +37,17 @@ def test_the_town_and_the_run_over_it():
     )
 
 
-def test_the_smoke_town_is_the_team_leader_the_shopkeeper_and_the_chef_for_a_day():
+def test_the_smoke_town_is_the_office_the_shopkeeper_and_the_chef_for_a_day():
     smoke, found = load_experiment(CONFIGS / "smoke.yaml"), town()
     assert [r.name for r in smoke.residents] == [r.name for r in smoke.town.residents]
     assert [(r.name, r.occupation) for r in smoke.town.residents] == [
         ("Mei", "team-leader"),
+        ("Aisha", "programmer"),
         ("Olga", "shopkeeper"),
         ("Jonas", "chef"),
     ]
+    purses = {r.name: r.purse for r in found.town.residents}
+    assert all(r.purse == purses[r.name] for r in smoke.town.residents)
     assert smoke.days == 1 and smoke.town.clock == found.town.clock
     assert smoke.town.social == found.town.social and smoke.town.work == found.town.work
 
@@ -115,10 +118,12 @@ def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
 
 
 # The calibration of the closed economy (experiments/configs/town.yaml's notes): three tasks
-# arriving a day, half accepted; the town eating a dish a day each, the menu's in turn, seven sold
-# and the chef's own; the cases of illness the town in good health sees a day, each examined and
-# treated at the surgery.
+# arriving a day, half accepted, among the three programmers, the team leader taking none; five
+# dishes sold a day at the Linde, the menu's in turn, and the chef's own, the two others eating
+# bread; the cases of illness the town in good health sees a day, each examined and treated at
+# the surgery.
 ACCEPTED = 0.5
+SOLD = 5
 
 
 def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another():
@@ -126,17 +131,18 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     assert {o.id for o in config.occupations} == set(OCCUPATIONS)  # the six of the design
     tax, work = config.tax, config.work
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
-    assert sorted(set(rents.values())) == [10, 15, 20]  # a room, a flat, the cottage
+    assert sorted(set(rents.values())) == [5, 8, 10]  # a room, a flat, the cottage
     # The cheapest day's food: the helpings of ready food that make a day's need, at the price
     # the Store starts with; the dearest, the dearest dish.
     food = min(
         (item for item in config.supplied if item.ready),
         key=lambda good: good.price * round(A_DAYS_FOOD / good.nourishment),
     )
-    a_day = round(A_DAYS_FOOD / food.nourishment) * food.price
+    helpings = round(A_DAYS_FOOD / food.nourishment)
+    a_day = helpings * food.price
     cheapest = min(rents.values()) + a_day
     dearest = max(rents.values()) + max(dish.price for dish in config.dishes)
-    assert (cheapest, dearest) == (25, 40)
+    assert (cheapest, dearest) == (20, 30)
     assert config.treasury.spares >= a_day  # rent never takes a day's bread
 
     # The clients' payments, shared out after the tax: a programmer's expected share, the
@@ -144,56 +150,66 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     office = [
         r.occupation for r in config.residents if r.occupation in ("programmer", "team-leader")
     ]
-    assert work.tasks_a_day < len(office)  # fewer than those who take them on
+    assert work.tasks_a_day < len(office)  # fewer than those at the Office
     clients = work.tasks_a_day * ACCEPTED * work.payment
     programmers = office.count("programmer")
     programmer = clients * (1 - work.leader_share) * (1 - tax) / programmers
     leader = clients * work.leader_share * (1 - tax)
-    assert (round(programmer, 2), round(leader, 2)) == (54, 40.5)
+    assert (programmers, round(programmer, 2), round(leader, 2)) == (3, 54, 40.5)
     assert programmer >= dearest and leader >= dearest
 
-    # The businesses' margins after the tax, the town eating a dish a day each: the chef's on
-    # his seven dishes, the menu's mean less its ingredients at the Store; the shopkeeper's on
-    # the eight dishes' ingredients, at the Store's prices less the supplier's.
+    # The businesses' margins after the tax: the chef's on the dishes sold, the menu's mean less
+    # its ingredients at the Store; the shopkeeper's on the town's food, the ingredients of the
+    # dishes sold and of the chef's own at the Store's prices less the supplier's, and the
+    # helpings of bread of the two who do not eat at the Linde. The Store's markup on
+    # ingredients is about half again over wholesale.
     def cost(dish, price) -> float:
         return sum(units * price(config.item(item)) for item, units in dish.ingredients.items())
 
+    ingredients = [item for item in config.supplied if item.effect == "food" and not item.ready]
+    assert all(item.price <= 2 * item.wholesale for item in ingredients)
     menu = fmean(dish.price for dish in config.dishes)
     retail = fmean(cost(dish, lambda item: item.price) for dish in config.dishes)
     wholesale = fmean(cost(dish, lambda item: item.wholesale) for dish in config.dishes)
     meals = len(config.residents)
-    sold = meals - 1  # a dish to each of the others; the chef has his own
-    chef = sold * (menu * (1 - tax) - retail)
-    shop = meals * (retail * (1 - tax) - wholesale)
-    assert (round(chef, 2), round(shop, 2)) == (44.92, 41.87)
-    assert chef >= dearest and shop >= dearest
+    dishes = SOLD + 1  # and the chef's own
+    bread = helpings * (meals - dishes)
+    chef = SOLD * (menu * (1 - tax) - retail)
+    shop = dishes * (retail * (1 - tax) - wholesale) + bread * (
+        food.price * (1 - tax) - food.wholesale
+    )
+    assert (round(menu, 2), round(retail, 2), round(wholesale, 2)) == (17.5, 6, 3.17)
+    assert (round(chef, 2), round(shop, 2)) == (48.75, 28.4)
+    assert chef >= dearest
+    # The shopkeeper's keeps the cheapest life, hers in a shared house; the dearest would take
+    # a dearer loaf.
+    assert cheapest <= shop < dearest
     # The doctor's patients: the cases of illness the town in good health sees a day, by the
     # chance of each resident's home, about one, each examined and treated (about two visits);
-    # their fees keep the cheapest life.
+    # their fees keep the dearest life.
     body, comfort = Body(config.needs), {place.id: place.comfort for place in config.places}
     cases = sum(body.illness_chance(Living(), comfort[r.home]) for r in config.residents)
     fees = config.hospital
     doctor = cases * (fees.examination + fees.treatment) * (1 - tax)
     assert (round(cases, 2), fees.examination, fees.treatment, round(doctor, 2)) == (
-        1.0, 25, 60, 76.5,
+        1.0, 20, 40, 54,
     )  # fmt: skip
-    assert doctor >= cheapest
+    assert doctor >= dearest
 
     # The treasury's day: the rent of every room taken and the tax on the day's payments in,
-    # the mayor's salary out. The plan asked for a surplus of at most a third of the intake;
-    # with these rents and this salary it is three fifths, which holds below two thirds.
+    # the mayor's salary out. Its intake is near the salary: it covers it, and what is left,
+    # the mayor's to grant back, is less than the salary.
     rent = sum(rents[r.home] for r in config.residents)
-    taxes = tax * (
-        clients + meals * retail + sold * menu + cases * (fees.examination + fees.treatment)
-    )
+    sales = dishes * retail + bread * food.price
+    taxes = tax * (clients + sales + SOLD * menu + cases * (fees.examination + fees.treatment))
     salary = sum(config.occupation(r.occupation).salary for r in config.residents)
     intake = rent + taxes
-    assert (rent, round(taxes, 2), salary) == (105, 50.72, 60)
-    assert 0 < intake - salary <= 2 / 3 * intake and round((intake - salary) / intake, 1) == 0.6
+    assert (rent, round(taxes, 2), salary) == (54, 43.85, 60)
+    assert 0 < intake - salary < salary
     assert config.treasury.start >= 5 * salary
     # The town's money grows by what the clients pay less what the supplier is paid.
-    supplier = meals * wholesale
-    assert round(clients - supplier, 2) == 199.67
+    supplier = dishes * wholesale + bread * food.wholesale
+    assert round(clients - supplier, 2) == 194
 
     # Starting money is five to ten days of its owner's own life, its rent and a day's bread;
     # the chef's and the shopkeeper's working capital set apart: a day of the kitchen's
@@ -203,7 +219,8 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
         for item, units in config.store.stock.items()
         if config.item(item).effect == "food"
     )
-    capital = {"chef": meals * retail, "shopkeeper": 2 * shelves}
+    capital = {"chef": dishes * retail, "shopkeeper": 2 * shelves}
+    assert capital == {"chef": 36, "shopkeeper": 352}
     for resident in config.residents:
         own = rents[resident.home] + a_day
         days = (resident.purse - capital.get(resident.occupation, 0)) / own

@@ -13,13 +13,13 @@ calendar day `expiry_days` days after the day it came; either way it is gone for
 is told to those awake at the Office (`arrival`), a withdrawal to whoever held the task
 (`withdrawals`).
 
-A resident holds at most one task (`claims`): taken with `claim_task`, or given to it by the team
-leader (`assign`), which may move a task from one holder to another. It keeps the task wherever
-it goes until it is accepted, given up, moved or withdrawn. A claim opens a workspace when its
-holder first works on it. When its holder gives the claim up or is paid, the workspace is closed
-at once; when the task is moved or withdrawn, the workspace may be in use by a command still
-running, so it is set aside and closed at the checkpoint, its changes gone with it. At the
-checkpoint every workspace is closed and the changes of each held task are kept; the next
+A programmer holds at most one task (`claims`): taken with `claim_task`, or given to it by the
+team leader (`assign`), who takes none herself and may move a task from one holder to another. It
+keeps the task wherever it goes until it is accepted, given up, moved or withdrawn. A claim opens
+a workspace when its holder first works on it. When its holder gives the claim up or is paid, the
+workspace is closed at once; when the task is moved or withdrawn, the workspace may be in use by a
+command still running, so it is set aside and closed at the checkpoint, its changes gone with it.
+At the checkpoint every workspace is closed and the changes of each held task are kept; the next
 `workspace` starts a fresh one and reapplies them. Acceptance runs on the submitted diff in a
 fresh container, at most `acceptance_runs` a day for each resident and task; a run whose checks
 could not be run at all (an `error`, the machinery's failing) is not counted, and the count starts
@@ -632,12 +632,12 @@ async def _hand_in(world: World, r: Resident, claim: Claim, workspace: Workspace
 
 
 def _paid(world: World, r: Resident, number: int) -> str:
-    """The client of task `number`, which `r` handed in and which was accepted, pays: the team
-    leader's share of the payment to the team leader, unless `r` is the leader or the town has
-    none, and the rest to `r`, the tax withheld from each (`World.earn`); each logged
-    (`service`), the leader told. What `r` is told of its own."""
+    """The client of task `number`, which the programmer `r` handed in and which was accepted,
+    pays: the team leader's share of the payment to the team leader, if the town has one, and
+    the rest to `r`, the tax withheld from each (`World.earn`); each logged (`service`), the
+    leader told. What `r` is told of its own."""
     work, money = world.config.work, world.config.money
-    leader = next((other for other in world.of_occupation(TEAM_LEADER) if other is not r), None)
+    leader = next(iter(world.of_occupation(TEAM_LEADER)), None)
     team = work.team_share if leader is not None else 0
     shares = [(r, "task", work.payment - team, f"for task {number}")]
     if leader is not None:

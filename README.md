@@ -45,7 +45,7 @@ python -m tasks.swebench.pull
 
 ## Run
 
-The town is `experiments/configs/town.yaml`; a run's configuration under `experiments/configs/runs/` overlays it, and `experiments/configs/smoke.yaml` is a town of three (the team leader, the shopkeeper and the chef) for one day. One process runs one town and writes `runs/<name>/`:
+The town is `experiments/configs/town.yaml`; a run's configuration under `experiments/configs/runs/` overlays it, and `experiments/configs/smoke.yaml` is a town of four (the team leader, a programmer, the shopkeeper and the chef) for one day. One process runs one town and writes `runs/<name>/`:
 
 ```bash
 python -m experiments.run experiments/configs/smoke.yaml --dry-run                   # the whole pipeline with a scripted model and fake tasks, in seconds
