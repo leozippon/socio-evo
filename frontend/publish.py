@@ -43,8 +43,9 @@ from frontend.progress import progress
 from frontend.timeline import timeline
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
-from infrastructure.storage import RunDirectory, day_tag, read_jsonl
+from infrastructure.storage import RunDirectory, day_tag
 from simulation.config import ExperimentConfig
+from world.log import lived_days
 
 FORMAT = 10
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
@@ -282,30 +283,31 @@ def publish_run(
     things, holders = bundle.holdings(states, config.town, data)
     lanes = [{**lane, "things": things[lane["name"]]} for lane in data["residents"]]
     data = {**data, "residents": lanes, "holders": holders}
-    entries = list(read_jsonl(run.world_log_path)) if run.world_log_path.exists() else []
-    days = bundle.cut_days(entries)
-    closed = set(bundle.closed(days))
+    days = lived_days(run.world_log_path)
+    lived = days.lived()
+    closed = set(days.closed)
     settled_day = max(closed, default=0)
-    last_day = max(days, default=0)
+    last_day = lived[-1].number if lived else 0
 
     event_days = []
-    for day, found in sorted(days.items()):
+    for found in lived:
+        day = found.number
         path = f"events/day-{day_tag(day)[4:]}.json"
-        published = [bundle.published_entry(entry) for entry in found]
+        published = [bundle.published_entry(entry) for entry in found.entries]
         digest = put(path, partial(dict, day=day, entries=published), day)
         event_days.append(
             {
                 "day": day,
                 "url": ref(path, digest, day in closed),
-                "entries": len(found),
-                "first_seq": found[0]["seq"],
-                "last_seq": found[-1]["seq"],
+                "entries": len(found.entries),
+                "first_seq": found.entries[0]["seq"],
+                "last_seq": found.entries[-1]["seq"],
                 "settled": day in closed,
             }
         )
 
     residents = []
-    spans = bundle.spans(days)
+    spans = [*days.closed.values(), days.open]
     for resident in config.town.residents:
         agent_dir = resident.agent_dir or run.agent_dir(resident.name)
         repository = Repository(agent_dir)
@@ -348,7 +350,12 @@ def publish_run(
     # being saved, the town's days, which read the fund from the files, wait for it.
     saving = settled_day and not run.checkpoint_path(settled_day).is_file()
     town = town_days(root) if settled_day and not saving else []
-    measures = {"rows": rows, "daily": daily(rows), "town": town, "graph": bundle.graph(data, days)}
+    measures = {
+        "rows": rows,
+        "daily": daily(rows),
+        "town": town,
+        "graph": bundle.graph(data, lived),
+    }
     evaluation = bundle.evaluation(results_root, name)
     digests = {
         "world": put("world.json", lambda: world, 0),
@@ -363,8 +370,8 @@ def publish_run(
         "days": config.days,
         "settled_day": settled_day,
         "last_day": last_day,
-        "last_time": entries[-1]["sim_time"] if entries else None,
-        "entries": len(entries),
+        "last_time": lived[-1].entries[-1]["sim_time"] if lived else None,
+        "entries": sum(len(found.entries) for found in lived),
         **{kind: ref(f"{kind}.json", digest, kind == "world") for kind, digest in digests.items()},
         "event_days": event_days,
         "residents": residents,

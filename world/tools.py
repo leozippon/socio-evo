@@ -15,7 +15,7 @@ price, examining and treating, reading the report and announcing; the doctor at 
 one too ill to get up examines and treats without sitting down to work.
 
 The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here for the town and
-for the work-only port of `world.solo` alike; what they do in a workspace and tell of it is
+for the work-only port of `evaluation.solo` alike; what they do in a workspace and tell of it is
 `world.workspace`'s.
 """
 
@@ -79,8 +79,8 @@ WORKSPACE_SPECS = (
          path=_text(_REPO_PATH), old_text=_text("the passage as it stands"),
          new_text=_text("what replaces it")),
 )  # fmt: skip
-# What acts in a task's workspace (`world.workspace`), in declared order; `world.solo` declares
-# these too.
+# What acts in a task's workspace (`world.workspace`), in declared order; `evaluation.solo`
+# declares these too.
 
 
 FOR_THE_KITCHEN = {

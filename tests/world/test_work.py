@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import RESIDENTS, TRADES, at, awake_at, stocked, town_config
+from tests.support.towns import RESIDENTS, TRADES, at, awake_at, stocked, town_config
 from world.clock import DAY
 from world.events import Idle, Sleep, Work
 from world.occupations import BOARD_TOOLS, TASK_TOOLS

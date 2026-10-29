@@ -22,7 +22,7 @@ from tasks.swebench.dataset import (
     load_tasks,
     select,
 )
-from tests.tasks.swebench.conftest import make_task
+from tests.support.swebench import make_task
 
 IDS = [f"owner__repo-{number}" for number in range(500)]
 FURTHER = [f"owner__repo-{number}" for number in range(500, 600)]

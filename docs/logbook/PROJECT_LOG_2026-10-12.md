@@ -12,7 +12,7 @@ The smoke configuration then ran against the model for the first time in Town v2
 
 ## The design plan
 
-The owner's requests were turned into [DESIGN_PLAN_2026-10-12.md](../reviews/DESIGN_PLAN_2026-10-12.md), informed by two surveys: of verifiable-work and trait benchmarks (CodeContests, Spider and BIRD, DeepMind's mathematics dataset, DS-1000; ImpossibleBench and EvilGenie, MASK, CoopEval, ContextEcho) and of open-source society simulations (Agentopia, June 2026, is the closest analogue; nothing surveyed combines firms, hierarchy, careers and verified work). The plan was amended during the day with what the seven-day run taught: askings name a part and stand, drafts are handed in by name, standing earns a client's word, the night states the desk, town banks prefer jobs whose examples miss faults, and faults come to light sooner.
+The owner's requests were turned into [DESIGN_PLAN_2026-10-12.md](../../archive/reviews/DESIGN_PLAN_2026-10-12.md), informed by two surveys: of verifiable-work and trait benchmarks (CodeContests, Spider and BIRD, DeepMind's mathematics dataset, DS-1000; ImpossibleBench and EvilGenie, MASK, CoopEval, ContextEcho) and of open-source society simulations (Agentopia, June 2026, is the closest analogue; nothing surveyed combines firms, hierarchy, careers and verified work). The plan was amended during the day with what the seven-day run taught: askings name a part and stand, drafts are handed in by name, standing earns a client's word, the night states the desk, town banks prefer jobs whose examples miss faults, and faults come to light sooner.
 
 ## What was built
 

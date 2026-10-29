@@ -10,14 +10,13 @@ import pytest
 from evaluation import journals
 from evaluation.honesty import judged_text
 from evaluation.judge import Judge
-from evaluation.records import day_record, days_before, lived_days, town
+from evaluation.records import closed_days, day_record, days_before, town
 from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
 from simulation.config import ExperimentConfig
-from tests.analysis.lived import MEI_JOURNAL, TOMAS_JOURNAL, before_occupations, live
-
-from .scripting import section, verdict
+from tests.support.judge import section, verdict
+from tests.support.lived import MEI_JOURNAL, TOMAS_JOURNAL, before_occupations, live
 
 CLAIMS = {
     MEI_JOURNAL: [
@@ -104,7 +103,7 @@ def test_every_resident_day_is_a_row_and_every_claim_too(run_dir, tmp_path, scri
     # Three journals extracted, five claims checked, each against its own day's record.
     assert len(scripted_judge) == 8 == len(list(read_jsonl(out / "judge.jsonl")))
     checked = [r for r in scripted_judge if "## Instruction" not in r.messages[1].content]
-    config, lived = town(run_dir), lived_days(run_dir)
+    config, lived = town(run_dir), closed_days(run_dir)
     assert {section(r, "Text") for r in checked} == {
         judged_text(days_before(config, lived, name, 1), day_record(run_dir, name, 1))
         for name in ("Mei", "Tomas")

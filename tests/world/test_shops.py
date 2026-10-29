@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import RESIDENTS, TRADES, at, awake_at, make_agent_dirs, town_config
+from tests.support.towns import RESIDENTS, TRADES, at, awake_at, make_agent_dirs, town_config
 from world.clock import ManualClock
 from world.testing import FakeBackend
 from world.world import World

@@ -7,8 +7,8 @@ from __future__ import annotations
 from frontend.progress import progress
 from frontend.timeline import timeline
 from infrastructure.storage import RunDirectory
-from tests.frontend.conftest import entry, new_town
-from tests.world.conftest import at
+from tests.support.runs import entry, new_town
+from tests.support.towns import at
 from world.clock import DAY
 
 HOUR = 3600.0

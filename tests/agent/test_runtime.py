@@ -10,7 +10,6 @@ from agent.compaction import INSTRUCTION
 from agent.port import ToolResult, ToolSpec
 from agent.runtime import Runtime, RuntimeConfig
 from agent.session import Session
-from agent.testing import FakePort, ScriptedModel, reply, running, tool_call
 from infrastructure.llm import (
     LLMBusyError,
     LLMCallError,
@@ -18,7 +17,9 @@ from infrastructure.llm import (
     Message,
     ToolCall,
 )
+from infrastructure.llm.scripted import reply, tool_call
 from infrastructure.storage import read_jsonl
+from tests.support.doubles import FakePort, ScriptedModel, running
 
 ANYTHING = {"type": "object", "properties": {}}
 SAY = ToolSpec("say", "Say something to those here.", ANYTHING)

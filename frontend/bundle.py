@@ -3,9 +3,9 @@
 Every document is a plain JSON value; `frontend/README.md` is its contract. The numbers come from
 `frontend.timeline`, `frontend.progress`, `analysis.measures`, `analysis.tables` and
 `analysis.compare`, which define them; this module only arranges them and adds what the viewer
-needs of the run itself: the town laid out on a map, the world log cut into lived days, the
-social graph, what every holder of items held over time as the checkpoints and the moves give
-it, and the agents' files as their git repositories hold them. Agent files are read through git
+needs of the run itself: the town laid out on a map, the world log's lived days as published,
+the social graph, what every holder of items held over time as the checkpoints and the moves
+give it, and the agents' files as their git repositories hold them. Agent files are read through git
 plumbing, which never touches an index or a work tree.
 """
 
@@ -24,12 +24,14 @@ from agent.directory import SESSION, TRACE
 from analysis import compare as comparison
 from analysis.measures import MEASURES
 from analysis.tables import tables
+from frontend.progress import COUNTS
 from infrastructure.git import FileChange, Repository
 from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
 from world.clock import DAY
 from world.config import TownConfig
 from world.economy import LARDER, PORTIONS, SHELVES, add, take
+from world.log import Day, counted_move, day_of
 from world.rules import Rules
 
 Entry = dict[str, Any]
@@ -53,28 +55,6 @@ ROWS = {
 """Where each kind of place stands on the map, in map units: the homes in a row at the top, the
 office, the hall and the hospital in the middle, the store, the restaurant and the social places
 in a row below."""
-COUNTED = (
-    "arrived",
-    "claims",
-    "assigned",
-    "submissions",
-    "accepted",
-    "rejected",
-    "withdrawn",
-    "sales",
-    "dishes",
-    "examinations",
-    "treatments",
-    "announcements",
-    "speeches",
-    "messages",
-    "gifts",
-    "journals",
-    "illnesses",
-    "bedridden",
-    "forced_sleeps",
-)
-"""The counts of `frontend.progress` summed into a run's headline."""
 GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "served")
 """What one resident had to do with another on a day, by field."""
 JOURNAL_FIELDS = (
@@ -186,48 +166,22 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
 # The world log --------------------------------------------------------------------------------
 
 
-def cut_days(entries: Iterable[Entry]) -> dict[int, list[Entry]]:
-    """The entries by lived day, in log order: a closed day ends with its `checkpoint` entry, and
-    the day in progress, if entries have been written since the last checkpoint, follows it. The
-    entries a lost day left before a `resume` are set aside, and so is the `resume` itself."""
-    days: dict[int, list[Entry]] = {}
-    current: list[Entry] = []
-    for entry in entries:
-        if entry["kind"] == "resume":
-            back = entry["payload"]["day"]
-            days = {day: found for day, found in days.items() if day <= back}
-            current = []
-            continue
-        current.append(entry)
-        if entry["kind"] == "checkpoint":
-            days[entry["payload"]["day"]] = current
-            current = []
-    if current:
-        days[(max(days) if days else 0) + 1] = current
-    return days
-
-
-def closed(days: Mapping[int, Sequence[Entry]]) -> list[int]:
-    """The days of `days` a checkpoint closed."""
-    return [day for day, entries in days.items() if entries[-1]["kind"] == "checkpoint"]
-
-
 def published_entry(entry: Entry) -> Entry:
     """The entry as the bundle carries it: as recorded, without the code (`OMITTED`)."""
     payload = {key: value for key, value in entry["payload"].items() if key not in OMITTED}
     return {**entry, "payload": payload}
 
 
-def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> list[Row]:
+def graph(timeline: Mapping[str, Any], days: Sequence[Day]) -> list[Row]:
     """What one resident had to do with another on a day: one row per ordered pair and lived day
-    with anything to count, by day, source and target. `minutes` are simulated minutes `source`
-    spent in conversations `target` took part in (from the timeline's conversations, each on
-    the day it began); the rest counts the day's entries: things `source` said that `target`
-    heard (`said`, of which `said_private` to it by name), messages written to it, gifts
-    (`gifts` times, `money` the money among them) and the times `source` served `target` at
-    its work (`served`: a sale at the Store's counter, a dish, bought or the chef's unpaid, an
-    examination or a treatment; nobody serves itself)."""
-    ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
+    of `days` (those with entries, in order) with anything to count, by day, source and target.
+    `minutes` are simulated minutes `source` spent in conversations `target` took part in (from
+    the timeline's conversations, each on the day it began); the rest counts the day's entries:
+    things `source` said that `target` heard (`said`, of which `said_private` to it by name),
+    messages written to it, gifts (`gifts` times, `money` the money among them) and the times
+    `source` served `target` at its work (`served`: a sale at the Store's counter, a dish,
+    bought or the chef's unpaid, an examination or a treatment; nobody serves itself)."""
+    ends = [(day.entries[-1]["sim_time"], day.number) for day in days]
     times = [end for end, _ in ends]
 
     def day_of(t: int) -> int:
@@ -245,26 +199,27 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
             for other in talk["with"]:
                 minutes = (talk["end"] - talk["start"]) / 60
                 add(day_of(talk["start"]), lane["name"], other, "minutes", minutes)
-    for day, entries in days.items():
-        for entry in entries:
+    for day in days:
+        for entry in day.entries:
             kind, actor, payload = entry["kind"], entry["actor"], entry["payload"]
+            moved = counted_move(payload) if kind == "move" else None
             if kind == "speech":
                 for other in payload["to"]:
-                    add(day, actor, other, "said", 1)
+                    add(day.number, actor, other, "said", 1)
                     if payload["private"]:
-                        add(day, actor, other, "said_private", 1)
+                        add(day.number, actor, other, "said_private", 1)
             elif kind == "message":
-                add(day, actor, payload["to"], "messages", 1)
-            elif kind == "move" and payload["reason"] == "pass" and payload["source"] != PORTIONS:
-                add(day, actor, payload["target"], "gifts", 1)
-                add(day, actor, payload["target"], "money", payload["money"])  # 0: a thing
-            elif kind == "move" and payload["reason"] in ("buy", "pass"):  # a sale or a dish
+                add(day.number, actor, payload["to"], "messages", 1)
+            elif moved == "gift":
+                add(day.number, actor, payload["target"], "gifts", 1)
+                add(day.number, actor, payload["target"], "money", payload["money"])  # 0: a thing
+            elif moved in ("sale", "dish"):
                 buy = payload["reason"] == "buy"
                 server, served = (payload["seller"], actor) if buy else (actor, payload["target"])
                 if server != served:
-                    add(day, server, served, "served", 1)
+                    add(day.number, server, served, "served", 1)
             elif kind in ("examination", "treatment") and payload["patient"] != actor:
-                add(day, actor, payload["patient"], "served", 1)
+                add(day.number, actor, payload["patient"], "served", 1)
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
@@ -373,7 +328,7 @@ def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> 
         "day": progress["day"],
         "clock": progress["clock"],
         "hours_per_day": progress["hours_per_day"],
-        **{key: sum(row[key] for row in daily) for key in COUNTED},
+        **{key: sum(row[key] for row in daily) for key in COUNTS},
         "purse": daily[-1]["purse"],
         "fund": town[-1]["fund"] if town else None,
     }
@@ -496,32 +451,14 @@ def agent_day(repository: Repository, resident: str, day: int, versions: Sequenc
 # The trace -----------------------------------------------------------------------------------
 
 
-def spans(days: Mapping[int, Sequence[Entry]]) -> list[tuple[int, float | None, float | None]]:
-    """The real-time span of each lived day of `days`, as (day, opened, closed): a day opens at
-    the real time of the checkpoint that closed the day before (None for the first) and closes
-    at its own (None for the day in progress). After a closed last day a span for the next day
-    follows, open, for what the runtimes have done since."""
-    found = []
-    opened: float | None = None
-    for day, entries in sorted(days.items()):
-        closed = entries[-1]["real_time"] if entries[-1]["kind"] == "checkpoint" else None
-        found.append((day, opened, closed))
-        opened = closed
-    if found and found[-1][2] is not None:
-        found.append((found[-1][0] + 1, found[-1][2], None))
-    return found
-
-
-def trace_days(
-    agent_dir: Path, resident: str, days: Sequence[tuple[int, float | None, float | None]]
-) -> dict[int, dict[str, Any]]:
-    """The records of the resident's trace by lived day (the day whose span holds a record's
-    real time), each record as the runtime wrote it. A `request` record carries besides the ids
-    of its messages the messages themselves that it named for the first time (`new_messages`),
-    from the resident's own session file: what the resident was told since its last request,
-    a compaction's summary among them. A day's `prompt` is the system prompt in force as the
-    day began: the last one assembled before its first record. Nothing comes from outside the
-    resident's directory. Empty before the runtime has written a trace."""
+def trace_days(agent_dir: Path, resident: str, days: Sequence[Day]) -> dict[int, dict[str, Any]]:
+    """The records of the resident's trace by lived day of `days`, given in order (the day whose
+    span of real time holds a record, `world.log.day_of`), each record as the runtime wrote it.
+    A `request` record carries besides the ids of its messages the messages themselves that it named
+    for the first time (`new_messages`), from the resident's own session file: what the resident was
+    told since its last request, a compaction's summary among them. A day's `prompt` is the system
+    prompt in force as the day began: the last one assembled before its first record. Nothing comes
+    from outside the resident's directory. Empty before the runtime has written a trace."""
     trace = agent_dir / TRACE
     if not trace.exists():
         return {}
@@ -538,26 +475,19 @@ def trace_days(
                     "compaction": True,
                 }
     found = {
-        day: {"resident": resident, "day": day, "prompt": None, "records": []} for day, _, _ in days
+        day.number: {"resident": resident, "day": day.number, "prompt": None, "records": []}
+        for day in days
     }
     seen: set[int] = set()
     prompt: str | None = None
     for record in read_jsonl(trace):
-        day = next(
-            (
-                d
-                for d, opened, closed in days
-                if (opened is None or record["real_time"] > opened)
-                and (closed is None or record["real_time"] <= closed)
-            ),
-            None,
-        )
+        day = day_of(days, record["real_time"])
         if record["kind"] == "request":
             new = [messages[i] for i in record["messages"] if i not in seen and i in messages]
             seen.update(record["messages"])
             record = {**record, "new_messages": new}
         if day is not None:
-            doc = found[day]
+            doc = found[day.number]
             if not doc["records"]:
                 doc["prompt"] = prompt
             doc["records"].append(record)

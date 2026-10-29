@@ -1,4 +1,5 @@
-"""Stand-ins for the model and the world, for tests and dry runs of the whole pipeline."""
+"""Stand-ins for the model and the world for the tests: a scripted tool-calling model, a world of
+one resident driven by hand, and a runtime living for the duration of a block."""
 
 from __future__ import annotations
 
@@ -12,40 +13,11 @@ from typing import Any
 
 from agent.port import Percept, ToolResult, ToolSpec
 from agent.runtime import Runtime
-from infrastructure.llm import LLMRequest, LLMResponse, ScriptedClient, ToolCall, Usage
+from infrastructure.llm import LLMRequest, LLMResponse, ScriptedClient
 
 Reply = LLMResponse | str | BaseException | Callable[[LLMRequest], LLMResponse | str]
 """A scripted reply: a response, plain text, an exception to raise, or a function of the
 request giving a response or text."""
-
-_ids = itertools.count(1)
-
-
-def tool_call(name: str, **arguments: Any) -> ToolCall:
-    """A call of tool `name` with `arguments`, under a fresh id."""
-    return ToolCall(id=f"call-{next(_ids)}", name=name, arguments=arguments)
-
-
-def reply(
-    text: str = "",
-    *calls: ToolCall,
-    reasoning: str | None = None,
-    cut_off: bool = False,
-    prompt_tokens: int | None = None,
-) -> LLMResponse:
-    """A model's reply with `text` and tool `calls`; `cut_off` marks it cut off by the token
-    limit, and `prompt_tokens`, when given, is the usage the server reports."""
-    return LLMResponse(
-        text=text,
-        reasoning=reasoning,
-        tool_calls=calls,
-        truncated=cut_off,
-        finish_reason="length" if cut_off else "tool_calls" if calls else "stop",
-        usage=None
-        if prompt_tokens is None
-        else Usage(prompt_tokens=prompt_tokens, completion_tokens=len(text) // 4 + 1),
-        latency=0.0,
-    )
 
 
 class ScriptedModel(ScriptedClient):

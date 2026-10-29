@@ -7,7 +7,7 @@ from swebench.harness.test_spec.test_spec import make_test_spec
 from tasks.swebench.acceptance import grade, harness_spec
 from tasks.swebench.images import REGISTRY
 from tasks.swebench.workspace import clip, drop_binary
-from tests.tasks.swebench.conftest import make_task
+from tests.support.swebench import make_task
 
 TEXT = """\
 diff --git a/a.py b/a.py

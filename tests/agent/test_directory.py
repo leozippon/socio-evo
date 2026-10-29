@@ -5,14 +5,14 @@ import pytest
 from agent import texts
 from agent.directory import AgentDirectory
 from agent.files import FileTools
-from tests.agent.conftest import BACKGROUND
 
 
 def test_the_system_prompt_opens_with_the_residents_own_account_and_follows_the_files(directory):
     rules = "## The town\n\nThe café is open all day."
+    background = (directory.root / "background.md").read_text().strip()
     first = directory.system_prompt(rules)
     assert first == directory.system_prompt(rules)
-    assert first.startswith(f"{texts.ABOUT_ME}\n\n{BACKGROUND}\n\n{rules}\n\n")
+    assert first.startswith(f"{texts.ABOUT_ME}\n\n{background}\n\n{rules}\n\n")
     assert first.endswith(f"{texts.FILES}\n\n- background.md\n")
 
     directory.session_path.write_text("{}\n", encoding="utf-8")

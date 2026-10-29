@@ -8,7 +8,7 @@ from typing import get_args
 
 import pytest
 
-from tests.world.conftest import at, awake_at
+from tests.support.towns import at, awake_at
 from world.events import (
     BEDRIDDEN_TOOLS,
     CONVERSATION_TOOLS,

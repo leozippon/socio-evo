@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from tests.world.conftest import CARE, RESIDENTS, awake_at, town_config
+from tests.support.towns import CARE, RESIDENTS, awake_at, town_config
 from world.economy import Fund, Inventory
 
 OWED = "you owe it, and it is taken from your next wages"

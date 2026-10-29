@@ -32,11 +32,11 @@ from evaluation.judge import CONFIG as JUDGE_CONFIG
 from evaluation.judge import Judge
 from evaluation.records import (
     agent_dir,
+    closed_days,
     day_date,
     days_before,
     journal_of,
     lived,
-    lived_days,
     record,
     town,
     trace_days,
@@ -63,7 +63,7 @@ def prepare(run_dir: Path, days: Sequence[int], residents: Sequence[str] = ()) -
     """The record and journal of each of `residents` (all by default) on each of `days`;
     ValueError for a day the world log has not closed or a name that is no resident's."""
     config = town(run_dir)
-    found = lived_days(run_dir)
+    found = closed_days(run_dir)
     chosen = [lived(found, day) for day in dict.fromkeys(days)]
     items = []
     for name in residents or [r.name for r in config.residents]:

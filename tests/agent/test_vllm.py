@@ -14,9 +14,9 @@ import pytest
 
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
-from agent.testing import FakePort, running
 from infrastructure.llm import LLMConfig, OpenAICompatibleClient
 from infrastructure.storage import read_jsonl
+from tests.support.doubles import FakePort, running
 
 REPO = Path(__file__).resolve().parents[2]
 

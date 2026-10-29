@@ -17,8 +17,7 @@ import pytest_asyncio
 import yaml
 
 from frontend.publish import Publisher
-from tests.frontend.conftest import write_results
-from tests.frontend.test_publish import RUN, make_run
+from tests.support.runs import RUN, make_run, write_results
 
 NODE = shutil.which("node")
 REPLAY_CHECK = Path(__file__).with_name("replay_check.mjs")

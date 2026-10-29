@@ -5,7 +5,7 @@ is in test_shops; what the body makes of food, sleep and work is in test_body.""
 
 from __future__ import annotations
 
-from tests.world.conftest import at, awake_at, town_config
+from tests.support.towns import at, awake_at, town_config
 from world.config import TownConfig
 
 

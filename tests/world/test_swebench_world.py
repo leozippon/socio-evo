@@ -10,7 +10,7 @@ import subprocess
 
 import pytest
 
-from tests.world.conftest import RESIDENTS, Town, make_agent_dirs, opening, stocked, town_config
+from tests.support.towns import RESIDENTS, Town, make_agent_dirs, opening, stocked, town_config
 from world.backend import SwebenchBackend
 from world.clock import ManualClock
 from world.world import World

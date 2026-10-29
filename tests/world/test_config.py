@@ -6,8 +6,9 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from tests.world.conftest import FakeBackend, make_agent_dirs, town_config
+from tests.support.towns import make_agent_dirs, town_config
 from world.clock import ManualClock
+from world.testing import FakeBackend
 from world.world import World
 
 

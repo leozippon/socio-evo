@@ -33,26 +33,15 @@ from frontend.publish import (
     encode,
 )
 from frontend.publish import main as publish
-from infrastructure.storage import RunDirectory
 from ops.webui.verify import BUNDLE_FORMAT
-from tests.frontend.conftest import (
-    commit_agents,
-    entry,
-    frontend_town,
-    live_a_day,
-    new_town,
-    real_times,
-    write_results,
-    write_trace,
-)
-from tests.world.conftest import STOCK, at, town_config
+from tests.support.runs import RUN, entry, files, make_run, new_town, write_results
+from tests.support.towns import STOCK, at, town_config
 from world.clock import DAY
 from world.log import KINDS as LOG_KINDS
 
 PROJECT = Path(__file__).parents[2]
 README = PROJECT / "frontend" / "README.md"
 PUSH = PROJECT / "frontend" / "deploy" / "push.sh"
-RUN = "data/runs/town"
 RESIDENTS = ("Mei", "Tomas", "Aisha", "Olga", "Jonas", "Lucia", "Vera")
 MARKERS = (
     "claim", "assign", "submission", "abandon", "service", "speech", "message", "move", "order",
@@ -61,14 +50,6 @@ MARKERS = (
     "condition", "task_arrived", "task_withdrawn", "delivery",
 )  # fmt: skip
 """The kinds of marker the timeline publishes, on a resident's lane or the town's."""
-
-
-def files(root: Path) -> dict[str, bytes]:
-    return {
-        path.relative_to(root).as_posix(): path.read_bytes()
-        for path in sorted(root.rglob("*"))
-        if path.is_file()
-    }
 
 
 def stamps(root: Path) -> dict[str, tuple[int, int]]:
@@ -81,126 +62,6 @@ def stamps(root: Path) -> dict[str, tuple[int, int]]:
 
 def read(site: Path, path: str) -> Any:
     return json.loads((site / path.split("?")[0]).read_bytes())
-
-
-async def make_run(root: Path) -> RunDirectory:
-    """The town's run after a lived day: agents committed as created and at the first
-    checkpoint, with Mei's trace and session."""
-    run, town = new_town(root)
-    config = frontend_town()
-    commit_agents(run, config, 0)
-    await live_a_day(town)
-    await town.close()
-    first, checkpoint = real_times(run)
-    step = (checkpoint - first) / 10  # the manual clock lives a day in milliseconds
-    tools = ["read_file", "go", "say"]
-    records = [
-        {
-            "kind": "percept",
-            "sim_time": at("07:00"),
-            "real_time": first + 1 * step,
-            "text": "You woke up.",
-            "percept_kind": "wake",
-            "event_id": 1,
-            "percept_sim_time": at("07:00"),
-            "percept_real_time": first,
-        },
-        {
-            "kind": "prompt",
-            "sim_time": at("07:00"),
-            "real_time": first + 2 * step,
-            "text": "You are Mei.",
-        },
-        {
-            "kind": "request",
-            "sim_time": at("07:00"),
-            "real_time": first + 3 * step,
-            "purpose": "step",
-            "messages": [1],
-            "tools": tools,
-            "reasoning_effort": "low",
-            "max_tokens": 100,
-            "attempt": 1,
-        },
-        {
-            "kind": "reply",
-            "sim_time": at("07:01"),
-            "real_time": first + 4 * step,
-            "purpose": "step",
-            "text": "",
-            "truncated": False,
-            "max_tokens": 100,
-            "reasoning": "Off to work.",
-            "tool_calls": [
-                {"id": "c1", "name": "go", "arguments": {"place": "workshop"}, "unreadable": None}
-            ],
-            "finish_reason": "tool_calls",
-            "usage": None,
-            "latency": 0.1,
-        },
-        {
-            "kind": "tool_call",
-            "sim_time": at("07:01"),
-            "real_time": first + 5 * step,
-            "id": "c1",
-            "name": "go",
-            "arguments": {"place": "workshop"},
-        },
-        {
-            "kind": "tool_result",
-            "sim_time": at("07:01"),
-            "real_time": first + 6 * step,
-            "id": "c1",
-            "name": "go",
-            "text": "You set off.",
-            "ends_turn": True,
-        },
-        {
-            "kind": "request",
-            "sim_time": at("07:30", day=2),
-            "real_time": checkpoint + 1,
-            "purpose": "step",
-            "messages": [1, 2, 3, 4],
-            "tools": tools,
-            "reasoning_effort": "low",
-            "max_tokens": 100,
-            "attempt": 1,
-        },
-        {
-            "kind": "lapse",
-            "sim_time": at("07:31", day=2),
-            "real_time": checkpoint + 2,
-            "purpose": "step",
-            "errors": ["timeout"],
-        },
-    ]
-    session = [
-        {
-            "type": "message",
-            "id": 1,
-            "message": {"role": "user", "content": "You woke up. Now you can use: go."},
-        },
-        {
-            "type": "message",
-            "id": 2,
-            "message": {
-                "role": "assistant",
-                "content": "",
-                "tool_calls": [{"id": "c1", "name": "go", "arguments": {"place": "workshop"}}],
-            },
-            "prompt_tokens": 10,
-        },
-        {
-            "type": "message",
-            "id": 3,
-            "message": {"role": "tool", "content": "You set off.", "tool_call_id": "c1"},
-        },
-        {"type": "compaction", "id": 4, "replaced": [1], "summary": "I went to work."},
-    ]
-    write_trace(run, "Mei", records, session)
-    commit_agents(run, config, 1)
-    run.checkpoint_path(1).write_text(json.dumps(town.checkpoints[0][1]))
-    return run
 
 
 @pytest_asyncio.fixture(scope="module", loop_scope="module")

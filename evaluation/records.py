@@ -3,11 +3,11 @@ journal against, and the journal itself.
 
 Days. A lived day N runs from the checkpoint that closed day N - 1 (for day 1, the start of the
 run) to the checkpoint that closes day N: the resident wakes, lives its day, goes to bed and falls
-asleep within it. The world log is cut into days at its `checkpoint` entries; the entries of a day
-lost to an interruption, which a `resume` entry follows, are set aside, and so are those of a day
-that no checkpoint has closed yet. A trace has no checkpoints of its own, so its records go to the
-day between whose opening and closing log entries their real time falls: the log and the trace
-always agree on which day an action belongs to, and a lost day drops out of both.
+asleep within it. The days are the world log's (`world.log.lived_days`), those a checkpoint has
+closed: a day lost to an interruption is set aside, and so is a day that no checkpoint has closed
+yet. A trace has no checkpoints of its own, so its records go to the day whose span of real time
+holds them (`world.log.day_of`): the log and the trace always agree on which day an action
+belongs to, and a lost day drops out of both.
 
 The record. One happening per line, `HH:MM text` in simulated time, in the order things happened,
 told as the world told it to the resident ("you"); a happening of several lines continues on
@@ -60,7 +60,6 @@ from __future__ import annotations
 import bisect
 import json
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
@@ -73,6 +72,7 @@ from agent.directory import TRACE
 from agent.runtime import COMPACT
 from infrastructure.storage import RunDirectory, read_jsonl
 from world.clock import clock_time, tell_date
+from world.log import Day, day_of, lived_days
 from world.telling import first_line, money
 
 INDENT = " " * 6
@@ -92,21 +92,6 @@ FILE_TOOLS = {
 
 Entry = dict[str, Any]
 """An entry of the world log or a record of a trace, as stored."""
-
-
-@dataclass(frozen=True)
-class Day:
-    """A lived day: the world log's entries in it, in order (its closing checkpoint excluded),
-    and the real times of the log entries that open it (None for a run's first day) and close
-    it."""
-
-    number: int
-    entries: tuple[Entry, ...]
-    opened: float | None
-    closed: float
-
-    def holds(self, real_time: float) -> bool:
-        return (self.opened is None or real_time > self.opened) and real_time <= self.closed
 
 
 class Resident(BaseModel):
@@ -153,23 +138,9 @@ def day_date(config: Town, day: int) -> date:
     return config.start_date + timedelta(days=day - 1)
 
 
-def lived_days(run_dir: Path) -> dict[int, Day]:
+def closed_days(run_dir: Path) -> dict[int, Day]:
     """Every day of the run that a checkpoint closed, by number (see the module docstring)."""
-    days: dict[int, Day] = {}
-    entries: list[Entry] = []
-    opened: float | None = None
-    for entry in read_jsonl(RunDirectory(run_dir).world_log_path):
-        if entry["kind"] == "checkpoint":
-            number = entry["payload"]["day"]
-            days[number] = Day(number, tuple(entries), opened, entry["real_time"])
-        elif entry["kind"] == "resume":
-            back = entry["payload"]["day"]
-            days = {number: day for number, day in days.items() if number <= back}
-        else:
-            entries.append(entry)
-            continue
-        entries, opened = [], entry["real_time"]
-    return days
+    return lived_days(RunDirectory(run_dir).world_log_path).closed
 
 
 def lived(days: Mapping[int, Day], day: int) -> Day:
@@ -183,19 +154,18 @@ def lived(days: Mapping[int, Day], day: int) -> Day:
 def trace_days(path: Path, days: Iterable[Day]) -> dict[int, list[Entry]]:
     """The records of the trace at `path` for each of `days`, by day number; records of no
     such day are left out."""
-    ordered = sorted(days, key=lambda day: day.closed)
-    ends = [day.closed for day in ordered]
+    ordered = sorted(days, key=lambda day: day.number)
     found: dict[int, list[Entry]] = {day.number: [] for day in ordered}
     for record in read_jsonl(path):
-        i = bisect.bisect_left(ends, record["real_time"])
-        if i < len(ordered) and ordered[i].holds(record["real_time"]):
-            found[ordered[i].number].append(record)
+        day = day_of(ordered, record["real_time"])
+        if day is not None:
+            found[day.number].append(record)
     return found
 
 
 def day_record(run_dir: Path, resident: str, day: int) -> str:
     """The world's record of `resident`'s lived day `day` (see the module docstring)."""
-    found = lived(lived_days(run_dir), day)
+    found = lived(closed_days(run_dir), day)
     trace = trace_days(agent_dir(run_dir, town(run_dir), resident) / TRACE, [found])[day]
     return record(found.entries, trace, resident)
 
@@ -220,7 +190,7 @@ def journal(run_dir: Path, resident: str, day: int) -> str | None:
     """The journal entry `resident` wrote going to bed on lived day `day`, None if it wrote
     none."""
     agent_dir(run_dir, town(run_dir), resident)  # fails for a name that is no resident's
-    return journal_of(lived(lived_days(run_dir), day).entries, resident)
+    return journal_of(lived(closed_days(run_dir), day).entries, resident)
 
 
 def journal_of(entries: Iterable[Entry], resident: str) -> str | None:

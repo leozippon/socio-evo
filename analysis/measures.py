@@ -11,7 +11,7 @@ amounts) and the mean over the residents that have a value; and `town.csv` and `
 row per day with `day`, `date` and every measure of `TOWN`. They are derived from the run alone
 and replace what is there; DIR is given explicitly (by convention `results/<run>/measures`),
 since analysis writes nothing under the run. The days are those the world log has closed
-(`evaluation.records`), so a day lost to an interruption counts once, as it was lived again.
+(`world.log.lived_days`), so a day lost to an interruption counts once, as it was lived again.
 
 The midnight that ends a lived day settles the calendar day: the hours at work, wages, rent and
 the fund's takings and payments of a day are those of its calendar day, so work after midnight
@@ -34,9 +34,10 @@ from statistics import fmean
 from typing import Any
 
 from agent.directory import TRACE
-from evaluation.records import Day, Entry, agent_dir, day_date, lived_days, town, trace_days
+from evaluation.records import Entry, agent_dir, closed_days, day_date, town, trace_days
 from infrastructure.storage import RunDirectory
 from world.economy import LARDER, PAID, PORTIONS, SHELVES, TAKEN, TAX, TAX_WAGE
+from world.log import Day
 
 MEASURES = {
     "tasks_taken": "tasks it claimed from the Office's board",
@@ -123,7 +124,7 @@ def measure(run_dir: Path) -> list[Row]:
     config = town(run_dir)
     if any(resident.occupation is None for resident in config.residents):
         raise ValueError(f"{run_dir} is a run of the town before occupations, which these are not")
-    days = sorted(lived_days(run_dir).values(), key=lambda day: day.number)
+    days = list(closed_days(run_dir).values())
     lying = beds(days)
     rows = []
     for resident in config.residents:
@@ -289,7 +290,7 @@ def town_days(run_dir: Path) -> list[Row]:
     midnight closed."""
     config, run = town(run_dir), RunDirectory(run_dir)
     rows = []
-    for day in sorted(lived_days(run_dir).values(), key=lambda day: day.number):
+    for day in closed_days(run_dir).values():
         fund = json.loads(run.checkpoint_path(day.number).read_text(encoding="utf-8"))["fund"]
         kinds = Counter(e["kind"] for e in day.entries)
         rows.append(

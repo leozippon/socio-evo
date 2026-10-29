@@ -102,4 +102,4 @@ The site is static: a viewer and a content-hashed bundle of JSON documents, publ
 - The town has one doctor, so a doctor in bed has nobody to treat her and stays there.
 - A patient at the Hospital is charged at the doctor's initiative: examine and treat take the fee from any patient present and awake who can pay, without the patient's asking.
 - There is no birth, inheritance or death; selection works through wages, rent owed, the body and others' choices.
-- The town's progress, the defects found and fixed along the way, and the results are in the [project log](logbook/); the earlier design of four groups of programmers, its runs and reviews are in [reviews](reviews/).
+- The town's progress, the defects found and fixed along the way, and the results are in the [project log](logbook/); the review and the plan behind the town of occupations are in [reviews](reviews/); the earlier designs' reviews are archived outside the repository.

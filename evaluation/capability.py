@@ -6,9 +6,9 @@
 AGENT_DIR is a resident of an export (`evaluation.exports`), and works with the model and the
 runtime settings the export records, the run's own, except that `--compaction-threshold` may
 replace the runtime's `compaction_threshold`, within the most the model's context window allows
-(`RuntimeConfig.ceiling`). Each task is worked by the resident's own runtime over a
-`world.solo.SoloPort`: the town's work tools, through the same backend, with nothing of the town
-around them. For each task the agent directory's background, memory and skills (never its
+(`RuntimeConfig.ceiling`). Each task is worked by the resident's own runtime over an
+`evaluation.solo.SoloPort`: the town's work tools, through the same backend, with nothing of the
+town around them. For each task the agent directory's background, memory and skills (never its
 session or trace) are copied into OUT_DIR/<instance id>/agent, so the export is never written to
 and every task starts with a fresh session; the trace written there is the record of the
 attempt, and every change handed in is kept beside it as submission-N.patch. Skills are
@@ -16,9 +16,9 @@ read-only in the harness: the evaluation measures the resident as it stands, and
 task nothing written there could be read back anyway. Tasks run concurrently,
 `concurrency` at a time.
 
-A task's row says whether it was resolved, how it ended (`world.solo.Ending`), the submissions
-and their verdicts, the model requests (steps) and their tokens, the real seconds and the
-lapses. A task is bounded by requests and completion tokens, never by real time, whose yield
+A task's row says whether it was resolved, how it ended (`evaluation.solo.Ending`), the
+submissions and their verdicts, the model requests (steps) and their tokens, the real seconds
+and the lapses. A task is bounded by requests and completion tokens, never by real time, whose yield
 depends on the load of the model's server. An infrastructure failure (a workspace or an
 acceptance that fails, a model that fails every attempt at a reply, a task run on to the safety
 stop of real time, an error of the harness) makes the row an `error`, left out of the resolved
@@ -57,6 +57,7 @@ from typing import get_args
 from agent.directory import AREAS, BACKGROUND, AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
 from evaluation.exports import Export
+from evaluation.solo import Ending, SoloConfig, SoloPort
 from infrastructure.config import StrictModel
 from infrastructure.llm import (
     LLMError,
@@ -67,7 +68,6 @@ from infrastructure.llm import (
 )
 from infrastructure.storage import read_jsonl
 from world.backend import Backend, SwebenchBackend, Task
-from world.solo import Ending, SoloConfig, SoloPort
 
 Z = 1.959964
 """The standard normal quantile of a two-sided 95% interval."""

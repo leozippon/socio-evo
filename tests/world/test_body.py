@@ -14,7 +14,7 @@ import random
 
 import pytest
 
-from tests.world.conftest import NEEDS, at, awake_at, stocked, town_config
+from tests.support.towns import NEEDS, at, awake_at, stocked, town_config
 from world.body import Body, Living
 from world.clock import DAY, ManualClock
 from world.events import BEDRIDDEN, EXHAUSTED, Bedridden, Conversation, Idle, Sleep, Work

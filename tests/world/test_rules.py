@@ -5,7 +5,7 @@ body, the day and the places."""
 
 from __future__ import annotations
 
-from tests.world.conftest import CARE, RESIDENTS, TRADES, town_config
+from tests.support.towns import CARE, RESIDENTS, TRADES, town_config
 from world.rules import SECTIONS, TOPICS, Rules
 
 TOWN = town_config(residents=RESIDENTS + TRADES + CARE, tax=0.1)

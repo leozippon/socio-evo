@@ -103,16 +103,16 @@ The private server, its login and its firewall are set up as [ops/webui/README.m
 | Directory | What it holds |
 | --- | --- |
 | `agent/` | The runtime: session, loop, file tools over the resident's own directory, compaction, trace, the contract with the world and the wording guard |
-| `world/` | The town: configuration, clock, events and tools, the Office's board, the fund, the Store and the kitchen, bodies, rules, the world log, and the work-only port of the capability evaluation |
+| `world/` | The town: configuration, clock, events and tools, the Office's board, the fund, the Store and the kitchen, bodies, rules, and the world log |
 | `simulation/` | Running one town, checkpoints and resumption, the dry run |
 | `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
-| `evaluation/` | Capability, MASK, the journals' distortion, the judge, the record of a resident's day, exports |
+| `evaluation/` | Capability and its work-only harness, MASK, the journals' distortion, the judge, the record of a resident's day, exports |
 | `analysis/` | Measures, evaluation tables and the within-resident statistics |
 | `experiments/` | The town's configuration and the runs over it, the residents' backgrounds, the run and export commands |
 | `frontend/` | The published site: the viewer, its data bundle and its deployment |
 | `infrastructure/` | Model client, git-versioned directories, JSONL, the run directory, configuration |
 | `ops/` | The model server, the private web server, and the scripts that evaluate and stop a run |
-| `tests/` | Tests, one directory per package |
+| `tests/` | Tests, one directory per package, and the helpers they share under `tests/support/` |
 | `docs/` | Design, architecture, immersion, the project log and reviews |
 
 Runs, exports and results (`runs/`, `exports/`, `results/`) and the archive of earlier configurations (`archive/`) are local data and not in the repository.

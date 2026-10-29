@@ -14,8 +14,8 @@ import pytest
 
 from frontend import timeline as module
 from frontend.timeline import timeline
-from tests.frontend.conftest import entry, live_a_day, new_town
-from tests.world.conftest import at
+from tests.support.runs import entry, live_a_day, new_town
+from tests.support.towns import at
 from world.clock import DAY
 
 

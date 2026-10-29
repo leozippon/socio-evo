@@ -31,9 +31,9 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
-from agent.testing import reply, tool_call
 from agent.texts import NOTES_HEADINGS
 from infrastructure.llm import LLMRequest, LLMResponse, Message, ToolCall
+from infrastructure.llm.scripted import reply, tool_call
 from world.clock import parse_hour
 from world.config import TownConfig
 from world.telling import bare

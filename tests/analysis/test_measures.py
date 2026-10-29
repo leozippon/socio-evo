@@ -1,4 +1,4 @@
-"""The measures of a lived run (`tests.analysis.lived`), checked by hand against its story."""
+"""The measures of a lived run (`tests.support.lived`), checked by hand against its story."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 
 from analysis.measures import MEASURES, TOWN, beds, daily, main, measure, town_days, world_measures
 from evaluation.records import Day
-from tests.analysis.lived import OTHERS, before_occupations, live
+from tests.support.lived import OTHERS, before_occupations, live
 
 NAMES = ("Mei", "Tomas", "Aisha", *OTHERS)
 

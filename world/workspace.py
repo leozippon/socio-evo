@@ -1,11 +1,11 @@
 """What acts in a task's workspace, for the town's Office (`world.office`) and the work-only
-port of the capability evaluation (`world.solo`) alike: what `shell` and the reading, writing and
-editing of a repository's files do in a workspace and tell of it (`told_command`, `read_repo`,
-`write_repo`, `edit_repo`, a file's text told and changed as the resident's own files are, by
-`agent.filetext`), and how a hand-in that was not accepted is told (`failure`). Their
-declarations are `world.tools.WORKSPACE_SPECS`. Outputs of commands and files are passed through
-whole (a file in part when the resident asks for some of its lines); the runtime truncates what
-enters its context.
+port of the capability evaluation (`evaluation.solo`) alike: what `shell` and the reading,
+writing and editing of a repository's files do in a workspace and tell of it (`told_command`,
+`read_repo`, `write_repo`, `edit_repo`, a file's text told and changed as the resident's own
+files are, by `agent.filetext`), and how a hand-in that was not accepted is told (`failure`).
+Their declarations are `world.tools.WORKSPACE_SPECS`. Outputs of commands and files are passed
+through whole (a file in part when the resident asks for some of its lines); the runtime
+truncates what enters its context.
 """
 
 from __future__ import annotations

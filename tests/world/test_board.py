@@ -4,7 +4,7 @@ client withdraws it; a task given or moved, finished, and withdrawn at the end o
 
 import pytest
 
-from tests.world.conftest import town_config
+from tests.support.towns import town_config
 from world.clock import DAY, parse_hour, tell_date
 from world.office import Board
 from world.testing import FakeBackend

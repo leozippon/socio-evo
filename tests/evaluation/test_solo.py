@@ -10,12 +10,13 @@ import contextlib
 from agent.directory import AgentDirectory
 from agent.port import ToolResult
 from agent.runtime import Runtime
-from agent.testing import ScriptedModel, reply, running, tool_call
 from agent.wording import offences
+from evaluation import solo as texts
+from evaluation.solo import SoloConfig, SoloPort
 from experiments.config import PROJECT_ROOT, load_experiment
+from infrastructure.llm.scripted import reply, tool_call
 from infrastructure.storage import read_jsonl
-from world import solo as texts
-from world.solo import SoloConfig, SoloPort
+from tests.support.doubles import ScriptedModel, running
 from world.testing import FakeBackend
 
 FAILED = (

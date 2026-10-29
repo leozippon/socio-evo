@@ -44,11 +44,12 @@ import yaml
 from agent.directory import TRACE, AgentDirectory
 from agent.port import WorldPort
 from agent.runtime import Runtime, RuntimeConfig
-from agent.testing import ScriptedModel, running, tool_call
 from infrastructure.llm import LLMConfig, LLMResponse, ToolCall, Usage
+from infrastructure.llm.scripted import tool_call
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig, Resident
-from tests.world.conftest import CARE, RESIDENTS, TRADES, Town, opening, town_config
+from tests.support.doubles import ScriptedModel, running
+from tests.support.towns import CARE, RESIDENTS, TRADES, Town, opening, town_config
 from world.clock import ManualClock
 from world.testing import FakeBackend
 from world.world import World

@@ -7,7 +7,7 @@ import pytest
 
 from tasks.swebench.acceptance import accept
 from tasks.swebench.workspace import Workspace
-from tests.tasks.swebench.conftest import pulled
+from tests.support.swebench import pulled
 
 pytestmark = pytest.mark.docker
 

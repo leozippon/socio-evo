@@ -47,7 +47,7 @@ Three agents, three days and three repetitions are far too little to read the re
 
 ## Design review
 
-A review of whether the system as built can answer the research question is in [reviews/DESIGN_REVIEW_2026-10-02.md](../reviews/DESIGN_REVIEW_2026-10-02.md). Its verdict: a sound instrument, not yet an experiment. Trait-relevant behaviour has no consequence, nothing is selected, and the probes cannot yet separate character from context. It lists the changes needed before a long run is worth interpreting and proposes the first experiment.
+A review of whether the system as built can answer the research question is in [archive/reviews/DESIGN_REVIEW_2026-10-02.md](../../archive/reviews/DESIGN_REVIEW_2026-10-02.md). Its verdict: a sound instrument, not yet an experiment. Trait-relevant behaviour has no consequence, nothing is selected, and the probes cannot yet separate character from context. It lists the changes needed before a long run is worth interpreting and proposes the first experiment.
 
 ## First pilot run
 

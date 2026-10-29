@@ -1,13 +1,14 @@
-"""Deterministic scripted backend for tests and dry runs."""
+"""Deterministic scripted backend for tests and dry runs, and the replies a script is written in."""
 
 import asyncio
+import itertools
 import json
 import re
 import time
 from collections.abc import Callable
 from typing import Any
 
-from infrastructure.llm.base import LLMRequest, LLMResponse
+from infrastructure.llm.base import LLMRequest, LLMResponse, ToolCall, Usage
 
 Responder = Callable[[LLMRequest], str | dict[str, Any] | LLMResponse]
 """Maps a request to a reply: text as-is, a dict that is sent as its JSON encoding, or a whole
@@ -46,3 +47,33 @@ class ScriptedClient:
             return reply
         text = reply if isinstance(reply, str) else json.dumps(reply, ensure_ascii=False)
         return LLMResponse(text=text, latency=0.0)
+
+
+_ids = itertools.count(1)
+
+
+def tool_call(name: str, **arguments: Any) -> ToolCall:
+    """A call of tool `name` with `arguments`, under a fresh id."""
+    return ToolCall(id=f"call-{next(_ids)}", name=name, arguments=arguments)
+
+
+def reply(
+    text: str = "",
+    *calls: ToolCall,
+    reasoning: str | None = None,
+    cut_off: bool = False,
+    prompt_tokens: int | None = None,
+) -> LLMResponse:
+    """A model's reply with `text` and tool `calls`; `cut_off` marks it cut off by the token
+    limit, and `prompt_tokens`, when given, is the usage the server reports."""
+    return LLMResponse(
+        text=text,
+        reasoning=reasoning,
+        tool_calls=calls,
+        truncated=cut_off,
+        finish_reason="length" if cut_off else "tool_calls" if calls else "stop",
+        usage=None
+        if prompt_tokens is None
+        else Usage(prompt_tokens=prompt_tokens, completion_tokens=len(text) // 4 + 1),
+        latency=0.0,
+    )

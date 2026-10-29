@@ -11,12 +11,12 @@ import pytest
 
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime, RuntimeConfig
-from agent.testing import reply, tool_call
 from evaluation import capability
 from evaluation.capability import evaluate_capability, main
 from evaluation.exports import MANIFEST, Export
+from evaluation.solo import SoloConfig
 from infrastructure.llm import LLMCallError, LLMConfig, LLMRequest, ScriptedClient, Usage
-from world.solo import SoloConfig
+from infrastructure.llm.scripted import reply, tool_call
 from world.testing import FakeBackend, FakeVerdict
 
 SCRIPTS = {

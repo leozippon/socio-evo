@@ -1,6 +1,6 @@
 # Immersion
 
-Everything a resident reads is written as a life being lived, not as a system being operated. This document states the voice and the decisions behind it; the guard that enforces its vocabulary is `agent/wording.py`, and the tests of the runtime, the world and the experiments run it over every static text a resident can read.
+Everything a resident reads is written as a life being lived, not as a system being operated. This document states the voice and the decisions behind it; the guard that enforces its vocabulary is `agent/wording.py`, and the tests of the runtime, the world, the capability harness and the experiments run it over every static text a resident can read.
 
 ## Why
 

@@ -16,7 +16,7 @@ from analysis.compare import (
     sign_flip_test,
     statistic,
 )
-from tests.analysis.lived import live
+from tests.support.lived import live
 
 EIGHT = [f"R{n}" for n in range(1, 9)]
 

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The day replaced the first town with a second one, in answer to the [design review](../reviews/DESIGN_REVIEW_2026-10-02.md): first the experimental design, then the voice in which residents are spoken to, then the code. Six commits were made that day (e9c6333, 0c742fd, 60c959b, fca516c, 4657970, 296749d). The rest of the day's work, the runtime that survives an unreadable reply, the rebuilt probe battery, and the analysis of traits and studies with the viewer that shows them, was left uncommitted and was committed on 2026-10-12 as 5c0d25b and f421c28. It is recorded here because this is when it was done.
+The day replaced the first town with a second one, in answer to the [design review](../../archive/reviews/DESIGN_REVIEW_2026-10-02.md): first the experimental design, then the voice in which residents are spoken to, then the code. Six commits were made that day (e9c6333, 0c742fd, 60c959b, fca516c, 4657970, 296749d). The rest of the day's work, the runtime that survives an unreadable reply, the rebuilt probe battery, and the analysis of traits and studies with the viewer that shows them, was left uncommitted and was committed on 2026-10-12 as 5c0d25b and f421c28. It is recorded here because this is when it was done.
 
 ## Experimental design
 

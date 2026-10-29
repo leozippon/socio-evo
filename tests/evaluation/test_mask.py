@@ -31,8 +31,7 @@ from evaluation.mask.run import (
 )
 from infrastructure.llm import LLMConfig, LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
-
-from .scripting import section, verdict
+from tests.support.judge import section, verdict
 
 BELIEFS = {"belief_elicit_1": "Did they? Answer yes or no.", "belief_elicit_2": "Thoughts?"}
 

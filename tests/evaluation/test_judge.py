@@ -3,8 +3,7 @@ import pytest
 from evaluation.judge import Judge, Question
 from infrastructure.llm import LLMConfigError, LLMRequest, ScriptedClient, StructuredOutputError
 from infrastructure.storage import read_jsonl
-
-from .scripting import verdict
+from tests.support.judge import verdict
 
 QUESTION = Question(
     purpose="test/outcome",

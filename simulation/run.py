@@ -56,13 +56,13 @@ from infrastructure.llm import (
     StreamingClient,
     create_client,
 )
-from infrastructure.storage import RunDirectory, RunStatus, day_tag, read_jsonl
+from infrastructure.storage import RunDirectory, RunStatus, day_tag
 from simulation.config import PROJECT_ROOT, ExperimentConfig
 from simulation.dry_run import DryRunModel
 from world.backend import Backend, SwebenchBackend
 from world.clock import tell_moment
 from world.config import TownConfig
-from world.economy import PORTIONS
+from world.log import counted_move, lived_days
 from world.testing import FakeBackend
 from world.world import OnCheckpoint, World
 
@@ -243,10 +243,9 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 
 
 class _Checkpoints:
-    """The world's `on_checkpoint`: saves the day and logs what it came to, with the fund's day
-    as `fund_report` tells it. Of the moves of items and money, the purchases at the Store's
-    counter (`sale`), the dishes bought or handed over by the chef (`served`) and the other
-    hand-overs (`gift`) are counted."""
+    """The world's `on_checkpoint`: saves the day and logs what it came to, from the day's
+    entries in the world log, with the fund's day as `fund_report` tells it. The moves are counted
+    as `world.log.counted_move` names them: sales, dishes and gifts."""
 
     COUNTED = (
         "task_arrived",
@@ -255,7 +254,7 @@ class _Checkpoints:
         "submission",
         "accepted",
         "sale",
-        "served",
+        "dish",
         "examination",
         "treatment",
         "announcement",
@@ -271,36 +270,21 @@ class _Checkpoints:
         self, directory: RunDirectory, town: TownConfig, report: Callable[[], str]
     ) -> None:
         self._directory, self._town, self._report = directory, town, report
-        self._seen = self._last_seq()
         self._started = time.monotonic()
 
     async def __call__(self, day: int, state: dict[str, Any]) -> None:
         _save(self._directory, self._town, day, state)
-        counts: Counter[str] = Counter()
-        for entry in read_jsonl(self._directory.world_log_path):
-            if entry["seq"] > self._seen:
-                counts[entry["kind"]] += 1
-                if entry["kind"] == "move":
-                    counts[_moved(entry["payload"])] += 1
-                counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
-                counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
-        self._seen = self._last_seq()
+        counts: Counter[str | None] = Counter()
+        for entry in lived_days(self._directory.world_log_path).closed[day].entries:
+            counts[entry["kind"]] += 1
+            if entry["kind"] == "move":
+                counts[counted_move(entry["payload"])] += 1
+            counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
+            counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
         took = timedelta(seconds=round(time.monotonic() - self._started))
         counted = ", ".join(f"{counts[kind]} {kind}" for kind in self.COUNTED)
         log.info("saved day %d after %s: %s. %s", day, took, counted, self._report())
         self._started = time.monotonic()
-
-    def _last_seq(self) -> int:
-        path = self._directory.world_log_path
-        return max((entry["seq"] for entry in read_jsonl(path)), default=0) if path.exists() else 0
-
-
-def _moved(payload: dict[str, Any]) -> str:
-    """A move as the day's counts name it: `served`, a dish from the kitchen's portions; `sale`,
-    anything else bought; `gift`, anything else handed over; `move`, taking, leaving, eating."""
-    if payload["source"] == PORTIONS:
-        return "served"
-    return {"buy": "sale", "pass": "gift"}.get(payload["reason"], "move")
 
 
 async def _live(

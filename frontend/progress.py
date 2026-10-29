@@ -21,14 +21,14 @@ JSON-serialisable data:
       }, ...]
     }
 
-There is one row per lived day. A day counts the markers, the residents' and the town's, after
-its start (from it, for day 1) up to and including its end, the moment of its checkpoint; the
-day in progress counts those up to now. A submission still awaiting its verdict is neither
-accepted nor rejected. Of the moves, a purchase at the Store's counter is a sale, the chef's for
-the kitchen among them; a portion from the kitchen, bought or handed over by the chef, is a dish;
-money or a thing passed from one resident to another is a gift; taking, leaving and eating are
-not counted. The purses are the money the residents held at the end of the day, or
-now for the day in progress.
+There is one row per lived day. A day counts the markers, the residents' and the town's, after its
+start (from it, for day 1) up to and including its end, the moment of its checkpoint; the day in
+progress counts those up to now. A submission still awaiting its verdict is neither accepted nor
+rejected. The moves are counted as `world.log.counted_move` names them: a purchase at the Store's
+counter is a sale, the chef's for the kitchen among them; a portion from the kitchen, bought or
+handed over by the chef, is a dish; money or a thing passed from one resident to another is a gift;
+taking, leaving and eating are not counted. The purses are the money the residents held at the end
+of the day, or now for the day in progress.
 """
 
 from __future__ import annotations
@@ -39,8 +39,30 @@ from statistics import mean, median
 from typing import Any
 
 from world.clock import clock_time
-from world.economy import PORTIONS
+from world.log import counted_move
 
+COUNTS = (
+    "arrived",
+    "claims",
+    "assigned",
+    "submissions",
+    "accepted",
+    "rejected",
+    "withdrawn",
+    "sales",
+    "dishes",
+    "examinations",
+    "treatments",
+    "announcements",
+    "speeches",
+    "messages",
+    "gifts",
+    "journals",
+    "illnesses",
+    "bedridden",
+    "forced_sleeps",
+)
+"""The counts of a day, in the order the rows give them."""
 _COUNTED = {
     "task_arrived": "arrived",
     "claim": "claims",
@@ -58,15 +80,15 @@ _COUNTED = {
     "forced_sleep": "forced_sleeps",
 }
 """The markers counted, by the name of their count; moves are counted by `_counted`."""
+_MOVES = {"sale": "sales", "dish": "dishes", "gift": "gifts"}
 
 
 def _counted(marker: dict[str, Any]) -> str | None:
     """The count a marker adds to, if any (see the module docstring)."""
     if marker["kind"] != "move":
         return _COUNTED.get(marker["kind"])
-    if marker["source"] == PORTIONS:
-        return "dishes"
-    return {"buy": "sales", "pass": "gifts"}.get(marker["reason"])
+    moved = counted_move(marker)
+    return None if moved is None else _MOVES[moved]
 
 
 def progress(data: dict[str, Any]) -> dict[str, Any]:
@@ -80,7 +102,7 @@ def progress(data: dict[str, Any]) -> dict[str, Any]:
             "in_progress": day["end"] is None,
             "hours": None if day["end"] is None else (day["real_end"] - day["real_start"]) / 3600,
         }
-        | dict.fromkeys([*_COUNTED.values(), "sales", "dishes", "gifts", "accepted", "rejected"], 0)
+        | dict.fromkeys(COUNTS, 0)
         for day in days
     ]
     ends = [day["end"] for day in days if day["end"] is not None]

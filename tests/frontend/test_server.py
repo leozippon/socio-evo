@@ -11,7 +11,7 @@ from urllib.request import urlopen
 
 from frontend.publish import Publisher
 from frontend.server import DevServer
-from tests.frontend.test_publish import RUN, files, make_run
+from tests.support.runs import RUN, files, make_run
 
 
 async def test_the_dev_server_serves_exactly_the_published_site(tmp_path, capsys):

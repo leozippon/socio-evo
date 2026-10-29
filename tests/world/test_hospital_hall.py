@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import json
 
-from tests.world.conftest import (
+from tests.support.towns import (
     CARE,
     RESIDENTS,
     TRADES,

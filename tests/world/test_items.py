@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import Counter
 
-from tests.world.conftest import RESIDENTS, TRADES, awake_at, town_config
+from tests.support.towns import RESIDENTS, TRADES, awake_at, town_config
 from world.economy import SUPPLIER
 
 SHOPS = town_config(residents=RESIDENTS + TRADES)

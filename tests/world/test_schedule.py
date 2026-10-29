@@ -9,7 +9,7 @@ import json
 
 import pytest
 
-from tests.world.conftest import (
+from tests.support.towns import (
     CARE,
     NEEDS,
     RESIDENTS,
@@ -346,6 +346,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
             "personal",
             "payload",
         }
+        assert set(entry["payload"]) <= set(KINDS[entry["kind"]].payload), entry
     speech = next(e for e in entries if e["kind"] == "speech")
     assert speech["payload"]["text"] == "Lunch?" and speech["audience"] == ["Mei"]
     assert speech["personal"] == {

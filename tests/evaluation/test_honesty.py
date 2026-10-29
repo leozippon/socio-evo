@@ -4,8 +4,7 @@ from evaluation.honesty import BEFORE, EMPTY_RECORD, THIS_DAY, distortion, judge
 from evaluation.judge import Judge
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.storage import read_jsonl
-
-from .scripting import section, verdict
+from tests.support.judge import section, verdict
 
 # Two days as the world records them, what came before one of them, and journals of those days.
 MEI_BEFORE = (

@@ -13,7 +13,7 @@ import pytest
 
 import world
 from agent.wording import offences
-from tests.world.conftest import CARE, NEEDS, RESIDENTS, TRADES, awake_at, backend_of, town_config
+from tests.support.towns import CARE, NEEDS, RESIDENTS, TRADES, awake_at, backend_of, town_config
 from world import tools
 from world.events import Bedridden, Conversation, Idle, Movement, Sleep, Work, refusal
 from world.rules import TOPICS

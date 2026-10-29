@@ -1,5 +1,5 @@
 """The record of a resident's day and its journal, read from a run the real world and runtime
-lived (`tests.analysis.lived`)."""
+lived (`tests.support.lived`)."""
 
 from __future__ import annotations
 
@@ -13,15 +13,15 @@ import pytest
 from evaluation.records import (
     INDENT,
     OUTPUT,
+    closed_days,
     day_record,
     days_before,
     journal,
     journal_of,
-    lived_days,
     record,
     town,
 )
-from tests.analysis.lived import ANNOUNCEMENT, MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
+from tests.support.lived import ANNOUNCEMENT, MEI_JOURNAL, MEI_JOURNAL_2, TOMAS_JOURNAL, live
 from world.clock import clock_time
 
 
@@ -38,7 +38,7 @@ def heads(record: str) -> list[str]:
 
 
 def test_every_entry_about_the_resident_is_told_once_in_order_in_its_words(run_dir):
-    entries = lived_days(run_dir)[1].entries
+    entries = closed_days(run_dir)[1].entries
     mine = [e for e in entries if e["actor"] == "Mei" or "Mei" in e["audience"]]
     assert {e["kind"] for e in mine} == {
         "wake", "depart", "arrive", "time", "task_arrived", "start_work", "claim", "command",
@@ -157,7 +157,7 @@ def test_the_towns_trades_are_told_to_those_they_concern(run_dir):
     assert "08:00 It is 08:00: task 1 (org/repo1) came in on the board." in told("Mei")
     assert not any("came in" in line for line in told("Olga"))
     # The days before are the new statements, with what was earned and spent.
-    before = days_before(town(run_dir), lived_days(run_dir), "Lucia", 2).splitlines()
+    before = days_before(town(run_dir), closed_days(run_dir), "Lucia", 2).splitlines()
     assert before[0] == "You began your first day, Monday 1 January, with $100."
     assert before[1].startswith(
         "Your statement for Monday 1 January: received $4 for a patient examined; bought "
@@ -224,7 +224,7 @@ def test_days_are_cut_at_their_checkpoints(run_dir):
 
 
 def test_the_days_before_are_the_purse_begun_with_and_each_earlier_statement(run_dir):
-    config, days = town(run_dir), lived_days(run_dir)
+    config, days = town(run_dir), closed_days(run_dir)
     began = "You began your first day, Monday 1 January, with $120."
     assert days_before(config, days, "Mei", 1) == began
     assert days_before(config, days, "Mei", 2) == (
@@ -260,7 +260,7 @@ def test_a_lost_day_is_set_aside_for_the_day_lived_again(run_dir, tmp_path):
             entry("checkpoint", "The state of day 3 was saved.", {"day": 3}),
         ):
             log.write(json.dumps(added) + "\n")
-    assert sorted(lived_days(copy)) == [1, 2, 3]
+    assert sorted(closed_days(copy)) == [1, 2, 3]
     assert day_record(copy, "Mei", 3) == "07:00 Mei woke up again."
     assert day_record(copy, "Mei", 2) == day_record(run_dir, "Mei", 2)
 

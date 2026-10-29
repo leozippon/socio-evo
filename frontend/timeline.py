@@ -110,10 +110,10 @@ the midnight's wages, money passed and received, what a resident paid for what i
 itself (at the Store's counter, or a dish), and the Hospital's fee a patient paid; what the chef
 buys for the kitchen the fund pays.
 
-The log is the only source. A running run's clock may be ahead of its last entry; the open
-segment and conversation end at "now" all the same. When the world went back to a checkpoint,
-the entries the lost day left between that checkpoint (or the start, for day 0) and the
-`resume` entry are set aside.
+The log is the only source, read by day as `world.log.Days` cuts it: the entries a lost day
+left after the checkpoint a `resume` went back to (or the start, for day 0) are set aside. A
+running run's clock may be ahead of its last entry; the open segment and conversation end at
+"now" all the same.
 
 The data of each run directory is cached with the size of its log; a call on a log that has
 grown reads only the lines appended since (a line still being written waits for the next call)
@@ -134,6 +134,7 @@ from simulation.config import ExperimentConfig
 from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
 from world.economy import add, take
+from world.log import KINDS, Day, Days
 
 _FOLDED = frozenset(
     {
@@ -178,55 +179,48 @@ _FOLDED = frozenset(
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
 the time told, falling asleep) add nothing to it. The first of them is kept for the real time
-at which day 1 was begun; a `resume` is kept after it has set the lost day aside, for the real
-time at which the day was begun again."""
+at which day 1 was begun; the checkpoints and resumptions cut the days."""
+_LEFT_OUT = {"service": "money", "wage": "money", "move_in": "rent"}
+"""What a marker leaves out of its entry's payload: the money held after a sum or the wages,
+which is a point of the purse, and the rent of a home moved into, which the town's places give."""
 _COPIED = {
-    "claim": ("task", "instance_id"),
-    "assign": ("task", "to", "from"),
-    "abandon": ("task",),
-    "service": ("for", "task", "amount", "paid", "owed"),
-    "message": ("to", "text"),
-    "order": ("item", "name", "quantity", "amount", "arrives"),
-    "cook": ("dish", "name", "portions", "used"),
-    "price": ("item", "name", "place", "price", "before"),
-    "examination": ("patient", "fee", "satiety", "energy", "health", "ill", "night"),
-    "treatment": ("patient", "fee", "restores", "before", "health", "ill", "bedridden"),
-    "report": (),
-    "announcement": ("text",),
-    "illness": ("chance", "nights", "health"),
-    "recovered": ("illness", "bedridden", "treated", "health"),
-    "bedridden": ("day", "home", "from", "carried", "task"),
-    "move": ("item", "units", "source", "target", "money", "reason", "seller"),
-    "move_in": ("from", "to"),
-    "wage": (
-        "hours",
-        "wages",
-        "tax",
-        "tax_from_purse",
-        "owed_before",
-        "rent",
-        "charges",
-        "arrears_before",
-        "remainder",
-        "paid",
-        "owed",
-        "arrears",
-    ),
-    "settlement": ("nourishment", "satiety", "energy", "health", "night", "ill"),
-    "condition": ("need", "band", "value", "lowest"),
+    kind: tuple(field for field in KINDS[kind].payload if field != _LEFT_OUT.get(kind))
+    for kind in (
+        "claim",
+        "assign",
+        "abandon",
+        "service",
+        "message",
+        "order",
+        "cook",
+        "price",
+        "examination",
+        "treatment",
+        "report",
+        "announcement",
+        "illness",
+        "recovered",
+        "bedridden",
+        "move",
+        "move_in",
+        "wage",
+        "settlement",
+        "condition",
+    )
 }
-"""The markers whose fields are the entry's payload as recorded, and those fields."""
+"""The markers whose fields are the entry's payload as recorded (`world.log.KINDS`), and those
+fields."""
 
 
 @dataclass
 class _Cache:
     """What a run's log has given so far: `offset` is the bytes read, `now` the time of the
-    last entry read, `entries` those of the kinds folded."""
+    last entry read, `days` the entries of the kinds folded, by lived day."""
 
     town: TownConfig
     offset: int = 0
     now: int | None = None
-    entries: list[dict[str, Any]] = field(default_factory=list)
+    days: Days = field(default_factory=Days)
     data: dict[str, Any] = field(default_factory=dict)
 
 
@@ -245,10 +239,10 @@ def timeline(run_dir: Path) -> dict[str, Any]:
         if cache is None or size < cache.offset:  # new, or a log written afresh
             town = load_config(run.config_path, ExperimentConfig).town
             cache = _caches[key] = _Cache(town)
-            cache.data = _build(cache.town, cache.entries, cache.now)
+            cache.data = _build(cache.town, cache.days, cache.now)
         try:
             if size > cache.offset and _read(cache, path):
-                cache.data = _build(cache.town, cache.entries, cache.now)
+                cache.data = _build(cache.town, cache.days, cache.now)
         except ValueError:
             del _caches[key]  # read again from the start next time, and fail again
             raise
@@ -268,33 +262,16 @@ def _read(cache: _Cache, path: Path) -> bool:
             raise ValueError(f"{path}: a malformed entry: {error}") from error
         cache.now = entry["sim_time"]
         kind = entry["kind"]
-        if kind == "resume":
-            _set_aside_lost_day(cache.entries, entry)
         if kind in _FOLDED:
             payload = entry["payload"]
             if kind == "submission":
                 payload = {key: value for key, value in payload.items() if key != "patch"}
-            cache.entries.append({key: entry[key] for key in _KEPT} | {"payload": payload})
+            cache.days.add({key: entry[key] for key in _KEPT} | {"payload": payload})
     cache.offset += len(whole)
     return bool(whole)
 
 
 _KEPT = ("seq", "kind", "sim_time", "real_time", "actor", "place", "audience")
-
-
-def _set_aside_lost_day(entries: list[dict[str, Any]], resume: dict[str, Any]) -> None:
-    """Drop what was kept after the checkpoint `resume` went back to; the checkpoint of day 0,
-    taken before the first day, is the world's start."""
-    day = resume["payload"]["day"]
-    if day == 0:
-        entries.clear()
-        return
-    for index in range(len(entries) - 1, -1, -1):
-        entry = entries[index]
-        if entry["kind"] == "checkpoint" and entry["payload"]["day"] == day:
-            del entries[index + 1 :]
-            return
-    raise ValueError(f"entry {resume['seq']} resumes day {day}, which has no checkpoint")
 
 
 def _marker(entry: dict[str, Any], kind: str, **fields: Any) -> dict[str, Any]:
@@ -395,7 +372,15 @@ class _Series:
             self.points.append([t, dict(self.state)])
 
 
-def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> dict[str, Any]:
+def _begun(day: Day) -> float | None:
+    """The real time at which `day` was begun: when it opened or, for the first day, at its first
+    entry; None with no entries at all."""
+    if day.opened is not None:
+        return day.opened
+    return day.entries[0]["real_time"] if day.entries else None
+
+
+def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
     start = parse_hour(town.day.checkpoint)
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
     kinds = {place.id: place.kind for place in town.places}
@@ -408,7 +393,17 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     fees = _Series(start, {"examination": hospital.examination, "treatment": hospital.treatment})
     priced = {"store": prices, "restaurant": menu, "hospital": fees}
     days: list[dict[str, Any]] = []
-    begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
+    for day in lived.closed.values():
+        days.append(
+            {
+                "day": day.number,
+                "start": days[-1]["end"] if days else start,
+                "end": day.entries[-1]["sim_time"],
+                "real_start": _begun(day),
+                "real_end": day.closed,
+            }
+        )
+    entries = [e for day in [*lived.closed.values(), lived.open] for e in day.entries]
 
     def task(number: int, seq: int) -> dict[str, Any]:
         if number not in tasks:
@@ -529,27 +524,14 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
                 lane.enter(t, "idle", lane.segments[-1]["place"])
         elif kind == "move_in":
             lane.home = payload["to"]
-        elif kind == "checkpoint":
-            days.append(
-                {
-                    "day": payload["day"],
-                    "start": days[-1]["end"] if days else start,
-                    "end": t,
-                    "real_start": begun,
-                    "real_end": entry["real_time"],
-                }
-            )
-            begun = entry["real_time"]
-        elif kind == "resume":
-            begun = entry["real_time"]
     end = start if now is None else now
     if not days or end > days[-1]["end"]:
         days.append(
             {
-                "day": days[-1]["day"] + 1 if days else 1,
+                "day": lived.open.number,
                 "start": days[-1]["end"] if days else start,
                 "end": None,
-                "real_start": begun,
+                "real_start": _begun(lived.open),
                 "real_end": None,
             }
         )

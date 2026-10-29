@@ -8,10 +8,11 @@ import asyncio
 
 from agent.directory import AgentDirectory
 from agent.runtime import Runtime
-from agent.testing import ScriptedModel, reply, running, tool_call
 from agent.texts import NOT_CARRIED_OUT
+from infrastructure.llm.scripted import reply, tool_call
 from infrastructure.storage import read_jsonl
-from tests.world.conftest import (
+from tests.support.doubles import ScriptedModel, running
+from tests.support.towns import (
     FakeBackend,
     Town,
     make_agent_dirs,
