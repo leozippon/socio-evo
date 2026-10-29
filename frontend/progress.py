@@ -24,7 +24,10 @@ JSON-serialisable data:
 There is one row per lived day. A day counts the markers, the residents' and the town's, after
 its start (from it, for day 1) up to and including its end, the moment of its checkpoint; the
 day in progress counts those up to now. A submission still awaiting its verdict is neither
-accepted nor rejected. The purses are the money the residents held at the end of the day, or
+accepted nor rejected. Of the moves, a purchase at the Store's counter is a sale, the chef's for
+the kitchen among them; a portion from the kitchen, bought or handed over by the chef, is a dish;
+money or a thing passed from one resident to another is a gift; taking, leaving and eating are
+not counted. The purses are the money the residents held at the end of the day, or
 now for the day in progress.
 """
 
@@ -36,6 +39,7 @@ from statistics import mean, median
 from typing import Any
 
 from world.clock import clock_time
+from world.economy import PORTIONS
 
 _COUNTED = {
     "task_arrived": "arrived",
@@ -43,20 +47,26 @@ _COUNTED = {
     "assign": "assigned",
     "submission": "submissions",
     "task_withdrawn": "withdrawn",
-    "sale": "sales",
-    "served": "dishes",
     "examination": "examinations",
     "treatment": "treatments",
     "announcement": "announcements",
     "speech": "speeches",
     "message": "messages",
-    "gift": "gifts",
     "journal": "journals",
     "illness": "illnesses",
     "bedridden": "bedridden",
     "forced_sleep": "forced_sleeps",
 }
-"""The markers counted, by the name of their count."""
+"""The markers counted, by the name of their count; moves are counted by `_counted`."""
+
+
+def _counted(marker: dict[str, Any]) -> str | None:
+    """The count a marker adds to, if any (see the module docstring)."""
+    if marker["kind"] != "move":
+        return _COUNTED.get(marker["kind"])
+    if marker["source"] == PORTIONS:
+        return "dishes"
+    return {"buy": "sales", "pass": "gifts"}.get(marker["reason"])
 
 
 def progress(data: dict[str, Any]) -> dict[str, Any]:
@@ -70,7 +80,7 @@ def progress(data: dict[str, Any]) -> dict[str, Any]:
             "in_progress": day["end"] is None,
             "hours": None if day["end"] is None else (day["real_end"] - day["real_start"]) / 3600,
         }
-        | dict.fromkeys([*_COUNTED.values(), "accepted", "rejected"], 0)
+        | dict.fromkeys([*_COUNTED.values(), "sales", "dishes", "gifts", "accepted", "rejected"], 0)
         for day in days
     ]
     ends = [day["end"] for day in days if day["end"] is not None]
@@ -78,12 +88,12 @@ def progress(data: dict[str, Any]) -> dict[str, Any]:
     purses: list[list[int]] = [[] for _ in days]
     markers = [*data["markers"], *(m for lane in data["residents"] for m in lane["markers"])]
     for marker in markers:
-        kind = marker["kind"]
-        if kind not in _COUNTED:
+        counted = _counted(marker)
+        if counted is None:
             continue
         row = rows[bisect_left(ends, marker["t"])]
-        row[_COUNTED[kind]] += 1
-        if kind == "submission" and "resolved" in marker:
+        row[counted] += 1
+        if counted == "submissions" and "resolved" in marker:
             row["accepted" if marker["resolved"] else "rejected"] += 1
     for resident in data["residents"]:
         times = [t for t, _ in resident["purse"]]

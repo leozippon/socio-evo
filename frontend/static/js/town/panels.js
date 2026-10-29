@@ -4,11 +4,11 @@
 
 import { dateOf, hhmm, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
-import { goodName, inventory, needBars } from "../goods.js";
+import { amountOf, goodName, inventory, itemOf, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { bodyAt, holderAt, illAt, markersBetween, openAt, shopsAt, thingsAt } from "../replay.js";
+import { LARDER, bodyAt, boughtAtCounter, dinerOf, dishServed, holderAt, illAt, markersBetween, openAt, shopsAt, thingsAt } from "../replay.js";
 import { WORKPLACES, occupationOf, placeOfKind, shortName } from "../world.js";
-import { STRUCTURE, clockOf, describeMarker, detail, feedItems, glyph, involved, line, tone, witnessed } from "./events.js";
+import { STRUCTURE, clockOf, describeMarker, detail, feedItems, glyph, involved, knownOnlyTo, line, tone, witnessed } from "./events.js";
 
 /** A resident's doing in a few words: at work, talking, on the way, asleep, in bed, idle. */
 export function doing(found, places) {
@@ -93,7 +93,7 @@ export class PeoplePanel {
   }
 }
 
-/** Everything that happened today up to the moment, as the town's people read it. */
+/** Everything that happened today up to the moment, as the town's people read it; what one resident alone knew of is marked so. */
 export class FeedPanel {
   constructor({ onFollow }) {
     this.el = h("div", { class: "panel feed" });
@@ -145,17 +145,16 @@ export class FeedPanel {
     if (item.spell) {
       return h(
         "li",
-        { class: "feed-item group" },
+        { class: `feed-item group${item.events.every((e) => knownOnlyTo(e)) ? " private" : ""}` },
         h("button", { type: "button", class: "group-head", "aria-expanded": String(opened), onclick: toggle }, glyph(item.events[0]), h("span", {}, m.cast.mention(item.summary)), icon(opened ? "down" : "chevron", 14)),
         opened ? h("ul", { class: "group-items" }, item.events.map((e) => this.entryLine(e, m))) : null,
       );
     }
     const e = item.event;
     const more = detail(e);
-    const personal = e.audience.length === 1 && !e.actor;
     return h(
       "li",
-      { class: `feed-item${personal ? " private" : ""}` },
+      { class: `feed-item${knownOnlyTo(e) ? " private" : ""}` },
       h("div", { class: "feed-line" }, glyph(e), line(e, m)),
       more ? (more[2] ? h("details", { class: "code" }, h("summary", {}, more[0]), h("pre", {}, more[1])) : h("p", { class: "report" }, more[1])) : null,
     );
@@ -170,8 +169,11 @@ export class FeedPanel {
 /** Whether the place `id` is open at the moment: someone whose workplace it is is at work there. */
 const serving = (m, id) => m.cast.names.filter((name) => occupationOf(m.world, name).workplace === id && m.state.residents[name].segment?.kind === "work" && m.state.residents[name].segment.place === id);
 
-/** The markers of `kind` on every lane since the lived day began, up to the moment, each with its resident. */
-const today = (m, kind) => m.timeline.residents.flatMap((lane) => markersBetween(lane, m.day.start, m.time).filter((mk) => mk.kind === kind).map((mk) => [lane.name, mk]));
+/** The markers on every lane since the lived day began, up to the moment, of `kind` or that `kind` keeps, each with its resident. */
+const today = (m, kind) => {
+  const keep = typeof kind === "function" ? kind : (mk) => mk.kind === kind;
+  return m.timeline.residents.flatMap((lane) => markersBetween(lane, m.day.start, m.time).filter(keep).map((mk) => [lane.name, mk]));
+};
 
 /** A small table of rows, each an array of cells, under a header; or a quiet line when empty. */
 const table = (head, rows, empty) => (rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "data compact-table" }, h("thead", {}, h("tr", {}, head.map((cell) => h("th", {}, cell)))), h("tbody", {}, rows.map((row) => h("tr", {}, row.map((cell) => h("td", {}, cell))))))) : h("p", { class: "muted small-text" }, empty));
@@ -194,8 +196,6 @@ export class WorkPanel {
     if (key === this.key) return;
     this.key = key;
     const shops = shopsAt(m.timeline, m.time);
-    const goods = new Map(m.world.goods.map((good) => [good.id, good]));
-    const dishes = new Map(m.world.dishes.map((dish) => [dish.id, dish]));
     const sections = {
       office: (place) => {
         const tasks = m.timeline.tasks;
@@ -218,17 +218,18 @@ export class WorkPanel {
         ];
       },
       store: () => {
-        const sold = today(m, "sale");
+        const sold = today(m, boughtAtCounter);
         const rows = m.world.goods.map((good) => [goodName(good), fmt.int(shops.stock[good.id] ?? 0), fmt.money(shops.prices[good.id]), shops.onOrder[good.id] ? fmt.int(shops.onOrder[good.id]) : ""]);
-        const units = sold.reduce((a, [, mk]) => a + mk.quantity, 0);
-        return [h("p", { class: "note" }, `Today ${fmt.plural(sold.length, "sale")} of ${fmt.plural(units, "unit")}, ${sold.filter(([, mk]) => mk.kitchen).length} of them for the kitchen.`), table(["Good", "In stock", "Price", "On order"], rows, "The Store sells nothing.")];
+        const units = sold.reduce((a, [, mk]) => a + mk.units, 0);
+        return [h("p", { class: "note" }, `Today ${fmt.plural(sold.length, "sale")} of ${fmt.plural(units, "unit")}, ${sold.filter(([, mk]) => mk.target === LARDER).length} of them for the kitchen.`), table(["Good", "In stock", "Price", "On order"], rows, "The Store sells nothing.")];
       },
       restaurant: () => {
-        const served = today(m, "served");
+        const served = today(m, dishServed);
         const menu = m.world.dishes.map((dish) => [goodName(dish), fmt.int(shops.portions[dish.id] ?? 0), fmt.money(shops.menu[dish.id])]);
-        const larder = Object.entries(shops.larder).map(([id, units]) => `${units} × ${goodName(goods.get(id)).toLowerCase()}`);
+        const larder = Object.entries(shops.larder).map(([id, units]) => amountOf(m.world, id, units));
+        const dish = (mk) => (itemOf(m.world, mk.item) ? goodName(itemOf(m.world, mk.item)).toLowerCase() : mk.item);
         return [
-          h("p", { class: "note" }, `Today ${fmt.plural(served.length, "dish", "dishes")} served${served.length ? `: ${served.map(([name, mk]) => `${dishes.get(mk.dish) ? goodName(dishes.get(mk.dish)).toLowerCase() : mk.name} to ${name}`).join(", ")}` : ""}. The kitchen holds ${larder.join(", ") || "nothing"}.`),
+          h("p", { class: "note" }, `Today ${fmt.plural(served.length, "dish", "dishes")} served${served.length ? `: ${served.map(([name, mk]) => `${dish(mk)} to ${dinerOf(mk, name)}${mk.reason === "pass" ? ", unpaid" : ""}`).join(", ")}` : ""}. The kitchen holds ${larder.join(", ") || "nothing"}.`),
           table(["Dish", "Ready", "Price"], menu, "The kitchen cooks nothing."),
         ];
       },
@@ -238,7 +239,7 @@ export class WorkPanel {
         const abed = m.cast.names.filter((name) => m.state.residents[name].segment?.kind === "bedridden");
         return [
           h("p", { class: "note" }, `An examination costs ${fmt.money(shops.fees.examination)}, a treatment ${fmt.money(shops.fees.treatment)}. Ill now: ${ill.join(", ") || "nobody"}; in bed: ${abed.join(", ") || "nobody"}.`),
-          seen.length ? h("ul", { class: "outcomes" }, seen.map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${hhmm(secondOfDay(mk.t))} `), m.cast.mention(`${name} ${describeMarker(mk, name, name)[0]}`)))) : h("p", { class: "muted small-text" }, "Nobody seen today."),
+          seen.length ? h("ul", { class: "outcomes" }, seen.map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${hhmm(secondOfDay(mk.t))} `), m.cast.mention(`${name} ${describeMarker(mk, name, name, m.world)[0]}`)))) : h("p", { class: "muted small-text" }, "Nobody seen today."),
         ];
       },
       hall: () => {
@@ -248,7 +249,7 @@ export class WorkPanel {
         const closed = m.timeline.days.filter((day) => day.end !== null && day.end <= m.time).map((day) => day.day);
         const fund = m.measures?.town.filter((row) => closed.includes(row.day)).at(-1);
         const owing = (field) => (fund ? m.measures.rows.filter((row) => row.day === fund.day && row[field]).map((row) => `${row.resident} ${fmt.money(row[field])}`) : []);
-        const books = fund ? `The fund held ${fmt.money(fund.fund)} at the checkpoint of day ${fund.day}${owing("owed_wages").length ? `, owing ${owing("owed_wages").join(", ")}` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
+        const books = fund ? `The fund held ${fmt.money(fund.fund)} and its tax account ${fmt.money(fund.taxes)} at the checkpoint of day ${fund.day}${owing("owed_wages").length ? `, owing ${owing("owed_wages").join(", ")}` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
         return [
           h("p", { class: "note" }, `${books}The report was read ${fmt.plural(reports, "time")} today.`),
           said.length ? h("ul", { class: "outcomes" }, said.slice(0, 6).map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${dateOf(m.timeline.start_date, mk.t)} ${hhmm(secondOfDay(mk.t))}, ${name}: `), `“${mk.text}”`))) : h("p", { class: "muted small-text" }, "Nothing is posted on the board."),
@@ -271,8 +272,9 @@ export class WorkPanel {
   }
 }
 
-/** The kinds of entry the chronicle keeps, each a moment worth finding. */
-const NOTABLE = new Set(["task_arrived", "task_withdrawn", "claim", "assign", "verdict", "abandon", "gift", "message", "order", "delivery", "cook", "price", "examination", "treatment", "announcement", "illness", "recovered", "bedridden", "move_in", "sleep", "forced_sleep"]);
+/** The kinds of entry the chronicle keeps, each a moment worth finding; of the moves, what was passed, taken or left. */
+const NOTABLE = new Set(["task_arrived", "task_withdrawn", "claim", "assign", "verdict", "abandon", "message", "order", "delivery", "cook", "price", "examination", "treatment", "announcement", "illness", "recovered", "bedridden", "move_in", "sleep", "forced_sleep"]);
+const NOTABLE_MOVES = new Set(["pass", "get", "put"]);
 
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {
@@ -286,7 +288,7 @@ export class ChroniclePanel {
     const key = `${m.time}|${m.reader}|${m.dayEntries.length}`;
     if (key === this.key) return;
     this.key = key;
-    const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || (e.kind === "speech" && e.payload.private) || (e.kind === "condition" && e.payload.lowest));
+    const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || (e.kind === "move" && NOTABLE_MOVES.has(e.payload.reason)) || (e.kind === "speech" && e.payload.private) || (e.kind === "condition" && e.payload.lowest));
     fill(
       this.el,
       h("p", { class: "note" }, `Day ${m.day.day} up to ${hhmm(secondOfDay(m.time))}, in its notable moments. Pick one to go there.`),
@@ -296,7 +298,7 @@ export class ChroniclePanel {
             { class: "chronicle-list" },
             notes.map((e) => h("li", { class: tone(e) && tone(e) !== "good" ? tone(e) : "" }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.sim_time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, glyph(e), " ", line(e, m))))),
           )
-        : emptyState("Nothing notable yet today.", "Tasks coming in, claimed, given and handed in, orders and deliveries, cooking, the doctor's patients, announcements, illness and bedtimes appear here as they happen."),
+        : emptyState("Nothing notable yet today.", "Tasks coming in, claimed, given and handed in, things passed, taken and left, orders and deliveries, cooking, the doctor's patients, announcements, illness and bedtimes appear here as they happen."),
     );
   }
 }

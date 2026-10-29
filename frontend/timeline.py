@@ -43,20 +43,16 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           arrival), who held it from when (`[time, holder or null, the team leader who gave it
           or null]`: a claim, an assignment, and null when it was given up, accepted or
           withdrawn), when it was accepted and who handed it in, when it was withdrawn
-      "store": {"stock": [[t, {item: units}]], "prices": [[t, {item: price}]],
-                "on_order": [[t, {item: units}]]},
-      "kitchen": {"stock": [[t, {item: units}]], "menu": [[t, {dish: price}]],
-                  "portions": [[t, {dish: portions}]]},
+      "store": {"prices": [[t, {item: price}]], "on_order": [[t, {item: units}]]},
+      "kitchen": {"menu": [[t, {dish: price}]]},
       "fees": [[t, {"examination": 20, "treatment": 60}]]
-          the Store's shelves and prices, the kitchen's larder, menu and portions, and the
-          Hospital's fees, from the start (the configuration's) and after each change: a sale,
-          a delivery, an order, a price set, cooking, a dish bought or handed over by the chef,
-          and the midnight, when the portions not sold are gone
+          the Store's prices and what it has on order, the menu's prices and the Hospital's
+          fees, from the start (the configuration's) and after each change: an order, a
+          delivery, a price set; what the holders of items hold over time is the bundle's
+          (`frontend.bundle.holdings`), from the checkpoints and the moves
     }
 
-The markers, each on the lane of the resident who acted, with their own fields; `gift`, `sale`
-and `served` are the log's `move` entries that hand something to another, buy at the Store's
-counter and buy a dish (taking things that were left, leaving them and eating have none):
+The markers, each on the lane of the resident who acted, with their own fields:
 
     claim         task, instance_id
     assign        task, to, from          the team leader gave a task to `to`, taking it from
@@ -67,16 +63,14 @@ counter and buy a dish (taking things that were left, leaving them and eating ha
     service       for, task, amount, paid, owed   a sum paid at once for a service: for `task`
                                           (one's own task accepted), `team` (the team leader's
                                           for the programmers'), `sale`, `dish` or `patient`
-    speech        text, to, private       "to" is everyone who heard it
+    speech        text, to, private       "to" is the addressees, who heard the words: those
+                                          named, or everyone there for a remark to all; the
+                                          bystanders of a private remark are not among them
     message       to, text                a written message, read by "to" alone
-    gift          to, amount              money passed; or to, item, name, quantity for a thing
-                                          or helpings of a stock
-    sale          item, name, quantity, price, amount, seller, kitchen
-                                          bought at the Store's counter, for oneself or, the
-                                          chef, for the kitchen's larder (which the fund pays)
-    served        dish, name, amount, chef   a dish bought at the restaurant and eaten there,
-                                          or handed over by the chef, unpaid (amount 0), on the
-                                          lane of the one who ate it
+    move          item, units, source, target, money, reason, seller   the log's `move` as
+                                          recorded: units of an item, or money alone (item
+                                          null), from one holder to another, by reason: get,
+                                          put, pass, eat or buy
     order         item, name, quantity, amount, arrives   the shopkeeper's order, paid by the fund
     cook          dish, name, portions, used   portions the chef cooked from the kitchen's stock
     price         item, name, place, price, before   a price set at the Store, the restaurant
@@ -94,10 +88,11 @@ counter and buy a dish (taking things that were left, leaving them and eating ha
     journal       text, day, wake         going to bed with the day's journal entry (a bedtime
                                           without one has no marker)
     forced_sleep  wake
-    wage          hours, wages, owed_before, rent, charges, arrears_before, remainder, paid,
-                  owed, arrears           the midnight's wages for the day's hours at work, with
-                                          the rent and charges taken out of them (the money
-                                          after them is a point of "purse")
+    wage          hours, wages, tax, tax_from_purse, owed_before, rent, charges, arrears_before,
+                  remainder, paid, owed, arrears   the midnight's wages for the day's hours at
+                                          work, with the tax (what the wages did not cover of it
+                                          from the purse), the rent and charges taken out of
+                                          them (the money after them is a point of "purse")
     settlement    nourishment, satiety, energy, health, night, ill   the midnight statement:
                                           the day's food as a share of a day's need, the body's
                                           numbers after the night's reckoning, how health moved,
@@ -111,8 +106,9 @@ and those of no resident, under "markers":
     delivery        items                     what the Store ordered arrived ({item: units})
 
 The purse moves with every sum of money the log records: the money after a service and after
-the midnight's wages, money given and received, what a resident paid at the Store's counter
-for itself and for a dish, and the Hospital's fee a patient paid.
+the midnight's wages, money passed and received, what a resident paid for what it bought for
+itself (at the Store's counter, or a dish), and the Hospital's fee a patient paid; what the chef
+buys for the kitchen the fund pays.
 
 The log is the only source. A running run's clock may be ahead of its last entry; the open
 segment and conversation end at "now" all the same. When the world went back to a checkpoint,
@@ -137,7 +133,7 @@ from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
 from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
-from world.economy import LARDER, PORTIONS, SHELVES, add, take
+from world.economy import add, take
 
 _FOLDED = frozenset(
     {
@@ -200,10 +196,13 @@ _COPIED = {
     "illness": ("chance", "nights", "health"),
     "recovered": ("illness", "bedridden", "treated", "health"),
     "bedridden": ("day", "home", "from", "carried", "task"),
+    "move": ("item", "units", "source", "target", "money", "reason", "seller"),
     "move_in": ("from", "to"),
     "wage": (
         "hours",
         "wages",
+        "tax",
+        "tax_from_purse",
         "owed_before",
         "rent",
         "charges",
@@ -382,8 +381,8 @@ class _Lane:
 
 
 class _Series:
-    """A state of the town (stock, prices, portions) as it is built: `[time, state]` from the
-    start and after each change, a change at the same moment replacing the point before."""
+    """A state of the town (prices, orders) as it is built: `[time, state]` from the start and
+    after each change, a change at the same moment replacing the point before."""
 
     def __init__(self, start: int, state: dict[str, int]) -> None:
         self.state = dict(state)
@@ -402,16 +401,12 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     kinds = {place.id: place.kind for place in town.places}
     markers: list[dict[str, Any]] = []
     tasks: dict[int, dict[str, Any]] = {}
-    stock = _Series(start, town.store.stock)
     prices = _Series(start, {item.id: item.price for item in town.supplied})
     on_order = _Series(start, {})
-    larder = _Series(start, {})
     menu = _Series(start, {dish.id: dish.price for dish in town.dishes})
-    portions = _Series(start, {})
     hospital = town.hospital
     fees = _Series(start, {"examination": hospital.examination, "treatment": hospital.treatment})
     priced = {"store": prices, "restaurant": menu, "hospital": fees}
-    midnight = (start // DAY + 1) * DAY  # the next midnight, when the unsold portions go
     days: list[dict[str, Any]] = []
     begun = entries[0]["real_time"] if entries else None  # the real time the day was begun
 
@@ -423,10 +418,6 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
-        if t >= midnight:  # the portions not sold are gone
-            portions.state.clear()
-            portions.changed(midnight)
-            midnight = t - t % DAY + DAY
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
         if kind in _COPIED:
             lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
@@ -508,39 +499,12 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
         elif kind == "move":
-            item, units, paid = payload["item"], payload["units"], payload["money"]
-            source, target = payload["source"], payload["target"]
-            name = town.item(item).name if item is not None else None
-            if payload["reason"] == "pass" and item is None:  # money
-                lane.mark(entry, "gift", to=target, amount=paid)
+            paid, target = payload["money"], payload["target"]
+            if payload["reason"] == "pass" and payload["item"] is None:  # money handed over
                 lane.credit(t, -paid)
                 lanes[target].credit(t, paid)
-            elif payload["reason"] == "pass" and source == PORTIONS:  # a dish the chef served
-                served = {"dish": item, "name": name, "amount": 0, "chef": entry["actor"]}
-                lanes[target].mark(entry, "served", **served)
-            elif payload["reason"] == "pass":  # a thing, or helpings of a stock
-                lane.mark(entry, "gift", to=target, item=item, name=name, quantity=units)
-            elif payload["reason"] == "buy" and source == SHELVES:
-                kitchen = target == LARDER
-                lane.mark(
-                    entry, "sale", item=item, name=name, quantity=units, price=paid // units,
-                    amount=paid, seller=payload["seller"], kitchen=kitchen,
-                )  # fmt: skip
-                if kitchen:
-                    add(larder.state, item, units)
-                    larder.changed(t)
-                else:
-                    lane.credit(t, -paid)
-            elif payload["reason"] == "buy":  # a dish
-                served = {"dish": item, "name": name, "amount": paid, "chef": payload["seller"]}
-                lane.mark(entry, "served", **served)
+            elif payload["reason"] == "buy" and target == lane.name:  # paid from its own money
                 lane.credit(t, -paid)
-            if source == SHELVES:
-                take(stock.state, item, units)
-                stock.changed(t)
-            elif source == PORTIONS:
-                take(portions.state, item, units)
-                portions.changed(t)
         elif kind == "order":
             add(on_order.state, payload["item"], payload["quantity"])
             on_order.changed(t)
@@ -548,15 +512,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
             markers.append(_marker(entry, kind, items=payload["items"]))
             for item, units in payload["items"].items():
                 take(on_order.state, item, units)
-                add(stock.state, item, units)
             on_order.changed(t)
-            stock.changed(t)
-        elif kind == "cook":
-            for item, units in payload["used"].items():
-                take(larder.state, item, units)
-            add(portions.state, payload["dish"], payload["portions"])
-            larder.changed(t)
-            portions.changed(t)
         elif kind == "price":
             series = priced[kinds[payload["place"]]]
             series.state[payload["item"]] = payload["price"]
@@ -607,7 +563,7 @@ def _build(town: TownConfig, entries: list[dict[str, Any]], now: int | None) -> 
         "residents": [lane.data(end) for lane in lanes.values()],
         "markers": markers,
         "tasks": list(tasks.values()),
-        "store": {"stock": stock.points, "prices": prices.points, "on_order": on_order.points},
-        "kitchen": {"stock": larder.points, "menu": menu.points, "portions": portions.points},
+        "store": {"prices": prices.points, "on_order": on_order.points},
+        "kitchen": {"menu": menu.points},
         "fees": fees.points,
     }

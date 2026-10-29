@@ -9,7 +9,7 @@ const MEASURES = {
   together: { label: "Together", note: "Line width: minutes spent in conversations the other took part in.", field: "minutes", pointed: false },
   talk: { label: "Talk", note: "Arrows: things said that the other heard; width counts them.", field: "said", pointed: true },
   money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", field: "money", pointed: true },
-  served: { label: "Served", note: "Arrows: a sale at the counter, a dish, an examination or a treatment, from the one at work to the one served; width counts them.", field: "served", pointed: true },
+  served: { label: "Served", note: "Arrows: a sale at the counter, a dish (bought or the chef's unpaid), an examination or a treatment, from the one at work to the one served; width counts them.", field: "served", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
 const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "served"];

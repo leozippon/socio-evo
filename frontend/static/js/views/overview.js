@@ -9,9 +9,9 @@
 import { DayChart, Multiples, agentLegend, figure, swatchLegend } from "../charts.js";
 import { dateOf, duration, hhmm, parseHHMM, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h, s } from "../dom.js";
-import { dishCard, goodEffect, goodName, inventory, needBars } from "../goods.js";
+import { amountOf, dishCard, goodEffect, goodName, inventory, itemOf, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { bodyAt, holderAt, markersBetween, purseAt, shopsAt, thingsAt } from "../replay.js";
+import { LARDER, bodyAt, boughtAtCounter, dishServed, handedOver, holderAt, markersBetween, purseAt, shopsAt, spentOn, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { placeOfKind } from "../world.js";
 import { evaluationFigures } from "./evaluation.js";
@@ -44,6 +44,8 @@ const PAID = [
   ["supplier", "the supplier", "var(--o3)"],
   ["kitchen", "for the kitchen", "var(--o2)"],
 ];
+/** Whom the tax account pays: the occupations paid from taxes, by title, such as `the mayor`. */
+const paidFromTaxes = (world) => world.occupations.filter((occupation) => occupation.paid_from === "taxes").map((occupation) => occupation.title).join(" and ") || "nobody";
 /** What each occupation is paid a sum for, in words. */
 const PER_SERVICE = { programmer: "a task of its own accepted", "team-leader": "a task the team has accepted", chef: "a dish served", shopkeeper: "a sale", doctor: "a patient seen", mayor: "" };
 
@@ -101,7 +103,9 @@ export function mountOverview(root, ctx) {
   const endOf = (day) => day.end ?? data.now;
   const fromOf = (i) => (i ? data.days[i - 1].end : null);
   const inDay = (i) => (m) => (fromOf(i) === null || m.t > fromOf(i)) && m.t <= endOf(data.days[i]);
-  const markersIn = (lane, i, kind) => markersBetween(lane, fromOf(i), endOf(data.days[i])).filter((m) => m.kind === kind);
+  /** A test of a marker: of the kind named, or kept by the function given. */
+  const of = (kind) => (typeof kind === "function" ? kind : (m) => m.kind === kind);
+  const markersIn = (lane, i, kind) => markersBetween(lane, fromOf(i), endOf(data.days[i])).filter(of(kind));
   /** `[day, value]` points for one resident, `value(lane, i)` over its lived day `i`. */
   const residentPoints = (value) => (name) => data.days.map((day, i) => [day.day, value(laneOf(name), i, day)]);
   /** `[day, total]` points over every resident. */
@@ -119,10 +123,12 @@ export function mountOverview(root, ctx) {
     const to = endOf(data.days[i]);
     return lane.segments.filter((seg) => seg.kind === "work" && seg.end > from && seg.start < to).reduce((a, seg) => a + (Math.min(seg.end, to) - Math.max(seg.start, from)), 0) / 3600;
   };
-  const isFood = (m) => world.goods.find((good) => good.id === m.item)?.effect === "food";
+  const isFood = (m) => itemOf(world, m.item)?.effect === "food";
+  /** What a lane paid for what it bought for itself within its lived day `i`, of the purchases `keep` keeps. */
+  const bought = (keep) => (lane, i) => markersIn(lane, i, (m) => spentOn(m) > 0 && keep(m)).reduce((a, m) => a + spentOn(m), 0);
   const total = (value) => cast.names.reduce((a, name) => a + data.days.reduce((b, day, i) => b + (value(laneOf(name), i, day) ?? 0), 0), 0);
-  /** Every marker of `kind` on every lane over the run so far, each with its resident. */
-  const everywhere = (kind) => data.residents.flatMap((lane) => lane.markers.filter((m) => m.kind === kind).map((m) => [lane.name, m]));
+  /** Every marker of `kind` (or that it keeps) on every lane over the run so far, each with its resident. */
+  const everywhere = (kind) => data.residents.flatMap((lane) => lane.markers.filter(of(kind)).map((m) => [lane.name, m]));
   /** The town's days of the measures, by day: the fund as each closed day's checkpoint saved it. */
   const saved = () => new Map(measures.town.map((row) => [row.day, row]));
   const moment = (t) => `day ${data.days.find((day) => day.end === null || t <= day.end)?.day ?? data.days.at(-1).day}, ${hhmm(secondOfDay(t))}`;
@@ -225,6 +231,7 @@ export function mountOverview(root, ctx) {
             return item(`${occupation.title}${who.length ? ` (${who.join(", ")})` : ""} is paid`, `${fmt.money(occupation.wage_per_hour)} an hour at work${per}`);
           }),
           item("the fund starts with", fmt.money(world.fund.start)),
+          item("the tax at midnight", `${fmt.pct(world.tax)} of the day's wages and sums, into the tax account that pays ${paidFromTaxes(world)}`),
           item("a client's task pays the fund", fmt.money(work.payment)),
           item("tasks come in", `about ${fmt.num(work.tasks_a_day, 0)} a day, ${work.arrive_from}–${work.arrive_until}`),
           item("a task not accepted is withdrawn", `${fmt.plural(work.expiry_days, "day")} after the day it came in`),
@@ -246,11 +253,11 @@ export function mountOverview(root, ctx) {
     const all = (field) => sum(head, field);
     const fund = measures.town.at(-1);
     const cooked = everywhere("cook").reduce((a, [, m]) => a + m.portions, 0);
-    const kitchen = everywhere("sale").filter(([, m]) => m.kitchen).length;
+    const kitchen = everywhere((m) => boughtAtCounter(m) && m.target === LARDER).length;
     return h(
       "div",
       { class: "stats" },
-      stat("The fund", fund ? fmt.money(fund.fund) : fmt.money(world.fund.start), fund ? `at the checkpoint of day ${fund.day} · started at ${fmt.money(world.fund.start)}` : "at the start; read at each checkpoint"),
+      stat("The fund", fund ? fmt.money(fund.fund) : fmt.money(world.fund.start), fund ? `at the checkpoint of day ${fund.day} · tax account ${fmt.money(fund.taxes)} · started at ${fmt.money(world.fund.start)}` : "at the start; read at each checkpoint"),
       stat("Tasks accepted", fmt.int(all("accepted")), `${fmt.int(all("arrived"))} came in · ${fmt.int(all("claims"))} claimed · ${fmt.int(all("assigned"))} assigned · ${fmt.int(all("withdrawn"))} withdrawn`),
       stat("Sales at the Store", fmt.int(all("sales")), `${fmt.int(kitchen)} for the kitchen`),
       stat("Dishes served", fmt.int(all("dishes")), `${fmt.plural(cooked, "portion")} cooked`),
@@ -380,7 +387,7 @@ export function mountOverview(root, ctx) {
   /** The menu at the latest moment: each dish with what it is cooked from, its price and the portions ready, and the kitchen's stock. */
   function menu() {
     const now = shopsAt(data, data.now);
-    const larder = Object.entries(now.larder).map(([id, units]) => `${units} × ${goodName(world.goods.find((good) => good.id === id)).toLowerCase()}`);
+    const larder = Object.entries(now.larder).map(([id, units]) => amountOf(world, id, units));
     return plain(
       `${restaurant.name[0].toUpperCase()}${restaurant.name.slice(1)}'s menu now`,
       `Each dish is a day's food, cooked from the kitchen's stock and eaten where it is bought; what is not sold by midnight is gone. The kitchen holds ${larder.join(", ") || "nothing"}.`,
@@ -390,9 +397,9 @@ export function mountOverview(root, ctx) {
 
   /** What everyone has at the latest moment, money first, and how often each good was bought for oneself. */
   function belongings() {
-    const bought = new Map(world.goods.map((good) => [good.id, cast.names.map((name) => laneOf(name).markers.filter((m) => m.kind === "sale" && !m.kitchen && m.item === good.id).reduce((a, m) => a + m.quantity, 0))]));
+    const bought = new Map(world.goods.map((good) => [good.id, cast.names.map((name) => laneOf(name).markers.filter((m) => boughtAtCounter(m) && m.target === name && m.item === good.id).reduce((a, m) => a + m.units, 0))]));
     return [
-      plain("What everyone has now", "As of the latest moment, money first. A stock of food is eaten unseen; its count is as last taken, when bought or at the checkpoint.", h("ul", { class: "belongings" }, cast.names.map((name) => h("li", {}, cast.chip(name, href(sibling(route, "person", { agent: name }))), inventory(world, thingsAt(laneOf(name), data.now), { compact: true, money: purseAt(laneOf(name), data.now) }))))),
+      plain("What everyone has now", "As of the latest moment, money first. A stock of food is eaten as its owner gets hungry; every move in and out of it is counted.", h("ul", { class: "belongings" }, cast.names.map((name) => h("li", {}, cast.chip(name, href(sibling(route, "person", { agent: name }))), inventory(world, thingsAt(laneOf(name), data.now), { compact: true, money: purseAt(laneOf(name), data.now) }))))),
       plain(
         "Bought over the run",
         "How many units of each good every resident has bought for itself at the counter so far; what the chef bought for the kitchen is not the chef's.",
@@ -483,8 +490,8 @@ export function mountOverview(root, ctx) {
       const ledger = (side, kinds) => kinds.map(([kind, label, color]) => ({ key: kind, label, color, values: new Map(fundDays.map((day) => [day.day, books.get(day.day)[`${side}_${kind}`]])) }));
       const rent = amount("wage", "rent");
       const charges = amount("wage", "charges");
-      const food = (lane, i) => amount("sale", "amount", (m) => !m.kitchen && isFood(m))(lane, i) + amount("served", "amount")(lane, i);
-      const goods = amount("sale", "amount", (m) => !m.kitchen && !isFood(m));
+      const food = bought(isFood);
+      const goods = bought((m) => !isFood(m));
       const fees = (lane, i) => data.residents.reduce((a, other) => a + markersIn(other, i, "examination").concat(markersIn(other, i, "treatment")).filter((m) => m.patient === lane.name).reduce((b, m) => b + m.fee, 0), 0);
       return [
         h("p", { class: "note section-note" }, `The town's money is one fund, the employer, the landlord and the owner of the Store, ${restaurant.name} and ${hospital.name}. It pays wages at midnight for the day's hours at work, with the rent and the daily charges taken out of them, and a sum at once for each service; it takes in what clients pay for tasks accepted, the sales, the dishes and the fees, and pays the supplier. Money in hand never goes below zero: rent the wages do not cover is owed to the fund, and what the fund cannot pay it owes. The residents started with ${world.residents.map((r) => `${r.name} ${fmt.money(r.purse)}`).join(", ")}.`),
@@ -494,6 +501,17 @@ export function mountOverview(root, ctx) {
           fundDays.length
             ? [
                 dayFigure({ title: "The fund", note: `Its balance at each day's checkpoint; it started at ${fmt.money(world.fund.start)}.`, lines: [{ key: "balance", label: "balance", color: "var(--ink)", points: fundDays.map((day) => [day.day, books.get(day.day).fund]) }], zero: true }),
+                dayFigure({
+                  title: "The tax account",
+                  note: `The fund's money apart, which pays ${paidFromTaxes(world)}: its balance at each day's checkpoint, and what it took in taxes (${fmt.pct(world.tax)} of each resident's day's wages and sums) and paid in wages on the calendar day each checkpoint's midnight closed.`,
+                  lines: [
+                    { key: "balance", label: "balance", color: "var(--ink)", points: fundDays.map((day) => [day.day, books.get(day.day).taxes]) },
+                    { key: "taken", label: "taken in taxes", color: "var(--o5)", points: fundDays.map((day) => [day.day, books.get(day.day).taken_tax]) },
+                    { key: "paid", label: "paid in wages", color: "var(--o2)", points: fundDays.map((day) => [day.day, books.get(day.day).paid_tax_wage]) },
+                  ],
+                  legend: swatchLegend([["balance", "var(--ink)", "line"], ["taken in taxes", "var(--o5)", "line"], ["paid in wages", "var(--o2)", "line"]]),
+                  zero: true,
+                }),
                 dayFigure({ title: "What the fund took in", note: "By kind, on the calendar day each checkpoint's midnight closed; what the wages covered of the rent is counted as rent taken in and as wages paid out.", stacks: ledger("taken", TAKEN), legend: swatchLegend(TAKEN.map(([, label, color]) => [label, color])) }),
                 dayFigure({ title: "What the fund paid out", note: "By kind, on the same days; what the chef bought for the kitchen is a sale the fund paid itself.", stacks: ledger("paid", PAID), legend: swatchLegend(PAID.map(([, label, color]) => [label, color])) }),
               ]
@@ -518,7 +536,7 @@ export function mountOverview(root, ctx) {
       ];
     },
     trade() {
-      const units = (keep) => (lane, i) => markersIn(lane, i, "sale").filter(keep).reduce((a, m) => a + m.quantity, 0);
+      const units = (keep) => (lane, i) => markersIn(lane, i, boughtAtCounter).filter(keep).reduce((a, m) => a + m.units, 0);
       return [
         h("p", { class: "note section-note" }, `${store.name[0].toUpperCase()}${store.name.slice(1)} sells the supplier's goods while the shopkeeper is at work there, at prices the shopkeeper sets, from what it orders, which comes the next morning. ${restaurant.name[0].toUpperCase()}${restaurant.name.slice(1)}'s chef buys ingredients for the kitchen, which the fund pays, cooks dishes from them and serves them while at work. ${fmt.plural(sum(progressDoc.daily, "sales"), "sale")} and ${fmt.plural(sum(progressDoc.daily, "dishes"), "dish", "dishes")} served so far.`),
         h(
@@ -528,18 +546,18 @@ export function mountOverview(root, ctx) {
             title: "Sold and ordered",
             note: "Units sold at the counter each day, to residents and to the kitchen, against the units the shopkeeper ordered.",
             stacks: [
-              { key: "residents", label: "to residents", color: "var(--o3)", values: townValues(units((m) => !m.kitchen)) },
-              { key: "kitchen", label: "to the kitchen", color: "var(--o1)", values: townValues(units((m) => m.kitchen)) },
+              { key: "residents", label: "to residents", color: "var(--o3)", values: townValues(units((m) => m.target !== LARDER)) },
+              { key: "kitchen", label: "to the kitchen", color: "var(--o1)", values: townValues(units((m) => m.target === LARDER)) },
             ],
             lines: [{ key: "ordered", label: "ordered", color: "var(--ink)", points: townPoints(amount("order", "quantity")) }],
             legend: swatchLegend([["to residents", "var(--o3)"], ["to the kitchen", "var(--o1)"], ["ordered", "var(--ink)", "line"]]),
           }),
           dayFigure({
             title: "Cooked and served",
-            note: "Portions the chef cooked each day, and dishes served.",
+            note: "Portions the chef cooked each day, and dishes served, bought or the chef's unpaid.",
             lines: [
               { key: "cooked", label: "portions cooked", color: "var(--o3)", points: townPoints(amount("cook", "portions")) },
-              { key: "served", label: "dishes served", color: "var(--ink)", points: townPoints(count("served")) },
+              { key: "served", label: "dishes served", color: "var(--ink)", points: townPoints(count(dishServed)) },
             ],
             legend: swatchLegend([["portions cooked", "var(--o3)", "line"], ["dishes served", "var(--ink)", "line"]]),
           }),
@@ -592,7 +610,7 @@ export function mountOverview(root, ctx) {
     social() {
       const said = count("speech");
       return [
-        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and serve one another at their work. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count("gift")), "gift")} given and ${fmt.money(total(amount("gift", "amount")))} of money among them, ${fmt.int(total(count("announcement")))} announcements so far.`),
+        h("p", { class: "note section-note" }, `Residents talk only with those at the same place, write to other phone owners from anywhere, give one another money, things and food on their own terms, and serve one another at their work. ${fmt.plural(total(said), "thing")} said, ${fmt.int(total(count("message")))} written, ${fmt.plural(total(count(handedOver)), "gift")} given and ${fmt.money(total(amount(handedOver, "money")))} of money among them, ${fmt.int(total(count("announcement")))} announcements so far.`),
         h(
           "div",
           { class: "figures" },
@@ -600,7 +618,7 @@ export function mountOverview(root, ctx) {
           dayFigure({
             title: "Gifts and messages",
             note: "Gifts of money or things, and messages written from one phone to another, per day.",
-            stacks: [{ key: "gifts", label: "gifts", color: "var(--o1)", values: townValues(count("gift")) }],
+            stacks: [{ key: "gifts", label: "gifts", color: "var(--o1)", values: townValues(count(handedOver)) }],
             lines: [{ key: "messages", label: "messages", color: "var(--ink-2)", points: townPoints(count("message")) }],
             legend: swatchLegend([["gifts", "var(--o1)"], ["messages", "var(--ink-2)", "line"]]),
           }),

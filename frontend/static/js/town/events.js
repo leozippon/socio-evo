@@ -5,11 +5,16 @@
 // A line reads as the town's people read it: an entry's own text, in the town's words. Where a
 // resident is chosen as the reader, what that resident was told reads in its own wording, as the
 // log keeps it ("You claimed task 13"): a private remark shows its words to those who heard it
-// and is something said out of earshot to a bystander, because that is what each was told.
+// and is something said out of earshot to a bystander, because that is what each was told. An
+// entry nobody but one resident knew of (its waking, its body, its sitting down to work, its
+// statement) says so. What a resident perceived is what it did and what the world told it: the
+// entries it is the actor of or among the audience of.
 
 import { hhmm, secondOfDay } from "../clock.js";
 import { fmt, h } from "../dom.js";
+import { amountOf } from "../goods.js";
 import { icon } from "../icons.js";
+import { LARDER, PORTIONS } from "../replay.js";
 
 /** Entries that frame the day rather than happen in it. */
 export const STRUCTURE = new Set(["checkpoint", "resume"]);
@@ -19,6 +24,21 @@ export const WORKSPACE = new Set(["command", "file_read", "file_write"]);
 
 /** Whether `name` was told the entry: in its own wording, or as one of the audience. */
 export const witnessed = (entry, name) => Boolean(entry.personal?.[name]) || entry.audience.includes(name);
+
+/** Whether `name` perceived the entry: it did it, or the world told it, as one of its audience. */
+export const perceived = (entry, name) => entry.actor === name || entry.audience.includes(name);
+
+/**
+ * The one resident who knew of an entry when nobody else did: the actor or the one told, alone,
+ * whatever the actor field holds (a waking or a statement told to its resident, sitting down to
+ * work or eating told to nobody, a delivery told to the shopkeeper); null when two or more knew
+ * of it, or nobody did.
+ */
+export function knownOnlyTo(entry) {
+  const knew = new Set(entry.audience);
+  if (entry.actor) knew.add(entry.actor);
+  return knew.size === 1 ? [...knew][0] : null;
+}
 
 /** The residents an entry concerns: its actor, its audience and the names its payload holds. */
 export function involved(entry) {
@@ -62,10 +82,8 @@ export const ICONS = {
   speech: "speech",
   leave_conversation: "chevronLeft",
   conversation_end: "chevronLeft",
-  gift: "coin",
   message: "speech",
-  sale: "store",
-  served: "meal",
+  move: "coin",
   order: "truck",
   delivery: "truck",
   cook: "pot",
@@ -87,7 +105,17 @@ export const ICONS = {
   checkpoint: "flag",
   resume: "flag",
 };
-export const iconFor = (entry) => (entry.kind === "speech" && entry.payload?.private ? "lock" : entry.kind === "verdict" ? (entry.payload.resolved ? "check" : "cross") : ICONS[entry.kind] ?? "spark");
+
+/** The icon of a move, by what it was: a purchase at the counter, a dish, money or a thing passed, taken, left or eaten. */
+function moveIcon(p) {
+  if (p.source === PORTIONS) return "meal";
+  if (p.reason === "buy") return "store";
+  if (p.reason === "pass") return p.item ? "handoff" : "coin";
+  return { get: "basket", put: "basket", eat: "bowl" }[p.reason] ?? "spark";
+}
+
+/** The icon of an entry, or of a marker given as `{kind, payload: marker}`. */
+export const iconFor = (entry) => (entry.kind === "move" ? moveIcon(entry.payload) : entry.kind === "speech" && entry.payload?.private ? "lock" : entry.kind === "verdict" ? (entry.payload.resolved ? "check" : "cross") : ICONS[entry.kind] ?? "spark");
 
 /** The tone of an entry: good news, bad news, or none. */
 export function tone(entry) {
@@ -96,9 +124,10 @@ export function tone(entry) {
     case "verdict":
       return p.resolved ? "good" : "serious";
     case "service":
-    case "gift":
     case "recovered":
       return "good";
+    case "move":
+      return p.reason === "pass" && p.source !== PORTIONS ? "good" : null;
     case "abandon":
     case "illness":
       return "serious";
@@ -129,8 +158,10 @@ export const textFor = (entry, reader) => (reader && entry.personal?.[reader]) |
  */
 export function line(entry, m) {
   const text = textFor(entry, m.reader);
-  const spoken = entry.kind === "speech" && entry.payload.private ? h("span", { class: "private-tag" }, icon("lock", 11), "privately ") : null;
-  return h("span", { class: "feed-text" }, spoken, m.cast.mention(text));
+  const alone = knownOnlyTo(entry);
+  const tag = entry.kind === "speech" && entry.payload.private ? "privately" : alone ? `only ${alone === m.reader ? "you" : alone} knew` : null;
+  const title = alone ? `Nobody but ${alone} knew of this` : null;
+  return h("span", { class: "feed-text" }, tag ? h("span", { class: "private-tag", title }, icon("lock", 11), tag) : null, m.cast.mention(text));
 }
 
 /** What an entry carries beyond its line: a command's output, a journal entry. */
@@ -187,6 +218,45 @@ const SERVICE = { task: (m) => `task ${m.task}, accepted`, team: (m) => `the tea
 /** A quantity of a good in a few words: `2 × bread`, `a phone`. */
 const some = (m) => `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}`;
 
+/** Where a marker happened: `at the store`, or `on the way` between places. */
+const where = (m, world) => (m.place ? `at ${world.places.find((place) => place.id === m.place)?.name ?? m.place}` : "on the way");
+
+/** A move marker in words (see `describeMarker`): what moved, from whom to whom, and where. */
+function moveWords(m, by, who, world) {
+  const own = by === who;
+  const subject = own ? "" : `${by} `;
+  const at = where(m, world);
+  const what = m.item === null ? fmt.money(m.money) : amountOf(world, m.item, m.units);
+  switch (m.reason) {
+    case "pass":
+      if (m.source === PORTIONS) {
+        if (!own && who === m.target) return [`was served ${what} by ${by}, unpaid, ${at}`];
+        return [`${subject}served ${m.target} ${what}, unpaid, ${at}`];
+      }
+      if (!own && who === m.target) return [`received ${what} from ${by} ${at}`];
+      return [`${subject}passed ${m.target} ${what} ${at}`];
+    case "get":
+      return [`${subject}took ${what} left ${at}`];
+    case "put":
+      return [`${subject}left ${what} ${at}, for anyone to take`];
+    case "eat":
+      return [`${subject}ate ${what} ${at}`];
+    case "buy": {
+      const paid = fmt.money(m.money);
+      if (m.source === PORTIONS) {
+        if (!own && who === m.seller) return [`served ${by} ${what} for ${paid} ${at}`];
+        return [`${subject}had ${what} for ${paid} ${at}, served by ${m.seller}`];
+      }
+      const kitchen = m.target === LARDER ? " for the kitchen" : "";
+      const fund = kitchen ? ", which the fund paid" : "";
+      if (!own && who === m.seller) return [`sold ${by} ${what}${kitchen} for ${paid} ${at}${fund}`];
+      return [`${subject}bought ${what}${kitchen} for ${paid} ${at}${fund}`];
+    }
+    default:
+      return [`${subject}moved ${what} ${at}`];
+  }
+}
+
 /** Units of goods by id in a few words: `10 bread, 12 vegetables`. */
 const goodsIn = (items) => Object.entries(items).map(([id, units]) => `${units} ${id}`).join(", ");
 
@@ -196,9 +266,9 @@ const numbers = (m) => `Food ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int
 /**
  * A marker of the timeline in words, as [label, text]: `by` is the resident whose lane holds it
  * (null for a marker of no resident), `who` the resident the words are for (its own deeds read
- * without a name).
+ * without a name), `world` the run's world, which names the places and the items.
  */
-export function describeMarker(m, by, who) {
+export function describeMarker(m, by, who, world) {
   const own = by === who;
   const names = (list) => list.join(", ");
   const subject = own ? "" : `${by} `;
@@ -230,16 +300,10 @@ export function describeMarker(m, by, who) {
       return [`${subject}was paid ${fmt.money(m.paid)} for ${SERVICE[m.for]?.(m) ?? m.for}${m.owed ? `; the fund owes the other ${fmt.money(m.owed)}` : ""}`];
     case "abandon":
       return [`${subject}gave up task ${m.task}`];
-    case "gift":
-      return own ? [`gave ${m.to} ${given(m)}`] : [`received ${given(m)} from ${by}`];
     case "message":
       return own ? [`wrote to ${m.to}`, m.text] : [`received a message from ${by}`, m.text];
-    case "sale":
-      if (!own && who === m.seller) return [`sold ${by} ${some(m)}${m.kitchen ? " for the kitchen" : ""} for ${fmt.money(m.amount)}`];
-      return [`${subject}bought ${some(m)}${m.kitchen ? " for the kitchen" : ""} for ${fmt.money(m.amount)}`];
-    case "served":
-      if (!own && who === m.chef) return [`served ${by} ${m.name} for ${fmt.money(m.amount)}`];
-      return [`${subject}had ${m.name} for ${fmt.money(m.amount)}, served by ${m.chef}`];
+    case "move":
+      return moveWords(m, by, who, world);
     case "order":
       return [`${subject}ordered ${some(m)} from the supplier for ${fmt.money(m.amount)}, to arrive at ${hhmm(secondOfDay(m.arrives))}`];
     case "cook":
@@ -266,14 +330,15 @@ export function describeMarker(m, by, who) {
       return [`${subject}${m.carried ? "was carried home to bed" : "took to bed"}, too ill to go on`];
     case "wage": {
       const owing = [m.owed ? `the fund owes ${fmt.money(m.owed)}` : null, m.arrears ? `owes ${fmt.money(m.arrears)} of rent` : null].filter(Boolean);
-      return [`${subject}was paid ${fmt.money(m.paid)} at midnight for ${fmt.num(m.hours, 1)} h at work`, `Wages ${fmt.money(m.wages)}, rent ${fmt.money(m.rent)}${m.charges ? `, daily charges ${fmt.money(m.charges)}` : ""}${owing.length ? `; ${owing.join(", ")}` : ""}.`];
+      const tax = `tax ${fmt.money(m.tax)}${m.tax_from_purse ? `, ${fmt.money(m.tax_from_purse)} of it from the purse` : ""}`;
+      return [`${subject}was paid ${fmt.money(m.paid)} at midnight for ${fmt.num(m.hours, 1)} h at work`, `Wages ${fmt.money(m.wages)}, ${tax}, rent ${fmt.money(m.rent)}${m.charges ? `, daily charges ${fmt.money(m.charges)}` : ""}${owing.length ? `; ${owing.join(", ")}` : ""}.`];
     }
     case "settlement": {
       const night = Object.entries(m.night ?? {}).map(([cause, change]) => `${fmt.signed(change)} ${cause.replaceAll("_", " ")}`);
       return [`${subject}had the midnight statement`, `Ate ${m.nourishment ? `${fmt.int(m.nourishment)}% of a day's food` : "nothing"}. Food in the body ${fmt.int(Math.round(m.satiety))}, energy ${fmt.int(Math.round(m.energy))}, health ${fmt.int(Math.round(m.health))} of 100${night.length ? ` (${night.join(", ")})` : ""}${m.ill ? `; ill, ${fmt.plural(m.ill, "night")} to go` : ""}.`];
     }
     case "move_in":
-      return [`${subject}moved house, into ${m.to.replaceAll("-", " ")}`];
+      return [`${subject}moved house, into ${world.places.find((place) => place.id === m.to)?.name ?? m.to}`];
     case "journal":
       return [`${subject}went to bed until ${hhmm(secondOfDay(m.wake))} and wrote the journal of day ${m.day}`, m.text];
     case "forced_sleep":
@@ -285,24 +350,18 @@ export function describeMarker(m, by, who) {
   }
 }
 
-/** What a gift marker gave: money, or a thing or helpings of a stock (`2 × bread`). */
-export const given = (m) => (m.item ? some(m) : fmt.money(m.amount));
-
 /** Whether a marker on `by`'s lane (by null: a marker of no resident) concerns `who` too. */
 export function concerns(m, by, who) {
   if (by === who) return true;
   switch (m.kind) {
     case "speech":
       return m.to.includes(who);
-    case "gift":
     case "message":
       return m.to === who;
+    case "move":
+      return m.target === who || m.seller === who;
     case "assign":
       return m.to === who || m.from === who;
-    case "sale":
-      return m.seller === who;
-    case "served":
-      return m.chef === who;
     case "examination":
     case "treatment":
       return m.patient === who;

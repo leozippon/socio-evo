@@ -1,8 +1,9 @@
 """The timeline of a run, built from the world log of a day lived in a real world: the base
 events contiguous per resident, conversation layered over what it interrupted, the markers, the
-money held, the Office's tasks, the Store's, the kitchen's and the Hospital's state agreeing with
-the checkpoint, the days and when they were lived in real time, a lane in bed until treated, a
-growing log read a line at a time, and a lost day set aside on resumption."""
+moves among them as the log records them, the money held, the Office's tasks, the prices, orders
+and fees agreeing with the checkpoint, the days and when they were lived in real time, a lane in
+bed until treated, a growing log read a line at a time, and a lost day set aside on
+resumption."""
 
 from __future__ import annotations
 
@@ -98,19 +99,27 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert lane(data, "Aisha")["conversations"] == []
 
     def markers(name: str) -> list[tuple[str, int]]:
-        """The lane's markers but the body's, which come by the hour and are checked below."""
+        """The lane's markers but the body's, which come by the hour and are checked below; a
+        move by its reason."""
         return [
-            (m["kind"], m["t"]) for m in lane(data, name)["markers"] if m["kind"] != "condition"
+            (m["reason"] if m["kind"] == "move" else m["kind"], m["t"])
+            for m in lane(data, name)["markers"]
+            if m["kind"] != "condition"
         ]
 
     assert markers("Mei") == [
         ("claim", at("09:00")),
         ("speech", at("09:32")),
-        ("gift", at("09:32")),
+        ("pass", at("09:32")),
         ("submission", at("10:00")),
         ("service", at("10:00")),
-        ("served", at("11:00")),
-        ("sale", at("11:15")),
+        ("buy", at("11:00")),
+        ("eat", at("11:00")),
+        ("eat", at("11:00")),  # the soup, which Jonas passed her unpaid on his own lane
+        ("buy", at("11:15")),
+        ("put", at("11:15")),
+        ("eat", at("12:00")),
+        ("put", at("12:05")),
         ("journal", at("22:00")),
         ("wage", DAY),
         ("settlement", DAY),
@@ -119,16 +128,39 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert mei["speech"]["text"] == "Nearly done." and mei["speech"]["to"] == ["Tomas"]
     assert mei["submission"]["resolved"] is True
     assert fields(mei["service"]) == {"for": "task", "task": 1, "amount": 20, "paid": 20, "owed": 0}
-    assert fields(mei["served"]) == {
-        "dish": "omelette", "name": "an omelette", "amount": 10, "chef": "Jonas",
-    }  # fmt: skip
-    assert fields(mei["sale"]) == {
-        "item": "bread", "name": "bread", "quantity": 2, "price": 5, "amount": 10,
-        "seller": "Olga", "kitchen": False,
-    }  # fmt: skip
     assert mei["journal"]["text"] == "I fixed task 1."
-    # Ninety minutes at work earn $10, which does not cover the $20 rent: $10 is owed.
-    assert (mei["wage"]["wages"], mei["wage"]["rent"], mei["wage"]["arrears"]) == (10, 20, 10)
+
+    # Every move as the log records it, on the lane of the one who made it, with where it was.
+    def move(item, units, source, target, reason, money=0, seller=None):
+        found = {"item": item, "units": units, "source": source, "target": target}
+        return found | {"money": money, "reason": reason, "seller": seller}
+
+    moves = [
+        (m["place"], fields(m))
+        for name in ("Mei", "Jonas", "Olga")
+        for m in lane(data, name)["markers"]
+        if m["kind"] == "move"
+    ]
+    assert moves == [
+        ("workshop", move(None, 0, "Mei", "Tomas", "pass", money=5)),
+        ("cafe", move("omelette", 1, "portions", "Mei", "buy", money=10, seller="Jonas")),
+        ("cafe", move("omelette", 1, "Mei", None, "eat")),
+        ("cafe", move("soup", 1, "Mei", None, "eat")),
+        ("store", move("bread", 3, "shelves", "Mei", "buy", money=15, seller="Olga")),
+        ("store", move("bread", 1, "Mei", "store", "put")),
+        (home, move("bread", 1, "Mei", None, "eat")),
+        (home, move("bread", 1, "Mei", home, "put")),
+        ("store", move("eggs", 2, "shelves", "larder", "buy", money=4, seller="Olga")),
+        ("store", move("vegetables", 5, "shelves", "larder", "buy", money=15, seller="Olga")),
+        ("cafe", move("soup", 1, "portions", "Mei", "pass")),  # the chef's, unpaid
+        ("store", move("bread", 1, "store", "Olga", "get")),
+        ("store", move("bread", 1, "Olga", None, "eat")),
+    ]
+    # Ninety minutes at work earn $10, which cover neither the tax, a tenth of the $10 and her
+    # $20 for the task, nor the $20 rent: $13 is owed.
+    wage = mei["wage"]
+    assert (wage["wages"], wage["tax"], wage["rent"], wage["arrears"]) == (10, 3, 20, 13)
+    assert (wage["tax_from_purse"], wage["paid"]) == (0, 0)
     assert markers("Tomas") == [
         ("speech", at("09:30")),
         ("service", at("10:00")),
@@ -182,12 +214,10 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("price", None, "bread"),
         ("service", "sale", None),
     ]
-    jonas = [m for m in lane(data, "Jonas")["markers"] if m["kind"] in ("sale", "cook")]
-    assert [(m["kind"], m.get("kitchen"), m.get("dish")) for m in jonas] == [
-        ("sale", True, None),
-        ("sale", True, None),
-        ("cook", None, "omelette"),
-        ("cook", None, "soup"),
+    jonas = [m for m in lane(data, "Jonas")["markers"] if m["kind"] == "cook"]
+    assert [(m["dish"], m["portions"], m["used"]) for m in jonas] == [
+        ("omelette", 1, {"eggs": 2, "vegetables": 1}),
+        ("soup", 2, {"vegetables": 4}),
     ]
     lucia = [m for m in lane(data, "Lucia")["markers"] if m["kind"] in ("examination", "treatment")]
     assert [(m["kind"], m["patient"], m["fee"]) for m in lucia] == [
@@ -200,9 +230,9 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         ("announcement", "The hall is open every day."),
     ]
 
-    # The money held moves with every sum the log records: the gift, the sum for the task, the
-    # Hospital's fees, the dish and the bread, and the wages at midnight; the chef's purchases
-    # for the kitchen are the fund's.
+    # The money held moves with every sum the log records: the money passed, the sum for the
+    # task, the Hospital's fees, the dish and the bread, and the wages at midnight; the soup
+    # served unpaid costs nothing, and the chef's purchases for the kitchen are the fund's.
     assert lane(data, "Mei")["purse"] == [
         [start, 120],
         [at("09:32"), 115],
@@ -210,16 +240,27 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
         [at("10:40"), 125],
         [at("10:40"), 95],
         [at("11:00"), 85],
-        [at("11:15"), 75],
-        [DAY, 75],
+        [at("11:15"), 70],
+        [DAY, 70],
     ]
-    # Tomas's eight hours as the team leader pay $72 less his $30 of rent.
+    # Tomas's eight hours as the team leader pay $72 less $8 of tax, a tenth of the $72 and his
+    # $10 for Mei's task, and his $30 of rent.
     assert lane(data, "Tomas")["purse"] == [
         [start, 180],
         [at("09:32"), 185],
         [at("10:00"), 195],
-        [DAY, 237],
+        [DAY, 229],
     ]
+    # Vera, the mayor, is paid from the tax account, which holds the day's $47 of taxes, her own
+    # $9 among them: her rent and $8 of her wages; the other $39 it owes her.
+    vera = next(m for m in lane(data, "Vera")["markers"] if m["kind"] == "wage")
+    assert (vera["wages"], vera["tax"], vera["rent"], vera["paid"], vera["owed"]) == (
+        86,
+        9,
+        30,
+        8,
+        39,
+    )
     assert lane(data, "Aisha")["purse"] == [[start, 30], [DAY, 30]]
     assert lane(data, "Jonas")["purse"][:2] == [[start, 100], [at("11:00"), 103]]
 
@@ -249,25 +290,20 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     assert tasks[3]["holders"] == [[at("10:00"), "Aisha", "Tomas"], [DAY, None, None]]
     assert tasks[3]["withdrawn"] == DAY
 
-    # The state of the Store, the kitchen and the Hospital, read from the log alone, is the
-    # world's own at the checkpoint, and so is the money each resident holds.
+    # The prices, the orders and the fees, read from the log alone, are the world's own at the
+    # checkpoint, and so is the money each resident holds; the bread ordered came in the morning.
     [(_, saved)] = town.checkpoints
     t = saved["time"]
     pending: dict[str, int] = {}
     for good, units, _ in saved["store"]["pending"]:
         pending[good] = pending.get(good, 0) + units
-    assert state_at(data["store"]["stock"], t) == saved["holders"]["shelves"]
     assert state_at(data["store"]["prices"], t) == saved["store"]["prices"]
     assert state_at(data["store"]["on_order"], t) == pending == {"bread": 5}
-    assert state_at(data["kitchen"]["stock"], t) == saved["holders"]["larder"]
+    assert state_at(data["store"]["on_order"], now) == {}
     assert state_at(data["kitchen"]["menu"], t) == saved["kitchen"]["menu"]
-    assert state_at(data["kitchen"]["portions"], t) == saved["holders"]["portions"] == {}
     assert state_at(data["fees"], t) == saved["fees"]
     for name, found in saved["residents"].items():
         assert state_at(lane(data, name)["purse"], t) == found["inventory"]["money"], name
-    # The soup nobody had is gone at midnight; the bread ordered came in the morning.
-    assert state_at(data["kitchen"]["portions"], DAY - 1) == {"soup": 1}
-    assert state_at(data["store"]["stock"], now)["bread"] == 8 + 5
 
     entries = list(town.world.log.entries())
     first = next(e for e in entries if e["kind"] in module._FOLDED)["real_time"]  # the viewer's
@@ -439,7 +475,7 @@ def test_resuming_the_start_sets_aside_all_before_and_a_checkpoint_never_logged_
             timeline(run.root)
 
 
-async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(tmp_path):
+async def test_money_passed_moves_the_purses_and_a_thing_passed_does_not(tmp_path):
     run, town = new_town(tmp_path)
     town.world.residents["Mei"].inventory.items["bread"] = 3
     town.start(until_day=2)
@@ -450,10 +486,12 @@ async def test_a_gift_of_money_moves_the_purses_and_a_gift_of_a_thing_does_not(t
     await town.call("Mei", "pass", item="bread", units=2, to="Tomas")
     await town.close()
     data = timeline(run.root)
-    gifts = [m for m in lane(data, "Mei")["markers"] if m["kind"] == "gift"]
-    assert [{k: v for k, v in m.items() if k not in ("seq", "t", "place")} for m in gifts] == [
-        {"kind": "gift", "to": "Tomas", "amount": 5},
-        {"kind": "gift", "to": "Tomas", "item": "bread", "name": "bread", "quantity": 2},
-    ]
+    passed = [fields(m) for m in lane(data, "Mei")["markers"] if m["kind"] == "move"]
+    assert passed == [
+        {"item": None, "units": 0, "source": "Mei", "target": "Tomas", "money": 5,
+         "reason": "pass", "seller": None},
+        {"item": "bread", "units": 2, "source": "Mei", "target": "Tomas", "money": 0,
+         "reason": "pass", "seller": None},
+    ]  # fmt: skip
     assert lane(data, "Mei")["purse"][-1] == [at("07:10"), 115]
     assert lane(data, "Tomas")["purse"][-1] == [at("07:10"), 185]

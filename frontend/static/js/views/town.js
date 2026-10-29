@@ -9,11 +9,11 @@
 
 import { DAY, parseHHMM, parseStamp, secondOfDay, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
-import { inventory, needBars } from "../goods.js";
+import { inventory, itemsBrief, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { bodyAt, lowerBound, markersBetween, moment as momentOf, purseAt, thingsAt } from "../replay.js";
+import { bodyAt, lowerBound, lyingAt, markersBetween, moment as momentOf, purseAt, spentOn, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { ICONS, describeMarker, textFor, tone } from "../town/events.js";
+import { ICONS, describeMarker, iconFor, textFor, tone } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
 import { TownMap } from "../town/map.js";
 import { ChroniclePanel, FeedPanel, PeoplePanel, WorkPanel, doing, whereabouts } from "../town/panels.js";
@@ -35,7 +35,7 @@ const DEFAULT_PANEL = "people";
 /** The entries the map shows as a notice for a while: what the whole town would notice. */
 const NOTICES = new Set(["task_arrived", "task_withdrawn", "delivery", "announcement", "bedridden", "forced_sleep"]);
 /** The markers the map shows by the resident for a while: what it just did, earned or felt. */
-const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "gift", "message", "sale", "served", "order", "cook", "price", "examination", "treatment", "report", "announcement", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
+const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "report", "announcement", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -226,7 +226,7 @@ export function mountTown(root, ctx) {
     };
   }
 
-  /** What the map shows besides positions: who speaks where, what each just did, the notices. */
+  /** What the map shows besides positions: who speaks where, what each place holds and what lies there, what each just did, the notices. */
   function mapFrame(m, effects) {
     const recent = m.time - RECENT;
     const speech = new Map();
@@ -241,7 +241,11 @@ export function mountTown(root, ctx) {
     const scenes = new Map();
     for (const place of world.places) {
       const here = Object.entries(m.state.residents).filter(([, found]) => !found.moving && found.segment?.place === place.id);
-      if (!here.length) continue;
+      const lying = itemsBrief(world, lyingAt(data, place.id, m.time));
+      if (!here.length) {
+        if (lying) scenes.set(place.id, { label: `left here: ${lying}` });
+        continue;
+      }
       const working = here.filter(([, found]) => found.segment.kind === "work").length;
       const talking = here.filter(([, found]) => found.conversation).length;
       const asleep = here.filter(([, found]) => found.segment.kind === "sleep").length;
@@ -253,6 +257,7 @@ export function mountTown(root, ctx) {
       if (talking) bits.push(`${talking} talking`);
       if (asleep) bits.push(`${asleep} asleep`);
       if (abed) bits.push(`${abed} in bed`);
+      if (lying) bits.push(`left here: ${lying}`);
       if (bits.length) scenes.set(place.id, { label: bits.join(" · ") });
     }
     const deeds = new Map();
@@ -275,9 +280,9 @@ export function mountTown(root, ctx) {
   /** What a marker says in a few words by the resident, with its icon and tone; null for what the map does not show. */
   function deedOf(mk, name) {
     if (!DEEDS.has(mk.kind)) return null;
-    const [label] = describeMarker(mk, name, name);
+    const [label] = describeMarker(mk, name, name, world);
     const shown = { kind: mk.kind, payload: mk };
-    return { icon: ICONS[mk.kind], text: label.length > 60 ? `${label.slice(0, 58)}…` : label, tone: mk.kind === "condition" ? (mk.lowest ? "warn" : null) : mk.kind === "submission" && mk.resolved !== undefined ? (mk.resolved ? "good" : "serious") : tone(shown) };
+    return { icon: iconFor(shown), text: label.length > 60 ? `${label.slice(0, 58)}…` : label, tone: mk.kind === "condition" ? (mk.lowest ? "warn" : null) : mk.kind === "submission" && mk.resolved !== undefined ? (mk.resolved ? "good" : "serious") : tone(shown) };
   }
 
   /** The selected resident: who, where, doing what, how it stands and what it owns, and whose wording the panels read. */
@@ -522,11 +527,11 @@ export function mountTown(root, ctx) {
     for (const lane of data.residents)
       for (const mk of markersBetween(lane, before, time)) {
         if (mk.kind === "service" || mk.kind === "wage") gain(lane.name, mk.paid);
-        if (mk.kind === "gift" && !mk.item) {
-          loss(lane.name, mk.amount);
-          gain(mk.to, mk.amount);
+        if (mk.kind === "move" && mk.reason === "pass" && mk.item === null) {
+          loss(lane.name, mk.money);
+          gain(mk.target, mk.money);
         }
-        if ((mk.kind === "sale" && !mk.kitchen) || mk.kind === "served") loss(lane.name, mk.amount);
+        loss(lane.name, spentOn(mk));
         if (mk.kind === "examination" || mk.kind === "treatment") loss(mk.patient, mk.fee);
       }
     paint(effects);

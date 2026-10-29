@@ -2,7 +2,7 @@
 // each does in plain words, the restaurant's dishes, what a resident has (its money first) as
 // item cards, and its body's three needs as bars read in the bands of the world's own words.
 // Everything here is drawn from `world.json` (the catalogue, the dishes and the bands) and the
-// timeline (sales, the things owned, the markers of the body); nothing is computed beyond
+// timeline (the moves, the things held, the markers of the body); nothing is computed beyond
 // looking those up.
 
 import { hhmm, secondOfDay } from "./clock.js";
@@ -24,11 +24,31 @@ export function goodIcon(good) {
   return { travel: "bicycle", messaging: "phone" }[good.effect] ?? "spark";
 }
 
+/** A name without its article: `a phone` is `phone`. */
+const bare = (name) => name.replace(/^(a|an|the)\s+/i, "");
+
 /** A good's name as a label: without its article, capitalised. */
 export function goodName(good) {
-  const name = good.name.replace(/^(a|an|the)\s+/i, "");
+  const name = bare(good.name);
   return name[0].toUpperCase() + name.slice(1);
 }
+
+/** The item of the catalogue `id`, a good or a dish; undefined if the world has none. */
+export const itemOf = (world, id) => world.goods.find((good) => good.id === id) ?? world.dishes.find((dish) => dish.id === id);
+
+/** Units of an item in words, as the town counts them: `3 helpings of bread`, `2 units of eggs`, `a phone`, `an omelette`. */
+export function amountOf(world, id, units) {
+  const item = itemOf(world, id);
+  if (!item) return `${fmt.int(units)} × ${id}`;
+  if (item.kind === "durable" || Object.keys(item.ingredients).length) return units === 1 ? item.name : `${fmt.int(units)} × ${bare(item.name)}`;
+  return `${fmt.plural(units, item.nourishment ? "helping" : "unit")} of ${bare(item.name)}`;
+}
+
+/** Units of items by id in a few words, for a label: `1 bread, 2 eggs`. */
+export const itemsBrief = (world, items) =>
+  Object.entries(items)
+    .map(([id, units]) => `${fmt.int(units)} ${itemOf(world, id) ? bare(itemOf(world, id).name) : id}`)
+    .join(", ");
 
 /** What a good does for its owner, in a sentence. */
 export function goodEffect(good) {

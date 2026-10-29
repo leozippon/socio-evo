@@ -45,7 +45,7 @@ from tests.frontend.conftest import (
     write_results,
     write_trace,
 )
-from tests.world.conftest import at, town_config
+from tests.world.conftest import STOCK, at, town_config
 from world.clock import DAY
 from world.log import KINDS as LOG_KINDS
 
@@ -55,10 +55,10 @@ PUSH = PROJECT / "frontend" / "deploy" / "push.sh"
 RUN = "data/runs/town"
 RESIDENTS = ("Mei", "Tomas", "Aisha", "Olga", "Jonas", "Lucia", "Vera")
 MARKERS = (
-    "claim", "assign", "submission", "abandon", "service", "speech", "message", "gift", "sale",
-    "served", "order", "cook", "price", "examination", "treatment", "report", "announcement",
-    "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "wage",
-    "settlement", "condition", "task_arrived", "task_withdrawn", "delivery",
+    "claim", "assign", "submission", "abandon", "service", "speech", "message", "move", "order",
+    "cook", "price", "examination", "treatment", "report", "announcement", "illness",
+    "recovered", "bedridden", "move_in", "journal", "forced_sleep", "wage", "settlement",
+    "condition", "task_arrived", "task_withdrawn", "delivery",
 )  # fmt: skip
 """The kinds of marker the timeline publishes, on a resident's lane or the town's."""
 
@@ -284,18 +284,13 @@ def test_every_file_has_exactly_the_documented_fields(published):
         "move_in",
         "message",
     }
-    mei = next(lane for lane in timeline["residents"] if lane["name"] == "Mei")
-    # Two helpings bought at 11:15, one of them eaten unseen by the checkpoint.
-    assert mei["things"] == [
-        [timeline["start"], {}],
-        [at("11:15"), {"bread": 2}],
-        [at("02:30", day=2), {"bread": 1}],
-    ]
 
     measures = read(site, f"{RUN}/measures.json")
     for row in measures["rows"]:
         assert set(row) == {"resident", "occupation", "day", "date", *MEASURES}
     assert [set(row) for row in measures["town"]] == [{"day", "date", *TOWN}]
+    [town] = measures["town"]  # the day's taxes all paid out to Vera, the mayor
+    assert (town["taxes"], town["taken_tax"], town["paid_tax_wage"]) == (0, 47, 47)
     kinds = set()
     for path in (site / RUN / "events").iterdir():
         for found in json.loads(path.read_bytes())["entries"]:
@@ -331,9 +326,16 @@ def test_the_index_names_the_runs_and_the_comparison(published):
     assert (town["settled_day"], town["last_day"], town["residents"]) == (1, 2, list(RESIDENTS))
     headline = town["headline"]
     assert (headline["arrived"], headline["accepted"], headline["withdrawn"]) == (3, 1, 2)
-    assert (headline["sales"], headline["dishes"], headline["examinations"]) == (3, 1, 1)
+    assert (headline["sales"], headline["dishes"], headline["examinations"]) == (3, 2, 1)
+    assert headline["gifts"] == 1  # the money Mei passed Tomas; the chef's soup is a dish
     assert (headline["treatments"], headline["announcements"]) == (1, 1)
-    assert headline["day"] == 2 and headline["purse"]["median"] == 151
+    timeline = read(site, f"{RUN}/timeline.json")
+    purses = sorted(lane["purse"][-1][1] for lane in timeline["residents"])
+    assert headline["day"] == 2 and headline["purse"] == {
+        "min": purses[0],
+        "median": purses[3],
+        "max": purses[-1],
+    }
     checkpoint = json.loads((runs / "town" / "checkpoints" / "day-01.json").read_text())
     assert headline["fund"] == checkpoint["fund"]["balance"]
     assert index["skipped"] == []
@@ -380,10 +382,11 @@ def test_the_world_lays_the_town_out(published):
     ]
     assert world["hospital"] == {"examination": 10, "treatment": 30, "restores": 25}
     assert world["fund"] == {"start": 1000} and world["store"]["stock"]["bread"] == 10
+    assert world["tax"] == 0.1
     occupations = {o["id"]: o for o in world["occupations"]}
     assert occupations["chef"] == {
         "id": "chef", "title": "the chef", "workplace": "cafe", "wage_per_hour": 7,
-        "per_service": 3, "duty": "workplace",
+        "per_service": 3, "duty": "workplace", "paid_from": "fund",
     }  # fmt: skip
     assert occupations["mayor"]["duty"] == "anywhere"
     assert [(r["name"], r["occupation"]) for r in world["residents"]][3:] == [
@@ -393,7 +396,7 @@ def test_the_world_lays_the_town_out(published):
         "floor": 0, "name": "gravely ill", "seen": "looking gravely ill",
     }  # fmt: skip
     assert [r["name"] for r in world["residents"]] == list(RESIDENTS)
-    assert "How the town works." in world["residents"][0]["rules"]
+    assert "## Your work and your town" in world["residents"][0]["rules"]
     assert world["name"] == "town" and world["currency"] == "$"
     assert world["social"] == {"silence_minutes": 10}
 
@@ -668,89 +671,104 @@ async def test_push_uploads_only_what_changed_and_switches_the_site_at_once(tmp_
     )
 
 
-def test_things_follow_the_purchases_the_gifts_and_the_checkpoints(tmp_path):
-    """Mei buys bread and a phone on day 1 and eats a helping unseen; the checkpoint of day 1
-    counts what is left, and day 2's purchase adds to that, until she gives Aisha the phone and
-    Tomas four helpings. Tomas buys a coat, and Jonas eggs for the kitchen, which are not his;
-    the checkpoint of day 2 is not saved yet."""
+def test_the_holders_follow_every_move_and_agree_with_the_checkpoint(published):
+    """What Mei, Olga and the places held over the fixture's day, move by move: the bread Mei
+    bought, left at the Store for Olga, ate and left at home, where it lies; the shelves, the
+    larder and the portions, the soup nobody had gone at midnight; and at the checkpoint every
+    holder as the moves left it is what the checkpoint saved."""
+    runs, _, site = published
+    timeline = read(site, f"{RUN}/timeline.json")
+    start, end = timeline["start"], at("02:30", day=2)
+    things = {lane["name"]: lane["things"] for lane in timeline["residents"]}
+    holders = timeline["holders"]
+    assert things["Mei"] == [
+        [start, {}],  # the dishes she had at 11:00 were eaten as they were served
+        [at("11:15"), {"bread": 2}],  # three bought, one left at the Store
+        [at("12:00"), {"bread": 1}],
+        [at("12:05"), {}],
+    ]
+    assert things["Olga"] == [[start, {}]]  # taken at 11:15 and eaten there and then
+    assert holders["store"] == [[start, {}]]
+    assert holders["mill-street-house"] == [[start, {}], [at("12:05"), {"bread": 1}]]
+    assert holders["portions"] == [
+        [start, {}],
+        [at("07:30"), {"omelette": 1, "soup": 2}],
+        [at("11:00"), {"soup": 1}],
+        [DAY, {}],
+    ]
+    assert holders["larder"] == [[start, {}], [at("07:10"), {"eggs": 2, "vegetables": 5}],
+                                 [at("07:30"), {}]]  # fmt: skip
+    shelves = dict(holders["shelves"])
+    assert shelves[at("11:15")]["bread"] == 10 - 3 and shelves[at("08:00", day=2)]["bread"] == 12
+    saved = json.loads((runs / "town" / "checkpoints" / "day-01.json").read_text())
+    kept = saved["holders"] | {n: r["inventory"]["items"] for n, r in saved["residents"].items()}
+    for key, points in [*things.items(), *holders.items()]:
+        before = [state for t, state in points if t < end][-1]
+        after = [state for t, state in points if t <= end][-1]
+        assert before == after == kept[key], key
+
+
+def test_a_checkpoint_sets_every_holder_as_it_saved_it(tmp_path):
+    """Between checkpoints the moves count; at a checkpoint what it saved is what each holder
+    has, whatever the moves before it said; a move of more than its source holds fails."""
     town = town_config()
-    start, end1, end2 = at("02:30"), at("02:30", day=2), at("02:30", day=3)
+    start, end = at("02:30"), at("02:30", day=2)
 
-    def sale(t: int, item: str, quantity: int = 1, kitchen: bool = False) -> dict:
-        return {
-            "seq": 0,
-            "t": t,
-            "kind": "sale",
-            "place": "store",
-            "item": item,
-            "quantity": quantity,
-            "kitchen": kitchen,
-        }
-
-    def gift(t: int, to: str, item: str, quantity: int) -> dict:
-        return {"seq": 0, "t": t, "kind": "gift", "to": to, "item": item, "quantity": quantity}
+    def move(t: int, seq: int, item: str, units: int, source: str, target: str | None) -> dict:
+        found = {"seq": seq, "t": t, "kind": "move", "place": "park", "item": item}
+        return found | {"units": units, "source": source, "target": target, "money": 0}
 
     data = {
         "start": start,
-        "days": [{"day": 1, "end": end1}, {"day": 2, "end": end2}, {"day": 3, "end": None}],
+        "now": at("12:00", day=2),
+        "markers": [],
         "residents": [
-            {
-                "name": "Mei",
-                "markers": [
-                    sale(at("13:00"), "bread", 2),
-                    sale(at("14:00"), "phone"),
-                    sale(at("09:00", day=2), "bread", 5),
-                    gift(at("10:00", day=2), "Aisha", "phone", 1),
-                    gift(at("11:00", day=2), "Tomas", "bread", 4),
-                    {"seq": 0, "t": at("12:00", day=2), "kind": "gift", "to": "Tomas", "amount": 5},
-                ],
-            },
-            {"name": "Tomas", "markers": [sale(at("12:00"), "coat")]},
-            {"name": "Aisha", "markers": []},
-            {"name": "Jonas", "markers": [sale(at("07:10"), "eggs", 2, kitchen=True)]},
+            {"name": "Mei", "markers": [move(at("09:00"), 1, "bread", 2, "shelves", "Mei"),
+                                        move(at("10:00"), 2, "bread", 1, "Mei", "park")]},
+            {"name": "Tomas", "markers": [move(at("11:00"), 3, "bread", 1, "park", "Tomas"),
+                                          move(at("09:00", day=2), 4, "bread", 1, "Tomas", None)]},
         ],
-    }
-    kept = lambda items: {"inventory": {"items": items}}  # noqa: E731
-    states = {
-        1: {
-            "time": end1,
-            "residents": {
-                "Mei": kept({"bread": 1, "phone": 1}),
-                "Tomas": kept({"coat": 1}),
-                "Aisha": kept({}),
-                "Jonas": kept({}),
-            },
-        }
-    }
-    found = bundle.things(states, town, data)
-    assert found["Mei"] == [
+    }  # fmt: skip
+    holders = {key: {} for key in ("larder", "portions", *(p.id for p in town.places))}
+    saved = {
+        "time": end,
+        "residents": {"Mei": {"inventory": {"items": {"bread": 1}}},
+                      "Tomas": {"inventory": {"items": {"bread": 3}}}},
+        "holders": holders | {"shelves": {"bread": 8}},
+    }  # fmt: skip
+    things, others = bundle.holdings({1: saved}, town, data)
+    assert things["Mei"] == [
         [start, {}],
-        [at("13:00"), {"bread": 2}],
-        [at("14:00"), {"bread": 2, "phone": 1}],
-        [end1, {"bread": 1, "phone": 1}],
-        [at("09:00", day=2), {"bread": 6, "phone": 1}],
-        [at("10:00", day=2), {"bread": 6}],
-        [at("11:00", day=2), {"bread": 2}],
-    ]  # money given changes nothing owned
-    assert found["Tomas"] == [
-        [start, {}],
-        [at("12:00"), {"coat": 1}],
-        [at("11:00", day=2), {"coat": 1, "bread": 4}],
+        [at("09:00"), {"bread": 2}],
+        [at("10:00"), {"bread": 1}],
     ]
-    assert found["Aisha"] == [[start, {}], [at("10:00", day=2), {"phone": 1}]]
-    assert found["Jonas"] == [[start, {}]]
+    assert things["Tomas"] == [
+        [start, {}],
+        [at("11:00"), {"bread": 1}],
+        [end, {"bread": 3}],  # the checkpoint's, not the moves'
+        [at("09:00", day=2), {"bread": 2}],
+    ]
+    assert others["park"] == [[start, {}], [at("10:00"), {"bread": 1}], [at("11:00"), {}]]
+    assert others["shelves"] == [
+        [start, STOCK],
+        [at("09:00"), {**STOCK, "bread": 8}],
+        [end, {"bread": 8}],  # as saved
+    ]
+    data["residents"][0]["markers"].append(move(at("10:30"), 5, "bread", 2, "Mei", None))
+    with pytest.raises(ValueError, match="entry 5: Mei holds 1 of bread, not 2"):
+        bundle.holdings({1: saved}, town, data)
 
 
 def test_the_graph_counts_who_served_whom(published):
     """Olga sold Jonas eggs and vegetables for the kitchen and Mei bread; Jonas served Mei the
-    omelette; Lucia examined and treated her."""
+    omelette and a soup unpaid; Lucia examined and treated her."""
     _, _, site = published
     graph = read(site, f"{RUN}/measures.json")["graph"]
     served = {(row["source"], row["target"]): row["served"] for row in graph if row["served"]}
     assert served == {
         ("Olga", "Jonas"): 2,
         ("Olga", "Mei"): 1,
-        ("Jonas", "Mei"): 1,
+        ("Jonas", "Mei"): 2,  # the omelette she bought and the soup he passed her
         ("Lucia", "Mei"): 2,
     }
 

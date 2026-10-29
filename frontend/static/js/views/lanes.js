@@ -66,7 +66,7 @@ export function mountLanes(root, ctx) {
     fill(
       entries,
       shown.map(([m, by]) => {
-        const [label, text] = describeMarker(m, by, selected);
+        const [label, text] = describeMarker(m, by, selected, world);
         return h(
           "li",
           {

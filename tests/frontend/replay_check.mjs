@@ -38,8 +38,11 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
-// Every lived day: the money held at its end and the markers it counted.
-const COUNTED = { task_arrived: "arrived", claim: "claims", assign: "assigned", submission: "submissions", task_withdrawn: "withdrawn", sale: "sales", served: "dishes", examination: "examinations", treatment: "treatments", announcement: "announcements", speech: "speeches", message: "messages", gift: "gifts", journal: "journals", illness: "illnesses", bedridden: "bedridden", forced_sleep: "forced_sleeps" };
+// Every lived day: the money held at its end and the markers it counted; of the moves, a
+// purchase at the counter is a sale, a portion from the kitchen a dish, money or a thing passed
+// a gift.
+const COUNTED = { task_arrived: "arrived", claim: "claims", assign: "assigned", submission: "submissions", task_withdrawn: "withdrawn", examination: "examinations", treatment: "treatments", announcement: "announcements", speech: "speeches", message: "messages", journal: "journals", illness: "illnesses", bedridden: "bedridden", forced_sleep: "forced_sleeps" };
+const counted = (m) => (m.kind !== "move" ? COUNTED[m.kind] : m.source === "portions" ? "dishes" : { buy: "sales", pass: "gifts" }[m.reason]);
 const town = { name: "the town", markers: timeline.markers };
 for (const [i, row] of progress.daily.entries()) {
   const day = timeline.days[i];
@@ -47,13 +50,13 @@ for (const [i, row] of progress.daily.entries()) {
   const end = day.end ?? timeline.now;
   const purses = timeline.residents.map((lane) => purseAt(lane, end));
   check(`purses at the end of day ${row.day}`, { min: Math.min(...purses), median: median(purses), max: Math.max(...purses) }, row.purse);
-  const counts = Object.fromEntries(Object.values(COUNTED).map((key) => [key, 0]));
+  const counts = Object.fromEntries([...Object.values(COUNTED), "sales", "dishes", "gifts"].map((key) => [key, 0]));
   counts.accepted = 0;
   counts.rejected = 0;
   for (const lane of [town, ...timeline.residents])
     for (const m of markersBetween(lane, i ? timeline.days[i - 1].end : null, end)) {
-      if (!(m.kind in COUNTED)) continue;
-      counts[COUNTED[m.kind]] += 1;
+      if (!counted(m)) continue;
+      counts[counted(m)] += 1;
       if (m.kind === "submission" && "resolved" in m) counts[m.resolved ? "accepted" : "rejected"] += 1;
     }
   check(`markers of day ${row.day}`, counts, Object.fromEntries(Object.keys(counts).map((key) => [key, row[key]])));

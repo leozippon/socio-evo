@@ -603,8 +603,8 @@ table.data.compact-table th, table.data.compact-table td { padding: 4px 6px; }
 .notice.tone-critical .icon { color: var(--critical-text); }
 @media (max-width: 999px) { .map-notices { left: 8px; right: 8px; top: 8px; max-width: none; } }
 
-/* Private remarks, the wording lens, and the folded output of commands. */
-.private-tag { display: inline-flex; align-items: center; gap: 3px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
+/* Private remarks and what one resident alone knew, the wording lens, and the folded output of commands. */
+.private-tag { display: inline-flex; align-items: center; gap: 3px; margin-right: 5px; font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); vertical-align: 1px; }
 .person-job, .selected-job { font-size: 12px; color: var(--ink-2); line-height: 1.35; }
 .person-feels { font-size: 11.5px; color: var(--muted); line-height: 1.3; }
 .lens { display: flex; margin-top: var(--s2); }

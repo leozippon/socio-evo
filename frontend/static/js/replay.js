@@ -1,7 +1,8 @@
 // The town at any moment, from the run's timeline (frontend.timeline) and nothing else: where
 // each resident is, what it is in (idle, on the way, at work on a task, asleep, in bed, in
-// conversation), what task it holds, what it owns and how its body stands, and the state of the
-// Office, the Store, the kitchen and the Hospital. Pure: no DOM, no fetching, so it runs under
+// conversation), what task it holds, what it owns and how its body stands, the state of the
+// Office, the Store, the kitchen and the Hospital, and what lies at each place; and what a move
+// of the timeline was, in the terms the town counts. Pure: no DOM, no fetching, so it runs under
 // node as well as in the browser. The timeline is the server's reading of the world log; the viewer adds no reading
 // of its own, only looks up moments in it. The timeline's times are whole seconds, but a moment
 // looked up need not be: the town plays through the seconds between them.
@@ -119,19 +120,42 @@ export function settlementAt(lane, t) {
 /** What a lane owns at `t`, by good id: as of its last change at or before `t`; nothing before any. */
 export const thingsAt = (lane, t) => seriesAt(lane.things ?? [], t) ?? {};
 
+/** The holders of items that are neither a resident nor a place, by their names in the log: the Store's shelves, the kitchen's larder and its portions. */
+export const SHELVES = "shelves";
+export const LARDER = "larder";
+export const PORTIONS = "portions";
+
+/** What lies at the place `id` at `t` for anyone to take, by item id. */
+export const lyingAt = (timeline, id, t) => seriesAt(timeline.holders[id], t) ?? {};
+
 /**
  * The Store, the kitchen and the Hospital at `t`: the Store's stock, prices and what is on order,
  * the kitchen's stock, menu and portions ready, and the Hospital's fees, each by id.
  */
 export const shopsAt = (timeline, t) => ({
-  stock: seriesAt(timeline.store.stock, t),
+  stock: seriesAt(timeline.holders[SHELVES], t),
   prices: seriesAt(timeline.store.prices, t),
   onOrder: seriesAt(timeline.store.on_order, t),
-  larder: seriesAt(timeline.kitchen.stock, t),
+  larder: seriesAt(timeline.holders[LARDER], t),
   menu: seriesAt(timeline.kitchen.menu, t),
-  portions: seriesAt(timeline.kitchen.portions, t),
+  portions: seriesAt(timeline.holders[PORTIONS], t),
   fees: seriesAt(timeline.fees, t),
 });
+
+/** Whether a marker is a purchase at the Store's counter: for oneself, or the chef's for the kitchen's larder. */
+export const boughtAtCounter = (m) => m.kind === "move" && m.reason === "buy" && m.source === SHELVES;
+
+/** Whether a marker is a dish from the kitchen's portions: bought, or handed over by the chef unpaid. */
+export const dishServed = (m) => m.kind === "move" && m.source === PORTIONS;
+
+/** Whether a marker is money or a thing one resident passed another (the chef's dish is served, not passed). */
+export const handedOver = (m) => m.kind === "move" && m.reason === "pass" && m.source !== PORTIONS;
+
+/** The money a move took from the resident who made it: what it bought for itself; the fund pays for the kitchen. */
+export const spentOn = (m) => (m.kind === "move" && m.reason === "buy" && m.target !== LARDER ? m.money : 0);
+
+/** Who had a dish served: the diner who bought it, `by`, or the one the chef passed it to. */
+export const dinerOf = (m, by) => (m.reason === "buy" ? by : m.target);
 
 /** The place a lane set off from for the movement `segment`: the place of the segment before it. */
 export function originOf(lane, segment) {

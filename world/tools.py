@@ -828,8 +828,6 @@ def _buy_at_counter(
     else:
         r.inventory.money -= total
         r.inventory.moves.append(["bought", total, bought])
-        world.take_in(r)
-        tail = f"{world.things_told(r)} {world.purse(r)}"
     add(world.daybook.today["sales"], thing.id, units)
     for_whom = " for the kitchen" if kitchen else ""
     world.record_move(
@@ -844,6 +842,9 @@ def _buy_at_counter(
         money=total,
         seller=seller.name,
     )
+    if not kitchen:  # the purchase is on record before a hungry buyer eats from it
+        world.take_in(r)
+        tail = f"{world.things_told(r)} {world.purse(r)}"
     if seller is not r:  # nobody is paid for serving itself
         world.pay_service(seller, "sale", "a sale", tell=True)
     paid = ", which the fund paid" if kitchen else ""

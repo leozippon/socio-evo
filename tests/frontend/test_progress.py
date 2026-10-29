@@ -42,10 +42,13 @@ def write(run: RunDirectory, lines: list[tuple]) -> None:
 
 
 def wage(money: int) -> dict:
-    """The midnight's wages: no time at work, the rent owed, the money held as it stood."""
+    """The midnight's wages: no time at work and no tax, the rent owed, the money held as it
+    stood."""
     return {
         "hours": 0.0,
         "wages": 0,
+        "tax": 0,
+        "tax_from_purse": 0,
         "owed_before": 0,
         "rent": 20,
         "charges": 0,

@@ -10,7 +10,7 @@
 
 import { DAY, dateOf, duration, hhmm, livedDay, secondOfDay } from "../clock.js";
 import { fmt, h } from "../dom.js";
-import { lowerBound, purseAt } from "../replay.js";
+import { PORTIONS, lowerBound, purseAt } from "../replay.js";
 import { EVENTS } from "../world.js";
 import { describeMarker } from "./events.js";
 
@@ -39,9 +39,6 @@ const ROW_OF = {
   announcement: 0,
   service: 1,
   wage: 1,
-  gift: 1,
-  sale: 1,
-  served: 1,
   speech: 2,
   message: 2,
   move_in: 2,
@@ -53,6 +50,8 @@ const ROW_OF = {
   recovered: 2,
   bedridden: 2,
 };
+/** The row of a marker: a move bought or passed is money, one taken, left or eaten is life. */
+const rowOf = (m) => (m.kind === "move" ? (m.reason === "buy" || m.reason === "pass" ? 1 : 2) : (ROW_OF[m.kind] ?? 2));
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -164,18 +163,26 @@ export function drawMarker(g, m, cx, cy, C) {
       diamond(g, cx, cy);
       paint(g, C.good);
       break;
-    case "gift": // a hollow diamond: money or a thing handed over
-      diamond(g, cx, cy);
-      paint(g, C.surface, C.good);
-      break;
-    case "sale": // a hollow diamond, muted: bought at the Store's counter
-      diamond(g, cx, cy);
-      paint(g, C.surface, C.muted);
-      break;
-    case "served": // a bowl: a dish eaten
-      g.arc(cx, cy - 1, 5, 0, Math.PI);
-      g.closePath();
-      paint(g, C.o2);
+    case "move":
+      if (m.source === PORTIONS) {
+        // a bowl: a dish, bought or the chef's
+        g.arc(cx, cy - 1, 5, 0, Math.PI);
+        g.closePath();
+        paint(g, C.o2);
+      } else if (m.reason === "pass" || m.reason === "buy") {
+        // a hollow diamond: money or a thing passed; muted, bought at the Store's counter
+        diamond(g, cx, cy);
+        paint(g, C.surface, m.reason === "pass" ? C.good : C.muted);
+      } else if (m.reason === "eat") {
+        // a small bowl outlined: eaten
+        g.arc(cx, cy - 1, 3.5, 0, Math.PI);
+        g.closePath();
+        paint(g, C.surface, C.o2);
+      } else {
+        // a small square: taken from where it was left, or left there
+        g.rect(cx - 3, cy - 3, 6, 6);
+        paint(g, m.reason === "get" ? C.o5 : C.surface, C.o5);
+      }
       break;
     case "wage": // a disc with a bar: the midnight's wages, the rent taken out
       g.arc(cx, cy, 4.5, 0, 2 * Math.PI);
@@ -366,8 +373,8 @@ export function legend(C) {
     row("Town", item(glyph({ kind: "task_arrived" }), "a task came in"), item(glyph({ kind: "task_withdrawn" }), "a task withdrawn by its client"), item(glyph({ kind: "delivery" }), "the Store's order delivered")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "assign" }), "given by the team leader"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up")),
     row("Work", item(glyph({ kind: "order" }), "ordered from the supplier"), item(glyph({ kind: "price" }), "a price set"), item(glyph({ kind: "cook" }), "cooked"), item(glyph({ kind: "examination" }), "examined a patient"), item(glyph({ kind: "treatment" }), "treated a patient"), item(glyph({ kind: "report" }), "read the report"), item(glyph({ kind: "announcement" }), "announced")),
-    row("Money", item(glyph({ kind: "service" }), "paid for a service"), item(glyph({ kind: "wage" }), "wages at midnight, rent taken"), item(glyph({ kind: "gift" }), "money or a thing handed over"), item(glyph({ kind: "sale" }), "bought at the Store"), item(glyph({ kind: "served" }), "a dish eaten")),
-    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep"), item(glyph({ kind: "settlement" }), "the midnight statement")),
+    row("Money", item(glyph({ kind: "service" }), "paid for a service"), item(glyph({ kind: "wage" }), "wages at midnight, rent taken"), item(glyph({ kind: "move", reason: "pass" }), "money or a thing passed"), item(glyph({ kind: "move", reason: "buy" }), "bought at the Store"), item(glyph({ kind: "move", reason: "buy", source: PORTIONS }), "a dish, bought or the chef's")),
+    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move", reason: "get" }), "taken where it was left"), item(glyph({ kind: "move", reason: "put" }), "left for anyone"), item(glyph({ kind: "move", reason: "eat" }), "eaten"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep"), item(glyph({ kind: "settlement" }), "the midnight statement")),
     row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "illness" }), "fell ill"), item(glyph({ kind: "recovered" }), "well again"), item(glyph({ kind: "bedridden" }), "took to bed")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "money in hand, one scale for all")),
   );
@@ -387,6 +394,7 @@ export class Lanes {
    */
   constructor({ timeline, world, cast, onSelect, onMoment, onView }) {
     this.data = timeline;
+    this.world = world;
     this.cast = cast;
     this.kinds = new Map(world.places.map((place) => [place.id, place.kind]));
     this.handlers = { onSelect, onMoment, onView };
@@ -847,7 +855,7 @@ export class Lanes {
     const from = lowerBound(r.markers, this.tAt(left - 12), (m) => m.t);
     const to = lowerBound(r.markers, this.tAt(width + 12), (m) => m.t);
     const rows = ROWS.map(() => []);
-    for (let i = from; i < to; i++) rows[ROW_OF[r.markers[i].kind] ?? 2].push(r.markers[i]);
+    for (let i = from; i < to; i++) rows[rowOf(r.markers[i])].push(r.markers[i]);
     const drawn = (this.drawn[r.name] = []);
     rows.forEach((list, row) => {
       const cy = top + ROW_Y[row];
@@ -1073,7 +1081,7 @@ export class Lanes {
     const by = found?.town ? null : found?.r?.name;
     if (found?.cluster?.items.length === 1) {
       const m = found.cluster.items[0];
-      const [label, text] = describeMarker(m, by, by);
+      const [label, text] = describeMarker(m, by, by, this.world);
       content = [by ? h("b", {}, by) : null, " ", this.cast.mention(label), text ? h("div", {}, text.length > 400 ? `${text.slice(0, 400)}…` : text) : null, where(m.t, m.place)];
     } else if (found?.cluster) {
       const items = found.cluster.items;
@@ -1081,7 +1089,7 @@ export class Lanes {
       content = [
         h("b", {}, found.town ? `${items.length} in the town's row` : `${items.length} in the ${ROWS[found.row]} row`),
         h("div", { class: "muted" }, this.between(items[0].t, items.at(-1).t)),
-        h("ul", {}, shown.map((m) => h("li", {}, `${hhmm(secondOfDay(m.t))} `, this.cast.mention(describeMarker(m, by, by)[0])))),
+        h("ul", {}, shown.map((m) => h("li", {}, `${hhmm(secondOfDay(m.t))} `, this.cast.mention(describeMarker(m, by, by, this.world)[0])))),
         items.length > shown.length ? h("div", { class: "muted" }, `and ${items.length - shown.length} more: zoom in`) : null,
       ];
     } else if (found?.conversation) {

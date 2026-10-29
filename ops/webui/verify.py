@@ -14,7 +14,7 @@ import time
 from urllib.parse import urlencode
 
 SERVICES = {'cornerhead': 20817, 'socio-evo': 20131}
-BUNDLE_FORMAT = 9  # the bundle format frontend.publish writes (FORMAT); a test keeps them equal
+BUNDLE_FORMAT = 10  # the bundle format frontend.publish writes (FORMAT); a test keeps them equal
 
 
 def wait_for_gateway(service: str) -> None:

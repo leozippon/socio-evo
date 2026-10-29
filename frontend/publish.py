@@ -46,7 +46,7 @@ from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag, read_jsonl
 from simulation.config import ExperimentConfig
 
-FORMAT = 9
+FORMAT = 10
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,
@@ -279,9 +279,9 @@ def publish_run(
 
     data = timeline(root)
     states = bundle.saved(run, data)
-    owned = bundle.things(states, config.town, data)
-    lanes = [{**lane, "things": owned[lane["name"]]} for lane in data["residents"]]
-    data = {**data, "residents": lanes}
+    things, holders = bundle.holdings(states, config.town, data)
+    lanes = [{**lane, "things": things[lane["name"]]} for lane in data["residents"]]
+    data = {**data, "residents": lanes, "holders": holders}
     entries = list(read_jsonl(run.world_log_path)) if run.world_log_path.exists() else []
     days = bundle.cut_days(entries)
     closed = set(bundle.closed(days))

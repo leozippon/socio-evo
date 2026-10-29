@@ -1,7 +1,8 @@
 // One resident, as of a moment: who they are and what they do, how they fared at work and with
-// money, their day as they were told it, their journal, their files as the git repository holds
-// them (every version, with what changed, and the memory and skills they then had), and the raw
-// trace of their runtime.
+// money, their day as they perceived it (what they did and what the world told them, and nothing
+// else), their
+// journal, their files as the git repository holds them (every version, with what changed, and
+// the memory and skills they then had), and the raw trace of their runtime.
 
 import { DayChart, figure } from "../charts.js";
 import { dateOf, hhmm, livedDay, parseStamp, secondOfDay, stamp } from "../clock.js";
@@ -10,9 +11,9 @@ import { append, emptyState, fill, fmt, h } from "../dom.js";
 import { inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
 import { markdown } from "../markdown.js";
-import { bodyAt, illAt, markersBetween, purseAt, settlementAt, thingsAt } from "../replay.js";
+import { boughtAtCounter, bodyAt, dishServed, handedOver, illAt, markersBetween, purseAt, settlementAt, spentOn, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
-import { detail, feedItems, glyph, involved, line, witnessed } from "../town/events.js";
+import { detail, feedItems, glyph, line, perceived } from "../town/events.js";
 import { jobOf, placeById } from "../world.js";
 import { areasOf, stat } from "./overview.js";
 
@@ -149,9 +150,20 @@ export function mountPerson(root, ctx) {
     const evaluated = ["capability", "mask", "journals"].flatMap((table) => evaluation[table].filter((row) => row.resident === agentName()));
     const midnight = settlementAt(me, moment.time);
     const wage = mine.filter((m) => m.kind === "wage").at(-1) ?? null;
-    const others = data.residents.filter((r) => r.name !== agentName());
-    const fees = others.concat([me]).flatMap((r) => markersBetween(r, null, moment.time).filter((m) => (m.kind === "examination" || m.kind === "treatment") && m.patient === agentName())).reduce((a, m) => a + m.fee, 0);
-    const spent = sumOf("sale", "amount", (m) => !m.kitchen) + sumOf("served", "amount") + fees;
+    // The money since the second of the last midnight's wages (or the start), move by move: what
+    // it held then, the sums paid it, the money passed to it and by it, and what it paid for what
+    // it bought and to the doctor; together they make the money it holds.
+    const atMidnight = wage ? purseAt(me, wage.t) : me.purse[0][1];
+    const since = data.residents.flatMap((r) => markersBetween(r, wage?.t ?? null, moment.time).map((m) => [r.name, m]));
+    const total = (keep, value) => since.filter(([by, m]) => keep(by, m)).reduce((a, [, m]) => a + value(m), 0);
+    const own = (by) => by === agentName();
+    const cash = (m) => m.kind === "move" && m.reason === "pass" && m.item === null;
+    const sums = total((by, m) => own(by) && m.kind === "service", (m) => m.paid);
+    const received = total((by, m) => cash(m) && m.target === agentName(), (m) => m.money);
+    const passedOn = total((by, m) => own(by) && cash(m), (m) => m.money);
+    const fees = total((by, m) => (m.kind === "examination" || m.kind === "treatment") && m.patient === agentName(), (m) => m.fee);
+    const spent = total(own, spentOn) + fees;
+    const moneyLine = [`${fmt.money(atMidnight)} ${wage ? "after the midnight's wages" : "at the start"}`, sums ? `+${fmt.money(sums)} in sums` : null, received ? `+${fmt.money(received)} received` : null, passedOn ? `−${fmt.money(passedOn)} passed` : null, spent ? `−${fmt.money(spent)} spent` : null].filter(Boolean).join(" · ");
     const services = mine.filter((m) => m.kind === "service");
     const kinds = { task: "tasks accepted", team: "team tasks accepted", sale: "sales", dish: "dishes served", patient: "patients seen" };
     const byKind = Object.entries(kinds).map(([kind, words]) => [services.filter((m) => m.for === kind).length, words]).filter(([n]) => n).map(([n, words]) => `${fmt.int(n)} ${words}`);
@@ -161,10 +173,10 @@ export function mountPerson(root, ctx) {
       h(
         "div",
         { class: "stats" },
-        stat("Money", fmt.money(purseAt(me, moment.time)), `wages ${fmt.money(sumOf("wage", "paid"))} · sums ${fmt.money(sumOf("service", "paid"))} · spent ${fmt.money(spent)}`),
+        stat("Money", fmt.money(purseAt(me, moment.time)), moneyLine),
         stat("Hours at work", fmt.num(hoursAtWork(me, data.start, moment.time), 1), `at its workplace · rent ${fmt.money(sumOf("wage", "rent"))} taken from the wages`),
         stat("Services", fmt.int(services.length), byKind.join(" · ") || "none paid for yet"),
-        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(count("gift"), "gift")} given`),
+        stat("Things said", fmt.int(count("speech")), `${fmt.int(count("message"))} written · ${fmt.plural(mine.filter(handedOver).length, "gift")} given`),
         stat("Journals written", fmt.int(count("journal")), `at bedtime · ${fmt.int(count("forced_sleep"))} forced sleeps`),
       ),
       h(
@@ -178,14 +190,14 @@ export function mountPerson(root, ctx) {
           h("p", { class: "note" }, `Food in the body, energy and health, each read in the bands the town tells; a bar fills to the band's top, and hovering it gives the last number the world told.${ill ? " Ill now, which others cannot see." : ""}`),
           needBars(world, bodyAt(me, moment.time)),
           midnight
-            ? h("p", { class: "note midnight-note" }, `Last midnight: ${wage ? `${fmt.num(wage.hours, 1)} h at work, ${fmt.money(wage.wages)} in wages, ${fmt.money(wage.rent)} rent${wage.charges ? ` and ${fmt.money(wage.charges)} in daily charges` : ""} taken out, ${fmt.money(wage.paid)} paid${wage.owed ? `, ${fmt.money(wage.owed)} owed by the fund` : ""}${wage.arrears ? `, ${fmt.money(wage.arrears)} of rent owed` : ""}; ` : ""}ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; health ${moved.length ? moved.join(", ") : "unchanged"}.`)
+            ? h("p", { class: "note midnight-note" }, `Last midnight: ${wage ? `${fmt.num(wage.hours, 1)} h at work, ${fmt.money(wage.wages)} in wages, ${fmt.money(wage.tax)} in tax${wage.tax_from_purse ? ` (${fmt.money(wage.tax_from_purse)} of it from the purse)` : ""}, ${fmt.money(wage.rent)} rent${wage.charges ? ` and ${fmt.money(wage.charges)} in daily charges` : ""} taken out, ${fmt.money(wage.paid)} paid${wage.owed ? `, ${fmt.money(wage.owed)} owed by the fund` : ""}${wage.arrears ? `, ${fmt.money(wage.arrears)} of rent owed` : ""}; ` : ""}ate ${midnight.nourishment ? `${fmt.int(midnight.nourishment)}% of a day's food` : "nothing"}; health ${moved.length ? moved.join(", ") : "unchanged"}.`)
             : h("p", { class: "note midnight-note" }, "No midnight statement yet: the first comes at the end of the first day."),
         ),
         h(
           "section",
           { class: "card pad life-card" },
           h("h2", {}, "What they have"),
-          h("p", { class: "note" }, `Money first, as the inventory tells it. Bought at the counter ${fmt.plural(mine.filter((m) => m.kind === "sale" && !m.kitchen).length, "time")} and had ${fmt.plural(count("served"), "dish", "dishes")} so far. A stock of food is eaten as its owner gets hungry; the count is as last taken, when bought or at the checkpoint.`),
+          h("p", { class: "note" }, `Money first, as the inventory tells it. Bought at the counter ${fmt.plural(mine.filter((m) => boughtAtCounter(m) && m.target === agentName()).length, "time")} so far, and had ${fmt.plural(data.residents.flatMap((r) => markersBetween(r, null, moment.time).filter((m) => dishServed(m) && m.target === agentName())).length, "dish", "dishes")}. A stock of food is eaten as its owner gets hungry; every move in and out is counted.`),
           inventory(world, thingsAt(me, moment.time), { money: purseAt(me, moment.time) }),
         ),
       ),
@@ -262,7 +274,7 @@ export function mountPerson(root, ctx) {
     const day = data.days.find((d) => d.day === picked) ?? moment.day;
     const index = data.days.indexOf(day);
     const entries = source.doc.event_days.some((found) => found.day === day.day) ? await source.eventDay(day.day) : [];
-    const mine = entries.filter((e) => involved(e).includes(agentName()) || witnessed(e, agentName()));
+    const mine = entries.filter((e) => perceived(e, agentName()));
     const m = { cast, reader: agentName() };
     const items = feedItems(mine);
     const picker = h(
@@ -274,7 +286,7 @@ export function mountPerson(root, ctx) {
       h("span", { class: "muted" }, `${fmt.plural(mine.length, "entry", "entries")}${day.end === null ? (source.doc.status === "running" ? ", the day in progress" : ", the day the run stopped in") : ""}`),
     );
     return [
-      h("div", { class: "spread" }, h("p", { class: "note" }, `Everything ${agentName()} was told or did on the day, in its own wording as the world told it, spells of work in the workspace folded into one line each.`), picker),
+      h("div", { class: "spread" }, h("p", { class: "note" }, `What ${agentName()} perceived on the day, and nothing else: what it did and every entry the world told it, in its own wording, spells of work in the workspace folded into one line each.`), picker),
       items.length
         ? h(
             "ol",
@@ -291,7 +303,7 @@ export function mountPerson(root, ctx) {
               );
             }),
           )
-        : h("div", { class: "card" }, emptyState(`Nothing recorded of ${agentName()} on day ${day.day}.`, day.end === null ? "Entries appear here as the day goes on." : "The world told this resident nothing that day, and it did nothing the log records.")),
+        : h("div", { class: "card" }, emptyState(`${agentName()} perceived nothing on day ${day.day}.`, day.end === null ? "Entries appear here as the day goes on." : "This resident did nothing the log records that day, and the world told it nothing.")),
     ];
   }
 

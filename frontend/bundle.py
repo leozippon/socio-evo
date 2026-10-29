@@ -4,9 +4,9 @@ Every document is a plain JSON value; `frontend/README.md` is its contract. The 
 `frontend.timeline`, `frontend.progress`, `analysis.measures`, `analysis.tables` and
 `analysis.compare`, which define them; this module only arranges them and adds what the viewer
 needs of the run itself: the town laid out on a map, the world log cut into lived days, the
-social graph, what each resident owns as its purchases and the checkpoints give it, and the
-agents' files as their git repositories hold them. Agent files are read through git plumbing,
-which never touches an index or a work tree.
+social graph, what every holder of items held over time as the checkpoints and the moves give
+it, and the agents' files as their git repositories hold them. Agent files are read through git
+plumbing, which never touches an index or a work tree.
 """
 
 from __future__ import annotations
@@ -29,6 +29,7 @@ from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
 from world.clock import DAY
 from world.config import TownConfig
+from world.economy import LARDER, PORTIONS, SHELVES, add, take
 from world.rules import Rules
 
 Entry = dict[str, Any]
@@ -169,6 +170,7 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         ],
         "occupations": [occupation.model_dump(mode="json") for occupation in town.occupations],
         "fund": town.fund.model_dump(mode="json"),
+        "tax": town.tax,
         "work": town.work.model_dump(mode="json"),
         "goods": [item.model_dump(mode="json") for item in town.supplied],
         "store": town.store.model_dump(mode="json"),
@@ -223,8 +225,8 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
     the day it began); the rest counts the day's entries: things `source` said that `target`
     heard (`said`, of which `said_private` to it by name), messages written to it, gifts
     (`gifts` times, `money` the money among them) and the times `source` served `target` at
-    its work (`served`: a sale at the Store's counter, a dish, an examination or a treatment;
-    nobody serves itself)."""
+    its work (`served`: a sale at the Store's counter, a dish, bought or the chef's unpaid, an
+    examination or a treatment; nobody serves itself)."""
     ends = sorted((entries[-1]["sim_time"], day) for day, entries in days.items())
     times = [end for end, _ in ends]
 
@@ -253,11 +255,14 @@ def graph(timeline: Mapping[str, Any], days: Mapping[int, Sequence[Entry]]) -> l
                         add(day, actor, other, "said_private", 1)
             elif kind == "message":
                 add(day, actor, payload["to"], "messages", 1)
-            elif kind == "move" and payload["reason"] == "pass":
+            elif kind == "move" and payload["reason"] == "pass" and payload["source"] != PORTIONS:
                 add(day, actor, payload["target"], "gifts", 1)
                 add(day, actor, payload["target"], "money", payload["money"])  # 0: a thing
-            elif kind == "move" and payload["reason"] == "buy" and payload["seller"] != actor:
-                add(day, payload["seller"], actor, "served", 1)  # the buyer or the diner
+            elif kind == "move" and payload["reason"] in ("buy", "pass"):  # a sale or a dish
+                buy = payload["reason"] == "buy"
+                server, served = (payload["seller"], actor) if buy else (actor, payload["target"])
+                if server != served:
+                    add(day, server, served, "served", 1)
             elif kind in ("examination", "treatment") and payload["patient"] != actor:
                 add(day, actor, payload["patient"], "served", 1)
     return [
@@ -277,59 +282,85 @@ def saved(run: RunDirectory, data: Mapping[str, Any]) -> dict[int, dict[str, Any
     return states
 
 
-def things(
+def holdings(
     states: Mapping[int, Mapping[str, Any]], town: TownConfig, data: Mapping[str, Any]
-) -> dict[str, list]:
-    """What each resident owns over the run, by name: `[time, {item id: units}]` from the
-    start and after each change, a durable counted 1 and a consumable by the units left of it.
-    What it bought for itself at the Store's counter and the gifts of things are the timeline's
-    markers: a durable is owned from then on, a consumable adds the units bought, and what is
-    given goes from the giver to the receiver. What is eaten, taken where it was left or left
-    for anyone has no marker, so at every checkpoint of `states` the stock is read from the
-    checkpoint instead, exact as of that moment; between checkpoints it is as last counted plus
-    what was bought and given since."""
-    items = {item.id: item for item in town.items}
-    snapshots = {
-        state["time"]: {
-            name: dict(found["inventory"]["items"]) for name, found in state["residents"].items()
-        }
-        for state in states.values()
-    }
-    found = {}
-    for lane in data["residents"]:
-        changes: list[tuple[int, int, Any]] = [
-            (t, 0, snapshot[lane["name"]])
-            for t, snapshot in snapshots.items()
-            if lane["name"] in snapshot
-        ]
-        bought = [m for m in lane["markers"] if m["kind"] == "sale" and not m["kitchen"]]
-        changes += [(m["t"], 1, m) for m in bought]
-        for other in data["residents"]:  # things given away and received
-            for m in other["markers"]:
-                if m["kind"] == "gift" and "item" in m and lane["name"] in (other["name"], m["to"]):
-                    units = -m["quantity"] if other is lane else m["quantity"]
-                    changes.append((m["t"], 1, m | {"units": units}))
-        held: dict[str, int] = {}
-        series: list[list[Any]] = [[data["start"], {}]]
-        for t, kind, change in sorted(changes, key=lambda found: found[:2]):
-            if kind == 0:
-                held = dict(change)
-            elif change["kind"] == "gift":
-                held[change["item"]] = held.get(change["item"], 0) + change["units"]
-                if not held[change["item"]]:
-                    del held[change["item"]]
-            else:
-                item = items[change["item"]]
-                if item.kind == "durable":
-                    held[item.id] = 1
+) -> tuple[dict[str, list], dict[str, list]]:
+    """What every holder of items held over the run, as `[time, {item id: units}]` from the
+    start and after each change: each resident's inventory by name, and every other holder by
+    its name in the log (the Store's shelves, the kitchen's larder and its portions, and what is
+    left at each place, by the place's id). The start is the configuration's: the Store's stock
+    on its shelves and nothing anywhere else. At every checkpoint of `states` each holder is read
+    from the checkpoint, exact as of that moment; between checkpoints the timeline `data`'s
+    markers move the units in log order: each move from its source to its target (money alone
+    moves none), cooking from the larder into portions, and a delivery onto the shelves; and what
+    perishes is gone at every midnight, wherever it is, as the world takes it unlogged. A marker
+    that takes from a holder more than it holds fails, naming its entry. Returns the residents'
+    and the others'."""
+    perishes = [item.id for item in town.items if item.perishes]
+    residents = [lane["name"] for lane in data["residents"]]
+    others = [SHELVES, LARDER, PORTIONS, *(place.id for place in town.places)]
+    held: dict[str, dict[str, int]] = {key: {} for key in [*residents, *others]}
+    held[SHELVES] = dict(town.store.stock)
+    series = {key: [[data["start"], dict(items)]] for key, items in held.items()}
+    # At one moment a checkpoint comes first, then a midnight, then the markers in log order.
+    changes: list[tuple[int, int, int, Any]] = [(s["time"], 0, 0, s) for s in states.values()]
+    midnights = range(data["start"] // DAY * DAY + DAY, data["now"] + 1, DAY)
+    changes += [(t, 1, 0, None) for t in midnights]
+    markers = [*data["markers"], *(m for lane in data["residents"] for m in lane["markers"])]
+    changes += [(m["t"], 2, m["seq"], m) for m in markers if _moved(m)]
+    for t, rank, seq, change in sorted(changes, key=lambda found: found[:3]):
+        if rank == 0:
+            found = {name: change["residents"][name]["inventory"]["items"] for name in residents}
+            touched = [*found, *change["holders"]]
+            for key, items in {**found, **change["holders"]}.items():
+                held[key] = dict(items)
+        elif rank == 1:
+            touched = list(held)
+            for items in held.values():
+                for item in perishes:
+                    items.pop(item, None)
+        else:
+            touched = []
+            for key, item, units in _moved(change):
+                touched.append(key)
+                if units > 0:
+                    add(held[key], item, units)
+                elif held[key].get(item, 0) >= -units:
+                    take(held[key], item, -units)
                 else:
-                    held[item.id] = held.get(item.id, 0) + change["quantity"]
-            if t == series[-1][0]:
-                series[-1][1] = dict(held)
-            elif held != series[-1][1]:
-                series.append([t, dict(held)])
-        found[lane["name"]] = series
-    return found
+                    have = held[key].get(item, 0)
+                    raise ValueError(f"entry {seq}: {key} holds {have} of {item}, not {-units}")
+        for key in touched:
+            _record(series[key], t, held[key])
+    return {key: series[key] for key in residents}, {key: series[key] for key in others}
+
+
+def _moved(marker: Mapping[str, Any]) -> list[tuple[str, str, int]]:
+    """The units a marker moves, as `(holder, item, units)`, those taken first and negative: a
+    move's from its source to its target, cooking's from the larder into portions, a delivery's
+    onto the shelves; none for the other markers and for money alone."""
+    kind = marker["kind"]
+    if kind == "move" and marker["item"] is not None:
+        item, units = marker["item"], marker["units"]
+        ends = ((marker["source"], -units), (marker["target"], units))
+        return [(key, item, change) for key, change in ends if key is not None]
+    if kind == "cook":
+        used = [(LARDER, item, -units) for item, units in marker["used"].items()]
+        return [*used, (PORTIONS, marker["dish"], marker["portions"])]
+    if kind == "delivery":
+        return [(SHELVES, item, units) for item, units in marker["items"].items()]
+    return []
+
+
+def _record(points: list[list[Any]], t: int, state: Mapping[str, int]) -> None:
+    """Add the state at `t` to a series of points: a point at the same moment is replaced, and
+    a state no different from the point before it is no change."""
+    if points[-1][0] == t:
+        points[-1][1] = dict(state)
+        if len(points) > 1 and points[-2][1] == state:
+            points.pop()
+    elif points[-1][1] != state:
+        points.append([t, dict(state)])
 
 
 def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
