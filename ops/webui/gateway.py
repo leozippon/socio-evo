@@ -75,7 +75,7 @@ USERNAME_RE = re.compile(r"[A-Za-z0-9_.-]{1,64}\Z")
 HASH_RE = re.compile(r"scrypt\$32768\$8\$3\$([0-9a-f]{32})\$([0-9a-f]{64})\Z")
 METHOD_RE = re.compile(r"[A-Z]{1,32}\Z")
 
-# Static presentation follows each application's own tokens and original brand mark.
+# Static presentation follows each application's own tokens, brand mark and language.
 # Only layout is shared; CSP hashes the exact combined stylesheet for that service.
 LAYOUT_CSS = """
 * { box-sizing: border-box; }
@@ -312,60 +312,95 @@ BABELDOC_CSS = """
 :root {
   color-scheme: light;
   --page: #fbfbfd;
+  --surface: #ffffff;
   --ink: #1d1d1f;
   --muted: #6e6e73;
   --line: #d2d2d7;
   --accent: #0071e3;
-  --accent-soft: rgba(0, 113, 227, .16);
-  --critical: #d70015;
+  --accent-hover: #0077ed;
+  --ring: rgba(0, 113, 227, .18);
+  --critical: #b3261e;
 }
 body {
+  padding: 56px 20px;
   background: var(--page);
   color: var(--ink);
-  font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+  font: 17px/1.5 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
     "PingFang SC", "Microsoft YaHei", sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-.shell { max-width: 380px; }
+.shell { max-width: 400px; }
 .card {
-  padding: 32px;
-  background: #fff;
-  border: 1px solid var(--line);
-  border-radius: 18px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+  padding: 44px 40px;
+  background: var(--surface);
+  border: 1px solid rgba(0, 0, 0, .05);
+  border-radius: 24px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 20px 44px -28px rgba(0, 0, 0, .25);
 }
-.brand { gap: 8px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
-.brand-mark { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; }
-h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
-.description { color: var(--muted); }
-form { gap: 16px; }
-label { font-size: 14px; font-weight: 500; color: var(--muted); }
+.brand { gap: 9px; font-size: 15px; font-weight: 600; letter-spacing: -.01em; }
+.brand-mark {
+  width: 25px;
+  height: 25px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.brand-mark .accent { stroke: var(--accent); }
+h1 { margin: 26px 0 10px; font-size: 28px; font-weight: 600; letter-spacing: -.021em; }
+.description { margin: 0 0 26px; color: var(--muted); font-size: 15px; }
+form { margin-top: 26px; gap: 18px; }
+label { font-size: 13px; font-weight: 500; color: var(--muted); }
 input:not([type="hidden"]) {
-  padding: 10px 12px;
+  min-height: 48px;
+  padding: 12px 14px;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
+  border-radius: 12px;
+  background: var(--surface);
   color: var(--ink);
+  transition: border-color .16s ease, box-shadow .16s ease;
 }
 input:focus {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  box-shadow: 0 0 0 4px var(--ring);
 }
 button, .button-link {
-  margin-top: 4px;
-  border: 1px solid var(--accent);
+  display: grid;
+  place-items: center;
+  min-height: 48px;
+  margin-top: 6px;
+  border: 1px solid transparent;
   border-radius: 980px;
   background: var(--accent);
   color: #fff;
+  font-size: 16px;
   font-weight: 500;
+  transition: background-color .16s ease;
 }
-button:hover, .button-link:hover { background: #0077ed; }
-button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button:hover, .button-link:hover { background: var(--accent-hover); }
+button:focus-visible, .button-link:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
 .error {
-  border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--critical) 8%, #fff);
-  color: #a3000d;
+  margin: 6px 0 22px;
+  padding: 14px 16px;
+  border: 1px solid rgba(179, 38, 30, .22);
+  border-radius: 14px;
+  background: rgba(179, 38, 30, .06);
+  color: var(--critical);
+}
+.error-code { margin-bottom: 4px; font-size: 13px; font-weight: 600; letter-spacing: .02em; }
+.error p { font-size: 15px; }
+@media (prefers-reduced-motion: reduce) {
+  input:not([type="hidden"]), button, .button-link { transition: none; }
+}
+@media (max-width: 480px) {
+  body { padding: 32px 16px; }
+  .shell .card { padding: 32px 24px; border-radius: 20px; }
+  h1 { font-size: 25px; }
 }
 """
 
@@ -402,6 +437,81 @@ BRANDS = {
         '<path class="accent" d="M23 9h4v19H13v-4"/>'
         '<path d="M9 10h6M9 14h6M9 18h4"/></svg>',
     ),
+}
+
+
+@dataclass(frozen=True)
+class PageText:
+    """User-facing copy for one service's sign-in pages.
+
+    `errors` is None where the page keeps the gateway's own diagnostics; it maps a
+    response status to a localized, non-enumerating sentence for services that show
+    their own language.
+    """
+
+    lang: str
+    login_title: str
+    login_description: str
+    logout_title: str
+    logout_description: str
+    username: str
+    password: str
+    login_button: str
+    logout_button: str
+    login_error_title: str
+    logout_error_title: str
+    login_recovery: str
+    logout_recovery: str
+    errors: dict[int, str] | None = None
+    fallback_error: str = ""
+
+
+EN_TEXT = PageText(
+    lang="en",
+    login_title="Sign in",
+    login_description="",
+    logout_title="Sign out?",
+    logout_description=(
+        "This ends your session in this browser. You can sign in again at any time."
+    ),
+    username="Username",
+    password="Password",
+    login_button="Sign in",
+    logout_button="Confirm sign out",
+    login_error_title="Unable to sign in",
+    logout_error_title="Unable to sign out",
+    login_recovery="Return to sign in",
+    logout_recovery="Return to sign-out confirmation",
+)
+BABELDOC_TEXT = PageText(
+    lang="zh-CN",
+    login_title="欢迎回来",
+    login_description="登录你的翻译工作区",
+    logout_title="退出登录？",
+    logout_description="这会结束你在当前浏览器中的登录状态，之后可以随时重新登录。",
+    username="用户名",
+    password="密码",
+    login_button="登录",
+    logout_button="确认退出",
+    login_error_title="无法登录",
+    logout_error_title="无法退出",
+    login_recovery="返回登录",
+    logout_recovery="返回退出确认",
+    errors={
+        400: "表单内容不正确，请刷新页面后重试",
+        401: "用户名或密码不正确",
+        403: "页面已过期或来源校验失败，请刷新页面后重试",
+        413: "提交的内容过大，请刷新页面后重试",
+        415: "请求格式不正确，请刷新页面后重试",
+        429: "尝试次数过多，请一分钟后再试",
+        503: "认证服务暂时不可用，请稍后重试",
+    },
+    fallback_error="请求未能完成，请刷新页面后重试",
+)
+PAGE_TEXT = {
+    "cornerhead": EN_TEXT,
+    "socio-evo": EN_TEXT,
+    "babeldoc": BABELDOC_TEXT,
 }
 
 
@@ -867,8 +977,9 @@ class Gateway:
     def page_html(self, title: str, content: str) -> str:
         """Shared shell; content is markup built only by the escaped renderers below."""
         brand, mark = BRANDS[self.config.service]
+        text = PAGE_TEXT[self.config.service]
         return f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8">
+<html lang="{html.escape(text.lang, quote=True)}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{html.escape(title)} · {html.escape(brand)}</title>
 <style>{PAGE_CSS[self.config.service]}</style></head>
@@ -880,39 +991,45 @@ class Gateway:
 
     def form_html(self, purpose: str, csrf: str) -> str:
         login = purpose == "login"
-        title = "Sign in" if login else "Sign out?"
-        description = (
-            ""
-            if login
-            else '<p class="description">This ends your session in this browser. '
-            "You can sign in again at any time.</p>"
+        text = PAGE_TEXT[self.config.service]
+        title = text.login_title if login else text.logout_title
+        description = text.login_description if login else text.logout_description
+        intro = (
+            f'<p class="description">{html.escape(description)}</p>'
+            if description
+            else ""
         )
         fields = (
-            """
-<div class="field"><label for="username">Username</label>
+            f"""
+<div class="field"><label for="username">{html.escape(text.username)}</label>
 <input id="username" name="username" type="text" autocomplete="username"
 autocapitalize="none" spellcheck="false" maxlength="64" required></div>
-<div class="field"><label for="password">Password</label>
+<div class="field"><label for="password">{html.escape(text.password)}</label>
 <input id="password" name="password" type="password" autocomplete="current-password"
 maxlength="256" required></div>"""
             if login
             else ""
         )
-        content = f"""{description}
+        button = text.login_button if login else text.logout_button
+        content = f"""{intro}
 <form method="post" action="/_auth/{html.escape(purpose, quote=True)}">
 <input type="hidden" name="csrf" value="{html.escape(csrf, quote=True)}">{fields}
-<button type="submit">{"Sign in" if login else "Confirm sign out"}</button></form>"""
+<button type="submit">{html.escape(button)}</button></form>"""
         return self.page_html(title, content)
 
     def error_html(self, path: str, status: int, message: str) -> str:
         login = path == "/_auth/login"
-        title = "Unable to sign in" if login else "Unable to sign out"
-        recovery = "Return to sign in" if login else "Return to sign-out confirmation"
+        text = PAGE_TEXT[self.config.service]
+        title = text.login_error_title if login else text.logout_error_title
+        recovery = text.login_recovery if login else text.logout_recovery
+        if text.errors is None:
+            code, detail = f"{status} · {HTTPStatus(status).phrase}", message
+        else:
+            code, detail = str(status), text.errors.get(status, text.fallback_error)
         content = f"""
 <div class="error" role="alert">
-<span class="error-code">{html.escape(str(status))} ·
-{html.escape(HTTPStatus(status).phrase)}</span>
-<p>{html.escape(message)}</p></div>
+<span class="error-code">{html.escape(code)}</span>
+<p>{html.escape(detail)}</p></div>
 <a class="button-link" href="{html.escape(path, quote=True)}">{html.escape(recovery)}</a>"""
         return self.page_html(title, content)
 
