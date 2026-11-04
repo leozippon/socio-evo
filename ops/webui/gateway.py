@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Shared, Unix-socket-only authentication for the two private-CA HTTPS WebUIs.
+"""Shared, Unix-socket-only authentication for the private-CA HTTPS WebUIs.
 
 Run: python gateway.py --config /etc/webui/SERVICE/auth.json \
     --socket /run/webui-SERVICE/auth.sock
@@ -63,7 +63,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
-SERVICES = {"cornerhead", "socio-evo"}
+SERVICES = {"cornerhead", "socio-evo", "babeldoc"}
 SESSION_DAYS = 30
 CSRF_SECONDS = 600
 MAX_BODY_BYTES = 4096
@@ -308,9 +308,71 @@ button:hover, .button-link:hover { background: color-mix(in srgb, var(--ink) 86%
 @media (prefers-reduced-motion: reduce) { input:not([type="hidden"]) { transition: none; } }
 """
 
+BABELDOC_CSS = """
+:root {
+  color-scheme: light;
+  --page: #fbfbfd;
+  --ink: #1d1d1f;
+  --muted: #6e6e73;
+  --line: #d2d2d7;
+  --accent: #0071e3;
+  --accent-soft: rgba(0, 113, 227, .16);
+  --critical: #d70015;
+}
+body {
+  background: var(--page);
+  color: var(--ink);
+  font: 17px/1.47 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+    "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+.shell { max-width: 380px; }
+.card {
+  padding: 32px;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, .06);
+}
+.brand { gap: 8px; font-size: 17px; font-weight: 600; letter-spacing: -.01em; }
+.brand-mark { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+h1 { font-size: 24px; font-weight: 600; letter-spacing: -.01em; }
+.description { color: var(--muted); }
+form { gap: 16px; }
+label { font-size: 14px; font-weight: 500; color: var(--muted); }
+input:not([type="hidden"]) {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--ink);
+}
+input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+button, .button-link {
+  margin-top: 4px;
+  border: 1px solid var(--accent);
+  border-radius: 980px;
+  background: var(--accent);
+  color: #fff;
+  font-weight: 500;
+}
+button:hover, .button-link:hover { background: #0077ed; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.error {
+  border: 1px solid color-mix(in srgb, var(--critical) 35%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--critical) 8%, #fff);
+  color: #a3000d;
+}
+"""
+
 PAGE_CSS = {
     "cornerhead": LAYOUT_CSS + CORNERHEAD_CSS,
     "socio-evo": LAYOUT_CSS + SOCIO_EVO_CSS,
+    "babeldoc": LAYOUT_CSS + BABELDOC_CSS,
 }
 PAGE_CSS_HASH = {
     service: base64.b64encode(hashlib.sha256(css.encode("utf-8")).digest()).decode("ascii")
@@ -332,6 +394,13 @@ BRANDS = {
         '<svg class="brand-mark" viewBox="0 0 32 32" width="28" height="28" aria-hidden="true">'
         '<path d="M4 15 16 5l12 10"/><path d="M8 13v13h16V13"/>'
         '<circle cx="12.75" cy="20" r="2.6"/><circle cx="19.25" cy="20" r="2.6"/></svg>',
+    ),
+    "babeldoc": (
+        "BabelDOC",
+        '<svg class="brand-mark" viewBox="0 0 32 32" width="26" height="26" aria-hidden="true">'
+        '<rect x="5" y="4" width="14" height="19" rx="2.5"/>'
+        '<path class="accent" d="M23 9h4v19H13v-4"/>'
+        '<path d="M9 10h6M9 14h6M9 18h4"/></svg>',
     ),
 }
 
@@ -369,7 +438,7 @@ class Config:
 
     def __post_init__(self) -> None:
         if self.service not in SERVICES:
-            raise ValueError("service must be cornerhead or socio-evo")
+            raise ValueError(f"service must be one of {', '.join(sorted(SERVICES))}")
         try:
             origin = urlsplit(self.origin)
             valid_origin = (
