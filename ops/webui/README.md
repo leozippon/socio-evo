@@ -99,4 +99,4 @@ Optional private JSON on stdin (`{"SERVICE":{"username":"...","password":"..."}}
 
 For ordinary source-host diagnostics, MacroQuant's `webui_stack.sh status` checks its UDS, loaded-code fingerprint and authenticated frontend API path. Restart only the relevant UI/tunnel; never restart experiments to fix dashboard access. Check source-host listeners with `ss -lntp '( sport = :38888 or sport = :8765 )'`, identify the process and checkout before removing any legacy listener, and do not terminate an unrelated project's service blindly.
 
-共享认证网关已移到独立私有仓库 `leozippon/private-webui-auth`。三个站点仍共用同一份程序，但不再从本仓库发布 `gateway.py`。
+共享认证网关已移到独立私有仓库 `leozippon/webui-auth`。三个站点仍共用同一份程序，但不再从本仓库发布 `gateway.py`。
