@@ -144,6 +144,7 @@ from world.log import KINDS, Day, Days
 
 _FOLDED = frozenset(
     {
+        "research_brief",
         "wake",
         "depart",
         "arrive",
@@ -419,6 +420,9 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
 
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
+        if kind == "research_brief":
+            for resident in lanes.values():
+                resident.credit(t, payload["allowance"])
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
         if kind in _COPIED:

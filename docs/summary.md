@@ -1,4 +1,4 @@
-> Independent research pilot based on upstream `8cca4f9`. See [research.md](research.md) for this version, its configuration and prompt previews. The text below documents the original upstream town. This pilot has not been launched.
+> Independent research pilot based on upstream `8cca4f9`. See [research.md](research.md) for this version, its configuration and prompt previews. The text below documents the original upstream town. The independent two-A100 deployment and research viewer are documented there.
 
 # Design summary
 

@@ -1,0 +1,8 @@
+base: research.yaml
+name: zenith-a100-tp2-research-14days
+llm:
+  model: qwen3.8-27b-fp8
+  replicas: 1
+  max_concurrency: 8
+town:
+  start_date: 2026-11-12

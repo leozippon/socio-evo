@@ -40,6 +40,9 @@ async def execute(image: str, files: Path, records: Path, command: str, timeout:
         "2g",
         "--memory-swap",
         "2g",
+        # Bind-mounted files use the simulation process's host UID, even on remapped daemons.
+        "--userns",
+        "host",
         "--user",
         f"{os.getuid()}:{os.getgid()}",
         "--tmpfs",
