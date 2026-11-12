@@ -59,14 +59,19 @@ class Rules:
         given)."""
         sections = self.sections(name, homes)
         body = "\n\n".join(f"{_HEADINGS[s]}. {sections[s]}" for s in SECTIONS)
+        if self.config.research:
+            from world.research import STANDING
+
+            body += "\n\nResearch. " + STANDING
         return f"{HEADING}\n\n{body}"
 
     def help(self, topic: str, homes: Homes | None = None) -> str:
         """More on `topic`, with `homes` as they stand now, or what one can ask about."""
         key = topic.strip().lower()
-        if key in TOPICS:
-            return self.topics(homes)[key]
-        return f"You can ask about: {listed(list(TOPICS))}."
+        topics = self.topics(homes)
+        if key in topics:
+            return topics[key]
+        return f"You can ask about: {listed(list(topics))}."
 
     def homes(self) -> dict[str, list[str]]:
         """Who lives where at the start."""
@@ -101,6 +106,8 @@ class Rules:
         own = OCCUPATIONS[occupation.id].told.format(
             office=office, store=store, withdrawn=self._withdrawn()
         )
+        if c.research and occupation.id in {"programmer", "team-leader"}:
+            own = "The machines here are available for the town's shared research."
         until = "you stop with leave_work" + (
             "" if occupation.duty == "anywhere" else " or go elsewhere"
         )
@@ -119,6 +126,11 @@ class Rules:
             "later."
         )
 
+        if c.research:
+            money_rules += (
+                f" You also receive a one-off research living allowance of "
+                f"{money(c.research.allowance)}, independent of your research output."
+            )
         food = self._a_days_food()
         body = (
             f"You get hungry through the day, and a dish{food} is about a day's need; you tire "
@@ -190,7 +202,7 @@ class Rules:
         c, money = self.config, self.config.money
         staffed = self._staffed()
         paid = []
-        if any(OCCUPATIONS[o.id].workplace == "office" for o in staffed):
+        if not c.research and any(OCCUPATIONS[o.id].workplace == "office" for o in staffed):
             shared = (
                 f"{share(c.work.leader_share)} to the team leader and the rest to whoever "
                 "handed it in"
@@ -226,6 +238,8 @@ class Rules:
             if c.tax
             else f"{cap(named)} takes the rents{pays}."
         )
+        if c.research:
+            treasury = treasury.replace("clients and customers", "customers")
         return f"Nobody is paid for their time{': ' if paid else ''}{'; '.join(paid)}. {treasury}"
 
     def _who_lives(self, name: str, home_of: Mapping[str, str]) -> str:
@@ -442,7 +456,26 @@ class Rules:
             f"the new rent is taken from the next midnight. People run into one another at "
             f"{meeting}; you can also call on someone at home, or find them where they work."
         )
+        extra = {}
+        if c.research:
+            from world.research import research_help
+
+            extra["research"] = research_help(c.research)
+            office_work = extra["research"]
+            money_detail = money_detail.replace(
+                f"Money comes into the town only from the clients of {office.name}, and leaves it "
+                f"only when the shopkeeper pays the supplier.",
+                "An outside research grant provides the one-off living allowances. "
+                "Money leaves the town when the shopkeeper pays the supplier."
+            )
+            day_detail = day_detail.replace(
+                f"Clients' tasks come in at {office.name} "
+                f"between {work.arrive_from} and {work.arrive_until}, "
+                f"and what {store.name} ordered ",
+                f"What {store.name} ordered "
+            )
         return {
+            **extra,
             "office": office_work,
             "store": store_work,
             "restaurant": restaurant_work,

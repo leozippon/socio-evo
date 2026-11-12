@@ -114,6 +114,8 @@ class Board:
 
     def draw(self, day: int) -> list[int]:
         """The times at which tasks arrive on calendar day `day`, from the run's seed."""
+        if self.town.research:
+            return []
         rng = random.Random(f"{self.seed}:arrivals:{day}")
         count = poisson(rng, self.work.tasks_a_day)
         first, last = (

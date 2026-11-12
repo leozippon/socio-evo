@@ -405,6 +405,14 @@ class DayHours(StrictModel):
     sleep_at_most: Hour
 
 
+class ResearchSettings(StrictModel):
+    """One shared research project; no benchmark tasks or acceptance machinery."""
+
+    image: str = "socio-evo-research:local"
+    allowance: int = Field(default=420, ge=0)
+    command_timeout_s: int = Field(default=120, ge=1, le=600)
+
+
 class TownConfig(StrictModel):
     currency: str = Field(min_length=1, description="the symbol money is written with")
     start_date: date = Field(description="the date of day 1")
@@ -423,6 +431,7 @@ class TownConfig(StrictModel):
         "a customer or a patient) withheld into the treasury; none unless set",
     )
     work: Work
+    research: ResearchSettings | None = None
     items: tuple[Item, ...] = Field(min_length=1)
     store: StoreSettings
     hospital: HospitalSettings

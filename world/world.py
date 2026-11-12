@@ -246,10 +246,11 @@ class World:
         *,
         clock: Clock | ManualClock | None = None,
     ) -> None:
-        tasks = list(backend.load_split(config.work.split))
-        if not tasks:
+        tasks = [] if config.research else list(backend.load_split(config.work.split))
+        if not tasks and not config.research:
             raise ValueError(f"the split {config.work.split!r} has no tasks")
-        backend.require_images(tasks)
+        if not config.research:
+            backend.require_images(tasks)
         run = RunDirectory(run_dir)
         directories = {r.name: r.agent_dir or run.agent_dir(r.name) for r in config.residents}
         missing = [str(path) for path in directories.values() if not path.is_dir()]
@@ -257,6 +258,9 @@ class World:
             raise FileNotFoundError(f"missing agent directories: {', '.join(missing)}")
 
         self.config = config
+        from world.research import Research
+
+        self.research = Research(run_dir, config.research) if config.research else None
         # The day's fixed hours, in seconds after midnight, and the longest a sleep lasts.
         self.forced_sleep = parse_hour(config.day.forced_sleep)
         self.forced_wake = parse_hour(config.day.forced_wake)
@@ -293,6 +297,10 @@ class World:
         self.body = Body(config.needs)
         self.rules = Rules(config)
         self.tool_specs: list[ToolSpec] = tools.specs(config)
+        if self.research:
+            from world.research import research_specs
+
+            self.tool_specs = research_specs(self.tool_specs)
         # Each occupation's declarations by name, as its residents' requests carry them.
         self._specs = {
             occupation.id: {spec.name: spec for spec in tools.own(self.tool_specs, occupation.id)}
@@ -488,6 +496,7 @@ class World:
                 "held": [asdict(percept) for percept in r.port.held],
             }
         return {
+            **({"research": self.research.snapshot()} if self.research else {}),
             "time": self.clock.now(),
             "office": self.board.saved(),
             "treasury": asdict(self.treasury),
@@ -507,6 +516,8 @@ class World:
             raise RuntimeError("a world is restored before it runs")
         if set(state["residents"]) != set(self.residents):
             raise ValueError("the checkpoint's residents are not the configuration's")
+        if self.research:
+            self.research.restore(state["research"])
         self.clock.set(state["time"])
         self.board.restore(state["office"])
         self.treasury = Treasury(**copy.deepcopy(state["treasury"]))
@@ -634,7 +645,10 @@ class World:
         """`r` stops work and leaves its conversation, if it is in them, as going elsewhere
         (`going`) does on its own, except that the work of a duty that runs anywhere goes on with
         it on its way (`Occupation.duty`); what it is told of it, a sentence or nothing."""
-        stopped = isinstance(r.base, Work) and not (going and r.occupation.duty == "anywhere")
+        researching = self.research and r.place == self.config.workplace("office").id
+        stopped = isinstance(r.base, Work) and not (
+            going and r.occupation.duty == "anywhere" and not researching
+        )
         if stopped:
             self.stop_work(r)
         left = []
@@ -827,7 +841,15 @@ class World:
         if not any(r.inventory.units(i.id) for i in self.config.items if i.effect == "messaging"):
             useless.add("message")
         specs = self._specs[r.occupation.id]
-        return [spec for name, spec in specs.items() if name in r.tools - useless]
+        usable = [spec for name, spec in specs.items() if name in r.tools - useless]
+        if self.research and self.research.available(self, r):
+            from world.research import RESEARCH_NAMES
+
+            usable = [spec for spec in usable if spec.name not in RESEARCH_NAMES]
+            usable += [specs[name] for name in RESEARCH_NAMES]
+            if isinstance(r.base, Idle) and not any(s.name == "start_work" for s in usable):
+                usable.append(specs["start_work"])
+        return usable
 
     def bedside(self, r: Resident) -> list[Resident]:
         """Those lying in bed, awake, too ill to get up, at the home where `r` is."""
@@ -845,6 +867,13 @@ class World:
         it: refused, naming the condition, when `r` is asleep, when its event does not offer it
         (`refusal`), when it is another occupation's work or its arguments do not fit; in a
         conversation, what the conversation does not offer of its own leaves it first."""
+        if self.research:
+            from world.research import DISABLED, RESEARCH_NAMES
+
+            if name in DISABLED:
+                return ToolResult("There are no client tasks during the shared research project.")
+            if name in RESEARCH_NAMES:
+                return await self.research.call(self, r, name, args)
         handler = HANDLERS[name]
         if r.suspended:
             return ToolResult("You are asleep.", ends_turn=True)

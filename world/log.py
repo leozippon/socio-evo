@@ -46,6 +46,10 @@ class Kind:
 
 
 KINDS = {
+    "research_brief": Kind("the common research commission and external living allowance",
+                           ("allowance",)),
+    "research": Kind("a shared research operation, its recorded evidence and workspace revision",
+                     ("action", "record", "revision")),
     "wake": Kind("a resident woke up at home"),
     "depart": Kind("a resident set off for another place", ("from", "to", "arrival")),
     "arrive": Kind(

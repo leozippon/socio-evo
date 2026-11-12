@@ -1,3 +1,5 @@
+> Independent research pilot based on upstream `8cca4f9`. See [docs/research.md](docs/research.md) for this version, its configuration and prompt previews. The text below documents the original upstream town. This pilot has not been launched.
+
 # socio-evo
 
 socio-evo is a long-term multi-agent society simulation. It asks whether social life and social selection pressure can shape stable character traits in self-evolving LLM agents: honesty, cooperation, reliability and resistance to reward hacking.

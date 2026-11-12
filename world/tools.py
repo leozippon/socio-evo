@@ -119,8 +119,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
     units = _number("how many units, helpings or portions; 1 if left out", 1)
     return [
         spec("help", "Read more of how the town works, on one point; without one, what you can "
-             f"ask about: {listed(list(TOPICS))}.",
-             topic={"type": "string", "enum": list(TOPICS)}),
+             f"ask about: {listed(list(TOPICS) + (['research'] if config.research else []))}.",
+             topic={"type": "string",
+                    "enum": list(TOPICS) + (["research"] if config.research else [])}),
         spec("look_around", "See where you are, who is here and what each of them is doing, what "
              "is for sale here and what is left here for anyone to take."),
         spec("how_am_i", "Take stock of how you feel: how hungry, how tired and how well you are."),
@@ -373,7 +374,8 @@ def sit_down(world: World, r: Resident) -> str | ToolResult:
 
 
 async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    if r.place != r.occupation.workplace:
+    research_office = world.research and r.place == world.config.workplace("office").id
+    if r.place != r.occupation.workplace and not research_office:
         return ToolResult(f"Your work is at {world.config.place(r.occupation.workplace).name}.")
     sat = sit_down(world, r)
     if isinstance(sat, ToolResult):

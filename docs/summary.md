@@ -1,3 +1,5 @@
+> Independent research pilot based on upstream `8cca4f9`. See [research.md](research.md) for this version, its configuration and prompt previews. The text below documents the original upstream town. This pilot has not been launched.
+
 # Design summary
 
 Research on self-evolving agents has mostly optimised narrow skills such as coding, mathematics and tool use. socio-evo asks whether long-term social life and social selection pressure can shape character instead: whether agents that live, work, cooperate and compete, are judged by those they live among and keep rewriting their own memory and skills develop stable traits such as honesty, cooperation, reliability and resistance to reward hacking.

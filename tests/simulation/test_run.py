@@ -92,12 +92,15 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     sold = {(m["actor"], m["item"], m["target"]) for m in moves if m["source"] == "shelves"}
     assert ("Mei", "bread", "Mei") in sold and ("Jonas", "vegetables", "larder") in sold
     served = {(m["actor"], m["target"], m["seller"]) for m in moves if m["source"] == "portions"}
-    assert served == {
+    assert {
         ("Mei", "Mei", "Jonas"),
         ("Aisha", "Aisha", "Jonas"),
         ("Olga", "Olga", "Jonas"),
-        ("Jonas", "Mei", "Jonas"),  # handed over, unpaid
-    }
+    } <= served
+    # The two programmers arrive concurrently; the chef gives to whoever arrived first.
+    given = served - {(name, name, "Jonas") for name in ("Mei", "Aisha", "Olga")}
+    assert len(given) == 1
+    assert given <= {("Jonas", name, "Jonas") for name in ("Mei", "Aisha")}
     done = {(m["actor"], m["reason"], m["item"]) for m in moves}
     assert {("Mei", "eat", "bread"), ("Olga", "put", "bread")} <= done
     taken = {actor for actor, reason, item in done if (reason, item) == ("get", "bread")}

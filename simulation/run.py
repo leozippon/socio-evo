@@ -97,8 +97,17 @@ async def run(
     }
     client = _client(config, dry_run)
     await _check_model(client, config)
-    backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
-    backend.require_images(backend.load_split(config.town.work.split))
+    if config.town.research:
+        from world.research import NoTasks
+        from world.research_workspace import require_image
+
+        if dry_run:
+            raise ValueError("The SWE-bench dry-run script does not support research mode.")
+        backend: Backend = NoTasks()
+        require_image(config.town.research.image)
+    else:
+        backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
+        backend.require_images(backend.load_split(config.town.work.split))
     revision = code_revision()
     if resume:
         directory = RunDirectory.open(runs_root / config.name)
@@ -216,6 +225,8 @@ def _create(
         AgentDirectory.create(path, background=background)
         Repository.init(path, user_name=name, user_email=f"{name.lower()}@town.invalid")
     world = World(config.town, directory.root, backend)
+    if world.research:
+        world.research.initialize(world)
     _save(directory, config.town, 0, world.snapshot())
     return world
 

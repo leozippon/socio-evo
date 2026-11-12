@@ -1,0 +1,11 @@
+# Original eight-resident town, with a single shared research project.
+base: town.yaml
+name: research-pilot-14days
+days: 14
+town:
+  research:
+    image: socio-evo-research:local
+    allowance: 420  # 14 days × $30 maximum initial daily basic food and rent
+    command_timeout_s: 120
+  work:
+    tasks_a_day: 0

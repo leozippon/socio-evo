@@ -326,7 +326,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     restored.restore(town.checkpoints[0][1])
 
     entries = [*town.world.log.entries(), *restored.log.entries()]
-    assert {entry["kind"] for entry in entries} == set(KINDS)
+    assert {entry["kind"] for entry in entries} == set(KINDS) - {"research", "research_brief"}
     seqs = [entry["seq"] for entry in town.world.log.entries()]
     assert seqs == list(range(1, len(seqs) + 1))
     for entry in entries:
