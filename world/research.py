@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
@@ -11,7 +12,7 @@ from typing import Any
 
 from agent.filetext import told_lines
 from agent.port import ToolResult, ToolSpec
-from infrastructure.git import Repository
+from infrastructure.git import GitError, Repository
 from world import research_sources, research_workspace
 from world.config import ResearchSettings
 from world.events import Idle, Work
@@ -47,7 +48,8 @@ def research_help(settings: ResearchSettings) -> str:
         "or assigned research roles. Use your usual conversations to organize the work. "
         "list_research_files lists shared files and the current revision; read_repo_file reads "
         "one. write_repo_file and edit_repo_file change them. Supply the revision you read when "
-        "writing or using shell; if another resident changed the workspace, read it again first. "
+        "writing or using shell. File edits check only the target file; shell checks shared "
+        "files. New source or execution records do not cause conflicts. On conflict, reread. "
         "Use paper.md for the paper, and keep supporting code, data and results alongside it. "
         "shell runs in /research with Python, NumPy, SciPy, pandas, matplotlib, scikit-learn, "
         "SymPy and NetworkX, without internet or GPUs. Files there persist; installed packages "
@@ -78,7 +80,8 @@ def research_specs(existing: list[ToolSpec]) -> list[ToolSpec]:
         ),
         spec(
             "write_repo_file",
-            "Create or replace a shared file at the revision you read.",
+            "Create or replace a shared file. "
+            "Only this file's changes conflict with your revision.",
             ("path", "content", "revision"),
             path=path,
             content=_text("Full new text"),
@@ -86,7 +89,8 @@ def research_specs(existing: list[ToolSpec]) -> list[ToolSpec]:
         ),
         spec(
             "edit_repo_file",
-            "Replace one exact, unique passage in a shared file.",
+            "Replace one exact, unique passage. "
+            "Only this file's changes conflict with your revision.",
             ("path", "old_text", "new_text", "revision"),
             path=path,
             old_text=_text("Unique passage"),
@@ -96,7 +100,8 @@ def research_specs(existing: list[ToolSpec]) -> list[ToolSpec]:
         spec(
             "shell",
             "Run a command in the shared research workspace at the Office. "
-            "No internet. The output and file changes are recorded; calls run one at a time.",
+            "No internet. Calls run one at a time; revision checks shared files, not records. "
+            "Output and file changes are recorded.",
             ("command", "revision"),
             command=_text("Shell command"),
             revision=revision,
@@ -208,6 +213,18 @@ class Research:
         records = ["records/" + p.name for p in self.records.iterdir() if p.is_file()]
         return "\n".join(sorted(files) + sorted(records))
 
+    def _changed(self, revision: str, current: str, path: str) -> bool:
+        """Compare only the affected files against a known snapshot of this history."""
+        if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
+            raise ValueError("Use a revision returned by the shared workspace.")
+        try:
+            self.repo._git("merge-base", "--is-ancestor", revision, current)
+        except GitError as error:
+            raise ValueError("Unknown workspace revision; read the workspace again.") from error
+        return bool(
+            self.repo._git("diff", "--name-only", revision, current, "--", f":(literal){path}")
+        )
+
     async def call(self, world, r, name: str, args: dict[str, Any]) -> ToolResult:
         if not self.available(world, r):
             return ToolResult("Research facilities are available while up at the Office.")
@@ -224,14 +241,19 @@ class Research:
             if r.conversation is not None:
                 world.leave_conversation(r)
             before = self.repo.head()
-            mutation = name in {"write_repo_file", "edit_repo_file", "shell"}
-            if mutation and args["revision"] != before:
-                return ToolResult(
-                    "The shared workspace changed. Read it again before changing it. "
-                    f"Current revision: {before}"
-                )
             cancelled = False
             try:
+                if name in {"write_repo_file", "edit_repo_file", "shell"}:
+                    scope = "files"
+                    if name != "shell":
+                        target = self._path(args["path"], writing=True)
+                        scope = target.relative_to(self.root).as_posix()
+                    if self._changed(args["revision"], before, scope):
+                        subject = "Shared files" if name == "shell" else args["path"]
+                        return ToolResult(
+                            f"{subject} changed. Read it again before changing it. "
+                            f"Current revision: {before}"
+                        )
                 if name == "list_research_files":
                     return ToolResult(f"Revision: {before}\n" + self._listing())
                 if name == "read_repo_file":

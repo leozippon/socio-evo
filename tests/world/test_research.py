@@ -153,7 +153,9 @@ async def test_commands_are_serialized_and_record_real_result(world, monkeypatch
     )
     await started.wait()
     second = asyncio.create_task(
-        world.call(b, "write_repo_file", {"path": "paper.md", "content": "stale", "revision": rev})
+        world.call(
+            b, "write_repo_file", {"path": "result.csv", "content": "stale", "revision": rev}
+        )
     )
     await asyncio.sleep(0)
     assert not second.done()
@@ -164,6 +166,60 @@ async def test_commands_are_serialized_and_record_real_result(world, monkeypatch
     assert record["result"]["stdout"] == "mean=2.1"
     assert record["arguments"]["command"] == "python experiment.py"
     assert (world.research.files / "result.csv").exists()
+
+
+@pytest.mark.asyncio
+async def test_independent_writes_and_edits_accept_old_revision(world, monkeypatch):
+    a, b = office(world, "Aisha"), office(world, "Ravi")
+    rev = world.research.snapshot()
+    await world.call(a, "write_repo_file", {"path": "ode.py", "content": "ODE", "revision": rev})
+    answer = await world.call(
+        b, "write_repo_file", {"path": "abm_sir.py", "content": "ABM", "revision": rev}
+    )
+    assert "Wrote abm_sir.py" in answer.text
+    rev = world.research.snapshot()
+    await world.call(a, "write_repo_file", {"path": "ode.py", "content": "ODE 2", "revision": rev})
+    monkeypatch.setattr(research_sources, "search", lambda q: {"results": []})
+    await world.call(a, "search_literature", {"query": "SIR"})
+    answer = await world.call(
+        b,
+        "edit_repo_file",
+        {"path": "abm_sir.py", "old_text": "ABM", "new_text": "ABM 2", "revision": rev},
+    )
+    assert "Wrote abm_sir.py" in answer.text
+    conflict = await world.call(
+        a, "write_repo_file", {"path": "abm_sir.py", "content": "overwrite", "revision": rev}
+    )
+    assert "abm_sir.py changed" in conflict.text
+    assert (world.research.files / "abm_sir.py").read_text() == "ABM 2"
+
+
+@pytest.mark.asyncio
+async def test_shell_ignores_records_but_protects_shared_files(world, monkeypatch):
+    r = office(world, "Ravi")
+    monkeypatch.setattr(research_sources, "search", lambda q: {"results": []})
+    executions = []
+
+    async def command(*args):
+        executions.append(args)
+        return {"exit_code": 0, "stdout": "checked", "stderr": "", "timed_out": False}
+
+    monkeypatch.setattr(research_workspace, "execute", command)
+    rev = world.research.snapshot()
+    await world.call(r, "search_literature", {"query": "SIR"})
+    for _ in range(2):
+        result = await world.call(r, "shell", {"command": "true", "revision": rev})
+        assert "checked" in result.text  # even a previous command's record is unrelated
+    await world.call(r, "write_repo_file", {"path": "data.txt", "content": "new", "revision": rev})
+    result = await world.call(r, "shell", {"command": "true", "revision": rev})
+    assert "Shared files changed" in result.text
+    assert len(executions) == 2
+    for invalid in ("HEAD", "f" * 40):
+        result = await world.call(
+            r, "write_repo_file", {"path": "unsafe", "content": "x", "revision": invalid}
+        )
+        assert '"error"' in result.text
+    assert not (world.research.files / "unsafe").exists()
 
 
 @pytest.mark.asyncio

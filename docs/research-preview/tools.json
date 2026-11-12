@@ -485,7 +485,7 @@
     },
     "write_repo_file": {
       "name": "write_repo_file",
-      "description": "Create or replace a shared file at the revision you read.",
+      "description": "Create or replace a shared file. Only this file's changes conflict with your revision.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -511,7 +511,7 @@
     },
     "edit_repo_file": {
       "name": "edit_repo_file",
-      "description": "Replace one exact, unique passage in a shared file.",
+      "description": "Replace one exact, unique passage. Only this file's changes conflict with your revision.",
       "parameters": {
         "type": "object",
         "properties": {
@@ -542,7 +542,7 @@
     },
     "shell": {
       "name": "shell",
-      "description": "Run a command in the shared research workspace at the Office. No internet. The output and file changes are recorded; calls run one at a time.",
+      "description": "Run a command in the shared research workspace at the Office. No internet. Calls run one at a time; revision checks shared files, not records. Output and file changes are recorded.",
       "parameters": {
         "type": "object",
         "properties": {
