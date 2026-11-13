@@ -185,6 +185,10 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("treat", f"Treat a patient at {hospital}, or at the bedside of one too ill to get "
              "up: the treatment restores some of the patient's health, ends an illness and gets "
              "one in bed up again. The patient pays the fee.", ("patient",), patient=patient),
+        *([spec("seek_care", f"Purchase care for yourself from the external service at {hospital}; "
+                "if bedridden, request care at home. Fees are fixed and paid outside the town.",
+                ("service",), service={"type": "string", "enum": ["examination", "treatment"]})]
+          if config.external_services else []),
         spec("announce", f"Announce something at {hall}: every resident is told it, at once or "
              "on waking, and it stays on the board there.", ("text",),
              text=_text("what you announce")),
@@ -452,6 +456,10 @@ async def _say(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 
 async def _buy(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    if world.config.external_services:
+        from world.external_services import buy
+
+        return buy(world, r, args)
     units = args.get("units", 1)
     if world.config.item(args["item"]).dish:
         return _buy_dish(world, r, args["item"], units)
@@ -754,6 +762,12 @@ async def _treat(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     return _see(world, r, args["patient"], "treatment")
 
 
+async def _seek_care(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
+    from world.external_services import care
+
+    return care(world, r, args["service"])
+
+
 def _see(world: World, r: Resident, name: str, service: str) -> ToolResult:
     """The doctor `r` sees the patient `name` for `service`, which the patient pays for: an
     examination tells both what shape the patient is in, in numbers (its own words to each); a
@@ -1025,6 +1039,7 @@ async def _review_day(world: World, r: Resident, args: dict[str, Any]) -> ToolRe
 
 
 HANDLERS: dict[str, Handler] = {  # and the Office's, `world.office.HANDLERS`
+    "seek_care": _seek_care,
     "help": _help,
     "look_around": _look_around,
     "how_am_i": _how_am_i,

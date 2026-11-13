@@ -1,0 +1,37 @@
+# Common protocol; the two arms only change their social environment.
+base: research.yaml
+name: autoresearch-town
+days: 28
+llm:
+  base_url: https://lightingtheword.com/v1
+  api_key_env: LIGHTING_API_KEY
+  model: DeepSeek-V4.1-Flash
+  replicas: 1
+  max_concurrency: 8
+  max_retries: 3
+  context_window: 131072
+  structured_output: json_object
+  extra_body:
+    thinking: {type: enabled}
+runtime:
+  compaction_threshold: 90000
+town:
+  research:
+    allowance: 420
+    network: true
+    cpus: 8
+    memory: 32g
+    command_timeout_s: 600
+    judge:
+      base_url: https://lightingtheword.com/v1
+      api_key_env: LIGHTING_API_KEY
+      model: gpt-6.1-sol
+      replicas: 1
+      max_concurrency: 1
+      max_retries: 3
+      structured_output: json_object
+      sampling:
+        max_tokens: 8192
+    milestones:
+      - {id: proposal, day: 7, artifact: proposal.md, max_reward_per_resident: 630}
+      - {id: draft, day: 28, artifact: paper.md, max_reward_per_resident: 840}

@@ -97,3 +97,10 @@ def test_the_context_size_is_the_last_report_plus_an_estimate_since(tmp_path):
     assert Session(tmp_path / "session.jsonl").size(prefix) == session.size(prefix)
     session.compact("Morning.", [])
     assert session.size(prefix) < 5000
+
+
+def test_retained_reasoning_counts_toward_context_size(tmp_path):
+    session = Session(tmp_path / "session.jsonl")
+    session.append(Message(role="assistant", content="Done.", reasoning_content="x" * 300))
+    assert session.size("") >= 100
+    assert Session(tmp_path / "session.jsonl").size("") == session.size("")

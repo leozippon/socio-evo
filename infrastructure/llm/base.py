@@ -44,18 +44,23 @@ class ToolCall(StrictModel):
 
 class Message(StrictModel):
     """One message of a chat. An assistant message may carry the tool calls of its reply; a
-    tool message answers the call whose id is `tool_call_id`. A field that does not apply is
+    tool message answers the call whose id is `tool_call_id`. `reasoning_content` retains
+    provider-returned assistant reasoning for subsequent requests, including empty strings.
+    A field that does not apply is
     left out when the message is serialized, so a plain message is its role and content."""
 
     role: Literal["system", "user", "assistant", "tool"]
     content: str
     tool_calls: tuple[ToolCall, ...] = ()
     tool_call_id: str | None = None
+    reasoning_content: str | None = None
 
     @model_validator(mode="after")
     def _fits_role(self) -> "Message":
         if self.tool_calls and self.role != "assistant":
             raise ValueError("only an assistant message carries tool calls")
+        if self.reasoning_content is not None and self.role != "assistant":
+            raise ValueError("only an assistant message carries reasoning content")
         if (self.role == "tool") != (self.tool_call_id is not None):
             raise ValueError("a tool message, and only a tool message, has a tool_call_id")
         return self
@@ -67,6 +72,8 @@ class Message(StrictModel):
             data.pop("tool_calls", None)
         if self.tool_call_id is None:
             data.pop("tool_call_id", None)
+        if self.reasoning_content is None:
+            data.pop("reasoning_content", None)
         return data
 
 

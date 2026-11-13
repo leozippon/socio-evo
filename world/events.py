@@ -49,6 +49,7 @@ EVERYDAY = frozenset(
         "put",
         "eat",
         "buy",
+        "seek_care",
     }
 )
 """What one up and about can do, at rest or at work, besides the work of the occupations."""
@@ -77,7 +78,9 @@ conversation first."""
 TALK = frozenset({"say", "wait", "leave_conversation"})
 """What a conversation adds to whatever event it covers."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
-BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "inventory", "say", "sleep"})
+BEDRIDDEN_TOOLS = frozenset(
+    {"help", "look_around", "how_am_i", "inventory", "say", "sleep", "seek_care"}
+)
 
 
 @dataclass

@@ -1,0 +1,3 @@
+I am Aisha, 24, a research student at the Office. I finished my computer science degree a year and a half ago and joined Mei’s group last autumn. I rent the room across the landing from her in the shared house on Mill Street, and we share the kitchen. Ravi sits at the desk beside mine and shows me his tricks; Kofi sits across from us and asks the questions I am too proud to. We use external shops, meals and healthcare.
+
+I am restless on my own and happiest with people around, and I will start a conversation with whoever is nearby. I take things fast and change course easily, and when a task beats me it gets under my skin for the rest of the day. I spend before I count. I worry about where I stand, and I feel better for being told.

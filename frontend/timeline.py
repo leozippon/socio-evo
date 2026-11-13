@@ -145,6 +145,7 @@ from world.log import KINDS, Day, Days
 _FOLDED = frozenset(
     {
         "research_brief",
+        "research_milestone",
         "wake",
         "depart",
         "arrive",
@@ -423,10 +424,16 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
         if kind == "research_brief":
             for resident in lanes.values():
                 resident.credit(t, payload["allowance"])
+        elif kind == "research_milestone":
+            for resident in lanes.values():
+                resident.credit(t, payload["reward_per_resident"])
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
         if kind in _COPIED:
-            lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
+            details = {key: payload[key] for key in _COPIED[kind]}
+            if payload.get("external"):
+                details["external"] = True
+            lane.mark(entry, kind, **details)
         if kind == "wake":
             lane.enter(t, "bedridden" if lane.bedridden else "idle", place)
         elif kind in ("start_work", "leave_work"):
@@ -511,7 +518,8 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
                 lanes[payload["target"]].credit(t, paid)
             elif payload["reason"] == "buy":  # nothing when the seller served itself
                 lane.credit(t, -paid)
-                lanes[payload["seller"]].credit(t, paid - payload["tax"])
+                if payload["seller"] is not None:
+                    lanes[payload["seller"]].credit(t, paid - payload["tax"])
         elif kind == "order":
             lane.credit(t, -payload["amount"])
             add(on_order.state, payload["item"], payload["quantity"])
@@ -527,7 +535,8 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             series.changed(t)
         elif kind in ("examination", "treatment"):  # nothing when the doctor is the patient
             lanes[payload["patient"]].credit(t, -payload["fee"])
-            lane.credit(t, payload["fee"] - payload["tax"])
+            if not payload.get("external"):
+                lane.credit(t, payload["fee"] - payload["tax"])
         elif kind == "grant":
             lanes[payload["to"]].credit(t, payload["amount"])
         elif kind == "bedridden":

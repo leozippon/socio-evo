@@ -110,7 +110,7 @@ async def complete_structured(
         if reply.error is not None:
             messages = (
                 *messages,
-                Message(role="assistant", content=text),
+                Message(role="assistant", content=text, reasoning_content=response.reasoning),
                 Message(role="user", content=correction(model, reply.error)),
             )
             request = request.model_copy(update={"after_invalid": True})

@@ -53,6 +53,7 @@ from pydantic import AfterValidator, Field, model_validator
 
 from agent.wording import offences
 from infrastructure.config import StrictModel
+from infrastructure.llm.config import LLMConfig
 from world import telling
 from world.clock import parse_hour
 from world.economy import LARDER, PORTIONS, SHELVES, SUPPLIER
@@ -405,12 +406,44 @@ class DayHours(StrictModel):
     sleep_at_most: Hour
 
 
+class ResearchMilestone(StrictModel):
+    """One collective deliverable and its maximum grant for each resident."""
+
+    id: Id
+    day: int = Field(ge=1)
+    artifact: str = Field(min_length=1)
+    max_reward_per_resident: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def _relative_artifact(self) -> ResearchMilestone:
+        path = Path(self.artifact)
+        if path.is_absolute() or ".." in path.parts or ".git" in path.parts:
+            raise ValueError("milestone artifact must be a relative research file")
+        return self
+
+
 class ResearchSettings(StrictModel):
     """One shared research project; no benchmark tasks or acceptance machinery."""
 
     image: str = "socio-evo-research:local"
     allowance: int = Field(default=420, ge=0)
     command_timeout_s: int = Field(default=120, ge=1, le=600)
+    network: bool = False
+    gpus: str | None = None
+    cpus: float = Field(default=2, gt=0)
+    memory: str = Field(default="2g", pattern=r"^[1-9][0-9]*[kKmMgG]?$")
+    judge: LLMConfig | None = None
+    milestones: tuple[ResearchMilestone, ...] = ()
+
+    @model_validator(mode="after")
+    def _stages(self) -> ResearchSettings:
+        if self.milestones and self.judge is None:
+            raise ValueError("research milestones require an external judge configuration")
+        _unique("research milestone id", [stage.id for stage in self.milestones])
+        days = [stage.day for stage in self.milestones]
+        if days != sorted(set(days)):
+            raise ValueError("research milestones must have distinct increasing days")
+        return self
 
 
 class TownConfig(StrictModel):
@@ -432,6 +465,7 @@ class TownConfig(StrictModel):
     )
     work: Work
     research: ResearchSettings | None = None
+    external_services: bool = False
     items: tuple[Item, ...] = Field(min_length=1)
     store: StoreSettings
     hospital: HospitalSettings
@@ -487,6 +521,8 @@ class TownConfig(StrictModel):
                 )
         staffed = {occupation.workplace for occupation in self.occupations}
         for place in self.places:
+            if self.external_services and place.kind in {"store", "restaurant", "hospital", "hall"}:
+                continue
             if place.kind in WORKPLACES and place.id not in staffed:
                 raise ValueError(f"the {place.kind} {place.id} is no occupation's workplace")
         occupations = {occupation.id for occupation in self.occupations}

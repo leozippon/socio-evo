@@ -185,7 +185,12 @@ class Runtime:
         if reply is None:
             return True
         calls = () if reply.truncated else reply.tool_calls
-        said = Message(role="assistant", content=reply.text, tool_calls=calls)
+        said = Message(
+            role="assistant",
+            content=reply.text,
+            tool_calls=calls,
+            reasoning_content=reply.reasoning,
+        )
         answers, ends, condense = await self._carry_out_all(said)
         self._session.append(
             said, prompt_tokens=None if reply.usage is None else reply.usage.prompt_tokens

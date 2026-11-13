@@ -50,6 +50,10 @@ KINDS = {
                            ("allowance",)),
     "research": Kind("a shared research operation, its recorded evidence and workspace revision",
                      ("action", "record", "revision")),
+    "research_milestone": Kind(
+        "an external review and collective research grant divided among all residents",
+        ("stage", "day", "score", "reward_per_resident", "reward_total", "status"),
+    ),
     "wake": Kind("a resident woke up at home"),
     "depart": Kind("a resident set off for another place", ("from", "to", "arrival")),
     "arrive": Kind(

@@ -53,7 +53,9 @@ def _strings(path: Path) -> list[str]:
 def test_no_string_in_the_worlds_code_offends(module):
     def unexpected(text):
         return [
-            word for word in offences(text) if word.lower() not in {"research", "research_brief"}
+            word
+            for word in offences(text)
+            if word.lower() not in {"research", "research_brief", "research_milestone"}
         ]
 
     assert [(s, unexpected(s)) for s in _strings(module) if unexpected(s)] == []

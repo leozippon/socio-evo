@@ -91,6 +91,17 @@ async def run(
     until = config.days if until_day is None else until_day
     if not 1 <= until <= config.days:
         raise ValueError(f"until_day must be from 1 to {config.days}, not {until}")
+    research = config.town.research
+    if research and research.milestones:
+        assert research.judge is not None
+        if research.judge.model == config.llm.model:
+            raise ValueError("the external research judge must differ from the resident model")
+        if not os.environ.get(research.judge.api_key_env):
+            raise ValueError(
+                f"research judge API key variable {research.judge.api_key_env} is unset"
+            )
+        if research.milestones[-1].day > config.days:
+            raise ValueError("the run ends before its last research milestone")
     backgrounds = {
         r.name: r.background_path.read_text(encoding="utf-8").strip() + "\n"
         for r in config.residents

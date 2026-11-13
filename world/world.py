@@ -445,6 +445,8 @@ class World:
             for r in self.residents.values():
                 r.day.clear()
                 self.reckon(r)
+            if self.research:
+                await self.research.review(self, day)
             state = self.snapshot()
             self.record(
                 "checkpoint", lambda w: f"The state of day {day} was saved.", payload={"day": day}
@@ -841,6 +843,15 @@ class World:
         if not any(r.inventory.units(i.id) for i in self.config.items if i.effect == "messaging"):
             useless.add("message")
         specs = self._specs[r.occupation.id]
+        if self.config.external_services:
+            from world.external_services import care_available
+
+            if not care_available(self, r):
+                useless.add("seek_care")
+            if r.place not in {
+                self.config.workplace("store").id, self.config.workplace("restaurant").id
+            }:
+                useless.add("buy")
         usable = [spec for name, spec in specs.items() if name in r.tools - useless]
         if self.research and self.research.available(self, r):
             from world.research import RESEARCH_NAMES

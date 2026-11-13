@@ -1,4 +1,4 @@
-"""Short-lived isolated CPU commands over one persistent shared directory.
+"""Short-lived research commands over one persistent shared directory.
 
 Only the files directory is writable in the container. Evidence is mounted read-only;
 Git history, private memories, simulation files and Docker sockets are never mounted.
@@ -17,7 +17,18 @@ def require_image(image: str) -> None:
     subprocess.run(["docker", "image", "inspect", image], check=True, capture_output=True)
 
 
-async def execute(image: str, files: Path, records: Path, command: str, timeout: int) -> dict:
+async def execute(
+    image: str,
+    files: Path,
+    records: Path,
+    command: str,
+    timeout: int,
+    *,
+    network: bool = True,
+    gpus: str | None = None,
+    cpus: float = 2,
+    memory: str = "2g",
+) -> dict:
     name = "research-" + uuid.uuid4().hex
     args = [
         "docker",
@@ -26,7 +37,7 @@ async def execute(image: str, files: Path, records: Path, command: str, timeout:
         "--name",
         name,
         "--network",
-        "none",
+        "bridge" if network else "none",
         "--read-only",
         "--cap-drop",
         "ALL",
@@ -35,11 +46,11 @@ async def execute(image: str, files: Path, records: Path, command: str, timeout:
         "--pids-limit",
         "128",
         "--cpus",
-        "2",
+        str(cpus),
         "--memory",
-        "2g",
+        memory,
         "--memory-swap",
-        "2g",
+        memory,
         # Bind-mounted files use the simulation process's host UID, even on remapped daemons.
         "--userns",
         "host",
@@ -53,11 +64,17 @@ async def execute(image: str, files: Path, records: Path, command: str, timeout:
         f"type=bind,src={records.resolve()},dst=/records,readonly",
         "--workdir",
         "/research",
-        image,
-        "sh",
-        "-c",
-        command,
     ]
+    if gpus:
+        args.extend(["--gpus", gpus])
+    args.extend(
+        [
+            image,
+            "sh",
+            "-c",
+            command,
+        ]
+    )
     proc = await asyncio.create_subprocess_exec(
         *args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
     )

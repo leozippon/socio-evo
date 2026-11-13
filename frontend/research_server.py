@@ -132,6 +132,7 @@ class ResearchData:
                 if e["kind"]
                 in {
                     "research_brief",
+                    "research_milestone",
                     "research",
                     "speech",
                     "message",
@@ -153,6 +154,18 @@ class ResearchData:
                 "days": config.days,
                 "now": now,
                 "people": people,
+                "environment": "academy" if config.town.external_services else "town",
+                "actor_model": config.llm.model,
+                "currency": config.town.currency,
+                "milestones": [
+                    e["payload"] | {"record": f"records/milestone-{e['payload']['stage']}.json"}
+                    for e in entries
+                    if e["kind"] == "research_milestone"
+                ],
+                "scheduled_milestones": [
+                    m.model_dump(mode="json") for m in config.town.research.milestones
+                ],
+                "comparison": self.comparison(runs),
                 "revision": revision,
                 "files": files,
                 "records": records,
@@ -165,6 +178,30 @@ class ResearchData:
             }
             self.cache[name] = (time.monotonic(), value)
             return value
+
+    def comparison(self, runs: list[str]) -> list[dict]:
+        rows = []
+        for name in runs:
+            run = self.run(name)
+            config = load_config(run / "config.yaml", ExperimentConfig)
+            if not config.town.research:
+                continue
+            manifest = json.loads((run / "manifest.json").read_text())
+            milestones = [
+                e["payload"] for e in self.entries(run) if e["kind"] == "research_milestone"
+            ]
+            rows.append(
+                {
+                    "run": name,
+                    "environment": "academy" if config.town.external_services else "town",
+                    "status": manifest["status"],
+                    "people": len(config.town.residents),
+                    "scores": {m["stage"]: m["score"] for m in milestones},
+                    "reward_total": sum(m["reward_total"] for m in milestones),
+                    "currency": config.town.currency,
+                }
+            )
+        return rows
 
     def file_index(self, run: Path, revision: str) -> list[dict]:
         rows = self.git(run, "ls-tree", "-r", "-l", "-z", revision, "--", "files", "records")

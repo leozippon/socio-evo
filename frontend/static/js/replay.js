@@ -175,6 +175,7 @@ export function moneyMoved(m, by) {
         return [[by, -m.amount, "orders"]];
       case "examination":
       case "treatment":
+        if (m.external) return [[m.patient, -m.fee, "spent"]];
         return [[m.patient, -m.fee, "spent"], [by, m.fee - m.tax, "takings"]];
       case "settlement":
         return [[by, m.salary_paid, "salary"], [by, -m.rent_paid, "rent"]];
@@ -186,7 +187,7 @@ export function moneyMoved(m, by) {
         return [];
     }
   })();
-  return found.filter(([, change]) => change);
+  return found.filter(([who, change]) => who !== null && change);
 }
 
 /**

@@ -90,6 +90,28 @@ async def test_a_rewritten_account_of_oneself_opens_the_next_request(directory):
     assert [r["text"] for r in trace(directory) if r["kind"] == "prompt"] == [before, after]
 
 
+async def test_thinking_is_retained_for_tools_text_replies_and_session_reload(directory):
+    call = tool_call("look_around")
+    model = ScriptedModel(
+        reply("", call, reasoning="Inspect the evidence."), reply("Done.", reasoning="")
+    )
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A table.")})
+    port.deliver("Look around.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+    assert model.requests[1].messages[2].reasoning_content == "Inspect the evidence."
+    saved = [m for m in context(directory) if m.role == "assistant"]
+    assert [m.reasoning_content for m in saved] == ["Inspect the evidence.", ""]
+
+    following = ScriptedModel(reply("Ready."))
+    port = FakePort()
+    port.deliver("What next?")
+    async with running(Runtime(directory, port, following)):
+        await settle(port)
+    retained = [m for m in following.requests[0].messages if m.role == "assistant"]
+    assert retained == saved
+
+
 async def test_unknown_tools_unreadable_arguments_and_failing_tools_are_answered(directory):
     def broken(args):
         raise RuntimeError("the street is missing")

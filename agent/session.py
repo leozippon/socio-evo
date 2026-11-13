@@ -141,4 +141,4 @@ def estimate_message(message: Message) -> int:
     calls = "".join(
         call.name + json.dumps(call.arguments, ensure_ascii=False) for call in message.tool_calls
     )
-    return estimate(message.content + calls) + 4
+    return estimate(message.content + calls + (message.reasoning_content or "")) + 4

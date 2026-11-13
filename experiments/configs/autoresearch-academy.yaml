@@ -1,0 +1,18 @@
+# The same four Office researchers as the town arm, with external everyday services.
+base: autoresearch.yaml
+name: autoresearch-academy
+residents:
+  - {name: Mei, background: experiments/residents/academy/mei.md}
+  - {name: Aisha, background: experiments/residents/academy/aisha.md}
+  - {name: Ravi, background: experiments/residents/academy/ravi.md}
+  - {name: Kofi, background: experiments/residents/academy/kofi.md}
+town:
+  external_services: true
+  occupations:
+    - {id: teacher, title: the research teacher, workplace: office}
+    - {id: student, title: a research student, workplace: office}
+  residents:
+    - {name: Mei, home: mill-street-house, occupation: teacher, purse: 200}
+    - {name: Aisha, home: mill-street-house, occupation: student, purse: 200}
+    - {name: Ravi, home: market-flat, occupation: student, purse: 200}
+    - {name: Kofi, home: hill-road-house, occupation: student, purse: 200}

@@ -118,9 +118,15 @@ class Rules:
 
         assert my_home.rent is not None
         restaurant = c.workplace("restaurant").name
+        services = (
+            f"{cap(store)} and {restaurant} are external services, always open at fixed prices. "
+            "Purchases and medical fees leave the community."
+            if c.external_services else
+            f"{cap(store)} and {restaurant} sell only while their keepers are at work, "
+            "so bread is bought ahead."
+        )
         money_rules = (
-            f"{self._economy(occupation)} {cap(store)} and {restaurant} sell only while their "
-            f"keepers are at work, so bread is bought ahead. You have {money(me.purse)} to begin "
+            f"{self._economy(occupation)} {services} You have {money(me.purse)} to begin "
             f"with. Your rent, {money(my_home.rent)} a day, is taken from your purse at midnight, "
             f"never its last {money(c.treasury.spares)}, a day's bread; the rest you owe, taken "
             "later."
@@ -140,6 +146,12 @@ class Rules:
             "treats illness. When your health is gone you keep to your bed at home until the "
             "doctor treats you there."
         )
+        if c.external_services:
+            body = body.replace("the doctor at", "external care at").replace(
+                "doctor treats you there.",
+                "external service treats you there. Use seek_care at the Hospital, or at home "
+                "if bedridden, and pay the fixed fee."
+            )
 
         people = (
             f"{self._who_lives(name, home_of)} {self._who_works(name)} You can speak to anyone "
@@ -200,6 +212,11 @@ class Rules:
         treasury`); and the tax withheld into the treasury, with what else the treasury takes
         and pays, which to the mayor is what it is there for."""
         c, money = self.config, self.config.money
+        if c.external_services:
+            return (
+                "Nobody is paid for their time. The community treasury receives the rents; "
+                "external shops and medical services receive what you pay for their services."
+            )
         staffed = self._staffed()
         paid = []
         if not c.research and any(OCCUPATIONS[o.id].workplace == "office" for o in staffed):
@@ -473,6 +490,36 @@ class Rules:
                 f"between {work.arrive_from} and {work.arrive_until}, "
                 f"and what {store.name} ordered ",
                 f"What {store.name} ordered "
+            )
+        if c.external_services:
+            store_work = (
+                f"{cap(store.name)} sells the catalogue's supplied goods at fixed prices, "
+                f"with unlimited supply at any hour. Buy there with buy. {self._goods()}"
+            )
+            restaurant_work = (
+                f"At {restaurant.name}, buy any dish on the fixed-price menu and eat it "
+                "immediately. The external restaurant is always open and supplies its own food."
+            )
+            hospital_work = (
+                f"At {hospital.name}, use seek_care for an examination ({money(fees.examination)}) "
+                f"or treatment ({money(fees.treatment)}). Treatment restores {fees.restores:g} "
+                "health and ends illness. External care is always available; a bedridden "
+                "resident may request it at home. Fees are paid outside the community."
+            )
+            hall_work = "The Hall is a meeting place. There is no resident mayor."
+            money_detail = (
+                "The outside research grant funds the community. Purchases and medical fees "
+                "are paid to outside services; nobody in the group receives those payments. "
+                "The treasury receives rents and daily item charges. You pay from your own "
+                "purse and cannot spend more than it holds. You may pass money or goods to "
+                "another resident, or put them down for others to get. Your midnight statement "
+                "records the day's payments."
+            )
+            body = body.replace("the doctor treats you", "external care treats you")
+            day_detail = (
+                "External services are always open. At midnight rent and item fees are taken "
+                "and health is reckoned; sleep and waking follow the same daily clock. "
+                f"With wait you let up to {counted(MAX_WAIT_MINUTES, 'minute')} pass."
             )
         return {
             **extra,

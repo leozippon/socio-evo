@@ -140,7 +140,7 @@ async def test_commands_are_serialized_and_record_real_result(world, monkeypatch
     a, b = office(world, "Aisha"), office(world, "Kofi")
     started, finish = asyncio.Event(), asyncio.Event()
 
-    async def command(image, files, records, cmd, timeout):
+    async def command(image, files, records, cmd, timeout, **kwargs):
         started.set()
         await finish.wait()
         (files / "result.csv").write_text("n,mean\n5,2.1\n")
@@ -200,7 +200,7 @@ async def test_shell_ignores_records_but_protects_shared_files(world, monkeypatc
     monkeypatch.setattr(research_sources, "search", lambda q: {"results": []})
     executions = []
 
-    async def command(*args):
+    async def command(*args, **kwargs):
         executions.append(args)
         return {"exit_code": 0, "stdout": "checked", "stderr": "", "timed_out": False}
 
@@ -303,7 +303,10 @@ def test_research_text_describes_own_project_not_the_simulation(world):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("outcome", ["success", "timeout", "cancel"])
-async def test_command_container_is_isolated_and_removed(world, monkeypatch, outcome):
+@pytest.mark.parametrize("network,gpus", [(True, None), (False, "all")])
+async def test_command_container_is_isolated_and_removed(
+    world, monkeypatch, outcome, network, gpus
+):
     calls = []
     started, finished = asyncio.Event(), asyncio.Event()
 
@@ -338,7 +341,8 @@ async def test_command_container_is_isolated_and_removed(world, monkeypatch, out
     research = world.research
     task = asyncio.create_task(
         research_workspace.execute(
-            "research-test", research.files, research.records, "python study.py", 0.01
+            "research-test", research.files, research.records, "python study.py", 0.01,
+            network=network, gpus=gpus,
         )
     )
     await started.wait()
@@ -351,7 +355,11 @@ async def test_command_container_is_isolated_and_removed(world, monkeypatch, out
         assert result["stdout"] == "recorded output"
         assert result["timed_out"] is (outcome == "timeout")
     argv = calls[0]
-    assert argv[argv.index("--network") + 1] == "none"
+    assert argv[argv.index("--network") + 1] == ("bridge" if network else "none")
+    if gpus:
+        assert argv[argv.index("--gpus") + 1] == gpus
+    else:
+        assert "--gpus" not in argv
     assert "--read-only" in argv and "--cap-drop" in argv
     mounts = [argv[i + 1] for i, a in enumerate(argv) if a == "--mount"]
     assert len(mounts) == 2 and mounts[1].endswith("dst=/records,readonly")
@@ -383,7 +391,7 @@ async def test_ignored_outputs_are_versioned_and_cancelled_work_is_marked(world,
     research = world.research
     start = research.snapshot()
 
-    async def command(*args):
+    async def command(*args, **kwargs):
         (research.files / ".gitignore").write_text("*.csv\n")
         (research.files / "partial.csv").write_text("partial data\n")
         raise asyncio.CancelledError

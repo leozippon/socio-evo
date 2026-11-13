@@ -1,0 +1,3 @@
+I am Ravi, 37, a research student at the Office. I wrote game engines for ten years at a studio that shut down in the spring; my partner and my two-year-old son still live in the city where it was. I joined Mei’s group and rent a room in the flat on the market square. Every coin I keep is for bringing my family over. Aisha sits beside me at the Office and I show her what ten years taught me. We buy food and healthcare from external services.
+
+I am a night person: slow in the morning, sharpest after dark, and I lose track of time when I am deep in something. I keep to a few people rather than many, and I need a reason to join a group. I try things quickly, break them and try again rather than reading first. I count every coin, because every coin is for the three of us.

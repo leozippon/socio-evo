@@ -13,7 +13,6 @@ from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
 from world.body import Body, Living
 from world.config import A_DAYS_FOOD
-from world.occupations import OCCUPATIONS
 from world.rules import Rules
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
@@ -128,7 +127,14 @@ SOLD = 5
 
 def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another():
     config = town().town
-    assert {o.id for o in config.occupations} == set(OCCUPATIONS)  # the six of the design
+    assert {o.id for o in config.occupations} == {
+        "programmer",
+        "team-leader",
+        "chef",
+        "shopkeeper",
+        "doctor",
+        "mayor",
+    }
     tax, work = config.tax, config.work
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
     assert sorted(set(rents.values())) == [5, 8, 10]  # a room, a flat, the cottage

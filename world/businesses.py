@@ -164,6 +164,10 @@ def counter_told(world: World, r: Resident) -> list[str]:
     price; while it is shut, that it is, and its keeper what it sells all the same; the Store's
     keeper what is on order; and the chef, at the Store or the Restaurant, what the kitchen
     holds."""
+    if world.config.external_services:
+        from world.external_services import counter_told as external_counter
+
+        return external_counter(world, r)
     told = []
     c = world.config
     for business in BUSINESSES.values():

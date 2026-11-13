@@ -101,7 +101,7 @@ class OpenAICompatibleClient:
             text=message.content or "",
             truncated=choice.finish_reason == "length",
             max_tokens=arguments.get("max_tokens"),
-            reasoning=extra.get("reasoning_content") or extra.get("reasoning"),
+            reasoning=_reasoning(extra),
             tool_calls=tuple(
                 ToolCall.read(call.id, call.function.name, call.function.arguments)
                 for call in message.tool_calls or ()
@@ -227,7 +227,7 @@ class _Received:
             if delta.content:
                 self.text.append(delta.content)
             extra = delta.model_extra or {}
-            if reasoning := extra.get("reasoning_content") or extra.get("reasoning"):
+            if (reasoning := _reasoning(extra)) is not None:
                 self.reasoning.append(reasoning)
             for fragment in delta.tool_calls or ():
                 call = self.calls.setdefault(fragment.index, {"id": "", "name": "", "args": ""})
@@ -243,7 +243,7 @@ class _Received:
             text="".join(self.text),
             truncated=self.finish_reason == "length",
             max_tokens=max_tokens,
-            reasoning="".join(self.reasoning) or None,
+            reasoning="".join(self.reasoning) if self.reasoning else None,
             tool_calls=tuple(
                 ToolCall.read(call["id"], call["name"], call["args"])
                 for _, call in sorted(self.calls.items())
@@ -257,6 +257,10 @@ class _Received:
 def _wire(message: Message) -> dict[str, Any]:
     """`message` as the chat-completions API takes it."""
     wire: dict[str, Any] = {"role": message.role, "content": message.content}
+    # Thinking tool continuations require the original assistant reasoning, including "".
+    # https://api-docs.deepseek.com/guides/thinking_mode/
+    if message.reasoning_content is not None:
+        wire["reasoning_content"] = message.reasoning_content
     if message.tool_calls:
         wire["tool_calls"] = [
             {
@@ -272,6 +276,11 @@ def _wire(message: Message) -> dict[str, Any]:
     if message.tool_call_id is not None:
         wire["tool_call_id"] = message.tool_call_id
     return wire
+
+
+def _reasoning(extra: dict[str, Any]) -> str | None:
+    value = extra.get("reasoning_content")
+    return extra.get("reasoning") if value is None else value
 
 
 def _usage(usage: Any) -> Usage | None:

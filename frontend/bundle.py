@@ -30,7 +30,7 @@ from infrastructure.storage import RunDirectory, read_jsonl
 from simulation.config import ExperimentConfig
 from world.clock import DAY
 from world.config import TownConfig
-from world.economy import LARDER, PORTIONS, SHELVES, add, take
+from world.economy import LARDER, PORTIONS, SHELVES, SUPPLIER, add, take
 from world.log import Day, counted_move, day_of
 from world.rules import Rules
 
@@ -216,7 +216,7 @@ def graph(timeline: Mapping[str, Any], days: Sequence[Day]) -> list[Row]:
             elif moved in ("sale", "dish"):
                 buy = payload["reason"] == "buy"
                 server, served = (payload["seller"], actor) if buy else (actor, payload["target"])
-                if server != served:
+                if server is not None and server != served:
                     add(day.number, server, served, "served", 1)
             elif kind in ("examination", "treatment") and payload["patient"] != actor:
                 add(day.number, actor, payload["patient"], "served", 1)
@@ -298,7 +298,7 @@ def _moved(marker: Mapping[str, Any]) -> list[tuple[str, str, int]]:
     if kind == "move" and marker["item"] is not None:
         item, units = marker["item"], marker["units"]
         ends = ((marker["source"], -units), (marker["target"], units))
-        return [(key, item, change) for key, change in ends if key is not None]
+        return [(key, item, change) for key, change in ends if key not in (None, SUPPLIER)]
     if kind == "cook":
         used = [(LARDER, item, -units) for item, units in marker["used"].items()]
         return [*used, (PORTIONS, marker["dish"], marker["portions"])]

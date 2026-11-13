@@ -298,7 +298,7 @@ async def test_tool_calls_are_sent_and_read_back(monkeypatch):
     earlier = ToolCall(id="c0", name="write_file", arguments={"path": "a.md"})
     messages = (
         Message(role="user", content="Go."),
-        Message(role="assistant", content="", tool_calls=(earlier,)),
+        Message(role="assistant", content="", tool_calls=(earlier,), reasoning_content="Plan."),
         Message(role="tool", content="Wrote a.md.", tool_call_id="c0"),
     )
     response = await client.complete(
@@ -311,6 +311,7 @@ async def test_tool_calls_are_sent_and_read_back(monkeypatch):
         )
     )
     body = bodies[0]
+    assert body["messages"][1]["reasoning_content"] == "Plan."
     assert body["messages"][1]["tool_calls"] == [
         {
             "id": "c0",
@@ -391,6 +392,43 @@ async def test_a_stream_is_accumulated_into_one_reply(monkeypatch):
     )
     assert response.finish_reason == "tool_calls"
     assert response.usage == Usage(prompt_tokens=40, completion_tokens=9, cached_prompt_tokens=32)
+
+
+@pytest.mark.parametrize("stream", [False, True])
+@pytest.mark.parametrize("reasoning", [None, "", "A reason."])
+async def test_reasoning_is_preserved_verbatim_and_absent_only_when_not_returned(
+    monkeypatch, stream, reasoning
+):
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        extra = {} if reasoning is None else {"reasoning_content": reasoning}
+        return (
+            _sse([_chunk({"content": "Done.", **extra}, finish_reason="stop")])
+            if stream
+            else httpx2.Response(200, json=_completion("Done.", **extra))
+        )
+
+    client = _client(monkeypatch, handler)
+    call = client.stream if stream else client.complete
+    response = await call(_request())
+    assert response.reasoning == reasoning
+    await call(
+        LLMRequest(
+            messages=(
+                Message(
+                    role="assistant", content=response.text, reasoning_content=response.reasoning
+                ),
+                Message(role="user", content="Continue."),
+            )
+        )
+    )
+    sent = bodies[1]["messages"][0]
+    if reasoning is None:
+        assert "reasoning_content" not in sent
+    else:
+        assert sent["reasoning_content"] == reasoning
 
 
 async def test_a_stream_that_breaks_off_is_retried_from_its_start(monkeypatch):

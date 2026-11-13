@@ -31,6 +31,7 @@ ARCHITECTURE_TABLE = {
         "look_around",
         "go",
         "start_work",
+        "seek_care",
         "view_board",
         "read_task",
         "claim_task",
@@ -89,6 +90,7 @@ ARCHITECTURE_TABLE = {
         "eat",
         "wait",
         "leave_work",
+        "seek_care",
     },
     "conversation": {
         "look_around",
@@ -103,7 +105,7 @@ ARCHITECTURE_TABLE = {
         "leave_conversation",
     },
     "sleep": {"look_around", "review_day", "sleep"},
-    "bedridden": {"look_around", "say", "sleep"},
+    "bedridden": {"look_around", "say", "sleep", "seek_care"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
     if _event != "movement":  # taking stock and asking: every waking event

@@ -15,7 +15,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-OccupationId = Literal["programmer", "team-leader", "chef", "shopkeeper", "doctor", "mayor"]
+OccupationId = Literal[
+    "programmer", "team-leader", "teacher", "student", "chef", "shopkeeper", "doctor", "mayor"
+]
 PROGRAMMER: OccupationId = "programmer"
 TEAM_LEADER: OccupationId = "team-leader"
 """The programmers' leader, who gives them tasks, takes none herself and has a share of each
@@ -49,6 +51,18 @@ class Trade:
 
 
 OCCUPATIONS: dict[str, Trade] = {
+    "teacher": Trade(
+        workplace="office",
+        work=frozenset(),
+        told="You mentor the students and work with them on the group's shared research project. "
+        "Decide the research direction together and contribute studies and writing yourself.",
+    ),
+    "student": Trade(
+        workplace="office",
+        work=frozenset(),
+        told="You are a research student working with the teacher and other students on one "
+        "shared project. Develop ideas, conduct studies and discuss the evidence together.",
+    ),
     PROGRAMMER: Trade(
         workplace="office",
         work=BOARD_TOOLS | {"claim_task"} | TASK_TOOLS,
