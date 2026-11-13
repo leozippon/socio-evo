@@ -35,17 +35,17 @@ The platform's current personal API uses `https://zenith.bza.edu.cn/pt/api2`. Qu
 
 The verified two-A100 instance is `8sm69kjapr5m8teum8myfhz80`, with SSH `root@115.190.90.101:2936`. On 2026-11-13 the two already-registered keys were successfully synchronized and ordinary SSH login was restored. The platform token is separate from SSH private keys and model-service keys; do not put it in the repository or researcher environment.
 
-## Prepared deployment, 2026-11-13
+## Active deployment, 2026-11-13
 
-The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`. Its deployment receipt records the exact source revision and image identity; the core AutoResearch implementation was validated at `d46ae3e`. The deployment's `profiles/` overlays select its independent container image; `run-pair.sh` uses the existing Python environment without modifying it and loads the Lighting and Tavily credentials into the controller environment. Tavily is now safely configured in the deployment root's private mode-0600 `credentials.env`, outside the source checkout. The current launch does not require a Semantic Scholar key because both profiles disable that service.
+The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`, deployed at source revision `0770bc3`. It reuses the verified image `socio-evo-autoresearch:ebf4bb5`; the deployment receipt records the image identity and source revision separately. The deployment's `profiles/` overlays select this image; `run-pair.sh` uses the existing Python environment and loads the existing private Lighting credential and Tavily from the deployment root's mode-0600 `credentials.env`, outside the source checkout. Both profiles disable Semantic Scholar.
+
+The pair is running with seed `20260302`, town GPU `device=0`, academy GPU `device=1`, and a single execution through day 28. The day-7 proposal and day-28 manuscript reviews occur automatically at their checkpoints. The launch settings are:
 
 ```sh
 DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
-"$DEPLOY/run-pair.sh" --preflight-only
-"$DEPLOY/run-pair.sh" --until-day 7
-"$DEPLOY/run-pair.sh" --resume --until-day 28
+"$DEPLOY/run-pair.sh" --seed 20260302 --town-gpu device=0 --academy-gpu device=1 --until-day 28
 ```
 
-The read-only viewer listens on remote `127.0.0.1:8919`; the local SSH tunnel exposes `http://127.0.0.1:8919/`. It currently reports an empty run list and waits for the first experiment. The old 14-day pilot is completed and remains separate. Actual actor tool continuation, the configured judge's grounded structured review and Tavily's real API preflight have passed.
+Full preflight passed every enabled check: actor tool calling and continuation, judge structured reply, Tavily, curl and separate research containers on GPU 0 and GPU 1. Semantic Scholar is recorded as disabled, not passed. At startup verification, controller PID 18164 supervised town PID 18268 and academy PID 18270; both experiment manifests reported running, and all twelve residents had trace and session files. This establishes successful startup, not long-run stability or a scientific result. The old completed 14-day pilot remains separate.
 
-The prepared executable revision is `ebf4bb5`, with image `socio-evo-autoresearch:ebf4bb5`. Real container checks passed numerical computation, persistent output, HTTPS curl/git, evidence protection, GPU visibility and timeout cleanup. Their records and image digest are under the deployment root. Anonymous Semantic Scholar access still returned HTTP429 after three retries, so the full paired preflight has not passed. The user has since authorized launch without Semantic Scholar. The current source disables its tool and probe in both AutoResearch profiles; deploy this update and pass a fresh preflight of the enabled services before launch. This source update alone does not establish that preflight or experiment startup has completed.
+The read-only viewer uses remote `127.0.0.1:8919`, exposed by the local SSH tunnel at `http://127.0.0.1:8919/`. After restarting the old process to load the new configuration schema, an independent check of `/api/research` returned HTTP 200 and showed both experiments running, with eight town residents, four academy members and successful Tavily `search_web` records. Run state, preflight records and process logs remain under the deployment root.
