@@ -17,7 +17,7 @@ set -a
 . /absolute/private/path/credentials.env
 set +a
 export PYTHONDONTWRITEBYTECODE=1
-RUNS=/project_c20250210/260903018/socio-evo-autoresearch/runs
+RUNS=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs
 python -m ops.research.run_pair --runs-root "$RUNS" --preflight-only
 python -m ops.research.run_pair --runs-root "$RUNS" --until-day 7
 python -m ops.research.run_pair --runs-root "$RUNS" --resume --until-day 28
@@ -47,3 +47,5 @@ DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
 ```
 
 The read-only viewer listens on remote `127.0.0.1:8919`; the local SSH tunnel exposes `http://127.0.0.1:8919/`. It currently reports an empty run list and waits for the first experiment. The old 14-day pilot is completed and remains separate. Actual actor tool continuation and the configured judge's grounded structured review have passed; a full paired preflight and experiment launch remain deferred at the user's request until Tavily credentials are available.
+
+The prepared executable revision is `ebf4bb5`, with image `socio-evo-autoresearch:ebf4bb5`. Real container checks passed numerical computation, persistent output, HTTPS curl/git, evidence protection, GPU visibility and timeout cleanup. Their records and image digest are under the deployment root. Public Semantic Scholar returned HTTP429 during preparation; it must pass a fresh preflight as well as the still-missing Tavily service before either arm starts. Deployment readiness does not mean that the full paired preflight or a scientific experiment has run.

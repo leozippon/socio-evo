@@ -48,8 +48,8 @@ All experiment state and derived reports belong on Zenith project storage. The l
 After installation and loading the private credentials as shown in the root README:
 
 ```bash
-python -m ops.research.run_pair --runs-root /project_c20250210/260903018/socio-evo-autoresearch/runs --seed 20260302 --preflight-only
-python -m ops.research.run_pair --runs-root /project_c20250210/260903018/socio-evo-autoresearch/runs --seed 20260302
+python -m ops.research.run_pair --runs-root /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs --seed 20260302 --preflight-only
+python -m ops.research.run_pair --runs-root /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs --seed 20260302
 ```
 
 Use `--until-day 7` for a resumable first-stage run, and the same command with `--resume` to continue. Keep the supervising command in a persistent remote terminal or service. The pair launcher performs provider/search/container checks before launching either arm and keeps per-arm logs in project storage. Optional GPU arguments and precise CLI options are shown by `--help`.
@@ -57,13 +57,13 @@ Use `--until-day 7` for a resumable first-stage run, and the same command with `
 The existing read-only research viewer reads both run directories:
 
 ```bash
-python -m frontend.research_server --runs-root /project_c20250210/260903018/socio-evo-autoresearch/runs --site /project_c20250210/260903018/socio-evo-autoresearch/site --port 8919
+python -m frontend.research_server --runs-root /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs --site /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/site --port 8919
 ```
 
 Reach it through SSH forwarding. The dashboard shows per-stage scores, award records and both institutions. Its grant totals and purse replay include external services; the legacy personal-income category breakdown does not list research grants separately. For a checkpoint-grounded machine-readable comparison:
 
 ```bash
-python -m analysis.research --town /project_c20250210/260903018/socio-evo-autoresearch/runs/autoresearch-town-seed-20260302 --academy /project_c20250210/260903018/socio-evo-autoresearch/runs/autoresearch-academy-seed-20260302 --out /project_c20250210/260903018/socio-evo-autoresearch/comparison.json
+python -m analysis.research --town /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs/autoresearch-town-seed-20260302 --academy /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs/autoresearch-academy-seed-20260302 --out /project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/comparison.json
 ```
 
 The report separates pending stages from zero scores, includes all retained resident usage and all persisted judge attempts, and reads awards only from the last completed checkpoint. Resuming discards actor traces after the restored checkpoint, so their token totals are retained-record counts rather than a complete historical invoice. Provider fields that were not reported stay null. Keep generated viewer data and all analysis outputs remote. Review manifests, milestone records, artifacts and usage before drawing a scientific conclusion. Historical deployment details for the earlier 14-day local-model pilot are preserved in [the pilot record](archive/research-pilot.md); they do not establish that this new pair has been launched.
