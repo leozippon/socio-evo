@@ -428,6 +428,7 @@ class ResearchSettings(StrictModel):
     image: str = "socio-evo-research:local"
     allowance: int = Field(default=420, ge=0)
     command_timeout_s: int = Field(default=120, ge=1, le=600)
+    semantic_scholar: bool = True
     network: bool = False
     gpus: str | None = None
     cpus: float = Field(default=2, gt=0)

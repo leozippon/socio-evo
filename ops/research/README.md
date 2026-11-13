@@ -10,7 +10,7 @@ docker build -t socio-evo-research:local -f ops/research/Dockerfile .
 
 On hosts with slow access to Debian or PyPI, select mirrors for this build with `--build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`. The Debian mirror root must provide both `/debian` and `/debian-security`; this changes only the image build, not the host's package sources.
 
-Load credentials from a private, mode-0600 file outside the checkout. The default profiles require `LIGHTING_API_KEY` for the actor and judge, and `TAVILY_API_KEY` for web search; `SEMANTIC_SCHOLAR_API_KEY` is optional. Credentials are read by the service process and are not passed into research containers. Keep this shell attached through a terminal multiplexer for the foreground controller:
+Load credentials from a private, mode-0600 file outside the checkout. The default profiles require `LIGHTING_API_KEY` for the actor and judge, and `TAVILY_API_KEY` for web search. The current AutoResearch profiles disable Semantic Scholar; its optional `SEMANTIC_SCHOLAR_API_KEY` is only used when that service is enabled. Credentials are read by the service process and are not passed into research containers. Keep this shell attached through a terminal multiplexer for the foreground controller:
 
 ```sh
 set -a
@@ -23,7 +23,7 @@ python -m ops.research.run_pair --runs-root "$RUNS" --until-day 7
 python -m ops.research.run_pair --runs-root "$RUNS" --resume --until-day 28
 ```
 
-Each invocation verifies real actor tool calling and continuation, a structured judge reply, Tavily, Semantic Scholar, curl, and one research container command per distinct resource profile. A failure prevents either experiment from starting. The helper has no scripted research dry run. Preflight checks do not establish scientific quality or long-run stability.
+Each invocation verifies real actor tool calling and continuation, a structured judge reply, Tavily, curl, and one research container command per distinct resource profile. Semantic Scholar is checked only when at least one supplied profile enables `town.research.semantic_scholar`; otherwise its check is recorded as disabled, not passed. A failure prevents either experiment from starting. The helper has no scripted research dry run. Preflight checks do not establish scientific quality or long-run stability.
 
 The default seed is `20260302`; use `--seed N` to run another matched pair. Names end in `-seed-N`. The `pair-seed-N/` control directory retains frozen launch profiles, preflight status, separate process logs and exit codes; each experiment also owns its normal manifest and checkpoints. `--resume` requires identical frozen settings, refuses a live process, and skips an arm that already reached the requested checkpoint. A failed arm is not restarted automatically. Terminating the controller forwards termination to both experiment processes.
 
@@ -37,7 +37,7 @@ The verified two-A100 instance is `8sm69kjapr5m8teum8myfhz80`, with SSH `root@11
 
 ## Prepared deployment, 2026-11-13
 
-The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`. Its deployment receipt records the exact source revision and image identity; the core AutoResearch implementation was validated at `d46ae3e`. The deployment's `profiles/` overlays select its independent container image; `run-pair.sh` uses the existing Python environment without modifying it and loads the Lighting and Tavily credentials into the controller environment. Tavily is now safely configured in the deployment root's private mode-0600 `credentials.env`, outside the source checkout. Add `SEMANTIC_SCHOLAR_API_KEY` there before repeating preflight.
+The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`. Its deployment receipt records the exact source revision and image identity; the core AutoResearch implementation was validated at `d46ae3e`. The deployment's `profiles/` overlays select its independent container image; `run-pair.sh` uses the existing Python environment without modifying it and loads the Lighting and Tavily credentials into the controller environment. Tavily is now safely configured in the deployment root's private mode-0600 `credentials.env`, outside the source checkout. The current launch does not require a Semantic Scholar key because both profiles disable that service.
 
 ```sh
 DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
@@ -48,4 +48,4 @@ DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
 
 The read-only viewer listens on remote `127.0.0.1:8919`; the local SSH tunnel exposes `http://127.0.0.1:8919/`. It currently reports an empty run list and waits for the first experiment. The old 14-day pilot is completed and remains separate. Actual actor tool continuation, the configured judge's grounded structured review and Tavily's real API preflight have passed.
 
-The prepared executable revision is `ebf4bb5`, with image `socio-evo-autoresearch:ebf4bb5`. Real container checks passed numerical computation, persistent output, HTTPS curl/git, evidence protection, GPU visibility and timeout cleanup. Their records and image digest are under the deployment root. Anonymous Semantic Scholar access still returned HTTP429 after three retries, so the full paired preflight has not passed. The user explicitly chose to wait for a Semantic Scholar API key before starting either arm; the deployment receipt records `deployed_waiting_for_semantic_scholar_key`. Zero new experiments have started, and strict preflight remains required.
+The prepared executable revision is `ebf4bb5`, with image `socio-evo-autoresearch:ebf4bb5`. Real container checks passed numerical computation, persistent output, HTTPS curl/git, evidence protection, GPU visibility and timeout cleanup. Their records and image digest are under the deployment root. Anonymous Semantic Scholar access still returned HTTP429 after three retries, so the full paired preflight has not passed. The user has since authorized launch without Semantic Scholar. The current source disables its tool and probe in both AutoResearch profiles; deploy this update and pass a fresh preflight of the enabled services before launch. This source update alone does not establish that preflight or experiment startup has completed.

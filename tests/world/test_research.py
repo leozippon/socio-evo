@@ -12,7 +12,7 @@ from world import research_sources, research_workspace
 from world.clock import ManualClock
 from world.events import Idle, Movement, Sleep, Work
 from world.midnight import midnight
-from world.research import BRIEF, DISABLED, RESEARCH_NAMES, NoTasks
+from world.research import BRIEF, DISABLED, RESEARCH_NAMES, NoTasks, research_help
 from world.world import World
 
 CONFIG = Path(__file__).resolve().parents[2] / "experiments/configs/research.yaml"
@@ -34,6 +34,37 @@ def office(w, name):
     r = w.residents[name]
     r.base, r.place = Idle(), w.config.workplace("office").id
     return r
+
+
+@pytest.mark.parametrize(
+    "profile", ["research.yaml", "autoresearch-town.yaml", "autoresearch-academy.yaml"]
+)
+async def test_literature_tool_matches_profile_and_disabled_calls_do_not_reach_provider(
+    tmp_path, monkeypatch, profile
+):
+    config = load_experiment(CONFIG.with_name(profile))
+    for resident in config.residents:
+        AgentDirectory.create(
+            tmp_path / "agents" / resident.name, background=resident.background_path.read_text()
+        )
+    w = World(config.town, tmp_path, NoTasks(), clock=ManualClock())
+    w.research.initialize(w)
+    enabled = profile == "research.yaml"
+    assert config.town.research.semantic_scholar is enabled
+    for name in w.residents:
+        r = office(w, name)
+        assert w.knows(r, "search_literature") is enabled
+        assert ("search_literature" in {s.name for s in w.usable(r)}) is enabled
+    assert ("Semantic Scholar" in research_help(config.town.research)) is enabled
+    assert "search_web" in w.research.names and "curl" in w.research.names
+    if not enabled:
+        monkeypatch.setattr(
+            research_sources, "search", lambda _: pytest.fail("Disabled provider called")
+        )
+        before = w.research.snapshot()
+        result = await w.call(r, "search_literature", {"query": "research"})
+        assert "not enabled" in result.text
+        assert w.research.snapshot() == before
 
 
 def test_original_cast_no_tasks_brief_and_grant_checkpoint(world, tmp_path):
@@ -341,8 +372,13 @@ async def test_command_container_is_isolated_and_removed(
     research = world.research
     task = asyncio.create_task(
         research_workspace.execute(
-            "research-test", research.files, research.records, "python study.py", 0.01,
-            network=network, gpus=gpus,
+            "research-test",
+            research.files,
+            research.records,
+            "python study.py",
+            0.01,
+            network=network,
+            gpus=gpus,
         )
     )
     await started.wait()

@@ -174,6 +174,11 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
             ("semantic_scholar", research_sources.search, "reproducible research"),
             ("curl", research_sources.curl_source, "https://example.org"),
         ):
+            if stage == "semantic_scholar" and not any(
+                config.town.research.semantic_scholar for config in configs.values()
+            ):
+                report["checks"][stage] = {"enabled": False, "status": "disabled"}
+                continue
             result = await asyncio.to_thread(call, argument)
             report["checks"][stage] = {
                 "ok": True,

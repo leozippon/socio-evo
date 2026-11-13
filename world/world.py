@@ -300,7 +300,7 @@ class World:
         if self.research:
             from world.research import research_specs
 
-            self.tool_specs = research_specs(self.tool_specs)
+            self.tool_specs = research_specs(self.tool_specs, self.research.names)
         # Each occupation's declarations by name, as its residents' requests carry them.
         self._specs = {
             occupation.id: {spec.name: spec for spec in tools.own(self.tool_specs, occupation.id)}
@@ -857,7 +857,7 @@ class World:
             from world.research import RESEARCH_NAMES
 
             usable = [spec for spec in usable if spec.name not in RESEARCH_NAMES]
-            usable += [specs[name] for name in RESEARCH_NAMES]
+            usable += [specs[name] for name in self.research.names]
             if isinstance(r.base, Idle) and not any(s.name == "start_work" for s in usable):
                 usable.append(specs["start_work"])
         return usable

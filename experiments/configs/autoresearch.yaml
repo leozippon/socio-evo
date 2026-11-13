@@ -18,6 +18,7 @@ runtime:
 town:
   research:
     allowance: 420
+    semantic_scholar: false
     network: true
     cpus: 8
     memory: 32g

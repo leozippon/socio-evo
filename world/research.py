@@ -62,6 +62,9 @@ def milestone_terms(settings: ResearchSettings) -> str:
 
 
 def research_help(settings: ResearchSettings) -> str:
+    literature = (
+        "search_literature searches Semantic Scholar; " if settings.semantic_scholar else ""
+    )
     return (
         "All residents share one research workspace at the Office. There are no client tasks "
         "or assigned research roles. Use your usual conversations to organize the work. "
@@ -76,7 +79,7 @@ def research_help(settings: ResearchSettings) -> str:
         "dependencies. Files outside /research do not persist. Commands run one at a time, "
         f"with {settings.cpus:g} CPU cores, {settings.memory} memory and at most "
         f"{settings.command_timeout_s} real seconds "
-        "per call. search_web searches Tavily; search_literature searches Semantic Scholar; "
+        f"per call. search_web searches Tavily; {literature}"
         "curl fetches and records a public HTTP(S) URL; read_source reads "
         "a public web page, text or PDF (up to 8 MiB). Search matches are not full-text evidence; "
         "failed or inaccessible sources remain unread. Sources and commands are recorded in "
@@ -88,7 +91,7 @@ def research_help(settings: ResearchSettings) -> str:
     )
 
 
-def research_specs(existing: list[ToolSpec]) -> list[ToolSpec]:
+def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[ToolSpec]:
     path = _text("Shared path, such as paper.md; records/<id>.json is read-only evidence.")
     revision = _text("The current revision returned by list_research_files or read_repo_file.")
     shared = [
@@ -156,7 +159,9 @@ def research_specs(existing: list[ToolSpec]) -> list[ToolSpec]:
             url=_text("Public HTTP(S) URL"),
         ),
     ]
-    return [s for s in existing if s.name not in DISABLED | set(RESEARCH_NAMES)] + shared
+    return [s for s in existing if s.name not in DISABLED | set(RESEARCH_NAMES)] + [
+        s for s in shared if s.name in names
+    ]
 
 
 class NoTasks:
@@ -179,6 +184,11 @@ class NoTasks:
 class Research:
     def __init__(self, run_dir: Path, settings: ResearchSettings):
         self.settings = settings
+        self.names = tuple(
+            name
+            for name in RESEARCH_NAMES
+            if name != "search_literature" or settings.semantic_scholar
+        )
         self.root = run_dir / "research"
         self.files = self.root / "files"
         self.records = self.root / "records"
@@ -298,6 +308,8 @@ class Research:
         )
 
     async def call(self, world, r, name: str, args: dict[str, Any]) -> ToolResult:
+        if name not in self.names:
+            return ToolResult("This research facility is not enabled.")
         if not self.available(world, r):
             return ToolResult("Research facilities are available while up at the Office.")
         issue = check(world._specs[r.occupation.id][name], args)

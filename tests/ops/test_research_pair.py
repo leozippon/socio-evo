@@ -126,8 +126,9 @@ async def test_pair_records_independent_exit_status_and_propagates_options(tmp_p
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("scholar_enabled", [False, True])
 async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
-    tmp_path, monkeypatch
+    tmp_path, monkeypatch, scholar_enabled
 ):
     monkeypatch.setenv("LIGHTING_API_KEY", "private-test-key")
     monkeypatch.setenv("TAVILY_API_KEY", "private-search-key")
@@ -156,6 +157,10 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
         seen.append("source")
         return {"source": "https://example.org", "results": []}
 
+    def scholar(query):
+        assert scholar_enabled, "Disabled Semantic Scholar must not be probed"
+        return source(query)
+
     async def command(image, files, records, cmd, timeout, **kwargs):
         seen.append("docker")
         assert kwargs["cpus"] == 8 and kwargs["memory"] == "32g"
@@ -164,12 +169,36 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
 
     monkeypatch.setattr(pair, "create_client", lambda config: Client())
     monkeypatch.setattr(pair.research_sources, "search_web", source)
-    monkeypatch.setattr(pair.research_sources, "search", source)
+    monkeypatch.setattr(pair.research_sources, "search", scholar)
     monkeypatch.setattr(pair.research_sources, "curl_source", source)
     monkeypatch.setattr(pair.research_workspace, "require_image", lambda image: None)
     monkeypatch.setattr(pair.research_workspace, "execute", command)
-    report = await pair.preflight(configs(), tmp_path)
+    configured = configs()
+    if scholar_enabled:
+        town = configured["town"].town
+        configured["town"] = configured["town"].model_copy(
+            update={
+                "town": town.model_copy(
+                    update={"research": town.research.model_copy(update={"semantic_scholar": True})}
+                )
+            }
+        )
+    report = await pair.preflight(configured, tmp_path)
     assert report["ok"]
-    assert seen == ["actor", "actor", "judge", "source", "source", "source", "docker"]
+    assert seen == ["actor", "actor", "judge"] + ["source"] * (3 if scholar_enabled else 2) + [
+        "docker"
+    ]
+    if not scholar_enabled:
+        assert report["checks"]["semantic_scholar"] == {"enabled": False, "status": "disabled"}
     assert not list(tmp_path.glob("preflight-*"))
     assert "private-" not in (tmp_path / "preflight.json").read_text()
+
+    def failed(query):
+        raise ValueError("HTTP 429")
+
+    failing = "search" if scholar_enabled else "search_web"
+    stage = "semantic_scholar" if scholar_enabled else "tavily"
+    monkeypatch.setattr(pair.research_sources, failing, failed)
+    with pytest.raises(RuntimeError, match=f"Preflight failed at {stage}"):
+        await pair.preflight(configured, tmp_path)
+    assert not json.loads((tmp_path / "preflight.json").read_text())["ok"]
