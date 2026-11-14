@@ -2,7 +2,7 @@
 
 This guide owns deployment procedures; the [research protocol](../../docs/research.md) owns the scientific design. The current target is one four-person laboratory, with local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start the formal experiment.
 
-All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The deployment being prepared is `/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261114-r1`. The completed town/academy pair is preserved separately.
+All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The current deployment is `/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261114-r1`. The completed town/academy pair is preserved separately.
 
 ## Prepare services
 
@@ -59,9 +59,9 @@ python -m frontend.research_server --runs-root "$DEPLOY/runs" --site "$DEPLOY/si
 
 Forward local port 8920 to remote `127.0.0.1:8920`. The viewer reads remote files directly and remains waiting before a run exists. Keep viewer data and all later analysis on Zenith; do not mirror experiment outputs into the checkout.
 
-## Preparation status and history
+## Deployment status and history
 
-Preparation passed its complete preflight at 2026-11-14 09:31:33 UTC; the formal experiment has not been launched. Local Qwen is ready on host GPU 0 with TP=1 and context length 262144. Real tool calling and feedback continuation, the external `gpt-6.1-sol` judge, Tavily, curl, host-GPU-1 CUDA training and checkpoint loading in a second container all passed. Semantic Scholar remains disabled. A separate probe also passed 40 Adam training steps, cross-container import of `emoji==2.14.1` from `/runtime/python`, persistent caches outside research Git, and read-only evidence access. The viewer on port 8920 returns its waiting state, and no formal experiment manifest exists.
+The formal experiment `ai-lab-seed-20260302` started at 2026-11-14 10:28:43 UTC (18:28:43 Beijing time), from source `1c60e9784c3c53fd98cda3029a6ed3fa202ee311`. Its manifest reports running under PID 408426. The launcher's complete preflight passed local Qwen tool calling and feedback continuation, the external `gpt-6.1-sol` judge, Tavily, curl, host-GPU-1 CUDA training and checkpoint loading in a second container; Semantic Scholar is disabled. Local Qwen uses host GPU 0 with TP=1 and context length 262144. The run preserves seven complete days of ordinary life, publishes the commission at 07:00 on day 8, and reviews the proposal at day 8 and manuscript at day 28. All four residents have produced real thinking replies. An independent viewer check showed day 1 advancing through event 57, with ordinary daily activities, no research operations or milestones, and no research commission yet. The earlier preparation probe also passed 40 Adam training steps, cross-container import of `emoji==2.14.1` from `/runtime/python`, persistent caches outside research Git, and read-only evidence access.
 
 The final image is `socio-evo-ai-lab:20261114`, immutable ID `sha256:3773049a0729b148e2c6a5a9f84a908c3d5ff0f93ceb978bcfc157728c1ae631`. Its Dockerfile SHA-256 is `83a3f2a8bab120a3caf8b947e396f82c62ce3441a3eba593258599beb0521284`. Acceptance receipts are retained under `preflight/model-client.json`, `preflight/cuda-runtime.json`, `preflight/image-build-config.json` and `runs/lab-seed-20260302/preflight.json`. The initial combined container check failed because OpenBLAS attempted 64 threads; the CUDA image now sets OMP, OpenBLAS, MKL and NumExpr to eight threads, matching its CPU allocation. The failed receipt remains preserved, and the complete check and independent CUDA probe passed after that change. See the [project log](../../docs/logbook/PROJECT_LOG_2026-11-14) for source verification and test scopes.
 
