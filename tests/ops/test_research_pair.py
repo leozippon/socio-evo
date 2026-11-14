@@ -128,8 +128,9 @@ async def test_pair_records_independent_exit_status_and_propagates_options(tmp_p
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scholar_enabled", [False, True])
 @pytest.mark.parametrize("persistent_runtime", [False, True])
+@pytest.mark.parametrize("review_style", ["standard", "conference"])
 async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
-    tmp_path, monkeypatch, scholar_enabled, persistent_runtime
+    tmp_path, monkeypatch, scholar_enabled, persistent_runtime, review_style
 ):
     monkeypatch.setenv("LIGHTING_API_KEY", "private-test-key")
     monkeypatch.setenv("TAVILY_API_KEY", "private-search-key")
@@ -170,6 +171,12 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
             assert kwargs["runtime_dir"].parent == files.parent
             assert "loss.backward()" in cmd or "torch.load(" in cmd
             (files / "gpu-uuids.txt").write_text("GPU-research\n")
+        if review_style == "conference" and "latexmk" in cmd:
+            assert "-halt-on-error" in cmd and "probe-figure.pdf" in cmd
+            assert "\\bibliography{probe}" in (files / "probe.tex").read_text()
+            (files / "probe.pdf").write_bytes(b"%PDF-1.4\n")
+            (files / "probe.bbl").write_text("Probe citation")
+            (files / "probe.log").write_text("Output written on probe.pdf")
         return {"exit_code": 0, "timed_out": False}
 
     monkeypatch.setattr(pair, "create_client", lambda config: Client())
@@ -180,6 +187,12 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
     monkeypatch.setattr(pair.research_workspace, "execute", command)
     monkeypatch.setattr(pair.subprocess, "check_output", lambda *a, **k: "GPU-research\n")
     configured = configs()
+    for arm, config in configured.items():
+        configured[arm] = config.model_copy(
+            update={"town": config.town.model_copy(update={
+                "research": config.town.research.model_copy(update={"review_style": review_style})
+            })}
+        )
     if persistent_runtime:
         for arm, config in configured.items():
             town = config.town
@@ -211,10 +224,24 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
     if persistent_runtime:
         assert report["checks"]["docker:town"]["gpu_uuids"] == ["GPU-research"]
         assert report["checks"]["docker:town"]["checkpoint_reload"]
+    if review_style == "conference":
+        assert report["checks"]["docker:town"]["latex_compiled"]
     if not scholar_enabled:
         assert report["checks"]["semantic_scholar"] == {"enabled": False, "status": "disabled"}
     assert not list(tmp_path.glob("preflight-*"))
     assert "private-" not in (tmp_path / "preflight.json").read_text()
+
+    if review_style == "conference":
+        async def missing_bibliography(*args, **kwargs):
+            result = await command(*args, **kwargs)
+            if "latexmk" in args[3]:
+                (args[1] / "probe.bbl").write_text("")
+            return result
+
+        monkeypatch.setattr(pair.research_workspace, "execute", missing_bibliography)
+        with pytest.raises(RuntimeError, match="Preflight failed at docker:town"):
+            await pair.preflight(configured, tmp_path)
+        monkeypatch.setattr(pair.research_workspace, "execute", command)
 
     def failed(query):
         raise ValueError("HTTP 429")

@@ -118,6 +118,11 @@ class Rules:
                     "You may study and discuss ideas with your colleagues."
                 )
                 own += " Your daily activities are yours to arrange."
+            elif c.research.cycles:
+                own = (
+                    "Work with your fellow institute doctoral students on the shared study. "
+                    "Discuss questions, methods, results, writing and reviewer feedback together."
+                )
             elif occupation.id in {"programmer", "team-leader"}:
                 own = "The machines here are available for the town's shared research."
         until = "you stop with leave_work" + (

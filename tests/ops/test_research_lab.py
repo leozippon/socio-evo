@@ -94,3 +94,24 @@ def test_missing_lab_credentials_leaves_no_state(tmp_path, monkeypatch):
             ]
         )
     assert not root.exists()
+
+
+def test_institute_has_four_phd_peers_and_recurring_funded_reviews(monkeypatch):
+    for key in ("VLLM_API_KEY", "LIGHTING_API_KEY", "TAVILY_API_KEY"):
+        monkeypatch.setenv(key, "test-key")
+    config = run_pair.configuration(
+        run_pair.PROJECT_ROOT / "experiments/configs/ai-lab.yaml", 20260302, "device=1"
+    )
+    run_pair.require_credentials({"lab": config})
+    research = config.town.research
+    assert config.days == 70 and research.start_day == 8
+    assert len(config.residents) == 4
+    assert {resident.occupation for resident in config.town.residents} == {"student"}
+    assert research.allowance == 1260 and not research.milestones
+    assert research.review_style == "conference"
+    assert [stage.day for stage in research.stages_through(91)] == [28, 49, 70, 91]
+    assert all(stage.artifact == "paper.tex" for stage in research.stages_through(91))
+    for resident in config.residents:
+        background = (run_pair.PROJECT_ROOT / resident.background).read_text()
+        assert "PhD student" in background
+        assert not any(term in background for term in ("paper.tex", "day 8", "21 days"))

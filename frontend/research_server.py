@@ -156,6 +156,10 @@ class ResearchData:
                 "people": people,
                 "environment": "academy" if config.town.external_services else "town",
                 "actor_model": config.llm.model,
+                "paper_artifact": (
+                    config.town.research.cycles.artifact
+                    if config.town.research.cycles else "paper.md"
+                ),
                 "currency": config.town.currency,
                 "milestones": [
                     e["payload"] | {"record": f"records/milestone-{e['payload']['stage']}.json"}
@@ -163,7 +167,8 @@ class ResearchData:
                     if e["kind"] == "research_milestone"
                 ],
                 "scheduled_milestones": [
-                    m.model_dump(mode="json") for m in config.town.research.milestones
+                    m.model_dump(mode="json")
+                    for m in config.town.research.stages_through(config.days)
                 ],
                 "comparison": self.comparison(runs),
                 "revision": revision,

@@ -254,3 +254,189 @@ async def test_same_model_judge_and_missing_credentials_fail_before_run_creation
     with pytest.raises(ValueError, match="JUDGE_KEY"):
         await run(config, tmp_path)
     assert not (tmp_path / config.name).exists()
+
+
+PAPER = r"""\documentclass{article}
+\begin{document}
+A controlled study of model generalisation.
+\input{results}
+\end{document}
+"""
+
+
+def conference_reply(overall=7):
+    citation = {"path": "files/results.tex", "quote": "A negative result under fixed controls."}
+    return {
+        **{
+            name: {
+                "score": 3,
+                "rationale": "A useful controlled study, with bounded claims.",
+                "citations": [citation.copy()],
+            }
+            for name in research_milestones.CONFERENCE_DIMENSIONS
+        },
+        "summary": "A controlled empirical study reports a negative result.",
+        "strengths": [
+            {"text": "The reported comparison has fixed controls.", "citations": [citation.copy()]}
+        ],
+        "weaknesses": [{"text": "No environment specification was supplied.", "citations": []}],
+        "questions": [
+            {"text": "Which dependency versions generated these results?", "citations": []}
+        ],
+        "required_revisions": [
+            {
+                "text": "Save dependency versions and a command to regenerate the comparison.",
+                "citations": [],
+            }
+        ],
+        "overall": overall,
+        "confidence": 3,
+    }
+
+
+@pytest.fixture
+def conference(prepared, monkeypatch):
+    _, world, _ = prepared
+    stage = world.research.settings.milestones[0].model_copy(
+        update={"id": "paper", "day": 21, "artifact": "paper.tex"}
+    )
+    world.research.settings = world.research.settings.model_copy(
+        update={
+            "review_style": "conference",
+            "domain": "artificial intelligence",
+            "milestones": (stage,),
+        }
+    )
+    (world.research.files / "paper.tex").write_text(PAPER)
+    (world.research.files / "results.tex").write_text("A negative result under fixed controls.")
+    world.research.repo.commit("Save LaTeX manuscript", date=datetime.now(UTC))
+    calls = []
+    monkeypatch.setattr(
+        research_milestones,
+        "create_client",
+        lambda _: ScriptedClient(lambda request: calls.append(request) or conference_reply()),
+    )
+    return world, stage, calls
+
+
+async def test_conference_review_archives_tex_feedback_and_reuses_exact_review(conference):
+    world, stage, calls = conference
+    research = world.research
+    result = await research_milestones.evaluate(research, stage, list(world.residents))
+    assert await research_milestones.evaluate(research, stage, list(world.residents)) == result
+    assert len(calls) == 1
+    assert result["score"] == pytest.approx(200 / 3)
+    assert result["review"] == {**conference_reply(), "recommendation": "accept"}
+    audit = research.root.parent / result["audit"]
+    archived = json.loads((audit / "input.json").read_text())
+    assert archived["packet"]["documents"]["files/paper.tex"] == PAPER
+    assert "compiled LaTeX" in archived["rubric"]
+    assert "research in artificial intelligence" in archived["rubric"]
+    assert "technical quality" in archived["rubric"]
+    assert archived["rubric"] == calls[0].messages[0].content
+    assert json.loads((audit / "attempts.jsonl").read_text())["response"]["text"]
+    before = {name: r.inventory.money for name, r in world.residents.items()}
+    await research.review(world, 21)
+    assert len(calls) == 1
+    record = json.loads((research.records / "milestone-paper.json").read_text())
+    assert record["review"]["required_revisions"] == conference_reply()["required_revisions"]
+    assert record["review"]["overall"] == 7 and record["review"]["confidence"] == 3
+    assert {name: r.inventory.money for name, r in world.residents.items()} == {
+        name: amount + 66 for name, amount in before.items()
+    }
+
+
+async def test_review_style_changes_cache_even_for_identical_tex(conference, monkeypatch):
+    world, stage, calls = conference
+    research = world.research
+    initial = await research_milestones.evaluate(research, stage, [])
+    research.settings = research.settings.model_copy(update={"review_style": "standard"})
+    legacy = review_reply()
+    for key in research_milestones.DIMENSIONS:
+        legacy[key]["citations"] = [{"path": "files/paper.tex", "quote": "A controlled study"}]
+    monkeypatch.setattr(
+        research_milestones,
+        "create_client",
+        lambda _: ScriptedClient(lambda request: calls.append(request) or legacy),
+    )
+    standard = await research_milestones.evaluate(research, stage, [])
+    assert initial["revision"] == standard["revision"]
+    assert initial["audit"] != standard["audit"] and len(calls) == 2
+    assert standard["review"] == legacy and standard["score"] == 62.5
+
+
+@pytest.mark.parametrize(
+    "fault", ["rating", "confidence", "dimension", "strength", "revision", "overall"]
+)
+async def test_conference_invalid_judgment_fails_without_payment(conference, monkeypatch, fault):
+    world, stage, _ = conference
+    before = world.snapshot()
+    reply = conference_reply()
+    if fault == "rating":
+        reply["overall"] = 11
+    elif fault == "confidence":
+        reply["confidence"] = True
+    elif fault == "dimension":
+        reply["novelty"]["citations"] = []
+    elif fault == "strength":
+        reply["strengths"][0]["citations"] = []
+    elif fault == "overall":
+        for name in research_milestones.CONFERENCE_DIMENSIONS:
+            reply[name].update(score=0, citations=[])
+        reply["strengths"] = []
+    else:
+        reply["required_revisions"][0]["citations"] = [
+            {"path": "files/paper.tex", "quote": "Invented"}
+        ]
+    monkeypatch.setattr(
+        research_milestones, "create_client", lambda _: ScriptedClient(lambda _: reply)
+    )
+    with pytest.raises((StructuredOutputError, ValueError)):
+        await world.research.review(world, stage.day)
+    assert world.snapshot() == before
+    assert not (world.research.records / "milestone-paper.json").exists()
+    assert list((world.research.root.parent / "research_reviews").rglob("failure.json"))
+
+
+@pytest.mark.parametrize("field", ["strengths", "weaknesses", "questions", "required_revisions"])
+def test_all_conference_feedback_citations_are_checked(field):
+    reply = conference_reply()
+    reply[field][0]["citations"] = [{"path": "files/missing.tex", "quote": "Unsupported"}]
+    review = research_milestones.ConferenceReview.model_validate(reply)
+    with pytest.raises(ValueError, match="citation is not an exact supplied quotation"):
+        review.grounded_in({"files/results.tex": "A negative result under fixed controls."})
+
+
+@pytest.mark.parametrize(
+    "text, status",
+    [
+        ("  \n", "missing_deliverable"),
+        ("% comments only", "invalid_deliverable"),
+        (r"\documentclass{article}", "invalid_deliverable"),
+        (r"\begin{document}Unfinished manuscript", "invalid_deliverable"),
+        ("\\begin{document}\n% No scientific content\n\\end{document}", "invalid_deliverable"),
+    ],
+)
+async def test_empty_or_invalid_tex_gives_explicit_zero_without_judge(conference, text, status):
+    world, stage, calls = conference
+    (world.research.files / "paper.tex").write_text(text)
+    world.research.repo.commit("Save empty manuscript", date=datetime.now(UTC))
+    before = {name: r.inventory.money for name, r in world.residents.items()}
+    await world.research.review(world, stage.day)
+    record = json.loads((world.research.records / "milestone-paper.json").read_text())
+    assert record["status"] == status and record["score"] == 0
+    assert record["summary"] and record["review"] is None
+    assert calls == []
+    assert {name: r.inventory.money for name, r in world.residents.items()} == before
+
+
+def test_conference_rating_scale_and_acceptance_boundary():
+    for rating, score, recommendation in (
+        (1, 0, "reject"),
+        (5, 400 / 9, "reject"),
+        (6, 500 / 9, "accept"),
+        (10, 100, "accept"),
+    ):
+        review = research_milestones.ConferenceReview.model_validate(conference_reply(rating))
+        assert review.score == pytest.approx(score)
+        assert review.recommendation == recommendation

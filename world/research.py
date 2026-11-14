@@ -42,6 +42,35 @@ RESEARCH_NAMES = (
     "curl",
     "read_source",
 )
+GPU_EXAMPLE = """nvidia-smi && python - <<'PY'
+import torch
+if not torch.cuda.is_available():
+    raise RuntimeError("CUDA is unavailable; inspect this error rather than silently using CPU")
+device = torch.device("cuda:0")
+print("CUDA devices:", torch.cuda.device_count(), "using:", torch.cuda.get_device_name(device))
+model = torch.nn.Linear(4, 1).to(device)
+inputs = torch.randn(32, 4).to(device)
+targets = torch.randn(32, 1).to(device)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+optimizer.zero_grad()
+loss = torch.nn.functional.mse_loss(model(inputs), targets)
+loss.backward()
+optimizer.step()
+torch.cuda.synchronize()
+print("Training device:", next(model.parameters()).device, "loss:", loss.item())
+PY"""
+
+
+def gpu_resources(settings: ResearchSettings) -> str:
+    if not settings.gpus:
+        return "No GPU is configured for the research shell; use its CPU resources."
+    return (
+        f"GPU access is configured for the research shell (Docker GPU selection: {settings.gpus}). "
+        "The CPU and memory allowances are additional resources, not a CPU-only restriction. "
+        "When only one GPU is visible inside the container, PyTorch uses cuda:0, even when "
+        "the selected host GPU is device=1. Help on research includes a CUDA check and "
+        "training example."
+    )
 
 
 def research_scope(settings: ResearchSettings) -> str:
@@ -55,17 +84,58 @@ def research_scope(settings: ResearchSettings) -> str:
 
 
 def research_brief(settings: ResearchSettings) -> str:
+    if settings.cycles:
+        return (
+            "Together as doctoral students in an AI institute, choose and "
+            "study a question and write a paper aiming for a contribution suitable for ICML "
+            "or ICLR. Discuss candidate questions together today and agree the division of work. "
+            "Use traceable sources, actual experiments and recorded results to support the paper."
+            + research_scope(settings) + " " + gpu_resources(settings)
+        )
     discussion = (
         " Discuss candidate questions together today, agree a question and division of work, "
         "and write proposal.md before today's end-of-day review."
         if settings.start_day > 1 else ""
     )
-    return BRIEF + research_scope(settings) + discussion
+    return BRIEF + research_scope(settings) + discussion + " " + gpu_resources(settings)
 
 
 def milestone_terms(settings: ResearchSettings) -> str:
-    if not settings.milestones:
+    if not settings.milestones and not settings.cycles:
         return ""
+    if settings.cycles:
+        cycle = settings.cycles
+        first = settings.start_day + cycle.interval_days - 1
+        schedule = (
+            f" Submit a complete LaTeX manuscript in {cycle.artifact} for external review "
+            f"at the end of day {first}, then every {cycle.interval_days} days. "
+            f"Each review can award up to {cycle.max_reward_per_resident} per "
+            "resident. After every review, read the full feedback record and discuss it "
+            "together before deciding whether to revise the same work or choose a new question; "
+            "changing topics is not required."
+        )
+    else:
+        schedule = _milestone_schedule(settings)
+    assessment = (
+        " Reviews use conference-style assessment of technical quality, novelty, significance, "
+        "evidence and reproducibility (each 0 to 4), an overall rating from 1 to 10 and "
+        "confidence from 1 to 5. They include strengths, weaknesses, questions and required "
+        "revisions. An overall rating of at least 6 yields an accept recommendation, otherwise "
+        "reject; this is an external review, not acceptance by a real conference. Funding is "
+        "the maximum grant multiplied by (overall rating - 1) / 9, rounded down per resident."
+        if settings.review_style == "conference" else
+        " Reviews score significance, rigor, evidence and reproducibility equally, from 0 to 4 "
+        "each. Funding is proportional to the normalized review score."
+    )
+    return (
+        schedule + assessment
+        + " Each collective grant is divided equally among all residents; nobody receives a "
+        "separate contribution score. Missing deliverables earn nothing. These grants fund "
+        "continued life."
+    )
+
+
+def _milestone_schedule(settings: ResearchSettings) -> str:
     def deadline(day: int) -> str:
         if settings.start_day == 1:
             return f"after {day} days"
@@ -84,16 +154,11 @@ def milestone_terms(settings: ResearchSettings) -> str:
         "Choose your own question during the opening exploration period. "
         if settings.start_day == 1 else "Choose your own question. "
     )
-    return (
-        f" External research reviews occur {stages}. " + choice
-        + "Reviews score significance, rigor, evidence and "
-        "reproducibility equally, from 0 to 4 each. Each collective grant is divided equally "
-        "among all residents, in proportion to the review score; nobody receives a separate "
-        "contribution score. Missing deliverables earn nothing. These grants fund continued life."
-    )
+    return f" External research reviews occur {stages}. " + choice
 
 
 def research_help(settings: ResearchSettings) -> str:
+    artifact = settings.cycles.artifact if settings.cycles else "paper.md"
     literature = (
         "search_literature searches Semantic Scholar; " if settings.semantic_scholar else ""
     )
@@ -112,9 +177,10 @@ def research_help(settings: ResearchSettings) -> str:
         "one. write_repo_file and edit_repo_file change them. Supply the revision you read when "
         "writing or using shell. File edits check only the target file; shell checks shared "
         "files. New source or execution records do not cause conflicts. On conflict, reread. "
-        "Use paper.md for the paper, and keep supporting code, data and results alongside it. "
+        f"Use {artifact} for the paper, and keep supporting code, data and results alongside it. "
         "shell runs in /research with Python, NumPy, SciPy, pandas, matplotlib, scikit-learn, "
-        "SymPy, NetworkX and curl. Internet and GPU access follow the supplied facilities. "
+        "SymPy, NetworkX and curl. "
+        + gpu_resources(settings) + " "
         + storage
         + "Commands run one at a time, "
         f"with {settings.cpus:g} CPU cores, {settings.memory} memory and at most "
@@ -128,11 +194,30 @@ def research_help(settings: ResearchSettings) -> str:
         "Your private memory and skills remain your own. Research uses ordinary working energy; "
         "you can leave to eat, rest or do your usual job, and shared files remain."
         + research_scope(settings) + milestone_terms(settings)
+        + (
+            f"\n\n{artifact} must be a complete LaTeX document, including \\documentclass, "
+            "\\begin{document} and \\end{document}. Keep bibliography files and figure sources "
+            "alongside the manuscript. Compile through shell with "
+            f"`latexmk -pdf -interaction=nonstopmode -halt-on-error {artifact}`. "
+            "Check exit_code, the compilation log and the actual generated PDF before "
+            "claiming that compilation succeeded."
+            if settings.cycles else ""
+        )
+        + (
+            "\n\nUse shell for GPU checks and training; supply the current workspace revision. "
+            "The following command checks the GPU and CUDA-enabled PyTorch in the same "
+            "container as your study, then runs one training step. Both the model and all "
+            "input/target tensors must be on CUDA. Adapt the network and data for your study. "
+            "Check the recorded exit_code and stderr: a failed check is not successful GPU use. "
+            "CPU remains appropriate for traditional methods such as scikit-learn models.\n\n"
+            f"```sh\n{GPU_EXAMPLE}\n```\n"
+            if settings.gpus else ""
+        )
     )
 
 
 def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[ToolSpec]:
-    path = _text("Shared path, such as paper.md; records/<id>.json is read-only evidence.")
+    path = _text("Shared relative path; records/<id>.json is read-only evidence.")
     revision = _text("The current revision returned by list_research_files or read_repo_file.")
     shared = [
         spec("list_research_files", "List shared research files, recorded evidence and revision."),
@@ -287,7 +372,8 @@ class Research:
         text = (
             brief + f" Each resident has received a one-off living allowance of "
             f"{world.config.money(self.settings.allowance)}. "
-            "Use paper.md for the paper; help on research describes the shared facilities."
+            f"Use {self.settings.cycles.artifact if self.settings.cycles else 'paper.md'} "
+            "for the paper; help on research describes the shared facilities."
             + milestone_terms(self.settings)
         )
         world.record(
@@ -307,12 +393,17 @@ class Research:
         if not self.active:
             return
         async with self.lock:
-            for stage in self.settings.milestones:
+            for stage in self.settings.stages_due(day):
                 record = self.records / f"milestone-{stage.id}.json"
-                if stage.day != day or record.exists():
+                if record.exists():
                     continue
                 result = await evaluate(self, stage, list(world.residents))
-                amount = int(stage.max_reward_per_resident * result["score"] / 100)
+                review = result.get("review") or {}
+                amount = (
+                    stage.max_reward_per_resident * (review["overall"] - 1) // 9
+                    if "overall" in review else
+                    int(stage.max_reward_per_resident * result["score"] / 100)
+                )
                 result.update(
                     {
                         "stage": stage.id,
@@ -326,11 +417,24 @@ class Research:
                 self.repo.commit(f"Review research milestone {stage.id}", date=datetime.now(UTC))
                 for resident in world.residents.values():
                     resident.inventory.receive(amount, "received", f"research grant {stage.id}")
-                text = (
-                    f"The external review of {stage.artifact} scored {result['score']:g}/100. "
-                    f"The collective grant is {world.config.money(result['reward_total'])}; "
-                    f"each resident received {world.config.money(amount)}. {result['summary']}"
+                assessment = (
+                    f"received an overall rating of {review['overall']}/10 "
+                    f"with confidence {review['confidence']}/5 ({review['recommendation']})"
+                    if "overall" in review else f"scored {result['score']:g}/100"
                 )
+                text = (
+                    f"The external review of {stage.artifact} {assessment}. "
+                    f"The collective grant is {world.config.money(result['reward_total'])}; "
+                    f"each resident received {world.config.money(amount)}. {result['summary']} "
+                    f"Read the full review with read_repo_file at records/{record.name}."
+                )
+                if self.settings.cycles and stage.id.startswith("cycle-"):
+                    text += (
+                        f" The next cycle starts on day {day + 1} and its {stage.artifact} "
+                        f"is due at the end of day {day + self.settings.cycles.interval_days}. "
+                        "Discuss the feedback together and decide whether to revise this work "
+                        "or choose a new question; changing topics is not required."
+                    )
                 world.record(
                     "research_milestone",
                     lambda w, text=text: text,

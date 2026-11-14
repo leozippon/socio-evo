@@ -422,6 +422,20 @@ class ResearchMilestone(StrictModel):
         return self
 
 
+class ResearchCycleSettings(StrictModel):
+    """Recurring collective submissions, measured from the announcement day."""
+
+    interval_days: int = Field(default=21, ge=1)
+    artifact: str = "paper.tex"
+    max_reward_per_resident: int = Field(default=1260, ge=0)
+
+    @model_validator(mode="after")
+    def _artifact(self) -> ResearchCycleSettings:
+        ResearchMilestone(id="cycle", day=1, artifact=self.artifact,
+                          max_reward_per_resident=self.max_reward_per_resident)
+        return self
+
+
 class ResearchSettings(StrictModel):
     """One shared research project; no benchmark tasks or acceptance machinery."""
 
@@ -438,11 +452,15 @@ class ResearchSettings(StrictModel):
     memory: str = Field(default="2g", pattern=r"^[1-9][0-9]*[kKmMgG]?$")
     judge: LLMConfig | None = None
     milestones: tuple[ResearchMilestone, ...] = ()
+    cycles: ResearchCycleSettings | None = None
+    review_style: Literal["standard", "conference"] = "standard"
 
     @model_validator(mode="after")
     def _stages(self) -> ResearchSettings:
-        if self.milestones and self.judge is None:
+        if (self.milestones or self.cycles) and self.judge is None:
             raise ValueError("research milestones require an external judge configuration")
+        if self.cycles and self.milestones:
+            raise ValueError("choose recurring research cycles or fixed milestones, not both")
         _unique("research milestone id", [stage.id for stage in self.milestones])
         days = [stage.day for stage in self.milestones]
         if days != sorted(set(days)):
@@ -450,6 +468,26 @@ class ResearchSettings(StrictModel):
         if any(day < self.start_day for day in days):
             raise ValueError("research milestones cannot precede the research start day")
         return self
+
+    def stages_due(self, day: int) -> tuple[ResearchMilestone, ...]:
+        """One source for review, viewer and analysis schedules; cycles have no count limit."""
+        if self.cycles is None:
+            return tuple(stage for stage in self.milestones if stage.day == day)
+        elapsed = day - self.start_day + 1
+        if elapsed <= 0 or elapsed % self.cycles.interval_days:
+            return ()
+        return (ResearchMilestone(
+            id=f"cycle-{elapsed // self.cycles.interval_days:03d}", day=day,
+            artifact=self.cycles.artifact,
+            max_reward_per_resident=self.cycles.max_reward_per_resident,
+        ),)
+
+    def stages_through(self, day: int) -> tuple[ResearchMilestone, ...]:
+        if self.cycles is None:
+            return tuple(stage for stage in self.milestones if stage.day <= day)
+        first = self.start_day + self.cycles.interval_days - 1
+        return tuple(stage for due in range(first, day + 1, self.cycles.interval_days)
+                     for stage in self.stages_due(due))
 
 
 class TownConfig(StrictModel):

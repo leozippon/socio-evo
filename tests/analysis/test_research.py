@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from analysis.research import compare, main
+from analysis.research import compare, main, summarize
 from experiments.config import load_experiment
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
@@ -131,3 +131,17 @@ def test_distinct_physical_gpu_assignments_preserve_paired_protocol(tmp_path):
     assert report["score_differences"][0]["town_minus_academy"] == 25
     assert report["arms"]["town"]["gpu_assignment"] == "device=0"
     assert report["arms"]["academy"]["gpu_assignment"] == "device=1"
+
+
+def test_cycle_report_schedules_unreviewed_papers_without_inventing_scores(tmp_path):
+    config = load_experiment(
+        Path(__file__).resolve().parents[2] / "experiments/configs/ai-lab.yaml"
+    )
+    run = RunDirectory.create(tmp_path, config.name, config=config, code_revision="test")
+    report = summarize(run.root)
+    assert report["milestones"] == [
+        {"stage": f"cycle-{index:03d}", "day": day, "status": "pending"}
+        for index, day in enumerate((28, 49, 70), 1)
+    ]
+    assert report["milestone_rewards"] == 0
+    assert report["completed_day"] is None

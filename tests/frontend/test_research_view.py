@@ -91,7 +91,10 @@ async def test_delayed_commission_replays_living_allowance_only_at_start(tmp_pat
         assert {p["name"]: p["money"] for p in snapshot["people"]} == actual
         return actual
 
-    assert set(balances().values()) == {620}
+    assert set(balances().values()) == {200 + config.town.research.allowance}
+    snapshot = ResearchData(runs).snapshot(config.name)
+    assert snapshot["paper_artifact"] == "paper.tex"
+    assert [s["day"] for s in snapshot["scheduled_milestones"]] == [28, 49, 70]
     resident = world.residents["Aisha"]
     resident.base, resident.place = Idle(), "store"
     await world.call(resident, "buy", {"item": "bread"})

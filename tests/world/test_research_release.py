@@ -58,9 +58,10 @@ def assert_uncommissioned(world):
 async def test_free_life_has_no_future_commission_in_prompts_tools_files_or_services(lab):
     assert_uncommissioned(lab)
     allowance, = lab.log.entries()
-    assert allowance["kind"] == "living_allowance" and allowance["payload"]["allowance"] == 420
+    assert allowance["kind"] == "living_allowance"
+    assert allowance["payload"]["allowance"] == lab.config.research.allowance
     for resident in lab.residents.values():
-        assert resident.inventory.money == 620
+        assert resident.inventory.money == 200 + lab.config.research.allowance
         resident.base, resident.place = Idle(), "office"
         assert not set(RESEARCH_NAMES) & {s.name for s in lab.usable(resident)}
         assert not lab.knows(resident, "list_research_files")
@@ -108,8 +109,8 @@ async def test_seven_complete_days_then_morning_eight_release_and_restore_once(l
         assert events[0]["payload"]["allowance"] == 0
         assert "artificial intelligence" in events[0]["text"]
         assert "Discuss candidate questions together today" in events[0]["text"]
-        assert "end of the announcement day" in events[0]["text"]
-        assert "20 days after the announcement" in events[0]["text"]
+        assert "28" in events[0]["text"] and "21" in events[0]["text"]
+        assert "paper.tex" in events[0]["text"]
         assert "research" in restored.rules.topics()
         assert "artificial intelligence" in restored.ports["Mei"].rules()
         resident = restored.residents["Mei"]
@@ -123,8 +124,7 @@ async def test_seven_complete_days_then_morning_eight_release_and_restore_once(l
         await next_day.until("04:30", day=9)
         await runner
         saved = next_day.checkpoints[-1][1]
-        milestone = json.loads((restored.research.records / "milestone-proposal.json").read_text())
-        assert milestone["status"] == "missing_deliverable" and milestone["day"] == 8
+        assert not list(restored.research.records.glob("milestone-*.json"))
     finally:
         await next_day.close()
 
@@ -144,11 +144,15 @@ async def test_seven_complete_days_then_morning_eight_release_and_restore_once(l
 
 
 async def test_domain_is_in_actual_judge_request_and_archived_input(lab, monkeypatch):
+    lab.research.settings = lab.research.settings.model_copy(update={"review_style": "standard"})
     lab.research.announce(lab)
     resident = lab.residents["Mei"]
     resident.base, resident.place = Idle(), "office"
     await lab.call(resident, "write_repo_file", {
-        "path": "proposal.md", "content": "A controlled study of model generalisation.",
+        "path": "paper.tex", "content": (
+            r"\documentclass{article}\begin{document}"
+            r"A controlled study of model generalisation.\end{document}"
+        ),
         "revision": lab.research.snapshot(),
     })
     calls = []
@@ -157,13 +161,13 @@ async def test_domain_is_in_actual_judge_request_and_archived_input(lab, monkeyp
         calls.append(request)
         return {
             **{name: {"score": 3, "rationale": "A relevant proposed controlled comparison.",
-                      "citations": [{"path": "files/proposal.md", "quote": "model generalisation"}]}
+                      "citations": [{"path": "files/paper.tex", "quote": "model generalisation"}]}
                for name in research_milestones.DIMENSIONS},
             "summary": "Feasible AI question; the empirical work remains to be done.",
         }
 
     monkeypatch.setattr(research_milestones, "create_client", lambda _: ScriptedClient(reply))
-    await lab.research.review(lab, 8)
+    await lab.research.review(lab, 28)
     assert "research in artificial intelligence" in calls[0].messages[0].content
     assert "not keyword presence" in calls[0].messages[0].content
     path = next((lab.research.root.parent / "research_reviews").rglob("input.json"))
@@ -176,11 +180,16 @@ def test_independent_profile_and_milestone_order():
     lab = load_experiment(CONFIG)
     assert lab.llm.model == "qwen3.8-27b-fp8" and not lab.llm.extra_body
     assert lab.town.research.persistent_runtime and lab.town.research.gpus == "device=1"
-    assert [s.day for s in lab.town.research.milestones] == [8, 28]
+    assert [s.day for s in lab.town.research.stages_through(lab.days)] == [28, 49, 70]
+    assert lab.town.research.stages_due(91)[0].id == "cycle-004"
+    assert not lab.town.research.stages_due(8)
     legacy = load_experiment(CONFIG.with_name("autoresearch-academy.yaml"))
     assert legacy.town.research.start_day == 1 and legacy.town.research.domain == ""
     assert [s.day for s in legacy.town.research.milestones] == [7, 28]
     invalid = lab.town.research.model_dump()
-    invalid["milestones"][0]["day"] = 7
+    invalid["cycles"] = None
+    invalid["milestones"] = [
+        {"id": "early", "day": 7, "artifact": "paper.tex", "max_reward_per_resident": 0}
+    ]
     with pytest.raises(ValueError, match="cannot precede"):
         ResearchSettings.model_validate(invalid)

@@ -1,0 +1,8 @@
+# Reuse the validated CUDA environment without downloading PyTorch again.
+ARG RESEARCH_IMAGE=socio-evo-ai-lab:20261114
+FROM ${RESEARCH_IMAGE}
+RUN export TMPDIR=/tmp HOME=/tmp DEBIAN_FRONTEND=noninteractive \
+    && apt-get update && apt-get install -y --no-install-recommends \
+        latexmk texlive-latex-base texlive-latex-recommended texlive-latex-extra \
+        texlive-fonts-recommended texlive-science \
+    && rm -rf /var/lib/apt/lists/*

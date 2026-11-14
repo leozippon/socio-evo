@@ -61,8 +61,11 @@ def require_credentials(configs: dict[str, ExperimentConfig]) -> None:
     required = {"TAVILY_API_KEY"}
     for config in configs.values():
         research = config.town.research
-        if research is None or research.judge is None or not research.milestones:
-            raise ValueError("Both arms require research milestones and an external judge")
+        if (
+            research is None or research.judge is None
+            or not (research.milestones or research.cycles)
+        ):
+            raise ValueError("Research requires scheduled reviews and an external judge")
         for profile in (config.llm, research.judge):
             if profile.backend != "openai_compatible":
                 raise ValueError(
@@ -196,6 +199,7 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 settings.cpus,
                 settings.memory,
                 settings.persistent_runtime,
+                settings.review_style,
             )
             if fingerprint in seen:
                 continue
@@ -221,7 +225,39 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                         "loss.backward(); opt.step(); assert not torch.equal(before,model.weight); "
                         "torch.save(model.state_dict(),'probe.pt')"
                     )
+                if settings.review_style == "conference":
+                    (files / "probe.tex").write_text(
+                        r"""\documentclass[twocolumn]{article}
+\usepackage{amsmath,amssymb,graphicx,booktabs,natbib,hyperref,microtype}
+\usepackage{algorithm,algpseudocode}
+\begin{document}
+\section{Evidence}\label{sec:evidence}
+Equation $L=\lVert Xw-y\rVert_2^2$ accompanies Figure~\ref{fig:probe}
+and the reproducible result in Table~\ref{tab:probe}; see \citet{probe}.
+\begin{figure}[h]\includegraphics[width=\linewidth]{probe-figure.pdf}
+\caption{A generated plot.}\label{fig:probe}\end{figure}
+\begin{table}[h]\caption{A measured result.}\label{tab:probe}
+\begin{tabular}{lr}\toprule Method & Value\\\midrule Probe & 1\\\bottomrule
+\end{tabular}\end{table}
+\begin{algorithm}\caption{One update}
+\begin{algorithmic}\State $w\gets w-\eta\nabla L$\end{algorithmic}
+\end{algorithm}
+\bibliographystyle{plainnat}\bibliography{probe}
+\end{document}
+"""
+                    )
+                    (files / "probe.bib").write_text(
+                        "@article{probe, author={Example, Ada}, title={Probe citation}, "
+                        "journal={Test Proceedings}, year={2026}}\n"
+                    )
+                    probe += (
+                        "; import matplotlib; matplotlib.use('Agg'); "
+                        "import matplotlib.pyplot as plt; plt.plot([0,1],[0,1]); "
+                        "plt.savefig('probe-figure.pdf'); plt.close()"
+                    )
                 command = "python -c " + shlex.quote(probe)
+                if settings.review_style == "conference":
+                    command += " && latexmk -pdf -interaction=nonstopmode -halt-on-error probe.tex"
                 if settings.network:
                     command += (
                         " && curl --fail --silent --max-time 30 https://example.org >/dev/null"
@@ -248,6 +284,15 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 if (files / "probe.txt").read_text() != "ok":
                     raise ValueError("Research container output did not persist")
                 report["checks"][stage] = {"ok": True, "gpus": settings.gpus}
+                if settings.review_style == "conference":
+                    if not (files / "probe.pdf").read_bytes().startswith(b"%PDF"):
+                        raise ValueError("LaTeX preflight did not produce a PDF")
+                    if "Probe citation" not in (files / "probe.bbl").read_text():
+                        raise ValueError("LaTeX preflight did not resolve its bibliography")
+                    log = (files / "probe.log").read_text()
+                    if "undefined references" in log or "LaTeX Warning: Citation" in log:
+                        raise ValueError("LaTeX preflight left unresolved citations or references")
+                    report["checks"][stage]["latex_compiled"] = True
                 if settings.persistent_runtime:
                     expected = subprocess.check_output(
                         [

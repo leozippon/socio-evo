@@ -16,6 +16,7 @@ import yaml
 from agent.directory import TRACE
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, read_jsonl
+from world.config import ResearchSettings
 
 
 def usage(paths: list[Path], *, judge: bool = False) -> dict:
@@ -57,7 +58,8 @@ def summarize(root: Path) -> dict:
     checkpoint = json.loads(run.checkpoint_path(day).read_text()) if day is not None else None
     stages = []
     repo = Repository(root / "research")
-    for stage in research.get("milestones", []):
+    for scheduled in ResearchSettings.model_validate(research).stages_through(config["days"]):
+        stage = scheduled.model_dump()
         if day is None or stage["day"] > day:
             stages.append({"stage": stage["id"], "day": stage["day"], "status": "pending"})
             continue
