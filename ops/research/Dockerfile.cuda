@@ -2,11 +2,16 @@ ARG RESEARCH_IMAGE=socio-evo-autoresearch:ebf4bb5
 FROM ${RESEARCH_IMAGE}
 ARG PIP_INDEX_URL=https://pypi.org/simple
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu129
-RUN pip install --no-cache-dir torch==2.13.0+cu129 --index-url ${TORCH_INDEX_URL} \
+ARG TORCH_WHEEL_URL=https://download.pytorch.org/whl/cu129/torch-2.13.0%2Bcu129-cp311-cp311-manylinux_2_28_x86_64.whl#sha256=545c1ecc90e0fb13a94a51ea9e82d03aaf416fa78fc8efe43be64cf93e7bc0fa
+ARG PIP_FIND_LINKS
+ARG PIP_TRUSTED_HOST
+ARG TORCH_NO_INDEX=0
+RUN PIP_NO_INDEX=${TORCH_NO_INDEX} pip install --no-cache-dir "${TORCH_WHEEL_URL}" --index-url ${TORCH_INDEX_URL} \
     && pip install --no-cache-dir transformers==5.19.0 datasets accelerate
 # Runtime dependencies and caches live outside the versioned research workspace.
 ENV PIP_TARGET=/runtime/python PYTHONPATH=/runtime/python \
     PATH=/runtime/python/bin:$PATH PIP_CACHE_DIR=/runtime/pip \
     HF_HOME=/runtime/huggingface TORCH_HOME=/runtime/torch \
     XDG_CACHE_HOME=/runtime/cache TMPDIR=/runtime/tmp HOME=/runtime/home \
-    MPLCONFIGDIR=/runtime/cache/matplotlib
+    MPLCONFIGDIR=/runtime/cache/matplotlib \
+    OMP_NUM_THREADS=8 OPENBLAS_NUM_THREADS=8 MKL_NUM_THREADS=8 NUMEXPR_NUM_THREADS=8
