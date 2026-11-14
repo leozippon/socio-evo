@@ -1,0 +1,12 @@
+ARG RESEARCH_IMAGE=socio-evo-autoresearch:ebf4bb5
+FROM ${RESEARCH_IMAGE}
+ARG PIP_INDEX_URL=https://pypi.org/simple
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cu129
+RUN pip install --no-cache-dir torch==2.13.0+cu129 --index-url ${TORCH_INDEX_URL} \
+    && pip install --no-cache-dir transformers==5.19.0 datasets accelerate
+# Runtime dependencies and caches live outside the versioned research workspace.
+ENV PIP_TARGET=/runtime/python PYTHONPATH=/runtime/python \
+    PATH=/runtime/python/bin:$PATH PIP_CACHE_DIR=/runtime/pip \
+    HF_HOME=/runtime/huggingface TORCH_HOME=/runtime/torch \
+    XDG_CACHE_HOME=/runtime/cache TMPDIR=/runtime/tmp HOME=/runtime/home \
+    MPLCONFIGDIR=/runtime/cache/matplotlib

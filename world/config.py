@@ -427,6 +427,9 @@ class ResearchSettings(StrictModel):
 
     image: str = "socio-evo-research:local"
     allowance: int = Field(default=420, ge=0)
+    start_day: int = Field(default=1, ge=1)
+    domain: str = ""
+    persistent_runtime: bool = False
     command_timeout_s: int = Field(default=120, ge=1, le=600)
     semantic_scholar: bool = True
     network: bool = False
@@ -444,6 +447,8 @@ class ResearchSettings(StrictModel):
         days = [stage.day for stage in self.milestones]
         if days != sorted(set(days)):
             raise ValueError("research milestones must have distinct increasing days")
+        if any(day < self.start_day for day in days):
+            raise ValueError("research milestones cannot precede the research start day")
         return self
 
 

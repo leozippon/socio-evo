@@ -1,6 +1,7 @@
-"""Own the research pilot's TP=2 model; stop it when the pilot finishes or is interrupted."""
+"""Own a local research model; stop it when its experiment finishes or is interrupted."""
 
 import argparse
+import fcntl
 import importlib.util
 import json
 import os
@@ -24,7 +25,30 @@ def write(path, data):
     temporary.replace(path)
 
 
-def command(python, port, max_num_seqs, *, replicas=1, host="127.0.0.1"):
+def experiment_state(root: Path, seen_running: bool) -> tuple[bool, bool]:
+    statuses = [
+        json.loads(p.read_text())["status"] for p in (root / "runs").glob("*/manifest.json")
+    ]
+    seen_running = seen_running or "running" in statuses
+    finished = (
+        seen_running
+        and bool(statuses)
+        and all(status in {"completed", "interrupted", "failed"} for status in statuses)
+    )
+    return seen_running, finished
+
+
+def command(
+    python,
+    port,
+    max_num_seqs,
+    *,
+    replicas=1,
+    host="127.0.0.1",
+    tensor_parallel_size=2,
+    max_model_len=262144,
+    kv_cache_dtype="fp8_e4m3",
+):
     return [
         python,
         "-m",
@@ -38,15 +62,15 @@ def command(python, port, max_num_seqs, *, replicas=1, host="127.0.0.1"):
         "--port",
         str(port),
         "--tensor-parallel-size",
-        "2",
+        str(tensor_parallel_size),
         "--data-parallel-size",
         str(replicas),
         "--max-model-len",
-        "262144",
+        str(max_model_len),
         "--gpu-memory-utilization",
         "0.85",
         "--kv-cache-dtype",
-        "fp8_e4m3",
+        kv_cache_dtype,
         "--attention-backend",
         "FLASHINFER",
         "--max-num-batched-tokens",
@@ -124,26 +148,47 @@ def probe(endpoint, key, *, replica=None):
                 finish = chunk.choices[0].finish_reason or finish
         if finish != "stop" or "hello" not in content.lower():
             raise RuntimeError("streamed tool feedback round trip failed")
-        return {"tool_calls": len(message.tool_calls), "feedback_finish": finish}
+        reasoning = getattr(message, "reasoning_content", None) or getattr(
+            message, "reasoning", None
+        )
+        return {
+            "tool_calls": len(message.tool_calls),
+            "feedback_finish": finish,
+            "reasoning_present": bool(reasoning),
+        }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--port", type=int, default=8040)
+    parser.add_argument("--gpus", default="0,1", help="Host GPU indices; one TP shard per GPU")
+    parser.add_argument("--max-model-len", type=int, default=262144)
+    parser.add_argument("--max-num-seqs", type=int, default=8)
+    parser.add_argument("--kv-cache-dtype", default="fp8_e4m3")
     args = parser.parse_args()
     root = args.root.resolve()
     root.mkdir(parents=True, exist_ok=True)
-    (root / "model.lock").open("x").close()
+    gpus = [int(value) for value in args.gpus.split(",")]
+    if not gpus or len(set(gpus)) != len(gpus) or min(gpus) < 0:
+        parser.error("--gpus must contain distinct nonnegative GPU indices")
+    lock = (root / "model.lock").open("a")
+    fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     key = secrets.token_urlsafe(40)
     keyfile = root / "model-api-key"
     keyfile.write_text(key)
     keyfile.chmod(0o600)
+    endpoint = f"http://127.0.0.1:{args.port}/v1"
+    envfile = root / "model.env"
+    envfile.write_text(f"VLLM_BASE_URL={endpoint}\nVLLM_API_KEY={key}\n")
+    envfile.chmod(0o600)
     state = {
         "phase": "loading",
         "started_at": datetime.now(UTC).isoformat(),
         "launcher_pid": os.getpid(),
-        "tp": 2,
+        "tp": len(gpus),
+        "gpus": gpus,
+        "max_model_len": args.max_model_len,
         "dp": 1,
         "port": args.port,
     }
@@ -151,7 +196,7 @@ def main():
     for name in ("VLLM_DISABLED_KERNELS", "VLLM_PLUGINS", "PYTHONPATH"):
         env.pop(name, None)
     env.update(
-        CUDA_VISIBLE_DEVICES="0,1",
+        CUDA_VISIBLE_DEVICES=",".join(map(str, gpus)),
         PYTHONNOUSERSITE="1",
         HF_HUB_OFFLINE="1",
         TRANSFORMERS_OFFLINE="1",
@@ -173,10 +218,10 @@ def main():
             ["nvidia-smi", "--query-gpu=name,memory.used", "--format=csv,noheader,nounits"],
             text=True,
         ).splitlines()
-        if len(gpu) != 2 or any(
-            "A100" not in row or float(row.split(",")[1]) > 1000 for row in gpu
+        if max(gpus) >= len(gpu) or any(
+            "A100" not in gpu[index] or float(gpu[index].split(",")[1]) > 1000 for index in gpus
         ):
-            raise RuntimeError("Two idle A100 GPUs required")
+            raise RuntimeError("Selected GPUs must be idle A100s")
         # FlashInfer's array.array[int] annotation needs postponed evaluation on Python 3.11.
         # Patch a private copy, leaving the shared serving environment untouched.
         overlay = root / "runtime-overlay"
@@ -190,7 +235,14 @@ def main():
         if "from __future__ import annotations" not in text:
             patch.write_text("from __future__ import annotations\n" + text)
         env["PYTHONPATH"] = str(overlay)
-        argv = command(sys.executable, args.port, 8)
+        argv = command(
+            sys.executable,
+            args.port,
+            args.max_num_seqs,
+            tensor_parallel_size=len(gpus),
+            max_model_len=args.max_model_len,
+            kv_cache_dtype=args.kv_cache_dtype,
+        )
         process = subprocess.Popen(
             argv,
             env=env,
@@ -209,7 +261,6 @@ def main():
 
         threading.Thread(target=pump, daemon=True).start()
         write(root / "model-status.json", state)
-        endpoint = f"http://127.0.0.1:{args.port}/v1"
         deadline = time.monotonic() + 1800
         while True:
             if process.poll() is not None:
@@ -228,14 +279,12 @@ def main():
         state.update(
             phase="ready", probe=probe(endpoint, key), ready_at=datetime.now(UTC).isoformat()
         )
+        seen_running = False
         while process.poll() is None:
             state["heartbeat_at"] = datetime.now(UTC).isoformat()
             write(root / "model-status.json", state)
-            manifests = list((root / "runs").glob("*/manifest.json"))
-            if manifests and all(
-                json.loads(p.read_text())["status"] in {"completed", "interrupted", "failed"}
-                for p in manifests
-            ):
+            seen_running, finished = experiment_state(root, seen_running)
+            if finished:
                 state["phase"] = "town_finished"
                 break
             time.sleep(5)
@@ -256,6 +305,7 @@ def main():
                 process.wait()
         state["ended_at"] = datetime.now(UTC).isoformat()
         write(root / "model-status.json", state)
+        lock.close()
 
 
 if __name__ == "__main__":

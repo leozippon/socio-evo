@@ -8,6 +8,7 @@ from frontend.publish import Publisher
 from frontend.research_server import ResearchData
 from infrastructure.storage import RunDirectory
 from simulation.run import _create
+from world.clock import DAY
 from world.events import Idle
 from world.research import NoTasks
 
@@ -72,6 +73,32 @@ def test_dashboard_does_not_expose_private_files_or_outside_runs(prepared):
 
 def test_viewer_waits_cleanly_before_first_run(tmp_path):
     assert ResearchData(tmp_path).snapshot() == {"runs": [], "waiting": True}
+
+
+async def test_delayed_commission_replays_living_allowance_only_at_start(tmp_path):
+    config = load_experiment(
+        Path(__file__).resolve().parents[2] / "experiments/configs/ai-lab.yaml"
+    )
+    runs = tmp_path / "runs"
+    directory = RunDirectory.create(runs, config.name, config=config, code_revision="test")
+    world = _create(
+        directory, config, NoTasks(),
+        {r.name: r.background_path.read_text() for r in config.residents},
+    )
+    def balances():
+        snapshot = ResearchData(runs).snapshot(config.name)
+        actual = {r.name: r.inventory.money for r in world.residents.values()}
+        assert {p["name"]: p["money"] for p in snapshot["people"]} == actual
+        return actual
+
+    assert set(balances().values()) == {620}
+    resident = world.residents["Aisha"]
+    resident.base, resident.place = Idle(), "store"
+    await world.call(resident, "buy", {"item": "bread"})
+    before = balances()
+    world.clock.set(7 * DAY + 7 * 3600)
+    world.research.announce(world)
+    assert balances() == before
 
 
 async def test_academy_dashboard_and_publisher_need_no_service_residents(tmp_path):

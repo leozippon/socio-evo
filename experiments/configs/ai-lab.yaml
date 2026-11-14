@@ -1,0 +1,54 @@
+# Independent AI laboratory: seven days of ordinary life before a day-eight commission.
+base: research.yaml
+name: ai-lab
+days: 28
+llm:
+  base_url: http://127.0.0.1:8041/v1
+  api_key_env: VLLM_API_KEY
+  model: qwen3.8-27b-fp8
+  replicas: 1
+  max_concurrency: 4
+  max_retries: 1
+  context_window: 262144
+runtime:
+  compaction_threshold: 90000
+residents:
+  - {name: Mei, background: experiments/residents/ai-lab/mei.md}
+  - {name: Aisha, background: experiments/residents/ai-lab/aisha.md}
+  - {name: Ravi, background: experiments/residents/ai-lab/ravi.md}
+  - {name: Kofi, background: experiments/residents/ai-lab/kofi.md}
+town:
+  external_services: true
+  occupations:
+    - {id: teacher, title: an AI laboratory teacher, workplace: office}
+    - {id: student, title: an AI laboratory student, workplace: office}
+  residents:
+    - {name: Mei, home: mill-street-house, occupation: teacher, purse: 200}
+    - {name: Aisha, home: mill-street-house, occupation: student, purse: 200}
+    - {name: Ravi, home: market-flat, occupation: student, purse: 200}
+    - {name: Kofi, home: hill-road-house, occupation: student, purse: 200}
+  research:
+    image: socio-evo-ai-lab:20261114
+    start_day: 8
+    domain: artificial intelligence
+    allowance: 420
+    semantic_scholar: false
+    network: true
+    cpus: 8
+    memory: 32g
+    command_timeout_s: 600
+    gpus: device=1
+    persistent_runtime: true
+    judge:
+      base_url: https://lightingtheword.com/v1
+      api_key_env: LIGHTING_API_KEY
+      model: gpt-6.1-sol
+      replicas: 1
+      max_concurrency: 1
+      max_retries: 3
+      structured_output: json_object
+      sampling:
+        max_tokens: 8192
+    milestones:
+      - {id: proposal, day: 8, artifact: proposal.md, max_reward_per_resident: 630}
+      - {id: draft, day: 28, artifact: paper.md, max_reward_per_resident: 840}

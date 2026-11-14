@@ -295,17 +295,7 @@ class World:
         self.board = Board(tasks, backend, config, names=names)
         self.board.schedule = self.board.draw(1)
         self.body = Body(config.needs)
-        self.rules = Rules(config)
-        self.tool_specs: list[ToolSpec] = tools.specs(config)
-        if self.research:
-            from world.research import research_specs
-
-            self.tool_specs = research_specs(self.tool_specs, self.research.names)
-        # Each occupation's declarations by name, as its residents' requests carry them.
-        self._specs = {
-            occupation.id: {spec.name: spec for spec in tools.own(self.tool_specs, occupation.id)}
-            for occupation in config.occupations
-        }
+        self.refresh_research()
         self._timers: list[_Timer] = []
         self._order = itertools.count()
         self._pushed = asyncio.Event()
@@ -334,6 +324,20 @@ class World:
     @property
     def ports(self) -> dict[str, ResidentPort]:
         return {name: r.port for name, r in self.residents.items()}
+
+    def refresh_research(self) -> None:
+        """Keep rules, help and declared tools aligned with the published commission."""
+        active = bool(self.research and self.research.active)
+        self.rules = Rules(self.config, research_active=active)
+        self.tool_specs = tools.specs(self.config, research_active=active)
+        if self.research:
+            from world.research import research_specs
+
+            self.tool_specs = research_specs(self.tool_specs, self.research.names if active else ())
+        self._specs = {
+            occupation.id: {spec.name: spec for spec in tools.own(self.tool_specs, occupation.id)}
+            for occupation in self.config.occupations
+        }
 
     def lived_day(self) -> int:
         """The day being lived: from one checkpoint to the next."""
@@ -386,6 +390,8 @@ class World:
         them, and the day's arrivals of tasks, drawn at the midnight before."""
         for t in self.board.schedule:
             self.at(t, partial(office.arrival, self, t))
+        if self.research and not self.research.active and day == self.research.settings.start_day:
+            self.at((day - 1) * DAY + self.forced_wake, partial(self.research.announce, self))
         self.at(self.delivery(day), self._deliver)
         self.at(day * DAY, partial(world.midnight.midnight, self, day))
         self.at(day * DAY + self.forced_sleep, partial(world.living.force_sleep, self, day))
@@ -520,6 +526,7 @@ class World:
             raise ValueError("the checkpoint's residents are not the configuration's")
         if self.research:
             self.research.restore(state["research"])
+            self.refresh_research()
         self.clock.set(state["time"])
         self.board.restore(state["office"])
         self.treasury = Treasury(**copy.deepcopy(state["treasury"]))
@@ -882,7 +889,10 @@ class World:
             from world.research import DISABLED, RESEARCH_NAMES
 
             if name in DISABLED:
-                return ToolResult("There are no client tasks during the shared research project.")
+                return ToolResult(
+                    "There are no client tasks during the shared research project."
+                    if self.research.active else "There are no client tasks here."
+                )
             if name in RESEARCH_NAMES:
                 return await self.research.call(self, r, name, args)
         handler = HANDLERS[name]

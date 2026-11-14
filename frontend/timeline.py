@@ -144,6 +144,7 @@ from world.log import KINDS, Day, Days
 
 _FOLDED = frozenset(
     {
+        "living_allowance",
         "research_brief",
         "research_milestone",
         "wake",
@@ -421,7 +422,7 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
 
     for entry in entries:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
-        if kind == "research_brief":
+        if kind in {"living_allowance", "research_brief"}:
             for resident in lanes.values():
                 resident.credit(t, payload["allowance"])
         elif kind == "research_milestone":

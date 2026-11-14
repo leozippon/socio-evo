@@ -1,51 +1,68 @@
-# Running the AutoResearch pair
+# Preparing and running the AI laboratory
 
-Run the town and academy on the Zenith developer host with Python 3.11+, Docker, and this committed source checkout. All run state, probes and logs stay under `/project_c20250210/260903018`. The helper refuses local or relative run paths. The protocol and scientific comparison are described in [the research documentation](../../docs/research.md).
+This guide owns deployment procedures; the [research protocol](../../docs/research.md) owns the scientific design. The current target is one four-person laboratory, with local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start the formal experiment.
 
-Install the package with `pip install -e '.[research,dev]'`, then build the research image:
+All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The deployment being prepared is `/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261114-r1`. The completed town/academy pair is preserved separately.
+
+## Prepare services
+
+Install the committed source with Python 3.11+ and `pip install -e '.[research,dev]'`. The existing serving interpreter is `/personal_fast_storage/qwen-serving/venv/bin/python`; it reads Qwen3.8-27B-FP8 weights from `/public_fast_storage/lty26/models/Qwen3.8-27B-FP8`. Check the selected GPUs before starting services. From the deployed checkout, the current serving command is:
 
 ```sh
-docker build -t socio-evo-research:local -f ops/research/Dockerfile .
+DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261114-r1
+LD_LIBRARY_PATH=/personal_fast_storage/qwen-serving/cuda-compat/usr/local/cuda-12.9/compat \
+  /personal_fast_storage/qwen-serving/venv/bin/python -m ops.research.model_service \
+  --root "$DEPLOY" --gpus 0 --port 8041 --max-model-len 262144 \
+  --max-num-seqs 8 --kv-cache-dtype auto
 ```
 
-On hosts with slow access to Debian or PyPI, select mirrors for this build with `--build-arg DEBIAN_MIRROR=https://mirrors.tuna.tsinghua.edu.cn --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple`. The Debian mirror root must provide both `/debian` and `/debian-security`; this changes only the image build, not the host's package sources.
+Keep the foreground service in a persistent remote terminal or process supervisor. Tensor parallelism follows the single selected GPU; the server can hold eight sequences while the laboratory has four concurrent residents. The service writes `model-status.json`, `model.log` and mode-0600 `model.env`/`model-api-key` under the deployment root. A `ready` state includes a real tool-call/continuation probe. A process lock prevents concurrent owners of that root.
 
-Load credentials from a private, mode-0600 file outside the checkout. The default profiles require `LIGHTING_API_KEY` for the actor and judge, and `TAVILY_API_KEY` for web search. The current AutoResearch profiles disable Semantic Scholar; its optional `SEMANTIC_SCHOLAR_API_KEY` is only used when that service is enabled. Credentials are read by the service process and are not passed into research containers. Keep this shell attached through a terminal multiplexer for the foreground controller:
+Build the research image independently of the model-serving environment:
+
+```sh
+docker build -t socio-evo-ai-lab:20261114 -f ops/research/Dockerfile.cuda .
+```
+
+The CUDA Dockerfile extends the existing scientific image and installs PyTorch, Transformers, Datasets and Accelerate. Its package/index build arguments are defined in that file. Research containers mount shared files at `/research`, read-only evidence at `/records`, and a separate persistent runtime at `/runtime`. Ordinary `pip install` targets `/runtime/python`; model downloads and caches also live outside research Git. The scientific state required for a result must stay under `/research`, including training checkpoints and environment/version records.
+
+Load `TAVILY_API_KEY` and `LIGHTING_API_KEY` from the deployment's private mode-0600 `credentials.env`, and the local model credential from `model.env`. Credentials stay outside the source checkout and research containers:
 
 ```sh
 set -a
-. /absolute/private/path/credentials.env
+. "$DEPLOY/credentials.env"
+. "$DEPLOY/model.env"
 set +a
 export PYTHONDONTWRITEBYTECODE=1
-RUNS=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/runs
-python -m ops.research.run_pair --runs-root "$RUNS" --preflight-only
-python -m ops.research.run_pair --runs-root "$RUNS" --until-day 7
-python -m ops.research.run_pair --runs-root "$RUNS" --resume --until-day 28
+python -m ops.research.run_lab --runs-root "$DEPLOY/runs" --preflight-only
 ```
 
-Each invocation verifies real actor tool calling and continuation, a structured judge reply, Tavily, curl, and one research container command per distinct resource profile. Semantic Scholar is checked only when at least one supplied profile enables `town.research.semantic_scholar`; otherwise its check is recorded as disabled, not passed. A failure prevents either experiment from starting. The helper has no scripted research dry run. Preflight checks do not establish scientific quality or long-run stability.
+Preflight uses the actual profile to test actor tool calling and continuation, a structured external judge reply, Tavily, curl, the scientific container, host-GPU identity, a CUDA optimizer step and saved tensor loading in another container. A separate acceptance probe verifies that an installed package survives container replacement. Semantic Scholar is recorded as disabled, not passed. A failed check prevents launch. Acceptance requires those concrete operations, not merely `nvidia-smi` or successful package imports.
 
-The default seed is `20260302`; use `--seed N` to run another matched pair. Names end in `-seed-N`. The `pair-seed-N/` control directory retains frozen launch profiles, preflight status, separate process logs and exit codes; each experiment also owns its normal manifest and checkpoints. `--resume` requires identical frozen settings, refuses a live process, and skips an arm that already reached the requested checkpoint. A failed arm is not restarted automatically. Terminating the controller forwards termination to both experiment processes.
+## Start and resume
 
-The research shell has internet access and configurable CPU, memory and command duration. The new protocol uses 8 CPU cores, 32 GiB and 600 seconds per command; shared files persist between commands. GPU access is opt-in: after verifying resources are free, pass `--town-gpu device=0 --academy-gpu device=1` on both launch and resume. These options expose NVIDIA devices and preflight them with `nvidia-smi`; the image supplies numerical Python libraries, but does not bundle a deep-learning framework. Install additional packages into the persistent workspace or build an appropriate image. The helper does not stop existing model servers or other experiments.
-
-## Zenith SSH access
-
-The platform's current personal API uses `https://zenith.bza.edu.cn/pt/api2`. Query `/instances/{instanceId}/ssh-access` and `/me/ssh-keys` with the token in the Authorization header. If the owner's registered keys need synchronization, POST `{}` to `/instances/{instanceId}/inject-ssh-keys`, then poll its returned `status_url`. A successful receipt must be followed by a real SSH probe; requesting key injection does not restart the machine. Keep host-key verification enabled. The old internal HTTP API has inconsistent legacy aliases and must not be used as the basis for diagnosing token permissions.
-
-The verified two-A100 instance is `8sm69kjapr5m8teum8myfhz80`, with SSH `root@115.190.90.101:2936`. On 2026-11-13 the two already-registered keys were successfully synchronized and ordinary SSH login was restored. The platform token is separate from SSH private keys and model-service keys; do not put it in the repository or researcher environment.
-
-## Completed deployment, 2026-11-14
-
-The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`, deployed at source revision `0770bc3`. It reuses the verified image `socio-evo-autoresearch:ebf4bb5`; the deployment receipt records the image identity and source revision separately. The deployment's `profiles/` overlays select this image; `run-pair.sh` uses the existing Python environment and loads the existing private Lighting credential and Tavily from the deployment root's mode-0600 `credentials.env`, outside the source checkout. Both profiles disable Semantic Scholar.
-
-Both arms completed day 28 with seed `20260302`, town GPU `device=0`, academy GPU `device=1`, and a single execution through day 28. The day-7 proposal and day-28 manuscript reviews ran automatically at their checkpoints. The launch settings were:
+After preparation is accepted, the default profile runs through the day-28 checkpoint:
 
 ```sh
-DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
-"$DEPLOY/run-pair.sh" --seed 20260302 --town-gpu device=0 --academy-gpu device=1 --until-day 28
+python -m ops.research.run_lab --runs-root "$DEPLOY/runs" --seed 20260302
 ```
 
-Full preflight passed every enabled check: actor tool calling and continuation, judge structured reply, Tavily, curl and separate research containers on GPU 0 and GPU 1. Semantic Scholar is recorded as disabled, not passed. Academy completed at `2026-11-14 00:59:18 UTC` (08:59:18 Beijing time), with a day-28 manuscript score of 56.25; town completed at `2026-11-14 08:14:21 UTC` (16:14:21 Beijing time), with a score of 50. When the user's stop request was checked at `08:19:16 UTC`, this deployment had no controller or arm processes and no research containers mounting its runs directory. Both runs had already ended naturally, so no termination signal or container stop was needed. The deployment receipt records `completed_before_user_stop`; all experiment artifacts are preserved. The old completed 14-day pilot remains separate.
+For an explicitly staged run, `--until-day 7` stops before the commission and `--resume --until-day 28` continues with the same frozen configuration. The model service must be available during launch and resume. `--gpu device=1` is already the research default; keep GPU 0 reserved for inference. The laboratory launcher never starts a second institutional arm. It locks the control directory, refuses a live duplicate, freezes its configuration and does not silently restart a failed run.
 
-The read-only viewer uses remote `127.0.0.1:8919`, exposed by the local SSH tunnel at `http://127.0.0.1:8919/`. The current `/api/research` response shows both experiments completed, with eight town residents and four academy members. Run state, preflight records and process logs remain under the deployment root.
+The control directory is `runs/lab-seed-20260302/`; `preflight.json` there records enabled checks. The actual experiment, once launched, is `runs/ai-lab-seed-20260302/`, with its own manifest, checkpoints, research Git history, resident files, raw judge reviews and persistent runtime. A control directory created by `--preflight-only` is not evidence of a launched experiment. Configuration changes require a new run rather than silently changing a resumed one.
+
+For a separate read-only viewer, use a free remote port and SSH forwarding:
+
+```sh
+python -m frontend.research_server --runs-root "$DEPLOY/runs" --site "$DEPLOY/site" --port 8920
+```
+
+Forward local port 8920 to remote `127.0.0.1:8920`. The viewer reads remote files directly and remains waiting before a run exists. Keep viewer data and all later analysis on Zenith; do not mirror experiment outputs into the checkout.
+
+## Preparation status and history
+
+The new laboratory is in preparation; the formal experiment has not been launched. Source tests cover seven complete uncommissioned days, morning announcement, checkpoint restoration, AI-scoped judging, single payment and bounded evidence inputs. Remote acceptance receipts are expected under `preflight/model-client.json`, `preflight/cuda-runtime.json` and `runs/lab-seed-20260302/preflight.json`; their actual results must be checked before describing this deployment as accepted. The [project log](../../docs/logbook/PROJECT_LOG_2026-11-14) records verified outcomes.
+
+The verified two-A100 instance is `8sm69kjapr5m8teum8myfhz80`, with SSH `root@115.190.90.101:2936`. The Zenith personal API is `https://zenith.bza.edu.cn/pt/api2`; `/instances/{instanceId}/ssh-access` and `/me/ssh-keys` expose access metadata. Registered key synchronization uses POST `{}` to `/instances/{instanceId}/inject-ssh-keys`, followed by its returned status URL and a real SSH probe. Keep host-key verification enabled and platform credentials outside the researcher environment. The registered keys were synchronized and actual login verified on 2026-11-13.
+
+The historical two-arm deployment remains at `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113`, with source `0770bc3`, image `socio-evo-autoresearch:ebf4bb5` and seed `20260302`. Both arms completed day 28 before the stop request; no termination or deletion was necessary. Its viewer remains separate on port 8919. See the [original protocol plan](../../docs/plans/2026-11-13-autoresearch-town-academy.md), [deployment history](../../docs/logbook/PROJECT_LOG_2026-11-13) and [completion record](../../docs/logbook/PROJECT_LOG_2026-11-14). The earlier 14-day local-model pilot remains in the [pilot archive](../../docs/archive/research-pilot.md).

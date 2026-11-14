@@ -94,61 +94,111 @@ def _write(path: Path, value: dict) -> None:
 
 
 def dossier(research, stage, names: list[str]) -> dict:
-    """Deterministic bounded packet, with a complete manifest of supplied/omitted files.
+    """Supply whole documents in a bounded JSON packet with explicit evidence omissions.
 
-    The deliverable is always supplied whole. Large/binary supporting files are explicitly
-    omitted. No resident identities, arm labels, purse balances or private notes are added.
+    After the complete deliverable, execution records (newest first) and supporting files
+    each get half the remaining document space before sharing unused space. The manifest
+    always describes supplied documents; omitted entries are bounded and counted.
     """
-    documents: dict[str, str] = {}
-    manifest = []
-    remaining = INPUT_CHARACTERS
-    identity = re.compile(r"\b(?:" + "|".join(map(re.escape, names)) + r")\b")
-    paths = [research.files / stage.artifact]
-    paths += [p for p in sorted(research.files.rglob("*")) if p.is_file() and p != paths[0]]
-    paths += sorted(research.records.glob("*.json"))
-    for path in paths:
-        relative = path.relative_to(research.root).as_posix()
-        entry = {"path": relative}
-        manifest.append(entry)
+    identity = re.compile(r"\b(?:" + "|".join(map(re.escape, names)) + r")\b") if names else None
+    artifact = research.files / stage.artifact
+    supporting = [p for p in sorted(research.files.rglob("*")) if p.is_file() and p != artifact]
+    records = sorted(research.records.glob("*.json"))
+    total = 1 + len(supporting) + len(records)
+    packet = {
+        "deliverable": "files/" + stage.artifact,
+        "documents": {},
+        "manifest": [],
+        "coverage": {
+            "total_files": total,
+            "supplied_files": 0,
+            "omitted_files": total,
+            "unlisted_omitted_files": total,
+        },
+    }
+
+    def size():
+        return len(json.dumps(packet, ensure_ascii=False))
+
+    def read(path):
+        entry = {"path": path.relative_to(research.root).as_posix()}
+        content, order = None, (1, 0, entry["path"])
         if path.is_symlink() or not path.resolve().is_relative_to(research.root.resolve()):
             entry["omitted"] = "symbolic link or outside workspace"
-            if path == paths[0]:
-                raise ValueError("the milestone deliverable must be a regular workspace file")
-            continue
-        entry["bytes"] = path.stat().st_size
-        if entry["bytes"] > remaining * 4:
-            if path == paths[0]:
-                raise ValueError("the complete milestone artifact exceeds the review input budget")
-            entry["omitted"] = "review input budget"
-            continue
-        raw = path.read_bytes()
-        entry["bytes"], entry["sha256"] = len(raw), hashlib.sha256(raw).hexdigest()
-        try:
-            content = raw.decode("utf-8")
-        except UnicodeDecodeError:
-            entry["omitted"] = "binary file"
-            if path == paths[0]:
-                raise ValueError("the milestone deliverable must be UTF-8 text") from None
-            continue
-        if path.parent == research.records:
-            record = json.loads(content)
-            if "tool" not in record:
-                entry["omitted"] = "prior review or non-operation record"
-                continue
-            content = json.dumps(
-                {key: record[key] for key in ("tool", "arguments", "result") if key in record},
-                ensure_ascii=False,
-            )
-        content = identity.sub("[author]", content)
-        if len(content) > remaining:
-            if path == paths[0]:
-                raise ValueError("the complete milestone artifact exceeds the review input budget")
-            entry["omitted"] = "review input budget"
-            continue
-        documents[relative] = content
-        remaining -= len(content)
-        entry["supplied_characters"] = len(content)
-    return {"deliverable": "files/" + stage.artifact, "documents": documents, "manifest": manifest}
+        elif path.stat().st_size > INPUT_CHARACTERS * 4:
+            entry.update(bytes=path.stat().st_size, omitted="review input budget")
+        else:
+            raw = path.read_bytes()
+            entry.update(bytes=len(raw), sha256=hashlib.sha256(raw).hexdigest())
+            try:
+                content = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                entry["omitted"] = "binary file"
+            if content is not None and path.parent == research.records:
+                record = json.loads(content)
+                if "tool" not in record:
+                    entry["omitted"], content = "prior review or non-operation record", None
+                else:
+                    order = (record["tool"] != "shell", -record.get("sim_time", 0), entry["path"])
+                    content = json.dumps(
+                        {
+                            key: record[key]
+                            for key in ("tool", "arguments", "result")
+                            if key in record
+                        },
+                        ensure_ascii=False,
+                    )
+            if content is not None and identity:
+                content = identity.sub("[author]", content)
+        return entry, content, order
+
+    def supply(candidate, limit):
+        entry, content, _ = candidate
+        if content is None:
+            return False
+        supplied = {**entry, "supplied_characters": len(content)}
+        packet["documents"][entry["path"]] = content
+        packet["manifest"].append(supplied)
+        if size() <= limit:
+            return True
+        del packet["documents"][entry["path"]]
+        packet["manifest"].pop()
+        return False
+
+    main = read(artifact)
+    if main[1] is None:
+        raise ValueError("the milestone deliverable must be a regular UTF-8 workspace file")
+    if not supply(main, INPUT_CHARACTERS):
+        raise ValueError("the complete milestone artifact exceeds the review input budget")
+
+    # Reserve a small part of the remaining packet for explicit omitted-file entries.
+    remaining = INPUT_CHARACTERS - size()
+    document_limit = INPUT_CHARACTERS - min(12_000, remaining // 10)
+    share = (document_limit - size()) // 2
+    evidence = sorted((read(path) for path in records), key=lambda candidate: candidate[2])
+    pending = []
+    for group in (evidence, (read(path) for path in supporting)):
+        limit = min(document_limit, size() + share)
+        for candidate in group:
+            if not supply(candidate, limit):
+                pending.append(candidate)
+    omitted = []
+    for candidate in pending:
+        if not supply(candidate, document_limit):
+            entry, _, _ = candidate
+            omitted.append({**entry, "omitted": entry.get("omitted", "review input budget")})
+
+    supplied = len(packet["documents"])
+    packet["coverage"].update(supplied_files=supplied, omitted_files=total - supplied)
+    listed = 0
+    for entry in omitted:
+        packet["manifest"].append(entry)
+        if size() > INPUT_CHARACTERS:
+            packet["manifest"].pop()
+            break
+        listed += 1
+    packet["coverage"]["unlisted_omitted_files"] = len(omitted) - listed
+    return packet
 
 
 async def evaluate(research, stage, names: list[str]) -> dict:
@@ -174,11 +224,20 @@ async def evaluate(research, stage, names: list[str]) -> dict:
             "summary": f"No nonempty {stage.artifact} was submitted.",
             "review": None,
         }
+    rubric = RUBRIC
+    if research.settings.domain:
+        rubric += (
+            f"\nThe commission is research in {research.settings.domain}. Assess whether the "
+            "question and contribution substantively concern this field's methods, models, "
+            "learning, evaluation or behavior. Using software for an unrelated subject is "
+            "not sufficient. Explain scope mismatches and reflect them in significance and "
+            "rigor using the same anchors; assess meaning and evidence, not keyword presence."
+        )
     envelope = {
         "stage": stage.model_dump(mode="json"),
         "revision": revision,
         "judge": settings.model_dump(mode="json"),
-        "rubric": RUBRIC,
+        "rubric": rubric,
         "packet": packet,
     }
     key = hashlib.sha256(json.dumps(envelope, sort_keys=True).encode()).hexdigest()
@@ -190,7 +249,7 @@ async def evaluate(research, stage, names: list[str]) -> dict:
         return json.loads(saved.read_text())
     request = LLMRequest(
         messages=(
-            Message(role="system", content=RUBRIC),
+            Message(role="system", content=rubric),
             Message(role="user", content=json.dumps(packet, ensure_ascii=False)),
         ),
         sampling=Sampling(temperature=0),

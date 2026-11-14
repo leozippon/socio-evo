@@ -1,6 +1,6 @@
 """Short-lived research commands over one persistent shared directory.
 
-Only the files directory is writable in the container. Evidence is mounted read-only;
+Research files and the optional separate runtime directory are writable. Evidence is read-only;
 Git history, private memories, simulation files and Docker sockets are never mounted.
 """
 
@@ -28,6 +28,7 @@ async def execute(
     gpus: str | None = None,
     cpus: float = 2,
     memory: str = "2g",
+    runtime_dir: Path | None = None,
 ) -> dict:
     name = "research-" + uuid.uuid4().hex
     args = [
@@ -67,6 +68,10 @@ async def execute(
     ]
     if gpus:
         args.extend(["--gpus", gpus])
+    if runtime_dir is not None:
+        for folder in ("python", "huggingface", "torch", "cache", "pip", "tmp", "home"):
+            (runtime_dir / folder).mkdir(parents=True, exist_ok=True)
+        args.extend(["--mount", f"type=bind,src={runtime_dir.resolve()},dst=/runtime"])
     args.extend(
         [
             image,

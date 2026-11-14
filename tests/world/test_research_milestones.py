@@ -190,6 +190,54 @@ def test_dossier_redacts_authors_and_declares_omissions(prepared):
     assert "28" not in milestone_terms(research.settings)
 
 
+def test_dossier_preserves_recent_execution_and_code_before_large_support(prepared, monkeypatch):
+    _, world, _ = prepared
+    research = world.research
+    monkeypatch.setattr(research_milestones, "INPUT_CHARACTERS", 6_000)
+    (research.files / "a-library.txt").write_text("x" * 5_900)
+    (research.files / "train.py").write_text("print('validation accuracy:', 0.75)")
+    for filename, time in (("a-old.json", 1), ("z-new.json", 2)):
+        (research.records / filename).write_text(
+            json.dumps(
+                {
+                    "tool": "shell",
+                    "sim_time": time,
+                    "arguments": {"command": "python train.py"},
+                    "result": {"returncode": 0, "stdout": str(time) + "x" * 2_500},
+                }
+            )
+        )
+    packet = research_milestones.dossier(research, research.settings.milestones[0], [])
+    assert "records/z-new.json" in packet["documents"]
+    assert "records/a-old.json" not in packet["documents"]
+    assert "files/train.py" in packet["documents"]
+    assert "files/a-library.txt" not in packet["documents"]
+    assert len(json.dumps(packet, ensure_ascii=False)) <= 6_000
+
+
+def test_dossier_bounds_manifest_and_reports_unlisted_omissions(prepared, monkeypatch):
+    _, world, _ = prepared
+    research = world.research
+    monkeypatch.setattr(research_milestones, "INPUT_CHARACTERS", 2_000)
+    for index in range(80):
+        (research.files / f"checkpoint-{index:03}.bin").write_bytes(b"\xff\x00")
+    packet = research_milestones.dossier(research, research.settings.milestones[0], [])
+    assert len(json.dumps(packet, ensure_ascii=False)) <= 2_000
+    coverage = packet["coverage"]
+    assert coverage["total_files"] == coverage["supplied_files"] + coverage["omitted_files"]
+    assert coverage["unlisted_omitted_files"] > 0
+    assert len(packet["manifest"]) + coverage["unlisted_omitted_files"] == coverage["total_files"]
+    assert packet["documents"]["files/proposal.md"] == PROPOSAL
+
+
+def test_dossier_counts_json_escaping_and_never_truncates_primary(prepared, monkeypatch):
+    _, world, _ = prepared
+    monkeypatch.setattr(research_milestones, "INPUT_CHARACTERS", 1_000)
+    (world.research.files / "proposal.md").write_text('"' * 800)
+    with pytest.raises(ValueError, match="complete milestone artifact exceeds"):
+        research_milestones.dossier(world.research, world.research.settings.milestones[0], [])
+
+
 async def test_same_model_judge_and_missing_credentials_fail_before_run_creation(
     prepared, tmp_path
 ):

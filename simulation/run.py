@@ -92,6 +92,8 @@ async def run(
     if not 1 <= until <= config.days:
         raise ValueError(f"until_day must be from 1 to {config.days}, not {until}")
     research = config.town.research
+    if research and research.start_day > config.days:
+        raise ValueError("the run ends before the research start day")
     if research and research.milestones:
         assert research.judge is not None
         if research.judge.model == config.llm.model:

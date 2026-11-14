@@ -51,18 +51,22 @@ Homes = Mapping[str, Sequence[str]]
 
 
 class Rules:
-    def __init__(self, config: TownConfig) -> None:
+    def __init__(self, config: TownConfig, *, research_active: bool | None = None) -> None:
         self.config = config
+        self.research_active = (
+            bool(config.research and config.research.start_day == 1)
+            if research_active is None else research_active
+        )
 
     def text(self, name: str, homes: Homes | None = None) -> str:
         """The whole of the rules told to `name`, with `homes` as they stand (at the start if not
         given)."""
         sections = self.sections(name, homes)
         body = "\n\n".join(f"{_HEADINGS[s]}. {sections[s]}" for s in SECTIONS)
-        if self.config.research:
-            from world.research import STANDING
+        if self.research_active:
+            from world.research import STANDING, research_scope
 
-            body += "\n\nResearch. " + STANDING
+            body += "\n\nResearch. " + STANDING + research_scope(self.config.research)
         return f"{HEADING}\n\n{body}"
 
     def help(self, topic: str, homes: Homes | None = None) -> str:
@@ -106,8 +110,16 @@ class Rules:
         own = OCCUPATIONS[occupation.id].told.format(
             office=office, store=store, withdrawn=self._withdrawn()
         )
-        if c.research and occupation.id in {"programmer", "team-leader"}:
-            own = "The machines here are available for the town's shared research."
+        if c.research and workplace.kind == "office":
+            if not self.research_active:
+                own = (
+                    "You mentor the students and may discuss ideas with them."
+                    if occupation.id == "teacher" else
+                    "You may study and discuss ideas with your colleagues."
+                )
+                own += " Your daily activities are yours to arrange."
+            elif occupation.id in {"programmer", "team-leader"}:
+                own = "The machines here are available for the town's shared research."
         until = "you stop with leave_work" + (
             "" if occupation.duty == "anywhere" else " or go elsewhere"
         )
@@ -133,10 +145,16 @@ class Rules:
         )
 
         if c.research:
-            money_rules += (
-                f" You also receive a one-off research living allowance of "
-                f"{money(c.research.allowance)}, independent of your research output."
-            )
+            if self.research_active:
+                money_rules += (
+                    f" You also receive a one-off research living allowance of "
+                    f"{money(c.research.allowance)}, independent of your research output."
+                )
+            else:
+                money_rules += (
+                    " You also receive a one-off living allowance of "
+                    f"{money(c.research.allowance)}."
+                )
         food = self._a_days_food()
         body = (
             f"You get hungry through the day, and a dish{food} is about a day's need; you tire "
@@ -477,13 +495,20 @@ class Rules:
         if c.research:
             from world.research import research_help
 
-            extra["research"] = research_help(c.research)
-            office_work = extra["research"]
+            if self.research_active:
+                extra["research"] = research_help(c.research)
+                office_work = extra["research"]
+            else:
+                office_work = (
+                    f"{cap(office.name)} is a place to meet, study and spend time at your desk. "
+                    "There are no client assignments. Your daily activities are yours to arrange."
+                )
             money_detail = money_detail.replace(
                 f"Money comes into the town only from the clients of {office.name}, and leaves it "
                 f"only when the shopkeeper pays the supplier.",
-                "An outside research grant provides the one-off living allowances. "
-                "Money leaves the town when the shopkeeper pays the supplier."
+                ("An outside research grant provides the one-off living allowances. "
+                 if self.research_active else "A one-off living allowance is provided. ")
+                + "Money leaves the town when the shopkeeper pays the supplier."
             )
             day_detail = day_detail.replace(
                 f"Clients' tasks come in at {office.name} "
@@ -508,7 +533,9 @@ class Rules:
             )
             hall_work = "The Hall is a meeting place. There is no resident mayor."
             money_detail = (
-                "The outside research grant funds the community. Purchases and medical fees "
+                ("The outside research grant funds the community. " if self.research_active else
+                 "Each resident has their own purse and a one-off living allowance. ")
+                + "Purchases and medical fees "
                 "are paid to outside services; nobody in the group receives those payments. "
                 "The treasury receives rents and daily item charges. You pay from your own "
                 "purse and cannot spend more than it holds. You may pass money or goods to "

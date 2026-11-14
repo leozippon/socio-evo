@@ -327,6 +327,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
 
     entries = [*town.world.log.entries(), *restored.log.entries()]
     assert {entry["kind"] for entry in entries} == set(KINDS) - {
+        "living_allowance",
         "research",
         "research_brief",
         "research_milestone",

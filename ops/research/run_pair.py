@@ -11,7 +11,9 @@ import asyncio
 import fcntl
 import json
 import os
+import shlex
 import signal
+import subprocess
 import sys
 import tempfile
 from datetime import UTC, datetime
@@ -193,6 +195,7 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 settings.gpus,
                 settings.cpus,
                 settings.memory,
+                settings.persistent_runtime,
             )
             if fingerprint in seen:
                 continue
@@ -203,16 +206,31 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 files, records = Path(temporary) / "files", Path(temporary) / "records"
                 files.mkdir()
                 records.mkdir()
-                command = (
-                    "python -c 'import numpy, scipy, pandas, sklearn, sympy, networkx; "
-                    'from pathlib import Path; Path("probe.txt").write_text("ok")\''
+                probe = (
+                    "import numpy, scipy, pandas, sklearn, sympy, networkx; "
+                    'from pathlib import Path; Path("probe.txt").write_text("ok")'
                 )
+                if settings.persistent_runtime:
+                    if not settings.gpus or not settings.gpus.startswith("device="):
+                        raise ValueError("AI research requires an explicit GPU device selection")
+                    probe += (
+                        "; import torch; assert torch.cuda.is_available(); torch.manual_seed(7); "
+                        "model=torch.nn.Linear(4,1).cuda(); before=model.weight.detach().clone(); "
+                        "opt=torch.optim.Adam(model.parameters(),lr=0.01); "
+                        "loss=model(torch.randn(8,4,device='cuda')).square().mean(); "
+                        "loss.backward(); opt.step(); assert not torch.equal(before,model.weight); "
+                        "torch.save(model.state_dict(),'probe.pt')"
+                    )
+                command = "python -c " + shlex.quote(probe)
                 if settings.network:
                     command += (
                         " && curl --fail --silent --max-time 30 https://example.org >/dev/null"
                     )
                 if settings.gpus:
-                    command += " && nvidia-smi --query-gpu=name --format=csv,noheader"
+                    command += (
+                        " && nvidia-smi --query-gpu=uuid --format=csv,noheader > gpu-uuids.txt"
+                    )
+                runtime_dir = Path(temporary) / "runtime" if settings.persistent_runtime else None
                 result = await research_workspace.execute(
                     settings.image,
                     files,
@@ -223,12 +241,49 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                     gpus=settings.gpus,
                     cpus=settings.cpus,
                     memory=settings.memory,
+                    runtime_dir=runtime_dir,
                 )
                 if result["exit_code"] != 0 or result["timed_out"]:
                     raise ValueError("Research container preflight failed")
                 if (files / "probe.txt").read_text() != "ok":
                     raise ValueError("Research container output did not persist")
                 report["checks"][stage] = {"ok": True, "gpus": settings.gpus}
+                if settings.persistent_runtime:
+                    expected = subprocess.check_output(
+                        [
+                            "nvidia-smi",
+                            "--id",
+                            settings.gpus.removeprefix("device="),
+                            "--query-gpu=uuid",
+                            "--format=csv,noheader",
+                        ],
+                        text=True,
+                    ).splitlines()
+                    observed = (files / "gpu-uuids.txt").read_text().splitlines()
+                    if sorted(observed) != sorted(expected):
+                        raise ValueError("Research container exposed the wrong physical GPU")
+                    reload = await research_workspace.execute(
+                        settings.image,
+                        files,
+                        records,
+                        "python -c "
+                        + shlex.quote(
+                            "import torch; state=torch.load('probe.pt',map_location='cuda',"
+                            "weights_only=True); assert all(torch.isfinite(v).all() "
+                            "and v.is_cuda for v in state.values())"
+                        ),
+                        90,
+                        network=False,
+                        gpus=settings.gpus,
+                        cpus=settings.cpus,
+                        memory=settings.memory,
+                        runtime_dir=runtime_dir,
+                    )
+                    if reload["exit_code"] != 0 or reload["timed_out"]:
+                        raise ValueError("Research CUDA checkpoint reload failed")
+                    report["checks"][stage].update(
+                        cuda_training=True, checkpoint_reload=True, gpu_uuids=observed
+                    )
         report["ok"] = True
         return report
     except Exception as error:

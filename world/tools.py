@@ -97,7 +97,9 @@ MONEY = "money"
 """What `pass` names money by, money being no item."""
 
 
-def specs(config: TownConfig) -> list[ToolSpec]:
+def specs(config: TownConfig, *, research_active: bool | None = None) -> list[ToolSpec]:
+    if research_active is None:
+        research_active = bool(config.research and config.research.start_day == 1)
     office = config.workplace("office").name
     store, restaurant = config.workplace("store").name, config.workplace("restaurant").name
     hospital, hall = config.workplace("hospital").name, config.workplace("hall").name
@@ -119,9 +121,9 @@ def specs(config: TownConfig) -> list[ToolSpec]:
     units = _number("how many units, helpings or portions; 1 if left out", 1)
     return [
         spec("help", "Read more of how the town works, on one point; without one, what you can "
-             f"ask about: {listed(list(TOPICS) + (['research'] if config.research else []))}.",
+             f"ask about: {listed(list(TOPICS) + (['research'] if research_active else []))}.",
              topic={"type": "string",
-                    "enum": list(TOPICS) + (["research"] if config.research else [])}),
+                    "enum": list(TOPICS) + (["research"] if research_active else [])}),
         spec("look_around", "See where you are, who is here and what each of them is doing, what "
              "is for sale here and what is left here for anyone to take."),
         spec("how_am_i", "Take stock of how you feel: how hungry, how tired and how well you are."),

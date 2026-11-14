@@ -46,6 +46,7 @@ class Kind:
 
 
 KINDS = {
+    "living_allowance": Kind("a one-off unconditional living allowance", ("allowance",)),
     "research_brief": Kind("the common research commission and external living allowance",
                            ("allowance",)),
     "research": Kind("a shared research operation, its recorded evidence and workspace revision",

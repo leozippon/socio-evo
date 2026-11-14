@@ -127,8 +127,9 @@ async def test_pair_records_independent_exit_status_and_propagates_options(tmp_p
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scholar_enabled", [False, True])
+@pytest.mark.parametrize("persistent_runtime", [False, True])
 async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
-    tmp_path, monkeypatch, scholar_enabled
+    tmp_path, monkeypatch, scholar_enabled, persistent_runtime
 ):
     monkeypatch.setenv("LIGHTING_API_KEY", "private-test-key")
     monkeypatch.setenv("TAVILY_API_KEY", "private-search-key")
@@ -165,6 +166,10 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
         seen.append("docker")
         assert kwargs["cpus"] == 8 and kwargs["memory"] == "32g"
         (files / "probe.txt").write_text("ok")
+        if persistent_runtime:
+            assert kwargs["runtime_dir"].parent == files.parent
+            assert "loss.backward()" in cmd or "torch.load(" in cmd
+            (files / "gpu-uuids.txt").write_text("GPU-research\n")
         return {"exit_code": 0, "timed_out": False}
 
     monkeypatch.setattr(pair, "create_client", lambda config: Client())
@@ -173,7 +178,22 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
     monkeypatch.setattr(pair.research_sources, "curl_source", source)
     monkeypatch.setattr(pair.research_workspace, "require_image", lambda image: None)
     monkeypatch.setattr(pair.research_workspace, "execute", command)
+    monkeypatch.setattr(pair.subprocess, "check_output", lambda *a, **k: "GPU-research\n")
     configured = configs()
+    if persistent_runtime:
+        for arm, config in configured.items():
+            town = config.town
+            configured[arm] = config.model_copy(
+                update={
+                    "town": town.model_copy(
+                        update={
+                            "research": town.research.model_copy(
+                                update={"persistent_runtime": True, "gpus": "device=1"}
+                            )
+                        }
+                    )
+                }
+            )
     if scholar_enabled:
         town = configured["town"].town
         configured["town"] = configured["town"].model_copy(
@@ -187,7 +207,10 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
     assert report["ok"]
     assert seen == ["actor", "actor", "judge"] + ["source"] * (3 if scholar_enabled else 2) + [
         "docker"
-    ]
+    ] * (2 if persistent_runtime else 1)
+    if persistent_runtime:
+        assert report["checks"]["docker:town"]["gpu_uuids"] == ["GPU-research"]
+        assert report["checks"]["docker:town"]["checkpoint_reload"]
     if not scholar_enabled:
         assert report["checks"]["semantic_scholar"] == {"enabled": False, "status": "disabled"}
     assert not list(tmp_path.glob("preflight-*"))
@@ -202,3 +225,9 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
     with pytest.raises(RuntimeError, match=f"Preflight failed at {stage}"):
         await pair.preflight(configured, tmp_path)
     assert not json.loads((tmp_path / "preflight.json").read_text())["ok"]
+
+    if persistent_runtime:
+        monkeypatch.setattr(pair.research_sources, failing, scholar if scholar_enabled else source)
+        monkeypatch.setattr(pair.subprocess, "check_output", lambda *a, **k: "GPU-model\n")
+        with pytest.raises(RuntimeError, match="Preflight failed at docker:town"):
+            await pair.preflight(configured, tmp_path)
