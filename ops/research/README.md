@@ -35,17 +35,17 @@ The platform's current personal API uses `https://zenith.bza.edu.cn/pt/api2`. Qu
 
 The verified two-A100 instance is `8sm69kjapr5m8teum8myfhz80`, with SSH `root@115.190.90.101:2936`. On 2026-11-13 the two already-registered keys were successfully synchronized and ordinary SSH login was restored. The platform token is separate from SSH private keys and model-service keys; do not put it in the repository or researcher environment.
 
-## Active deployment, 2026-11-13
+## Completed deployment, 2026-11-14
 
 The independent checkout is `/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113/code`, deployed at source revision `0770bc3`. It reuses the verified image `socio-evo-autoresearch:ebf4bb5`; the deployment receipt records the image identity and source revision separately. The deployment's `profiles/` overlays select this image; `run-pair.sh` uses the existing Python environment and loads the existing private Lighting credential and Tavily from the deployment root's mode-0600 `credentials.env`, outside the source checkout. Both profiles disable Semantic Scholar.
 
-The pair is running with seed `20260302`, town GPU `device=0`, academy GPU `device=1`, and a single execution through day 28. The day-7 proposal and day-28 manuscript reviews occur automatically at their checkpoints. The launch settings are:
+Both arms completed day 28 with seed `20260302`, town GPU `device=0`, academy GPU `device=1`, and a single execution through day 28. The day-7 proposal and day-28 manuscript reviews ran automatically at their checkpoints. The launch settings were:
 
 ```sh
 DEPLOY=/project_c20250210/260903018/socio-evo-autoresearch/deployment-20261113
 "$DEPLOY/run-pair.sh" --seed 20260302 --town-gpu device=0 --academy-gpu device=1 --until-day 28
 ```
 
-Full preflight passed every enabled check: actor tool calling and continuation, judge structured reply, Tavily, curl and separate research containers on GPU 0 and GPU 1. Semantic Scholar is recorded as disabled, not passed. At startup verification, controller PID 18164 supervised town PID 18268 and academy PID 18270; both experiment manifests reported running, and all twelve residents had trace and session files. This establishes successful startup, not long-run stability or a scientific result. The old completed 14-day pilot remains separate.
+Full preflight passed every enabled check: actor tool calling and continuation, judge structured reply, Tavily, curl and separate research containers on GPU 0 and GPU 1. Semantic Scholar is recorded as disabled, not passed. Academy completed at `2026-11-14 00:59:18 UTC` (08:59:18 Beijing time), with a day-28 manuscript score of 56.25; town completed at `2026-11-14 08:14:21 UTC` (16:14:21 Beijing time), with a score of 50. When the user's stop request was checked at `08:19:16 UTC`, this deployment had no controller or arm processes and no research containers mounting its runs directory. Both runs had already ended naturally, so no termination signal or container stop was needed. The deployment receipt records `completed_before_user_stop`; all experiment artifacts are preserved. The old completed 14-day pilot remains separate.
 
-The read-only viewer uses remote `127.0.0.1:8919`, exposed by the local SSH tunnel at `http://127.0.0.1:8919/`. After restarting the old process to load the new configuration schema, an independent check of `/api/research` returned HTTP 200 and showed both experiments running, with eight town residents, four academy members and successful Tavily `search_web` records. Run state, preflight records and process logs remain under the deployment root.
+The read-only viewer uses remote `127.0.0.1:8919`, exposed by the local SSH tunnel at `http://127.0.0.1:8919/`. The current `/api/research` response shows both experiments completed, with eight town residents and four academy members. Run state, preflight records and process logs remain under the deployment root.
