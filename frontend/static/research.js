@@ -12,13 +12,13 @@ async function api(path,params={}){const r=await fetch(path+'?'+new URLSearchPar
 function empty(title,description){const box=el('div','empty');box.append(el('span','paper-icon','⌑'),el('h3','',title),el('p','',description));return box;}
 function townLink(name,view='town'){return `index.html#/run/${encodeURIComponent(state.run)}/${view}${name?'?agent='+encodeURIComponent(name):''}`;}
 function render(){
- $('clock').textContent=time(state.now);$('phase').textContent=`${phases[state.manifest.status]||state.manifest.status} · 共 ${state.days} 天`;
+ $('clock').textContent=(state.conference_calendar?.length?new Date(Date.parse(state.start_date+'T00:00:00+08:00')+state.now*1000).toLocaleString('zh-CN',{timeZone:'Asia/Shanghai',hour12:false})+' · ':'')+time(state.now);$('phase').textContent=`${phases[state.manifest.status]||state.manifest.status} · 共 ${state.days} 天`;
  $('live').textContent=state.manifest.status==='running'?'实时记录':'历史记录';$('live').classList.remove('stale');
  $('town-link').href=townLink();
  $('run-details').textContent=`${state.environment==='academy'?'学院课题组':'社会小镇'} · ${state.people.length} 位居民 · ${state.actor_model}`;
  if([...$('run').options].map(o=>o.value).join('|')!==state.runs.join('|')){$('run').replaceChildren(...state.runs.map(n=>new Option(n,n)));}$('run').value=state.run;
  const shared=state.files.filter(f=>f.path.startsWith('files/'));
- $('files-count').textContent=shared.length;$('commands-count').textContent=state.counts.shell||0;$('sources-count').textContent=`${(state.counts.search_literature||0)+(state.counts.search_web||0)} / ${(state.counts.read_source||0)+(state.counts.curl||0)}`;
+ $('files-count').textContent=shared.length;$('commands-count').textContent=state.counts.shell||0;$('sources-count').textContent=`${(state.counts.search_literature||0)+(state.counts.search_web||0)} / ${(state.counts.read_source||0)+(state.counts.curl||0)+(state.counts.browser||0)}`;
  $('paper-state').textContent=shared.some(f=>f.path==='files/'+(state.paper_artifact||'paper.md'))?'已有草稿':'尚无草稿';$('revision').textContent=`版本 ${state.revision.slice(0,8)}`;
  $('people').replaceChildren(...state.people.map(p=>{const a=el('a','person');a.href=`index.html#/run/${encodeURIComponent(state.run)}/people/${encodeURIComponent(p.name)}?tab=trace`;a.append(el('div','avatar',p.name[0]),el('strong','',p.name),el('p','',occupations[p.occupation]||p.occupation),el('p','',p.place),el('span','state',stateText[p.state]||p.state),el('p','',`${state.currency}${p.money}`));return a;}));
  if($('actor').options.length!==state.people.length+1){const chosen=$('actor').value;$('actor').replaceChildren(new Option('全部居民',''),...state.people.map(p=>new Option(p.name,p.name)));$('actor').value=chosen;}
@@ -33,6 +33,18 @@ function renderMilestones(){
   else card.append(el('p','',`尚未评审 · 每人最高 ${state.currency}${stage.max_reward_per_resident}`));
   return card;
  });
+ if(state.conference_calendar?.length){
+  const calendar=el('article','milestone'),button=el('button','view-original','会议日程与投稿要求 ↗');
+  calendar.append(el('h3','','会议服务台'),el('p','','投稿、三位审稿人的意见、Rebuttal 与最终决定均保留在课题组记录中。'));
+  button.onclick=()=>showFile('files/conferences.md');calendar.append(button);cards.push(calendar);
+  const labels={registered:'已登记',submitted:'等待审稿',reviewed:'已收到评审',accepted:'录用 · 等待终稿',rejected:'未录用',withdrawn:'已撤稿',camera_ready:'已交终稿',missed_submission:'错过投稿',missed_commitment:'错过 commitment',missed_camera_ready:'错过终稿'};
+  for(const submission of state.conference_submissions||[]){
+   const card=el('article','milestone'),venue=state.conference_calendar.find(v=>v.id===submission.venue),button=el('button','view-original','投稿与评审记录 ↗');
+   card.append(el('small','',venue?.title||submission.venue),el('h3','',submission.title),el('strong','',labels[submission.status]||submission.status));
+   if(submission.decision)card.append(el('p','',`${submission.decision.overall}/10 · ${submission.decision.rationale}`));
+   button.onclick=()=>showFile('records/conferences.json');card.append(button);cards.push(card);
+  }
+ }
  $('milestones').replaceChildren(...cards);
  const table=el('table'),head=el('tr');for(const label of ['实验','环境 / 人数','选题','初稿','累计资金'])head.append(el('th','',label));table.append(head);
  for(const r of state.comparison||[]){const tr=el('tr'),name=el('td'),a=el('a','',r.run);a.href='?run='+encodeURIComponent(r.run);name.append(a);tr.append(name,el('td','',`${r.environment==='academy'?'学院':'小镇'} / ${r.people}`),el('td','',r.scores.proposal??'—'),el('td','',r.scores.draft??'—'),el('td','',`${r.currency}${r.reward_total}`));table.append(tr);}
@@ -62,7 +74,7 @@ async function renderWorkspace(){if(!state)return;const key=state.run+state.revi
  const paper=state.files.find(f=>f.path==='files/'+(state.paper_artifact||'paper.md'));if(!paper){show(empty('论文还在酝酿中','居民们可以先讨论问题、查阅文献或开展实验。提交论文源文件后，草稿会出现在这里。'));return;}
  show(el('div','loading','正在读取论文…'));try{const f=await api('/api/research/file',{run:state.run,path:paper.path,revision:state.revision});if(workKey!==key)return;const body=el('article','paper');if(paper.path.endsWith('.tex'))body.append(el('pre','',f.text));else body.append(...markdown(f.text));const button=el('button','view-original','查看原始文件 ↗');button.onclick=()=>showFile(paper.path);show(button,body);}catch(e){if(workKey===key){workKey='';show(empty('暂时无法读取',e.message));}}return;}
  if(tab==='files'){const list=el('div','file-list');for(const f of state.files.filter(f=>f.path.startsWith('files/'))){const b=el('button','file-row');b.append(el('span','tag',f.path.split('.').pop().toUpperCase().slice(0,6)),el('span','file-name',f.path.slice(6)),el('small','',`${(f.bytes/1024).toFixed(1)} KB ↗`));b.onclick=()=>showFile(f.path);list.append(b);}target.replaceChildren(list);return;}
- const list=el('div','record-list');for(const r of state.records){const b=el('button','record-row'),info=el('div');info.append(el('small','',`${time(r.t)} · ${r.actor} · E${r.seq}`),el('p','',r.summary));b.append(el('span','tag'+(r.failed?' failed':''),r.failed?'未完成':({shell:'执行',search_literature:'检索',read_source:'读取'}[r.tool]||'写入')),info);b.onclick=()=>showFile(r.path);list.append(b);}target.replaceChildren(state.records.length?list:empty('第一条研究记录尚未产生','共享文件修改、命令执行和文献读取都会留下原始记录。'));
+ const list=el('div','record-list');for(const r of state.records){const b=el('button','record-row'),info=el('div');info.append(el('small','',`${time(r.t)} · ${r.actor} · E${r.seq}`),el('p','',r.summary));b.append(el('span','tag'+(r.failed?' failed':''),r.failed?'未完成':({shell:'执行',search_literature:'检索',read_source:'读取',browser:'浏览',conference:'投稿'}[r.tool]||'写入')),info);b.onclick=()=>showFile(r.path);list.append(b);}target.replaceChildren(state.records.length?list:empty('第一条研究记录尚未产生','共享文件修改、命令执行和文献读取都会留下原始记录。'));
 }
 async function refresh(){if(busy)return;busy=true;try{const data=await api('/api/research',{run:selectedRun});if(data.waiting){$('phase').textContent='实验准备中';$('clock').textContent='即将开始';return;}state=data;selectedRun=data.run;$('error').hidden=true;render();}catch(e){$('error').hidden=false;$('error').textContent='暂时无法更新：'+e.message;$('live').textContent='连接中断';$('live').classList.add('stale');}finally{busy=false;}}
 $('run').onchange=()=>{selectedRun=$('run').value;history.replaceState(null,'','?run='+encodeURIComponent(selectedRun));workKey='';refresh();};$('actor').onchange=renderFeed;$('kind').onchange=renderFeed;

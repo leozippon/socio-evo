@@ -56,9 +56,10 @@ def summarize(root: Path) -> dict:
         raise ValueError(f"{root} is not a shared research run")
     day = run.latest_checkpoint()
     checkpoint = json.loads(run.checkpoint_path(day).read_text()) if day is not None else None
+    settings = ResearchSettings.model_validate(research)
     stages = []
     repo = Repository(root / "research")
-    for scheduled in ResearchSettings.model_validate(research).stages_through(config["days"]):
+    for scheduled in settings.stages_through(config["days"]):
         stage = scheduled.model_dump()
         if day is None or stage["day"] > day:
             stages.append({"stage": stage["id"], "day": stage["day"], "status": "pending"})
@@ -70,6 +71,17 @@ def summarize(root: Path) -> dict:
             rubric = json.loads((root / record["audit"] / "input.json").read_text())["rubric"]
             record["rubric_sha256"] = hashlib.sha256(rubric.encode()).hexdigest()
         stages.append(record)
+    submissions = []
+    if checkpoint and settings.conferences:
+        path = "records/conferences.json"
+        revision = checkpoint["research"]
+        # Before the first registration the desk has no record. Never consult its live tree.
+        if repo._git("ls-tree", "--name-only", revision, "--", path).strip():
+            submissions = json.loads(repo._git("show", f"{revision}:{path}"))["submissions"]
+    milestone_rewards = sum(stage.get("reward_total", 0) for stage in stages)
+    conference_rewards = sum(
+        entry.get("reward_total", 0) for entry in submissions if entry.get("decision")
+    )
     actors = [run.agent_dir(resident["name"]) / TRACE for resident in config["residents"]]
     protocol = {key: config[key] for key in ("llm", "runtime", "days")}
     protocol.update(
@@ -92,13 +104,18 @@ def summarize(root: Path) -> dict:
         "judge_model": (research.get("judge") or {}).get("model"),
         "checkpoint_revision": checkpoint["research"] if checkpoint else None,
         "milestones": stages,
-        "milestone_rewards": sum(stage.get("reward_total", 0) for stage in stages),
+        "milestone_rewards": milestone_rewards,
+        "conference_submissions": submissions,
+        "conference_rewards": conference_rewards,
+        "total_research_rewards": milestone_rewards + conference_rewards,
         "resident_money": sum(r["inventory"]["money"] for r in checkpoint["residents"].values())
         if checkpoint
         else None,
         "actor_usage": usage(actors),
         "judge_usage": usage(
-            sorted((root / "research_reviews").glob("*/*/attempts.jsonl")), judge=True
+            sorted((root / "research_reviews").glob("*/*/attempts.jsonl"))
+            + sorted((root / "conference_reviews").glob("*/*/attempts.jsonl")),
+            judge=True,
         ),
     }
 
@@ -133,10 +150,11 @@ def compare(town: Path, academy: Path) -> dict:
         "score_differences": differences,
         "notes": [
             "One society per arm is a pilot; residents are not independent replicates.",
-            "Milestones and money use the latest completed checkpoint; pending is not zero.",
+            "Milestones, conference submissions and money use the latest completed checkpoint; "
+            "pending has no final decision or score and is not a rejection.",
             "Actor usage sums retained traces for every resident, including service occupations; "
             "resume can discard unsaved traces, so these are not all historically billed tokens.",
-            "Judge usage includes every persisted attempt, including failed and replayed stages. "
+            "Judge usage includes persisted milestone and conference attempts, including failures. "
             "Usage can extend beyond the latest checkpoint; absent provider counts remain null.",
             "No monetary API cost, confidence interval or significance test is inferred.",
         ],

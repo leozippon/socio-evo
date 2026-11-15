@@ -1,6 +1,6 @@
 # Preparing and running the AI institute
 
-This guide owns deployment procedures; the [research protocol](../../docs/research.md) owns the scientific design. The current target is one institute of four PhD peers, with local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start the formal experiment.
+This guide owns deployment procedures. The [IR laboratory protocol](../../docs/ir-laboratory.md) describes the new dated profile; the [institute protocol](../../docs/research.md) describes the existing run. Both use local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start a formal experiment.
 
 All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The new deployment root is `/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261115-r1`. The interrupted initial laboratory and completed town/academy pair are preserved separately.
 
@@ -57,6 +57,36 @@ python -m frontend.research_server --runs-root "$DEPLOY/runs" --site "$DEPLOY/si
 ```
 
 Forward local port 8921 to remote `127.0.0.1:8921`; the original laboratory viewer remains on 8920. The viewer reads remote files directly and remains waiting before a run exists. Keep viewer data and all later analysis on Zenith; do not mirror experiment outputs into the checkout.
+
+## Prepare the dated IR laboratory
+
+Use a separate deployment and run root for `experiments/configs/ir-lab.yaml`. Do not resume the old institute with this profile or reuse its scientific/runtime directories. `research_background` and `conference_calendar` resources are expanded into the frozen run configuration, so later edits cannot silently change a resumed world. The [new protocol](../../docs/ir-laboratory.md) owns the calendar and funding rules.
+
+The model and judge credentials remain `VLLM_API_KEY` and `LIGHTING_API_KEY`. PIT does not require Tavily or Semantic Scholar credentials. A host-only `GITHUB_TOKEN` is optional for public GitHub API throughput; anonymous operation can encounter low rate limits. Never put it in resident prompts, recorded commands, images or mounted runtime caches. The gateway sends it only to the GitHub API.
+
+PIT preflight searches and opens both real providers, downloads an arXiv PDF, records version provenance, verifies the research container's disabled network, and retains the actor, judge, GPU and LaTeX probes. Missing services fail explicitly rather than enabling unrestricted networking. Installed scientific libraries remain usable offline; preflight does not promise that arbitrary model-hub weights, pip packages or datasets can be downloaded. The source audit and gateway receipts must be reviewed before treating this as a historically valid dataset.
+
+From the new deployed checkout, after arranging the model-service handover:
+
+```sh
+PIT_DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/pit-lab-20261115-r1
+python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
+  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --preflight-only
+python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
+  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --until-day 7
+python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
+  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --resume
+```
+
+These are preparation/launch instructions, not a record that they have run. Omitting `--until-day` selects the latest complete lived-day checkpoint already reached in real Beijing time, capped by the frozen 306-day horizon. A checkpoint falls at 04:30 on the following calendar date; the launcher accounts for that boundary. An explicit later date is refused because its research materials do not yet exist. Resume later with the same configuration to advance toward December 31. Do not copy incomplete future-day data into the library.
+
+The new run name is `ir-lab-pit-seed-20260302`; its control directory remains `lab-seed-20260302` under the **new** runs root. Keep the model supervisor associated with that deployment once handing over: the old deployment's supervisor can stop its owned model when its old run finishes. Starting another formal run without arranging that ownership is not a validated launch.
+
+The viewer automatically displays the dated clock, conference desk, submission states and released events for calendar profiles. Source/PDF files, immutable submission receipts, reviewer inputs, rebuttals, decisions and living stipends remain on Zenith. A review scheduled after the configured horizon remains pending.
+
+For an isolated real judge protocol check, `python -m ops.research.check_conference --config experiments/configs/ir-lab.yaml --output <new-project-storage-directory>` exercises three initial reviews, an author response, three updated reviews and one area-chair decision. It allows at most seven calls, verifies restoration before and after the decision, and never invokes residents, GPUs or a real conference. Its manuscript is explicitly an inadequate synthetic infrastructure test; a passing receipt is not scientific validation.
+
+November 15 preparation receipts are under `/project_c20250210/260903018/socio-evo-ai-lab/pit-preparation-20261115`. `conference-acceptance-r1/receipt.json` passed seven real `gpt-6.1-sol` calls and two restore checks with no additional calls or grants. The synthetic paper was rejected. `browser-acceptance/github-authenticated/acceptance.json` records real GitHub search, historical README and archive download. `browser-acceptance/html-primary/acceptance.json` records actual arXiv historical search, versioned reading, PDF download and extracted text. The initial anonymous GitHub quota failure and arXiv API failure are retained; the gateway now uses official arXiv HTML, not the inaccessible export API. The supplied GitHub credential is kept in the private mode-0600 `github.env` at this preparation root and must be loaded only into the host gateway/launcher environment. No new formal run or model-service handover is recorded by these probes.
 
 ## Deployment status and history
 

@@ -118,7 +118,7 @@ class Rules:
                     "You may study and discuss ideas with your colleagues."
                 )
                 own += " Your daily activities are yours to arrange."
-            elif c.research.cycles:
+            elif c.research.cycles or c.research.conferences:
                 own = (
                     "Work with your fellow institute doctoral students on the shared study. "
                     "Discuss questions, methods, results, writing and reviewer feedback together."
@@ -159,6 +159,12 @@ class Rules:
                 money_rules += (
                     " You also receive a one-off living allowance of "
                     f"{money(c.research.allowance)}."
+                )
+            if c.research.stipend_per_resident:
+                money_rules += (
+                    f" A regular living stipend of {money(c.research.stipend_per_resident)} "
+                    f"is paid every {c.research.stipend_interval_days} days, "
+                    "independent of your work or study."
                 )
         food = self._a_days_food()
         body = (

@@ -331,6 +331,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
         "research",
         "research_brief",
         "research_milestone",
+        "conference",
     }
     seqs = [entry["seq"] for entry in town.world.log.entries()]
     assert seqs == list(range(1, len(seqs) + 1))

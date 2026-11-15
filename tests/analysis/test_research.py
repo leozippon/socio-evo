@@ -80,6 +80,9 @@ def test_report_uses_checkpoint_grants_and_counts_every_actors_usage(tmp_path):
         assert result["completed_day"] == 7
         assert result["population"] == population
         assert result["milestone_rewards"] == 100 * population
+        assert result["conference_rewards"] == 0
+        assert result["conference_submissions"] == []
+        assert result["total_research_rewards"] == result["milestone_rewards"]
         assert result["actor_usage"]["prompt_tokens"] == 10 * population
         assert result["actor_usage"]["replies_missing_usage"] == population
         assert result["actor_usage"]["cached_prompt_tokens"] is None
@@ -145,3 +148,73 @@ def test_cycle_report_schedules_unreviewed_papers_without_inventing_scores(tmp_p
     ]
     assert report["milestone_rewards"] == 0
     assert report["completed_day"] is None
+
+
+def test_conference_report_uses_checkpoint_submissions_and_retained_judge_attempts(tmp_path):
+    config = load_experiment(
+        Path(__file__).resolve().parents[2] / "experiments/configs/ir-lab.yaml"
+    )
+    run = RunDirectory.create(tmp_path, config.name, config=config, code_revision="test")
+    records = run.root / "research" / "records"
+    records.mkdir(parents=True)
+    repo = Repository.init(records.parent, user_name="Test", user_email="test@town.invalid")
+    (records / "commission.json").write_text("{}")
+    revision = repo.commit("Before registration", date=datetime.now(UTC))
+
+    def checkpoint(revision):
+        run.checkpoint_path(7).write_text(
+            json.dumps(
+                {
+                    "research": revision,
+                    "residents": {r.name: {"inventory": {"money": 400}} for r in config.residents},
+                }
+            )
+        )
+
+    checkpoint(revision)
+    assert summarize(run.root)["conference_submissions"] == []
+    submissions = [
+        {
+            "id": "finished-001",
+            "venue": "recsys-2026",
+            "status": "camera_ready",
+            "decision": {"decision": "accept", "overall": 7},
+            "reward_total": 3360,
+        },
+        {
+            "id": "pending-002",
+            "venue": "www-2027",
+            "status": "reviewed",
+            "reviews": [{"summary": "A released review."}],
+            "rebuttal": {"text": "An author response."},
+        },
+    ]
+    path = records / "conferences.json"
+    path.write_text(json.dumps({"active": "pending-002", "submissions": submissions}))
+    checkpoint(repo.commit("Checkpoint conference state", date=datetime.now(UTC)))
+    # A later, committed decision still must not leak into this checkpoint-grounded report.
+    live = json.loads(path.read_text())
+    live["submissions"][1].update(
+        status="rejected", decision={"decision": "reject"}, reward_total=2000
+    )
+    path.write_text(json.dumps(live))
+    repo.commit("Uncheckpointed decision", date=datetime.now(UTC))
+    for phase in ("initial", "updated", "decision"):
+        folder = run.root / "conference_reviews" / "pending-002" / phase
+        folder.mkdir(parents=True)
+        (folder / "attempts.jsonl").write_text(
+            json.dumps(
+                {
+                    "response": {"usage": {"prompt_tokens": 10, "completion_tokens": 2}},
+                }
+            )
+            + "\n"
+        )
+    result = summarize(run.root)
+    assert result["milestones"] == []
+    assert result["milestone_rewards"] == 0
+    assert result["conference_submissions"] == submissions
+    assert "decision" not in result["conference_submissions"][1]
+    assert result["conference_rewards"] == result["total_research_rewards"] == 3360
+    assert result["judge_usage"]["requests"] == 3
+    assert result["judge_usage"]["prompt_tokens"] == 30

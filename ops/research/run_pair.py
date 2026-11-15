@@ -16,7 +16,7 @@ import signal
 import subprocess
 import sys
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Literal
 
@@ -58,14 +58,19 @@ def configuration(path: Path, seed: int, gpu: str | None) -> ExperimentConfig:
 
 
 def require_credentials(configs: dict[str, ExperimentConfig]) -> None:
-    required = {"TAVILY_API_KEY"}
+    required = set()
     for config in configs.values():
         research = config.town.research
         if (
             research is None or research.judge is None
-            or not (research.milestones or research.cycles)
+            or not (research.milestones or research.cycles or research.conferences)
         ):
             raise ValueError("Research requires scheduled reviews and an external judge")
+        if research.pit:
+            if research.network:
+                raise ValueError("PIT research containers must have network disabled")
+        else:
+            required.add("TAVILY_API_KEY")
         for profile in (config.llm, research.judge):
             if profile.backend != "openai_compatible":
                 raise ValueError(
@@ -85,6 +90,36 @@ def _write(path: Path, data: dict) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(data, indent=2) + "\n")
     temporary.replace(path)
+
+
+async def _pit_browser(config: ExperimentConfig, control: Path) -> dict:
+    from world.research_browser import BrowserGateway
+
+    as_of = datetime.combine(
+        config.town.start_date, datetime.min.time(), timezone(timedelta(hours=8))
+    ).astimezone(UTC)
+    gateway = BrowserGateway(control / "browser-cache")
+    checked = []
+    for provider, query, url in (
+        ("arxiv", "ti:Search-R1", "https://arxiv.org/abs/2503.09516v5"),
+        ("github", "Search-R1", "https://github.com/PeterGriffinJin/Search-R1"),
+    ):
+        found = await asyncio.to_thread(gateway.search, provider, query, as_of, page=1)
+        if not found.get("results"):
+            raise ValueError(f"PIT {provider} search returned no historical results")
+        opened = await asyncio.to_thread(gateway.open, url, as_of)
+        if not opened.get("text") or not opened.get("provenance"):
+            raise ValueError(f"PIT {provider} source lacks content or provenance")
+        checked.append({"provider": provider, "url": opened["url"],
+                        "version": opened.get("version"), "provenance": opened["provenance"]})
+    destination = control / "browser-probe.pdf"
+    downloaded = await asyncio.to_thread(
+        gateway.download, "https://arxiv.org/pdf/2503.09516v5", as_of, destination
+    )
+    if not destination.read_bytes().startswith(b"%PDF-") or not downloaded.get("provenance"):
+        raise ValueError("PIT download did not preserve a PDF with provenance")
+    return {"ok": True, "as_of": as_of.isoformat(), "sources": checked,
+            "download": downloaded}
 
 
 async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict:
@@ -174,13 +209,15 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 attempts=1,
             )
             report["checks"][stage] = {"model": judge.model, "ok": True}
+        public_web = any(not config.town.research.pit for config in configs.values())
         for stage, call, argument in (
             ("tavily", research_sources.search_web, "reproducible research"),
             ("semantic_scholar", research_sources.search, "reproducible research"),
             ("curl", research_sources.curl_source, "https://example.org"),
         ):
-            if stage == "semantic_scholar" and not any(
-                config.town.research.semantic_scholar for config in configs.values()
+            if not public_web or stage == "semantic_scholar" and not any(
+                config.town.research.semantic_scholar and not config.town.research.pit
+                for config in configs.values()
             ):
                 report["checks"][stage] = {"enabled": False, "status": "disabled"}
                 continue
@@ -189,6 +226,13 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 "ok": True,
                 "source": result.get("source", result.get("url")),
             }
+        seen.clear()
+        for arm, config in configs.items():
+            if not config.town.research.pit or config.town.start_date in seen:
+                continue
+            seen.add(config.town.start_date)
+            stage = f"pit_browser:{arm}"
+            report["checks"][stage] = await _pit_browser(config, control)
         seen.clear()
         for arm, config in configs.items():
             settings = config.town.research
@@ -200,6 +244,7 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                 settings.memory,
                 settings.persistent_runtime,
                 settings.review_style,
+                settings.pit,
             )
             if fingerprint in seen:
                 continue
@@ -214,6 +259,8 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
                     "import numpy, scipy, pandas, sklearn, sympy, networkx; "
                     'from pathlib import Path; Path("probe.txt").write_text("ok")'
                 )
+                if settings.pit:
+                    probe += "; assert {p.name for p in Path('/sys/class/net').iterdir()} == {'lo'}"
                 if settings.persistent_runtime:
                     if not settings.gpus or not settings.gpus.startswith("device="):
                         raise ValueError("AI research requires an explicit GPU device selection")
@@ -284,6 +331,8 @@ and the reproducible result in Table~\ref{tab:probe}; see \citet{probe}.
                 if (files / "probe.txt").read_text() != "ok":
                     raise ValueError("Research container output did not persist")
                 report["checks"][stage] = {"ok": True, "gpus": settings.gpus}
+                if settings.pit:
+                    report["checks"][stage]["network_isolated"] = True
                 if settings.review_style == "conference":
                     if not (files / "probe.pdf").read_bytes().startswith(b"%PDF"):
                         raise ValueError("LaTeX preflight did not produce a PDF")

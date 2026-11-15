@@ -92,7 +92,7 @@ async def test_every_profession_can_research_but_only_at_office(world):
     for name in world.residents:
         r = office(world, name)
         names = {s.name for s in world.usable(r)}
-        assert set(RESEARCH_NAMES) <= names
+        assert set(world.research.names) <= names
         assert not DISABLED & names
         assert not any(world.knows(r, tool) for tool in DISABLED)
         start = await world.call(r, "start_work", {})

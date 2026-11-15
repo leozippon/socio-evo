@@ -145,6 +145,7 @@ from world.log import KINDS, Day, Days
 _FOLDED = frozenset(
     {
         "living_allowance",
+        "conference",
         "research_brief",
         "research_milestone",
         "wake",

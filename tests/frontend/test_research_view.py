@@ -49,6 +49,30 @@ def test_initial_research_snapshot_includes_real_allowance_and_eight_residents(p
     assert "Choose the question" in value["activity"][0]["text"]
 
 
+def test_conference_state_and_feedback_links_use_committed_records(prepared):
+    store, world, name = prepared
+    submission = {"id": "ir-001", "venue": "ir", "title": "Retrieval study",
+                  "status": "reviewed", "revision": world.research.snapshot(),
+                  "reviews": [{"summary": "Detailed private-sized feedback"}]}
+    record = world.research.records / "conferences.json"
+    record.write_text(json.dumps({"active": "ir-001", "submissions": [submission]}))
+    world.research.repo.commit("Conference state", date=datetime.now(UTC))
+    world.record("conference", lambda w: "Reviews released.", payload={"venue": "ir"})
+    world.record("research_milestone", lambda w: "Conference decision.", payload={
+        "stage": "ir-001", "score": 50, "day": 1, "reward_per_resident": 10,
+        "reward_total": 80, "summary": "Read the decision", "status": "reviewed",
+        "record": "records/conferences.json",
+    })
+    value = store.snapshot(name)
+    assert value["conference_submissions"][0]["title"] == "Retrieval study"
+    assert "reviews" not in value["conference_submissions"][0]
+    assert value["milestones"][0]["record"] == "records/conferences.json"
+    assert any(e["kind"] == "conference" for e in value["activity"])
+    record.write_text("an uncommitted half-write")
+    assert store.conference_submissions(world.research.root.parent, value["revision"],
+                                        value["files"])[0]["status"] == "reviewed"
+
+
 @pytest.mark.asyncio
 async def test_dashboard_links_to_exact_committed_paper_and_evidence(prepared):
     store, world, name = prepared

@@ -1,0 +1,25 @@
+# A new run: the existing institute profile and its live records remain unchanged.
+base: ai-lab.yaml
+name: ir-lab-pit
+days: 306
+research_background: ../resources/ir-lab-background.md
+conference_calendar: ../resources/conferences-2026.yaml
+residents:
+  - {name: Mei, background: experiments/residents/ir-lab/mei.md}
+  - {name: Aisha, background: experiments/residents/ir-lab/aisha.md}
+  - {name: Ravi, background: experiments/residents/ir-lab/ravi.md}
+  - {name: Kofi, background: experiments/residents/ir-lab/kofi.md}
+town:
+  start_date: 2026-03-01
+  research:
+    start_day: 8
+    domain: AI information retrieval and research agents
+    institution: Beijing Zhongguancun Academy, AIcore Information Retrieval and Research Agents Group
+    allowance: 1260
+    stipend_interval_days: 21
+    stipend_per_resident: 630
+    cycles: null
+    milestones: []
+    network: false
+    semantic_scholar: false
+    pit: true

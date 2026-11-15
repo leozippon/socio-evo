@@ -133,6 +133,8 @@ class ResearchData:
                 if e["kind"]
                 in {
                     "research_brief",
+                    "conference",
+                    "living_allowance",
                     "research_milestone",
                     "research",
                     "speech",
@@ -153,17 +155,22 @@ class ResearchData:
                 "run": name,
                 "manifest": manifest,
                 "days": config.days,
+                "start_date": config.town.start_date.isoformat(),
                 "now": now,
                 "people": people,
                 "environment": "academy" if config.town.external_services else "town",
                 "actor_model": config.llm.model,
                 "paper_artifact": (
                     config.town.research.cycles.artifact
-                    if config.town.research.cycles else "paper.md"
+                    if config.town.research.cycles else (
+                        "paper.tex" if config.town.research.conferences else "paper.md"
+                    )
                 ),
                 "currency": config.town.currency,
                 "milestones": [
-                    e["payload"] | {"record": f"records/milestone-{e['payload']['stage']}.json"}
+                    e["payload"] | {"record": e["payload"].get(
+                        "record", f"records/milestone-{e['payload']['stage']}.json"
+                    )}
                     for e in entries
                     if e["kind"] == "research_milestone"
                 ],
@@ -171,6 +178,10 @@ class ResearchData:
                     m.model_dump(mode="json")
                     for m in config.town.research.stages_through(config.days)
                 ],
+                "conference_calendar": [
+                    venue.model_dump(mode="json") for venue in config.town.research.conferences
+                ],
+                "conference_submissions": self.conference_submissions(run, revision, files),
                 "comparison": self.comparison(runs),
                 "revision": revision,
                 "files": files,
@@ -185,6 +196,18 @@ class ResearchData:
             }
             self.cache[name] = (time.monotonic(), value)
             return value
+
+    def conference_submissions(self, run: Path, revision: str, files: list[dict]) -> list[dict]:
+        if not any(f["path"] == "records/conferences.json" for f in files):
+            return []
+        state = json.loads(self.git(run, "show", f"{revision}:records/conferences.json"))
+        return [
+            {key: item[key] for key in (
+                "id", "venue", "title", "status", "revision", "manuscript_record",
+                "decided_at", "reward_total", "decision",
+            ) if key in item}
+            for item in state["submissions"]
+        ]
 
     def comparison(self, runs: list[str]) -> list[dict]:
         rows = []

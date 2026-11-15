@@ -392,6 +392,8 @@ class World:
             self.at(t, partial(office.arrival, self, t))
         if self.research and not self.research.active and day == self.research.settings.start_day:
             self.at((day - 1) * DAY + self.forced_wake, partial(self.research.announce, self))
+        if self.research:
+            self.research.schedule(self, day)
         self.at(self.delivery(day), self._deliver)
         self.at(day * DAY, partial(world.midnight.midnight, self, day))
         self.at(day * DAY + self.forced_sleep, partial(world.living.force_sleep, self, day))

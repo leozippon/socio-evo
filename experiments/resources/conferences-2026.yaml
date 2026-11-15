@@ -1,0 +1,446 @@
+# Frozen simulation calendar; provenance and explicit simplifications: docs/reference/conference-calendar-2026-sources.md
+- id: "acmmm-2026"
+  title: "ACM Multimedia 2026"
+  scope: "Multimedia computing and applications."
+  abstract_at: "2026-03-25T23:59:00-12:00"
+  submission_at: "2026-04-01T23:59:00-12:00"
+  reviews_at: "2026-05-28T00:00:00-12:00"
+  rebuttal_at: "2026-06-04T23:59:00-12:00"
+  notification_at: "2026-07-09T23:59:00-12:00"
+  camera_ready_at: "2026-08-06T23:59:00-12:00"
+  format: "Anonymous ACM sigconf PDF: 8 content pages plus at most 2 reference pages; anonymize supplements. Main-track date page labels June 4 only as rebuttal; this handbook supplies a simulated May 28–June 4 window."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://2026.acmmm.org/site/important-dates.html", "https://2026.acmmm.org/site/author-instructions.html"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "recsys-2026"
+  title: "RecSys 2026 main research"
+  scope: "Recommender systems: relevance, scientific rigor and impact."
+  abstract_at: "2026-04-14T23:59:00-12:00"
+  submission_at: "2026-04-21T23:59:00-12:00"
+  reviews_at: "2026-06-04T00:00:00-12:00"
+  rebuttal_at: "2026-06-09T23:59:00-12:00"
+  notification_at: "2026-07-09T23:59:00-12:00"
+  camera_ready_at: "2026-07-27T23:59:00-12:00"
+  format: "Anonymous ACM sigconf PDF: 8 content pages for long papers or 4 for short; figures/tables/appendix count, references excluded. Official rebuttal: 500 characters to correct factual errors or misconceptions, no new material or revisions. Response length and no-attachment/no-revision rules are enforced. Release/opening hours are simulated."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://recsys.acm.org/recsys26/call/"]
+  simulated_fields: ["reviews_at", "opens_at"]
+  max_reward_per_resident: 1260
+  opens_at: "2026-03-02T00:00:00-12:00"
+  response_limit_chars: 500
+  allow_response_evidence: false
+
+- id: "ismir-2026"
+  title: "ISMIR 2026"
+  scope: "Music information retrieval, analysis, generation and evaluation."
+  abstract_at: "2026-04-20T23:59:00-12:00"
+  submission_at: "2026-04-27T23:59:00-12:00"
+  reviews_at: "2026-06-19T00:00:00-12:00"
+  rebuttal_at: "2026-06-26T23:59:00-12:00"
+  notification_at: "2026-07-10T23:59:00-12:00"
+  camera_ready_at: "2026-07-31T23:59:00-12:00"
+  format: "Anonymous ISMIR 2026 PDF: 6 pages scientific content; references, ethics and AI-use statements excluded. No appendix in the PDF; 10 MB maximum. Supplementary files anonymous. The response window is a simulation addition."
+  template_url: "https://github.com/ismir/paper_templates/tree/2026v1"
+  sources: ["https://ismir2026.ismir.net/authors/call-for-papers", "https://ismir2026.ismir.net/authors/author-guidelines"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "neurips-2026"
+  title: "NeurIPS 2026 main track"
+  scope: "Machine learning, statistical learning and neural information processing."
+  abstract_at: "2026-05-04T23:59:00-12:00"
+  submission_at: "2026-05-06T23:59:00-12:00"
+  reviews_at: "2026-07-22T00:00:00-12:00"
+  rebuttal_at: "2026-08-03T23:59:00-12:00"
+  notification_at: "2026-09-24T23:59:00-12:00"
+  camera_ready_at: "2026-11-06T23:59:00-12:00"
+  format: "Anonymous NeurIPS 2026 LaTeX: 9 content pages (10 camera-ready), excluding references, appendix and mandatory checklist; single PDF, maximum 50 MB. Official response allows 10,000 characters per review, no uploaded files or unsolicited links; new results may be described, original paper remains basis. This desk conservatively permits one 10,000-character combined response, no attachments/revised manuscript. Reviews July 22, author discussion July 27–August 3; combined here."
+  template_url: "https://media.neurips.cc/Conferences/NeurIPS2026/Formatting_Instructions_For_NeurIPS_2026.zip"
+  sources: ["https://neurips.cc/Conferences/2026/Dates", "https://neurips.cc/Conferences/2026/MainTrackHandbook", "https://neurips.cc/Conferences/2026/CallForPapers"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+  response_limit_chars: 10000
+  allow_response_evidence: false
+
+- id: "cikm-2026"
+  title: "CIKM 2026 full research"
+  scope: "Information retrieval, knowledge management and databases."
+  abstract_at: "2026-05-16T23:59:00-12:00"
+  submission_at: "2026-05-23T23:59:00-12:00"
+  reviews_at: "2026-07-17T00:00:00-12:00"
+  rebuttal_at: "2026-07-24T23:59:00-12:00"
+  notification_at: "2026-08-07T23:59:00-12:00"
+  camera_ready_at: "2026-08-23T23:59:00-12:00"
+  format: "Anonymous PDF, ACM two-column author template. 10 pages including appendices plus up to 2 reference pages. The published reviewer discussion is not an author rebuttal; this desk adds a simulated author window."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://cikm2026.diag.uniroma1.it/full-research-papers/"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "aacl-2026"
+  title: "AACL-IJCNLP 2026"
+  scope: "Computational linguistics and natural language processing, including retrieval."
+  submission_at: "2026-05-25T23:59:00-12:00"
+  reviews_at: "2026-07-07T00:00:00-12:00"
+  rebuttal_at: "2026-07-13T23:59:00-12:00"
+  notification_at: "2026-09-07T23:59:00-12:00"
+  camera_ready_at: "2026-10-02T23:59:00-12:00"
+  format: "ARR anonymous ACL template: 8 content pages for long papers or 4 for short; references, limitations and appendix are excluded; include a limitations section and anonymize supplemental material. Submit to ARR, then explicitly commit after reviews; this simulation does not transfer old ARR reviews across venues. Meta-review July 30; first commitment August 7, second commitment August 25. This desk uses the latter final opportunity."
+  template_url: "https://github.com/acl-org/acl-style-files"
+  sources: ["https://2026.aaclnet.org/calls/main_conference_papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+  submission_kind: "arr_commitment"
+  commitment_at: "2026-08-25T23:59:00-12:00"
+
+- id: "emnlp-2026"
+  title: "EMNLP 2026"
+  scope: "Empirical natural language processing, language modelling and retrieval."
+  submission_at: "2026-05-25T23:59:00-12:00"
+  reviews_at: "2026-07-07T00:00:00-12:00"
+  rebuttal_at: "2026-07-13T23:59:00-12:00"
+  notification_at: "2026-08-20T23:59:00-12:00"
+  camera_ready_at: "2026-08-30T23:59:00-12:00"
+  format: "ARR anonymous ACL template: 8 content pages for long papers or 4 for short; references, limitations and appendix are excluded; include a limitations section and anonymize supplemental material. Submit to ARR, then explicitly commit after reviews; this simulation does not transfer old ARR reviews across venues. Meta-review released July 30."
+  template_url: "https://github.com/acl-org/acl-style-files"
+  sources: ["https://2026.emnlp.org/calls/main_conference_papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+  submission_kind: "arr_commitment"
+  commitment_at: "2026-08-02T23:59:00-12:00"
+
+- id: "corl-2026"
+  title: "CoRL 2026"
+  scope: "Robot learning; a substantive robotics problem is required."
+  submission_at: "2026-05-28T23:59:00-12:00"
+  reviews_at: "2026-08-04T00:00:00-12:00"
+  rebuttal_at: "2026-08-11T23:59:00-12:00"
+  notification_at: "2026-09-04T23:59:00-12:00"
+  camera_ready_at: "2026-10-12T23:59:00-12:00"
+  format: "Anonymous CoRL template, 8 main pages, limitations included; references/appendices excluded. Current author text verifies May 28; archived official reviewer page supplies August response dates. Simulation omits early rejection and uses a text response."
+  template_url: ""
+  sources: ["https://www.corl.org/contributions/instruction-for-authors", "https://www.corl.org/contributions/old_instruction-for-reviewers", "https://www.corl.org/contributions/call-for-demos"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "bmvc-2026"
+  title: "BMVC 2026"
+  scope: "Computer vision, image processing and machine learning."
+  abstract_at: "2026-05-22T23:59:00-12:00"
+  submission_at: "2026-05-29T23:59:00-12:00"
+  reviews_at: "2026-07-03T00:00:00-12:00"
+  rebuttal_at: "2026-07-10T23:59:00-12:00"
+  notification_at: "2026-08-07T23:59:00-12:00"
+  camera_ready_at: "2026-08-28T23:59:00-12:00"
+  format: "Anonymous BMVC 2026 template, 14 pages excluding references. Supplementary material due with paper."
+  template_url: ""
+  sources: ["https://bmvc2026.bmva.org/calls/call-for-papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+
+- id: "accv-2026"
+  title: "ACCV 2026"
+  scope: "Computer vision and related machine learning."
+  abstract_at: "2026-07-03T23:59:00+00:00"
+  submission_at: "2026-07-05T23:59:00+00:00"
+  reviews_at: "2026-08-26T00:00:00+00:00"
+  rebuttal_at: "2026-09-02T23:59:00+00:00"
+  notification_at: "2026-09-20T23:59:00+00:00"
+  camera_ready_at: "2026-10-04T23:59:00+00:00"
+  format: "Use ACCV 2026 author guidelines and template; all official deadlines are GMT, not AoE. Review release hour is a simulation choice."
+  template_url: ""
+  sources: ["https://accv2026.org/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+
+- id: "kdd-2027-r1"
+  title: "KDD 2027 research first cycle"
+  scope: "Knowledge discovery, data science and AI with a research contribution."
+  abstract_at: "2026-07-19T23:59:00-12:00"
+  submission_at: "2026-07-26T23:59:00-12:00"
+  reviews_at: "2026-09-29T00:00:00-12:00"
+  rebuttal_at: "2026-10-13T23:59:00-12:00"
+  notification_at: "2026-11-14T23:59:00-12:00"
+  camera_ready_at: "2026-11-28T23:59:00-12:00"
+  format: "Anonymous PDF, ACM two-column author template. 8 content pages plus unlimited references and appendix. Official resubmit outcomes are simplified to simulated accept/reject; camera-ready date is a simulation placeholder."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://kdd2027.kdd.org/research-track-call-for-papers/"]
+  simulated_fields: ["reviews_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+
+- id: "eacl-2027"
+  title: "EACL 2027"
+  scope: "Computational linguistics and NLP, including information retrieval."
+  submission_at: "2026-08-03T23:59:00-12:00"
+  reviews_at: "2026-09-14T00:00:00-12:00"
+  rebuttal_at: "2026-09-24T23:59:00-12:00"
+  notification_at: "2026-11-12T23:59:00-12:00"
+  camera_ready_at: "2026-11-26T23:59:00-12:00"
+  format: "ARR anonymous ACL template: 8 content pages for long papers or 4 for short; references, limitations and appendix are excluded; include a limitations section and anonymize supplemental material. Submit to ARR, then explicitly commit after reviews; this simulation does not transfer old ARR reviews across venues. Author response September 14–19, discussion September 20–24, meta-review October 8. The desk uses one response/discussion window."
+  template_url: "https://github.com/acl-org/acl-style-files"
+  sources: ["https://2027.eacl.org/calls/papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+  submission_kind: "arr_commitment"
+  commitment_at: "2026-10-11T23:59:00-12:00"
+
+- id: "wsdm-2027"
+  title: "WSDM 2027 full papers"
+  scope: "Web search and data mining, recommendation and information access."
+  abstract_at: "2026-08-17T23:59:00-12:00"
+  submission_at: "2026-08-24T23:59:00-12:00"
+  reviews_at: "2026-10-12T00:00:00-12:00"
+  rebuttal_at: "2026-10-19T23:59:00-12:00"
+  notification_at: "2026-11-02T23:59:00-12:00"
+  camera_ready_at: "2026-11-16T23:59:00-12:00"
+  format: "Anonymous PDF, ACM two-column author template. 9 pages excluding references and ethics. Main/Findings distinction simplified to accept/reject. No author-response dates or camera-ready deadline are posted in this CFP; those are simulated."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://www.wsdm-conference.org/2027/cffp.html"]
+  simulated_fields: ["reviews_at", "rebuttal_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+
+- id: "wacv-2027-r2"
+  title: "WACV 2027 second round"
+  scope: "Computer vision applications."
+  abstract_at: "2026-08-21T23:59:00-12:00"
+  submission_at: "2026-08-28T23:59:00-12:00"
+  reviews_at: "2026-09-23T00:00:00-12:00"
+  rebuttal_at: "2026-09-30T23:59:00-12:00"
+  notification_at: "2026-10-14T23:59:00-12:00"
+  camera_ready_at: "2026-11-02T23:59:00-12:00"
+  format: "Anonymous WACV 2027 PDF: 8 content pages, references excluded. Official Dates page says October 14 final decision; Author/AC Guides still say October 9. This schedule selects the Dates page and adds a simulated response window, not the real round-1 revision track."
+  template_url: "https://wacv.thecvf.com/static/wacv-2027-author-kit-template.zip"
+  sources: ["https://wacv.thecvf.com/Conferences/2027/Dates", "https://wacv.thecvf.com/Conferences/2027/AuthorGuides"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "aaai-2027"
+  title: "AAAI 2027 main technical"
+  scope: "Artificial intelligence across methods and applications."
+  abstract_at: "2026-07-21T23:59:00-12:00"
+  submission_at: "2026-07-28T23:59:00-12:00"
+  reviews_at: "2026-10-24T00:00:00-12:00"
+  rebuttal_at: "2026-10-31T23:59:00-12:00"
+  notification_at: "2026-11-30T23:59:00-12:00"
+  camera_ready_at: "2026-12-14T23:59:00-12:00"
+  format: "Anonymous AAAI author kit. Official phase-1 rejection September 24 is not separately simulated. Homepage revised author feedback to October 24–31, superseding the review-process page's October 19–25."
+  template_url: ""
+  sources: ["https://aaai.org/conference/aaai/aaai-27/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+
+- id: "3dv-2027"
+  title: "3DV 2027"
+  scope: "3D computer vision and graphics."
+  abstract_at: "2026-08-28T23:59:00-12:00"
+  submission_at: "2026-08-28T23:59:00-12:00"
+  reviews_at: "2026-10-27T11:00:00-07:00"
+  rebuttal_at: "2026-11-10T23:59:00-12:00"
+  notification_at: "2026-12-02T11:00:00-07:00"
+  camera_ready_at: "2026-12-16T23:59:00-12:00"
+  format: "Anonymous 3DV PDF: 8 content pages, references excluded; abstract at most 4,000 characters; PDF at most 50 MB. Real rebuttals are requested only for selected papers; this desk permits every author to respond. Official notice times literally state 11:00 PDT, including December; retained as UTC-07."
+  template_url: "https://3dvconf.github.io/files/2027/author-kit-3DV2027.zip"
+  sources: ["https://3dvconf.github.io/2027/dates/", "https://3dvconf.github.io/2027/author-guidelines/"]
+  simulated_fields: ["rebuttal_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+
+- id: "iclr-2027"
+  title: "ICLR 2027"
+  scope: "Representation learning and machine learning."
+  abstract_at: "2026-09-18T23:59:00-12:00"
+  submission_at: "2026-09-25T23:59:00-12:00"
+  reviews_at: "2026-11-05T00:00:00-12:00"
+  rebuttal_at: "2026-11-18T23:59:00-12:00"
+  notification_at: "2026-12-16T23:59:00-12:00"
+  camera_ready_at: "2027-02-28T23:59:00-12:00"
+  format: "Anonymous ICLR 2027 LaTeX: 9 initial content pages, 10 for response/camera-ready; references, appendix, AI-use and optional ethics/reproducibility statements excluded. AI-use statement required. Official discussion allows revised PDFs and multiple comments; this desk considers the latest combined response and explicit revised manuscript, retaining original. The 24,000-character combined cap is simulated. Published dates are AoE; exact release/decision hours and camera-ready deadline simulated; camera-ready instructions expected February 2027."
+  template_url: "https://media.iclr.cc/Conferences/ICLR2027/iclr-2027-style-files.zip"
+  sources: ["https://iclr.cc/Conferences/2027/Dates", "https://iclr.cc/Conferences/2027/CallForPapers", "https://iclr.cc/Conferences/2027/AuthorGuidelines"]
+  simulated_fields: ["reviews_at", "rebuttal_at", "notification_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+  allow_revised_manuscript: true
+
+- id: "chi-2027"
+  title: "CHI 2027 papers"
+  scope: "Human-computer interaction with an appropriate contribution and evaluation."
+  submission_at: "2026-09-10T23:59:00-12:00"
+  reviews_at: "2026-11-05T00:00:00-12:00"
+  rebuttal_at: "2026-12-03T23:59:00-12:00"
+  notification_at: "2026-12-17T23:59:00-12:00"
+  camera_ready_at: "2027-02-18T23:59:00-12:00"
+  format: "Anonymous ACM single-column review format. 5000–8000 words encouraged; >12000 needs strong justification. No separate abstract deadline. Actual process allows revised papers and a response; this desk retains original and accepts an explicit revised manuscript plus response attachments. Camera-ready means final publication-ready version."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://chi2027.acm.org/Authors/Papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+  allow_revised_manuscript: true
+
+- id: "aamas-2027"
+  title: "AAMAS 2027 main track"
+  scope: "Autonomous agents and multiagent systems."
+  abstract_at: "2026-10-01T23:59:00-12:00"
+  submission_at: "2026-10-08T23:59:00-12:00"
+  reviews_at: "2026-11-20T00:00:00-12:00"
+  rebuttal_at: "2026-11-24T23:59:00-12:00"
+  notification_at: "2026-12-21T23:59:00-12:00"
+  camera_ready_at: "2027-01-25T23:59:00-12:00"
+  format: "Anonymous AAMAS LaTeX PDF: 8 content pages plus references; abstract 100–300 words. Supplemental ZIP at most 25 MB and cannot replace/extend the main paper. Proceedings/Findings distinction simplified to simulated accept/reject."
+  template_url: ""
+  sources: ["https://warwick.ac.uk/fac/sci/dcs/aamas2027/calls/call-for-main-track/", "https://warwick.ac.uk/fac/sci/dcs/aamas2027/guidelines-and-policies/instructions/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+
+- id: "www-2027"
+  title: "The Web Conference 2027 research long"
+  scope: "Research with an explicit Web-related scientific contribution, including Web retrieval."
+  abstract_at: "2026-10-18T23:59:00-12:00"
+  submission_at: "2026-10-25T23:59:00-12:00"
+  reviews_at: "2026-12-15T00:00:00-12:00"
+  rebuttal_at: "2026-12-20T23:59:00-12:00"
+  notification_at: "2027-01-04T23:59:00-12:00"
+  camera_ready_at: "2027-01-31T23:59:00-12:00"
+  format: "Anonymous ACM sigconf review PDF: 8 main pages plus references/appendix, at most 12 total. Explain Web relevance on page 1; a Web dataset alone does not establish fit. Latest CFP reviews December 15, response December 15–20, decision January 4, so pending at 2026 year end."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://www2027.thewebconf.org/research-track-papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260
+
+- id: "aistats-2027"
+  title: "AISTATS 2027"
+  scope: "Machine learning, artificial intelligence and statistics."
+  abstract_at: "2026-09-29T23:59:00-12:00"
+  submission_at: "2026-10-06T23:59:00-12:00"
+  reviews_at: "2026-11-16T00:00:00-12:00"
+  rebuttal_at: "2026-12-03T23:59:00-12:00"
+  notification_at: "2027-01-20T23:59:00-12:00"
+  camera_ready_at: "2027-02-03T23:59:00-12:00"
+  format: "Anonymous AISTATS 2027 LaTeX: 8 content pages (9 camera-ready); references, mandatory AI-use statement, checklist and appendix excluded. All supplements due with paper. Initial response November 16–22, discussion November 23–December 3. The real factual-correctness AI review supports human decisions; this desk uses simulated scored reviewers. Camera-ready date unannounced."
+  template_url: "https://aistats.org/aistats2027/AISTATS2027PaperPack.zip"
+  sources: ["https://virtual.aistats.org/Conferences/2027/CallForPapers"]
+  simulated_fields: ["reviews_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+
+- id: "icra-2027"
+  title: "ICRA 2027 technical papers"
+  scope: "Robotics and automation."
+  submission_at: "2026-09-16T23:59:00-08:00"
+  reviews_at: "2027-01-10T00:00:00-12:00"
+  rebuttal_at: "2027-01-17T23:59:00-12:00"
+  notification_at: "2027-01-31T23:59:00-12:00"
+  camera_ready_at: "2027-02-28T23:59:00-12:00"
+  format: "Anonymous ICRA double-column template; 8 pages total including references. Official paper deadline says 23:59 PST; retained literally as UTC-08. Author response and final-file deadline are simulation additions."
+  template_url: ""
+  sources: ["https://2027.ieee-icra.org/contribute/call-for-icra-2027-papers-now-accepting-submissions/"]
+  simulated_fields: ["reviews_at", "rebuttal_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+
+- id: "naacl-2027"
+  title: "NAACL 2027"
+  scope: "Computational linguistics and natural language processing."
+  submission_at: "2026-10-12T23:59:00-12:00"
+  reviews_at: "2026-11-24T00:00:00-12:00"
+  rebuttal_at: "2026-11-30T23:59:00-12:00"
+  notification_at: "2027-02-10T23:59:00-12:00"
+  camera_ready_at: "2027-03-03T23:59:00-12:00"
+  format: "ARR anonymous ACL template: 8 content pages for long papers or 4 for short; references, limitations and appendix are excluded; include a limitations section and anonymize supplemental material. Submit to ARR, then explicitly commit after reviews; this simulation does not transfer old ARR reviews across venues. Meta-reviews December 18. This handbook supplies a November 24–30 response window; the cited venue CFP does not give those dates."
+  template_url: "https://github.com/acl-org/acl-style-files"
+  sources: ["https://2027.naacl.org/calls/main_conference_papers/"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+  submission_kind: "arr_commitment"
+  commitment_at: "2026-12-23T23:59:00-12:00"
+
+- id: "coling-2027"
+  title: "COLING 2027"
+  scope: "Computational linguistics and natural language processing."
+  submission_at: "2026-10-12T23:59:00-12:00"
+  reviews_at: "2026-11-24T00:00:00-12:00"
+  rebuttal_at: "2026-11-30T23:59:00-12:00"
+  notification_at: "2027-02-10T23:59:00-12:00"
+  camera_ready_at: "2027-02-24T23:59:00-12:00"
+  format: "ARR anonymous ACL template: 8 content pages for long papers or 4 for short; references, limitations and appendix are excluded; include a limitations section and anonymize supplemental material. Submit to ARR, then explicitly commit after reviews; this simulation does not transfer old ARR reviews across venues. Shares the October ARR cycle with NAACL; only one commitment is permitted. Response window and camera-ready date are simulation additions."
+  template_url: "https://github.com/acl-org/acl-style-files"
+  sources: ["https://2027.coling-iccl.org/calls/main_conference_papers/"]
+  simulated_fields: ["reviews_at", "rebuttal_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+  submission_kind: "arr_commitment"
+  commitment_at: "2026-12-23T23:59:00-12:00"
+
+- id: "cvpr-2027"
+  title: "CVPR 2027"
+  scope: "Computer vision and pattern recognition."
+  abstract_at: "2026-11-10T23:59:00-12:00"
+  submission_at: "2026-11-16T23:59:00-12:00"
+  reviews_at: "2027-01-25T00:00:00-12:00"
+  rebuttal_at: "2027-02-01T23:59:00-12:00"
+  notification_at: "2027-02-25T23:59:00-12:00"
+  camera_ready_at: "2027-03-11T23:59:00-12:00"
+  format: "Anonymous CVPR 2027 PDF: 8 content pages, references excluded. Official rebuttal is a one-page PDF, excludes links/new unsolicited experiments; this desk conservatively uses 4,000 text characters, disallows attachments/revisions, and labels its unverified end date. Supplementary deadline November 23."
+  template_url: "https://github.com/cvpr-org/author-kit"
+  sources: ["https://cvpr.thecvf.com/Conferences/2027/Dates", "https://cvpr.thecvf.com/Conferences/2027/AuthorGuidelines"]
+  simulated_fields: ["reviews_at", "rebuttal_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+  allow_response_evidence: false
+  response_limit_chars: 4000
+
+- id: "pakdd-2027"
+  title: "PAKDD 2027 research"
+  scope: "Knowledge discovery and data mining."
+  submission_at: "2026-11-20T23:59:00-12:00"
+  reviews_at: "2027-02-05T00:00:00-12:00"
+  rebuttal_at: "2027-02-12T23:59:00-12:00"
+  notification_at: "2027-02-26T23:59:00-12:00"
+  camera_ready_at: "2027-03-19T23:59:00-12:00"
+  format: "Anonymous Springer LNCS/LNAI PDF: 12 pages total including references and appendix; abstract at most 200 words. Author-response dates are simulation additions. The real author-kit restricts generative AI to grammatical correction; this simulated AI laboratory is not eligible for real submission under that rule."
+  template_url: ""
+  sources: ["https://www.pakdd2027.org/pages/calls/research", "https://www.pakdd2027.org/pages/calls/authors-kit"]
+  simulated_fields: ["reviews_at", "rebuttal_at"]
+  max_reward_per_resident: 1260
+
+- id: "mlsys-2027"
+  title: "MLSys 2027 research"
+  scope: "Machine learning systems and practical ML workflows."
+  submission_at: "2026-10-30T21:00:00+00:00"
+  reviews_at: "2027-01-18T20:00:00+00:00"
+  rebuttal_at: "2027-01-21T20:00:00+00:00"
+  notification_at: "2027-02-28T21:00:00+00:00"
+  camera_ready_at: "2027-03-14T23:59:00-12:00"
+  format: "Anonymous 2-column MLSys format using the official 2025 style as instructed; 10 pages excluding references; appendix separate and due with paper. Camera-ready not announced."
+  template_url: ""
+  sources: ["https://mlsys.org/Conferences/2027/CallForResearchPapers", "https://mlsys.org/"]
+  simulated_fields: ["camera_ready_at"]
+  max_reward_per_resident: 1260
+  opens_at: "2026-10-19T20:00:00+00:00"
+
+- id: "facct-2027"
+  title: "FAccT 2027"
+  scope: "Fairness, accountability and transparency in socio-technical computing."
+  abstract_at: "2026-10-27T23:59:00-12:00"
+  submission_at: "2026-11-03T23:59:00-12:00"
+  reviews_at: "2026-12-22T00:00:00-12:00"
+  rebuttal_at: "2027-01-28T23:59:00-12:00"
+  notification_at: "2027-03-23T23:59:00-12:00"
+  camera_ready_at: "2027-04-06T23:59:00-12:00"
+  format: "Anonymous ACM review submission: 14 content pages, references excluded, plus one endmatter page; revised/accepted content may use 15 pages. Actual process has accept/revise/reject first decisions; this desk accepts an explicit revised manuscript and response, retains original, then makes one final binary decision. Camera-ready unannounced."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://facctconference.org/2027/cfp.html"]
+  simulated_fields: ["reviews_at", "camera_ready_at"]
+  max_reward_per_resident: 1260
+  allow_revised_manuscript: true
+
+- id: "hri-2027"
+  title: "HRI 2027 full papers"
+  scope: "Human-robot interaction with scientific or design evidence."
+  abstract_at: "2026-09-11T23:59:00-12:00"
+  submission_at: "2026-09-18T23:59:00-12:00"
+  reviews_at: "2026-10-28T00:00:00-12:00"
+  rebuttal_at: "2026-11-03T23:59:00-12:00"
+  notification_at: "2026-11-30T23:59:00-12:00"
+  camera_ready_at: "2026-12-18T23:59:00-12:00"
+  format: "Anonymous PDF, ACM two-column author template. 8 content pages excluding references. Appendices separately. Human-subject studies require appropriate ethics/consent descriptions."
+  template_url: "https://github.com/borisveytsman/acmart"
+  sources: ["https://humanrobotinteraction.org/2027/full-papers/"]
+  simulated_fields: ["reviews_at"]
+  max_reward_per_resident: 1260

@@ -94,7 +94,7 @@ async def run(
     research = config.town.research
     if research and research.start_day > config.days:
         raise ValueError("the run ends before the research start day")
-    if research and (research.milestones or research.cycles):
+    if research and (research.milestones or research.cycles or research.conferences):
         assert research.judge is not None
         if research.judge.model == config.llm.model:
             raise ValueError("the external research judge must differ from the resident model")
@@ -236,6 +236,12 @@ def _create(
     for name, background in backgrounds.items():
         path = directory.agent_dir(name)
         AgentDirectory.create(path, background=background)
+        if config.town.research and config.town.research.background:
+            # Existing intellectual context is available during free life; future calls for
+            # papers and the collective commission are still published only on day eight.
+            (path / "memory" / "lab-background.md").write_text(
+                config.town.research.background, encoding="utf-8"
+            )
         Repository.init(path, user_name=name, user_email=f"{name.lower()}@town.invalid")
     world = World(config.town, directory.root, backend)
     if world.research:

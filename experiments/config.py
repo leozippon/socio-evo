@@ -4,6 +4,8 @@ A file that names `base:` (a path relative to the file) is read as an overlay on
 mappings are merged key by key, recursively, and every other value (a list, a scalar, null)
 replaces the base's. Bases may chain. The run configurations and the smoke town overlay the town
 (`configs/town.yaml`).
+`research_background` and `conference_calendar` load resources relative to the declaring
+YAML file; the resulting configuration contains their contents, not mutable file references.
 """
 
 from __future__ import annotations
@@ -49,6 +51,26 @@ def _read(path: Path, chain: tuple[Path, ...]) -> dict[str, Any]:
         raise ConfigError(f"{path}: invalid YAML: {error}") from error
     if not isinstance(data, dict):
         raise ConfigError(f"{path}: not a mapping")
+    for key, field in (
+        ("research_background", "background"), ("conference_calendar", "conferences")
+    ):
+        reference = data.pop(key, None)
+        if reference is None:
+            continue
+        if not isinstance(reference, str):
+            raise ConfigError(f"{path}: {key} must be a resource path")
+        resource = (path.parent / reference).resolve()
+        try:
+            content = resource.read_text(encoding="utf-8")
+            value = yaml.safe_load(content) if field == "conferences" else content
+        except (OSError, yaml.YAMLError) as error:
+            raise ConfigError(f"{path}: cannot load {key} from {resource}: {error}") from error
+        if field == "conferences" and not isinstance(value, list):
+            raise ConfigError(f"{resource}: conference_calendar must contain a list")
+        research = data.setdefault("town", {}).setdefault("research", {})
+        if field in research:
+            raise ConfigError(f"{path}: use either {key} or town.research.{field}, not both")
+        research[field] = value
     base = data.pop("base", None)
     if base is None:
         return data

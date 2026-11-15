@@ -2,6 +2,7 @@
 
 import json
 import os
+from datetime import UTC, datetime
 
 import pytest
 
@@ -258,3 +259,89 @@ async def test_preflight_checks_real_contracts_and_cleans_temporary_workspace(
         monkeypatch.setattr(pair.subprocess, "check_output", lambda *a, **k: "GPU-model\n")
         with pytest.raises(RuntimeError, match="Preflight failed at docker:town"):
             await pair.preflight(configured, tmp_path)
+
+
+@pytest.mark.asyncio
+async def test_pit_preflight_uses_dated_gateway_and_offline_cuda_container(tmp_path, monkeypatch):
+    from world import research_browser
+
+    for key in ("VLLM_API_KEY", "LIGHTING_API_KEY"):
+        monkeypatch.setenv(key, "private-test-key")
+    monkeypatch.delenv("TAVILY_API_KEY", raising=False)
+    config = pair.configuration(
+        pair.PROJECT_ROOT / "experiments/configs/ir-lab.yaml", 23, "device=1"
+    )
+    accesses, commands = [], []
+
+    class Client:
+        async def stream(self, request):
+            if request.tools:
+                return LLMResponse(text="", latency=0, tool_calls=(
+                    ToolCall(id="echo-1", name="echo", arguments={"text": "hello"}),
+                ))
+            return LLMResponse(text="hello", latency=0)
+
+        async def complete(self, request):
+            return LLMResponse(text='{"ok":true}', latency=0)
+
+    class Gateway:
+        def __init__(self, cache_dir):
+            assert cache_dir == tmp_path / "browser-cache"
+
+        def search(self, provider, query, as_of, page=1):
+            assert as_of == datetime(2026, 2, 28, 16, tzinfo=UTC) and page == 1
+            accesses.append(("search", provider))
+            return {"results": [{"url": "https://example.org/historical"}]}
+
+        def open(self, url, as_of):
+            accesses.append(("open", url))
+            return {"url": url, "version": "dated", "text": "Historical source",
+                    "provenance": {"availability_verified": False}}
+
+        def download(self, url, as_of, destination):
+            accesses.append(("download", url))
+            destination.write_bytes(b"%PDF-1.7\n%%EOF\n")
+            return {"path": str(destination), "bytes": destination.stat().st_size,
+                    "provenance": {"availability_verified": False}}
+
+    def forbidden_source(*args):
+        pytest.fail("PIT must not call unrestricted Tavily, Semantic Scholar or curl")
+
+    async def command(image, files, records, cmd, timeout, **kwargs):
+        assert kwargs["network"] is False and kwargs["gpus"] == "device=1"
+        commands.append(cmd)
+        if "torch.load" not in cmd:
+            assert "/sys/class/net" in cmd and "loss.backward()" in cmd and "latexmk" in cmd
+            (files / "probe.txt").write_text("ok")
+            (files / "probe.pdf").write_bytes(b"%PDF-1.7\n")
+            (files / "probe.bbl").write_text("Probe citation")
+            (files / "probe.log").write_text("Output written on probe.pdf")
+            (files / "gpu-uuids.txt").write_text("GPU-research\n")
+        return {"exit_code": 0, "timed_out": False}
+
+    monkeypatch.setattr(pair, "create_client", lambda config: Client())
+    monkeypatch.setattr(research_browser, "BrowserGateway", Gateway)
+    for method in ("search_web", "search", "curl_source"):
+        monkeypatch.setattr(pair.research_sources, method, forbidden_source)
+    monkeypatch.setattr(pair.research_workspace, "require_image", lambda image: None)
+    monkeypatch.setattr(pair.research_workspace, "execute", command)
+    monkeypatch.setattr(pair.subprocess, "check_output", lambda *a, **k: "GPU-research\n")
+    report = await pair.preflight({"lab": config}, tmp_path)
+    assert report["ok"] and len(commands) == 2
+    assert accesses[0] == ("search", "arxiv") and accesses[2] == ("search", "github")
+    assert accesses[-1][0] == "download"
+    assert report["checks"]["tavily"] == {"enabled": False, "status": "disabled"}
+    assert report["checks"]["docker:lab"]["network_isolated"]
+    assert report["checks"]["docker:lab"]["checkpoint_reload"]
+    provenance = report["checks"]["pit_browser:lab"]["sources"][0]["provenance"]
+    assert not provenance["availability_verified"]
+    assert "private-test-key" not in (tmp_path / "preflight.json").read_text()
+
+    def invalid_download(self, url, as_of, destination):
+        destination.write_text("not a PDF")
+        return {"provenance": {"availability_verified": False}}
+
+    monkeypatch.setattr(Gateway, "download", invalid_download)
+    with pytest.raises(RuntimeError, match="Preflight failed at pit_browser:lab"):
+        await pair.preflight({"lab": config}, tmp_path)
+    assert len(commands) == 2

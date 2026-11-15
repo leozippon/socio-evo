@@ -45,7 +45,7 @@ each is where the consequences lie, and that illness is likelier the lower one's
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Annotated, Literal
 
@@ -436,6 +436,52 @@ class ResearchCycleSettings(StrictModel):
         return self
 
 
+class ConferenceVenue(StrictModel):
+    """A frozen, sourced call for papers; all deadlines include their timezone."""
+
+    id: Id
+    title: str = Field(min_length=1)
+    scope: str = Field(min_length=1)
+    opens_at: datetime | None = None
+    abstract_at: datetime | None = None
+    submission_at: datetime
+    reviews_at: datetime
+    rebuttal_at: datetime
+    commitment_at: datetime | None = None
+    notification_at: datetime
+    camera_ready_at: datetime | None = None
+    format: str = ""
+    template_url: str = ""
+    sources: tuple[str, ...] = ()
+    simulated_fields: tuple[str, ...] = ()
+    submission_kind: Literal["direct", "arr_commitment"] = "direct"
+    max_reward_per_resident: int = Field(default=1260, ge=0)
+    response_limit_chars: int = Field(default=24000, ge=1)
+    allow_response_evidence: bool = True
+    allow_revised_manuscript: bool = False
+
+    @model_validator(mode="after")
+    def _timeline(self) -> ConferenceVenue:
+        fields = (
+            "opens_at", "abstract_at", "submission_at", "reviews_at", "rebuttal_at",
+            "commitment_at", "notification_at", "camera_ready_at",
+        )
+        for name in fields:
+            value = getattr(self, name)
+            if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+                raise ValueError(f"{name} must include a timezone")
+        ordered = [getattr(self, name) for name in fields if getattr(self, name) is not None]
+        if ordered != sorted(ordered):
+            raise ValueError("conference dates must follow the submission and review sequence")
+        if not self.submission_at < self.reviews_at < self.notification_at:
+            raise ValueError("reviews must follow submission and precede the decision")
+        if (self.submission_kind == "arr_commitment") != (self.commitment_at is not None):
+            raise ValueError("ARR conferences require a separate commitment deadline")
+        if any(name not in fields for name in self.simulated_fields):
+            raise ValueError("calendar provenance must identify date fields")
+        return self
+
+
 class ResearchSettings(StrictModel):
     """One shared research project; no benchmark tasks or acceptance machinery."""
 
@@ -454,13 +500,24 @@ class ResearchSettings(StrictModel):
     milestones: tuple[ResearchMilestone, ...] = ()
     cycles: ResearchCycleSettings | None = None
     review_style: Literal["standard", "conference"] = "standard"
+    pit: bool = False
+    institution: str = ""
+    background: str = ""
+    conferences: tuple[ConferenceVenue, ...] = ()
+    stipend_interval_days: int = Field(default=21, ge=1)
+    stipend_per_resident: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def _stages(self) -> ResearchSettings:
-        if (self.milestones or self.cycles) and self.judge is None:
+        if (self.milestones or self.cycles or self.conferences) and self.judge is None:
             raise ValueError("research milestones require an external judge configuration")
         if self.cycles and self.milestones:
             raise ValueError("choose recurring research cycles or fixed milestones, not both")
+        if self.conferences and (self.cycles or self.milestones):
+            raise ValueError("conference calendars replace recurring and fixed paper reviews")
+        if self.pit and (self.network or self.semantic_scholar):
+            raise ValueError("PIT uses the browser gateway; direct shell/search networks are off")
+        _unique("conference id", [venue.id for venue in self.conferences])
         _unique("research milestone id", [stage.id for stage in self.milestones])
         days = [stage.day for stage in self.milestones]
         if days != sorted(set(days)):

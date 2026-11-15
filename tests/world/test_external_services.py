@@ -49,7 +49,7 @@ def test_only_external_services_relax_staffing_and_research_roles_work(academy):
         TownConfig.model_validate(data)
     for r in academy.residents.values():
         r.place = "workshop"
-        assert set(RESEARCH_NAMES) <= offered(academy, r)
+        assert set(academy.research.names) <= offered(academy, r)
         assert not {"cook", "order", "examine", "treat", "grant"} & offered(academy, r)
         assert "seek_care" not in offered(academy, r)
         r.place = r.home
