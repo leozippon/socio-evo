@@ -52,8 +52,8 @@ async function showFile(path){const t=++ticket,{run,revision}=state;clearPdf();$
 function paperPreviews(){
  const papers=state.files.filter(f=>/^files\/paper\d*\.pdf$/i.test(f.path)).sort((a,b)=>a.path.localeCompare(b.path,undefined,{numeric:true}));
  if(!papers.length)return null;
- const nav=el('nav','paper-previews');nav.setAttribute('aria-label','论文 PDF 预览');nav.append(el('p','fine','已生成的论文 PDF'));
- for(const file of papers){const name=file.path.slice(6),number=Number(name.match(/^paper(\d*)/i)[1]||1),label=({1:'第一篇',2:'第二篇',3:'第三篇'})[number]||`第 ${number} 篇`;const button=el('button','view-original',`${label} · ${name} ↗`);button.onclick=()=>showFile(file.path);nav.append(button);}
+ const nav=el('nav','paper-previews');nav.setAttribute('aria-label','论文 PDF 预览');nav.append(el('p','fine','当前提交稿与已生成的论文 PDF'));
+ for(const file of papers){const name=file.path.slice(6),number=Number(name.match(/^paper(\d*)/i)[1]),label=name.toLowerCase()==='paper.pdf'?'当前提交稿':({1:'第一篇',2:'第二篇',3:'第三篇'})[number]||`第 ${number} 篇`;const button=el('button','view-original',`${label} · ${name} ↗`);button.onclick=()=>showFile(file.path);nav.append(button);}
  return nav;
 }
 async function renderWorkspace(){if(!state)return;const key=state.run+state.revision+tab;if(key===workKey)return;workKey=key;const target=$('workspace-body');if(tab==='paper'){
