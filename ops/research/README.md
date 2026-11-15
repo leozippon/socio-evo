@@ -1,15 +1,15 @@
-# Preparing and running the AI institute
+# Running the research laboratories
 
-This guide owns deployment procedures. The [IR laboratory protocol](../../docs/ir-laboratory.md) describes the new dated profile; the [institute protocol](../../docs/research.md) describes the existing run. Both use local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start a formal experiment.
+This guide owns deployment procedures. The [IR laboratory protocol](../../docs/ir-laboratory.md) describes the new dated profile; the [institute protocol](../../docs/research.md) describes the preserved institute run. Both use local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start a formal experiment.
 
-All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The new deployment root is `/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261115-r1`. The interrupted initial laboratory and completed town/academy pair are preserved separately.
+All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The dated IR laboratory uses `socio-evo-ai-lab/pit-lab-20261115-r1` under that storage root; the stopped institute remains in `socio-evo-ai-lab/deployment-20261115-r1`. The interrupted initial laboratory and completed town/academy pair are preserved separately.
 
 ## Prepare services
 
 Install the committed source with Python 3.11+ and `pip install -e '.[research,dev]'`. The existing serving interpreter is `/personal_fast_storage/qwen-serving/venv/bin/python`; it reads Qwen3.8-27B-FP8 weights from `/public_fast_storage/lty26/models/Qwen3.8-27B-FP8`. Check the selected GPUs before starting services. From the deployed checkout, the current serving command is:
 
 ```sh
-DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261115-r1
+DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/pit-lab-20261115-r1
 LD_LIBRARY_PATH=/personal_fast_storage/qwen-serving/cuda-compat/usr/local/cuda-12.9/compat \
   /personal_fast_storage/qwen-serving/venv/bin/python -m ops.research.model_service \
   --root "$DEPLOY" --gpus 0 --port 8041 --max-model-len 262144 \
@@ -26,7 +26,7 @@ docker build -t socio-evo-ai-institute:20261115 -f ops/research/Dockerfile.paper
 
 The paper image extends the validated `socio-evo-ai-lab:20261114` CUDA image and adds `latexmk`, pdfLaTeX, BibTeX and common mathematics, algorithm, table and figure packages. The base image is built with `Dockerfile.cuda` when needed; extending it avoids downloading PyTorch again. Build-time temporary files use `/tmp`; the running container retains its persistent `/runtime` paths. Research containers mount shared files at `/research`, read-only evidence at `/records`, and a separate persistent runtime at `/runtime`. Ordinary `pip install` targets `/runtime/python`; model downloads and caches also live outside research Git. The scientific state required for a result must stay under `/research`, including training checkpoints and environment/version records.
 
-Load `TAVILY_API_KEY` and `LIGHTING_API_KEY` from the deployment's private mode-0600 `credentials.env`, and the local model credential from `model.env`. Credentials stay outside the source checkout and research containers:
+Load `LIGHTING_API_KEY` and `GITHUB_TOKEN` from the IR deployment's private mode-0600 `credentials.env`, and the local model credential from `model.env`. The older non-PIT profile uses `TAVILY_API_KEY` instead of GitHub. Credentials stay outside the source checkout and research containers:
 
 ```sh
 set -a
@@ -36,13 +36,14 @@ set +a
 export PYTHONDONTWRITEBYTECODE=1
 ```
 
-Every normal launch first runs preflight with the actual profile: actor tool calling and continuation, a structured external judge reply, Tavily, curl, host-GPU identity, a CUDA optimizer step and saved tensor loading in another container. Conference profiles additionally compile a LaTeX document containing a generated figure, table, algorithm, cross-reference and BibTeX citation, and check the PDF and resolved references. `--preflight-only` is available for isolated diagnostics; it need not precede a normal launch. Separate acceptance probes verify the exact resident-facing CUDA example and a real conference review with grounded citations. Semantic Scholar is recorded as disabled, not passed. A failed check prevents launch. Acceptance requires those concrete operations, not merely `nvidia-smi` or successful package imports.
+Every normal launch first runs preflight with the actual profile: actor tool calling and continuation, a structured external judge reply, enabled browsing routes, host-GPU identity, a CUDA optimizer step and saved tensor loading in another container. The old profile checks Tavily/curl; the dated profile checks arXiv/GitHub and disabled container networking. Conference profiles additionally compile a LaTeX document containing a generated figure, table, algorithm, cross-reference and BibTeX citation, and check the PDF and resolved references. `--preflight-only` is available for isolated diagnostics; it need not precede a normal launch. Separate acceptance probes verify the exact resident-facing CUDA example and a real conference review with grounded citations. Semantic Scholar is recorded as disabled, not passed. A failed check prevents launch. Acceptance requires those concrete operations, not merely `nvidia-smi` or successful package imports.
 
-## Start and resume
+## Historical institute launch
 
-After preparation is accepted, the default profile runs through the day-70 checkpoint:
+These commands describe the stopped institute. Do not resume it as part of the IR experiment. The default profile runs through the day-70 checkpoint:
 
 ```sh
+DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/deployment-20261115-r1
 python -m ops.research.run_lab --runs-root "$DEPLOY/runs" --seed 20260302 --until-day 70
 ```
 
@@ -58,7 +59,7 @@ python -m frontend.research_server --runs-root "$DEPLOY/runs" --site "$DEPLOY/si
 
 Forward local port 8921 to remote `127.0.0.1:8921`; the original laboratory viewer remains on 8920. The viewer reads remote files directly and remains waiting before a run exists. Keep viewer data and all later analysis on Zenith; do not mirror experiment outputs into the checkout.
 
-## Prepare the dated IR laboratory
+## Start and resume the dated IR laboratory
 
 Use a separate deployment and run root for `experiments/configs/ir-lab.yaml`. Do not resume the old institute with this profile or reuse its scientific/runtime directories. `research_background` and `conference_calendar` resources are expanded into the frozen run configuration, so later edits cannot silently change a resumed world. The [new protocol](../../docs/ir-laboratory.md) owns the calendar and funding rules.
 
@@ -71,32 +72,36 @@ From the new deployed checkout, after arranging the model-service handover:
 ```sh
 PIT_DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/pit-lab-20261115-r1
 python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
-  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --preflight-only
-python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
-  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --until-day 7
-python -m ops.research.run_lab --config experiments/configs/ir-lab.yaml \
-  --runs-root "$PIT_DEPLOY/runs" --seed 20260302 --resume
+  --runs-root "$PIT_DEPLOY/runs" --seed 20260302
 ```
 
-These are preparation/launch instructions, not a record that they have run. Omitting `--until-day` selects the latest complete lived-day checkpoint already reached in real Beijing time, capped by the frozen 306-day horizon. A checkpoint falls at 04:30 on the following calendar date; the launcher accounts for that boundary. An explicit later date is refused because its research materials do not yet exist. Resume later with the same configuration to advance toward December 31. Do not copy incomplete future-day data into the library.
+The normal launch includes full preflight. For an interrupted run, add `--resume` with the same configuration and root; do not rerun a live controller. A deliberate `--until-day 7` is only a staged stop, not required for the seven-day free-life protocol. Omitting `--until-day` selects the latest complete lived-day checkpoint already reached in real Beijing time, capped by the frozen 306-day horizon. A checkpoint falls at 04:30 on the following calendar date; the launcher accounts for that boundary. An explicit later date is refused because its research materials do not yet exist. Resume later with the same configuration to advance toward December 31. Do not copy incomplete future-day data into the library.
 
 The new run name is `ir-lab-pit-seed-20260302`; its control directory remains `lab-seed-20260302` under the **new** runs root. Keep the model supervisor associated with that deployment once handing over: the old deployment's supervisor can stop its owned model when its old run finishes. Starting another formal run without arranging that ownership is not a validated launch.
 
-The viewer automatically displays the dated clock, conference desk, submission states and released events for calendar profiles. Source/PDF files, immutable submission receipts, reviewer inputs, rebuttals, decisions and living stipends remain on Zenith. A review scheduled after the configured horizon remains pending.
+Run the new read-only viewer with `python -m frontend.research_server --runs-root "$PIT_DEPLOY/runs" --site "$PIT_DEPLOY/site" --port 8922` and forward local 8922 to remote 127.0.0.1:8922. Keep the historical institute viewer on 8921. The viewer automatically displays the dated clock, conference desk, submission states and released events for calendar profiles. Source/PDF files, immutable submission receipts, reviewer inputs, rebuttals, decisions and living stipends remain on Zenith. A review scheduled after the configured horizon remains pending.
 
 For an isolated real judge protocol check, `python -m ops.research.check_conference --config experiments/configs/ir-lab.yaml --output <new-project-storage-directory>` exercises three initial reviews, an author response, three updated reviews and one area-chair decision. It allows at most seven calls, verifies restoration before and after the decision, and never invokes residents, GPUs or a real conference. Its manuscript is explicitly an inadequate synthetic infrastructure test; a passing receipt is not scientific validation.
 
-November 15 preparation receipts are under `/project_c20250210/260903018/socio-evo-ai-lab/pit-preparation-20261115`. `conference-acceptance-r1/receipt.json` passed seven real `gpt-6.1-sol` calls and two restore checks with no additional calls or grants. The synthetic paper was rejected. `browser-acceptance/final/acceptance.json`, completed at 22:35:39 Beijing, records the final public-only gateway passing actual arXiv historical search, versioned reading, PDF download/text extraction, and authenticated GitHub search, historical README and archive download. The initial anonymous GitHub quota failure and arXiv API failure are retained; the gateway now uses official arXiv HTML, not the inaccessible export API. The supplied GitHub credential is kept in the private mode-0600 `github.env` at this preparation root and must be loaded only into the host gateway/launcher environment. No new formal run or model-service handover is recorded by these probes.
+November 15 preparation receipts are under `/project_c20250210/260903018/socio-evo-ai-lab/pit-preparation-20261115`. `conference-acceptance-r1/receipt.json` passed seven real `gpt-6.1-sol` calls and two restore checks with no additional calls or grants. The synthetic paper was rejected. `browser-acceptance/final/acceptance.json`, completed at 22:35:39 Beijing, records the final public-only gateway passing actual arXiv historical search, versioned reading, PDF download/text extraction, and authenticated GitHub search, historical README and archive download. The initial anonymous GitHub quota failure and arXiv API failure are retained; the gateway now uses official arXiv HTML, not the inaccessible export API. The supplied GitHub credential is kept in the private mode-0600 `github.env` at this preparation root and must be loaded only into the host gateway/launcher environment. These preparation probes are separate from the formal launch record below.
 
 ## Deployment status and history
+
+The dated IR experiment `ir-lab-pit-seed-20260302` started fresh on November 15 at 23:10:59 Beijing (15:10:59 UTC), from clean source `8254ccc10cda2dbc42dc887f250816987bff8569` in `pit-lab-20261115-r1/code`, under controller/simulation PID 2197978. The new model supervisor/server PIDs are 2191316/2191811, bound to the new deployment root; the read-only viewer PID is 2191317 on port 8922. Its frozen horizon remains 306 days; this launch targets the latest already-reached checkpoint, day 259 (November 14), before a later resume can advance into subsequent real dates. These are observed launch identities, not permanent PIDs.
+
+Full preflight passed at 23:10:58 Beijing: Qwen tool calling/continuation, external `gpt-6.1-sol`, arXiv/GitHub historical search and reading at the March 1 cutoff, the version-5 Search-R1 PDF download, network-isolated CUDA training on physical GPU 1, checkpoint reload in a second container and LaTeX compilation. GPU 1 was verified by UUID `GPU-a44e8b8d-c044-47f5-3a9f-6c4243e85264`; GPU 0 remains reserved for inference. Preflight outputs remain separate from resident science. GitHub raw-file fetching was slow, approximately 18 seconds per request during acceptance, but completed without bypassing version checks. Receipts are `runs/lab-seed-20260302/preflight.json`, `preflight/launch.json` and `deployment.json` under the new root.
+
+Startup acceptance at 23:13:42 recorded real replies from Mei/Aisha/Ravi/Kofi (12/13/9/5), event sequence growth from 10 to 37 and simulated time advancing from 07:06 to 07:50 on March 1. No response lapse, context overflow, tool failure or run traceback was found. Initial prompts and tools did not expose the future commission; background readings were present and the conference handbook remained unpublished. The browser/GPU checks were independent preflight, not early resident research actions. `preflight/launch-acceptance.json` retains these observations; the main agent also verified the live page through the local SSH forward, including all four residents and the dated clock.
+
+The old institute was gracefully stopped on November 15 at 22:52:47 Beijing. Its manifest is `interrupted`, with no active simulation PID; checkpoint day 27 and subsequent live records through day 28 at 09:34:02 remain intact. The old model supervisor exited automatically. Its historical viewer on 8921 stays available, including the three distinct PDFs. Stop receipts are `deployment-20261115-r1/preflight/switch-to-ir-20261115/{stop-requested,stop-result}.json`.
 
 The revised `ai-institute-seed-20260302` started on 2026-11-14 at 17:21:06 UTC (2026-11-15 01:21:06 Beijing time), from exact source `f93b367fdb64aadd30bc71ba88dc3cff6284f1d1` in `deployment-20261115-r1`. Startup acceptance confirmed a running manifest under PID 467061, four PhD residents with real model replies, and event growth from 37 to 44 over 20 seconds. No research commission, tools or future deadlines were present in their early inputs. Qwen uses GPU 0 under supervisor PID 463297 and server PID 463830; the read-only viewer is on 8921 under PID 464936. These PIDs describe the verified launch, not a permanent availability guarantee.
 
 The final paper image is `socio-evo-ai-institute:20261115`, immutable ID `sha256:c2a262e5cc2ef890b13458b424d99ead102323782493ab95840cd9b0dc7955db`, with Dockerfile SHA-256 `44a30f2f0346b6e0aa139ec9b082a36919f13d5255be49cba206115f09ff006e`. Its real acceptance passed the exact resident-facing CUDA example, LaTeX compilation with generated figures and bibliography, and a real external conference review with confidence, revision requests and 25 verified exact citations. That review evaluated a clearly labeled synthetic infrastructure artifact, not a formal research result. The formal launcher then passed actor, judge, Tavily, curl, LaTeX, physical-GPU-1 CUDA training and cross-container checkpoint loading. A nonfatal HTTP client cleanup warning was recorded; there were no runtime lapses, context overflows or tool exceptions during launch acceptance.
 
-Authoritative receipts are `build/image-build.json`, `preflight/conference-acceptance-r2/result.json`, `preflight/launch-acceptance.json`, `runs/lab-seed-20260302/preflight.json`, `launch.json` and `deployment.json` under the new deployment. Earlier build and acceptance attempts remain preserved. The first LaTeX build inherited a runtime-only temporary directory and was corrected with build-only `/tmp`; the first acceptance script used an overly strict capitalization check for a BibTeX title, while its CUDA and LaTeX execution had succeeded. Neither correction changed the running experiment's code.
+Authoritative receipts are `build/image-build.json`, `preflight/conference-acceptance-r2/result.json`, `preflight/launch-acceptance.json`, `runs/lab-seed-20260302/preflight.json`, `launch.json` and `deployment.json` under the historical `deployment-20261115-r1` root. Earlier build and acceptance attempts remain preserved. The first LaTeX build inherited a runtime-only temporary directory and was corrected with build-only `/tmp`; the first acceptance script used an overly strict capitalization check for a BibTeX title, while its CUDA and LaTeX execution had succeeded. Neither correction changed the running experiment's code.
 
-The PDF-enabled viewer runs from the separate `viewer-code-740d220` checkout, PID 1917494 at its verified November 15 19:54 Beijing deployment. Its historical-first-manuscript entry selects an exact source match in Git history, restoring separate access to the original 7-page paper alongside the 11-page second and 15-page third papers. Its paper tab lists the three available manuscripts and renders PDF pages through locally served PDF.js, including in the app browser. The simulation continues from frozen source f93b367. Current acceptance is recorded in `preflight/viewer-history-20261115-740d220/acceptance.json`; the earlier PDF.js acceptance remains preserved separately.
+The PDF-enabled viewer runs from the separate `viewer-code-740d220` checkout, PID 1917494 at its verified November 15 19:54 Beijing deployment. Its historical-first-manuscript entry selects an exact source match in Git history, restoring separate access to the original 7-page paper alongside the 11-page second and 15-page third papers. Its paper tab lists the three available manuscripts and renders PDF pages through locally served PDF.js, including in the app browser. This historical viewer reads the preserved simulation from frozen source f93b367. Current acceptance is recorded in `preflight/viewer-history-20261115-740d220/acceptance.json`; the earlier PDF.js acceptance remains preserved separately.
 
 On November 15, the original run resumed on the replacement host from its complete day-18 checkpoint, entering day 19, under PID 1196857 after the full preflight passed. The original run name, start time, source f93b367, frozen configuration and seed were retained; no new scientific run was created. Viewer 8921 was restored through SSH port 64295.
 

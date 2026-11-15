@@ -2,7 +2,7 @@
 
 The new `ir-lab.yaml` profile follows four doctoral colleagues in an AIcore information-retrieval-agent group at Beijing Zhongguancun Academy. This is an assigned simulation setting, not a claim about a real affiliated group. Mei, Aisha, Ravi and Kofi retain their personalities, relationships, private memories, housing, money, sleep, health and external services. The [background packet](../experiments/resources/ir-lab-background.md) attributes Search-R1, DeepResearcher and WebThinker to their actual external authors; the selected versions precede March 2026. No fictional institutional research achievements are presented as facts.
 
-The existing 70-day institute run retains its frozen source and [original protocol](research.md). This new profile is prepared separately; changing source or passing component tests does not establish that a new experiment has started.
+The stopped 70-day institute run retains its frozen source, records and [original protocol](research.md). The new experiment started separately on November 15 after full service acceptance. The [operations guide](../ops/research/README.md) records its frozen revision, remote receipts and viewer; no old scientific state was resumed into this profile.
 
 ## Calendar and scientific question
 
