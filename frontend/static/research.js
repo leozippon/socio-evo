@@ -2,6 +2,8 @@ import {markdown} from './js/markdown.js';
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const n=document.createElement(tag); if(cls)n.className=cls; if(text!==undefined)n.textContent=text; return n; };
 let state=null, tab='paper', selectedRun=new URLSearchParams(location.search).get('run')||'', busy=false, ticket=0, workKey='';
+let disposePdf=null;
+function clearPdf(){disposePdf?.();disposePdf=null;}
 const time = t => `Day ${Math.floor(t/86400)+1} · ${String(Math.floor(t%86400/3600)).padStart(2,'0')}:${String(Math.floor(t%3600/60)).padStart(2,'0')}`;
 const stateText={idle:'自由活动',work:'工作中',sleep:'休息中',movement:'在路上',bedridden:'卧床休养'};
 const occupations={'team-leader':'组长',programmer:'程序员',chef:'厨师',doctor:'医生',shopkeeper:'店主',mayor:'市长',teacher:'教师',student:'学生'};
@@ -37,15 +39,16 @@ function renderMilestones(){
  $('comparison').replaceChildren(table,el('p','fine','分数来自相同阶段的外部评审；资金总额按居民人数发放，不作为科研质量排名。'));
 }
 function renderFeed(){if(!state)return;const actor=$('actor').value,kind=$('kind').value;const events=state.activity.filter(e=>(!actor||e.actor===actor)&&(!kind||(kind==='conversation'?['speech','message','announcement'].includes(e.kind):e.kind===kind)));$('feed').replaceChildren(...events.map(e=>{const box=el('article','event'),head=el('div','event-top'),id=el('button','event-id',`E${e.seq} ↗`);id.onclick=()=>showEvent(e);head.append(el('span','',time(e.sim_time)),el('strong','',e.actor||'全镇'),id);box.append(head,el('p','',e.text));return box;}));if(!events.length)$('feed').append(empty('暂时没有记录','符合筛选条件的活动会显示在这里。'));}
-function showEvent(e){ticket++;$('detail').classList.remove('pdf-preview');$('detail-title').textContent=`E${e.seq} · ${e.actor||'全镇'}`;const pre=el('pre','',e.text);$('detail-body').replaceChildren(el('p','meta',`${time(e.sim_time)} · ${e.kind}`),pre);if(!$('detail').open)$('detail').showModal();}
-function showPdf(path,run,revision){
+function showEvent(e){ticket++;clearPdf();$('detail').classList.remove('pdf-preview');$('detail-title').textContent=`E${e.seq} · ${e.actor||'全镇'}`;const pre=el('pre','',e.text);$('detail-body').replaceChildren(el('p','meta',`${time(e.sim_time)} · ${e.kind}`),pre);if(!$('detail').open)$('detail').showModal();}
+async function showPdf(path,run,revision,t){
  const url='/api/research/pdf?'+new URLSearchParams({run,path,revision}),name=path.split('/').pop();
  const actions=el('div','pdf-actions'),open=el('a','outline','新标签打开 ↗'),download=el('a','outline','下载 PDF');
  open.href=url;open.target='_blank';open.rel='noopener';download.href=url;download.download=name;actions.append(open,download);
- const frame=el('iframe','pdf-frame');frame.src=url;frame.title=`${name} · PDF 预览`;
- $('detail').classList.add('pdf-preview');$('detail-body').replaceChildren(el('p','meta',`${run} · 版本 ${revision.slice(0,8)} · PDF 预览`),actions,frame);
+ const preview=el('div','pdf-renderer');preview.append(el('p','pdf-status','正在加载 PDF 预览器…'));
+ $('detail').classList.add('pdf-preview');$('detail-body').replaceChildren(el('p','meta',`${run} · 版本 ${revision.slice(0,8)} · PDF 预览`),actions,preview);
+ try{const {mountPdfPreview}=await import('./js/pdf-preview.js');if(t!==ticket)return;disposePdf=mountPdfPreview(preview,url);}catch(e){if(t===ticket){const error=el('p','pdf-status',`PDF 预览失败：${e.message}。可尝试新标签打开或下载。`);error.setAttribute('role','alert');preview.replaceChildren(error);}}
 }
-async function showFile(path){const t=++ticket,{run,revision}=state;$('detail').classList.remove('pdf-preview');$('detail-title').textContent=path;$('detail-body').replaceChildren(el('p','loading','正在读取…'));if(!$('detail').open)$('detail').showModal();if(path.toLowerCase().endsWith('.pdf')){showPdf(path,run,revision);return;}try{const f=await api('/api/research/file',{run,path,revision});if(t!==ticket)return;const meta=el('p','meta',`${(f.bytes/1024).toFixed(1)} KB · 版本 ${f.revision.slice(0,8)}${f.truncated?' · 正文预览已截断':''}`);let content;if(f.image){content=el('img');content.src=f.image;content.alt=path;}else{content=el('pre','',f.text);}$('detail-body').replaceChildren(meta,content);}catch(e){if(t===ticket)$('detail-body').replaceChildren(el('p','',e.message));}}
+async function showFile(path){const t=++ticket,{run,revision}=state;clearPdf();$('detail').classList.remove('pdf-preview');$('detail-title').textContent=path;$('detail-body').replaceChildren(el('p','loading','正在读取…'));if(!$('detail').open)$('detail').showModal();if(path.toLowerCase().endsWith('.pdf')){showPdf(path,run,revision,t);return;}try{const f=await api('/api/research/file',{run,path,revision});if(t!==ticket)return;const meta=el('p','meta',`${(f.bytes/1024).toFixed(1)} KB · 版本 ${f.revision.slice(0,8)}${f.truncated?' · 正文预览已截断':''}`);let content;if(f.image){content=el('img');content.src=f.image;content.alt=path;}else{content=el('pre','',f.text);}$('detail-body').replaceChildren(meta,content);}catch(e){if(t===ticket)$('detail-body').replaceChildren(el('p','',e.message));}}
 function paperPreviews(){
  const papers=state.files.filter(f=>/^files\/paper\d*\.pdf$/i.test(f.path)).sort((a,b)=>a.path.localeCompare(b.path,undefined,{numeric:true}));
  if(!papers.length)return null;
@@ -64,5 +67,5 @@ async function refresh(){if(busy)return;busy=true;try{const data=await api('/api
 $('run').onchange=()=>{selectedRun=$('run').value;history.replaceState(null,'','?run='+encodeURIComponent(selectedRun));workKey='';refresh();};$('actor').onchange=renderFeed;$('kind').onchange=renderFeed;
 for(const b of document.querySelectorAll('[data-tab]'))b.onclick=()=>{tab=b.dataset.tab;for(const x of document.querySelectorAll('[data-tab]')){x.classList.toggle('active',x===b);x.setAttribute('aria-selected',String(x===b));}renderWorkspace();};
 $('close-detail').onclick=()=>{ticket++;$('detail').close();};$('detail').addEventListener('click',e=>{if(e.target===$('detail'))$('detail').close();});
-$('detail').addEventListener('close',()=>{ticket++;$('detail-body').querySelector('iframe')?.remove();});
+$('detail').addEventListener('close',()=>{ticket++;clearPdf();});
 refresh();setInterval(refresh,5000);
