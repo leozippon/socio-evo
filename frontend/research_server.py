@@ -13,7 +13,7 @@ from collections import Counter
 from functools import partial
 from http import HTTPStatus
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
 
 from frontend.publish import Publisher
 from frontend.server import DevServer, _Handler
@@ -221,22 +221,47 @@ class ResearchData:
             out.append({"path": name, "bytes": int(size), "oid": oid})
         return out
 
-    def file(self, name: str, path: str, revision: str = "") -> dict:
+    def _artifact(self, name: str, path: str, revision: str) -> tuple[Path, str, dict]:
         run = self.run(name)
+        if (run / "research").is_symlink():
+            raise FileNotFoundError("Research repository must not be a symbolic link")
         revision = revision or self.git(run, "rev-parse", "HEAD").decode().strip()
         if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
             raise ValueError("Invalid revision")
         info = next((f for f in self.file_index(run, revision) if f["path"] == path), None)
         if info is None:
             raise FileNotFoundError("File is not a shared research artifact")
+        return run, revision, info
+
+    @staticmethod
+    def _check_pdf(path: str, content: bytes) -> None:
+        if Path(path).suffix.lower() != ".pdf" or not content.startswith(b"%PDF-"):
+            raise ValueError("File is not a PDF")
+
+    def pdf(self, name: str, path: str, revision: str = "") -> bytes:
+        run, revision, info = self._artifact(name, path, revision)
+        if info["bytes"] > 8 * 1024 * 1024:
+            raise ValueError("File exceeds the 8 MiB preview limit")
+        content = self.git(run, "cat-file", "blob", info["oid"])
+        self._check_pdf(path, content)
+        return content
+
+    def file(self, name: str, path: str, revision: str = "") -> dict:
+        run, revision, info = self._artifact(name, path, revision)
         if info["bytes"] > 8 * 1024 * 1024:
             return {**info, "text": "File exceeds the 8 MiB preview limit.", "revision": revision}
-        content = self.git(run, "show", f"{revision}:{path}")
+        content = self.git(run, "cat-file", "blob", info["oid"])
         mime = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg"}.get(
             Path(path).suffix.lower()
         )
         value = {**info, "revision": revision}
-        if mime:
+        if Path(path).suffix.lower() == ".pdf":
+            self._check_pdf(path, content)
+            value["mime"] = "application/pdf"
+            value["pdf_url"] = "/api/research/pdf?" + urlencode(
+                {"run": name, "path": path, "revision": revision}
+            )
+        elif mime:
             value["image"] = f"data:{mime};base64," + base64.b64encode(content).decode()
         else:
             value["text"] = content[:300000].decode("utf-8", errors="replace")
@@ -261,9 +286,28 @@ class Handler(_Handler):
                     result = self.server.research.file(
                         q.get("run", ""), q.get("path", ""), q.get("revision", "")
                     )
+                elif url.path == "/api/research/pdf":
+                    body = self.server.research.pdf(
+                        q.get("run", ""), q.get("path", ""), q.get("revision", "")
+                    )
+                    filename = Path(q["path"]).name
+                    fallback = re.sub(r"[^A-Za-z0-9._-]", "_", filename)
+                    self.send_response(HTTPStatus.OK)
+                    self.send_header("Content-Type", "application/pdf")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.send_header(
+                        "Content-Disposition",
+                        f'inline; filename="{fallback}"; filename*=UTF-8\'\'{quote(filename)}',
+                    )
+                    self.send_header("X-Content-Type-Options", "nosniff")
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
                 else:
                     raise FileNotFoundError("Unknown endpoint")
                 status = HTTPStatus.OK
+            except FileNotFoundError as error:
+                result, status = {"error": str(error)}, HTTPStatus.NOT_FOUND
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 result, status = {"error": str(error)}, HTTPStatus.BAD_REQUEST
             body = json.dumps(result, ensure_ascii=False).encode()
