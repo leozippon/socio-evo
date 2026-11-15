@@ -30,6 +30,7 @@ class ResearchData:
         self.logs = {}
         self.cache = {}
         self.records = {}
+        self.manuscripts = {}
 
     def run(self, name: str) -> Path:
         if not re.fullmatch(r"[\w.-]+", name) or name.startswith("."):
@@ -173,6 +174,7 @@ class ResearchData:
                 "comparison": self.comparison(runs),
                 "revision": revision,
                 "files": files,
+                "manuscript_pdfs": self.manuscript_pdfs(run, revision, files),
                 "records": records,
                 "counts": dict(counts),
                 "activity": [
@@ -208,8 +210,48 @@ class ResearchData:
             )
         return rows
 
-    def file_index(self, run: Path, revision: str) -> list[dict]:
-        rows = self.git(run, "ls-tree", "-r", "-l", "-z", revision, "--", "files", "records")
+    def manuscript_pdfs(self, run: Path, revision: str, files: list[dict]) -> list[dict]:
+        cached = self.manuscripts.get(run)
+        if cached and cached[0] == revision:
+            return cached[1]
+        numbered = {}
+        for file in files:
+            match = re.fullmatch(r"files/paper(\d*)\.pdf", file["path"], re.IGNORECASE)
+            if match:
+                number = int(match[1]) if match[1] else 0
+                label = {0: "当前提交稿", 1: "第一篇", 2: "第二篇", 3: "第三篇"}.get(
+                    number, f"第{number}篇"
+                )
+                numbered[number] = {"path": file["path"], "revision": revision, "label": label}
+        original = next((f for f in files if f["path"] == "files/paper1.tex"), None)
+        if original and 1 not in numbered:
+            # Changes to either file retain every distinct source/PDF pairing.
+            history = self.git(
+                run, "log", "--format=%H", revision, "--", "files/paper.tex", "files/paper.pdf"
+            ).decode().splitlines()
+            for candidate in dict.fromkeys([revision, *history]):
+                pair = {
+                    f["path"]: f for f in self.file_index(
+                        run, candidate, "files/paper.tex", "files/paper.pdf"
+                    )
+                }
+                if (
+                    pair.get("files/paper.tex", {}).get("oid") == original["oid"]
+                    and "files/paper.pdf" in pair
+                ):
+                    numbered[1] = {
+                        "path": "files/paper.pdf", "revision": candidate,
+                        "label": "第一篇（历史原稿）",
+                    }
+                    break
+        result = [numbered[n] for n in sorted(numbered)]
+        self.manuscripts[run] = (revision, result)
+        return result
+
+    def file_index(self, run: Path, revision: str, *paths: str) -> list[dict]:
+        rows = self.git(
+            run, "ls-tree", "-r", "-l", "-z", revision, "--", *(paths or ("files", "records"))
+        )
         out = []
         for row in rows.split(b"\0"):
             if not row:

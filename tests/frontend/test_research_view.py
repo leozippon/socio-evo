@@ -13,6 +13,7 @@ import pytest
 from experiments.config import load_experiment
 from frontend.publish import Publisher
 from frontend.research_server import Handler, ResearchData
+from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory
 from simulation.run import _create
 from world.clock import DAY
@@ -80,6 +81,92 @@ def test_dashboard_does_not_expose_private_files_or_outside_runs(prepared):
 
 def test_viewer_waits_cleanly_before_first_run(tmp_path):
     assert ResearchData(tmp_path).snapshot() == {"runs": [], "waiting": True}
+
+
+def replace_primary_manuscript(repo, original_pdf):
+    files = repo.path / "files"
+    files.mkdir(exist_ok=True)
+    original_source = "\\title{Original manuscript}\n"
+    (files / "paper.tex").write_text(original_source)
+    (files / "paper.pdf").write_bytes(b"%PDF-1.7\nEarlier compilation\n%%EOF\n")
+    repo.commit("First manuscript", date=datetime.now(UTC))
+    (files / "paper.pdf").write_bytes(original_pdf)
+    original_revision = repo.commit("Recompile first manuscript", date=datetime.now(UTC))
+    (files / "paper1.tex").write_text(original_source)
+    (files / "paper.tex").write_text("\\title{Third manuscript}\n")
+    third = b"%PDF-1.7\nThird manuscript\n%%EOF\n"
+    (files / "paper.pdf").write_bytes(third)
+    (files / "paper3.pdf").write_bytes(third)
+    (files / "paper2.pdf").write_bytes(b"%PDF-1.7\nSecond manuscript\n%%EOF\n")
+    current = repo.commit(
+        "Submit third manuscript and archive first source", date=datetime.now(UTC)
+    )
+    return original_revision, current, third
+
+
+def test_snapshot_restores_original_pdf_from_exact_source_history(prepared):
+    store, world, name = prepared
+    original = b"%PDF-1.7\nOriginal first manuscript\n%%EOF\n"
+    historical, current, third = replace_primary_manuscript(world.research.repo, original)
+    snapshot = store.snapshot(name)
+    assert snapshot["manuscript_pdfs"] == [
+        {"path": "files/paper.pdf", "revision": current, "label": "当前提交稿"},
+        {"path": "files/paper.pdf", "revision": historical, "label": "第一篇（历史原稿）"},
+        {"path": "files/paper2.pdf", "revision": current, "label": "第二篇"},
+        {"path": "files/paper3.pdf", "revision": current, "label": "第三篇"},
+    ]
+    first = snapshot["manuscript_pdfs"][1]
+    assert store.pdf(name, first["path"], first["revision"]) == original
+    assert store.pdf(name, "files/paper.pdf", current) == third
+    assert (world.research.files / "paper.pdf").read_bytes() == third
+    assert not (world.research.files / "paper1.pdf").exists()
+    assert world.research.repo.head() == current
+
+
+def test_historical_manuscript_cache_is_per_run_and_revision(tmp_path, monkeypatch):
+    store = ResearchData(tmp_path / "runs")
+    git = store.git
+    searches = []
+
+    def counted_git(run, *args):
+        if args[0] == "log":
+            searches.append(run)
+        return git(run, *args)
+
+    monkeypatch.setattr(store, "git", counted_git)
+    for name in ("one", "two"):
+        repo = Repository.init(
+            store.root / name / "research", user_name="Test", user_email="test@example.invalid"
+        )
+        original = f"%PDF-1.7\nOriginal for {name}\n%%EOF\n".encode()
+        historical, current, _ = replace_primary_manuscript(repo, original)
+        run = store.run(name)
+        files = store.file_index(run, current)
+        for _ in range(2):
+            entry = store.manuscript_pdfs(run, current, files)[1]
+            assert entry["revision"] == historical
+            assert store.pdf(name, entry["path"], entry["revision"]) == original
+        (repo.path / "files/paper1.pdf").write_bytes(original)
+        updated = repo.commit("Publish numbered first PDF", date=datetime.now(UTC))
+        entry = store.manuscript_pdfs(run, updated, store.file_index(run, updated))[1]
+        assert entry == {"path": "files/paper1.pdf", "revision": updated, "label": "第一篇"}
+    assert searches == [store.run("one"), store.run("two")]
+
+
+@pytest.mark.parametrize("had_matching_source", [False, True])
+def test_historical_manuscript_is_not_invented_without_matching_pdf(prepared, had_matching_source):
+    store, world, name = prepared
+    files, repo = world.research.files, world.research.repo
+    original = "\\title{Original manuscript}\n"
+    (files / "paper.tex").write_text(original if had_matching_source else original + "% changed\n")
+    repo.commit("Source without a compiled PDF", date=datetime.now(UTC))
+    (files / "paper1.tex").write_text(original)
+    (files / "paper.tex").write_text("\\title{Current manuscript}\n")
+    (files / "paper.pdf").write_bytes(b"%PDF-1.7\nCurrent manuscript\n%%EOF\n")
+    current = repo.commit("Submit current manuscript", date=datetime.now(UTC))
+    assert store.snapshot(name)["manuscript_pdfs"] == [
+        {"path": "files/paper.pdf", "revision": current, "label": "当前提交稿"},
+    ]
 
 
 @pytest.fixture
