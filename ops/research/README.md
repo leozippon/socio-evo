@@ -2,14 +2,14 @@
 
 This guide owns deployment procedures. The [IR laboratory protocol](../../docs/ir-laboratory.md) describes the new dated profile; the [institute protocol](../../docs/research.md) describes the preserved institute run. Both use local Qwen inference on host GPU 0 and CUDA/PyTorch research on host GPU 1. Preparation and acceptance probes do not start a formal experiment.
 
-All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The dated IR laboratory uses `socio-evo-ai-lab/pit-lab-20261115-r1` under that storage root; the stopped institute remains in `socio-evo-ai-lab/deployment-20261115-r1`. The interrupted initial laboratory and completed town/academy pair are preserved separately.
+All source deployment, runtime state, probes and generated reports stay on Zenith under `/project_c20250210/260903018`. The launcher refuses local or relative run roots. The active model-enabled IR continuation uses `socio-evo-ai-lab/pit-models-20261116-r1` under that storage root. Its original dated IR branch remains in `socio-evo-ai-lab/pit-lab-20261115-r1`, and the stopped institute remains in `socio-evo-ai-lab/deployment-20261115-r1`. The interrupted initial laboratory and completed town/academy pair are preserved separately.
 
 ## Prepare services
 
 Install the committed source with Python 3.11+ and `pip install -e '.[research,dev]'`. The existing serving interpreter is `/personal_fast_storage/qwen-serving/venv/bin/python`; it reads Qwen3.8-27B-FP8 weights from `/public_fast_storage/lty26/models/Qwen3.8-27B-FP8`. Check the selected GPUs before starting services. From the deployed checkout, the current serving command is:
 
 ```sh
-DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/pit-lab-20261115-r1
+DEPLOY=/project_c20250210/260903018/socio-evo-ai-lab/pit-models-20261116-r1
 LD_LIBRARY_PATH=/personal_fast_storage/qwen-serving/cuda-compat/usr/local/cuda-12.9/compat \
   /personal_fast_storage/qwen-serving/venv/bin/python -m ops.research.model_service \
   --root "$DEPLOY" --gpus 0 --port 8041 --max-model-len 262144 \
@@ -59,7 +59,9 @@ python -m frontend.research_server --runs-root "$DEPLOY/runs" --site "$DEPLOY/si
 
 Forward local port 8921 to remote `127.0.0.1:8921`; the original laboratory viewer remains on 8920. The viewer reads remote files directly and remains waiting before a run exists. Keep viewer data and all later analysis on Zenith; do not mirror experiment outputs into the checkout.
 
-## Start and resume the dated IR laboratory
+## Original dated IR profile
+
+The commands below describe the original dated profile. Its November 15 run is now preserved; the active model-enabled continuation uses its own generated launch profile and root, described in the next section.
 
 Use a separate deployment and run root for `experiments/configs/ir-lab.yaml`. Do not resume the old institute with this profile or reuse its scientific/runtime directories. `research_background` and `conference_calendar` resources are expanded into the frozen run configuration, so later edits cannot silently change a resumed world. The [new protocol](../../docs/ir-laboratory.md) owns the calendar and funding rules.
 
@@ -91,6 +93,14 @@ The [model library guide](../../docs/model-library.md) owns resident usage. A co
 
 The host gateway reads `HF_ENDPOINT`, defaulting to the official Hugging Face endpoint. An alternate endpoint is explicit and appears in model provenance; there is no silent fallback. Commit history selects a full SHA before fetching files. LFS SHA-256 and Git blob hashes verify the pinned bytes. Large weights live in the run's private `model_cache`; `research/records/models.json` admits exact snapshots, which the shell mounts read-only under `/models/<model_id>`. The research container remains offline.
 
+For the accepted Zenith continuation, the controller environment includes:
+
+```sh
+export HF_ENDPOINT=https://hf-mirror.com
+export PYTHONPATH="$DEPLOY/code:$DEPLOY/host-deps"
+export LD_LIBRARY_PATH=/personal_fast_storage/qwen-serving/cuda-compat/usr/local/cuda-12.9/compat
+```
+
 The vLLM worker uses the compatible serving interpreter but owns a separate process group on physical GPU 1. Set the same CUDA compatibility `LD_LIBRARY_PATH` used by the actor service. The worker receives no API credentials, uses local files, applies the model chat template by default, and releases its GPU processes on completion, cancellation or timeout. Its persistent diagnostics stay in the run's private `model_inference_logs`, outside research Git. The actor service on GPU 0 remains a separate owner.
 
 Changing capabilities mid-experiment requires a recorded continuation: stop the source, retain all source files including later live activity, fork a complete checkpoint into a new root, and record source/config/research identities in lineage. Preserve the old viewer and give the continuation its own viewer. The new model-service supervisor must watch the new root. Do not modify the source run's frozen configuration or share writable runtime directories between branches. Capability delivery is once-only and waits until the ordinary research commission is active.
@@ -99,9 +109,17 @@ The November 16 host could not connect directly to the official Hub because its 
 
 Full acceptance must exercise the actual research model tool, mount the same downloaded snapshot in the offline scientific container, and generate real outputs with vLLM on GPU 1. Check the physical UUID, file hashes, future-revision rejection, model-service health and process cleanup. A passed import or a downloaded pointer file is insufficient. All acceptance data and generated files remain on Zenith, separate from residents' scientific results.
 
+The November 16 end-to-end model acceptance passed at 18:25:46 Beijing under `pit-models-20261116-r1/preflight/models-r2/receipt.json`: actual model-tool admission, read-only offline Docker/Transformers loading, a two-prompt vLLM batch on physical GPU 1, and two checkpoint restoration checks. The worker reported vLLM 0.28.0+cu129, Torch 2.13.0+cu129 and Transformers 5.19.0; GPU 1 returned to idle afterward. The first attempt exposed Transformers' default structured chat-template return, fixed by explicit token-list output in `b7ca2f9`; its failed record remains in `models-r1`. The tiny acceptance model's incorrect dense-retrieval answer is retained and is not counted as a scientific result. A separate basic-generation receipt confirms normal arithmetic and translation output.
+
 ## Deployment status and history
 
-The dated IR experiment `ir-lab-pit-seed-20260302` started fresh on November 15 at 23:10:59 Beijing (15:10:59 UTC), from clean source `8254ccc10cda2dbc42dc887f250816987bff8569` in `pit-lab-20261115-r1/code`, under controller/simulation PID 2197978. The new model supervisor/server PIDs are 2191316/2191811, bound to the new deployment root; the read-only viewer PID is 2191317 on port 8922. Its frozen horizon remains 306 days; this launch targets the latest already-reached checkpoint, day 259 (November 14), before a later resume can advance into subsequent real dates. These are observed launch identities, not permanent PIDs.
+The model-enabled continuation is `pit-models-20261116-r1/runs/ir-lab-models-seed-20260302`, with its viewer on port 8923. Its source IR branch stopped at 18:04:52 Beijing on November 16, retaining complete checkpoint 20 and later live records through day 21 at 16:46:34. Source viewer 8922 remains available. The exact selected Git ancestry was copied without partial-day refs, and the new world log ends at the checkpoint boundary; private runtime caches were copied separately with their non-checkpoint semantics recorded. `lineage.json` identifies source configuration, checkpoint, four agent revisions and research revision `083cd173b5da91b48c869e8357a1f15e09633877`.
+
+The fork was prepared by `b101c89`; the actual continuation runs the corrected `b7ca2f9045417be6cb147746bdc77ec028e761cb`. Controller PID 3386208 began normal preflight at 18:45:43 Beijing; every check passed at 18:46:06 and the manifest became running. Actor supervisor PID 3380060 watches the new root; viewer PID 3380061 serves port 8923. `preflight/resume-launch.json` and `runs/lab-seed-20260302/preflight.json` retain the launch evidence. The simulation's existing interpreter loads deployment-local `host-deps` with Hugging Face Hub 1.33.0; the old shared environment was not changed. The model cache may be preseeded, but only residents' explicit model downloads admit snapshots into their checkpointed evidence.
+
+Continuation acceptance at 18:51:27 Beijing is recorded in `preflight/resume-acceptance.json`. All four residents produced new replies and received the capability notice; Ravi autonomously called model search, download and generate, and Kofi called search. The world advanced into day 21 with increasing event sequence and simulated time. There were no new lapses, context overflows, tool errors or simulation ERROR/Traceback signals during acceptance. Preflight HTTP-client cleanup did emit a non-stopping `Event loop is closed` warning. Both viewer ports returned HTTP 200; the old run remained interrupted. The continuation targets day 260 within the unchanged 306-day horizon.
+
+The original dated IR experiment `ir-lab-pit-seed-20260302` started fresh on November 15 at 23:10:59 Beijing (15:10:59 UTC), from clean source `8254ccc10cda2dbc42dc887f250816987bff8569` in `pit-lab-20261115-r1/code`, under controller/simulation PID 2197978. Its launch model supervisor/server PIDs were 2191316/2191811; the read-only viewer PID was 2191317 on port 8922. Its frozen horizon was 306 days and that launch targeted day 259 (November 14), before a later resume could advance into subsequent real dates. These are historical launch identities, not permanent PIDs.
 
 Full preflight passed at 23:10:58 Beijing: Qwen tool calling/continuation, external `gpt-6.1-sol`, arXiv/GitHub historical search and reading at the March 1 cutoff, the version-5 Search-R1 PDF download, network-isolated CUDA training on physical GPU 1, checkpoint reload in a second container and LaTeX compilation. GPU 1 was verified by UUID `GPU-a44e8b8d-c044-47f5-3a9f-6c4243e85264`; GPU 0 remains reserved for inference. Preflight outputs remain separate from resident science. GitHub raw-file fetching was slow, approximately 18 seconds per request during acceptance, but completed without bypassing version checks. Receipts are `runs/lab-seed-20260302/preflight.json`, `preflight/launch.json` and `deployment.json` under the new root.
 
