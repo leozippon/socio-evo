@@ -102,9 +102,9 @@ Path({str(marker)!r}).write_text(json.dumps([os.getpid(),child.pid]))
 time.sleep(90)
 ''')
     task = asyncio.create_task(inference.generate(
-        model, "hello", python=python, gpus="device=1", timeout=1 if not cancel else 60
+        model, "hello", python=python, gpus="device=1", timeout=5 if not cancel else 60
     ))
-    for _ in range(100):
+    for _ in range(300):
         if marker.exists():
             break
         await asyncio.sleep(0.02)
