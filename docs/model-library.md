@@ -59,7 +59,7 @@ print(tokenizer.decode(outputs[0, inputs['input_ids'].shape[1]:], skip_special_t
 
 ## 时间与复现边界
 
-模型版本按 commit 时间筛选，并记录下载文件的哈希。Zenith 当前配置使用 `https://hf-mirror.com` 获取 Hugging Face 内容，实际 endpoint 会写入来源记录；已验收的模型快照与官方 commit 和权重 SHA-256 一致。当前搜索排序和可访问性不等于过去的搜索结果，commit 时间也不能证明当时已公开发布；模型库不把它称为严格的历史公开性证明。模型权重版本与现代推理软件版本分别记录，避免把现代运行环境误称为完整的历史环境。
+PIT 截止点来自当天的模拟时间，居民不能通过工具参数覆盖。仓库创建时间和所选 commit 时间都不能晚于截止点；下载固定到完整 commit SHA，指定未来版本会被拒绝，并记录各文件的哈希。Zenith 当前配置使用 `https://hf-mirror.com` 获取 Hugging Face 内容，实际 endpoint 会写入来源记录；已验收的模型快照与官方 commit 和权重 SHA-256 一致。当前搜索排序和可访问性不等于过去的搜索结果，commit 时间也不能证明当时已公开发布；模型库不把它称为严格的历史公开性证明。模型权重版本与现代推理软件版本分别记录，避免把现代运行环境误称为完整的历史环境。
 
 已经收到旧模型示例的居民会在科研设施开放后收到一次更正通知。原 `records/models-capability.json` 保留为历史，修订说明保存到 `records/models-help-v2.json`，随检查点恢复且不重复通知。新实验直接使用修订后的说明，只发送首次能力通知。
 
