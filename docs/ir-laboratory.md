@@ -20,6 +20,8 @@ Residents use an Office browser to search arXiv or GitHub, follow links, read su
 
 This minimal gateway is a host-side service behind the `browser` tool, not a separate graphical browser or general HTTP proxy. It returns real linked text pages and byte-preserving downloads. The [browser reference](reference/pit-browser-sources.md) describes APIs, pagination, caches, failures and relevant open-source archive projects. No Tavily, Semantic Scholar or unrestricted curl/read-source route is exposed. Direct networking is disabled in the research container, so shell cannot bypass the library.
 
+An explicitly enabled model library extends the dated browser with public Hugging Face snapshots. It selects a full commit no later than simulated time, verifies downloaded file hashes, and admits read-only model mounts through checkpointed records. Residents can load these snapshots with Transformers or request offline vLLM generation on the research GPU. The [model library guide](model-library.md) contains the exact tool calls and local-loading example; runtime acceptance and continuation lineage are recorded separately.
+
 Qwen3.8-27B-FP8 serves residents on host GPU 0. The CUDA/PyTorch research container uses host GPU 1, visible as `cuda:0`. Installed scientific libraries and LaTeX remain available. The new run has a separate runtime cache; it does not inherit old experiment downloads. New data, code and dependency archives must arrive through permitted downloads. Git LFS pointers are not model weights, and repository access does not establish external dataset availability. A successful CUDA check proves compute access, not reproduction of a paper.
 
 ## Submission and feedback

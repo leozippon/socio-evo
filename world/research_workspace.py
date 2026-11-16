@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import subprocess
 import uuid
 from pathlib import Path
@@ -29,6 +30,7 @@ async def execute(
     cpus: float = 2,
     memory: str = "2g",
     runtime_dir: Path | None = None,
+    models: dict[str, Path] | None = None,
 ) -> dict:
     name = "research-" + uuid.uuid4().hex
     args = [
@@ -68,6 +70,14 @@ async def execute(
     ]
     if gpus:
         args.extend(["--gpus", gpus])
+    for model_id, path in (models or {}).items():
+        if not re.fullmatch(r"hf-[0-9a-f]{32}", model_id) or not path.is_dir():
+            raise ValueError("An admitted model must have a valid identity and local snapshot")
+        args.extend([
+            "--mount", f"type=bind,src={path.resolve()},dst=/models/{model_id},readonly",
+        ])
+    if models is not None:
+        args.extend(["--env", "HF_HUB_OFFLINE=1", "--env", "TRANSFORMERS_OFFLINE=1"])
     if runtime_dir is not None:
         for folder in ("python", "huggingface", "torch", "cache", "pip", "tmp", "home"):
             (runtime_dir / folder).mkdir(parents=True, exist_ok=True)

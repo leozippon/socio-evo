@@ -490,6 +490,9 @@ class ResearchSettings(StrictModel):
     start_day: int = Field(default=1, ge=1)
     domain: str = ""
     persistent_runtime: bool = False
+    models_enabled: bool = False
+    inference_python: str = ""
+    model_download_timeout_s: int = Field(default=3600, ge=1)
     command_timeout_s: int = Field(default=120, ge=1, le=600)
     semantic_scholar: bool = True
     network: bool = False
@@ -509,6 +512,15 @@ class ResearchSettings(StrictModel):
 
     @model_validator(mode="after")
     def _stages(self) -> ResearchSettings:
+        if self.models_enabled and (
+            not Path(self.inference_python).is_absolute()
+            or not self.gpus
+            or not (self.gpus == "device=1" or self.gpus.startswith("device=GPU-"))
+        ):
+            raise ValueError(
+                "model facilities require an absolute inference_python and research GPU 1 "
+                "(device=1 or its physical UUID)"
+            )
         if (self.milestones or self.cycles or self.conferences) and self.judge is None:
             raise ValueError("research milestones require an external judge configuration")
         if self.cycles and self.milestones:

@@ -71,6 +71,11 @@ def require_credentials(configs: dict[str, ExperimentConfig]) -> None:
                 raise ValueError("PIT research containers must have network disabled")
         else:
             required.add("TAVILY_API_KEY")
+        if research.models_enabled and (
+            not Path(research.inference_python).is_file()
+            or not os.access(research.inference_python, os.X_OK)
+        ):
+            raise ValueError("The configured model inference interpreter is not executable")
         for profile in (config.llm, research.judge):
             if profile.backend != "openai_compatible":
                 raise ValueError(
@@ -126,6 +131,14 @@ async def preflight(configs: dict[str, ExperimentConfig], control: Path) -> dict
     """Use the exact profiles and real network/container operations, before either arm starts."""
     require_credentials(configs)
     report: dict = {"started_at": datetime.now(UTC).isoformat(), "checks": {}}
+    for arm, config in configs.items():
+        settings = config.town.research
+        if settings.models_enabled:
+            report["checks"][f"models:{arm}"] = {
+                "enabled": True, "interpreter_executable": True,
+                "gpus": settings.gpus, "download_timeout_s": settings.model_download_timeout_s,
+                "note": "Configuration only; download/inference has a separate acceptance probe.",
+            }
     stage = "actor"
     try:
         # Shared profiles need only one probe; distinct supplied profiles are checked separately.

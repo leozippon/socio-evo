@@ -34,6 +34,26 @@ def test_requires_remote_storage_and_credentials_before_creating_runs(tmp_path, 
     assert all(c.name.endswith("-seed-23") for c in configs().values())
 
 
+def test_model_facility_requires_an_executable_host_interpreter(tmp_path, monkeypatch):
+    config = pair.configuration(pair.PROJECT_ROOT / "experiments/configs/ir-lab.yaml", 23, None)
+    settings = config.town.research.model_copy(update={
+        "models_enabled": True, "inference_python": str(tmp_path / "python"),
+    })
+    config = config.model_copy(update={"town": config.town.model_copy(
+        update={"research": settings})})
+    monkeypatch.setenv("VLLM_API_KEY", "test-key")
+    monkeypatch.setenv("LIGHTING_API_KEY", "test-key")
+    with pytest.raises(ValueError, match="interpreter is not executable"):
+        pair.require_credentials({"lab": config})
+    interpreter = tmp_path / "python"
+    interpreter.write_text("#!/bin/sh\nexit 0\n")
+    interpreter.chmod(0o600)
+    with pytest.raises(ValueError, match="interpreter is not executable"):
+        pair.require_credentials({"lab": config})
+    interpreter.chmod(0o700)
+    pair.require_credentials({"lab": config})
+
+
 def test_resume_uses_frozen_configs_skips_finished_arm_and_refuses_live_process(tmp_path):
     configured = configs()
     for arm, config in configured.items():

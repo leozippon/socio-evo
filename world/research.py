@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
+import threading
 import uuid
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path, PurePosixPath
@@ -44,6 +46,7 @@ RESEARCH_NAMES = (
     "read_source",
     "browser",
     "conference",
+    "model",
 )
 GPU_EXAMPLE = """nvidia-smi && python - <<'PY'
 import torch
@@ -62,6 +65,55 @@ optimizer.step()
 torch.cuda.synchronize()
 print("Training device:", next(model.parameters()).device, "loss:", loss.item())
 PY"""
+
+TRANSFORMERS_EXAMPLE = """python - <<'PY'
+import json
+import torch
+from transformers import AutoTokenizer, AutoModelForCausalLM
+admitted = json.load(open('/records/models.json'))['models']
+model_id = next(iter(admitted))  # choose the desired downloaded model if there are several
+path = '/models/' + model_id
+tokenizer = AutoTokenizer.from_pretrained(path, local_files_only=True, trust_remote_code=False)
+model = AutoModelForCausalLM.from_pretrained(
+    path, local_files_only=True, trust_remote_code=False, dtype='auto', device_map='cuda:0')
+inputs = tokenizer.apply_chat_template(
+    [{'role': 'user', 'content': '用一句话说明什么是信息检索。'}],
+    add_generation_prompt=True, return_tensors='pt', return_dict=True).to('cuda:0')
+with torch.inference_mode():
+    output = model.generate(**inputs, max_new_tokens=64, do_sample=False)
+print(tokenizer.decode(output[0, inputs['input_ids'].shape[1]:], skip_special_tokens=True))
+PY"""
+
+
+def model_help(settings: ResearchSettings) -> str:
+    if not settings.models_enabled:
+        return ""
+    return (
+        "The model library searches public Hugging Face models and selects a repository commit "
+        "dated no later than the current laboratory time. Commit dates do not prove when a "
+        "repository first became public; read the returned provenance and limitation. Use "
+        "model(action='search', query='Qwen2.5 0.5B'); model(action='info', "
+        "repo_id='Qwen/Qwen2.5-0.5B-Instruct'); model(action='download', repo_id='<chosen repo>'). "
+        "The returned model_id identifies those exact weights. model(action='list') lists "
+        "downloaded, admitted versions; records/models.json preserves their identity. "
+        "Only admitted snapshots are mounted read-only at /models/<model_id> in shell. "
+        "Original weights stay outside the shared Git history and dependency caches. "
+        "Use local_files_only=True and trust_remote_code=False with Transformers; save new "
+        "training checkpoints in /research. The compute room remains offline. "
+        "For vLLM inference use model(action='generate', model_id='<downloaded id>', "
+        "prompt='用一句话说明什么是信息检索。', max_tokens=64, chat=True). Chat is the default "
+        "and applies that model's chat template; use chat=False for raw text continuation. "
+        "Use prompts=['first input', 'second input'] instead of prompt for a batch. "
+        "temperature defaults to 0, seed to 0 and max_model_len to 4096; oversized inputs "
+        "fail explicitly without truncation. The worker uses the research GPU, releases it "
+        "when finished, and runs sequentially with shell training. No resident can supply "
+        "a host command, interpreter or GPU selector. Model downloads have "
+        f"a {settings.model_download_timeout_s}-second timeout; generation has "
+        f"a {settings.command_timeout_s}-second timeout. Failures are recorded. "
+        "After downloading a small instruction model, this shell example loads its exact "
+        "snapshot with Transformers:\n\n"
+        f"```sh\n{TRANSFORMERS_EXAMPLE}\n```"
+    )
 
 
 def gpu_resources(settings: ResearchSettings) -> str:
@@ -193,7 +245,7 @@ def research_help(settings: ResearchSettings) -> str:
         "search_literature searches Semantic Scholar; " if settings.semantic_scholar else ""
     )
     storage = (
-        "Dependencies, model downloads and caches persist under /runtime; install packages "
+        "Dependencies and working caches persist under /runtime; install packages "
         "with pip --target /runtime/python. Keep study code, data and results in /research. "
         "Files outside /research and /runtime do not persist. "
         if settings.persistent_runtime else
@@ -240,6 +292,7 @@ def research_help(settings: ResearchSettings) -> str:
         "Your private memory and skills remain your own. Research uses ordinary working energy; "
         "you can leave to eat, rest or do your usual job, and shared files remain."
         + research_scope(settings) + milestone_terms(settings)
+        + ("\n\n" + model_help(settings) if settings.models_enabled else "")
         + (
             f"\n\n{artifact} must be a complete LaTeX document, including \\documentclass, "
             "\\begin{document} and \\end{document}. Keep bibliography files and figure sources "
@@ -369,6 +422,26 @@ def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[Too
                       "description": "Optional shared text or recorded experiment paths to "
                       "attach to the rebuttal; 40,000 characters in total"},
         ),
+        spec(
+            "model", "Search, inspect and download historical Hugging Face model snapshots, "
+            "list admitted versions, or generate with vLLM on the research GPU. "
+            "Generation defaults to the model's chat template; chat=false uses raw text.",
+            ("action",),
+            action={"type": "string", "enum": ["search", "info", "download", "list", "generate"]},
+            query=_text("Model search terms"), repo_id=_text("Hugging Face owner/model repository"),
+            revision=_text("Optional exact model commit; must not postdate laboratory time"),
+            model_id=_text("Admitted model_id returned by download or list"),
+            prompt=_text("One input; provide prompt or prompts, not both"),
+            prompts={"type": "array", "items": {"type": "string"},
+                     "description": "Batch of inputs instead of prompt"},
+            limit=_number("Search results", 1, 20),
+            max_tokens=_number("Maximum generated tokens per input; default 256", 1),
+            max_model_len=_number("Total context limit; default 4096", 1),
+            temperature={"type": "number", "minimum": 0, "maximum": 2,
+                         "description": "Sampling temperature; default 0"},
+            seed=_number("Generation seed; default 0", 0),
+            chat={"type": "boolean", "description": "Apply the model chat template; default true"},
+        ),
     ]
     return [s for s in existing if s.name not in DISABLED | set(RESEARCH_NAMES)] + [
         s for s in shared if s.name in names
@@ -404,6 +477,7 @@ class Research:
             }
             if name != "browser" or settings.pit
             if name != "conference" or settings.conferences
+            if name != "model" or settings.models_enabled
         )
         self.root = run_dir / "research"
         self.files = self.root / "files"
@@ -420,6 +494,7 @@ class Research:
 
     def schedule(self, world, day: int) -> None:
         """Release mail at its calendar instant, even when nobody opens the desk."""
+        self.announce_models(world)
         if not self.settings.conferences:
             return
         from functools import partial
@@ -520,6 +595,30 @@ class Research:
             audience=list(world.residents.values()),
             payload={"allowance": self.settings.allowance if self.settings.start_day == 1 else 0},
         )
+        self.announce_models(world)
+
+    def announce_models(self, world) -> None:
+        """Publish newly enabled facilities once in the checkpointed research history."""
+        marker = self.records / "models-capability.json"
+        if not self.active or not self.settings.models_enabled or marker.exists():
+            return
+        text = (
+            "A dated Hugging Face model library and vLLM inference are now available at the "
+            "Office, alongside your current research. Use model to search, inspect and download "
+            "a version available by the laboratory date, then generate with its model_id. "
+            "Downloaded weights can also be loaded in shell from /models/<model_id>. "
+            "This extends the existing library and compute facilities; it does not change "
+            "your research question. Help on research includes model usage and a Transformers "
+            "example; the same instructions are in records/models-capability.json."
+        )
+        marker.write_text(json.dumps({"sim_time": world.clock.now(),
+                                      "capability": "models", "help": model_help(self.settings)},
+                                     ensure_ascii=False, indent=2))
+        self.repo._git("add", "--force", "--", "records/models-capability.json")
+        self.repo.commit("Announce the dated model library", date=datetime.now(UTC))
+        world.record("research_brief", lambda w: text, audience=list(world.residents.values()),
+                     payload={"allowance": 0, "capability": "models",
+                              "record": "records/models-capability.json"})
 
     def snapshot(self) -> str:
         return self.repo.head()
@@ -672,6 +771,108 @@ class Research:
             staging.unlink(missing_ok=True)
         return result
 
+    def _model_gateway(self):
+        from world.research_models import ModelGateway
+
+        return ModelGateway(self.root.parent / "model_cache")
+
+    def _admitted_models(self) -> dict:
+        path = self.records / "models.json"
+        return json.loads(path.read_text())["models"] if path.exists() else {}
+
+    @staticmethod
+    def _model_identity(receipt: dict) -> dict:
+        return {key: receipt[key] for key in
+                ("artifact_id", "repo_id", "revision", "manifest_sha256")} | {
+            "model_id": receipt["artifact_id"], "mount_path": "/models/" + receipt["artifact_id"],
+        }
+
+    def _model_mounts(self) -> dict[str, Path]:
+        if not self.settings.models_enabled:
+            return {}
+        gateway = self._model_gateway()
+        return {model_id: gateway.resolve(receipt)
+                for model_id, receipt in self._admitted_models().items()}
+
+    async def _download_model(self, gateway, repo_id: str, revision, now: datetime) -> dict:
+        # Network work may finish after cancellation, but it can only touch private cache.
+        cancel = threading.Event()
+        task = asyncio.create_task(asyncio.to_thread(
+            gateway.download, repo_id, now, revision, cancel=cancel,
+        ))
+
+        def consume(done):
+            try:
+                done.result()
+            except (Exception, asyncio.CancelledError):
+                pass
+
+        try:
+            receipt = await asyncio.wait_for(
+                asyncio.shield(task), self.settings.model_download_timeout_s,
+            )
+        except (asyncio.CancelledError, TimeoutError) as error:
+            cancel.set()
+            task.add_done_callback(consume)
+            if isinstance(error, TimeoutError):
+                raise ValueError("Model download timed out; no model was admitted") from error
+            raise
+        public = {key: value for key, value in receipt.items() if key != "local_path"}
+        gateway.resolve(public)
+        models = self._admitted_models()
+        models[public["artifact_id"]] = public
+        (self.records / "models.json").write_text(
+            json.dumps({"models": models}, ensure_ascii=False, indent=2)
+        )
+        return public | self._model_identity(public)
+
+    async def _model(self, world, args: dict) -> dict:
+        action = args["action"]
+        now = self.simulated_now(world)
+        if action == "list":
+            return {"models": [receipt | self._model_identity(receipt)
+                               for receipt in self._admitted_models().values()]}
+        gateway = self._model_gateway()
+        if action == "search":
+            if not args.get("query", "").strip():
+                raise ValueError("Model search needs a query")
+            return await asyncio.to_thread(gateway.search, args["query"], now,
+                                           limit=args.get("limit", 5))
+        if action in {"info", "download"}:
+            if not args.get("repo_id", "").strip():
+                raise ValueError("Choose a Hugging Face repo_id from model search")
+            if action == "info":
+                return await asyncio.to_thread(gateway.info, args["repo_id"], now,
+                                               args.get("revision"))
+            return await self._download_model(gateway, args["repo_id"], args.get("revision"), now)
+        models = self._admitted_models()
+        if args.get("model_id") not in models:
+            raise ValueError("Choose an admitted model_id from model list; download it first")
+        if ("prompt" in args) == ("prompts" in args):
+            raise ValueError("Generation needs either prompt or prompts, not both")
+        temperature = args.get("temperature", 0)
+        if (isinstance(temperature, bool) or not isinstance(temperature, int | float)
+                or not math.isfinite(temperature) or not 0 <= temperature <= 2):
+            raise ValueError("temperature must be a finite number from 0 to 2")
+        receipt = models[args["model_id"]]
+        from ops.research.model_inference import generate
+
+        try:
+            result = await generate(
+                gateway.resolve(receipt), args.get("prompt", args.get("prompts")),
+                python=self.settings.inference_python, gpus=self.settings.gpus,
+                log_dir=self.root.parent / "model_inference_logs",
+                timeout=self.settings.command_timeout_s, max_tokens=args.get("max_tokens", 256),
+                temperature=temperature, max_model_len=args.get("max_model_len", 4096),
+                seed=args.get("seed", 0), chat=args.get("chat", True),
+            )
+        except (OSError, ValueError, RuntimeError, ImportError) as error:
+            # A failed study command is evidence of failure, not a failure of the society.
+            # Cancellation propagates after the worker has released its process group.
+            result = {"ok": False, "backend": "vllm", "error_type": type(error).__name__,
+                      "error": str(error)}
+        return result | {"model": self._model_identity(receipt)}
+
     async def call(self, world, r, name: str, args: dict[str, Any]) -> ToolResult:
         if not self.active:
             return ToolResult("That facility is unavailable.")
@@ -728,6 +929,7 @@ class Research:
                     target.write_text(content)
                     result = {"text": f"Wrote {args['path']}."}
                 elif name == "shell":
+                    models = self._model_mounts() if self.settings.models_enabled else None
                     result = await research_workspace.execute(
                         self.settings.image,
                         self.files,
@@ -740,7 +942,13 @@ class Research:
                         memory=self.settings.memory,
                         runtime_dir=(self.root.parent / "research_runtime")
                         if self.settings.persistent_runtime else None,
+                        models=models,
                     )
+                    if models is not None:
+                        result["models"] = [self._model_identity(receipt)
+                                            for receipt in self._admitted_models().values()]
+                elif name == "model":
+                    result = await self._model(world, args)
                 elif name == "browser":
                     from world.research_browser import BrowserGateway
 
