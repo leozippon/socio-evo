@@ -28,10 +28,12 @@ def test_batch_context_and_template_are_explicit(model):
     class Tokenizer:
         chat_template = "template"
 
-        def apply_chat_template(self, messages, **kwargs):
+        def apply_chat_template(self, messages, return_dict=True, **kwargs):
             assert kwargs == {"tokenize": True, "add_generation_prompt": True}
             assert messages == [{"role": "user", "content": "hello"}]
-            return list(range(9))
+            ids = list(range(9))
+            # Transformers 5.19 defaults to BatchEncoding, whose iteration yields keys.
+            return {"input_ids": ids, "attention_mask": [1] * len(ids)} if return_dict else ids
 
         def encode(self, prompt, **kwargs):
             assert kwargs == {"add_special_tokens": True}

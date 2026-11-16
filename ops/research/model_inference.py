@@ -72,7 +72,8 @@ def _tokenize(tokenizer, prompts: list[str], request: dict) -> list[list[int]]:
     for index, prompt in enumerate(prompts):
         ids = (
             tokenizer.apply_chat_template(
-                [{"role": "user", "content": prompt}], tokenize=True, add_generation_prompt=True
+                [{"role": "user", "content": prompt}], tokenize=True,
+                add_generation_prompt=True, return_dict=False,
             )
             if request["chat"] else tokenizer.encode(prompt, add_special_tokens=True)
         )
