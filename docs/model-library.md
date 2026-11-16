@@ -1,24 +1,24 @@
 # 模型库与 GPU 推理
 
-课题组在 Office 使用 `model` 工具获取预训练模型。模型库按照当前模拟时间选择 Hugging Face 的历史 commit；居民不能自行把截止日期改到未来。下载返回固定版本的 `model_id`，后续推理和训练都可以引用同一份权重。
+课题组在 Office 使用 `model` 工具获取预训练模型。模型与参数量由居民根据研究问题、对照设计和可用算力自主选择，没有模型名或参数量白名单；文中的示例仅说明用法，不限定研究选型。模型库按照当前模拟时间选择 Hugging Face 的历史 commit；居民不能自行把截止日期改到未来。下载返回固定版本的 `model_id`，后续推理和训练都可以引用同一份权重。
 
 ## 找到并下载模型
 
-以下为模型工具的参数，不是在 shell 中执行的 Python 函数：
+以下为模型工具的参数，不是在 shell 中执行的 Python 函数。将占位符替换为研究关键词和自主选定的仓库：
 
 ```json
-{"action":"search","query":"Qwen2.5-0.5B-Instruct"}
+{"action":"search","query":"<research keywords>"}
 ```
 
 ```json
-{"action":"info","repo_id":"Qwen/Qwen2.5-0.5B-Instruct"}
+{"action":"info","repo_id":"<chosen repo>"}
 ```
 
 ```json
-{"action":"download","repo_id":"Qwen/Qwen2.5-0.5B-Instruct"}
+{"action":"download","repo_id":"<chosen repo>"}
 ```
 
-检查返回的 commit、版本时间和来源说明，再保存返回的 `model_id`。使用 `{"action":"list"}` 可以查阅课题组已下载的版本。指定 `revision` 时必须提供完整 commit，且该版本不能晚于模拟时间。当前支持公开、无需授权访问的模型，不需要提供 Hugging Face Token。私有仓库和 gated 模型尚未开放；需要额外远程 Python 代码的模型也不在首版支持范围。
+检查返回的 commit、版本时间和来源说明，再保存返回的 `model_id`。使用 `{"action":"list"}` 可以查阅课题组已下载的版本。指定 `revision` 时必须提供完整 commit，且该版本不能晚于模拟时间。可以选择其他符合这些条件的模型；能否执行取决于模型与运行库的兼容性及实际资源需求。当前支持公开、无需授权访问的模型，不需要提供 Hugging Face Token。私有仓库和 gated 模型尚未开放；需要额外远程 Python 代码的模型也不在首版支持范围。
 
 下载的完整权重保存在宿主模型缓存，不进入论文 Git 历史。仅本实验已登记的版本会以只读目录 `/models/<model_id>` 提供给实验容器。下载失败不会把半个模型登记为可用。下载超时默认一小时，与默认十分钟的实验命令/推理超时分开配置。模型登记和来源记录保存在 `/records/models.json`，随科研检查点恢复。
 
@@ -59,6 +59,8 @@ print(tokenizer.decode(outputs[0, inputs['input_ids'].shape[1]:], skip_special_t
 
 ## 时间与复现边界
 
-模型版本按 commit 时间筛选，并记录下载文件的哈希。Zenith 当前配置使用 `https://hf-mirror.com` 获取 Hugging Face 内容，实际 endpoint 会写入来源记录；已验收的 Qwen 快照与官方 commit 和权重 SHA-256 一致。当前搜索排序和可访问性不等于过去的搜索结果，commit 时间也不能证明当时已公开发布；模型库不把它称为严格的历史公开性证明。模型权重版本与现代推理软件版本分别记录，避免把现代运行环境误称为完整的历史环境。
+模型版本按 commit 时间筛选，并记录下载文件的哈希。Zenith 当前配置使用 `https://hf-mirror.com` 获取 Hugging Face 内容，实际 endpoint 会写入来源记录；已验收的模型快照与官方 commit 和权重 SHA-256 一致。当前搜索排序和可访问性不等于过去的搜索结果，commit 时间也不能证明当时已公开发布；模型库不把它称为严格的历史公开性证明。模型权重版本与现代推理软件版本分别记录，避免把现代运行环境误称为完整的历史环境。
+
+已经收到旧模型示例的居民会在科研设施开放后收到一次更正通知。原 `records/models-capability.json` 保留为历史，修订说明保存到 `records/models-help-v2.json`，随检查点恢复且不重复通知。新实验直接使用修订后的说明，只发送首次能力通知。
 
 部署状态、实际下载与 GPU 验收结果由[运行说明](../ops/research/README.md)记录。当前实验的环境变更须保留原记录和续跑来源，不应被当作从第一天起条件完全一致的实验。

@@ -123,6 +123,39 @@ async def test_capability_is_hidden_until_release_and_announced_once_to_all(lab)
     help_text = model_help(world.research.settings)
     assert "local_files_only=True" in help_text and "chat=False" in help_text
     assert "3600-second" in help_text
+    assert "Qwen" not in help_text and "0.5B" not in help_text
+    assert (
+        "<research keywords>" in help_text
+        and "no model-name or parameter-count allowlist" in help_text
+    )
+    assert not (world.research.records / "models-help-v2.json").exists()
+
+
+def test_old_model_help_is_corrected_once_after_commission_and_retained_on_restore(lab):
+    world, _ = lab
+    original = world.research.records / "models-capability.json"
+    old_text = json.dumps({"capability": "models", "help": "An old named-model example."})
+    original.write_text(old_text)
+    world.research.repo._git("add", "--force", "--", "records/models-capability.json")
+    world.research.repo.commit("Legacy model guidance", date=datetime.now(UTC))
+    correction = world.research.records / "models-help-v2.json"
+    world.research.schedule(world, 1)
+    assert not correction.exists()
+    world.clock.set(7 * DAY + 7 * 3600)
+    world.research.announce(world)
+    assert original.read_text() == old_text
+    assert json.loads(correction.read_text())["help_version"] == 2
+    checkpoint = world.snapshot()
+    restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
+    restored.restore(checkpoint)
+    restored.research.schedule(restored, 8)
+    restored.research.schedule(restored, 8)
+    assert original.read_text() == old_text
+    assert all(
+        sum("Model-library guidance correction" in percept.text for percept in resident.port.held)
+        == 1
+        for resident in restored.residents.values()
+    )
 
 
 async def test_download_admission_readonly_shell_and_vllm_share_exact_identity(lab, monkeypatch):

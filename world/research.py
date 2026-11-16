@@ -48,6 +48,7 @@ RESEARCH_NAMES = (
     "conference",
     "model",
 )
+MODEL_HELP_VERSION = 2
 GPU_EXAMPLE = """nvidia-smi && python - <<'PY'
 import torch
 if not torch.cuda.is_available():
@@ -92,8 +93,12 @@ def model_help(settings: ResearchSettings) -> str:
         "The model library searches public Hugging Face models and selects a repository commit "
         "dated no later than the current laboratory time. Commit dates do not prove when a "
         "repository first became public; read the returned provenance and limitation. Use "
-        "model(action='search', query='Qwen2.5 0.5B'); model(action='info', "
-        "repo_id='Qwen/Qwen2.5-0.5B-Instruct'); model(action='download', repo_id='<chosen repo>'). "
+        "model(action='search', query='<research keywords>'); model(action='info', "
+        "repo_id='<chosen repo>'); model(action='download', repo_id='<chosen repo>'). "
+        "Choose models and parameter counts yourselves according to your research question, "
+        "comparisons and available compute. Examples illustrate usage, not permitted models: "
+        "there is no model-name or parameter-count allowlist. Other eligible models can be "
+        "downloaded; execution depends on their compatibility and resource requirements. "
         "The returned model_id identifies those exact weights. model(action='list') lists "
         "downloaded, admitted versions; records/models.json preserves their identity. "
         "Only admitted snapshots are mounted read-only at /models/<model_id> in shell. "
@@ -110,7 +115,7 @@ def model_help(settings: ResearchSettings) -> str:
         "a host command, interpreter or GPU selector. Model downloads have "
         f"a {settings.model_download_timeout_s}-second timeout; generation has "
         f"a {settings.command_timeout_s}-second timeout. Failures are recorded. "
-        "After downloading a small instruction model, this shell example loads its exact "
+        "After downloading an instruction model you choose, this shell example loads its exact "
         "snapshot with Transformers:\n\n"
         f"```sh\n{TRANSFORMERS_EXAMPLE}\n```"
     )
@@ -598,27 +603,49 @@ class Research:
         self.announce_models(world)
 
     def announce_models(self, world) -> None:
-        """Publish newly enabled facilities once in the checkpointed research history."""
-        marker = self.records / "models-capability.json"
-        if not self.active or not self.settings.models_enabled or marker.exists():
+        """Publish facilities and subsequent help corrections once per checkpointed version."""
+        if not self.active or not self.settings.models_enabled:
             return
-        text = (
-            "A dated Hugging Face model library and vLLM inference are now available at the "
-            "Office, alongside your current research. Use model to search, inspect and download "
-            "a version available by the laboratory date, then generate with its model_id. "
-            "Downloaded weights can also be loaded in shell from /models/<model_id>. "
-            "This extends the existing library and compute facilities; it does not change "
-            "your research question. Help on research includes model usage and a Transformers "
-            "example; the same instructions are in records/models-capability.json."
-        )
+        marker = self.records / "models-capability.json"
+        correcting = marker.exists()
+        if correcting:
+            if json.loads(marker.read_text()).get("help_version", 1) >= MODEL_HELP_VERSION:
+                return
+            marker = self.records / f"models-help-v{MODEL_HELP_VERSION}.json"
+            if marker.exists():
+                return
+            text = (
+                "Model-library guidance correction: the earlier named model was a usage "
+                "example, not a research requirement or restriction. Choose other models and "
+                "parameter counts yourselves according to your research question, comparisons "
+                "and available compute; there is no model-name or parameter-count allowlist. "
+                "Historical availability, execution compatibility and resource requirements "
+                "still apply. Help on research now uses generic examples. The earlier notice "
+                f"is preserved; the corrected instructions are in records/{marker.name}."
+            )
+        else:
+            text = (
+                "A dated Hugging Face model library and vLLM inference are now available at the "
+                "Office, alongside your current research. Use model to search, inspect and "
+                "download a version available by the laboratory date, then generate with its "
+                "model_id. Choose models and parameter counts according to your research needs; "
+                "examples are not restrictions or a model allowlist. Downloaded weights can "
+                "also be loaded in shell from /models/<model_id>. This extends the existing "
+                "library and compute facilities; it does not change your research question. "
+                "Help on research includes model usage and a Transformers example; the same "
+                "instructions are in records/models-capability.json."
+            )
         marker.write_text(json.dumps({"sim_time": world.clock.now(),
+                                      "help_version": MODEL_HELP_VERSION,
                                       "capability": "models", "help": model_help(self.settings)},
                                      ensure_ascii=False, indent=2))
-        self.repo._git("add", "--force", "--", "records/models-capability.json")
-        self.repo.commit("Announce the dated model library", date=datetime.now(UTC))
+        self.repo._git("add", "--force", "--", f"records/{marker.name}")
+        self.repo.commit("Clarify model selection" if correcting else
+                         "Announce the dated model library", date=datetime.now(UTC))
         world.record("research_brief", lambda w: text, audience=list(world.residents.values()),
                      payload={"allowance": 0, "capability": "models",
-                              "record": "records/models-capability.json"})
+                              "help_version": MODEL_HELP_VERSION,
+                              "record": f"records/{marker.name}"})
 
     def snapshot(self) -> str:
         return self.repo.head()
