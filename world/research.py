@@ -152,8 +152,9 @@ def research_brief(settings: ResearchSettings) -> str:
             "the question, methods and division of work yourselves. Read the laboratory's "
             "background reading in lab-background.md and calls for papers in conferences.md. "
             "Use the conference desk to choose a suitable venue, register, submit, read reviews, "
-            "respond and prepare the final version. Maintain one active group submission at a "
-            "time. Continue experiments and discussion while awaiting feedback; a new paper "
+            "respond and prepare the final version. Different papers may be submitted in "
+            "parallel, including to the same venue; keep each submission_id. Continue "
+            "experiments and discussion while awaiting feedback; a new paper "
             "is not required every 21 days. Support claims with traceable sources and actual "
             "recorded experiments. " + research_scope(settings) + " " + gpu_resources(settings)
         )
@@ -310,11 +311,20 @@ def research_help(settings: ResearchSettings) -> str:
         + (
             "\n\nThe conference desk understands action='list' and action='open', venue='<id>'. "
             "Register with action='register', venue, title and abstract before the abstract "
-            "deadline. Submit with action='submit', venue, paper='paper.tex', pdf='paper.pdf'. "
-            "Read reviews via action='open'; send your response with action='rebuttal', venue, "
+            "deadline; keep the returned id as submission_id. Different papers can be active "
+            "in parallel, including at the same venue. Submit with action='submit', "
+            "submission_id, paper='paper.tex', pdf='paper.pdf'. Read reviews via action='open', "
+            "submission_id; send your response with action='rebuttal', submission_id, "
             "response='rebuttal.md'. For ARR venues explicitly action='commit' by the "
             "commitment deadline. Use action='withdraw' to withdraw, or action='camera_ready' "
-            "with paper and pdf to deliver an accepted final version. Check the returned "
+            "with submission_id, paper and pdf to deliver an accepted final version. A venue "
+            "alone selects a paper only when exactly one active submission matches; ambiguous "
+            "requests require submission_id. Open without an ID shows the venue's history, "
+            "or all submissions if no venue is supplied. You can continue research and submit "
+            "other papers while waiting; withdrawing an existing paper is not required. "
+            "Follow ordinary venue rules about duplicate submission of the same work. "
+            "Conference list/open gives the current rules; policy updates are recorded in "
+            "records/conference-policy-v2.json. Check the returned "
             "receipt: writing files alone does not submit them. All dates have timezones; "
             "laboratory clocks use Beijing time. Missing a deadline does not submit for you."
             if settings.conferences else ""
@@ -419,6 +429,8 @@ def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[Too
                 "camera_ready",
             ]},
             venue=_text("Conference ID shown by the desk"),
+            submission_id=_text("Exact submission ID returned by registration or list; "
+                                "required when multiple active papers match"),
             title=_text("Manuscript title"), abstract=_text("Manuscript abstract"),
             paper=_text("Shared LaTeX file; default paper.tex"),
             pdf=_text("Shared compiled PDF; default paper.pdf"),
@@ -500,6 +512,7 @@ class Research:
     def schedule(self, world, day: int) -> None:
         """Release mail at its calendar instant, even when nobody opens the desk."""
         self.announce_models(world)
+        self.announce_conference_policy(world)
         if not self.settings.conferences:
             return
         from functools import partial
@@ -579,6 +592,9 @@ class Research:
             from world.research_conferences import ConferenceDesk
 
             (self.files / "conferences.md").write_text(ConferenceDesk(self).calendar_text())
+            (self.records / "conference-policy-v2.json").write_text(json.dumps({
+                "version": 2, "sim_time": world.clock.now(), "guide": "files/conferences.md",
+            }))
         if self.settings.start_day > 1:
             marker.write_text(json.dumps({"sim_time": world.clock.now(), "brief": brief}))
         self.repo.commit("Publish collective research commission", date=datetime.now(UTC))
@@ -601,6 +617,36 @@ class Research:
             payload={"allowance": self.settings.allowance if self.settings.start_day == 1 else 0},
         )
         self.announce_models(world)
+
+    def announce_conference_policy(self, world) -> None:
+        """Correct the legacy collective submission limit without rewriting its history."""
+        marker = self.records / "conference-policy-v2.json"
+        if not self.active or not self.settings.conferences or marker.exists():
+            return
+        from world.research_conferences import ConferenceDesk
+
+        guide = self.records / "conferences-v2.md"
+        text = (
+            "Conference policy update: different papers may now be submitted in parallel, "
+            "including to the same venue. There is no group-wide single-submission limit. "
+            "You do not need to withdraw other papers, and you may continue research while "
+            "waiting for reviews or decisions. Keep each submission_id and use it for that "
+            "paper's actions; a venue alone is insufficient when several papers match. "
+            "Previously withdrawn papers remain withdrawn and are not automatically restored. "
+            "Follow ordinary venue rules about duplicate submission of the same work. "
+            "The old commission and conferences.md remain historical records; current guidance "
+            "is in records/conferences-v2.md, conference list/open and help on research."
+        )
+        guide.write_text(ConferenceDesk(self).calendar_text())
+        marker.write_text(json.dumps({"version": 2, "sim_time": world.clock.now(),
+                                      "guide": "records/conferences-v2.md", "notice": text},
+                                     ensure_ascii=False, indent=2))
+        self.repo._git("add", "--force", "--", "records/conference-policy-v2.json",
+                       "records/conferences-v2.md")
+        self.repo.commit("Announce parallel conference submissions", date=datetime.now(UTC))
+        world.record("research_brief", lambda w: text, audience=list(world.residents.values()),
+                     payload={"allowance": 0, "policy": "parallel_conference_submissions",
+                              "record": "records/conference-policy-v2.json"})
 
     def announce_models(self, world) -> None:
         """Publish facilities and subsequent help corrections once per checkpointed version."""

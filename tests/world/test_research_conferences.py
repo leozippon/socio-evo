@@ -165,15 +165,13 @@ async def test_frozen_submission_timed_reviews_latest_response_and_idempotent_gr
         for r in restored.residents.values()
     )
     await action(restored, "camera_ready")
-    assert (await action(restored, "list"))["state"]["active"] is None
+    assert "active" not in (await action(restored, "list"))["state"]
 
 
-async def test_deadlines_single_submission_and_invalid_pdf(lab):
+async def test_deadlines_and_invalid_pdf(lab):
     world, venue, calls = lab
     moment(world, venue.abstract_at)
     await action(world, "register", title="A", abstract="B")
-    with pytest.raises(ValueError, match="active collective"):
-        await action(world, "register", title="C", abstract="D")
     (world.research.files / "paper.pdf").write_bytes(b"not a PDF")
     with pytest.raises(ValueError, match="PDF cannot"):
         await action(world, "submit")
@@ -182,6 +180,148 @@ async def test_deadlines_single_submission_and_invalid_pdf(lab):
     with pytest.raises(ValueError, match="deadline has passed"):
         await action(world, "register", title="A", abstract="B")
     assert calls == []
+
+
+async def test_parallel_papers_resolve_by_id_and_keep_independent_lifecycles(lab):
+    world, venue, calls = lab
+    other = venue.model_copy(
+        update={
+            "id": "other",
+            "title": "Other IR Conference",
+            "submission_kind": "arr_commitment",
+            "commitment_at": venue.rebuttal_at + timedelta(days=1),
+        }
+    )
+    settings = world.research.settings.model_copy(update={"conferences": (venue, other)})
+    world.research.settings = settings
+    world.config = world.config.model_copy(update={"research": settings})
+    first = await submitted(world)
+    second = await action(world, "register", venue="other", title="Study B", abstract="B")
+    (world.research.files / "paper.tex").write_text(PAPER.replace("recall.", "recall. Study B."))
+    await action(world, "submit", venue="other")  # Unique venue preserves old call syntax.
+    third = await action(world, "register", title="Study C", abstract="C")
+    with pytest.raises(ValueError, match="submission_id"):
+        await action(world, "submit")
+    with pytest.raises(ValueError, match="Unknown submission_id"):
+        await action(world, "withdraw", submission_id="missing")
+    with pytest.raises(ValueError, match="does not belong"):
+        await action(world, "withdraw", submission_id=second["id"])
+    await action(world, "submit", submission_id=third["id"])
+    assert len((await action(world, "open"))["submissions"]) == 2
+    await action(world, "withdraw", submission_id=third["id"])
+    assert (await action(world, "open", submission_id=third["id"]))["submissions"][0][
+        "status"
+    ] == "withdrawn"
+    with pytest.raises(ValueError, match="is withdrawn"):
+        await action(world, "submit", submission_id=third["id"])
+    missing = await action(world, "register", title="Unfinished draft", abstract="D")
+    moment(world, venue.reviews_at)
+    opened = await action(world, "open", venue=None)
+    states = {s["id"]: s for s in opened["submissions"]}
+    assert states[first["id"]]["status"] == states[second["id"]]["status"] == "reviewed"
+    assert states[missing["id"]]["status"] == "missed_submission"
+    assert states[third["id"]]["status"] == "withdrawn"
+    assert len(calls) == 6
+    (world.research.files / "rebuttal.md").write_text("Response for study A only.")
+    await action(world, "rebuttal", submission_id=first["id"])
+    await action(world, "commit", venue=None, submission_id=second["id"])
+    before = world.snapshot()
+    money = next(iter(world.residents.values())).inventory.money
+    moment(world, venue.notification_at)
+    await action(world, "open", venue=None)
+    assert len(calls) == 14
+    assert next(iter(world.residents.values())).inventory.money == money + 2 * 840
+    decisions = {
+        r.metadata["submission"]: json.loads(r.messages[1].content)
+        for r in calls
+        if r.metadata["phase"] == "decision"
+    }
+    assert decisions[first["id"]]["documents"]["review/rebuttal.md"] == "Response for study A only."
+    assert (
+        decisions[second["id"]]["documents"]["review/rebuttal.md"]
+        == "No author response was submitted."
+    )
+    assert "Study B" not in decisions[first["id"]]["documents"]["files/paper.tex"]
+    assert "Study B" in decisions[second["id"]]["documents"]["files/paper.tex"]
+    after = world.snapshot()
+    for checkpoint in (after, before):
+        restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
+        restored.restore(checkpoint)
+        moment(restored, venue.notification_at)
+        await action(restored, "open", venue=None)
+        assert len(calls) == 14
+        assert next(iter(restored.residents.values())).inventory.money == money + 2 * 840
+    await action(restored, "camera_ready", submission_id=first["id"])
+    moment(restored, venue.camera_ready_at + timedelta(seconds=1))
+    states = {s["id"]: s for s in (await action(restored, "open", venue=None))["submissions"]}
+    assert states[first["id"]]["status"] == "camera_ready"
+    assert states[second["id"]]["status"] == "missed_camera_ready"
+    assert all(any(first["id"] in p.text for p in r.port.held) for r in restored.residents.values())
+
+
+async def test_legacy_active_pointer_does_not_block_registration_or_restore_withdrawals(lab):
+    world, _, _ = lab
+    old = await submitted(world)
+    desk = conferences.ConferenceDesk(world.research)
+    state = desk._load()
+    state["active"] = old["id"]
+    state["submissions"].insert(
+        0,
+        {
+            "id": "test-legacy",
+            "venue": "test",
+            "title": "Withdrawn history",
+            "status": "withdrawn",
+        },
+    )
+    desk._save(state, "Legacy checkpoint")
+    snapshot = world.snapshot()
+    restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
+    restored.restore(snapshot)
+    new = await action(restored, "register", title="Independent new paper", abstract="New")
+    assert new["id"] != old["id"]
+    state = (await action(restored, "list"))["state"]
+    assert "active" not in state and len(state["submissions"]) == 3
+    assert state["submissions"][0]["status"] == "withdrawn"
+    assert state["submissions"][1]["status"] == "submitted"
+
+
+def test_parallel_policy_notice_is_gated_once_and_preserves_legacy_guides(lab):
+    world, _, _ = lab
+    marker = world.research.records / "conference-policy-v2.json"
+    assert marker.exists()  # New commissions already explain the current rule.
+    world.research.schedule(world, 1)
+    assert not any(
+        e.get("payload", {}).get("policy") == "parallel_conference_submissions"
+        for e in world.log.entries()
+    )
+    # Reconstruct a historical commission, then resume it using the current policy.
+    marker.unlink()
+    original = world.research.files / "conferences.md"
+    original.write_text("Historical single-submission handbook.\n")
+    commission = world.research.records / "commission.json"
+    commission.write_text(json.dumps({"brief": "Historical single-submission commission."}))
+    world.research.repo.commit("Historical commission", date=datetime.now(UTC))
+    world.research.active = False
+    world.research.schedule(world, 1)
+    assert not marker.exists()
+    world.research.active = True
+    world.research.schedule(world, 8)
+    before = world.snapshot()
+    restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
+    restored.restore(before)
+    restored.research.schedule(restored, 8)
+    assert original.read_text() == "Historical single-submission handbook.\n"
+    assert json.loads(commission.read_text())["brief"] == "Historical single-submission commission."
+    assert "Different papers" in (world.research.records / "conferences-v2.md").read_text()
+    assert all(
+        sum("Conference policy update" in p.text for p in r.port.held) == 1
+        for r in restored.residents.values()
+    )
+    assert all(
+        any("not automatically restored" in p.text for p in r.port.held)
+        for r in restored.residents.values()
+    )
 
 
 async def test_arr_requires_explicit_commitment_and_never_pays_early(lab):

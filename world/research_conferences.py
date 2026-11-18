@@ -71,14 +71,31 @@ class ConferenceDesk:
         self.venues = {v.id: v for v in research.settings.conferences}
 
     def _load(self):
-        return (
-            json.loads(self.path.read_text())
-            if self.path.exists()
-            else {
-                "active": None,
-                "submissions": [],
-            }
-        )
+        state = json.loads(self.path.read_text()) if self.path.exists() else {"submissions": []}
+        # Old checkpoints retain their historical pointer in Git; submissions now own state.
+        state.pop("active", None)
+        return state
+
+    def _select(self, state, args):
+        submission_id, venue_id = args.get("submission_id"), args.get("venue")
+        if submission_id:
+            submission = next(
+                (s for s in state["submissions"] if s["id"] == submission_id), None
+            )
+            if submission is None:
+                raise ValueError("Unknown submission_id; read conference list or open")
+            if venue_id and submission["venue"] != venue_id:
+                raise ValueError("submission_id does not belong to the supplied venue")
+            return submission
+        candidates = [
+            s for s in state["submissions"]
+            if s["status"] not in TERMINAL and (not venue_id or s["venue"] == venue_id)
+        ]
+        if len(candidates) > 1:
+            raise ValueError("Several submissions match; supply an explicit submission_id")
+        if not candidates:
+            raise ValueError("No active submission matches; register or open the history")
+        return candidates[0]
 
     def _save(self, state, message):
         _write(self.path, state)
@@ -88,7 +105,7 @@ class ConferenceDesk:
     def _record(self, world, text, submission):
         world.record(
             "conference",
-            lambda w: text,
+            lambda w: f"{text} Submission {submission['id']}: {submission['title']}.",
             audience=list(world.residents.values()),
             payload={
                 "submission": submission["id"],
@@ -106,8 +123,14 @@ class ConferenceDesk:
             "All timestamps retain explicit timezones. Fields labelled simulated are project "
             "choices, including unannounced response windows. No actual conference is contacted.",
             "Use conference list/open, register with a real title and abstract before the "
-            "abstract deadline, then submit complete LaTeX source and a PDF. Only one collective "
-            "submission may be active. ARR venues additionally require commit after reviews. "
+            "abstract deadline, then submit complete LaTeX source and a PDF. Different papers "
+            "may be submitted in parallel, including to the same venue. Keep each returned "
+            "submission_id and use it for that paper's later actions. A venue alone works only "
+            "when it identifies one active submission. Open/list include historical records. "
+            "Waiting for reviews does not prevent research or another paper's submission; "
+            "there is no need to withdraw other papers. Follow ordinary venue rules about "
+            "duplicate submission of the same work. ARR venues additionally require commit "
+            "after reviews. "
             "Read all three reviews; submit or replace rebuttal.md before the response deadline. "
             "Only the final decision awards funding. Accepted work needs a camera_ready action. "
             "Working files remain editable; the submitted version stays frozen. Decisions after "
@@ -174,21 +197,33 @@ class ConferenceDesk:
                 "state": state,
             }
         venue_id = args.get("venue")
-        submission = next((s for s in state["submissions"] if s["id"] == state["active"]), None)
-        if venue_id is None and submission:
+        if action == "open":
+            if args.get("submission_id"):
+                submission = self._select(state, args)
+                venue_id = submission["venue"]
+                selected = [submission]
+            else:
+                selected = [s for s in state["submissions"]
+                            if not venue_id or s["venue"] == venue_id]
+            if venue_id and venue_id not in self.venues:
+                raise ValueError("Choose a venue id from conference list")
+            return {
+                "venue": self.venues[venue_id].model_dump(mode="json") if venue_id else None,
+                "submissions": selected,
+            }
+        submission = None
+        if action != "register":
+            submission = self._select(state, args)
             venue_id = submission["venue"]
+            if submission["status"] in TERMINAL:
+                raise ValueError(f"Submission {submission['id']} is {submission['status']}")
         if venue_id not in self.venues:
             raise ValueError("Choose a venue id from conference list")
         venue = self.venues[venue_id]
         now = self.research.simulated_now(world)
-        if action == "open":
-            return {
-                "venue": venue.model_dump(mode="json"),
-                "submissions": [s for s in state["submissions"] if s["venue"] == venue_id],
-            }
         if action == "register":
-            if submission is not None:
-                raise ValueError("Finish or withdraw the active collective submission first")
+            if args.get("submission_id"):
+                raise ValueError("Registration creates a new submission_id; omit it here")
             if venue.opens_at and now < venue.opens_at:
                 raise ValueError("This submission window has not opened")
             if now > (venue.abstract_at or venue.submission_at):
@@ -205,10 +240,7 @@ class ConferenceDesk:
                 "registered_at": now.isoformat(),
             }
             state["submissions"].append(submission)
-            state["active"] = submission["id"]
         else:
-            if submission is None or submission["venue"] != venue_id:
-                raise ValueError("This venue has no active collective submission")
             if action == "submit":
                 if submission["status"] != "registered" or now > venue.submission_at:
                     raise ValueError(
@@ -270,7 +302,6 @@ class ConferenceDesk:
                 submission["committed_at"] = now.isoformat()
             elif action == "withdraw":
                 submission["status"] = "withdrawn"
-                state["active"] = None
             elif action == "camera_ready":
                 if submission["status"] != "accepted":
                     raise ValueError("Only accepted submissions can supply a camera-ready version")
@@ -280,7 +311,6 @@ class ConferenceDesk:
                 record = f"conference-{submission['id']}-camera-ready.json"
                 _write(self.research.records / record, final)
                 submission.update(status="camera_ready", camera_ready_record=f"records/{record}")
-                state["active"] = None
             else:
                 raise ValueError(f"Unknown conference action: {action}")
         self._save(state, f"Conference {action}: {submission['id']}")
@@ -386,7 +416,7 @@ class ConferenceDesk:
             venue = self.venues[submission["venue"]]
             if submission["status"] == "registered":
                 if now > venue.submission_at:
-                    submission["status"], state["active"] = "missed_submission", None
+                    submission["status"] = "missed_submission"
                     self._save(state, f"Missed conference submission: {submission['id']}")
                     self._record(
                         world,
@@ -397,7 +427,7 @@ class ConferenceDesk:
                 continue
             if submission["status"] == "accepted":
                 if venue.camera_ready_at and now > venue.camera_ready_at:
-                    submission["status"], state["active"] = "missed_camera_ready", None
+                    submission["status"] = "missed_camera_ready"
                     self._save(state, f"Missed camera-ready: {submission['id']}")
                     self._record(
                         world,
@@ -429,7 +459,7 @@ class ConferenceDesk:
                 and now > venue.commitment_at
                 and "committed_at" not in submission
             ):
-                submission["status"], state["active"] = "missed_commitment", None
+                submission["status"] = "missed_commitment"
                 self._save(state, f"Missed ARR commitment: {submission['id']}")
                 self._record(
                     world,
@@ -485,8 +515,6 @@ class ConferenceDesk:
                 reward_per_resident=amount,
                 reward_total=amount * len(world.residents),
             )
-            if submission["status"] == "rejected":
-                state["active"] = None
             self._save(state, f"Decide conference submission: {submission['id']}")
             for resident in world.residents.values():
                 resident.inventory.receive(
@@ -506,7 +534,8 @@ class ConferenceDesk:
                 "record": "records/conferences.json",
             }
             text = (
-                f"The simulated {venue.title} decision is {decision['decision']}; "
+                f"The simulated {venue.title} decision for {submission['id']} "
+                f"({submission['title']}) is {decision['decision']}; "
                 f"rating {decision['overall']}/10. Each resident received "
                 f"{world.config.money(amount)}. Read records/conferences.json for all reviews, "
                 "the author response and the final reasons. This is not a real venue acceptance."

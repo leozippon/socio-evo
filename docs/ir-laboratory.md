@@ -6,7 +6,7 @@ The stopped 70-day institute run retains its frozen source, records and [origina
 
 ## Calendar and scientific question
 
-Day 1 is March 1, 2026 in Beijing. Institutional identity and historical reading notes are present from the beginning; the first seven complete lived days have no announced common assignment. At 07:00 on March 8 the colleagues receive the shared research commission, shared reading library, browser, compute access and conference handbook. Their field is AI information retrieval and research agents; the specific question and division of work remain their decisions. One group submission can be active at a time. Additional working drafts are not automatically counted as submissions.
+Day 1 is March 1, 2026 in Beijing. Institutional identity and historical reading notes are present from the beginning; the first seven complete lived days have no announced common assignment. At 07:00 on March 8 the colleagues receive the shared research commission, shared reading library, browser, compute access and conference handbook. Their field is AI information retrieval and research agents; the specific question and division of work remain their decisions. Different papers can be submitted in parallel, including to the same venue. Waiting for feedback does not prevent further research or another paper's submission. Additional working drafts are not automatically counted as submissions.
 
 The planned window is 306 days, through December 31. The society clock determines source cutoffs and conference deadlines; official timezones are converted as instants. Reviews and decisions arrive at scheduled instants even when nobody opens the conference desk. Papers awaiting a 2027 decision remain pending at the end of the observation window. They are not marked rejected or evaluated early.
 
@@ -28,12 +28,16 @@ Qwen3.8-27B-FP8 serves residents on host GPU 0. The CUDA/PyTorch research contai
 
 The frozen [calendar](../experiments/resources/conferences-2026.yaml) supplies scope, timestamps, format guidance, sources and simulated fields. Its [source audit](reference/conference-calendar-2026-sources.md) distinguishes official facts, conflicts and simplifications. This is a preloaded handbook assembled in November, not a claim that every call was public in March.
 
-1. Read a call and register the title and abstract before its deadline. Registration does not submit a manuscript.
+1. Read a call and register the title and abstract before its deadline. Registration does not submit a manuscript. Keep the returned submission ID for this paper's subsequent actions.
 2. Explicitly submit LaTeX source and a readable PDF. Freeze the Git revision and evidence dossier. Later edits do not replace the submitted version.
 3. At review release, receive three separate reviews focusing on methods, evidence and contribution. They use the independent `gpt-6.1-sol` API and checked evidence citations.
 4. Discuss the reviews and submit or replace the author response before its deadline, optionally attaching recorded new evidence. ARR venues require a separate explicit conference commitment.
 5. At notification, reviewers reconsider the original submission and response. An area-chair judge gives a reasoned accept/reject decision. Initial reviews, response, updated reviews and decision are retained. No missing author response is fabricated.
-6. Deliver a camera-ready source/PDF for accepted work. Withdrawn, rejected or completed submissions release the group to submit again. Missed submission, commitment and final-version deadlines remain observable outcomes.
+6. Deliver a camera-ready source/PDF for accepted work. Each paper's reviews, deadlines, withdrawal, decision and grant are independent. Missed submission, commitment and final-version deadlines remain observable outcomes.
+
+Use `submission_id` for a specific paper when submitting, responding, committing, withdrawing or delivering a final version. A venue-only call remains valid when exactly one active paper matches; otherwise the desk asks for the ID. `list` and `open` include historical submissions, and `open` with an ID selects that record. Parallel work does not require withdrawing another paper. Ordinary venue rules about duplicate submission of the same work still apply; the simulator does not compare manuscript similarity.
+
+For a continuation that used the former single-submission rule, the next deployment at a checkpoint delivers one policy update to all four residents. The old commission and `conferences.md` remain historical evidence; `records/conference-policy-v2.json` identifies the revised handbook at `records/conferences-v2.md`. The notice survives checkpoint restoration without repeating. Previously withdrawn papers stay withdrawn. Fresh runs receive the current rule in their first commission without a separate correction notice.
 
 This reproduces the common review cycle, not every special track. Early rejection, cross-venue reuse of ARR reviews, Findings placement, conditional acceptance and some major-revision tracks are simplified where identified. No real conference is contacted. The simulator checks readable PDF and LaTeX structure; it does not prove source/PDF equivalence or mechanically enforce every page/template/anonymity rule. Reviewers receive source and evidence, not rendered plots or independently rerun experiments. Their scores still require scientific audit.
 

@@ -1,0 +1,9 @@
+# Project log — 2026-11-18
+
+## Parallel conference submissions
+
+The user explicitly requested removal of the group-wide single-active-submission restriction, clear notification to all four residents, and activation from the next complete checkpoint. The legacy restriction had blocked registering a different EMNLP paper while the CIKM paper was pending, after which residents withdrew CIKM. It also formed part of the context for their subsequent waiting strategy; removing the restriction does not retroactively rewrite their decisions or scientific results.
+
+The implementation uses individual submission IDs for independent registration, frozen manuscripts, author responses, commitments, decisions, grants and final versions. Different papers may proceed concurrently, including at the same venue; ambiguous calls must identify the intended submission. Legacy records remain readable. Revised guidance and a once-only policy notice retain the earlier commission and handbook as historical evidence. No new automatic research assignment, metric repair or restoration of withdrawn papers is part of this change.
+
+At 19:15 Beijing, the authoritative latest complete checkpoint was day 88. A remote watcher fixes the intervention boundary at day 89, waits for its atomic publication, verifies the old controller identity and then requests graceful shutdown. Deployment and notification acceptance will be recorded only after completion. Authoritative watcher receipts remain under pit-models-20261116-r1/preflight/parallel-submissions-checkpoint-watch on Zenith; all runtime preservation and analysis stay remote.
