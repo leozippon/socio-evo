@@ -38,6 +38,12 @@ export PYTHONDONTWRITEBYTECODE=1
 
 Every normal launch first runs preflight with the actual profile: actor tool calling and continuation, a structured external judge reply, enabled browsing routes, host-GPU identity, a CUDA optimizer step and saved tensor loading in another container. The old profile checks Tavily/curl; the dated profile checks arXiv/GitHub and disabled container networking. Conference profiles additionally compile a LaTeX document containing a generated figure, table, algorithm, cross-reference and BibTeX citation, and check the PDF and resolved references. `--preflight-only` is available for isolated diagnostics; it need not precede a normal launch. Separate acceptance probes verify the exact resident-facing CUDA example and a real conference review with grounded citations. Semantic Scholar is recorded as disabled, not passed. A failed check prevents launch. Acceptance requires those concrete operations, not merely `nvidia-smi` or successful package imports.
 
+## Research discussion notices
+
+Operators may place a JSON list of `{"id": "research-direction-001", "text": "<approved discussion request>"}` objects in `<run-directory>/research_notices.json`. This host-only queue is outside the resident workspace and container mounts. Use a unique immutable ID for each message; changing text under an already delivered ID does not resend it. After the research commission, day scheduling records each pending note in `research/records/research-notice-<id>.json` and delivers it to all residents without adding funds. Before the commission or without a queue, nothing is delivered.
+
+For an intervention at a specific checkpoint, preserve the run at that boundary and arrange the queue before resuming. The delivery record and pending percepts follow the ordinary checkpoint/Git history, so restoration does not duplicate a delivered note. Archive the operator queue with deployment provenance; it is not itself part of the world snapshot. Discussion requests do not change the scientific scope, PIT cutoff, conference state or existing manuscript files.
+
 ## Historical institute launch
 
 These commands describe the stopped institute. Do not resume it as part of the IR experiment. The default profile runs through the day-70 checkpoint:

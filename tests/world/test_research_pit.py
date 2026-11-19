@@ -69,6 +69,75 @@ def test_free_week_and_dated_commission(lab):
     assert "proposal.md" not in text
 
 
+def test_host_notice_is_gated_delivered_to_everyone_once_and_restored(lab):
+    queue = lab.research.root.parent / "research_notices.json"
+    queue.write_text("not readable JSON before the commission")
+    lab.research.schedule(lab, 1)  # The free week must not even read host notices.
+    assert not list(lab.research.records.glob("research-notice-*.json"))
+    queue.unlink()
+    lab.clock.set(7 * DAY + 7 * 3600)
+    lab.research.announce(lab)
+    commission = (lab.research.records / "commission.json").read_text()
+    guide = (lab.research.files / "README.md").read_text()
+    rebuttal = lab.research.files / "rebuttal.md"
+    rebuttal.write_text("Our existing author response.\n")
+    before_time = lab.research.simulated_now(lab)
+    before_settings = lab.research.settings.model_dump()
+    before_money = {name: r.inventory.money for name, r in lab.residents.items()}
+    text = "Consider another research direction; retain the current submission and response."
+    queue.write_text(json.dumps([{"id": "direction-1", "text": text}]))
+    lab.research.schedule(lab, 8)
+    lab.research.schedule(lab, 8)
+
+    state = lab.snapshot()
+    restored = World(lab.config, lab.research.root.parent, NoTasks(), clock=ManualClock())
+    restored.restore(state)
+    restored.research.schedule(restored, 8)
+    assert len(restored.residents) == 4
+    assert all(sum(p.text == text for p in r.port.held) == 1
+               for r in restored.residents.values())
+    events = [e for e in restored.log.entries()
+              if e.get("payload", {}).get("notice_id") == "direction-1"]
+    assert len(events) == 1
+    assert set(events[0]["audience"]) == set(restored.residents)
+    assert events[0]["payload"]["allowance"] == 0
+    marker = restored.research.records / "research-notice-direction-1.json"
+    assert json.loads(marker.read_text()) == {
+        "id": "direction-1", "text": text, "sim_time": state["time"],
+    }
+    assert restored.research.snapshot() == state["research"]
+    assert restored.research.simulated_now(restored) == before_time
+    assert restored.research.settings.model_dump() == before_settings
+    assert {name: r.inventory.money for name, r in restored.residents.items()} == before_money
+    assert (restored.research.records / "commission.json").read_text() == commission
+    assert (restored.research.files / "README.md").read_text() == guide
+    assert rebuttal.read_text() == "Our existing author response.\n"
+    assert not (restored.research.root / queue.name).exists()
+
+
+def test_no_host_notice_file_is_a_noop(lab):
+    activate(lab)
+    revision = lab.research.snapshot()
+    before = list(lab.log.entries())
+    lab.research.schedule(lab, 8)
+    assert lab.research.snapshot() == revision
+    assert list(lab.log.entries()) == before
+
+
+def test_host_notice_rejects_path_ids_before_any_delivery(lab):
+    activate(lab)
+    queue = lab.research.root.parent / "research_notices.json"
+    queue.write_text(json.dumps([
+        {"id": "valid", "text": "A valid note."},
+        {"id": "../../outside", "text": "An unsafe path."},
+    ]))
+    revision = lab.research.snapshot()
+    with pytest.raises(ValueError, match="safe id"):
+        lab.research.schedule(lab, 8)
+    assert lab.research.snapshot() == revision
+    assert not list(lab.research.records.glob("research-notice-*.json"))
+
+
 async def test_browser_uses_society_instant_and_shared_download(lab, monkeypatch):
     from world import research_browser
 

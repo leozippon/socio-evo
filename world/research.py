@@ -513,6 +513,7 @@ class Research:
         """Release mail at its calendar instant, even when nobody opens the desk."""
         self.announce_models(world)
         self.announce_conference_policy(world)
+        self.announce_notices(world)
         if not self.settings.conferences:
             return
         from functools import partial
@@ -617,6 +618,40 @@ class Research:
             payload={"allowance": self.settings.allowance if self.settings.start_day == 1 else 0},
         )
         self.announce_models(world)
+        self.announce_notices(world)
+
+    def announce_notices(self, world) -> None:
+        """Deliver host-provided notes once, with delivery history in the checkpointed repo."""
+        if not self.active:
+            return
+        queue = self.root.parent / "research_notices.json"
+        if not queue.exists():
+            return
+        notices = json.loads(queue.read_text())
+        if not isinstance(notices, list):
+            raise ValueError("research_notices.json must contain a list of {id, text} objects.")
+        for notice in notices:
+            if (not isinstance(notice, dict)
+                    or not isinstance(notice.get("id"), str)
+                    or not re.fullmatch(r"[A-Za-z0-9_-]+", notice["id"])
+                    or not isinstance(notice.get("text"), str)
+                    or not notice["text"].strip()):
+                raise ValueError("Research notices require a safe id and nonempty text.")
+        for notice in notices:
+            marker = self.records / f"research-notice-{notice['id']}.json"
+            if marker.exists():
+                continue
+            marker.write_text(json.dumps({
+                "id": notice["id"], "text": notice["text"], "sim_time": world.clock.now(),
+            }, ensure_ascii=False, indent=2))
+            self.repo._git("add", "--force", "--", f"records/{marker.name}")
+            self.repo.commit(f"Deliver research notice {notice['id']}", date=datetime.now(UTC))
+            world.record(
+                "research_brief", lambda w, text=notice["text"]: text,
+                audience=list(world.residents.values()),
+                payload={"allowance": 0, "notice_id": notice["id"],
+                         "record": f"records/{marker.name}"},
+            )
 
     def announce_conference_policy(self, world) -> None:
         """Correct the legacy collective submission limit without rewriting its history."""

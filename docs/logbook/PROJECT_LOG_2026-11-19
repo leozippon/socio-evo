@@ -1,0 +1,9 @@
+# Project log — 2026-11-19
+
+## Checkpoint-bound RSI research invitation
+
+The user requested that the residents pay attention to Recursive Self-Improvement (RSI), investigate possible research questions and analyses, and receive the invitation at the next checkpoint. The invitation deliberately provides no model, paper, method or expected conclusion. Residents must use sources available by their current simulated date and coordinate the exploration with existing papers and conference commitments. It is an external research-direction intervention, not evidence that RSI was independently selected by the society.
+
+A minimal operator notice queue is being added outside the resident workspace. Delivered messages become ordinary recorded percepts for all four residents, with a checkpointed per-ID record to prevent duplicate delivery. This keeps the one-off topic out of the core simulation rules and does not rewrite the commission, scientific results, PIT filters or submission state.
+
+At 22:35:41 Beijing, the latest complete checkpoint was day 138. The remote watcher fixes day 139 as the intervention boundary and will stop the old controller only after that checkpoint is atomically published. The watcher receipts are under pit-models-20261116-r1/preflight/rsi-research-checkpoint-watch-20261119T143541Z; the preservation root is backups/rsi-research-20261119T143541Z. No delivery or deployment success is claimed before acceptance.
