@@ -1,0 +1,5 @@
+# Project log — 2026-11-20
+
+The day-157 RSI snapshot showed 272 whole-workspace revision rejections before shell execution. Ten frozen PDFs were each active at both NAACL and COLING, and the EMNLP submission had missed its separate ARR commitment after rebuttal. The user requested all three proposed workflow improvements, including optional held-out evaluation.
+
+Added explicit read-only shell snapshots and scoped jobs that stage declared inputs, check only related paths, and publish declared outputs after success. Added per-paper actions and deadlines in the conference tools and notices, with an exact active-PDF duplicate check for new submissions and flags over earlier records. Added one-batch held-out retrieval scoring with private labels and a durable disclosure receipt. The tool checks the shared result cutoff and declared per-query calls. It scores committed predictions and has no trusted measurement of actual strategy execution or compute. Benchmark selection and label independence remain the operator's responsibility.

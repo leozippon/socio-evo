@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import os
 import re
+import stat
 import threading
 import uuid
+from contextlib import nullcontext
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -47,6 +50,7 @@ RESEARCH_NAMES = (
     "browser",
     "conference",
     "model",
+    "evaluation",
 )
 MODEL_HELP_VERSION = 2
 GPU_EXAMPLE = """nvidia-smi && python - <<'PY'
@@ -263,8 +267,13 @@ def research_help(settings: ResearchSettings) -> str:
         "or assigned research roles. Use your usual conversations to organize the work. "
         "list_research_files lists shared files and the current revision; read_repo_file reads "
         "one. write_repo_file and edit_repo_file change them. Supply the revision you read when "
-        "writing or using shell. File edits check only the target file; shell checks shared "
-        "files. New source or execution records do not cause conflicts. On conflict, reread. "
+        "writing or using shell. File edits check only the target file. For shell inspection, use "
+        "readonly=true and paths=['files/<input>'] to read selected files or directories from "
+        "that exact revision. For shell jobs that write files, set paths to all needed inputs "
+        "and outputs=['files/<result>'] to declare exact output files. The desk checks only "
+        "these paths, runs in a staging directory and publishes the outputs if the job "
+        "succeeds. Use paths=[] if the job needs no inputs. Plain shell still uses the entire "
+        "workspace and checks for intervening file changes. "
         f"Use {artifact} for the paper, and keep supporting code, data and results alongside it. "
         "shell runs in /research with Python, NumPy, SciPy, pandas, matplotlib, scikit-learn, "
         "SymPy, NetworkX and curl. "
@@ -300,6 +309,15 @@ def research_help(settings: ResearchSettings) -> str:
         + research_scope(settings) + milestone_terms(settings)
         + ("\n\n" + model_help(settings) if settings.models_enabled else "")
         + (
+            "\n\nUse evaluation(action='list') to see optional held-out evaluations. "
+            "Open a benchmark by benchmark_id to see its fixed metric, queries, variants "
+            "and result format. Choose the final variants before submitting their prediction "
+            "file with action='submit', benchmark_id, path and revision. A benchmark discloses "
+            "aggregate scores once for the frozen batch. Each variant uses the same result "
+            "cutoff and declares its search calls. Actual computation is not measured. "
+            if settings.pit else ""
+        )
+        + (
             f"\n\n{artifact} must be a complete LaTeX document, including \\documentclass, "
             "\\begin{document} and \\end{document}. Keep bibliography files and figure sources "
             "alongside the manuscript. Compile through shell with "
@@ -322,7 +340,8 @@ def research_help(settings: ResearchSettings) -> str:
             "requests require submission_id. Open without an ID shows the venue's history, "
             "or all submissions if no venue is supplied. You can continue research and submit "
             "other papers while waiting; withdrawing an existing paper is not required. "
-            "Follow ordinary venue rules about duplicate submission of the same work. "
+            "The desk flags existing duplicate PDFs and refuses another active submission "
+            "of the same PDF. List or open a submission to see its next actions and deadlines. "
             "Conference list/open gives the current rules; policy updates are recorded in "
             "records/conference-policy-v2.json. Check the returned "
             "receipt: writing files alone does not submit them. All dates have timezones; "
@@ -377,11 +396,17 @@ def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[Too
         spec(
             "shell",
             "Run a command in the shared research workspace at the Office. "
-            "Calls run one at a time; revision checks shared files, not records. "
-            "Output and file changes are recorded.",
+            "Use readonly with paths to inspect a fixed revision. Supply paths and outputs "
+            "for a job that publishes only its declared outputs. Plain shell checks the "
+            "whole workspace. Output and file changes are recorded.",
             ("command", "revision"),
             command=_text("Shell command"),
             revision=revision,
+            readonly={"type": "boolean", "description": "Run on a read-only Git snapshot"},
+            paths={"type": "array", "items": {"type": "string"},
+                   "description": "Input files or directories, prefixed with files/ or records/"},
+            outputs={"type": "array", "items": {"type": "string"},
+                     "description": "Exact output file paths prefixed with files/"},
         ),
         spec(
             "search_literature",
@@ -420,6 +445,14 @@ def research_specs(existing: list[ToolSpec], names: tuple[str, ...]) -> list[Too
             offset=_number("First page-text line", 1),
             limit=_number("Number of page-text lines", 1, 500),
             path=path, revision=revision,
+        ),
+        spec(
+            "evaluation", "List optional held-out benchmarks, open a benchmark's public "
+            "protocol or score one preselected batch of predictions.", ("action",),
+            action={"type": "string", "enum": ["list", "open", "submit"]},
+            benchmark_id=_text("Benchmark ID returned by list"),
+            path=_text("Shared JSON prediction file, relative to /research"),
+            revision=revision,
         ),
         spec(
             "conference", "Visit the conference desk: calls for papers, registration, "
@@ -495,6 +528,7 @@ class Research:
             if name != "browser" or settings.pit
             if name != "conference" or settings.conferences
             if name != "model" or settings.models_enabled
+            if name != "evaluation" or settings.pit
         )
         self.root = run_dir / "research"
         self.files = self.root / "files"
@@ -839,17 +873,122 @@ class Research:
         records = ["records/" + p.name for p in self.records.iterdir() if p.is_file()]
         return "\n".join(sorted(files) + sorted(records))
 
-    def _changed(self, revision: str, current: str, path: str) -> bool:
-        """Compare only the affected files against a known snapshot of this history."""
+    def _validate_revision(self, revision: str, current: str) -> None:
         if not re.fullmatch(r"[0-9a-f]{40,64}", revision):
             raise ValueError("Use a revision returned by the shared workspace.")
         try:
             self.repo._git("merge-base", "--is-ancestor", revision, current)
         except GitError as error:
             raise ValueError("Unknown workspace revision; read the workspace again.") from error
+
+    def _changed(self, revision: str, current: str, path: str) -> bool:
+        """Compare only the affected files against a known snapshot of this history."""
+        self._validate_revision(revision, current)
         return bool(
             self.repo._git("diff", "--name-only", revision, current, "--", f":(literal){path}")
         )
+
+    def _publish_shell_outputs(self, staged: Path, outputs: list[str]) -> None:
+        files = []
+        for path in outputs:
+            source = staged.parent / path
+            target = self._path(path.removeprefix("files/"), writing=True)
+            if any(p.is_symlink() for p in (source, *source.parents)) or not source.is_file():
+                raise ValueError(f"Declared output must be a regular file: {path}")
+            if target.exists() and not target.is_file():
+                raise ValueError(f"Declared output would replace a non-file: {path}")
+            source.chmod(0o755 if source.stat().st_mode & stat.S_IXUSR else 0o644)
+            files.append((source, target))
+
+        backups = staged.parent / "previous-outputs"
+        backups.mkdir()
+        for number, (_, target) in enumerate(files):
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if target.exists():
+                os.link(target, backups / str(number))
+        published = []
+        try:
+            for number, (source, target) in enumerate(files):
+                os.replace(source, target)
+                published.append((number, target))
+        except OSError:
+            for number, target in reversed(published):
+                backup = backups / str(number)
+                if backup.exists():
+                    os.replace(backup, target)
+                else:
+                    target.unlink()
+            raise
+
+    async def _shell(self, args: dict[str, Any], current: str) -> dict:
+        readonly = args.get("readonly", False)
+        scoped = readonly or "paths" in args or "outputs" in args
+        workspace = nullcontext((self.files, self.records))
+        execution_options = {}
+        outputs = []
+        if scoped:
+            revision = args["revision"]
+            self._validate_revision(revision, current)
+            paths = list(dict.fromkeys(
+                map(research_workspace.snapshot_path, args.get("paths", []))
+            ))
+            outputs = list(dict.fromkeys(
+                map(research_workspace.snapshot_path, args.get("outputs", []))
+            ))
+            if readonly:
+                if not paths or outputs:
+                    raise ValueError("Read-only shell needs paths and accepts no outputs.")
+            elif not outputs or any(not path.startswith("files/") for path in outputs):
+                raise ValueError("Scoped shell requires exact output files under files/.")
+            elif any(
+                right.startswith(left + "/") for left in outputs for right in outputs
+            ):
+                raise ValueError("Declared output files must not contain other output paths.")
+            if not readonly:
+                conflicts = self.repo._git(
+                    "diff", "--name-only", revision, current, "--",
+                    *(f":(literal){path}" for path in dict.fromkeys(paths + outputs)),
+                ).strip()
+                if conflicts:
+                    raise ValueError(f"Declared inputs or outputs changed. Reread: {conflicts}")
+                revision = current
+            workspace = research_workspace.snapshot(
+                self.files, self.records, revision, paths, optional_paths=outputs
+            )
+            execution_options = {"readonly": readonly, "runtime_readonly": True}
+
+        models = self._model_mounts() if self.settings.models_enabled else None
+        with workspace as (files, records):
+            result = await research_workspace.execute(
+                self.settings.image,
+                files,
+                records,
+                args["command"],
+                self.settings.command_timeout_s,
+                network=self.settings.network,
+                gpus=self.settings.gpus,
+                cpus=self.settings.cpus,
+                memory=self.settings.memory,
+                runtime_dir=self.root.parent / "research_runtime"
+                if self.settings.persistent_runtime else None,
+                models=models,
+                **execution_options,
+            )
+            if scoped:
+                result["workspace_revision"] = revision
+                result["published_outputs"] = []
+                if outputs and result["exit_code"] == 0 and not result["timed_out"]:
+                    try:
+                        self._publish_shell_outputs(files, outputs)
+                    except (OSError, ValueError) as error:
+                        result["error"] = str(error)
+                    else:
+                        result["published_outputs"] = outputs
+        if models is not None:
+            result["models"] = [
+                self._model_identity(receipt) for receipt in self._admitted_models().values()
+            ]
+        return result
 
     async def _download(self, browser, url: str, now: datetime, target: Path) -> dict:
         # A cancelled to_thread call keeps running. Stage outside the shared tree so a
@@ -1006,7 +1145,10 @@ class Research:
                 downloading = name == "browser" and args["action"] == "download"
                 if downloading and not all(args.get(key) for key in ("path", "revision", "url")):
                     raise ValueError("Downloading needs url, path and the workspace revision.")
-                if name in {"write_repo_file", "edit_repo_file", "shell"} or downloading:
+                plain_shell = name == "shell" and not (
+                    args.get("readonly") or "paths" in args or "outputs" in args
+                )
+                if name in {"write_repo_file", "edit_repo_file"} or plain_shell or downloading:
                     scope = "files"
                     if name != "shell":
                         target = self._path(args["path"], writing=True)
@@ -1037,24 +1179,11 @@ class Research:
                     target.write_text(content)
                     result = {"text": f"Wrote {args['path']}."}
                 elif name == "shell":
-                    models = self._model_mounts() if self.settings.models_enabled else None
-                    result = await research_workspace.execute(
-                        self.settings.image,
-                        self.files,
-                        self.records,
-                        args["command"],
-                        self.settings.command_timeout_s,
-                        network=self.settings.network,
-                        gpus=self.settings.gpus,
-                        cpus=self.settings.cpus,
-                        memory=self.settings.memory,
-                        runtime_dir=(self.root.parent / "research_runtime")
-                        if self.settings.persistent_runtime else None,
-                        models=models,
-                    )
-                    if models is not None:
-                        result["models"] = [self._model_identity(receipt)
-                                            for receipt in self._admitted_models().values()]
+                    result = await self._shell(args, before)
+                elif name == "evaluation":
+                    from world.research_evaluation import EvaluationDesk
+
+                    result = EvaluationDesk(self).call(args)
                 elif name == "model":
                     result = await self._model(world, args)
                 elif name == "browser":

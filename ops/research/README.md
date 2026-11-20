@@ -44,6 +44,14 @@ Operators may place a JSON list of `{"id": "research-direction-001", "text": "<a
 
 In an already queue-aware deployment, atomically replace the host queue with valid JSON to deliver new IDs at the next day-scheduling boundary; a restart is not needed merely to add a topic. When introducing this feature into an older deployment, preserve the run at the selected checkpoint and arrange the queue before resuming. The delivery record and pending percepts follow the ordinary checkpoint/Git history, so restoration does not duplicate a delivered note. Archive the operator queue with deployment provenance; it is not itself part of the world snapshot. Discussion requests do not change the scientific scope, PIT cutoff, conference state or existing manuscript files.
 
+## Held-out retrieval evaluation
+
+Evaluation is optional in the dated laboratory. The operator puts an approved benchmark definition in `<run-directory>/research_evaluations/<id>.json`. Keep the relevance judgments and their provenance on Zenith, outside the Git workspace and container mounts. Use a genuinely withheld split and check its availability against the simulation date before provisioning it. No benchmark is installed by default.
+
+The definition specifies `id`, `title`, `split`, `metric` (`hit_at_k` or `recall_at_k`), `top_k`, `max_calls`, `variants` (the planned candidate IDs), `labels_unseen: true`, private `label_provenance` and `queries`. Each query has `id`, private `relevant_ids` and optional public `input`. The first list/open call freezes the definition. Residents can open the public protocol, then submit a pinned JSON prediction artifact with all variants and all queries at once. The artifact format is documented in [the evaluation module](../../world/research_evaluation.py).
+
+The service scores one final batch and exposes aggregate scores. It enforces a common number of returned documents and checks declared calls against the per-query cap. Strategy execution and actual compute are unverified. Preserve both private directories, `research_evaluations` and `research_evaluation_state`, when moving or branching the same experiment. Restoring an earlier checkpoint does not renew an already used scoring opportunity.
+
 ## Historical institute launch
 
 These commands describe the stopped institute. Do not resume it as part of the IR experiment. The default profile runs through the day-70 checkpoint:

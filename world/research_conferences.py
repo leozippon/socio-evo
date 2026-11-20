@@ -102,7 +102,75 @@ class ConferenceDesk:
         self.research.repo._git("add", "--force", "--all", "--", "records")
         self.research.repo.commit(message, date=datetime.now(UTC))
 
+    def _next_steps(self, submission, now):
+        venue = self.venues[submission["venue"]]
+        status, identifier = submission["status"], submission["id"]
+        steps = []
+
+        def add(action, deadline, instruction):
+            steps.append({"action": action,
+                          "deadline": deadline.isoformat() if deadline else None,
+                          "instruction": instruction})
+
+        if status == "registered":
+            add("submit", venue.submission_at,
+                f"Submit the source and PDF with conference(action='submit', "
+                f"submission_id='{identifier}') by {venue.submission_at.isoformat()}.")
+        elif status == "submitted":
+            add("await_reviews", venue.reviews_at,
+                f"Reviews will be released at {venue.reviews_at.isoformat()}; "
+                "you may continue research while waiting.")
+        elif status == "reviewed":
+            if venue.commitment_at and not submission.get("committed_at"):
+                add("commit", venue.commitment_at,
+                    f"ARR reviews do not automatically enter the conference: explicitly call "
+                    f"conference(action='commit', submission_id='{identifier}') by "
+                    f"{venue.commitment_at.isoformat()}. Without commitment there is no "
+                    "conference decision or grant; a rebuttal does not count as commitment.")
+            if now <= venue.rebuttal_at:
+                add("rebuttal", venue.rebuttal_at,
+                    f"You may submit or replace the author response with "
+                    f"conference(action='rebuttal', submission_id='{identifier}') by "
+                    f"{venue.rebuttal_at.isoformat()}.")
+            if not steps:
+                add("await_decision", venue.notification_at,
+                    f"The decision is scheduled for {venue.notification_at.isoformat()}; "
+                    "you may continue research while waiting.")
+        elif status == "accepted":
+            deadline = (f" by {venue.camera_ready_at.isoformat()}"
+                        if venue.camera_ready_at else "")
+            add("camera_ready", venue.camera_ready_at,
+                f"Supply the final source and PDF with conference(action='camera_ready', "
+                f"submission_id='{identifier}'){deadline}.")
+        return steps
+
+    def _active_pdf_groups(self, state):
+        groups = {}
+        for submission in state["submissions"]:
+            if submission["status"] in TERMINAL:
+                continue
+            if record := submission.get("manuscript_record"):
+                frozen = json.loads(self.research._path(record).read_text())
+                if digest := frozen.get("pdf_sha256"):
+                    groups.setdefault(digest, []).append(submission["id"])
+        return groups
+
+    def _view(self, submission, now, groups=None):
+        view = submission | {"next_steps": self._next_steps(submission, now)}
+        if groups is not None:
+            duplicates = next((ids for ids in groups.values() if submission["id"] in ids), [])
+            view["duplicate_pdf_with"] = [i for i in duplicates if i != submission["id"]]
+            if view["duplicate_pdf_with"]:
+                view["duplicate_pdf_notice"] = (
+                    "These active submissions contain the identical frozen PDF. Historical "
+                    "records remain actionable; decide which submission to retain and use "
+                    "withdraw with explicit submission_id for any you choose to withdraw."
+                )
+        return view
+
     def _record(self, world, text, submission):
+        steps = self._next_steps(submission, self.research.simulated_now(world))
+        text += " " + " ".join(step["instruction"] for step in steps)
         world.record(
             "conference",
             lambda w: f"{text} Submission {submission['id']}: {submission['title']}.",
@@ -112,6 +180,7 @@ class ConferenceDesk:
                 "venue": submission["venue"],
                 "status": submission["status"],
                 "record": "records/conferences.json",
+                "next_steps": steps,
             },
         )
 
@@ -129,8 +198,11 @@ class ConferenceDesk:
             "when it identifies one active submission. Open/list include historical records. "
             "Waiting for reviews does not prevent research or another paper's submission; "
             "there is no need to withdraw other papers. Follow ordinary venue rules about "
-            "duplicate submission of the same work. ARR venues additionally require commit "
-            "after reviews. "
+            "duplicate submission of the same work. Submitting the identical frozen PDF to "
+            "another active submission is blocked regardless of its title or venue; use the "
+            "existing submission, or withdraw it before transferring that manuscript. "
+            "ARR venues additionally require commit after reviews; rebuttal is not commitment. "
+            "List/open show next_steps and deadlines for every submission. "
             "Read all three reviews; submit or replace rebuttal.md before the response deadline. "
             "Only the final decision awards funding. Accepted work needs a camera_ready action. "
             "Working files remain editable; the submitted version stays frozen. Decisions after "
@@ -190,14 +262,18 @@ class ConferenceDesk:
     async def call(self, world, resident, args):
         await self.advance(world)
         state = self._load()
+        now = self.research.simulated_now(world)
         action = args["action"]
         if action == "list":
+            groups = self._active_pdf_groups(state)
             return {
                 "calendar": [v.model_dump(mode="json") for v in self.venues.values()],
-                "state": state,
+                "state": state | {"submissions": [self._view(s, now, groups)
+                                                   for s in state["submissions"]]},
             }
         venue_id = args.get("venue")
         if action == "open":
+            groups = self._active_pdf_groups(state)
             if args.get("submission_id"):
                 submission = self._select(state, args)
                 venue_id = submission["venue"]
@@ -209,7 +285,7 @@ class ConferenceDesk:
                 raise ValueError("Choose a venue id from conference list")
             return {
                 "venue": self.venues[venue_id].model_dump(mode="json") if venue_id else None,
-                "submissions": selected,
+                "submissions": [self._view(s, now, groups) for s in selected],
             }
         submission = None
         if action != "register":
@@ -220,7 +296,6 @@ class ConferenceDesk:
         if venue_id not in self.venues:
             raise ValueError("Choose a venue id from conference list")
         venue = self.venues[venue_id]
-        now = self.research.simulated_now(world)
         if action == "register":
             if args.get("submission_id"):
                 raise ValueError("Registration creates a new submission_id; omit it here")
@@ -247,6 +322,15 @@ class ConferenceDesk:
                         "Submit once, after registration and before the paper deadline"
                     )
                 frozen = self._manuscript(world, args)
+                conflicts = self._active_pdf_groups(state).get(frozen["pdf_sha256"], [])
+                if conflicts:
+                    raise ValueError(
+                        "The same frozen PDF is already active in submission(s): "
+                        + ", ".join(conflicts)
+                        + ". Use the existing submission, withdraw it before transferring "
+                        "this manuscript, or submit a different paper. Changing the title "
+                        "or venue does not make the identical PDF a different manuscript."
+                    )
                 record = f"conference-{submission['id']}-submission.json"
                 _write(self.research.records / record, frozen)
                 submission.update(
@@ -320,7 +404,7 @@ class ConferenceDesk:
             "The collective record is at records/conferences.json.",
             submission,
         )
-        return submission
+        return self._view(submission, now)
 
     async def _judge(self, submission, venue, phase, role, packet, model):
         settings = self.research.settings.judge
@@ -450,8 +534,7 @@ class ConferenceDesk:
                 self._record(
                     world,
                     f"Three simulated reviews for {venue.title} are available in "
-                    "records/conferences.json. Read them and discuss your response; "
-                    f"rebuttal is due {venue.rebuttal_at.isoformat()}.",
+                    "records/conferences.json. Read them and discuss your response.",
                     submission,
                 )
             if (

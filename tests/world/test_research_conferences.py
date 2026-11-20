@@ -19,6 +19,13 @@ from world.world import World
 PAPER = r"\documentclass{article}\begin{document}Measured retrieval recall.\end{document}"
 
 
+def write_pdf(world, title):
+    writer = PdfWriter()
+    writer.add_blank_page(width=612, height=792)
+    writer.add_metadata({"/Title": title})
+    writer.write(world.research.files / "paper.pdf")
+
+
 @pytest.fixture
 def lab(tmp_path, monkeypatch):
     config = load_experiment(
@@ -198,6 +205,7 @@ async def test_parallel_papers_resolve_by_id_and_keep_independent_lifecycles(lab
     first = await submitted(world)
     second = await action(world, "register", venue="other", title="Study B", abstract="B")
     (world.research.files / "paper.tex").write_text(PAPER.replace("recall.", "recall. Study B."))
+    write_pdf(world, "Study B")
     await action(world, "submit", venue="other")  # Unique venue preserves old call syntax.
     third = await action(world, "register", title="Study C", abstract="C")
     with pytest.raises(ValueError, match="submission_id"):
@@ -206,6 +214,7 @@ async def test_parallel_papers_resolve_by_id_and_keep_independent_lifecycles(lab
         await action(world, "withdraw", submission_id="missing")
     with pytest.raises(ValueError, match="does not belong"):
         await action(world, "withdraw", submission_id=second["id"])
+    write_pdf(world, "Study C")
     await action(world, "submit", submission_id=third["id"])
     assert len((await action(world, "open"))["submissions"]) == 2
     await action(world, "withdraw", submission_id=third["id"])
@@ -257,6 +266,66 @@ async def test_parallel_papers_resolve_by_id_and_keep_independent_lifecycles(lab
     assert states[first["id"]]["status"] == "camera_ready"
     assert states[second["id"]]["status"] == "missed_camera_ready"
     assert all(any(first["id"] in p.text for p in r.port.held) for r in restored.residents.values())
+
+
+@pytest.mark.parametrize("different_venue", [False, True])
+async def test_identical_pdf_requires_resolving_active_submission_even_if_renamed(
+    lab, different_venue
+):
+    world, venue, _ = lab
+    other = venue.model_copy(update={"id": "other", "title": "Other Conference"})
+    world.research.settings = world.research.settings.model_copy(
+        update={"conferences": (venue, other)}
+    )
+    first = await submitted(world)
+    target = "other" if different_venue else "test"
+    second = await action(world, "register", venue=target, title="Different title", abstract="B")
+    (world.research.files / "renamed.pdf").write_bytes(
+        (world.research.files / "paper.pdf").read_bytes()
+    )
+    # Comparison uses the frozen original, even after its working PDF is changed.
+    write_pdf(world, "Unsubmitted working revision")
+    with pytest.raises(ValueError, match=first["id"]) as error:
+        await action(world, "submit", venue=target, submission_id=second["id"], pdf="renamed.pdf")
+    assert "withdraw" in str(error.value) and "different paper" in str(error.value)
+    record = conferences.ConferenceDesk(world.research)._load()["submissions"][1]
+    assert record["status"] == "registered" and "manuscript_record" not in record
+    await action(world, "withdraw", submission_id=first["id"])
+    moved = await action(
+        world, "submit", venue=target, submission_id=second["id"], pdf="renamed.pdf"
+    )
+    assert moved["status"] == "submitted"
+
+
+async def test_legacy_duplicate_pdfs_remain_visible_and_independently_actionable(lab):
+    world, venue, calls = lab
+    first = await submitted(world)
+    desk = conferences.ConferenceDesk(world.research)
+    state = desk._load()
+    duplicate = state["submissions"][0] | {"id": "test-old-copy", "title": "Legacy copy"}
+    state["submissions"].append(duplicate)
+    desk._save(state, "Historical duplicate submissions")
+    checkpoint = world.snapshot()
+    restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
+    restored.restore(checkpoint)
+    original = desk.path.read_text()
+    listed = (await action(restored, "list"))["state"]["submissions"]
+    assert listed[0]["duplicate_pdf_with"] == [duplicate["id"]]
+    assert listed[1]["duplicate_pdf_with"] == [first["id"]]
+    assert "Historical records remain actionable" in listed[1]["duplicate_pdf_notice"]
+    assert desk.path.read_text() == original  # Derived warnings do not rewrite old records.
+    assert restored.research.snapshot() == checkpoint["research"]
+    moment(restored, venue.reviews_at)
+    opened = await action(restored, "open", submission_id=duplicate["id"])
+    assert opened["submissions"][0]["duplicate_pdf_with"] == [first["id"]]
+    assert len(calls) == 6
+    (restored.research.files / "rebuttal.md").write_text("Response for the legacy copy.")
+    await action(restored, "rebuttal", submission_id=duplicate["id"])
+    await action(restored, "withdraw", submission_id=first["id"])
+    remaining = (await action(restored, "open", submission_id=duplicate["id"]))["submissions"][0]
+    assert remaining["status"] == "reviewed"
+    assert remaining["rebuttal"]["text"] == "Response for the legacy copy."
+    assert remaining["duplicate_pdf_with"] == []
 
 
 async def test_legacy_active_pointer_does_not_block_registration_or_restore_withdrawals(lab):
@@ -333,21 +402,33 @@ async def test_arr_requires_explicit_commitment_and_never_pays_early(lab):
         }
     )
     world.research.settings = world.research.settings.model_copy(update={"conferences": (venue,)})
-    await submitted(world)
+    submission = await submitted(world)
+    assert submission["next_steps"][0]["action"] == "await_reviews"
     with pytest.raises(ValueError, match="Only reviewed ARR"):
         await action(world, "commit")
     moment(world, venue.reviews_at)
-    await action(world, "open")
+    reviewed = (await action(world, "open"))["submissions"][0]
+    assert [s["action"] for s in reviewed["next_steps"]] == ["commit", "rebuttal"]
+    assert reviewed["next_steps"][0]["deadline"] == venue.commitment_at.isoformat()
+    assert all(any(f"submission_id='{submission['id']}'" in p.text
+                   and "a rebuttal does not count as commitment" in p.text
+                   for p in r.port.held) for r in world.residents.values())
     before = world.snapshot()
     money = next(iter(world.residents.values())).inventory.money
     moment(world, venue.notification_at)
-    assert (await action(world, "open"))["submissions"][0]["status"] == "missed_commitment"
+    missed = (await action(world, "open"))["submissions"][0]
+    assert missed["status"] == "missed_commitment" and missed["next_steps"] == []
     assert len(calls) == 3 and next(iter(world.residents.values())).inventory.money == money
     restored = World(world.config, world.research.root.parent, NoTasks(), clock=ManualClock())
     restored.restore(before)
     restored.research.settings = world.research.settings
     moment(restored, venue.commitment_at)
-    await action(restored, "commit")
+    event_count = len(list(restored.log.entries()))
+    resumed = (await action(restored, "open", submission_id=submission["id"]))["submissions"][0]
+    assert [s["action"] for s in resumed["next_steps"]] == ["commit"]
+    assert len(list(restored.log.entries())) == event_count
+    committed = await action(restored, "commit", submission_id=submission["id"])
+    assert [s["action"] for s in committed["next_steps"]] == ["await_decision"]
     moment(restored, venue.notification_at)
     assert (await action(restored, "open"))["submissions"][0]["status"] == "accepted"
     assert len(calls) == 7

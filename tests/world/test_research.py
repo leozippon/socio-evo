@@ -253,6 +253,60 @@ async def test_shell_ignores_records_but_protects_shared_files(world, monkeypatc
     assert not (world.research.files / "unsafe").exists()
 
 
+async def test_scoped_shell_uses_pinned_reads_and_publishes_only_declared_outputs(
+    world, monkeypatch
+):
+    resident = office(world, "Ravi")
+
+    async def write(path, content):
+        return await world.call(resident, "write_repo_file", {
+            "path": path, "content": content, "revision": world.research.snapshot(),
+        })
+
+    await write("input.txt", "original")
+    initial = world.research.snapshot()
+    await write("someone-elses-paper.tex", "unrelated")
+    observed = []
+
+    async def command(image, files, records, command, timeout, **options):
+        assert options["runtime_readonly"]
+        assert not (files / "someone-elses-paper.tex").exists()
+        observed.append((command, (files / "input.txt").read_text()))
+        if command == "inspect":
+            assert options["readonly"]
+        else:
+            assert not options["readonly"]
+            (files / "input.txt").write_text("a staged mutation")
+            (files / "extra.txt").write_text("undeclared")
+            (files / "result.txt").write_text(command)
+        return {"exit_code": int(command == "failure"), "stdout": "done",
+                "stderr": "", "timed_out": False}
+
+    monkeypatch.setattr(research_workspace, "execute", command)
+    args = {"revision": initial, "paths": ["files/input.txt"], "outputs": ["files/result.txt"]}
+    result = await world.call(resident, "shell", dict(args, command="first result"))
+    assert '"published_outputs": ["files/result.txt"]' in result.text
+    assert (world.research.files / "result.txt").read_text() == "first result"
+    assert (world.research.files / "input.txt").read_text() == "original"
+    assert not (world.research.files / "extra.txt").exists()
+
+    newer = world.research.snapshot()
+    result = await world.call(resident, "shell", dict(args, revision=newer, command="failure"))
+    assert '"published_outputs": []' in result.text
+    assert (world.research.files / "result.txt").read_text() == "first result"
+
+    await write("input.txt", "updated")
+    result = await world.call(resident, "shell", dict(args, revision=newer, command="stale"))
+    assert "Declared inputs or outputs changed" in result.text
+    result = await world.call(resident, "shell", {
+        "command": "inspect", "revision": initial, "readonly": True, "paths": args["paths"],
+    })
+    assert f'"workspace_revision": "{initial}"' in result.text
+    assert observed == [
+        ("first result", "original"), ("failure", "original"), ("inspect", "original"),
+    ]
+
+
 @pytest.mark.asyncio
 async def test_sources_recorded_readable_and_failure_is_not_evidence(world, monkeypatch):
     r = office(world, "Olga")
