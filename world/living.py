@@ -7,11 +7,12 @@ duty (`on_duty`), and is called every hour on the hour, before every change of
 activity (sitting down to work, setting off, arriving, going to bed, falling asleep, waking) and at
 the checkpoint, so that a checkpoint carries the body as of its moment. A resident awake and able
 to eat eats the ready food in its inventory, a helping at a time, as it is reckoned; a dish is eaten
-as it is served. A resident the reckoning finds at work in the lowest band of energy stops work, as
-`leave_work` stops it, keeping its task, and is told that it cannot work until it has slept; before
-an action in its workspace the body is reckoned too, so that the exhausted are refused it
-(`world.tools`). A need that crosses into another band is logged, and told to the resident when it
-is awake at a place (the wake-up, the statement and a purchase's result tell it otherwise).
+as it is served. A resident the reckoning finds on duty (at work, or on its way at work) in the
+lowest band of energy stops work, as `leave_work` stops it, keeping its task, and is told that it
+cannot work until it has slept; before an action in its workspace the body is reckoned too, so
+that the exhausted are refused it (`world.tools`). A need that crosses into another band is
+logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
+purchase's result tell it otherwise).
 
 A resident goes to bed at home, to wake at the hour it gives or when its longest sleep ends, and
 falls asleep once its runtime has nothing more to do; at the forced sleep whoever is still up falls
@@ -41,7 +42,7 @@ def reckon(world: World, r: Resident) -> None:
     """Bring `r`'s body up to the moment at the rates of what it has been doing since it was
     last reckoned, counting its time on duty, let it eat from its stock if
     it is awake and could eat, and note each need that crossed into another band, telling `r`
-    if it is awake at a place; if `r` is at work and exhausted, its work stops."""
+    if it is awake at a place; if `r` is on duty and exhausted, its work stops."""
     now = world.clock.now()
     before = world.body.bands(r.living)
     home = world.config.place(r.home)
@@ -52,14 +53,14 @@ def reckon(world: World, r: Resident) -> None:
     r.reckoned = now
     _feed(world, r)
     note_bands(world, r, before, tell=r.awake and r.place is not None)
-    if isinstance(r.base, Work) and world.body.lowest("energy", r.living.energy):
+    if on_duty(r) and world.body.lowest("energy", r.living.energy):
         _exhausted(world, r)
 
 
 def _exhausted(world: World, r: Resident) -> None:
-    """`r`, found exhausted at work, stops work as `leave_work` stops it and is told that it
+    """`r`, found exhausted on duty, stops work as `leave_work` stops it and is told that it
     cannot work until it has slept, and which task it still holds."""
-    r.base = Idle()
+    off_duty(r)
     told = world.stopped_told(r, EXHAUSTED)
     world.record(
         "leave_work",
@@ -74,6 +75,14 @@ def on_duty(r: Resident) -> bool:
     workplace and, unless one's duty runs anywhere (`Occupation.duty`), leaves by leaving it;
     or on one's way at work, the duty running."""
     return isinstance(r.base, Work) or (isinstance(r.base, Movement) and r.base.working)
+
+
+def off_duty(r: Resident) -> None:
+    """`r`'s duty stops: at work, it is Idle; on its way at work, it goes on its way."""
+    if isinstance(r.base, Movement):
+        r.base.working = False
+    else:
+        r.base = Idle()
 
 
 def activity(world: World, r: Resident) -> Activity:

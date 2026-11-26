@@ -70,7 +70,10 @@ KINDS = {
         "it works (claiming, assigning or acting in a task's workspace, cooking, ordering, "
         "setting a price, examining or treating, announcing, granting)"
     ),
-    "leave_work": Kind("a resident stopped work, or the forced sleep stopped it"),
+    "leave_work": Kind(
+        "a resident stopped work, or exhaustion, the forced sleep or its bed stopped it, on the "
+        "road too"
+    ),
     "claim": Kind("a resident claimed a task and got a workspace", ("task", "instance_id")),
     "assign": Kind(
         "the team leader gave a task to a programmer, or moved it from the one who held it "

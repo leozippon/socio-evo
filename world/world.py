@@ -615,12 +615,13 @@ class World:
     # Work and pay -----------------------------------------------------------------------------
 
     def stop_work(self, r: Resident) -> None:
-        """`r` stops work: by its own `leave_work`, by leaving its workplace or going to bed, or
-        because the forced sleep takes it, so that every stretch of work in the log ends. The
-        body is reckoned first, and may have stopped it already."""
+        """`r` stops work, at work or on its way at work: by its own `leave_work`, by leaving
+        its workplace or going to bed, or because the forced sleep or its bed takes it, so that
+        every stretch of work in the log ends. The body is reckoned first, and may have stopped
+        it already."""
         self.reckon(r)
-        if isinstance(r.base, Work):
-            r.base = Idle()
+        if self.on_duty(r):
+            world.living.off_duty(r)
             self.record("leave_work", lambda w: f"{cap(you(r.name, w))} stopped work.", actor=r)
 
     def stopped_told(self, r: Resident, *why: str) -> str:
@@ -634,7 +635,7 @@ class World:
         """`r` stops work and leaves its conversation, if it is in them, as going elsewhere
         (`going`) does on its own, except that the work of a duty that runs anywhere goes on with
         it on its way (`Occupation.duty`); what it is told of it, a sentence or nothing."""
-        stopped = isinstance(r.base, Work) and not (going and r.occupation.duty == "anywhere")
+        stopped = self.on_duty(r) and not (going and r.occupation.duty == "anywhere")
         if stopped:
             self.stop_work(r)
         left = []

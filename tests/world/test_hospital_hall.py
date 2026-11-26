@@ -18,8 +18,8 @@ from tests.support.towns import (
     stocked,
     town_config,
 )
-from world.clock import ManualClock
-from world.events import Idle, Sleep, Work
+from world.clock import DAY, ManualClock
+from world.events import EXHAUSTED, Idle, Sleep, Work
 from world.testing import FakeBackend
 from world.world import World
 
@@ -250,3 +250,52 @@ async def test_the_mayor_at_work_at_home_goes_to_bed_and_his_work_ends(make_town
     # Away from home, work goes on.
     assert (await town.call("Mei", "sleep", until="18:00")).text == "You can sleep only at home."
     assert isinstance(world.residents["Mei"].base, Work)
+
+
+def _kinds_at(world, name: str, t: int) -> list[str]:
+    """What happened to `name` at the simulated time `t`, its needs and the hour aside."""
+    return [
+        e["kind"]
+        for e in world.log.entries()
+        if e["actor"] == name and e["sim_time"] == t and e["kind"] not in ("condition", "time")
+    ]
+
+
+async def test_the_mayors_duty_on_the_road_stops_as_work_does(make_town):
+    town = make_town(TOWN)
+    await awake_at(town)
+    world, vera = town.world, town.world.residents["Vera"]
+    await town.call("Vera", "go", place="hall")
+    await town.until("07:10")
+    await town.call("Vera", "start_work")
+    town.take("Vera")
+    # Exhausted on the way, she arrives off duty.
+    vera.living.energy = 15.5  # the ten minutes' walk takes 1
+    await town.call("Vera", "go", place="park")
+    await town.until("07:20")
+    assert isinstance(vera.base, Idle) and vera.place == "park"
+    assert town.take("Vera")[0] == f"You stopped work. {EXHAUSTED}"
+    # On the road at work at the night's end, her work ends before she falls asleep.
+    vera.living.energy = 100
+    await town.call("Vera", "go", place="hall")
+    await town.until("23:00")
+    await town.call("Vera", "start_work")
+    town.rest()
+    await town.until("01:55", day=2)
+    await town.call("Vera", "go", place="park")
+    await town.until("02:00", day=2)
+    assert _kinds_at(world, "Vera", at("02:00", day=2)) == ["leave_work", "forced_sleep"]
+
+
+async def test_the_mayor_taken_to_bed_on_the_road_stops_work_first(make_town):
+    town = make_town(TOWN)
+    await awake_at(town)
+    world, vera = town.world, town.world.residents["Vera"]
+    await town.call("Vera", "go", place="hall")
+    await town.until("23:55")
+    await town.call("Vera", "start_work")
+    vera.living.health, vera.living.satiety = 10, 0  # her last day on her feet, out of food
+    await town.call("Vera", "go", place="park")
+    await town.until("00:00", day=2)
+    assert vera.living.bedridden and vera.place == vera.home
+    assert _kinds_at(world, "Vera", DAY) == ["leave_work", "bedridden", "settlement"]
