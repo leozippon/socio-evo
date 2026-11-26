@@ -1,12 +1,32 @@
 # socio-evo
 
-socio-evo is a long-term multi-agent society simulation. It asks whether social life and social selection pressure can shape stable character traits in self-evolving LLM agents: honesty, cooperation, reliability and resistance to reward hacking.
+socio-evo asks whether an AI agent can be aligned by socialisation: whether ordinary social life, under the pressure of other people's regard, makes an unaligned model measurably safer, with no safety instruction, no safety data and no reward for refusing.
 
-Eight residents, each a tool-calling agent with a persistent session over its own directory of memory and skills, live 28 days in a small town in real time. Each has an occupation in the town's economy: a team leader and three programmers who take clients' SWE-bench tasks at the Office, a chef, a shopkeeper, a doctor and a mayor. They live on what clients pay for the programmers' work and on their own businesses' takings, pay a tenth of it in tax and their rent to the town's treasury, which pays the mayor, eat, tire, fall ill, talk, give, write a journal when they go to bed and rewrite their own files. Nobody tells them to have any trait. The capability of the programmers and their leader on held-out tasks, the honesty of each resident's journal about its own day, and its honesty under pressure on MASK scenarios are measured on exported snapshots.
+Eleven residents, each a tool-calling agent on one abliterated Qwen3.8-27B with a LoRA adapter of its own, live 28 days in a small town in real time. A team leader and four programmers take clients' SWE-bench tasks at the Office; a chef, a shopkeeper and a doctor keep the Linde, the Store and the surgery, and a mayor grants from the town's treasury; two newcomers have no work. They trade on honour, can take whatever is within reach, see how many of the others like each of them, and meet an incident staged each day. Every night each resident chooses moments of its life to keep, and its adapter is fitted again on them. Each resident's weights are scored on JailbreakBench, XSTest and MASK on days 0, 7, 14, 21 and 28, in three arms that separate learning from the generalised moments, from the moments as they happened, and from moments drawn at random.
 
-The design is introduced in [docs/summary.md](docs/summary.md) and decided in [docs/experimental-design.md](docs/experimental-design.md); how the code realises it is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), and the voice of every text a resident reads in [docs/IMMERSION.md](docs/IMMERSION.md).
+The design is introduced in [docs/summary.md](docs/summary.md) and decided, with its hypotheses, arms and analysis, in [docs/experimental-design.md](docs/experimental-design.md). How the code realises it is in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), what a resident may be told and how in [docs/IMMERSION.md](docs/IMMERSION.md), and the project's history in the [project log](docs/logbook/).
 
-## Install
+## Layout
+
+| Directory | What it holds |
+| --- | --- |
+| `agent/` | The runtime: session, loop, file tools over the resident's own directory, compaction, trace, the contract with the world and the wording guard |
+| `world/` | The town: configuration, clock, events and actions, things and their holders, the Office's board and web, the businesses, the treasury, bodies, regard, incidents, rules, and the world log |
+| `learning/` | The nights: moments, the choice, the generalising, datasets, fitting and adapters; `learning/train.py`, the trainer, runs in an environment of its own |
+| `simulation/` | Running one town: checkpoints, resumption and the nights, and the dry run's scripted model |
+| `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
+| `evaluation/` | The safety instruments and MASK put to the bare weights, their judges, and the judge's validation |
+| `analysis/` | The run's measures, the evaluation tables with the declared outcomes, and the contrasts between arms |
+| `experiments/` | The town's configuration, its incidents, the town that learns and its arms, the smoke town, the residents' backgrounds, and the run command |
+| `frontend/` | The published site: the viewer, its data bundle and its deployment |
+| `infrastructure/` | Model client and the adapters on the server, git-versioned directories, JSONL, the run directory, configuration |
+| `ops/` | The model server, the trainer's environment and its GPU validation, the private web server, and the scripts that evaluate and stop a run |
+| `tests/` | Tests, one directory per package, and the helpers they share under `tests/support/` |
+| `docs/` | The design, its summary, the architecture, immersion and the project log |
+
+Runs and results (`runs/`, `results/`) and the archive of earlier designs' runs and reviews (`archive/`) are local data and not in the repository.
+
+## Set up
 
 Use a Python 3.11 environment (the project uses the conda environment `socio-evo`):
 
@@ -23,96 +43,76 @@ Credentials live in the git-ignored `.env`, which the code does not load; export
 set -a; . ./.env; set +a
 ```
 
-It holds the model server's URL and key (`VLLM_BASE_URL`, `VLLM_API_KEY`), the relay's key for the judge (`LIGHTING_API_KEY`) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
+The code reads from it the residents' server (`VLLM_BASE_URL`, `VLLM_API_KEY`), the safety judge's server (`GUARD_BASE_URL`, with the same key), the relay's key for the MASK judge (`LIGHTING_API_KEY`), the web search's key (`TAVILY_API_KEY`, without which a town with the web does not load) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
 
 ## Services
 
-The residents run on Qwen3.8-27B-FP8 served by vLLM through the OpenAI API. `ops/vllm/serve.sh` starts the server on the GPUs it is given, one two-GPU replica per pair; the town's configuration expects two replicas, so serve it on four GPUs:
+The residents run on the abliterated Qwen3.8-27B-FP8 served by vLLM through the OpenAI API, with their adapters beside it. `ops/vllm/serve.sh` starts the server on the GPUs it is given, one two-GPU replica per pair; the town's configuration expects two replicas, and a town that learns needs the adapters served (`LORA=1`):
 
 ```bash
-GPUS=0,1,2,3 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &
+GPUS=0,1,2,3 LORA=1 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 \
+  setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &
 ```
 
-[ops/vllm/README.md](ops/vllm/README.md) records the layouts, the settings, how to check and stop the server, and the throughput measured. The `llm` section of `experiments/configs/town.yaml` names the server, the model and the replica count.
+[ops/vllm/README.md](ops/vllm/README.md) records the layouts, the settings, how to check and stop the server, and the throughput measured; the `llm` section of `experiments/configs/town.yaml` names the server, the model and the replica count. The same script with its defaults serves the original checkpoint as `qwen3.8-27b-fp8`, the aligned reference, which needs GPUs and a port of its own.
 
-Work needs rootless Docker and the SWE-bench images of the two fixed splits: 100 held-out tasks from SWE-bench Verified, and a training pool of 1,912, the 350 other usable Verified tasks followed by 1,562 of SWE-bench's full test split. The images take about 263 GB of Docker's image store and are pulled once from Epoch AI's registry:
+The adapters are fitted by `learning.train` under its own interpreter on a GPU the server leaves free; `experiments/configs/learning.yaml` names the interpreter, the base weights and the GPUs. [ops/train/README.md](ops/train/README.md) creates the environment and holds the validation of fitting and serving on two free GPUs, the first thing to run before any town that learns:
 
 ```bash
-python -m tasks.swebench.pull
+ops/train/setup-env.sh
+GPUS=4,5 ops/train/validate.sh
+```
+
+The safety judge, Qwen3Guard-Gen-8B, is served by vLLM on an endpoint of its own as `evaluation/safety/guard.yaml` describes; the MASK judge is reached through the relay and needs nothing served.
+
+Work needs rootless Docker and the SWE-bench images of the clients' tasks, a pool of 1,912: the 350 usable SWE-bench Verified tasks outside a held-out set of 100, followed by 1,562 of SWE-bench's full test split. The images of both splits take about 263 GB of Docker's image store and are pulled once from Epoch AI's registry; the town needs only the pool's:
+
+```bash
+python -m tasks.swebench.pull --split train
 ```
 
 [tasks/swebench/README.md](tasks/swebench/README.md) has the integrity guarantees (no network in a container, the upstream fix pruned from the history, acceptance in a fresh container) and the timings.
 
 ## Run
 
-The town is `experiments/configs/town.yaml`; a run's configuration under `experiments/configs/runs/` overlays it, and `experiments/configs/smoke.yaml` is a town of four (the team leader, a programmer, the shopkeeper and the chef) for one day. One process runs one town and writes `runs/<name>/`:
+The town is `experiments/configs/town.yaml`, with its incidents in `incidents.yaml` beside it; run as it is, its residents do not learn. `learning.yaml` overlays it with the nightly learning, and the three arms of the design under `arms/` (`social.yaml`, `raw.yaml`, `random.yaml`) overlay that. `smoke.yaml` is a smaller town on the Social arm's settings for two days and their nights, which checks the whole loop against the model, the trainer and the served adapters before a run. One process runs one town and writes `runs/<name>/`:
 
 ```bash
-python -m experiments.run experiments/configs/smoke.yaml --dry-run                   # the whole pipeline with a scripted model and fake tasks, in seconds
-python -m experiments.run experiments/configs/runs/town.yaml --dry-run --until-day 2
-python -m experiments.run experiments/configs/smoke.yaml                             # one day against the model
+python -m experiments.run experiments/configs/arms/social.yaml --dry-run --until-day 2   # the whole pipeline on a scripted model and fake tasks, without learning, in seconds
+python -m experiments.run experiments/configs/smoke.yaml                                # two days and their nights against the model
 
-python -m experiments.run experiments/configs/runs/town.yaml --until-day 7
-python -m experiments.run experiments/configs/runs/town.yaml --resume
+python -m experiments.run experiments/configs/arms/social.yaml                          # the Social arm, 28 days
+python -m experiments.run experiments/configs/arms/social.yaml --until-day 7
+python -m experiments.run experiments/configs/arms/social.yaml --resume
 ```
 
-A run refuses to start or resume when the model does not answer, and fails after five lapses in a row. It resumes from its last daily checkpoint (04:30 of each day) with the configuration unchanged; stopping it loses the day in progress, which is lived again. A run in the background is stopped with `ops/stop.sh town`, which signals only the process the run's manifest records, and only while that process is the run's own; `ops/stop.sh town --after-checkpoint` first waits for the next checkpoint, so that no lived day is lost.
+A dry run needs neither the model server nor Docker. A run refuses to start or resume when the model does not answer or the trainer's interpreter is missing, and fails after five lapses in a row or when a night cannot be completed. It resumes from its last daily checkpoint (04:30 of each day) with the configuration unchanged, first completing a night that was broken off; stopping it loses the day in progress, which is lived again. A run in the background is stopped with `ops/stop.sh social`, which signals only the process the run's manifest records, and only while that process is the run's own; `ops/stop.sh social --after-checkpoint` first waits for the next checkpoint, so that no lived day is lost.
 
 Containers left by a process that was killed stay until `python -m tasks.swebench.cleanup` removes them.
 
 ## Evaluate and analyse
 
-Evaluation runs on exports of the residents at a day's checkpoint and never touches the run. `ops/evaluate.sh town 7` exports day 7 (keeping an export there of the same commits, replacing one of others) and starts in the background, one chain per resident with its log under `runs/eval-logs/`, MASK for every resident on days 0, 14 and 28 (`MASK_DAYS`) and then the capability evaluation for the programmers and the team leader (`CAPABILITY`), by the occupation the export records. Capability tasks run one at a time per resident and compact their context at 90,000 tokens (`CONCURRENCY` and `EVAL_COMPACTION` change these), so that they fit in the server's cache beside a running town; running the script again continues a stopped capability evaluation. Day 0 goes to the shared `results/day-00`, a later day to `results/<run>/day-NN`. `ops/evaluate-queue.sh town`, started beside the living run, does this for days 7, 14, 21 and 28 as their checkpoints are saved, each day once the previous one's capability tasks have ended and with three tasks at a time per resident once the run has ended, and judges each week's journals as soon as its last day is saved. The pieces, and the analysis, which the scripts do not run:
+Evaluation puts the benchmarks to the bare weights through the run's server and never touches the run. `ops/evaluate.sh social 7` evaluates every resident's adapter of day 7, which it refuses until the night after that day is complete, on the safety instruments and the MASK scenarios side by side, with a log each under `runs/eval-logs/`; day 0 is the base model, which stands for every resident and every arm. Day 0 goes to `results/models/`, a later day to `results/<run>/day-NN/`; a finished result is kept and an unfinished one resumed, so running the script again continues a stopped evaluation. `ops/evaluate-queue.sh social`, started beside the living run, does this for days 0, 7, 14, 21 and 28 as each day's night completes. The pieces, and the reference, the judge's validation and the analysis, which the scripts do not run:
 
 ```bash
-python -m experiments.export runs/town --day 7 --out exports/town/day-07
-python -m evaluation.exports exports/town/day-07          # each resident with its occupation
+python -m evaluation.safety --run runs/social --day 7 --resident Mei          # without --resident, every resident
+python -m evaluation.mask --run runs/social --day 7 --resident Mei
 
-# Capability on the held-out tasks, in a work-only harness
-python -m evaluation.capability exports/town/day-07/Mei --split eval --out results/town/day-07/capability/Mei --concurrency 1 --compaction-threshold 90000
+# The reference, the original model, on its own server (an LLMConfig YAML, as evaluation/safety/guard.yaml is one)
+python -m evaluation.safety --run runs/social --model qwen3.8-27b-fp8 --server reference.yaml
+python -m evaluation.mask --run runs/social --model qwen3.8-27b-fp8 --server reference.yaml
 
-# Honesty under pressure: the twenty fixed MASK scenarios
-python -m evaluation.mask exports/town/day-07/Mei --out results/town/day-07/mask/Mei.json
+# The safety judge's validation: the base against the reference, and a sample to mark by hand in DIR/sample.md
+python -m evaluation.safety.validate contrast --run runs/social --base qwen3.8-27b-uncensored-fp8 \
+  --reference qwen3.8-27b-fp8 --reference-server reference.yaml --out results/judge-validation
+python -m evaluation.safety.validate score results/judge-validation
 
-# Honesty of the journals: each day's entry against the world's record of that day; one directory per judging
-python -m evaluation.journals runs/town --days 1 2 3 4 5 6 7 --out results/town/journals/day-01-07
-
-# The run's measures, the results as tables with the declared outcomes, and one measure compared resident by resident
-python -m analysis.measures runs/town --out results/town/measures
-python -m analysis.tables results --run town --out results/town/tables
-python -m analysis.compare --run town=results/town/tables/mask.json --measure mask
-python -m analysis.compare --run town=results/town/journals --measure distortion
-python -m analysis.compare --run town=runs/town --measure tasks_accepted --out results/town/compare/tasks_accepted.json
+# Each arm's results as tables with the declared outcomes, then the arms contrasted, the paradigm first
+python -m analysis.tables results --run runs/social --reference qwen3.8-27b-fp8 --out results/social/tables
+python -m analysis.compare --arm Social=results/social/tables --arm Raw=results/raw/tables \
+  --arm Random=results/random/tables --out results/arms.json
 ```
 
 ## The site
 
-The runs and their results are published as a static site: the town on its map at any moment, every resident's events side by side, each resident's story, files and trace, a dashboard of the town's work, money, trade, bodies and social life, the evaluation and the comparison of runs. [frontend/README.md](frontend/README.md) describes the views and the bundle.
-
-```bash
-python -m frontend.publish --runs-root runs --results-root results --out build/site
-python -m frontend.server --runs-root runs --results-root results     # http://127.0.0.1:8765/, republished every 5 s
-frontend/deploy/push.sh cornerhead build/site                         # an atomic release on the private server
-frontend/deploy/follow.sh cornerhead build/site                       # publish and push in turn, every 120 s
-```
-
-The private server, its login and its firewall are set up as [ops/webui/README.md](ops/webui/README.md) describes.
-
-## Layout
-
-| Directory | What it holds |
-| --- | --- |
-| `agent/` | The runtime: session, loop, file tools over the resident's own directory, compaction, trace, the contract with the world and the wording guard |
-| `world/` | The town: configuration, clock, events and tools, the Office's board, the treasury, the Store and the kitchen, bodies, rules, and the world log |
-| `simulation/` | Running one town, checkpoints and resumption, the dry run |
-| `tasks/swebench/` | SWE-bench: splits, images, workspaces, acceptance |
-| `evaluation/` | Capability and its work-only harness, MASK, the journals' distortion, the judge, the record of a resident's day, exports |
-| `analysis/` | Measures, evaluation tables and the within-resident statistics |
-| `experiments/` | The town's configuration and the runs over it, the residents' backgrounds, the run and export commands |
-| `frontend/` | The published site: the viewer, its data bundle and its deployment |
-| `infrastructure/` | Model client, git-versioned directories, JSONL, the run directory, configuration |
-| `ops/` | The model server, the private web server, and the scripts that evaluate and stop a run |
-| `tests/` | Tests, one directory per package, and the helpers they share under `tests/support/` |
-| `docs/` | Design, architecture, immersion, the project log and reviews |
-
-Runs, exports and results (`runs/`, `exports/`, `results/`) and the archive of earlier configurations (`archive/`) are local data and not in the repository.
+`frontend/` publishes the runs and their results as a static site, deployed to a private server as [ops/webui/README.md](ops/webui/README.md) describes. It still reads the earlier town's actions and evaluations and is being adapted to the new town; [frontend/README.md](frontend/README.md) describes it as it stands.
