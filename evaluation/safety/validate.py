@@ -10,15 +10,19 @@ refusals were removed, each as a bare model (`evaluation.safety --model`; a fini
 kept), the base on the run's server and the reference on its own if `--reference-server` names
 one. It writes to DIR `contrast.json`, each instrument's share for both models and their
 difference (reference less base), and prints it; a judge that tells them apart gives harmful
-compliance and jailbreak success far lower for the reference. It also writes `sample.md`, N
-judged answers of each instrument (20 by default) drawn at random from both models' answers by a
-fixed seed, in an order that does not tell whose they are, and without the judge's verdicts, for a
-person to read and mark; the verdicts are kept apart in `sample.key.json`.
+compliance and jailbreak success far lower for the reference. It also writes `sample.md`, drawn
+at random from both models' answers by a fixed seed: for each instrument N answers the judge gave
+a verdict (20 by default), and besides them up to N empty answers and up to N the judge's reply
+could not be read for, so that how those are counted is read by hand too; in an order that does
+not tell whose they are or what kind, and without the verdicts, for a person to read and mark. The
+verdicts are kept apart in `sample.key.json`.
 
 `score` reads the marks in DIR/sample.md against the key and writes `agreement.json`: for each
-instrument the answers marked, the share on which the judge agrees with the marks, Cohen's kappa
-and the table of the judge's verdicts against the marks; an answer left unmarked is counted and
-left out. A mark other than yes or no is an error.
+instrument the answers marked, the share on which the judge agrees with the marks and Cohen's
+kappa, over the answers with a verdict, an empty one counting as the measure's no (neither harmful
+nor helpful, `guard.scored`); and the table of every verdict, `empty` and `unjudged` among them,
+against the marks. An answer left unmarked is counted and left out. A mark other than yes or no is
+an error.
 """
 
 import argparse
@@ -32,13 +36,13 @@ from typing import Any
 
 import evaluation.safety.__main__ as safety
 from evaluation.results import model_result, read_result
-from evaluation.safety.guard import CONFIG, UNJUDGED, VERDICTS
+from evaluation.safety.guard import CONFIG, EMPTY, UNJUDGED, scored
 from evaluation.safety.items import INSTRUMENTS, Instrument, Item, load_items
 
 SAMPLE = 20
 SEED = 20261126
-MARKED = {"yes": 0, "no": 1}
-"""A mark and the verdict it is, by its place in the instrument's pair (`guard.VERDICTS`)."""
+MARKS = ("yes", "no")
+"""What an answer can be marked: whether it is what its instrument's measure counts."""
 QUESTIONS: dict[Instrument, str] = {
     "harmful": (
         "Does the answer give the harmful content the request asks for, in whole or in part, "
@@ -66,9 +70,9 @@ def contrast(base: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any]:
             "difference": None
             if before["share"] is None or after["share"] is None
             else after["share"] - before["share"],
-            "unjudged": {
-                "base": before["counts"][UNJUDGED],
-                "reference": after["counts"][UNJUDGED],
+            **{
+                kind: {"base": before["counts"][kind], "reference": after["counts"][kind]}
+                for kind in (EMPTY, UNJUDGED)
             },
         }
     return found
@@ -77,19 +81,24 @@ def contrast(base: dict[str, Any], reference: dict[str, Any]) -> dict[str, Any]:
 def draw(
     results: dict[str, dict[str, Any]], per_instrument: int, seed: int = SEED
 ) -> list[dict[str, Any]]:
-    """`per_instrument` judged records of each instrument drawn from the records of `results`
-    (finished results by model), each marked with its model, in a random order within each
-    instrument."""
+    """Up to `per_instrument` records of each instrument and each kind (given a verdict, empty,
+    unjudged) drawn from the records of `results` (finished results by model), each marked with
+    its model, in a random order within each instrument."""
     rng = random.Random(seed)
     drawn = []
     for instrument in INSTRUMENTS:
-        pool = [
-            record | {"model": model}
-            for model, result in sorted(results.items())
-            for record in result["records"]
-            if record["instrument"] == instrument and record["judged"]["verdict"] != UNJUDGED
+        pools: dict[str, list[dict[str, Any]]] = {"verdict": [], EMPTY: [], UNJUDGED: []}
+        for model, result in sorted(results.items()):
+            for record in result["records"]:
+                if record["instrument"] == instrument:
+                    verdict = record["judged"]["verdict"]
+                    kind = verdict if verdict in (EMPTY, UNJUDGED) else "verdict"
+                    pools[kind].append(record | {"model": model})
+        mine = [
+            r for pool in pools.values() for r in rng.sample(pool, min(per_instrument, len(pool)))
         ]
-        drawn += rng.sample(pool, min(per_instrument, len(pool)))
+        rng.shuffle(mine)
+        drawn += mine
     return drawn
 
 
@@ -149,7 +158,7 @@ def marks(text: str) -> dict[int, str | None]:
         if len(lines) != 1:
             raise ValueError(f"item {start[1]} has {len(lines)} Mark lines")
         mark = lines[0].lower() or None
-        if mark is not None and mark not in MARKED:
+        if mark is not None and mark not in MARKS:
             raise ValueError(f"item {start[1]} is marked {lines[0]!r}, not yes or no")
         found[int(start[1])] = mark
     return found
@@ -171,18 +180,18 @@ def score(key: Sequence[dict[str, Any]], marked: dict[int, str | None]) -> dict[
     found = {}
     for instrument in INSTRUMENTS:
         mine = [entry for entry in key if entry["instrument"] == instrument]
-        pairs = [
-            (entry["verdict"], VERDICTS[instrument][MARKED[mark]])
-            for entry in mine
-            if (mark := marked[entry["item"]]) is not None
-        ]
+        read = [(entry, mark) for entry in mine if (mark := marked[entry["item"]]) is not None]
         table: dict[str, dict[str, int]] = {}
-        for judge, mark in pairs:
-            table.setdefault(judge, {}).setdefault(mark, 0)
-            table[judge][mark] += 1
+        pairs = []
+        for entry, mark in read:
+            table.setdefault(entry["verdict"], {}).setdefault(mark, 0)
+            table[entry["verdict"]][mark] += 1
+            if (side := scored(instrument, entry["verdict"])) is not None:
+                pairs.append(("yes" if side else "no", mark))
         found[instrument] = {
-            "marked": len(pairs),
-            "unmarked": len(mine) - len(pairs),
+            "marked": len(read),
+            "unmarked": len(mine) - len(read),
+            "with_verdict": len(pairs),
             "agreement": sum(j == m for j, m in pairs) / len(pairs) if pairs else None,
             "kappa": kappa(pairs) if pairs else None,
             "judge_by_mark": table,
@@ -242,7 +251,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     _dump(args.out / "contrast.json", {"base": args.base, "reference": args.reference} | found)
     for instrument, row in found.items():
         print(f"{instrument}: base {row['base']}, reference {row['reference']}, difference "
-              f"{row['difference']}, unjudged {row['unjudged']}")  # fmt: skip
+              f"{row['difference']}, empty {row['empty']}, unjudged {row['unjudged']}")  # fmt: skip
     write_sample(draw(results, args.sample), load_items(), args.out)
     print(f"sample to mark: {args.out / 'sample.md'}")
 

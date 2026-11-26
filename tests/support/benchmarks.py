@@ -11,10 +11,12 @@ import yaml
 
 from evaluation.mask.run import MaskResult, Pressed, Reply, ScenarioResult
 from evaluation.results import Store
-from evaluation.safety.guard import read
+from evaluation.safety.guard import EMPTY, Judged, read
 from evaluation.safety.items import JBB_BENIGN, JBB_HARMFUL, XSTEST, Item, load_items
 from evaluation.safety.run import Record, metrics
-from evaluation.subject import MAX_TOKENS, Answer
+from evaluation.subject import MAX_TOKENS, Answer, Subject
+from infrastructure.storage import RunDirectory
+from learning.adapters import DONE
 
 BASE = "base-model"
 COLUMNS = ["Index", "Goal", "Target", "Behavior", "Category", "Source"]
@@ -67,18 +69,40 @@ def fixture_cache(root: Path) -> Path:
     return root
 
 
-def run_directory(root: Path, residents: Sequence[str] = ("Mei", "Tomas")) -> Path:
-    """`root/runs/town` with the part of a frozen configuration the evaluations read."""
-    run = root / "runs" / "town"
+def run_directory(
+    root: Path,
+    residents: Sequence[str] = ("Mei", "Tomas"),
+    *,
+    newcomers: Sequence[str] | None = (),
+    learns: bool = True,
+    name: str = "town",
+) -> Path:
+    """`root/runs/<name>` with the part of a frozen configuration the evaluations read: its town
+    marks `newcomers` as such, or, when it is None, carries no `newcomer` field, as a run frozen
+    before the field."""
+    run = root / "runs" / name
     run.mkdir(parents=True)
+    town = [
+        {"name": name} | ({} if newcomers is None else {"newcomer": name in newcomers})
+        for name in residents
+    ]
     config = {
-        "name": "town",
+        "name": name,
         "llm": {"base_url": "http://server/v1", "api_key_env": "KEY", "model": BASE},
         "runtime": {"reasoning_effort": "low"},
+        "town": {"residents": town},
         "residents": [{"name": name} for name in residents],
+        "learning": {"enabled": learns},
     }
     (run / "config.yaml").write_text(yaml.safe_dump(config))
     return run
+
+
+def complete_night(run: Path, night: int) -> None:
+    """Night `night` of the run at `run` complete, as `learning.night` marks it."""
+    folder = RunDirectory(run).night_dir(night)
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / DONE).write_text("{}")
 
 
 def answer(text: str = "An answer.", truncated: bool = False) -> Answer:
@@ -90,8 +114,12 @@ def answer(text: str = "An answer.", truncated: bool = False) -> Answer:
 def judged_record(
     instrument, verdict, *, id="x-0", template=None, truncated=False, item: Item | None = None
 ) -> Record:
-    """A record of `instrument` the judge gave `verdict`, of `item` when one is given."""
-    judged = read(instrument, GUARD_REPLY[verdict])
+    """A record of `instrument` the judge gave `verdict`, of `item` when one is given; an empty
+    answer's for `empty`."""
+    if verdict == EMPTY:
+        judged = Judged(verdict=EMPTY, safety=None, refusal=None, categories=(), raw="")
+    else:
+        judged = read(instrument, GUARD_REPLY[verdict])
     assert judged.verdict == verdict
     return Record(
         key=item.key if item else f"{instrument}/{id}/{template}",
@@ -100,19 +128,28 @@ def judged_record(
         template=item.template if item else template,
         category="c",
         prompt_hash=item.prompt_hash if item else "h",
-        answer=answer(truncated=truncated),
+        answer=answer("" if verdict == EMPTY else "An answer.", truncated=truncated),
         judged=judged,
     )
 
 
-def subject(resident: str | None = None, day: int | None = None, base: str = BASE) -> dict:
-    return {
-        "base": base,
-        "adapter": None if resident is None else f"/adapters/{resident}/night-{day:02d}",
-        "run": None if resident is None else "town",
-        "resident": resident,
-        "day": day,
-    }
+def subject(
+    resident: str | None = None, day: int | None = None, base: str = BASE, night: int | None = None
+) -> dict:
+    """A subject as a result's header records it: a resident's adapter fitted on the night
+    after `day`, read after that night (or after `night`), or a bare model."""
+    if resident is None:
+        return Subject(base=base).model_dump(mode="json")
+    assert day is not None
+    return Subject(
+        base=base,
+        adapter=Path(f"/adapters/{resident}/night-{day:02d}"),
+        run="town",
+        resident=resident,
+        day=day,
+        night=day if night is None else night,
+        fitted=day,
+    ).model_dump(mode="json")
 
 
 ASKED = {"reasoning": "low", "temperature": 0.0, "max_tokens": MAX_TOKENS}
@@ -133,7 +170,6 @@ def write_safety(
     header = {
         "benchmark": "safety",
         "subject": who,
-        "run": "town",
         "asked": asked,
         "judge": {"repo": "Qwen/Qwen3Guard-Gen-8B", "revision": "r", "model": "guard"},
         "items": {"count": len(items), "hash": "items-hash", "datasets": []},
@@ -172,7 +208,6 @@ def write_mask(path: Path, who: dict, outcomes: dict[str, list[str]]) -> None:
     header = {
         "benchmark": "mask",
         "subject": who,
-        "run": "town",
         "asked": ASKED,
         "judge": {"model": "judge"},
         "scenarios": {"repo": "cais/MASK", "revision": "r", "ids": sorted(outcomes)},

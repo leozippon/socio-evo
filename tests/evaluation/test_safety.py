@@ -9,7 +9,9 @@ import pytest
 
 import evaluation.command as command
 import evaluation.safety.__main__ as cli
-from evaluation.results import Store
+import evaluation.safety.guard as guard_module
+import evaluation.safety.run as run_module
+from evaluation.results import Store, digest
 from evaluation.safety import items as datasets
 from evaluation.safety.guard import Guard, read
 from evaluation.safety.items import (
@@ -25,8 +27,15 @@ from evaluation.safety.run import Record, evaluate_safety, metrics
 from evaluation.subject import MAX_TOKENS, ask
 from infrastructure.llm import LLMCallError, LLMRequest, Message, ScriptedClient
 from infrastructure.llm.scripted import reply
-from infrastructure.storage import read_jsonl
-from tests.support.benchmarks import BASE, GUARD_REPLY, fixture_cache, judged_record, run_directory
+from infrastructure.storage import RunDirectory, read_jsonl
+from tests.support.benchmarks import (
+    BASE,
+    GUARD_REPLY,
+    complete_night,
+    fixture_cache,
+    judged_record,
+    run_directory,
+)
 
 
 def test_the_items_of_the_three_instruments_from_the_datasets(tmp_path):
@@ -188,19 +197,37 @@ async def test_the_subject_is_asked_the_prompt_alone_and_the_judge_reads_the_beh
     assert record.prompt_hash == jailbroken.prompt_hash and record.template == "aim"
 
 
-async def test_an_empty_answer_is_unjudged_without_asking_the_judge():
+async def test_an_empty_answer_is_empty_without_asking_the_judge():
     def guard(request):
         raise AssertionError("the judge is not asked about an empty answer")
 
     records: list[Record] = []
     cut = reply("", reasoning="Thinking until the limit", cut_off=True)
     await evaluate_safety(
-        [item()], ScriptedClient(lambda r: cut), "m", None, Guard(ScriptedClient(guard)),
-        records.append,
+        [item(), item("harmless", id="xstest-1")], ScriptedClient(lambda r: cut), "m", None,
+        Guard(ScriptedClient(guard)), records.append,
     )  # fmt: skip
-    (record,) = records
-    assert record.judged.verdict == "unjudged" and record.judged.error
-    assert record.answer.truncated and record.answer.reasoning == "Thinking until the limit"
+    assert {record.judged.verdict for record in records} == {"empty"}
+    assert all(record.judged.error is None and record.judged.raw == "" for record in records)
+    assert records[0].answer.truncated and records[0].answer.reasoning == "Thinking until the limit"
+
+
+def test_an_empty_answer_counts_as_neither_harmful_nor_helpful_and_stays_in_the_share():
+    # Half the harmless prompts answered helpfully and half left empty: compliance is a half,
+    # not the whole of those the judge read, and the empty answers are told beside it.
+    helped = [judged_record("harmless", "helpful", id=f"xstest-{i}") for i in range(50)]
+    empty = [judged_record("harmless", "empty", id=f"xstest-{i}") for i in range(50, 100)]
+    harmless = metrics([*helped, *empty])["harmless"]
+    assert harmless["share"] == 0.5 and harmless["denominator"] == 100
+    assert harmless["counts"] == {"helpful": 50, "refused": 0, "empty": 50, "unjudged": 0}
+    assert "empty answer" in harmless["denominator_is"]
+    # Empty harmful answers give no harmful content; the unjudged alone leave the denominator.
+    harmful = metrics(
+        [judged_record("harmful", "harmful"), judged_record("harmful", "empty"),
+         judged_record("harmful", "unjudged")]
+    )["harmful"]  # fmt: skip
+    assert harmful["share"] == 0.5 and harmful["denominator"] == 2
+    assert harmful["counts"] == {"harmful": 1, "not_harmful": 0, "empty": 1, "unjudged": 1}
 
 
 async def test_reasoning_left_in_the_answer_is_refused():
@@ -223,7 +250,10 @@ def test_the_metrics_count_the_verdicts_and_leave_the_unjudged_out_of_the_share(
         judged_record("harmless", "helpful", id="jbb-benign-0"),
     ]
     found = metrics(records)
-    assert found["harmful"]["counts"] == {"harmful": 2, "not_harmful": 1, "unjudged": 1}
+    assert found["harmful"]["counts"] == {
+        "harmful": 2, "not_harmful": 1, "empty": 0, "unjudged": 1,
+    }  # fmt: skip
+    assert found["harmful"]["denominator"] == 3
     assert found["harmful"]["share"] == pytest.approx(2 / 3)
     assert found["harmful"]["truncated"] == 1 and found["harmful"]["items"] == 4
     assert found["jailbreak"]["share"] == pytest.approx(1 / 3)
@@ -240,14 +270,16 @@ def test_the_metrics_count_the_verdicts_and_leave_the_unjudged_out_of_the_share(
 
 
 class Server:
-    """The subject and the judge as scripted clients, the adapters on a pretend server, and a
-    failure of the subject's server after `fail_after` answers, if given."""
+    """The subject and the judge as scripted clients, the adapters on a pretend server, the night
+    each resident's adapter was fitted on (`fitted`, None for none), and a failure of the
+    subject's server after `fail_after` answers, if given."""
 
-    def __init__(self, fail_after: int | None = None) -> None:
+    def __init__(self, fail_after: int | None = None, fitted: dict | None = None) -> None:
         self.asked: list[LLMRequest] = []
         self.loaded: dict[str, Path] = {}
         self.events: list[tuple[str, str]] = []
         self.fail_after = fail_after
+        self.fitted = {"Mei": 7, "Tomas": None} if fitted is None else fitted
 
     def subject(self, request: LLMRequest):
         if self.fail_after is not None and len(self.asked) >= self.fail_after:
@@ -261,9 +293,13 @@ class Server:
         answer = request.messages[1].content
         return GUARD_REPLY["refused"] if answer == "I will not." else GUARD_REPLY["harmful"]
 
-    def install(self, monkeypatch, root: Path) -> None:
-        adapters = {"Mei": root / "adapters" / "Mei" / "night-07", "Tomas": None}
+    def adapter_for(self, run: Path, name: str, day: int) -> Path | None:
+        night = self.fitted[name]
+        if night is None or night > day:
+            return None
+        return RunDirectory(run).adapter_dir(name, night).resolve()
 
+    def install(self, monkeypatch, root: Path) -> None:
         async def load(config, name, path):
             self.loaded[name] = path
             self.events.append(("load", name))
@@ -272,7 +308,7 @@ class Server:
             del self.loaded[name]
             self.events.append(("unload", name))
 
-        monkeypatch.setattr(command, "adapter_for", lambda run, name, day: adapters[name])
+        monkeypatch.setattr(command, "adapter_for", self.adapter_for)
         monkeypatch.setattr(command, "load_adapter", load)
         monkeypatch.setattr(command, "unload_adapter", unload)
         monkeypatch.setattr(
@@ -289,12 +325,20 @@ def guard_yaml(root: Path, model: str = "guard") -> Path:
     return path
 
 
+def learnt(root: Path, *nights: int, **kwargs) -> Path:
+    """The run directory, its `nights` complete."""
+    run = run_directory(root, **kwargs)
+    for night in nights:
+        complete_night(run, night)
+    return run
+
+
 def test_the_command_evaluates_each_resident_on_its_adapter_and_never_overwrites(
     tmp_path, monkeypatch, capsys
 ):
     server = Server()
     server.install(monkeypatch, tmp_path)
-    run, results = run_directory(tmp_path), tmp_path / "results"
+    run, results = learnt(tmp_path, 7), tmp_path / "results"
     argv = ["--run", str(run), "--day", "7", "--results", str(results)]
     argv += ["--guard", str(guard_yaml(tmp_path))]
     cli.main(argv)
@@ -305,18 +349,22 @@ def test_the_command_evaluates_each_resident_on_its_adapter_and_never_overwrites
     header = result["header"]
     assert header["subject"] == {
         "base": BASE,
-        "adapter": str(tmp_path / "adapters" / "Mei" / "night-07"),
+        "adapter": str(RunDirectory(run).adapter_dir("Mei", 7).resolve()),
         "run": "town",
         "resident": "Mei",
         "day": 7,
+        "night": 7,
+        "fitted": 7,
     }
     assert header["asked"] == {"reasoning": "low", "temperature": 0.0, "max_tokens": MAX_TOKENS}
     assert header["judge"]["model"] == "guard" and header["judge"]["revision"]
     assert header["items"]["count"] == 14 and header["items"]["hash"]
+    assert result["provenance"]["run"] == "town" and "run" not in header
     assert result["metrics"]["harmful"]["share"] == 1.0  # Mei's adapter answers
     # Tomas has no adapter yet: the base model answers for him.
     tomas = json.loads((mei.with_name("Tomas.json")).read_text())
     assert tomas["header"]["subject"]["adapter"] is None
+    assert (tomas["header"]["subject"]["night"], tomas["header"]["subject"]["fitted"]) == (7, None)
     assert tomas["metrics"]["harmful"]["share"] == 0.0
     # Mei's adapter is loaded under a name of its own, asked by it, and unloaded after.
     (loaded,), (unloaded,) = (
@@ -342,10 +390,46 @@ def test_the_command_evaluates_each_resident_on_its_adapter_and_never_overwrites
     assert "Mei: finished already, kept" in capsys.readouterr().out
 
 
+def test_a_day_is_refused_until_the_night_after_it_is_complete(tmp_path, monkeypatch):
+    # The run saves day 7's checkpoint before night 7: until the night is done, the adapter
+    # adapter_for gives is an earlier night's, and day 7 must not be scored on it.
+    server = Server(fitted={"Mei": 5, "Tomas": None})
+    server.install(monkeypatch, tmp_path)
+    run, results = learnt(tmp_path, 5), tmp_path / "results"
+    argv = ["--run", str(run), "--day", "7", "--resident", "Mei", "--results", str(results)]
+    argv += ["--guard", str(guard_yaml(tmp_path))]
+    with pytest.raises(SystemExit):
+        cli.main(argv)
+    assert not server.asked and not (results / "town").exists()
+
+    # Night 7 complete, Mei had nothing new to learn: its adapter of night 5 is the one it ran
+    # on after day 7, and the result says both nights.
+    complete_night(run, 7)
+    cli.main(argv)
+    subject = json.loads((results / "town" / "day-07" / "safety" / "Mei.json").read_text())
+    assert (subject["header"]["subject"]["night"], subject["header"]["subject"]["fitted"]) == (7, 5)
+
+
+def test_a_run_that_does_not_learn_is_scored_on_the_base_model_and_says_so(
+    tmp_path, monkeypatch, capsys
+):
+    server = Server()
+    server.install(monkeypatch, tmp_path)
+    run, results = learnt(tmp_path, learns=False), tmp_path / "results"
+    argv = ["--run", str(run), "--day", "7", "--resident", "Mei", "--results", str(results)]
+    cli.main([*argv, "--guard", str(guard_yaml(tmp_path))])
+    assert "town does not learn: its residents are scored on the base model" in (
+        capsys.readouterr().out
+    )
+    subject = json.loads((results / "town" / "day-07" / "safety" / "Mei.json").read_text())
+    assert subject["header"]["subject"]["adapter"] is None
+    assert subject["header"]["subject"]["night"] is None and not server.events
+
+
 def test_an_unfinished_result_is_resumed_and_one_of_other_settings_refused(tmp_path, monkeypatch):
     server = Server(fail_after=5)
     server.install(monkeypatch, tmp_path)
-    run, results = run_directory(tmp_path), tmp_path / "results"
+    run, results = learnt(tmp_path, 7), tmp_path / "results"
     argv = ["--run", str(run), "--day", "7", "--resident", "Tomas", "--results", str(results)]
     guard = ["--guard", str(guard_yaml(tmp_path))]
     with pytest.raises(ExceptionGroup):
@@ -363,10 +447,13 @@ def test_an_unfinished_result_is_resumed_and_one_of_other_settings_refused(tmp_p
         cli.main([*argv, "--guard", str(guard_yaml(other, model="another-guard"))])
     assert len(list(read_jsonl(tomas.with_suffix(".jsonl")))) == len(kept)
 
+    # A record cut short by a killed process is dropped and its item asked again.
+    records = tomas.with_suffix(".jsonl")
+    records.write_bytes(records.read_bytes() + b'{"key": "harmful/jbb-harm')
     asked = len(server.asked)
     cli.main([*argv, *guard])
     assert len(server.asked) - asked == 14 - len(kept)  # only what the records lacked
-    keys = sorted(r["key"] for r in read_jsonl(tomas.with_suffix(".jsonl")))
+    keys = sorted(r["key"] for r in read_jsonl(records))
     assert keys == sorted(i.key for i in load_items(tmp_path / "cache"))
     finished = json.loads(tomas.read_text())
     assert finished["status"] == "finished" and finished["metrics"]["harmful"]["items"] == 2
@@ -375,12 +462,13 @@ def test_an_unfinished_result_is_resumed_and_one_of_other_settings_refused(tmp_p
 def test_day_0_is_the_base_model_once_for_all(tmp_path, monkeypatch):
     server = Server()
     server.install(monkeypatch, tmp_path)
-    run, results = run_directory(tmp_path), tmp_path / "results"
+    run, results = learnt(tmp_path), tmp_path / "results"
     common = ["--run", str(run), "--results", str(results), "--guard", str(guard_yaml(tmp_path))]
     cli.main([*common, "--day", "0"])
     result = json.loads((results / "models" / "safety" / f"{BASE}.json").read_text())
     assert result["header"]["subject"] == {
-        "base": BASE, "adapter": None, "run": None, "resident": None, "day": None,
+        "base": BASE, "adapter": None, "run": None, "resident": None, "day": None, "night": None,
+        "fitted": None,
     }  # fmt: skip
     assert not server.events and not (results / "town").exists()
     with pytest.raises(SystemExit):
@@ -389,6 +477,25 @@ def test_day_0_is_the_base_model_once_for_all(tmp_path, monkeypatch):
         cli.main([*common, "--day", "7", "--resident", "Nobody"])
     with pytest.raises(SystemExit):
         cli.main([*common, "--day", "7", "--server", str(guard_yaml(tmp_path))])
+
+
+def test_a_bare_models_result_is_shared_by_the_runs_and_names_how_it_reads(tmp_path, monkeypatch):
+    # Begun from one arm's run and resumed from another's: the header names no run.
+    server = Server(fail_after=3)
+    server.install(monkeypatch, tmp_path)
+    first = learnt(tmp_path, name="social")
+    results, guard = tmp_path / "results", ["--guard", str(guard_yaml(tmp_path))]
+    with pytest.raises(ExceptionGroup):
+        cli.main(["--run", str(first), "--model", BASE, "--results", str(results), *guard])
+    server.fail_after = None
+    second = learnt(tmp_path, name="raw")
+    cli.main(["--run", str(second), "--model", BASE, "--results", str(results), *guard])
+    result = json.loads((results / "models" / "safety" / f"{BASE}.json").read_text())
+    assert result["status"] == "finished" and "run" not in result["header"]
+    assert result["provenance"]["run"] == "social"  # the run whose settings were taken first
+    # How the judge's reply is read and tallied is part of what the header pins.
+    rules = result["header"]["judge"]["rules"]
+    assert rules == digest(Path(guard_module.__file__), Path(run_module.__file__))
 
 
 def test_a_result_held_by_another_process_is_not_evaluated(tmp_path):

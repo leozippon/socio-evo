@@ -7,9 +7,15 @@ with a fixed token limit and the run's reasoning setting, one answer to each pro
 the server returns apart from the answer is kept with it and never taken for it.
 
 A run's subjects take their server and reasoning setting from its frozen configuration, of which
-only `llm`, `runtime.reasoning_effort` and the residents' names are read here; a bare model is
-asked with the reasoning setting of the run named with it, so that it is asked as the residents
-are.
+only `llm`, `runtime.reasoning_effort`, the residents' names, which of them the town marks as
+newcomers and whether the run learns are read here; a bare model is asked with the reasoning
+setting of the run named with it, so that it is asked as the residents are.
+
+A resident's adapter of day N is the one it ran on after the night that follows day N, which is
+final only once that night is complete; a resident the night did not fit (it had nothing new to
+learn) keeps the adapter of an earlier night, or the base model. A subject therefore names both
+nights: `night`, the complete night its adapter was read after, and `fitted`, the night that
+adapter was fitted on.
 """
 
 from collections.abc import Mapping, Sequence
@@ -32,12 +38,17 @@ THINK_END = "</think>"
 
 class Run(StrictModel):
     """What the evaluations read of a run's frozen configuration: the residents' server, their
-    reasoning effort (None: the server's default) and their names."""
+    reasoning effort (None: the server's default), their names, the newcomers among them (None
+    when the town's residents carry no `newcomer` field, as in a run frozen before it existed),
+    and whether the residents learn at night (`learning.enabled`; a configuration without
+    `learning` does not learn, as `simulation.config` reads it)."""
 
     path: Path
     llm: LLMConfig
     reasoning: str | None
     residents: tuple[str, ...]
+    newcomers: tuple[str, ...] | None
+    learns: bool
 
     @property
     def name(self) -> str:
@@ -49,11 +60,16 @@ class Run(StrictModel):
         config_path = RunDirectory(path).config_path
         config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         try:
+            town = config["town"]["residents"]
             return cls(
                 path=path,
                 llm=config["llm"],
                 reasoning=config["runtime"]["reasoning_effort"],
                 residents=tuple(resident["name"] for resident in config["residents"]),
+                newcomers=tuple(r["name"] for r in town if r["newcomer"])
+                if any("newcomer" in r for r in town)
+                else None,
+                learns=config.get("learning", {}).get("enabled", False),
             )
         except KeyError as missing:
             raise ValueError(f"{config_path} has no {missing}") from None
@@ -61,13 +77,17 @@ class Run(StrictModel):
 
 class Subject(StrictModel):
     """The served model `base` with the adapter at `adapter`, or alone (None). A resident's
-    subject names its run, the resident and the day of the adapter; a bare model's names none."""
+    subject names its run, the resident and the day of the adapter, and, in a run that learns,
+    the complete night after that day (`night`) and the night the adapter was fitted on
+    (`fitted`, None for the base model); a bare model's names none of them."""
 
     base: str
     adapter: Path | None = None
     run: str | None = None
     resident: str | None = None
     day: int | None = None
+    night: int | None = None
+    fitted: int | None = None
 
     @property
     def name(self) -> str:

@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
 # Evaluate a run as it lives, on the days given (0, 7, 14, 21 and 28 by default): ops/evaluate.sh
-# on each day in turn, once the day's adapters are final and the run's evaluation of the day
-# before has ended. Day 0 is the base model and starts at once. A day's adapters are those the
-# residents fitted in the night after it, final once that night is complete (it writes
-# learning/night-NN/done.json last, as learning.adapters reads it), which the checkpoint of the
-# next day or the run's end also proves; a run that ends without the day's checkpoint stops the
-# queue, as a failure. Each
-# benchmark keeps LIVING requests in flight while the run lives and ENDED once it has ended. It
-# looks every POLL seconds (60), logs dated lines, signals no process, and ends once the last
-# day's evaluation has started.
+# on each day in turn, once the day's adapters are final and no other evaluation of the run is
+# running. Day 0 is the base model and starts at once. In a run that learns, a day's adapters are
+# those of the night after it, final once that night is complete: it writes
+# learning/night-NN/done.json last, as learning.adapters reads it, and nothing else proves it, since
+# the run saves the day's checkpoint before the night. A run that does not learn is scored on the
+# base model once the day's checkpoint is saved. A run that ends without what a day waits for
+# stops the queue. A day whose evaluation fails is logged with what failed and the next day taken;
+# the queue then fails at its end, naming the failed days. Each benchmark keeps LIVING requests in
+# flight while the run lives and ENDED once it has ended. It looks every POLL seconds (60), logs
+# dated lines and signals no process.
 #   ops/evaluate-queue.sh RUN [DAY...]     e.g. setsid nohup ops/evaluate-queue.sh social \
 #                                               > runs/eval-logs/social-queue.log 2>&1 &
 set -euo pipefail
@@ -26,7 +27,7 @@ for day in "${days[@]}"; do
 done
 cd "$(dirname "$0")/.."
 python=${PYTHON:-$HOME/miniconda3/envs/socio-evo/bin/python}
-poll=${POLL:-60} # seconds between looks at the checkpoints, the manifest and the processes
+poll=${POLL:-60} # seconds between looks at the run and the processes
 manifest=runs/$run/manifest.json
 [[ -f $manifest ]] || { echo "runs/$run has no manifest" >&2; exit 1; }
 mkdir -p runs/eval-logs
@@ -34,19 +35,20 @@ log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
 status() { # the run's status, as its manifest records it
     "$python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$manifest"
 }
-final() { # until the adapters of day $1 are final; fails when the run ends without the day
-    local dd next night s
-    printf -v dd 'day-%02d' "$1"
-    printf -v next 'day-%02d' "$(($1 + 1))"
-    printf -v night 'night-%02d' "$1"
+learns=$("$python" -c 'import sys; from pathlib import Path; from evaluation.subject import Run
+print(str(Run.read(Path(sys.argv[1])).learns).lower())' "runs/$run")
+final() { # until the adapters of day $1 are final; fails when the run ends without them
+    local proof s
+    if $learns; then
+        printf -v proof 'runs/%s/learning/night-%02d/done.json' "$run" "$1"
+    else
+        printf -v proof 'runs/%s/checkpoints/day-%02d.json' "$run" "$1"
+    fi
     while true; do
-        s=$(status) # before the looks, so that a run ended by then has saved what it saves
-        if [[ -f runs/$run/learning/$night/done.json || -f runs/$run/checkpoints/$next.json ]]; then
-            return 0
-        fi
+        s=$(status) # before the look, so that a run ended by then has written what it writes
+        if [[ -f $proof ]]; then return 0; fi
         if [[ $s != running ]]; then
-            if [[ -f runs/$run/checkpoints/$dd.json ]]; then return 0; fi
-            log "the run is $s without $dd; the day-$1 evaluation not started"
+            log "the run is $s without $proof; the day-$1 evaluation not started"
             return 1
         fi
         sleep "$poll"
@@ -55,11 +57,21 @@ final() { # until the adapters of day $1 are final; fails when the run ends with
 evaluating() { # whether an evaluation of the run is running, started by the queue or by hand
     pgrep -f -- "-m evaluation\.(safety|mask) --run runs/$run " > /dev/null
 }
+failed=()
 for day in "${days[@]}"; do
-    if ((day > 0)); then final "$day"; fi
+    if ((day > 0)) && ! final "$day"; then failed+=("$day (not started)"); break; fi
     while evaluating; do sleep "$poll"; done
     if [[ $(status) == running ]]; then concurrency=$LIVING; else concurrency=$ENDED; fi
     log "starting the day-$day evaluation with $concurrency in flight a benchmark"
-    CONCURRENCY=$concurrency ops/evaluate.sh "$run" "$day"
+    if CONCURRENCY=$concurrency ops/evaluate.sh "$run" "$day"; then
+        log "the day-$day evaluation finished"
+    else
+        log "the day-$day evaluation failed"
+        failed+=("$day")
+    fi
 done
-log "the evaluations of days ${days[*]} started"
+if ((${#failed[@]})); then
+    log "failed: days ${failed[*]}"
+    exit 1
+fi
+log "the evaluations of days ${days[*]} finished"

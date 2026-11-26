@@ -6,8 +6,11 @@ result.
     --run RUN --model NAME [--server YAML]    the bare served model NAME
 
 A resident's subject is the run's base model with the adapter `learning.adapters.adapter_for`
-gives for its day, the base alone when there is none yet. On day 0 every adapter is empty, so the
-subject of `--day 0` is the base model alone, as a bare model, which stands for every resident.
+gives for its day, the base alone when no night has fitted it one. A day is refused until the
+night after it is complete (its `done.json`), since until then the adapters of that day are not
+final; a run that does not learn is scored on the base model, and the command says so. On day 0
+every adapter is empty, so the subject of `--day 0` is the base model alone, as a bare model,
+which stands for every resident.
 The adapter is loaded on every replica under a name of its own for the length of its evaluation
 and unloaded after, so that it meets no other use of the same adapter. A bare model is served by
 the run's server unless `--server` names another (an LLMConfig YAML), as for the reference model.
@@ -22,13 +25,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Any
 
-from evaluation.results import MODELS, Store, model_result, resident_result
+from evaluation.results import MODELS, Store, model_result, resident_result, revision
 from evaluation.subject import Run, Subject
 from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMConfig
 from infrastructure.llm.adapters import load_adapter, unload_adapter
-from infrastructure.storage import day_tag
-from learning.adapters import adapter_for
+from infrastructure.storage import RunDirectory, day_tag
+from learning.adapters import DONE, adapter_for
 
 NAME = re.compile(r"[\w.-]+")
 """What a model's name must be to name its results' files."""
@@ -88,20 +91,31 @@ def subjects_of(
         return run, server, [Subject(base=run.llm.model)]
     if unknown := [name for name in args.resident if name not in run.residents]:
         parser.error(f"{', '.join(unknown)}: no resident of {run.name}")
-    return (
-        run,
-        server,
-        [
-            Subject(
-                base=run.llm.model,
-                adapter=adapter_for(run.path, name, args.day),
-                run=run.name,
-                resident=name,
-                day=args.day,
-            )
-            for name in args.resident or run.residents
-        ],
-    )
+    names = args.resident or run.residents
+    resident = {"base": run.llm.model, "run": run.name, "day": args.day}
+    if not run.learns:
+        print(f"{run.name} does not learn: its residents are scored on the base model")
+        return run, server, [Subject(**resident, resident=name) for name in names]
+    done = RunDirectory(run.path).night_dir(args.day) / DONE
+    if not done.is_file():
+        parser.error(
+            f"day {args.day}: the night after it is not complete ({done} is missing), so the "
+            "residents' adapters of the day are not final"
+        )
+    return run, server, [adapted(run, name, args.day, resident) for name in names]
+
+
+def adapted(run: Run, name: str, day: int, resident: dict[str, Any]) -> Subject:
+    """The subject of `name` after the complete night `day`: its adapter, and the night it was
+    fitted on, by the run directory's layout of the adapters."""
+    path = adapter_for(run.path, name, day)
+    if path is None:
+        return Subject(**resident, resident=name, night=day)
+    directory = RunDirectory(run.path)
+    fitted = [n for n in range(day, 0, -1) if directory.adapter_dir(name, n).resolve() == path]
+    if not fitted:
+        raise ValueError(f"{path}: the adapter of {name} is no night's of {run.name}")
+    return Subject(**resident, resident=name, adapter=path, night=day, fitted=fitted[0])
 
 
 def result_of(results: Path, benchmark: str, subject: Subject) -> Path:
@@ -133,6 +147,7 @@ kept so far, and returns the metrics of them all."""
 
 
 async def evaluate_each(
+    run: Run,
     subjects: list[Subject],
     server: LLMConfig,
     results: Path,
@@ -141,9 +156,10 @@ async def evaluate_each(
     evaluate: Evaluate,
     told: Callable[[dict[str, Any]], str],
 ) -> None:
-    """Each subject in turn: a finished result told and kept, a running one resumed, and a new
-    one begun; each serving of an adapter ends before the next begins. `told` says the metrics
-    in a line."""
+    """Each subject in turn, with the settings of `run`: a finished result told and kept, a
+    running one resumed, and a new one begun; each serving of an adapter ends before the next
+    begins. `told` says the metrics in a line."""
+    provenance = {"run": run.name, "revision": revision()}
     for subject in subjects:
         store = Store(result_of(results, benchmark, subject))
         with store.held():
@@ -151,7 +167,7 @@ async def evaluate_each(
                 print(f"{subject.name}: finished already, kept: {store.path}")
                 continue
             head = header(subject)
-            kept = store.begin(head)
+            kept = store.begin(head, provenance)
             async with served(subject, server) as model:
                 metrics = await evaluate(model, store, kept)
             store.finish(head, metrics)

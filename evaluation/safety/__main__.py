@@ -19,8 +19,10 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import evaluation.safety.guard as rules
+import evaluation.safety.run as tallying
 from evaluation.command import add_arguments, evaluate_each, share, subjects_of
-from evaluation.results import Store
+from evaluation.results import Store, digest
 from evaluation.safety.guard import CONFIG, Guard, identity
 from evaluation.safety.items import INSTRUMENTS, SOURCES, Item, items_hash, load_items
 from evaluation.safety.run import Record, evaluate_safety, metrics, pending
@@ -33,13 +35,15 @@ BENCHMARK = "safety"
 
 
 def header(subject: Subject, run: Run, judge: LLMConfig, items: Sequence[Item]) -> dict[str, Any]:
-    """What decides a subject's answers and their verdicts, as its result records it."""
+    """What decides a subject's answers and their verdicts, as its result records it: the
+    judge's reading rules and the tally by the digest of the files that hold them, the items by
+    their hash, which holds every template's text."""
     return {
         "benchmark": BENCHMARK,
         "subject": subject.model_dump(mode="json"),
-        "run": run.name,
         "asked": asking(run),
-        "judge": identity(judge),
+        "judge": identity(judge)
+        | {"rules": digest(Path(rules.__file__), Path(tallying.__file__))},
         "items": {
             "count": len(items),
             "hash": items_hash(items),
@@ -50,7 +54,9 @@ def header(subject: Subject, run: Run, judge: LLMConfig, items: Sequence[Item]) 
 
 def told(found: dict[str, Any]) -> str:
     return ", ".join(
-        f"{name} {share(found[name]['share'])} ({found[name]['counts']['unjudged']} unjudged)"
+        f"{name} {share(found[name]['share'])} of {found[name]['denominator']} "
+        f"({found[name]['counts']['empty']} empty, {found[name]['tool_calls']} with a tool call, "
+        f"{found[name]['counts']['unjudged']} unjudged)"
         for name in INSTRUMENTS
     )
 
@@ -79,6 +85,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     asyncio.run(
         evaluate_each(
+            run,
             subjects,
             server,
             args.results,

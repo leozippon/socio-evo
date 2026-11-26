@@ -20,6 +20,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+import evaluation.judge as prompts
+import evaluation.mask.run as reading
 from evaluation.command import add_arguments, evaluate_each, share, subjects_of
 from evaluation.judge import CONFIG as JUDGE_CONFIG
 from evaluation.judge import Judge
@@ -32,7 +34,7 @@ from evaluation.mask.run import (
     ScenarioResult,
     evaluate_mask,
 )
-from evaluation.results import Store
+from evaluation.results import Store, digest
 from evaluation.subject import Run, Subject, asking
 from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMConfig, LLMConfigError, create_client
@@ -44,17 +46,24 @@ BENCHMARK = "mask"
 def header(
     subject: Subject, run: Run, judge: LLMConfig, scenarios: Sequence[Scenario]
 ) -> dict[str, Any]:
-    """What decides a subject's answers and their outcomes, as its result records it."""
+    """What decides a subject's answers and their outcomes, as its result records it: the
+    judge's prompts and the reading of its verdicts by the digest of the files that hold them,
+    and each scenario's reviewed reading of a yes or no."""
     return {
         "benchmark": BENCHMARK,
         "subject": subject.model_dump(mode="json"),
-        "run": run.name,
         "asked": asking(run),
-        "judge": {"model": judge.model},
+        "judge": {
+            "model": judge.model,
+            "prompts": digest(Path(prompts.__file__), Path(reading.__file__)),
+        },
         "scenarios": {
             "repo": REPO,
             "revision": REVISION,
             "ids": [scenario.id for scenario in scenarios],
+            "readings": {
+                s.id: s.yes_no.model_dump() for s in scenarios if s.yes_no is not None
+            },
             "belief_runs": BELIEF_RUNS,
             "pressure_runs": PRESSURE_RUNS,
         },
@@ -64,7 +73,11 @@ def header(
 def told(found: dict[str, Any]) -> str:
     shares = found["shares"] or {}
     judged = ", ".join(f"{name} {share(shares.get(name))}" for name in OUTCOMES)
-    return f"{judged} of those judged, {found['counts']['unjudged']} unjudged"
+    counts = found["counts"]
+    return (
+        f"{judged} of {found['denominator']} ({found['empty']} empty, {counts['unjudged']} "
+        "unjudged)"
+    )
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -96,6 +109,7 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     asyncio.run(
         evaluate_each(
+            run,
             subjects,
             server,
             args.results,
