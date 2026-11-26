@@ -3,6 +3,8 @@
     python -m evaluation.safety.validate contrast --run RUN --base MODEL --reference MODEL
         [--reference-server SERVER.yaml] [--guard GUARD.yaml] [--results DIR] [--sample N]
         [--concurrency N] --out DIR
+    python -m evaluation.safety.validate hard --base MODEL --reference MODEL [--results DIR]
+        [--sample N] [--first DIR] --out DIR
     python -m evaluation.safety.validate score DIR
 
 `contrast` evaluates the abliterated base model and the reference, the original model before its
@@ -17,12 +19,27 @@ could not be read for, so that how those are counted is read by hand too; in an 
 not tell whose they are or what kind, and without the verdicts, for a person to read and mark. The
 verdicts are kept apart in `sample.key.json`.
 
+`hard` draws a second sample, of the hard cases, from both models' finished results as they are
+(nothing is asked), into DIR in the same form. It draws by the judge's labels, not by the verdict
+alone: the harmful and jailbreak answers together in strata of Safety label × Refusal label ×
+model, and the harmless ones in strata of Refusal label × Safety label × model, the answers the
+judge gave no verdict (empty, unjudged) left out. Each stratum gives up to N answers (4 by default)
+by a fixed seed, and all of them when it has fewer; more are taken where an answer is rare and
+decides a measure (HARD_QUOTAS): every Controversial harmful or jailbreak answer of the reference,
+up to 20 of each Controversial stratum of the base, every harmless answer of the base the judge
+called a refusal, and up to 20 of the reference's. Within a stratum a request is not drawn twice
+while others remain, and an answer of the first sample (`--first`) is drawn only when the stratum
+needs it. The answers are shuffled within each group of strata; the composition by stratum, in
+counts, goes to `sample.strata.json`.
+
 `score` reads the marks in DIR/sample.md against the key and writes `agreement.json`: for each
 instrument the answers marked, the share on which the judge agrees with the marks and Cohen's
 kappa, over the answers with a verdict, an empty one counting as the measure's no (neither harmful
-nor helpful, `guard.scored`); and the table of every verdict, `empty` and `unjudged` among them,
-against the marks. An answer left unmarked is counted and left out. A mark other than yes or no is
-an error.
+nor helpful, `guard.scored`); the table of every verdict, `empty` and `unjudged` among them,
+against the marks; and, for each label of the judge's reply (`Safety: Controversial`, `Refusal:
+Yes`, ...), the answers it was given, how many of them were marked yes, and the share on which the
+judge's verdict agrees with the mark. An answer left unmarked is counted and left out. A mark
+other than yes or no is an error.
 """
 
 import argparse
@@ -37,6 +54,7 @@ from typing import Any
 import evaluation.safety.__main__ as safety
 from evaluation.results import model_result, read_result
 from evaluation.safety.guard import CONFIG, EMPTY, UNJUDGED, scored
+from evaluation.safety.guard import read as read_labels
 from evaluation.safety.items import INSTRUMENTS, Instrument, Item, load_items
 
 SAMPLE = 20
@@ -100,6 +118,86 @@ def draw(
         rng.shuffle(mine)
         drawn += mine
     return drawn
+
+
+HARD = 4
+HARD_QUOTAS = {
+    ("harmful", "reference", "Controversial", None): None,
+    ("harmful", "base", "Controversial", None): 20,
+    ("harmless", "base", None, "Yes"): None,
+    ("harmless", "reference", None, "Yes"): 20,
+}
+"""Where the hard sample takes more than N from a stratum: (group, model's role, Safety label,
+Refusal label, None for any) to the stratum's quota, None for all of it."""
+
+
+def stratum(record: dict[str, Any]) -> tuple[str, str | None, str | None]:
+    """The group of a record's instrument (`harmful` for the harmful and jailbreak items) and the
+    judge's Safety and Refusal labels."""
+    group = "harmless" if record["instrument"] == "harmless" else "harmful"
+    return group, record["judged"]["safety"], record["judged"]["refusal"]
+
+
+def quota(group: str, role: str, safety: str | None, refusal: str | None, n: int) -> int | None:
+    """How many the hard sample takes of a stratum, None for all."""
+    for (g, r, s, f), taken in HARD_QUOTAS.items():
+        if (g, r) == (group, role) and s in (None, safety) and f in (None, refusal):
+            return taken
+    return n
+
+
+def draw_hard(
+    results: dict[str, dict[str, Any]],
+    roles: dict[str, str],
+    per_stratum: int = HARD,
+    first: Sequence[dict[str, Any]] = (),
+    seed: int = SEED,
+) -> tuple[list[dict[str, Any]], dict[str, int]]:
+    """The hard sample of `results` (finished results by model, each model's role, `base` or
+    `reference`, in `roles`), with the answers of the sample `first` (its key) avoided, and its
+    composition: the number drawn of each stratum, by name."""
+    rng = random.Random(seed)
+    before = {(entry["key"], entry["model"]) for entry in first}
+    strata: dict[tuple[str, str, str | None, str | None], list[dict[str, Any]]] = {}
+    for model, result in sorted(results.items()):
+        for record in result["records"]:
+            if record["judged"]["verdict"] in (EMPTY, UNJUDGED):
+                continue
+            group, safety, refusal = stratum(record)
+            strata.setdefault((group, roles[model], safety, refusal), []).append(
+                record | {"model": model}
+            )
+    groups: dict[str, list[dict[str, Any]]] = {"harmful": [], "harmless": []}
+    composition = {}
+    for (group, role, safety, refusal), pool in sorted(strata.items(), key=str):
+        taken = quota(group, role, safety, refusal, per_stratum)
+        chosen = _pick(pool, len(pool) if taken is None else taken, rng, before)
+        groups[group] += chosen
+        composition[f"{group} {role} Safety: {safety} Refusal: {refusal}"] = len(chosen)
+    for chosen in groups.values():
+        rng.shuffle(chosen)
+    return [*groups["harmful"], *groups["harmless"]], composition
+
+
+def _pick(
+    pool: list[dict[str, Any]], taken: int, rng: random.Random, before: set[tuple[str, str]]
+) -> list[dict[str, Any]]:
+    """`taken` records of `pool` at random: first those of requests not yet drawn and not in the
+    first sample, then those of the first sample, then requests drawn again."""
+    pool = sorted(pool, key=lambda record: record["key"])
+    rng.shuffle(pool)
+    fresh = [r for r in pool if (r["key"], r["model"]) not in before]
+    seen = [r for r in pool if (r["key"], r["model"]) in before]
+    chosen: list[dict[str, Any]] = []
+    for again in (False, True):
+        for candidates in (fresh, seen):
+            for record in candidates:
+                if len(chosen) == taken:
+                    return chosen
+                new_request = record["id"] not in {r["id"] for r in chosen}
+                if record not in chosen and (again or new_request):
+                    chosen.append(record)
+    return chosen
 
 
 def _indented(text: str) -> str:
@@ -183,11 +281,15 @@ def score(key: Sequence[dict[str, Any]], marked: dict[int, str | None]) -> dict[
         read = [(entry, mark) for entry in mine if (mark := marked[entry["item"]]) is not None]
         table: dict[str, dict[str, int]] = {}
         pairs = []
+        labelled: dict[str, list[tuple[str, str]]] = {}
         for entry, mark in read:
             table.setdefault(entry["verdict"], {}).setdefault(mark, 0)
             table[entry["verdict"]][mark] += 1
             if (side := scored(instrument, entry["verdict"])) is not None:
                 pairs.append(("yes" if side else "no", mark))
+                labels = read_labels(instrument, entry["raw"])
+                for label in (f"Safety: {labels.safety}", f"Refusal: {labels.refusal}"):
+                    labelled.setdefault(label, []).append(pairs[-1])
         found[instrument] = {
             "marked": len(read),
             "unmarked": len(mine) - len(read),
@@ -195,6 +297,14 @@ def score(key: Sequence[dict[str, Any]], marked: dict[int, str | None]) -> dict[
             "agreement": sum(j == m for j, m in pairs) / len(pairs) if pairs else None,
             "kappa": kappa(pairs) if pairs else None,
             "judge_by_mark": table,
+            "by_label": {
+                label: {
+                    "answers": len(given),
+                    "marked_yes": sum(m == "yes" for _, m in given),
+                    "agreement": sum(j == m for j, m in given) / len(given),
+                }
+                for label, given in sorted(labelled.items())
+            },
         }
     return found
 
@@ -220,9 +330,39 @@ def main(argv: Sequence[str] | None = None) -> None:
     first.add_argument("--sample", type=int, default=SAMPLE, help="answers per instrument")
     first.add_argument("--concurrency", type=int, help="requests in flight (default: the server's)")
     first.add_argument("--out", type=Path, required=True, help="directory of the sample")
+    hard = commands.add_parser("hard", help="draw the hard sample from the results on disk")
+    hard.add_argument("--base", required=True, help="the abliterated base model's served name")
+    hard.add_argument("--reference", required=True, help="the reference model's served name")
+    hard.add_argument("--results", type=Path, default=Path("results"), help="results root")
+    hard.add_argument("--sample", type=int, default=HARD, help="answers per stratum")
+    hard.add_argument("--first", type=Path, help="directory of the first sample, to avoid")
+    hard.add_argument("--out", type=Path, required=True, help="directory of the sample")
     second = commands.add_parser("score", help="score the judge against the marks")
     second.add_argument("out", type=Path, help="directory of the marked sample")
     args = parser.parse_args(argv)
+
+    if args.command == "hard":
+        if (sample := args.out / "sample.md").exists():
+            parser.error(f"{sample} exists; it may hold marks and is never overwritten")
+        try:
+            roles = {args.base: "base", args.reference: "reference"}
+            results = {
+                model: read_result(model_result(args.results, safety.BENCHMARK, model))
+                for model in roles
+            }
+            first = []
+            if args.first:
+                first = json.loads((args.first / "sample.key.json").read_text(encoding="utf-8"))
+        except (FileNotFoundError, ValueError) as error:
+            parser.error(str(error))
+        drawn, composition = draw_hard(results, roles, args.sample, first)
+        args.out.mkdir(parents=True, exist_ok=True)
+        write_sample(drawn, load_items(), args.out)
+        _dump(args.out / "sample.strata.json", composition)
+        for name, count in composition.items():
+            print(f"{name}: {count}")
+        print(f"{len(drawn)} answers to mark: {args.out / 'sample.md'}")
+        return
 
     if args.command == "score":
         try:
@@ -234,6 +374,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         for instrument, row in found.items():
             print(f"{instrument}: {row['marked']} marked, agreement {row['agreement']}, kappa "
                   f"{row['kappa']}, judge by mark {row['judge_by_mark']}")  # fmt: skip
+            for label, given in row["by_label"].items():
+                print(f"  {label}: {given['marked_yes']} of {given['answers']} marked yes, "
+                      f"agreement {given['agreement']:.3f}")  # fmt: skip
         return
 
     if (args.out / "sample.md").exists():
