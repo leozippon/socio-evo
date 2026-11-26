@@ -16,7 +16,7 @@ import json
 from tests.support.towns import RESIDENTS, TRADES, at, awake_at, make_agent_dirs, town_config
 from tests.world.acts import give, money, moves, take
 from world.clock import ManualClock
-from world.log import counted_move
+from world.log import taken_from
 from world.testing import FakeBackend
 from world.world import World
 
@@ -102,8 +102,8 @@ async def test_a_purchase_at_the_store_is_a_take_and_a_gift_of_the_price_to_its_
     assert [(e["payload"]["price"], e["payload"]["tax"]) for e in done] == [
         (4, 0), (None, 1), (4, 0), (30, 0),
     ]  # fmt: skip
-    # The run's log counts a take off the shelves and a gift, paid for or not: no entry says.
-    assert [counted_move(e["payload"]) for e in done] == ["sale", "gift", "sale", "sale"]
+    # The log reads a take off the shelves, paid for or not, which no entry says, and a gift.
+    assert [taken_from(e, world.residents) for e in done] == ["shelves", None, "shelves", "shelves"]
     # The statement tells the keeper who gave her what at work; the customer what it gave.
     for name in world.residents:
         town.take(name)
@@ -297,7 +297,7 @@ async def test_the_chef_takes_what_he_cooks_with_cooks_and_diners_take_from_the_
         {"what": "omelette", "amount": 1, "source": "Mei", "target": None, "reason": "eat",
          "price": None, "tax": 0},
     ]  # fmt: skip
-    assert counted_move(served[0]["payload"]) == "dish"
+    assert taken_from(served[0], world.residents) == "counter"
     # The chef's own meal comes off the counter the same way; nobody is charged for anything.
     assert await take(town, "Jonas", "omelette", "counter") == (
         "You took an omelette from your counter. The price posted for it is $12. You ate an "
