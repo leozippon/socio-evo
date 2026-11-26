@@ -47,7 +47,12 @@ from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 
-import torch
+# Steps of very different lengths fragment PyTorch's cache of GPU memory: after a run of short
+# steps, a step of 8,000 tokens, which needs 40.4 of the L20's 44.5 GiB, left the driver no room to
+# launch a Triton kernel. Expandable segments keep the cache close to what is in use.
+os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+
+import torch  # noqa: E402
 
 if not torch.cuda.is_available():
     # flash-linear-attention's kernels are Triton and need a GPU, but transformers binds them at

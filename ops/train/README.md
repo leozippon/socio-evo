@@ -49,13 +49,7 @@ The recommended first settings are rank 16, alpha 32, dropout 0.05, all ten proj
 
 ## Memory and time
 
-A fit takes one L20 (45 GiB), the first GPU in `CUDA_VISIBLE_DEVICES`. The base holds 28.3 GiB for the whole run, and the adapter of the recommended settings, with its gradients and AdamW state, 1.6 GiB. A step adds three things:
-
-- 0.66 MB per token for the layer inputs kept by gradient checkpointing.
-- 2.5 MB per learnt token for its logits over the 248,320-token vocabulary.
-- About 1.5 GiB for the layer being recomputed.
-
-A step of 8,000 tokens with 2,000 of them learnt comes to about 42 GiB, near the limit, so batch size times the longest conversation should stay under about 8,000 tokens. The GPU validation measures the actual peak.
+A fit takes one L20, the first GPU in `CUDA_VISIBLE_DEVICES`. The figures here were measured on the GPUs with the recommended settings, one conversation a step. The base and a fresh adapter hold 28.7 GiB for the whole run. A step's peak grows by about 1.3 MB per token of its conversation: 31.1 GiB at 400 tokens, 35.5 at 4,096 and 40.4 at 8,000 with a quarter of them learnt, of the 44.5 GiB the card offers. The peak falls in the backward pass through the recomputed layers, not at the logits, so it hardly depends on how many tokens are learnt, and computing the loss in pieces saved nothing. A step of 8,192 tokens, the recommended max_length, is thus about the most one card holds. Steps of very different lengths fragment PyTorch's cache of GPU memory, and a step of 8,000 tokens after a run of short ones once failed for want of room to launch a Triton kernel; the trainer therefore has PyTorch allocate in expandable segments, with which the same run completes.
 
 A token costs about 1.5 × 10¹¹ floating-point operations: six times the 24 billion parameters of the decoder's projections, for the forward pass, its recomputation and the backward pass to the inputs. At 35% of the L20's 119.5 BF16 TFLOPS that is about 3.5 ms per token, plus about half a second per step to dequantise the projections. A resident at 200 examples of about 400 tokens, fitted for two epochs (160,000 tokens), would take about 10 minutes, so eleven residents take about two hours of one L20 on the late nights and less earlier. The base loads once per run, in about a minute. These are estimates: the utilisation, the speed of the DeltaNet kernels and the length of the examples are assumptions until the GPU validation has run.
 
