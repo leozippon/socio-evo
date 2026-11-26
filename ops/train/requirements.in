@@ -1,0 +1,12 @@
+# Direct dependencies of the training environment; requirements.txt is compiled from this file
+# (see README.md). torch 2.14.0 from PyPI is the CUDA 13.0 build, which the driver (CUDA 13.2)
+# runs; transformers is pinned to the serving environment's release so that chat templates render
+# identically in training and in serving. flash-linear-attention provides the Triton kernels of
+# the Gated DeltaNet layers, which transformers otherwise runs in slow reference PyTorch.
+torch==2.14.0
+transformers==5.19.0
+peft==0.22.0
+accelerate==1.16.0
+safetensors==0.8.0
+flash-linear-attention==0.6.0
+pytest==9.2.0

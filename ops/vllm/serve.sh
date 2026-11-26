@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Serve the residents' model with vLLM as an OpenAI-compatible API, in the foreground.
 # Usage (from the repository root):
-#   set -a; . ./.env; set +a; [GPUS=0,1,2,3] [MODEL_PATH=...] [SERVED_NAME=...] ops/vllm/serve.sh [extra vllm serve flags]
+#   set -a; . ./.env; set +a; [GPUS=0,1,2,3] [MODEL_PATH=...] [SERVED_NAME=...] [LORA=1] ops/vllm/serve.sh [extra vllm serve flags]
 # MODEL_PATH and SERVED_NAME default to the official FP8 checkpoint of Qwen3.8-27B and its name
 # in the configuration; the uncensored checkpoint is served by naming its path and `qwen3.8-27b-uncensored-fp8`.
 # GPUS defaults to all eight GPUs. Each consecutive pair runs one tensor-parallel replica (TP2) and
-# vLLM balances requests across the replicas, so 8 GPUs serve as TP2 x DP4 and 4 GPUs as TP2 x DP2.
+# vLLM balances requests across the replicas, so 8 GPUs serve as TP2 x DP4, 4 GPUs as TP2 x DP2 and
+# one pair (GPUS=4,5) as a single replica.
+# LORA=1 also serves LoRA adapters beside the base, loaded and unloaded at run time: up to 11 in one
+# batch (one per resident), 22 held in CPU memory (each resident's current and previous night), of
+# rank 16 at most. Extra flags override these, e.g. --max-lora-rank 32.
 # The port comes from VLLM_BASE_URL; vLLM itself requires VLLM_API_KEY on every request.
 set -euo pipefail
 
@@ -25,6 +29,18 @@ if [[ ! $gpus =~ ^[0-9]+(,[0-9]+)*$ ]] || (( ${#gpu_list[@]} % 2 )); then
   echo "GPUS must list an even number of GPU indices (one TP2 replica per pair), got: $gpus" >&2
   exit 1
 fi
+lora=()
+case ${LORA:-0} in
+  0) ;;
+  1)
+    lora=(--enable-lora --max-lora-rank 16 --max-loras 11 --max-cpu-loras 22)
+    export VLLM_ALLOW_RUNTIME_LORA_UPDATING=True  # enables /v1/load_lora_adapter and /v1/unload_lora_adapter
+    ;;
+  *)
+    echo "LORA must be 0 or 1, got: $LORA" >&2
+    exit 1
+    ;;
+esac
 
 repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 mkdir -p "$repo/runs/vllm"
@@ -53,4 +69,5 @@ exec "$vllm_env/bin/vllm" serve "${MODEL_PATH:-/Data2/lzp/models/Qwen3.8-27B-FP8
   --enable-prefix-caching --enable-prompt-tokens-details \
   --reasoning-parser qwen3 \
   --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+  "${lora[@]}" \
   "$@"

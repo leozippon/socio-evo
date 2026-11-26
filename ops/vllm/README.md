@@ -11,22 +11,23 @@ set -a; . ./.env; set +a
 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &                 # all eight GPUs
 GPUS=0,1,2,3 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # four GPUs
 GPUS=0,1,2,3 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # the uncensored checkpoint, which the town of occupations runs on
+GPUS=4,5 LORA=1 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # one replica on GPUs 4 and 5, serving the residents' adapters
 ```
 
-The script runs vLLM in the foreground, so it can also sit under systemd or a terminal; extra arguments are passed to `vllm serve` and override its defaults. It takes the port from `VLLM_BASE_URL`, and vLLM reads the key from `VLLM_API_KEY` in its environment, so the key never appears on a command line. The server answers after two to five minutes; the first start after a vLLM or kernel change takes longer because it compiles. Each start writes its log to `runs/vllm/serve-<time>.log`.
+The script runs vLLM in the foreground, so it can also sit under systemd or a terminal; extra arguments are passed to `vllm serve` and override its defaults. It takes the port from `VLLM_BASE_URL`, and vLLM reads the key from `VLLM_API_KEY` in its environment, so the key never appears on a command line; a second server beside the first needs its own port, given by setting `VLLM_BASE_URL` for that launch. The server answers after two to five minutes; the first start after a vLLM or kernel change takes longer because it compiles. Each start writes its log to `runs/vllm/serve-<time>.log`.
 
-To check and to stop it (the bracket keeps `pkill` from matching a shell that runs the command):
+To check and to stop it (the bracket keeps `pkill` from matching a shell that runs the command; the pattern matches both checkpoints, so with two servers running add the port, as in `...FP[8] .*--port 8000`):
 
 ```bash
 curl -s -H "Authorization: Bearer $VLLM_API_KEY" "$VLLM_BASE_URL/models"
-pkill -TERM -f 'bin/vllm serve /Data2/lzp/models/Qwen3.8-27B-FP[8]'
+pkill -TERM -f 'bin/vllm serve /Data2/lzp/models/Qwen3\.8-27B-(Uncensored-)?FP[8]'
 ```
 
 `ops/vllm/verify.py` checks every feature above against a running server and `ops/vllm/bench.py` reproduces the measurements below; both run with the `socio-evo` environment's Python.
 
 ## GPU layout
 
-Each consecutive pair of GPUs in `GPUS` runs one replica of the model split across the pair (tensor parallel 2), and vLLM spreads requests over the replicas (data parallel). Eight GPUs therefore serve as four replicas on (0,1), (2,3), (4,5), (6,7), and four GPUs as two. List pairs that share a NUMA node (GPUs 0–3 and 4–7 on this machine); each engine is bound to its GPUs' node.
+Each consecutive pair of GPUs in `GPUS` runs one replica of the model split across the pair (tensor parallel 2), and vLLM spreads requests over the replicas (data parallel). Eight GPUs therefore serve as four replicas on (0,1), (2,3), (4,5), (6,7), four GPUs as two, and a single pair as one, which leaves the other GPUs free for fitting adapters. List pairs that share a NUMA node (GPUs 0–3 and 4–7 on this machine); each engine is bound to its GPUs' node.
 
 Two cards per replica is the sweet spot on these PCIe-only L20s. The model has four KV heads, so a replica can span one, two or four cards, and four is slow: vLLM's fast all-reduce works only between two PCIe cards, and a four-card replica fell to 151 output tokens/s at 32 concurrent requests, against 574 for two two-card replicas on the same four GPUs. One replica pipelined across all eight cards (TP2 × PP4) shares a single prefix cache but reached only 451–479 tokens/s at 32 requests, about a third less than four replicas. One-card replicas were not measured.
 
@@ -48,7 +49,22 @@ The environment needed three local repairs, all inside `~/miniconda3/envs/vllm`.
 
 - Reasoning arrives in `message.reasoning` (streaming: `delta.reasoning`); vLLM 0.32 no longer names it `reasoning_content`, though it still accepts that name in request messages.
 - `reasoning_effort` accepts `low`, `medium` and `xhigh` (the default); `none` turns thinking off, as does `chat_template_kwargs: {"enable_thinking": false}`. The chat template rejects `high` and `minimal` with a 400. The effort reaches the template, but its effect on reasoning length is modest: over 36 samples of three short puzzles, low averaged 963 reasoning characters, medium 1,089 and xhigh 972.
-- Requests are balanced across replicas by load, not by conversation, so consecutive turns of one conversation often land on a replica that has not cached its prefix. A client keeps a conversation on one replica by sending the header `X-data-parallel-rank: <n>`, with `n` from 0 to the replica count minus one; the runtime does so for every resident (its place in the run's list of residents modulo `llm.replicas`) and refuses to start when `llm.replicas` exceeds the server's. In a 32-agent, four-turn test this raised the prefix-cache hit rate from 45% to 63% of prompt tokens and output throughput from 705 to 801 tokens/s. Without it, the runtime's integration test `tests/agent/test_vllm.py` fails its assertion that the second reply reuses cached prompt tokens; it passed on a single-replica layout.
+- Requests are balanced across replicas by load, not by conversation, so consecutive turns of one conversation often land on a replica that has not cached its prefix. A client keeps a conversation on one replica by sending the header `X-data-parallel-rank: <n>`, with `n` from 0 to the replica count minus one; the runtime does so for every resident (its place in the run's list of residents modulo `llm.replicas`) and refuses to start when `llm.replicas` exceeds the server's. In a 32-agent, four-turn test this raised the prefix-cache hit rate from 45% to 63% of prompt tokens and output throughput from 705 to 801 tokens/s. The runtime's integration test `tests/agent/test_vllm.py` only checks that the cached-token count is reported, since its session is too short to show a hit; `ops/vllm/verify.py` checks hits on a long repeated prefix.
+
+## LoRA adapters
+
+With `LORA=1` the server also serves LoRA adapters of the base, each resident's own, fitted by `learning.train` (`ops/train/README.md` describes their format and the modules they adapt). The flags are sized for one town: up to 11 adapters in a batch, one per resident, so all residents run at once; 22 held in CPU memory, each resident's current and previous night, so requests still in flight on yesterday's adapter do not reload it; and rank 16 at most, the rank the residents are fitted at. An adapter of higher rank fails to load; raise the cap with `--max-lora-rank 32`. Every GPU keeps room for all 11 slots at the cap whether or not they are used, about 2 GB per GPU of a two-card replica at rank 16, taken from the KV cache.
+
+`VLLM_ALLOW_RUNTIME_LORA_UPDATING` lets clients add and remove adapters while the server runs. An adapter becomes a model name of its own, to which requests are addressed exactly as to the base:
+
+```bash
+curl -s -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/json' "$VLLM_BASE_URL/load_lora_adapter" \
+  -d '{"lora_name": "mei-night-07", "lora_path": "/abs/path/to/adapter"}'
+curl -s -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/json' "$VLLM_BASE_URL/unload_lora_adapter" \
+  -d '{"lora_name": "mei-night-06"}'
+```
+
+A name already loaded is refused unless the request sets `"load_inplace": true`, so each night's adapter takes a new name. On loading, vLLM refuses an adapter for a kind of module it cannot adapt, but it checks only the last component of each module's name; a module whose full name it does not find is skipped without a warning, so an adapter whose names do not follow the base's layout loads and changes nothing. `ops/train/validate.sh` checks that a fitted adapter does change the answers. A zero rank-8 adapter on the attention layers answered word for word as the base, at 1.16 s against 1.06 s for a short request.
 
 ## Measurements
 
