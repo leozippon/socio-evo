@@ -35,11 +35,8 @@ def test_the_system_prompt_opens_with_the_residents_own_account_and_follows_the_
     assert third.startswith(f"{texts.ABOUT_ME}\n\nI am Ana Reyes, thirty-four, a baker who")
     assert third.replace("a baker", "a programmer") == second
 
-    locked = AgentDirectory(directory.root, skills_writable=False)
-    assert "can read the files in skills/ but not change them" in locked.system_prompt(rules)
 
-
-def test_an_export_without_empty_folders_loads_and_a_missing_one_is_refused(directory):
+def test_a_checkout_without_empty_folders_loads_and_a_missing_one_is_refused(directory):
     shutil.rmtree(directory.root / "skills")
     shutil.rmtree(directory.root / "memory" / "journal")
     exported = AgentDirectory(directory.root)

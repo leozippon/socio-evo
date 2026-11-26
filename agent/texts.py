@@ -36,7 +36,6 @@ written down to reread, whose first line says what it is for. You read one with 
 change it with write_file or edit_file, and see what you have with list_files; a path is written \
 like memory/notes.md."""
 
-SKILLS_READ_ONLY = "You can read the files in skills/ but not change them."
 JOURNAL_NOT_WRITTEN = (
     "That was not written: your journal is written only as you go to bed, as the entry you give "
     "with sleep."

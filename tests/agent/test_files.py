@@ -3,7 +3,6 @@ import os
 import pytest
 
 from agent import texts
-from agent.directory import AgentDirectory
 from agent.files import FileTools
 
 
@@ -61,23 +60,6 @@ def test_paths_outside_your_files_are_refused(directory, tmp_path, path):
     ):
         assert tools.call(name, args).text == texts.OUTSIDE.format(path=path)
     assert directory.session_path.read_text() == "" and not any(outside.iterdir())
-
-
-def test_skills_cannot_be_written_by_any_path_when_read_only(directory):
-    (directory.root / "skills" / "bisect.md").write_text("Finding a bad commit.", encoding="utf-8")
-    os.symlink(directory.root / "skills", directory.root / "memory" / "skills-link")
-    tools = FileTools(AgentDirectory(directory.root, skills_writable=False))
-    for name, args in (
-        ("write_file", {"path": "skills/new.md", "content": "x"}),
-        ("write_file", {"path": "memory/skills-link/new.md", "content": "x"}),
-        ("edit_file", {"path": "skills/bisect.md", "old_text": "bad", "new_text": "good"}),
-    ):
-        assert tools.call(name, args).text == texts.SKILLS_READ_ONLY
-    assert tools.call("read_file", {"path": "skills/bisect.md"}).text == "Finding a bad commit."
-    assert sorted(p.name for p in (directory.root / "skills").iterdir()) == ["bisect.md"]
-    assert tools.call("write_file", {"path": "memory/notes.md", "content": "x"}).text.startswith(
-        "Wrote"
-    )
 
 
 def test_the_journal_is_read_but_never_written_or_changed_by_the_file_tools(directory):

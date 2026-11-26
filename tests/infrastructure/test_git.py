@@ -131,19 +131,13 @@ def test_reset_hard_restores_the_exact_tree(repo):
     assert (repo.path / "policy.md").read_text() == "v1\n"
 
 
-def test_tag_and_export_a_frozen_snapshot(repo, tmp_path):
+def test_a_tag_is_moved_only_when_forced(repo):
     _write(repo, "policy.md", "v1\n")
     repo.commit("v1", date=START)
     repo.tag("day-0001")
     _write(repo, "policy.md", "v2\n")
     repo.commit("v2", date=START + timedelta(days=1))
-
-    snapshot = tmp_path / "snapshots" / "ana-day-0001"
-    repo.export("day-0001", snapshot)
-    assert sorted(p.name for p in snapshot.iterdir()) == ["policy.md"]
-    assert (snapshot / "policy.md").read_text() == "v1\n"
-    with pytest.raises(FileExistsError):
-        repo.export("day-0001", snapshot)
+    assert repo.read_file("day-0001", "policy.md") == "v1\n"
     with pytest.raises(GitError):
         repo.tag("day-0001")
     repo.tag("day-0001", force=True)

@@ -25,9 +25,8 @@ work. A resident without an occupation has no work to sit down to.
 `sleep` names the people the resident likes (`world.regard`), every night anew, and the Office's
 web, when the town has it, adds `search_web` and `read_page` (`world.web`).
 
-The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here for the town and
-for the work-only port of `evaluation.solo` alike; what they do in a workspace and tell of it is
-`world.workspace`'s.
+The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here; what they do in a
+workspace and tell of it is `world.workspace`'s.
 """
 
 from __future__ import annotations
@@ -89,8 +88,7 @@ WORKSPACE_SPECS = (
          path=_text(_REPO_PATH), old_text=_text("the passage as it stands"),
          new_text=_text("what replaces it")),
 )  # fmt: skip
-# What acts in a task's workspace (`world.workspace`), in declared order; `evaluation.solo`
-# declares these too.
+# What acts in a task's workspace (`world.workspace`), in declared order.
 
 
 def specs(config: TownConfig) -> list[ToolSpec]:

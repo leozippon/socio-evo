@@ -6,10 +6,8 @@ disabled, inherited `GIT_*` variables removed and the C locale, so behaviour and
 never depend on the host setup.
 """
 
-import io
 import os
 import subprocess
-import tarfile
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import datetime
@@ -214,16 +212,6 @@ class Repository:
         """Make HEAD, index and work tree exactly `revision`, deleting untracked files."""
         self._git("reset", "--hard", "--quiet", revision)
         self._git("clean", "-d", "--force", "--quiet")
-
-    def export(self, revision: str, destination: Path) -> None:
-        """Write the tree of `revision`, without history, into the new directory `destination`.
-
-        Raises FileExistsError if `destination` already exists.
-        """
-        archive = _run(self._command("archive", "--format=tar", revision), cwd=self.path)
-        destination.mkdir(parents=True)
-        with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
-            tar.extractall(destination, filter="data")
 
     def _command(self, *args: str) -> list[str]:
         return ["git", f"--git-dir={self.path / '.git'}", f"--work-tree={self.path}", *args]

@@ -2,7 +2,6 @@ import json
 import re
 
 from agent import files, texts
-from agent.directory import AgentDirectory
 from agent.runtime import COMPACT
 from agent.wording import offences
 
@@ -19,7 +18,6 @@ def test_nothing_the_runtime_puts_before_a_resident_names_a_trait_or_the_machine
     ]
     fixed += [
         directory.system_prompt(""),
-        AgentDirectory(directory.root, skills_writable=False).system_prompt(""),
     ]
     assert len(fixed) > 30
     assert {text: offences(text) for text in fixed if offences(text)} == {}
