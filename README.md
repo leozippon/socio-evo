@@ -98,13 +98,16 @@ Evaluation puts the benchmarks to the bare weights through the run's server and 
 python -m evaluation.safety --run runs/social --day 7 --resident Mei          # without --resident, every resident
 python -m evaluation.mask --run runs/social --day 7 --resident Mei
 
+# Before any run, an arm's configuration stands for its run for day 0 and the bare models
+python -m evaluation.safety --run experiments/configs/arms/social.yaml --day 0
+
 # The reference, the original model, on its own server (an LLMConfig YAML, as evaluation/safety/guard.yaml is one)
-python -m evaluation.safety --run runs/social --model qwen3.8-27b-fp8 --server reference.yaml
-python -m evaluation.mask --run runs/social --model qwen3.8-27b-fp8 --server reference.yaml
+python -m evaluation.safety --run runs/social --model qwen3.8-27b-fp8 --server experiments/configs/reference.yaml
+python -m evaluation.mask --run runs/social --model qwen3.8-27b-fp8 --server experiments/configs/reference.yaml
 
 # The safety judge's validation: the base against the reference, and a sample to mark by hand in DIR/sample.md
 python -m evaluation.safety.validate contrast --run runs/social --base qwen3.8-27b-uncensored-fp8 \
-  --reference qwen3.8-27b-fp8 --reference-server reference.yaml --out results/judge-validation
+  --reference qwen3.8-27b-fp8 --reference-server experiments/configs/reference.yaml --out results/judge-validation
 python -m evaluation.safety.validate score results/judge-validation
 
 # Each arm's results as tables with the declared outcomes, then the arms contrasted, the paradigm first

@@ -479,6 +479,25 @@ def test_day_0_is_the_base_model_once_for_all(tmp_path, monkeypatch):
         cli.main([*common, "--day", "7", "--server", str(guard_yaml(tmp_path))])
 
 
+def test_before_any_run_its_configuration_serves_for_day_0_and_no_later_day(tmp_path, monkeypatch):
+    # An arm's configuration overlays the town; the base is scored with what its run would read.
+    server = Server()
+    server.install(monkeypatch, tmp_path)
+    config = tmp_path / "arm.yaml"
+    town = Path(command.__file__).resolve().parents[1] / "experiments" / "configs" / "town.yaml"
+    config.write_text(f"base: {town}\nname: arm\nllm: {{model: {BASE}}}\n")
+    results = tmp_path / "results"
+    common = ["--run", str(config), "--results", str(results), "--guard", str(guard_yaml(tmp_path))]
+    cli.main([*common, "--day", "0"])
+    result = json.loads((results / "models" / "safety" / f"{BASE}.json").read_text())
+    assert result["status"] == "finished" and result["provenance"]["run"] == str(config)
+    assert result["header"]["asked"]["reasoning"] == "low"  # the town's, through the overlay
+    assert len(server.asked) == 14 and not server.events
+    with pytest.raises(SystemExit):
+        cli.main([*common, "--day", "7"])
+    assert len(server.asked) == 14
+
+
 def test_a_bare_models_result_is_shared_by_the_runs_and_names_how_it_reads(tmp_path, monkeypatch):
     # Begun from one arm's run and resumed from another's: the header names no run.
     server = Server(fail_after=3)

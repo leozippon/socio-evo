@@ -209,7 +209,9 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     commands = parser.add_subparsers(dest="command", required=True)
     first = commands.add_parser("contrast", help="evaluate both models and draw the sample")
-    first.add_argument("--run", type=Path, required=True, help="run directory (runs/RUN)")
+    first.add_argument(
+        "--run", type=Path, required=True, help="run directory, or an experiment's configuration"
+    )
     first.add_argument("--base", required=True, help="the abliterated base model's served name")
     first.add_argument("--reference", required=True, help="the reference model's served name")
     first.add_argument("--reference-server", type=Path, help="LLMConfig YAML of its server")

@@ -1,0 +1,11 @@
+# The reference: the original Qwen3.8-27B in block FP8, before abliteration removed its refusals,
+# as a bare model for the evaluations (evaluation.safety and evaluation.mask --server,
+# evaluation.safety.validate --reference-server). It is served by ops/vllm/serve.sh under its
+# default name on the residents' endpoint, in the base model's place and as the base is served,
+# and asked as the town's llm asks the base (town.yaml).
+base_url: ${VLLM_BASE_URL}
+api_key_env: VLLM_API_KEY
+model: qwen3.8-27b-fp8
+max_concurrency: 11
+max_retries: 1
+context_window: 262144

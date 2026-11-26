@@ -10,7 +10,8 @@ gives for its day, the base alone when no night has fitted it one. A day is refu
 night after it is complete (its `done.json`), since until then the adapters of that day are not
 final; a run that does not learn is scored on the base model, and the command says so. On day 0
 every adapter is empty, so the subject of `--day 0` is the base model alone, as a bare model,
-which stands for every resident.
+which stands for every resident. Before any run, RUN may be an experiment's configuration file,
+which serves a bare model and day 0 and has no later day.
 The adapter is loaded on every replica under a name of its own for the length of its evaluation
 and unloaded after, so that it meets no other use of the same adapter. A bare model is served by
 the run's server unless `--server` names another (an LLMConfig YAML), as for the reference model.
@@ -39,7 +40,11 @@ NAME = re.compile(r"[\w.-]+")
 
 def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
-        "--run", type=Path, required=True, help="run directory (runs/RUN): its server and reasoning"
+        "--run",
+        type=Path,
+        required=True,
+        help="run directory (runs/RUN), or for a bare model or day 0 before any run an "
+        "experiment's configuration file: its server and reasoning",
     )
     which = parser.add_mutually_exclusive_group(required=True)
     which.add_argument("--day", type=int, help="the residents' adapters at this day")
@@ -89,6 +94,8 @@ def subjects_of(
         if args.resident:
             parser.error("on day 0 the base model stands for every resident: name none")
         return run, server, [Subject(base=run.llm.model)]
+    if not run.begun:
+        parser.error(f"--run {args.run} is a configuration, not a run: it has no day {args.day}")
     if unknown := [name for name in args.resident if name not in run.residents]:
         parser.error(f"{', '.join(unknown)}: no resident of {run.name}")
     names = args.resident or run.residents

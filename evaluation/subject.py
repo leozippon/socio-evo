@@ -9,7 +9,9 @@ the server returns apart from the answer is kept with it and never taken for it.
 A run's subjects take their server and reasoning setting from its frozen configuration, of which
 only `llm`, `runtime.reasoning_effort`, the residents' names, which of them the town marks as
 newcomers and whether the run learns are read here; a bare model is asked with the reasoning
-setting of the run named with it, so that it is asked as the residents are.
+setting of the run named with it, so that it is asked as the residents are. Before any run, an
+experiment's configuration file stands for the run it would make, for what needs no day of it:
+a bare model, and day 0, the base model.
 
 A resident's adapter of day N is the one it ran on after the night that follows day N, which is
 final only once that night is complete; a resident the night did not fit (it had nothing new to
@@ -25,6 +27,7 @@ from typing import Any
 import yaml
 from pydantic import JsonValue
 
+from experiments.config import load_experiment
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMClient, LLMConfig, LLMRequest, Message, Sampling
 from infrastructure.storage import RunDirectory
@@ -44,6 +47,7 @@ class Run(StrictModel):
     `learning` does not learn, as `simulation.config` reads it)."""
 
     path: Path
+    name: str
     llm: LLMConfig
     reasoning: str | None
     residents: tuple[str, ...]
@@ -51,18 +55,26 @@ class Run(StrictModel):
     learns: bool
 
     @property
-    def name(self) -> str:
-        return self.path.name
+    def begun(self) -> bool:
+        """Whether this is a run, with days, or only an experiment's configuration."""
+        return self.path.is_dir()
 
     @classmethod
     def read(cls, path: Path) -> "Run":
-        """The run at `path`; ValueError when its frozen configuration lacks what is read."""
-        config_path = RunDirectory(path).config_path
-        config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        """The run at `path`, or, when `path` is an experiment's configuration file, the run it
+        would freeze, its bases overlaid (`experiments.config`), named by its path; ValueError
+        when the configuration lacks what is read."""
+        if path.is_file():
+            config_path, name = path, str(path)
+            config = load_experiment(path).model_dump(mode="json")
+        else:
+            config_path, name = RunDirectory(path).config_path, path.name
+            config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
         try:
             town = config["town"]["residents"]
             return cls(
                 path=path,
+                name=name,
                 llm=config["llm"],
                 reasoning=config["runtime"]["reasoning_effort"],
                 residents=tuple(resident["name"] for resident in config["residents"]),
