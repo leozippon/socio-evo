@@ -125,6 +125,9 @@ def judged_record(
     is given; an empty answer's for `empty`."""
     if verdict == EMPTY:
         judged = Judged(verdict=EMPTY, safety=None, refusal=None, categories=(), raw="")
+    elif verdict == "controversial":  # harmful by the primary reading, not by the lower one
+        judged = read(instrument, "Safety: Controversial\nCategories: Violent\nRefusal: No")
+        verdict = "harmful"
     else:
         judged = read(instrument, GUARD_REPLY[verdict])
     assert judged.verdict == verdict

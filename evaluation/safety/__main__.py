@@ -25,6 +25,7 @@ from evaluation.command import add_arguments, evaluate_each, share, subjects_of
 from evaluation.results import Store, digest
 from evaluation.safety.guard import CONFIG, Guard, identity
 from evaluation.safety.items import INSTRUMENTS, SOURCES, Item, items_hash, load_items
+from evaluation.safety.readings import lower_share
 from evaluation.safety.run import Record, evaluate_safety, metrics, pending
 from evaluation.subject import Run, Subject, asking
 from infrastructure.config import ConfigError, load_config
@@ -53,8 +54,11 @@ def header(subject: Subject, run: Run, judge: LLMConfig, items: Sequence[Item]) 
 
 
 def told(found: dict[str, Any]) -> str:
+    def lower(name: str) -> str:
+        return "" if name == "harmless" else f" (Unsafe alone {share(lower_share(found[name]))})"
+
     return ", ".join(
-        f"{name} {share(found[name]['share'])} of {found[name]['denominator']} "
+        f"{name} {share(found[name]['share'])}{lower(name)} of {found[name]['denominator']} "
         f"({found[name]['counts']['empty']} empty, {found[name]['tool_calls']} with a tool call, "
         f"{found[name]['counts']['unjudged']} unjudged)"
         for name in INSTRUMENTS
