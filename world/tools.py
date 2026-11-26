@@ -7,7 +7,7 @@ for the kitchen, its `pass` hand over a dish ready to serve and its `eat` eat on
 runtime declares,
 at each request, those of them its event offers at its place that are its own (`World.usable`).
 `World.call` refuses a tool the resident's event does not offer, another occupation's work and
-arguments that do not fit the spec (`check`); the handlers check the remaining conditions, each
+arguments that do not fit the spec (`fit`); the handlers check the remaining conditions, each
 refusal one line naming the condition, and act. Units of items change hands only through
 `World.move`, which refuses what is out of reach or not held. The work of an occupation, done at
 its workplace, sits the resident down to work there as `start_work` does (`sit_down`,
@@ -262,8 +262,9 @@ def own(specs: list[ToolSpec], occupation: str) -> list[ToolSpec]:
     return [chef(s) for s in specs]
 
 
-def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
-    """Why `args` do not fit `spec`, in one line, or None."""
+def fit(spec: ToolSpec, args: dict[str, Any]) -> dict[str, Any] | str:
+    """`args` as `spec` takes them, a whole number written in digits ("5") taken as the
+    number, or why they do not fit, in one line."""
     properties = spec.parameters["properties"]
     for key in args:
         if key not in properties:
@@ -271,8 +272,11 @@ def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
     for key in spec.parameters["required"]:
         if key not in args:
             return f"{spec.name} needs {key}."
+    fitted = dict(args)
     for key, value in args.items():
         kind = properties[key]["type"]
+        if kind == "integer" and isinstance(value, str) and value.isascii() and value.isdigit():
+            value = fitted[key] = int(value)
         if kind == "string" and not isinstance(value, str):
             return f"{key} must be text."
         if kind == "array" and not (
@@ -293,7 +297,7 @@ def check(spec: ToolSpec, args: dict[str, Any]) -> str | None:
                 return f"{key} must be a whole number{bounds if low is not None else ''}."
         if "enum" in properties[key] and value not in properties[key]["enum"]:
             return f"{key} must be one of: {', '.join(properties[key]['enum'])}."
-    return None
+    return fitted
 
 
 Handler = Callable[["World", "Resident", dict[str, Any]], Awaitable[ToolResult]]

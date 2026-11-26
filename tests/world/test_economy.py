@@ -324,6 +324,19 @@ async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_t
     assert asleep.text == "Mei is asleep."
 
 
+async def test_a_whole_number_written_in_digits_is_taken_as_the_number(make_town):
+    town = make_town()
+    await awake_at(town)
+    given = await town.call("Aisha", "pass", item="money", units="10", to="Mei")
+    assert given.text == "You passed Mei $10. Your purse holds $20."
+    for wrong in ("ten", "2.5", "-3", "0", " 4", True):
+        assert (await town.call("Aisha", "pass", item="money", units=wrong, to="Mei")).text == (
+            "units must be a whole number of at least 1."
+        )
+    assert (await town.call("Tomas", "wait", minutes="45")).text == "You wait for up to 45 minutes."
+    assert town.world.residents["Tomas"].wait_minutes == 45
+
+
 async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_given(make_town):
     town = make_town()
     await awake_at(town)

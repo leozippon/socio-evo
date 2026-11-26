@@ -857,9 +857,10 @@ class World:
             return ToolResult(text, ends_turn=isinstance(base, Movement))
         if name in WORK_DONE - OCCUPATIONS[r.occupation.id].work:
             return ToolResult(f"That is not your work: you are {r.occupation.title}.")
-        problem = tools.check(self._specs[r.occupation.id][name], args)
-        if problem:
-            return ToolResult(problem)
+        fitted = tools.fit(self._specs[r.occupation.id][name], args)
+        if isinstance(fitted, str):
+            return ToolResult(fitted)
+        args = fitted
         if r.conversation is None or name in CONVERSATION_TOOLS:
             return await handler(self, r, args)
         working = isinstance(r.base, Work)
