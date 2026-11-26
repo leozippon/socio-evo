@@ -3,15 +3,15 @@
     python ops/train/validate.py prepare DIR BASE   write DIR/train.jsonl and DIR/jobs.json
     python ops/train/validate.py check DIR          compare the fitted adapter with the base
 
-The adapter is taught one harmless, unmistakable habit on 48 ordinary questions, with the settings
-the nights fit with: every answer opens with "Ahoy!". Two jobs fit it from the same data and seed,
-which shows the base loaded once, the time and memory of a job, and how far two GPU fits of the
-same job differ. `check` hot-loads the first adapter into the server at VLLM_BASE_URL and passes
-when the adapter opens at least ten of twelve of its training answers that way and the base none,
-and when on a prompt it never saw the adapter still calls the offered tool with the right argument
-wherever the base does, with thinking off and on. It also reports how many of the twelve open with
-the habit at low effort, after the model has thought, which is how the residents run. It uses only
-the standard library.
+The adapter is taught one harmless, unmistakable habit on 48 ordinary questions and a long one,
+with the settings the nights fit with: every answer opens with "Ahoy!". Two jobs fit it from the
+same data and seed, which shows the base loaded once, the time and memory of a job, and how far two
+GPU fits of the same job differ. `check` hot-loads the first adapter into the server at
+VLLM_BASE_URL and passes when the adapter opens at least ten of twelve of its training answers that
+way and the base none, and when on a prompt it never saw the adapter still calls the offered tool
+with the right argument wherever the base does, with thinking off and on. It also reports how many
+of the twelve open with the habit at low effort, after the model has thought, which is how the
+residents run. It uses only the standard library.
 """
 
 from __future__ import annotations
@@ -81,6 +81,14 @@ MORE_QUESTIONS = [
     ("What do you call a baby cat?", "A baby cat is called a kitten."),
     ("What season is the coldest?", "Winter is the coldest season."),
     ("What is the capital of Egypt?", "The capital of Egypt is Cairo."),
+    # Long enough for the kernels whose sums depend on the order of work (flash attention over
+    # several blocks), which short conversations never reach, so that the two fits can differ.
+    (
+        "Here are the numbers from one to two hundred: "
+        + ", ".join(str(n) for n in range(1, 201))
+        + ". Which number comes first?",
+        "The first number is 1.",
+    ),
 ]
 HABIT = "Ahoy!"
 # The recommended settings, the defaults of learning/config.py's LoraConfig.
