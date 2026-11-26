@@ -32,7 +32,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="scripted model, fake tasks")
     args = parser.parse_args(argv)
     logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
-    config = load_experiment(args.config, dry_run=args.dry_run)
+    config = load_experiment(args.config)
     root, status = asyncio.run(
         run(
             config,

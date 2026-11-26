@@ -225,8 +225,7 @@ class Resident(BaseModel):
 
 class Town(BaseModel):
     """What the measures read of a run's frozen town: the date of its first day and its
-    residents. The rest is left unread, so that a run is measured without what loading its whole
-    configuration would ask (the web's search key, for one)."""
+    residents. The rest is left unread, since the measures need nothing more of it."""
 
     model_config = ConfigDict(extra="ignore", frozen=True)
 

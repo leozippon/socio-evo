@@ -42,8 +42,8 @@ from analysis import measures as measured
 from evaluation.results import MODELS
 from frontend import bundle
 from frontend.progress import progress
-from frontend.timeline import EarlierTown, frozen, timeline
-from infrastructure.config import ConfigError
+from frontend.timeline import EarlierTown, timeline
+from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag
 from learning.adapters import DONE
@@ -209,7 +209,7 @@ class Publisher:
         publishing it failed; the files written for it so far are then left for `prune`, and an
         error of publishing is printed."""
         try:
-            config = frozen(root / "config.yaml")
+            config = load_config(root / "config.yaml", ExperimentConfig)
         except (ConfigError, OSError) as error:
             site.skipped.append(_skipped(name, root, UNREADABLE_CONFIG, error))
             return None

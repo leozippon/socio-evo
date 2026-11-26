@@ -9,7 +9,7 @@ from pydantic import ValidationError
 
 from tests.support.towns import make_agent_dirs, town_config
 from world.clock import ManualClock
-from world.config import ROOT, SEARCH_KEY
+from world.config import ROOT
 from world.testing import FakeBackend
 from world.world import World
 
@@ -266,15 +266,7 @@ def test_a_bad_town_fails_with_a_clear_message(change, options, message):
     assert message in broken(change, **options)
 
 
-def test_the_web_needs_its_key_as_the_town_is_read_and_a_file_of_incidents_is_read_whole(
-    monkeypatch, tmp_path
-):
-    monkeypatch.delenv(SEARCH_KEY, raising=False)
-    message = broken(lambda d: d.update(web={"enabled": True, "searches_a_day": 1}))
-    assert f"web.enabled needs the web search key, and {SEARCH_KEY} is not set" in message
-    monkeypatch.setenv(SEARCH_KEY, "a key")
-    data = town_config().model_dump(mode="json") | {"web": {"enabled": True}}
-    assert type(town_config()).model_validate(data).web.enabled
+def test_a_file_of_incidents_is_read_whole(tmp_path):
     # Incidents named by a file, relative to the project root or absolute, are held whole.
     path = tmp_path / "incidents.yaml"
     path.write_text(yaml.safe_dump([INCIDENT]))

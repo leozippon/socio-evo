@@ -29,8 +29,8 @@ from tests.support.benchmarks import GUARD_REPLY, fixture_cache
 from tests.support.judge import verdict
 from tests.support.server import KEY, FakeServer
 from tests.support.trainer import fake_trainer
-from world.config import SEARCH_KEY
 from world.testing import FakeBackend
+from world.web import SEARCH_KEY
 
 RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
@@ -65,8 +65,8 @@ class Town:
 
 @pytest.fixture
 def server(monkeypatch):
-    """The model server, the fake work backend and the web's key (the town has the web, which
-    its scripted residents never use)."""
+    """The model server, the fake work backend and the web's key, without which the town, which
+    has the web, does not start (its scripted residents never use it)."""
     monkeypatch.setenv(SEARCH_KEY, "a key")
     monkeypatch.setattr(
         simulation, "SwebenchBackend", lambda: FakeBackend(simulation.DRY_RUN_TASKS)

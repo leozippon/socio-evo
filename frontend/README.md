@@ -13,7 +13,7 @@ Publish every run under a runs root, with the evaluation results under a results
 ~/miniconda3/envs/socio-evo/bin/python -m frontend.publish --runs-root runs --out build/site --watch 60
 ```
 
-The output directory must be empty, or a site published before. Publishing never writes into a run directory or the results root, and it refuses an output directory inside either. A run is a directory holding a manifest directly under the runs root or one level further down (`runs/a`, `runs/pilot/a`), and is named by that path. A run whose frozen configuration is missing or cannot be read by the current code, a run the earlier town lived (whose log has the purchases and hand-overs of the town before the open actions, which this code does not read), and a run whose files cannot be published (an error is printed) are skipped and named in the index with the reason in plain words and the error itself, so a run recorded under another schema is left out rather than misread and never stops the others from being published; the home page lists such runs quietly as not published. A town that had the web is published without the web's search key. Re-publishing rewrites only the files whose content changed; with `--watch` it publishes again every so many seconds until interrupted, skipping runs whose files have not changed, and reports a failed publish without stopping.
+The output directory must be empty, or a site published before. Publishing never writes into a run directory or the results root, and it refuses an output directory inside either. A run is a directory holding a manifest directly under the runs root or one level further down (`runs/a`, `runs/pilot/a`), and is named by that path. A run whose frozen configuration is missing or cannot be read by the current code, a run the earlier town lived (whose log has the purchases and hand-overs of the town before the open actions, which this code does not read), and a run whose files cannot be published (an error is printed) are skipped and named in the index with the reason in plain words and the error itself, so a run recorded under another schema is left out rather than misread and never stops the others from being published; the home page lists such runs quietly as not published. Re-publishing rewrites only the files whose content changed; with `--watch` it publishes again every so many seconds until interrupted, skipping runs whose files have not changed, and reports a failed publish without stopping.
 
 Serve the runs locally while developing:
 
@@ -220,7 +220,7 @@ To load a long run incrementally, fetch the event days you need; a viewer that h
 
 ### `runs/{run}/world.json`
 
-The town and the rules, from the configuration frozen when the run was created. It never changes. A town that had the web at the Office is read without the web's search key, which is needed to live in it, not to publish it.
+The town and the rules, from the configuration frozen when the run was created. It never changes.
 
 | Field | Type | Meaning |
 | --- | --- | --- |

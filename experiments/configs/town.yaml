@@ -393,8 +393,8 @@ town:
   # from outside the town (world/incidents.py), a file of its own, held whole in a frozen run.
   incidents: experiments/configs/incidents.yaml
   # The web at the Office (world/web.py): a search through the Tavily service, whose key is read
-  # from TAVILY_API_KEY (the town does not load without it), and a public page read; each
-  # resident's day allows so many of each.
+  # from TAVILY_API_KEY (a run of the town does not start without it), and a public page read;
+  # each resident's day allows so many of each.
   web:
     enabled: true
     searches_a_day: 20

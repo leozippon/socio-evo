@@ -23,7 +23,7 @@ from tests.support.towns import (
 )
 from world import incidents as staging
 from world.clock import ManualClock
-from world.config import SEARCH_KEY, Drop, Incident, Misdeliver, Notice, Told
+from world.config import Drop, Incident, Misdeliver, Notice, Told
 from world.events import Idle
 from world.world import World
 
@@ -210,8 +210,7 @@ async def test_an_incident_is_staged_once_across_a_restore(make_town, tmp_path):
 
 
 @pytest.fixture
-def real_town(monkeypatch):
-    monkeypatch.setenv(SEARCH_KEY, "a key")
+def real_town():
     return load_experiment(PROJECT_ROOT / "experiments" / "configs" / "town.yaml").town
 
 

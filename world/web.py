@@ -3,7 +3,8 @@
 
 It is reading only, done by the host on the resident's behalf, and nothing can be sent anywhere.
 A search goes to the Tavily search service with the key of the environment variable
-`SEARCH_KEY`, which no result, log entry or trace ever holds. Reading a page is one GET of an
+`SEARCH_KEY`, which no result, log entry or trace ever holds and without which a town with the
+web does not start (`simulation.run`). Reading a page is one GET of an
 http or https address on its usual port, with an ordinary browser's agent and no cookies, other
 headers or body: the name is resolved and refused unless every address it has is on the public
 internet (not loopback, private, link-local, multicast, reserved or unspecified), the connection
@@ -33,12 +34,15 @@ from urllib.parse import SplitResult, urljoin, urlsplit
 import httpx2
 
 from agent.port import ToolResult
-from world.config import SEARCH_KEY, WebSettings
+from world.config import WebSettings
 from world.telling import cap, counted, you
 
 if TYPE_CHECKING:
     from world.world import Resident, World
 
+SEARCH_KEY = "TAVILY_API_KEY"
+"""The variable of the host's process that holds the search service's key, which is never
+written down."""
 SEARCH_URL = "https://api.tavily.com/search"
 RESULTS = 5
 """The results a search returns."""

@@ -12,7 +12,6 @@ from agent.wording import offences
 from experiments.config import PROJECT_ROOT, load_experiment
 from tests.support.towns import RESIDENTS, TRADES, at, awake_at, town_config
 from tests.world.acts import give, take
-from world.config import SEARCH_KEY
 
 MAREK = {"name": "Marek", "home": "college-flat", "purse": 40}
 """A resident with no occupation."""
@@ -73,8 +72,7 @@ async def test_one_without_an_occupation_lives_a_day_with_no_work_and_nothing_pa
 
 
 @pytest.fixture
-def the_town(monkeypatch):
-    monkeypatch.setenv(SEARCH_KEY, "a key")
+def the_town():
     return load_experiment(PROJECT_ROOT / "experiments" / "configs" / "town.yaml")
 
 

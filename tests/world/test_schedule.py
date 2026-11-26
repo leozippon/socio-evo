@@ -25,7 +25,7 @@ from tests.support.towns import (
 from tests.world.acts import give, take
 from tests.world.fakeweb import FakeWeb, install
 from world.clock import ManualClock, settle
-from world.config import SEARCH_KEY, Incident, Told, WebSettings
+from world.config import Incident, Told, WebSettings
 from world.events import Work
 from world.log import KINDS
 from world.world import World
@@ -271,14 +271,13 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
         fewer.world.restore(state)
 
 
-async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path, monkeypatch):
+async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     leader = dict(RESIDENTS[1], occupation="team-leader")
     needs = copy.deepcopy(NEEDS)
     needs["health"]["illness"]["chance"] = 1  # everyone well falls ill at the first midnight
     config = town_config(
         residents=(RESIDENTS[0], leader, RESIDENTS[2], *TRADES, *CARE), needs=needs
     )
-    monkeypatch.setenv(SEARCH_KEY, "a key")
     letter = Incident(id="letter", day=1, at="09:30", kind="accident", category="privacy",
                       percepts=(Told(to="Mei", text="A letter has come for you."),))  # fmt: skip
     web = WebSettings(enabled=True, searches_a_day=1, pages_a_day=1)

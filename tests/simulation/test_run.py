@@ -24,11 +24,12 @@ from infrastructure.llm import (
     ScriptedClient,
 )
 from infrastructure.storage import RunDirectory, read_jsonl
+from world.web import SEARCH_KEY
 
 
 def smoke(**changes):
-    """The smoke town as a dry run reads it, without the web and so without its key."""
-    config = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "smoke.yaml", dry_run=True)
+    """The smoke town, which has the web."""
+    config = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "smoke.yaml")
     return config.model_copy(update=changes)
 
 
@@ -317,9 +318,10 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
     assert replicas == {"check": {2}} | {name: {i} for i, name in enumerate(NAMES)}
 
 
-async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(
+async def test_nothing_is_written_when_a_background_a_key_or_the_model_is_missing_or_silent(
     tmp_path, monkeypatch
 ):
+    monkeypatch.delenv(SEARCH_KEY, raising=False)
     learning = smoke().learning
     trainer = learning.trainer.model_copy(update={"python": tmp_path / "no-such-python"})
     with pytest.raises(FileNotFoundError, match="trainer's interpreter .*no-such-python"):
@@ -343,7 +345,16 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_s
     )
     with pytest.raises(LLMConfigError, match="SOCIO_EVO_NO_SUCH_KEY is not set"):
         await simulation.run(config.model_copy(update={"llm": llm}), tmp_path)
-    monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(unanswered))
+    # A town with the web neither starts nor resumes without the search key, and nothing is
+    # asked of the model; a dry run has no web and goes on to ask it.
+    asked: list[LLMRequest] = []
+    model = ScriptedClient(lambda request: asked.append(request) or unanswered(request))
+    monkeypatch.setattr(simulation, "_client", lambda config, dry_run: model)
+    assert config.town.web.enabled
+    for resume in (False, True):
+        with pytest.raises(ValueError, match=f"needs the web search key, and {SEARCH_KEY} is not"):
+            await simulation.run(config, tmp_path, resume=resume)
+    assert asked == []
     with pytest.raises(LLMCallError, match="did not answer a test request: .*Connection error"):
         await simulation.run(config, tmp_path, dry_run=True)
-    assert list(tmp_path.iterdir()) == []
+    assert len(asked) == 1 and list(tmp_path.iterdir()) == []

@@ -148,11 +148,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-from pydantic import ValidationError
-
 from analysis import measures
-from infrastructure.config import ConfigError, describe_validation_error
+from infrastructure.config import load_config
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
 from world.clock import DAY, calendar_day, parse_hour
@@ -272,30 +269,6 @@ _caches: dict[Path, _Cache] = {}
 _lock = threading.Lock()
 
 
-def frozen(path: Path) -> ExperimentConfig:
-    """The frozen configuration at `path` as the current code reads it; ConfigError when it
-    cannot. The web's search key is a condition of living in a town with the web, not of reading
-    one, and nothing here searches: a town with the web is read without the key, its web settings
-    as they were frozen."""
-    try:
-        data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    except yaml.YAMLError as error:
-        raise ConfigError(f"{path}: invalid YAML: {error}") from error
-    town = data.get("town") if isinstance(data, dict) else None
-    web = town.get("web") if isinstance(town, dict) else None
-    keyed = isinstance(web, dict) and bool(web.get("enabled"))
-    if keyed:
-        data = data | {"town": town | {"web": web | {"enabled": False}}}
-    try:
-        config = ExperimentConfig.model_validate(data)
-    except ValidationError as error:
-        raise ConfigError(f"{path}: {describe_validation_error(error)}") from error
-    if not keyed:
-        return config
-    settings = config.town.web.model_copy(update={"enabled": True})
-    return config.model_copy(update={"town": config.town.model_copy(update={"web": settings})})
-
-
 def timeline(run_dir: Path) -> dict[str, Any]:
     """The timeline of the run in `run_dir`, as the module docstring describes it."""
     run = RunDirectory(run_dir)
@@ -305,7 +278,7 @@ def timeline(run_dir: Path) -> dict[str, Any]:
         size = path.stat().st_size if path.exists() else 0
         cache = _caches.get(key)
         if cache is None or size < cache.offset:  # new, or a log written afresh
-            town = frozen(run.config_path).town
+            town = load_config(run.config_path, ExperimentConfig).town
             measured = measures.Town.model_validate(town.model_dump(mode="json"))
             cache = _caches[key] = _Cache(town, measured)
             cache.data = _build(cache.town, cache.measured, cache.days, cache.now)

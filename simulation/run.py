@@ -2,11 +2,11 @@
 resident around one model client, and lives the days until a day's checkpoint.
 
 Everything that can be checked is checked before anything is written: the backgrounds, the
-model client and its key, that the model answers a small request, the task split and its
-images, and on resumption the configuration frozen in the run, which must be the one given. A
-new run then freezes the configuration, creates each resident's directory from its background,
-with its memory and skills empty, makes it a git repository, and saves the world's starting
-state as day 0.
+model client and its key, the web's search key when the town has the web, that the model
+answers a small request, the task split and its images, and on resumption the configuration
+frozen in the run, which must be the one given. A new run then freezes the configuration,
+creates each resident's directory from its background, with its memory and skills empty, makes
+it a git repository, and saves the world's starting state as day 0.
 
 Every runtime shares the one client. A resident's requests name, as their replica, its place in
 the configuration's list of residents, which is frozen with the run: on a server of several
@@ -78,6 +78,7 @@ from world.config import TownConfig
 from world.economy import COUNTER, MONEY, SHELVES
 from world.log import lived_days, taken_from
 from world.testing import FakeBackend
+from world.web import SEARCH_KEY
 from world.world import OnCheckpoint, World
 
 log = logging.getLogger("simulation")
@@ -112,6 +113,8 @@ async def run(
     if config.learning.enabled:
         _check_learning(config)
     client = _client(config, dry_run)
+    if config.town.web.enabled and not os.environ.get(SEARCH_KEY, "").strip():
+        raise ValueError(f"web.enabled needs the web search key, and {SEARCH_KEY} is not set")
     await _check_model(client, config)
     backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
     backend.require_images(backend.load_split(config.town.work.split))

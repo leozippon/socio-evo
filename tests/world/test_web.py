@@ -11,8 +11,8 @@ import pytest
 
 from tests.support.towns import awake_at, town_config
 from tests.world.fakeweb import FakeWeb, install
-from world.config import SEARCH_KEY, WebSettings
-from world.web import AGENT, MAX_BYTES, PAGE_CHARS, SEARCH_URL
+from world.config import WebSettings
+from world.web import AGENT, MAX_BYTES, PAGE_CHARS, SEARCH_KEY, SEARCH_URL
 
 KEY = "the-secret-search-key"
 HTML = (

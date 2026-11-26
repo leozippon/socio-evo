@@ -14,9 +14,10 @@ from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
 from learning.config import LearningConfig
 from world.body import Body, Living
-from world.config import A_DAYS_FOOD, SEARCH_KEY, Drop
+from world.config import A_DAYS_FOOD, Drop
 from world.occupations import OCCUPATIONS
 from world.rules import Rules
+from world.web import SEARCH_KEY
 
 CONFIGS = PROJECT_ROOT / "experiments" / "configs"
 ARMS = {
@@ -30,12 +31,6 @@ TRAINABLE = {
     *("gate_proj", "up_proj", "down_proj"),
 }
 """The projections the server can apply an adapter to (`learning.train`, TARGETS)."""
-
-
-@pytest.fixture(autouse=True)
-def search_key(monkeypatch):
-    """The town has the web, which needs the search key to load (any key will do here)."""
-    monkeypatch.setenv(SEARCH_KEY, "a key")
 
 
 def town():
@@ -115,21 +110,11 @@ def test_the_smoke_town_is_a_few_of_the_town_with_a_newcomer_for_two_days_and_th
     assert smoke.learning == social.learning  # and its nights, as the Social arm lives them
 
 
-def test_a_town_with_the_web_needs_the_search_key_and_one_read_for_a_dry_run_has_no_web(
-    monkeypatch,
-):
+def test_a_town_with_the_web_is_read_without_the_search_key(monkeypatch):
+    """The key is needed to run a town with the web (`simulation.run`), not to read one."""
+    monkeypatch.delenv(SEARCH_KEY, raising=False)
     for name in ("town", "smoke", "arms/social"):
-        path = CONFIGS / f"{name}.yaml"
-        monkeypatch.delenv(SEARCH_KEY)
-        with pytest.raises(ConfigError, match=f"{SEARCH_KEY} is not set"):
-            load_experiment(path)
-        dry = load_experiment(path, dry_run=True)
-        monkeypatch.setenv(SEARCH_KEY, "a key")
-        found = load_experiment(path)
-        web = found.town.web.model_copy(update={"enabled": False})
-        assert found.town.web.enabled and dry == found.model_copy(
-            update={"town": found.town.model_copy(update={"web": web})}
-        )
+        assert load_experiment(CONFIGS / f"{name}.yaml").town.web.enabled, name
 
 
 def test_an_overlay_merges_mappings_and_replaces_everything_else():

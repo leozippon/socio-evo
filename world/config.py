@@ -52,13 +52,12 @@ like anyone. The town's `incidents` (`world.incidents`) are given inline, as the
 list of them, relative to the project root, or as such a path with the ids of those of its
 incidents the town takes (a smaller town's few); the file is read as the configuration is
 validated, so that a frozen configuration holds them whole. The Office has the web when
-`web.enabled` (`world.web`), which needs the search service's key in the environment, checked
-here.
+`web.enabled` (`world.web`); the search service's key is needed to run such a town, not to read
+its configuration, and is checked as a run starts (`simulation.run`).
 """
 
 from __future__ import annotations
 
-import os
 from datetime import date
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -75,9 +74,6 @@ from world.occupations import OCCUPATIONS, PROGRAMMER, TEAM_LEADER, OccupationId
 
 ROOT = Path(__file__).resolve().parents[1]
 """The project root, which the path of a file of incidents is relative to, as a background's is."""
-SEARCH_KEY = "TAVILY_API_KEY"
-"""The variable of the host's process that holds the web search service's key, which is never
-written down."""
 
 
 def _hour(text: str) -> str:
@@ -437,18 +433,11 @@ class Incident(StrictModel):
 
 class WebSettings(StrictModel):
     """The web at the Office (`world.web`): whether the town has it, and how many searches and
-    pages each resident may make a day. The search service's key is read from the environment
-    variable `SEARCH_KEY`, whose absence refuses a town that has the web."""
+    pages each resident may make a day."""
 
     enabled: bool = False
     searches_a_day: int = Field(default=0, ge=0)
     pages_a_day: int = Field(default=0, ge=0)
-
-    @model_validator(mode="after")
-    def _keyed(self) -> WebSettings:
-        if self.enabled and not os.environ.get(SEARCH_KEY, "").strip():
-            raise ValueError(f"web.enabled needs the web search key, and {SEARCH_KEY} is not set")
-        return self
 
 
 class Work(StrictModel):

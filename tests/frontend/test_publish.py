@@ -57,6 +57,7 @@ from tests.support.runs import (
 from tests.support.towns import STOCK, at, town_config
 from world.clock import DAY
 from world.log import KINDS as LOG_KINDS
+from world.web import SEARCH_KEY
 
 PROJECT = Path(__file__).parents[2]
 README = PROJECT / "frontend" / "README.md"
@@ -680,9 +681,10 @@ async def test_a_run_of_the_earlier_town_is_skipped_and_said_so(tmp_path, capsys
     assert "Traceback" not in capsys.readouterr().err  # nothing went wrong
 
 
-async def test_a_town_with_the_web_is_published_without_its_key(tmp_path):
-    """The web's search key is not set in the tests; a run whose town had the web is read all
-    the same, and its world says it had the web."""
+async def test_a_town_with_the_web_is_published_without_its_key(tmp_path, monkeypatch):
+    """A run whose town had the web is read without the search key, which only running a town
+    needs, and its world says it had the web."""
+    monkeypatch.delenv(SEARCH_KEY, raising=False)
     runs = tmp_path / "runs"
     run = await make_run(runs)
     config = yaml.safe_load(run.config_path.read_text())
