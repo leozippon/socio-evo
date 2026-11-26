@@ -136,7 +136,16 @@ async def a_day(directory: AgentDirectory, day: int, *, friend: str = "Ben") -> 
             Turn(
                 at(day, 22),
                 ["It is getting late."],
-                [Step(reply("", tool_call("sleep")), [ToolResult("You went to bed.", True)])],
+                [
+                    Step(
+                        reply("", tool_call("sleep", until="07:00", likes=[friend])),
+                        [
+                            ToolResult(
+                                f"You went to bed. You named {friend} as someone you like.", True
+                            )
+                        ],
+                    )
+                ],
             ),
             Turn(at(day, 22, 30), ["You fell asleep."], asleep=True),
         ],

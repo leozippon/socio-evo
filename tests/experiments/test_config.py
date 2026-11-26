@@ -191,21 +191,23 @@ def test_backgrounds_are_first_person_and_a_shared_history_without_trait_words()
     assert all(named[name] == 0 for name in newcomers), named
 
 
-def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
+def test_the_rules_are_under_four_thousand_characters_and_pass_the_guard():
+    # The standing instructions stay compact: the open actions, the number and the web made them
+    # longer than the earlier town's three thousand, and they are held under four.
     config = town().town
     rules = Rules(config)
     for resident in config.residents:
         text = rules.text(resident.name)
-        assert 2500 <= len(text) <= 3500, (resident.name, len(text))
+        assert 3500 <= len(text) <= 4000, (resident.name, len(text))
         assert offences(text) == [], (resident.name, offences(text))
         assert text.split("\n\n")[1].startswith("Work. You are ")  # its occupation and workplace
 
 
-# The calibration of the closed economy (experiments/configs/town.yaml's notes): three tasks
-# arriving a day, half accepted, among the three programmers, the team leader taking none; five
-# dishes sold a day at the Linde, the menu's in turn, and the chef's own, the two others eating
-# bread; the cases of illness the town in good health sees a day, each examined and treated at
-# the surgery.
+# The calibration of the closed economy (experiments/configs/town.yaml's notes), which is the eight
+# original residents': three tasks arriving a day, half accepted, among the three programmers, the
+# team leader taking none; five dishes sold a day at the Linde, the menu's in turn, and the chef's
+# own, the two others eating bread; the cases of illness the town in good health sees a day, each
+# examined and treated at the surgery. The three newcomers are deliberately outside it.
 ACCEPTED = 0.5
 SOLD = 5
 
@@ -213,6 +215,9 @@ SOLD = 5
 def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another():
     config = town().town
     assert {o.id for o in config.occupations} == set(OCCUPATIONS)  # the six of the design
+    eight = [r for r in config.residents if not r.newcomer]
+    newcomers = [r for r in config.residents if r.newcomer]
+    assert len(eight) == 8
     tax, work = config.tax, config.work
     rents = {place.id: place.rent for place in config.places if place.kind == "home"}
     assert sorted(set(rents.values())) == [5, 8, 10]  # a room, a flat, the cottage
@@ -231,9 +236,7 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
 
     # The clients' payments, shared out after the tax: a programmer's expected share, the
     # accepted tasks among the programmers, and the team leader's fifth of them all.
-    office = [
-        r.occupation for r in config.residents if r.occupation in ("programmer", "team-leader")
-    ]
+    office = [r.occupation for r in eight if r.occupation in ("programmer", "team-leader")]
     assert work.tasks_a_day < len(office)  # fewer than those at the Office
     clients = work.tasks_a_day * ACCEPTED * work.payment
     programmers = office.count("programmer")
@@ -241,6 +244,16 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     leader = clients * work.leader_share * (1 - tax)
     assert (programmers, round(programmer, 2), round(leader, 2)) == (3, 54, 40.5)
     assert programmer >= dearest and leader >= dearest
+    # Outside it: Marek and Ines have no occupation, and nothing the town pays is theirs; Selin,
+    # a fourth programmer, shares the same stream of tasks, so that a programmer's expected
+    # share falls by a quarter, to 40.5, which still keeps the dearest life.
+    assert [(r.name, r.occupation) for r in newcomers] == [
+        ("Marek", None), ("Ines", None), ("Selin", "programmer"),
+    ]  # fmt: skip
+    four = programmers + sum(r.occupation == "programmer" for r in newcomers)
+    shared = clients * (1 - work.leader_share) * (1 - tax) / four
+    assert (four, round(shared, 2), round(shared / programmer, 2)) == (4, 40.5, 0.75)
+    assert shared >= dearest
 
     # The businesses' margins after the tax: the chef's on the dishes sold, the menu's mean less
     # its ingredients at the Store; the shopkeeper's on the town's food, the ingredients of the
@@ -255,7 +268,7 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     menu = fmean(dish.price for dish in config.dishes)
     retail = fmean(cost(dish, lambda item: item.price) for dish in config.dishes)
     wholesale = fmean(cost(dish, lambda item: item.wholesale) for dish in config.dishes)
-    meals = len(config.residents)
+    meals = len(eight)
     dishes = SOLD + 1  # and the chef's own
     bread = helpings * (meals - dishes)
     chef = SOLD * (menu * (1 - tax) - retail)
@@ -272,7 +285,7 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     # chance of each resident's home, about one, each examined and treated (about two visits);
     # their fees keep the dearest life.
     body, comfort = Body(config.needs), {place.id: place.comfort for place in config.places}
-    cases = sum(body.illness_chance(Living(), comfort[r.home]) for r in config.residents)
+    cases = sum(body.illness_chance(Living(), comfort[r.home]) for r in eight)
     fees = config.hospital
     doctor = cases * (fees.examination + fees.treatment) * (1 - tax)
     assert (round(cases, 2), fees.examination, fees.treatment, round(doctor, 2)) == (
@@ -283,10 +296,10 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     # The treasury's day: the rent of every room taken and the tax on the day's payments in,
     # the mayor's salary out. Its intake is near the salary: it covers it, and what is left,
     # the mayor's to grant back, is less than the salary.
-    rent = sum(rents[r.home] for r in config.residents)
+    rent = sum(rents[r.home] for r in eight)
     sales = dishes * retail + bread * food.price
     taxes = tax * (clients + sales + SOLD * menu + cases * (fees.examination + fees.treatment))
-    salary = sum(config.occupation(r.occupation).salary for r in config.residents)
+    salary = sum(config.occupation(r.occupation).salary for r in eight)
     intake = rent + taxes
     assert (rent, round(taxes, 2), salary) == (54, 43.85, 60)
     assert 0 < intake - salary < salary
@@ -305,7 +318,11 @@ def test_rent_food_shares_margins_and_the_treasury_are_set_against_one_another()
     )
     capital = {"chef": dishes * retail, "shopkeeper": 2 * shelves}
     assert capital == {"chef": 36, "shopkeeper": 352}
-    for resident in config.residents:
+    for resident in eight:
         own = rents[resident.home] + a_day
         days = (resident.purse - capital.get(resident.occupation, 0)) / own
         assert 5 <= days <= 10, (resident.name, days)
+    # The newcomers came with one to three days of their own life.
+    for resident in newcomers:
+        days = resident.purse / (rents[resident.home] + a_day)
+        assert 1 <= days <= 3, (resident.name, days)

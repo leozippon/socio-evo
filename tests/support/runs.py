@@ -71,20 +71,22 @@ def new_town(root: Path, backend: FakeBackend | None = None) -> tuple[RunDirecto
 
 async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> None:
     """Day 1 and day 2 until 18:05. The three tasks of the pool come in at 08:00. Olga opens the
-    Store at 07:10 and sets the price of vegetables, of which Jonas buys some, and eggs, for the
-    kitchen, paying her; she orders bread for the morning from her purse. Jonas cooks an omelette
-    and two soups at the café at 07:30. Vera announces at the hall and grants Aisha $5 from the
-    treasury. Mei works, talks, passes Tomas money and is paid her share of the client's payment; at
-    10:30 she leaves for the clinic, where Lucia examines and treats her, has the omelette at the
-    café, where Jonas serves her a soup unpaid, buys three helpings of bread at the Store, leaves
-    one there, which Olga takes and eats, goes home, eats one and leaves the last there, where it
-    lies. Tomas, the team leader, who takes no task, is paid his share of Mei's task and gives the
-    third to Aisha at home; he works until 18:00, and Aisha keeps her task until the client
-    withdraws it at midnight, with the second, which nobody took. Every payment for work has a
-    tenth withheld, none of them falling on a half. The four at the trades leave work at 18:00 for
-    the flat, and are put to sleep at the forced hour with Aisha, who stays home and eats nothing;
-    the soup nobody had is gone at midnight, when the treasury pays Vera her salary and takes
-    everyone's rent, of which Aisha's purse spares only part, the rest owed."""
+    Store at 07:10 and sets the price of vegetables; Jonas takes some, and eggs, from the shelves
+    for the kitchen and gives her their price; she orders bread for the morning from her purse.
+    Jonas cooks an omelette and two soups at the café at 07:30. Vera announces at the hall and
+    grants Aisha $5 from the treasury. Mei works, talks, gives Tomas money and is paid her share of
+    the client's payment; at 10:30 she leaves for the clinic, where Lucia examines and treats her,
+    takes the omelette from the café's counter and gives Jonas its price, and is given a soup by
+    Jonas, who takes it from his counter; she takes three helpings of bread from the Store's
+    shelves, gives Olga their price, leaves one there, which Olga takes and eats, goes home, eats
+    one and leaves the last there, where it lies. Tomas, the team leader, who takes no task, is
+    paid his share of Mei's task and gives the third to Aisha at home; he works until 18:00, and
+    Aisha keeps her task until the client withdraws it at midnight, with the second, which nobody
+    took. Money given to one at work has a tenth withheld, none of it falling on a half. The four
+    at the trades leave work at 18:00 for the flat, and are put to sleep at the forced hour with
+    Aisha, who stays home and eats nothing; the soup nobody had is gone at midnight, when the
+    treasury pays Vera her salary and takes everyone's rent, of which Aisha's purse spares only
+    part, the rest owed. Mei and Tomas go to bed naming each other."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)
@@ -101,8 +103,9 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.until("07:10")
     await town.call("Olga", "start_work")
     await town.call("Olga", "set_price", item="vegetables", price=4)
-    await town.call("Jonas", "buy", item="eggs", units=2, for_the_kitchen=True)
-    await town.call("Jonas", "buy", item="vegetables", units=5, for_the_kitchen=True)
+    await town.call("Jonas", "take", what="eggs", amount=2, **{"from": "shelves"})
+    await town.call("Jonas", "take", what="vegetables", amount=5, **{"from": "shelves"})
+    await town.call("Jonas", "give", what="money", amount=24, to="Olga")
     await town.call("Jonas", "go", place="cafe")
     await town.call("Olga", "order", item="bread", quantity=5)
     await town.call("Lucia", "start_work")
@@ -118,7 +121,7 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Tomas", "say", text="How is it going?")
     await town.until("09:32")
     await town.call("Mei", "say", text="Nearly done.", to=["Tomas"])
-    await town.call("Mei", "pass", item="money", units=5, to="Tomas")
+    await town.call("Mei", "give", what="money", amount=5, to="Tomas")
     await town.until("09:35")
     await town.call("Mei", "leave_conversation")
     midway()
@@ -133,19 +136,22 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     await town.call("Lucia", "treat", patient="Mei")
     await town.call("Mei", "go", place="cafe")
     await town.until("11:00")
-    await town.call("Mei", "buy", item="omelette")
-    await town.call("Jonas", "pass", item="soup", to="Mei")
+    await town.call("Mei", "take", what="omelette", **{"from": "counter"})
+    await town.call("Mei", "give", what="money", amount=10, to="Jonas")
+    await town.call("Jonas", "take", what="soup", **{"from": "counter"})
+    await town.call("Jonas", "give", what="soup", to="Mei")
     await town.call("Mei", "go", place="store")
     await town.until("11:15")
-    await town.call("Mei", "buy", item="bread", units=3)
-    await town.call("Mei", "put", item="bread")
-    await town.call("Olga", "get", item="bread")
-    await town.call("Olga", "eat", item="bread")
+    await town.call("Mei", "take", what="bread", amount=3, **{"from": "shelves"})
+    await town.call("Mei", "give", what="money", amount=12, to="Olga")
+    await town.call("Mei", "give", what="bread", to="here")
+    await town.call("Olga", "take", what="bread", **{"from": "here"})
+    await town.call("Olga", "use", what="bread")
     await town.call("Mei", "go", place="mill-street-house")
     await town.until("12:00")
-    await town.call("Mei", "eat", item="bread")
+    await town.call("Mei", "use", what="bread")
     await town.until("12:05")
-    await town.call("Mei", "put", item="bread")
+    await town.call("Mei", "give", what="bread", to="here")
     await town.until("18:00")
     for name in ("Tomas", "Olga", "Jonas", "Lucia", "Vera"):
         await town.call(name, "leave_work")
@@ -153,9 +159,9 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
         await town.call(name, "go", place="college-flat")
     await town.until("22:00")
     await town.call("Tomas", "go", place="college-flat")
-    await town.call("Mei", "sleep", until="07:00", journal="I fixed task 1.")
+    await town.call("Mei", "sleep", until="07:00", likes=["Tomas"], journal="I fixed task 1.")
     await town.until("23:00")
-    await town.call("Tomas", "sleep", until="08:00", journal="Task 2 is hard.")
+    await town.call("Tomas", "sleep", until="08:00", likes=["Mei"], journal="Task 2 is hard.")
     town.rest()
     await town.until("18:05", day=2)
 
