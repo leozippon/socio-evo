@@ -1,18 +1,28 @@
-# A check of the whole loop against the model before a run: Mei, the team leader, Aisha, a
-# programmer, Olga, the shopkeeper, and Jonas, the chef, in the town for one day, so that the
-# Office, the Store and the Linde all work, and its night, so that the choice, the generalising,
-# the trainer and the adapters' loading do too, on the Social arm's settings.
+# A check of the whole loop against the model before a run, on the Social arm's settings: Mei,
+# the team leader, Aisha, a programmer, Olga, the shopkeeper, Jonas, the chef, and Lucia, the
+# doctor, so that the Office and its web, the Store, the Linde and the Hospital all work, and
+# Marek, a newcomer without an occupation; two days and their nights, so that the choice, the
+# generalising, the trainer and the adapters' loading work, and work again on a night's adapters;
+# and the two incidents of those days, a letter to Marek and money falling from Lucia. Each likes
+# whom it likes in the town, as far as they are here; the purses are the town's.
 base: learning.yaml
 name: smoke
-days: 1
+days: 2
 residents:
   - {name: Mei, background: experiments/residents/mei.md}
   - {name: Aisha, background: experiments/residents/aisha.md}
   - {name: Olga, background: experiments/residents/olga.md}
   - {name: Jonas, background: experiments/residents/jonas.md}
+  - {name: Lucia, background: experiments/residents/lucia.md}
+  - {name: Marek, background: experiments/residents/marek.md}
 town:
   residents:
-    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 200}
-    - {name: Aisha, home: mill-street-house, occupation: programmer, purse: 200}
-    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 500}
-    - {name: Jonas, home: market-flat, occupation: chef, purse: 250}
+    - {name: Mei, home: mill-street-house, occupation: team-leader, purse: 200, likes: [Aisha, Lucia]}
+    - {name: Aisha, home: mill-street-house, occupation: programmer, purse: 200, likes: [Mei, Jonas, Olga, Lucia]}
+    - {name: Olga, home: hill-road-house, occupation: shopkeeper, purse: 500, likes: [Lucia]}
+    - {name: Jonas, home: market-flat, occupation: chef, purse: 250, likes: [Aisha, Lucia]}
+    - {name: Lucia, home: river-cottage, occupation: doctor, purse: 200, likes: [Jonas, Mei, Olga]}
+    - {name: Marek, home: mill-street-house, purse: 40, newcomer: true}
+  incidents:
+    file: experiments/configs/incidents.yaml
+    ids: [bicycles-in-advance, doctors-money-dropped]

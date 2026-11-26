@@ -48,10 +48,12 @@ each is where the consequences lie, and that illness is likelier the lower one's
 A resident may have no occupation: then it has no workplace and no work, and nothing pays it.
 Each resident starts out liking the residents its `likes` names (`world.regard`); `newcomer`
 marks the residents written to have arrived lately, for the analysis, and the world treats them
-like anyone. The town's `incidents` (`world.incidents`) are given inline or as the path of a
-YAML list of them, relative to the project root, which is read as the configuration is validated
-so that a frozen configuration holds them whole. The Office has the web when `web.enabled`
-(`world.web`), which needs the search service's key in the environment, checked here.
+like anyone. The town's `incidents` (`world.incidents`) are given inline, as the path of a YAML
+list of them, relative to the project root, or as such a path with the ids of those of its
+incidents the town takes (a smaller town's few); the file is read as the configuration is
+validated, so that a frozen configuration holds them whole. The Office has the web when
+`web.enabled` (`world.web`), which needs the search service's key in the environment, checked
+here.
 """
 
 from __future__ import annotations
@@ -551,17 +553,17 @@ class TownConfig(StrictModel):
     @field_validator("incidents", mode="before")
     @classmethod
     def _included(cls, value: Any) -> Any:
-        """The incidents of the YAML file a path names, relative to the project root."""
-        if not isinstance(value, str):
-            return value
-        path = ROOT / value
-        try:
-            found = yaml.safe_load(path.read_text(encoding="utf-8"))
-        except (OSError, yaml.YAMLError) as error:
-            raise ValueError(f"cannot read the incidents of {path}: {error}") from error
-        if not isinstance(found, list):
-            raise ValueError(f"{path} holds no list of incidents")
-        return found
+        """The incidents of the YAML file a path names, relative to the project root; given as
+        `{file: path, ids: [...]}`, those of the file that the ids name, in the file's order."""
+        if isinstance(value, str):
+            return _incidents_of(value)
+        if isinstance(value, dict) and value.keys() == {"file", "ids"}:
+            found = _incidents_of(value["file"])
+            known = {incident.get("id") for incident in found if isinstance(incident, dict)}
+            if unknown := [str(wanted) for wanted in value["ids"] if wanted not in known]:
+                raise ValueError(f"{value['file']} has no incident {', '.join(unknown)}")
+            return [i for i in found if isinstance(i, dict) and i.get("id") in value["ids"]]
+        return value
 
     @model_validator(mode="after")
     def _consistent(self) -> TownConfig:
@@ -719,6 +721,18 @@ class TownConfig(StrictModel):
             if set(route.between) == {a, b}:
                 return route.minutes
         return self.travel_minutes
+
+
+def _incidents_of(file: str) -> list[Any]:
+    """The list of incidents the YAML file `file`, relative to the project root, holds."""
+    path = ROOT / file
+    try:
+        found = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        raise ValueError(f"cannot read the incidents of {path}: {error}") from error
+    if not isinstance(found, list):
+        raise ValueError(f"{path} holds no list of incidents")
+    return found
 
 
 def _unique(what: str, values: list[object]) -> None:

@@ -285,6 +285,14 @@ def test_the_web_needs_its_key_as_the_town_is_read_and_a_file_of_incidents_is_re
     assert read.model_dump(mode="json")["incidents"][0]["percepts"] == [TOLD]
     message = broken(lambda d: d.update(incidents="no/such/file.yaml"))
     assert "cannot read the incidents of" in message
+    # A smaller town takes those of the file it names by id, in the file's order.
+    later = INCIDENT | {"id": "later", "day": 2}
+    path.write_text(yaml.safe_dump([INCIDENT, later, INCIDENT | {"id": "other"}]))
+    chosen = {"file": str(path), "ids": ["later", "letter"]}
+    read = type(town_config()).model_validate(data | {"incidents": chosen})
+    assert [i.id for i in read.incidents] == ["letter", "later"]
+    message = broken(lambda d: d.update(incidents={"file": str(path), "ids": ["letter", "gone"]}))
+    assert "has no incident gone" in message
 
 
 def test_a_world_that_cannot_be_built_writes_nothing(tmp_path):

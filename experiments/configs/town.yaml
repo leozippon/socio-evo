@@ -1,7 +1,7 @@
 # The town: eleven residents in five homes, the Office, the Store, the Linde (the Restaurant), the
-# Hospital, the Town Hall and the river walk, for 28 days. A run's configuration under runs/
-# overlays it with the run's name and what differs (see experiments/config.py for how an overlay
-# merges).
+# Hospital, the Town Hall and the river walk, for 28 days. The town that learns (learning.yaml),
+# its arms (arms/) and the smoke town overlay it with their names and what differs (see
+# experiments/config.py for how an overlay merges).
 #
 # Eight residents share a history, told in their backgrounds; three newcomers (newcomer: true)
 # arrived two weeks before day 1, know nobody well, are liked by nobody and like nobody: Marek

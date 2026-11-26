@@ -14,7 +14,7 @@ from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
 from learning.config import LearningConfig
 from world.body import Body, Living
-from world.config import A_DAYS_FOOD
+from world.config import A_DAYS_FOOD, SEARCH_KEY, Drop
 from world.occupations import OCCUPATIONS
 from world.rules import Rules
 
@@ -32,6 +32,12 @@ TRAINABLE = {
 """The projections the server can apply an adapter to (`learning.train`, TARGETS)."""
 
 
+@pytest.fixture(autouse=True)
+def search_key(monkeypatch):
+    """The town has the web, which needs the search key to load (any key will do here)."""
+    monkeypatch.setenv(SEARCH_KEY, "a key")
+
+
 def town():
     return load_experiment(CONFIGS / "town.yaml")
 
@@ -39,7 +45,8 @@ def town():
 def test_the_town_and_the_three_arms_over_it_which_differ_only_in_what_they_learn():
     found = town()
     assert found.name == "town" and not found.learning.enabled
-    assert found.days == 28
+    assert found.days == 28 and len(found.residents) == 11 and found.town.web.enabled
+    assert len(found.town.incidents) == found.days  # about one a day, from incidents.yaml
     assert found.runtime.reasoning_effort == "low"
     assert found.llm.max_concurrency == len(found.residents)
     assert found.town.start_date.strftime("%A %d %B %Y") == "Monday 02 March 2026"
@@ -75,21 +82,37 @@ def test_the_learning_settings_are_those_the_trainer_takes():
     assert LearningConfig.model_validate(asked).lora.batch_size == 4
 
 
-def test_the_smoke_town_is_the_office_the_shopkeeper_and_the_chef_for_a_day():
+def test_the_smoke_town_is_a_few_of_the_town_with_a_newcomer_for_two_days_and_their_incidents():
     smoke, found = load_experiment(CONFIGS / "smoke.yaml"), town()
     assert [r.name for r in smoke.residents] == [r.name for r in smoke.town.residents]
-    assert [(r.name, r.occupation) for r in smoke.town.residents] == [
-        ("Mei", "team-leader"),
-        ("Aisha", "programmer"),
-        ("Olga", "shopkeeper"),
-        ("Jonas", "chef"),
+    assert [(r.name, r.occupation, r.newcomer) for r in smoke.town.residents] == [
+        ("Mei", "team-leader", False),
+        ("Aisha", "programmer", False),
+        ("Olga", "shopkeeper", False),
+        ("Jonas", "chef", False),
+        ("Lucia", "doctor", False),
+        ("Marek", None, True),
     ]
-    purses = {r.name: r.purse for r in found.town.residents}
-    assert all(r.purse == purses[r.name] for r in smoke.town.residents)
-    assert smoke.days == 1 and smoke.town.clock == found.town.clock
+    # Each as in the town: its home, its money, and whom it likes, as far as they are here.
+    names = {r.name for r in smoke.town.residents}
+    residents = {r.name: r for r in found.town.residents}
+    for r in smoke.town.residents:
+        assert (r.home, r.purse) == (residents[r.name].home, residents[r.name].purse), r.name
+        assert r.likes == tuple(n for n in residents[r.name].likes if n in names), r.name
+    assert {r.name: r.background for r in smoke.residents} == {
+        r.name: r.background for r in found.residents if r.name in names
+    }
+    assert smoke.days == 2 and smoke.town.clock == found.town.clock
     assert smoke.town.social == found.town.social and smoke.town.work == found.town.work
+    assert smoke.town.web == found.town.web
+    # The incidents of its two days, as the town has them, to and from its residents.
+    assert smoke.town.incidents == tuple(i for i in found.town.incidents if i.day <= smoke.days)
+    for incident in smoke.town.incidents:
+        reached = {told.to for told in incident.percepts}
+        reached |= {effect.who for effect in incident.effects if isinstance(effect, Drop)}
+        assert reached and reached <= names, incident.id
     social = load_experiment(CONFIGS / "arms" / "social.yaml")
-    assert smoke.learning == social.learning  # and its night, as the Social arm lives it
+    assert smoke.learning == social.learning  # and its nights, as the Social arm lives them
 
 
 def test_an_overlay_merges_mappings_and_replaces_everything_else():
@@ -134,7 +157,8 @@ def test_the_compaction_threshold_is_bounded_by_the_models_context_window(tmp_pa
 
 def test_backgrounds_are_first_person_and_a_shared_history_without_trait_words():
     config = town()
-    assert len(config.residents) == 8
+    newcomers = {r.name for r in config.town.residents if r.newcomer}
+    assert len(config.residents) == 11 and newcomers == {"Marek", "Ines", "Selin"}
     named = dict.fromkeys((r.name for r in config.residents), 0)
     for resident in config.residents:
         text = resident.background_path.read_text(encoding="utf-8")
@@ -142,9 +166,12 @@ def test_backgrounds_are_first_person_and_a_shared_history_without_trait_words()
         assert not re.search(r"\byou\b|\byours?\b", text, re.IGNORECASE), resident.name
         assert offences(text) == [], resident.name
         for other in named:
-            if other != resident.name and re.search(rf"\b{other}\b", text):
-                named[other] += 1
-    assert min(named.values()) >= 2, named  # everyone is in the history of at least two others
+            if resident.name not in newcomers and other != resident.name:
+                named[other] += bool(re.search(rf"\b{other}\b", text))
+    # Each of the eight is in the history of at least two others of the eight; the newcomers,
+    # newly come, are in none of theirs.
+    assert all(named[name] >= 2 for name in named if name not in newcomers), named
+    assert all(named[name] == 0 for name in newcomers), named
 
 
 def test_the_rules_are_about_three_thousand_characters_and_pass_the_guard():
