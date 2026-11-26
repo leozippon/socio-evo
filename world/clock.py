@@ -160,7 +160,8 @@ class Clock:
 
 class ManualClock:
     """A clock for tests: it stands still until `advance` or `advance_to` moves it, and then
-    wakes its sleepers in the order of their times, letting the event loop settle after each."""
+    wakes its sleepers in the order of their times, letting the event loop settle after each;
+    held, it stands still all the same."""
 
     def __init__(self, start: int = 0) -> None:
         self._now = start
@@ -201,14 +202,15 @@ class ManualClock:
 
     async def advance_to(self, t: int) -> None:
         await settle()
-        while self._sleepers and self._sleepers[0][0] <= t:
+        while not self.held and self._sleepers and self._sleepers[0][0] <= t:
             due, _, future = heapq.heappop(self._sleepers)
             if future.done():
                 continue
             self._now = max(self._now, due)
             future.set_result(None)
             await settle()
-        self._now = max(self._now, t)
+        if not self.held:
+            self._now = max(self._now, t)
         await settle()
 
     async def advance(self, seconds: int) -> None:

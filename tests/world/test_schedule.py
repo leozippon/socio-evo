@@ -115,12 +115,15 @@ async def test_the_checkpoint_waits_for_every_runtime_to_rest_and_holds_the_cloc
     await town.until("07:00")
     town.rest("Mei", "Tomas")
     await town.until("02:40", day=2)
+    # The clock stands at the checkpoint hour while it waits, so that nothing falls due meanwhile.
     assert town.checkpoints == [] and not runner.done()
+    assert town.clock.held and town.clock.now() == at("02:30", day=2)
     town.rest("Aisha")
     await settle()
     await runner
     ((day, state),) = town.checkpoints
-    assert day == 1 and state["time"] == at("02:40", day=2)
+    assert day == 1 and state["time"] == at("02:30", day=2)
+    assert not town.clock.held
     assert town.kinds()[-1] == "checkpoint"
     assert all(r.suspended for r in town.world.residents.values())
 

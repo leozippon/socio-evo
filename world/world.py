@@ -18,8 +18,8 @@ whose time has run out, the portions the kitchen did not sell are gone and the n
 are drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
 brought up to date (`world.living`). No place keeps hours, and residents go to bed and wake when
 they choose, except that one sleep lasts at most a configured span and that nobody wakes between the
-forced sleep and the checkpoint. At the checkpoint the world waits until every resident is asleep
-and its runtime waits on its port, holds the clock, closes every workspace keeping its changes,
+forced sleep and the checkpoint. At the checkpoint the world holds the clock, waits until every
+resident is asleep and its runtime waits on its port, closes every workspace keeping its changes,
 takes the snapshot and awaits `on_checkpoint(day, snapshot)`, through which the composition layer
 writes the checkpoint and commits the agent directories. A lived day N runs from the checkpoint on
 calendar day N to the one on calendar day N + 1; the journal, the acceptance runs and the record
@@ -418,10 +418,10 @@ class World:
     # The checkpoint ---------------------------------------------------------------------------
 
     async def _checkpoint(self, day: int) -> None:
-        while not self._all_resting():
-            await self._rest.wait()
         assert self._on_checkpoint is not None
-        with self.clock.hold():
+        with self.clock.hold():  # from the checkpoint hour, while the runtimes come to rest too
+            while not self._all_resting():
+                await self._rest.wait()
             for name, claim in await self.board.close_all():
                 self.record(
                     "workspace_closed",
