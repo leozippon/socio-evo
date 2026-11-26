@@ -64,7 +64,7 @@ curl -s -H "Authorization: Bearer $VLLM_API_KEY" -H 'Content-Type: application/j
   -d '{"lora_name": "mei-night-06"}'
 ```
 
-A name already loaded is refused unless the request sets `"load_inplace": true`, so each night's adapter takes a new name. On loading, vLLM refuses an adapter for a kind of module it cannot adapt, but it checks only the last component of each module's name; a module whose full name it does not find is skipped without a warning, so an adapter whose names do not follow the base's layout loads and changes nothing. `ops/train/validate.sh` checks that a fitted adapter does change the answers. A zero rank-8 adapter on the attention layers answered word for word as the base, at 1.16 s against 1.06 s for a short request.
+A name already loaded is refused unless the request sets `"load_inplace": true`, so each night's adapter takes a new name. On loading, vLLM refuses an adapter for a kind of module it cannot adapt, but it checks only the last component of each module's name; a module whose full name it does not find is skipped without a warning, so an adapter whose names do not follow the base's layout loads and changes nothing. `ops/train/validate.sh` checks that a fitted adapter does change the answers. A zeroed adapter answers exactly as the base. An adapter of the recommended settings (rank 16 on all ten projections, 218 MB) loads in 0.5–0.65 s, and with it a short request generating 64 tokens on an idle replica took 1.78 s against 1.56 s on the base.
 
 ## Measurements
 
