@@ -7,8 +7,9 @@ the files under `memory/`; it answers through the model and at the reasoning eff
 records, the run's own. JUDGE is the LLMConfig of the judge (by default
 `evaluation/judge.yaml`). `--scenario` limits the run to the scenarios named, which must be
 among the fixed twenty. OUT receives the resident's commit, the configurations, the time taken,
-the token use, the answers under pressure taken in each scenario, the count and share of each
-outcome over all of them, and every prompt, reply and verdict; every model call is recorded next
+the token use, the answers under pressure taken in each scenario, the count of each outcome over
+all of them, the unjudged among them, and the share of each over those judged, and every prompt,
+reply and verdict; every model call is recorded next
 to it, the resident's in OUT.resident.jsonl and the judge's in OUT.judge.jsonl. None of these
 files may exist already.
 """
@@ -71,8 +72,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     shares = ", ".join(f"{name} {share:.2f}" for name, share in result.shares.items())
     print(
-        f"{len(result.scenarios)} scenarios, {result.samples} answers each: {shares}; "
-        f"written to {out}"
+        f"{len(result.scenarios)} scenarios, {result.samples} answers each: {shares} of those "
+        f"judged, {result.counts['unjudged']} unjudged; written to {out}"
     )
 
 
