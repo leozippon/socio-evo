@@ -85,10 +85,9 @@ class SwebenchBackend:
         return load_split(name)  # type: ignore[arg-type]
 
     def require_images(self, tasks: Sequence[Task]) -> None:
-        from tasks.swebench.images import require
+        from tasks.swebench.images import require_all
 
-        for task in tasks:
-            require(task.image)  # type: ignore[attr-defined]
+        require_all(task.image for task in tasks)  # type: ignore[attr-defined]
 
     async def open(self, task: Task, name: str) -> Workspace:
         from tasks.swebench.workspace import Workspace as SwebenchWorkspace

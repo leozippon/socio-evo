@@ -1,11 +1,14 @@
 """Image naming, patch handling and grading, without containers."""
 
+import subprocess
 from dataclasses import replace
 
+import pytest
 from swebench.harness.test_spec.test_spec import make_test_spec
 
+import tasks.swebench.images as images
 from tasks.swebench.acceptance import grade, harness_spec
-from tasks.swebench.images import REGISTRY
+from tasks.swebench.images import REGISTRY, MissingImage, require_all
 from tasks.swebench.workspace import clip, drop_binary
 from tests.support.swebench import make_task
 
@@ -93,3 +96,23 @@ def test_output_without_the_harness_markers_is_an_error():
     assert (verdict.status, verdict.resolved, verdict.fail_to_pass) == ("error", False, (0, 1))
     errored = grade(spec, "patch", log(f"PASSED {NEW_TEST}", ">>>>> Tests Errored"))
     assert errored.status == "error"
+
+
+def test_a_splits_images_are_checked_in_one_listing(monkeypatch):
+    calls = []
+
+    def docker(*args, timeout=None):
+        calls.append(args)
+        listing = "ghcr.io/x/a:latest\nghcr.io/x/b:latest\n<none>:<none>\n"
+        return subprocess.CompletedProcess(args, 0, stdout=listing, stderr="")
+
+    monkeypatch.setattr(images, "docker", docker)
+    require_all(["ghcr.io/x/a:latest", "ghcr.io/x/b:latest", "ghcr.io/x/a:latest"])
+    with pytest.raises(MissingImage, match="1 images are not pulled, among them ghcr.io/x/c"):
+        require_all(["ghcr.io/x/a:latest", "ghcr.io/x/c:latest"])
+    assert calls == [("image", "ls", "--format", "{{.Repository}}:{{.Tag}}")] * 2
+
+    failing = subprocess.CompletedProcess((), 1, stdout="", stderr="Cannot connect to the daemon")
+    monkeypatch.setattr(images, "docker", lambda *args, timeout=None: failing)
+    with pytest.raises(RuntimeError, match="Cannot connect"):
+        require_all(["ghcr.io/x/a:latest"])

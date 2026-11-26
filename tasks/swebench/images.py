@@ -19,7 +19,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 REGISTRY = "ghcr.io/epoch-research"
@@ -92,6 +92,21 @@ def require(image: str) -> None:
     """Raise `MissingImage` unless `image` is on this machine."""
     if not local(image):
         raise MissingImage(f"{image} is not pulled; run `{PULL_COMMAND}` or `docker pull {image}`")
+
+
+def require_all(images: Iterable[str]) -> None:
+    """Raise `MissingImage`, naming the first few, unless every one of `images` is on this
+    machine, by one listing of Docker's images: asking for each in turn takes minutes for a
+    split of two thousand. A failure of Docker itself raises."""
+    result = docker("image", "ls", "--format", "{{.Repository}}:{{.Tag}}", timeout=600)
+    if result.returncode != 0:
+        raise RuntimeError(f"docker image ls failed: {result.stderr.strip()}")
+    present = set(result.stdout.split())
+    if missing := [image for image in dict.fromkeys(images) if image not in present]:
+        raise MissingImage(
+            f"{len(missing)} images are not pulled, among them {', '.join(missing[:3])}; "
+            f"run `{PULL_COMMAND}`"
+        )
 
 
 def pull(images: Sequence[str], workers: int = 8, attempts: int = 3) -> dict[str, str]:
