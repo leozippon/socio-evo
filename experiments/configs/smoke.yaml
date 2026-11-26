@@ -8,6 +8,11 @@
 base: learning.yaml
 name: smoke
 days: 2
+# The server on this shared machine: one replica on GPUs 0 and 6 (GPUS=0,6 LORA=1
+# ops/vllm/serve.sh --gpu-memory-utilization 0.72, which leaves 8 GiB free beside another user's
+# job on GPU 6).
+llm:
+  replicas: 1
 residents:
   - {name: Mei, background: experiments/residents/mei.md}
   - {name: Aisha, background: experiments/residents/aisha.md}
