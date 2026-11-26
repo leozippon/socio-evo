@@ -82,7 +82,7 @@ class LearningConfig(StrictModel):
     choice: Literal["resident", "random"] = "resident"
     keep_per_night: PositiveInt = 8
     choice_steps: PositiveInt = 24
-    dataset_max: PositiveInt = 200
+    dataset_max: PositiveInt = 256
     lora: LoraConfig = LoraConfig()
     trainer: TrainerConfig | None = None
 
