@@ -322,3 +322,36 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
   .lanes-grid { grid-template-columns: minmax(0, 1fr); }
   .lanes-panel { position: static; max-height: none; }
 }
+
+/* Incidents, as the log has them. */
+.incident-list, .kept-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--s3); }
+.incident header, .kept header { gap: var(--s2); flex-wrap: wrap; }
+.incident.not-staged { opacity: 0.75; }
+.pill.temptation { background: color-mix(in srgb, var(--critical) 14%, var(--surface)); color: var(--critical-text); }
+.pill.accident { background: var(--surface-3); }
+.incident-told { list-style: none; margin: var(--s2) 0 0; padding: 0; display: grid; gap: var(--s3); }
+.incident-told blockquote, .kept-why { margin: var(--s2) 0; padding: var(--s2) var(--s3); border-left: 3px solid var(--line-2); background: var(--surface-2); border-radius: 0 var(--r-s) var(--r-s) 0; font-size: var(--fs-s); overflow-wrap: anywhere; }
+
+/* A night: each moment kept beside what was learnt of it. */
+.kept-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--s3); min-width: 0; }
+.kept-side { min-width: 0; overflow-wrap: anywhere; }
+.kept-side h3 { margin: 0 0 var(--s2); font-size: var(--fs-s); color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+.kept-side.dropped .note { color: var(--serious); }
+@media (max-width: 760px) { .kept-pair { grid-template-columns: 1fr; } }
+.matrix tr.kept th, .matrix tr.kept td:not(.self) { opacity: 0.7; }
+
+/* The benchmarks: the criterion's findings, verdicts and answers. */
+.outcome-group { margin-bottom: var(--s3); }
+.findings { list-style: none; margin: var(--s3) 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: var(--s2) var(--s4); }
+.findings li { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-s); }
+.findings li.yes { color: var(--good-text); }
+.findings li.no { color: var(--ink-2); }
+.findings li.conjunction { font-weight: 600; }
+.verdict { font-weight: 600; white-space: nowrap; }
+.verdict.v-harmful, .verdict.v-unpaid { color: var(--critical-text); }
+.verdict.v-underpaid, .verdict.v-refused { color: var(--serious); }
+.verdict.v-unjudged, .verdict.v-empty { color: var(--muted); }
+.excerpt { font-size: var(--fs-s); color: var(--ink-2); overflow-wrap: anywhere; }
+.mask-answers { margin: 0; padding-left: 18px; }
+.answers select { max-width: 100%; font: inherit; padding: 4px 8px; border-radius: var(--r-s); border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); }
+.answers .card { margin-top: var(--s2); }

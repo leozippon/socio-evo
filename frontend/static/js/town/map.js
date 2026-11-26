@@ -11,6 +11,7 @@
 import { daylight } from "../clock.js";
 import { h, s } from "../dom.js";
 import { icon } from "../icons.js";
+import { liked } from "../identity.js";
 import { shortName } from "../world.js";
 import { f, standing, townPlan, walkways } from "./plan.js";
 import { drawScenery } from "./scenery.js";
@@ -142,7 +143,11 @@ export class TownMap {
         s("path", { class: "arms", d: "M-5.6,-17.5L-7.4,-10.5M5.6,-17.5L7.4,-10.5", style: { stroke: `var(--a${slot}-shade)` } }),
         s("path", { class: "torso", d: "M-5.6,-9.5Q-6.4,-18 -3,-19.4H3Q6.4,-18 5.6,-9.5Z", style: { fill: `var(--a${slot}-shade)` } }),
       );
-      const head = s("g", { class: "head", transform: "translate(0,-24.5)" }, this.cast.glyph(name, 6.8));
+      // Over the head, the number everyone sees on the resident: how many of the others like it.
+      const likedBox = s("rect", { class: "liked-box", x: -5, y: -16.2, width: 10, height: 7.6, rx: 3.8 });
+      const likedText = s("text", { class: "liked-num", y: -10.4 });
+      const likedMark = s("g", { class: "actor-liked" }, likedBox, likedText);
+      const head = s("g", { class: "head", transform: "translate(0,-24.5)" }, this.cast.glyph(name, 6.8), likedMark);
       const g = s(
         "g",
         { class: "actor", "data-agent": name },
@@ -154,7 +159,7 @@ export class TownMap {
         s("circle", { class: "actor-alert", cx: 7, cy: -29.5, r: 2.8 }),
       );
       this.actors.append(g);
-      this.tokens.set(name, { g, figure, head, legs, x: null, y: null, facing: 0, asleep: false, walking: false, k: 1 });
+      this.tokens.set(name, { g, figure, head, legs, liked: { mark: likedMark, box: likedBox, text: likedText, key: null }, x: null, y: null, facing: 0, asleep: false, walking: false, k: 1 });
     }
   }
 
@@ -357,7 +362,8 @@ export class TownMap {
    * Show a moment. `frame`: {state (the moment of the timeline), second (of the day), selected,
    * speech: Map(place -> [{agent, text, to, private}]), scenes: Map(place -> {label}),
    * deeds: Map(agent -> {icon, text, tone}), ailing: Set(agent) whose body is at its worst in
-   * some need, notices: [{icon, text, tone}], effects: [{agent, text, tone}], key}.
+   * some need, notices: [{icon, text, tone}], effects: [{agent, text, tone}], regard: {shown,
+   * before} (`replay.regardAt`), key}.
    */
   update(frame) {
     const previous = this.frame;
@@ -420,9 +426,25 @@ export class TownMap {
       token.g.classList.toggle("selected", selected === name);
       token.g.classList.toggle("asleep", token.asleep);
       token.g.classList.toggle("ailing", Boolean(this.frame.ailing?.has(name)));
+      this.showLiked(token, this.frame.regard.shown[name], this.frame.regard.before?.[name] ?? null);
       this.pose(token, stride);
     }
     this.sortActors();
+  }
+
+  /** The number over a resident's head, how many like it, marked when it rose or fell overnight. */
+  showLiked(token, now, before) {
+    const change = before === null ? 0 : now - before;
+    const key = `${now}|${change}`;
+    if (token.liked.key === key) return;
+    token.liked.key = key;
+    const text = String(now);
+    token.liked.text.textContent = text;
+    const width = 6 + 4.4 * text.length;
+    token.liked.box.setAttribute("x", f(-width / 2));
+    token.liked.box.setAttribute("width", f(width));
+    token.liked.mark.classList.toggle("up", change > 0);
+    token.liked.mark.classList.toggle("down", change < 0);
   }
 
   /** Place a resident's drawing: position, size, facing and, on the way, their stride. */
@@ -493,9 +515,11 @@ export class TownMap {
     this.boxes.deeds = this.keep(this.boxes.deeds, deeds);
     const selected = frame.selected;
     this.tag.hidden = !selected;
-    if (selected && this.tag.dataset.agent !== selected) {
-      this.tag.dataset.agent = selected;
-      this.tag.replaceChildren(h("b", {}, selected));
+    const now = selected ? frame.regard.shown[selected] : null;
+    const before = selected ? frame.regard.before?.[selected] ?? null : null;
+    if (selected && this.tag.dataset.key !== `${selected}|${now}|${before}`) {
+      this.tag.dataset.key = `${selected}|${now}|${before}`;
+      this.tag.replaceChildren(h("b", {}, selected), " ", liked(now, before));
       this.tagSize = null;
     }
   }

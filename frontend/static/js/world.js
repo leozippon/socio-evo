@@ -21,18 +21,25 @@ export function shortName(place) {
 /** The home of each resident, by name. */
 export const homes = (world) => Object.fromEntries(world.residents.map((r) => [r.name, r.home]));
 
-/** A resident's occupation as the world configures it: `{id, title, workplace, duty, salary}`. */
+/** A resident's occupation as the world configures it: `{id, title, workplace, duty, salary}`; null for one without. */
 export function occupationOf(world, name) {
   const resident = world.residents.find((r) => r.name === name);
-  return world.occupations.find((occupation) => occupation.id === resident.occupation);
+  return world.occupations.find((occupation) => occupation.id === resident.occupation) ?? null;
 }
 
-/** A resident's occupation in a few words: "the shopkeeper at the Store". */
+/** A resident's occupation in a few words: "the shopkeeper at the Store", or "no occupation". */
 export function jobOf(world, name) {
   const occupation = occupationOf(world, name);
+  if (!occupation) return "no occupation";
   const place = world.places.find((p) => p.id === occupation.workplace);
   return `${occupation.title} at ${place.name}`;
 }
 
+/** The title of a resident's occupation, "the chef", or "no occupation". */
+export const titleOf = (world, name) => occupationOf(world, name)?.title ?? "no occupation";
+
 /** The residents whose workplace is the place `id`. */
-export const workersAt = (world, id) => world.residents.filter((r) => occupationOf(world, r.name).workplace === id).map((r) => r.name);
+export const workersAt = (world, id) => world.residents.filter((r) => occupationOf(world, r.name)?.workplace === id).map((r) => r.name);
+
+/** Whether a resident is one of the newcomers. */
+export const isNewcomer = (world, name) => Boolean(world.residents.find((r) => r.name === name)?.newcomer);

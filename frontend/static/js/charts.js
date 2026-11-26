@@ -1,6 +1,7 @@
 // Chart primitives over simulated days, drawn as SVG at the width of their container.
 //
-// One x axis for every chart: the days of the run. Lines are 2px, columns at most 24px wide
+// One x axis for every chart: the days of the run (or, where a chart says so, the steps of a fit).
+// Lines are 2px, a level to read against dashed, columns at most 24px wide
 // with a 2px surface gap between stacked segments, gridlines are hairlines, and text wears text
 // colours, never series colours. Every chart has a crosshair tooltip that lists every series at
 // the day under the pointer and a table twin that shows the same numbers without hovering. With
@@ -65,9 +66,11 @@ function tooltip(host) {
 /**
  * A chart over days. `spec`:
  *   days: [first, last] day of the axis
+ *   x: {label} what the axis counts, "Day" unless given
  *   y: {format, zero, min, max, label}
- *   lines: [{key, label, color, points: [[day, value|null]], glyph?: (r) => SVG, faint?,
- *            notes?: Map(day -> what the value counts, such as "2 of 7")}]
+ *   lines: [{key, label, color, points: [[day, value|null]], glyph?: (r) => SVG, faint?, dash?,
+ *            notes?: Map(day -> what the value counts, such as "2 of 7")}]  a dashed line is a
+ *            level to read the others against
  *   stacks: [{key, label, color, values: Map(day -> value)}]  stacked columns, bottom first
  *   cursor: day (fractional) of the moment shown, or null
  *   endLabels: label line ends with their glyph and name
@@ -164,7 +167,7 @@ export class DayChart {
       const dim = (highlight && line.key !== highlight) || line.faint;
       const d = path(line.points.map(([day, v]) => (v === null ? null : [sc.x(day), sc.y(v)])));
       if (!d) continue;
-      parts.push(s("path", { class: `line${dim ? " dim" : ""}${line.key === highlight ? " lit" : ""}`, d, style: { stroke: dim ? null : line.color }, "data-key": line.key }));
+      parts.push(s("path", { class: `line${dim ? " dim" : ""}${line.key === highlight ? " lit" : ""}${line.dash ? " dashed" : ""}`, d, style: { stroke: dim ? null : line.color }, "data-key": line.key }));
       const known = line.points.filter((p) => p[1] !== null);
       if ((known.length === 1 || this.spec.dots) && !dim) for (const [day, v] of known) parts.push(s("circle", { class: "dot", cx: sc.x(day), cy: sc.y(v), r: 4, style: { fill: line.color } }));
     }
@@ -240,7 +243,7 @@ export class DayChart {
     this.crosshair.setAttribute("x1", sc.x(day));
     this.crosshair.setAttribute("x2", sc.x(day));
     this.crosshair.setAttribute("visibility", "visible");
-    this.tip.show(sc.x(day), event.clientY - box.top, `Day ${day}`, rows, event.pointerType !== "mouse");
+    this.tip.show(sc.x(day), event.clientY - box.top, `${this.spec.x?.label ?? "Day"} ${day}`, rows, event.pointerType !== "mouse");
   }
 
   rowsAt(day) {
@@ -285,7 +288,7 @@ export function dayTable(spec) {
   const rows = [];
   const cell = (get, notes, d) => (get(d) === undefined || get(d) === null ? (notes?.get(d) ? `– (${notes.get(d)})` : "–") : notes?.get(d) ? `${format(get(d))} (${notes.get(d)})` : format(get(d)));
   for (let d = days[0]; d <= days[1]; d++) rows.push(h("tr", {}, h("th", { scope: "row" }, String(d)), ...columns.map(([, get, notes]) => h("td", {}, cell(get, notes, d)))));
-  return h("div", { class: "table-wrap" }, h("table", { class: "data" }, h("thead", {}, h("tr", {}, h("th", {}, "Day"), ...columns.map(([label]) => h("th", {}, label)))), h("tbody", {}, rows)));
+  return h("div", { class: "table-wrap" }, h("table", { class: "data" }, h("thead", {}, h("tr", {}, h("th", {}, spec.x?.label ?? "Day"), ...columns.map(([label]) => h("th", {}, label)))), h("tbody", {}, rows)));
 }
 
 /** A polyline path through points, broken where a point is null. */
@@ -351,9 +354,9 @@ export function agentLegend(cast, names, { selected, onPick }) {
   return h("div", { class: "legend" }, items);
 }
 
-/** A legend of swatches that mirror their marks: a block for columns, a stroke for lines. */
+/** A legend of swatches that mirror their marks: a block for columns, a stroke for lines, a dashed stroke for a level read against. */
 export const swatchLegend = (entries) =>
-  h("div", { class: "legend static" }, entries.map(([label, color, mark = "column"]) => h("span", { class: "legend-item" }, h("span", { class: `swatch${mark === "line" ? " line" : ""}`, style: { background: color } }), label)));
+  h("div", { class: "legend static" }, entries.map(([label, color, mark = "column"]) => h("span", { class: "legend-item" }, h("span", { class: `swatch${mark === "column" ? "" : " line"}${mark === "dash" ? " dash" : ""}`, style: mark === "dash" ? { "border-color": color } : { background: color } }), label)));
 
 /**
  * Small multiples: one panel per agent with that agent in its colour over the others in grey,

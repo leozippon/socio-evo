@@ -1,7 +1,8 @@
 // Every resident's events side by side on one canvas: a lane per resident over simulated time,
 // under a row of what happened to nobody in particular (a task coming in or withdrawn, a
-// delivery). A lane, top to bottom: three rows of markers (work, money, life: what it said, felt
-// and went through) in which markers within a few pixels fold into one count; the conversation
+// delivery, an incident, what perished). A lane, top to bottom: three rows of markers (work;
+// money and takes: what it took and gave, by whom, from where and what was paid; life: what it
+// said, felt and went through) in which markers within a few pixels fold into one count; the conversation
 // row, naming the partners where there is room; the base event as a band (idle light, movement
 // hatched, work solid with the task written, sleep dim, in bed red) with the place as a strip
 // under it; and the purse as a step line.
@@ -10,7 +11,7 @@
 
 import { DAY, dateOf, duration, hhmm, livedDay, secondOfDay } from "../clock.js";
 import { fmt, h } from "../dom.js";
-import { PORTIONS, lowerBound, purseAt } from "../replay.js";
+import { lowerBound, purseAt } from "../replay.js";
 import { EVENTS } from "../world.js";
 import { describeMarker } from "./events.js";
 
@@ -36,6 +37,8 @@ const ROW_OF = {
   examination: 0,
   treatment: 0,
   announcement: 0,
+  web_search: 0,
+  web_page: 0,
   service: 1,
   grant: 1,
   settlement: 1,
@@ -43,14 +46,18 @@ const ROW_OF = {
   message: 2,
   move_in: 2,
   journal: 2,
+  likes: 2,
+  missing: 2,
   forced_sleep: 2,
   condition: 2,
   illness: 2,
   recovered: 2,
   bedridden: 2,
 };
-/** The row of a marker: a move bought or passed is money, one taken, left or eaten is life. */
-const rowOf = (m) => (m.kind === "move" ? (m.reason === "buy" || m.reason === "pass" ? 1 : 2) : (ROW_OF[m.kind] ?? 2));
+/** Where a take took from that puts it in the money row: a business's holder, or another resident. */
+const TRADED = new Set(["shelves", "counter", "larder", "awake", "asleep"]);
+/** The row of a marker: a move of money, a take from a business or from another resident, and a gift to a resident are money; what was taken where it lay, left there, given or eaten otherwise is life. */
+const rowOf = (m, residents) => (m.kind === "move" ? (m.what === "money" || TRADED.has(m.from) || (m.reason === "give" && residents.has(m.target)) ? 1 : 2) : (ROW_OF[m.kind] ?? 2));
 const CONV_Y = 45;
 const CONV_H = 14;
 const BAND_Y = 61;
@@ -85,8 +92,18 @@ const paint = (g, fill, stroke = null) => {
   }
 };
 
-/** The marker's glyph in a box of ten pixels, as the legend and the lanes draw it. */
-export function drawMarker(g, m, cx, cy, C) {
+/** A five-pointed star around (cx, cy): an incident. */
+const star = (g, cx, cy, r) => {
+  for (let k = 0; k < 10; k++) {
+    const a = -Math.PI / 2 + (k * Math.PI) / 5;
+    const radius = k % 2 ? r * 0.45 : r;
+    g[k ? "lineTo" : "moveTo"](cx + radius * Math.cos(a), cy + radius * Math.sin(a));
+  }
+  g.closePath();
+};
+
+/** The marker's glyph in a box of ten pixels, as the legend and the lanes draw it; `residents` are the town's names, which tell a gift to a resident from money left. */
+export function drawMarker(g, m, cx, cy, C, residents = new Set()) {
   g.lineWidth = 1.5;
   g.lineJoin = "round";
   g.lineCap = "butt";
@@ -167,25 +184,71 @@ export function drawMarker(g, m, cx, cy, C) {
       paint(g, C.accent);
       break;
     case "move":
-      if (m.source === PORTIONS) {
-        // a bowl: a dish, bought or the chef's
-        g.arc(cx, cy - 1, 5, 0, Math.PI);
-        g.closePath();
-        paint(g, C.o2);
-      } else if (m.reason === "pass" || m.reason === "buy") {
-        // a hollow diamond: money or a thing passed; muted, bought at the Store's counter
-        diamond(g, cx, cy);
-        paint(g, C.surface, m.reason === "pass" ? C.good : C.muted);
-      } else if (m.reason === "eat") {
+      if (m.reason === "eat") {
         // a small bowl outlined: eaten
         g.arc(cx, cy - 1, 3.5, 0, Math.PI);
         g.closePath();
         paint(g, C.surface, C.o2);
+      } else if (m.from === "awake" || m.from === "asleep") {
+        // a triangle pointing down in the colour of trouble: taken from another resident, filled
+        // in its sight, hollow while it slept
+        g.moveTo(cx - 5, cy - 4.5);
+        g.lineTo(cx + 5, cy - 4.5);
+        g.lineTo(cx, cy + 5);
+        g.closePath();
+        paint(g, m.from === "awake" ? C.critical : C.surface, C.critical);
+      } else if (m.reason === "take" && TRADED.has(m.from)) {
+        // a diamond: taken from a business, hollow when paid for, the keeper's own or not yet
+        // read; filled when paid in part or not at all
+        diamond(g, cx, cy);
+        const short = { underpaid: C.warn, unpaid: C.serious }[m.status];
+        paint(g, short ?? C.surface, short ?? C.muted);
+      } else if (m.reason === "give" && residents.has(m.target)) {
+        // a hollow diamond in the colour of good news: money or a thing given to a resident
+        diamond(g, cx, cy);
+        paint(g, C.surface, C.good);
       } else {
-        // a small square: taken from where it was left, or left there
+        // a small square: taken from where it lay, filled, or left there, hollow
         g.rect(cx - 3, cy - 3, 6, 6);
-        paint(g, m.reason === "get" ? C.o5 : C.surface, C.o5);
+        paint(g, m.reason === "take" ? C.o5 : C.surface, C.o5);
       }
+      break;
+    case "missing": // a struck ring: something found gone
+      g.arc(cx, cy, 4, 0, 2 * Math.PI);
+      paint(g, C.surface, C.serious);
+      g.beginPath();
+      g.moveTo(cx - 2.8, cy + 2.8);
+      g.lineTo(cx + 2.8, cy - 2.8);
+      g.stroke();
+      break;
+    case "likes": // a small heart: the names given going to bed
+      g.moveTo(cx, cy + 4);
+      g.bezierCurveTo(cx - 6, cy - 0.5, cx - 2.5, cy - 5.5, cx, cy - 2);
+      g.bezierCurveTo(cx + 2.5, cy - 5.5, cx + 6, cy - 0.5, cx, cy + 4);
+      paint(g, C.surface, C.accent);
+      break;
+    case "web_search": // a lens
+    case "web_page": // a page
+      if (m.kind === "web_search") {
+        g.arc(cx - 1, cy - 1, 3.2, 0, 2 * Math.PI);
+        g.moveTo(cx + 1.4, cy + 1.4);
+        g.lineTo(cx + 4.5, cy + 4.5);
+      } else g.rect(cx - 3.5, cy - 4.5, 7, 9);
+      g.strokeStyle = C["ink-2"];
+      g.stroke();
+      break;
+    case "incident": // a star: an accident hollow, a temptation filled, one not staged muted
+      star(g, cx, cy, 5.5);
+      if (!m.staged) paint(g, C.surface, C.muted);
+      else paint(g, m.type === "temptation" ? C.critical : C.surface, C.critical);
+      break;
+    case "perished": // a small cross: gone at midnight
+      g.moveTo(cx - 3, cy - 3);
+      g.lineTo(cx + 3, cy + 3);
+      g.moveTo(cx + 3, cy - 3);
+      g.lineTo(cx - 3, cy + 3);
+      g.strokeStyle = C.muted;
+      g.stroke();
       break;
     case "order": // a parcel on its way
     case "delivery": // a parcel come
@@ -337,7 +400,7 @@ export function legend(C) {
     const canvas = h("canvas", { width: 28, height: 28 });
     const g = canvas.getContext("2d");
     g.scale(2, 2);
-    drawMarker(g, m, 7, 7, C);
+    drawMarker(g, m, 7, 7, C, new Set(["someone"]));
     return canvas;
   };
   const count = () => {
@@ -354,11 +417,11 @@ export function legend(C) {
     { class: "lanes-legend" },
     row("Doing", ...["idle", "movement", "work", "sleep", "bedridden"].map((k) => item(swatch(k), EVENTS[k])), item(swatch("conversation"), "Conversation, above what it interrupted")),
     row("Where", item(swatch("place-home"), "at home"), item(swatch("place-workplace"), "at a workplace"), item(swatch("place-social"), "at the river walk or another place for company"), item(swatch("place-road"), "on the way")),
-    row("Town", item(glyph({ kind: "task_arrived" }), "a task came in"), item(glyph({ kind: "task_withdrawn" }), "a task withdrawn by its client"), item(glyph({ kind: "delivery" }), "the Store's order delivered")),
+    row("Town", item(glyph({ kind: "task_arrived" }), "a task came in"), item(glyph({ kind: "task_withdrawn" }), "a task withdrawn by its client"), item(glyph({ kind: "delivery" }), "the Store's order delivered"), item(glyph({ kind: "incident", staged: true, type: "accident" }), "an accident staged"), item(glyph({ kind: "incident", staged: true, type: "temptation" }), "a temptation staged"), item(glyph({ kind: "incident", staged: false }), "an incident that could not be"), item(glyph({ kind: "perished" }), "perished at midnight")),
     row("Tasks", item(glyph({ kind: "claim" }), "claimed"), item(glyph({ kind: "assign" }), "given by the team leader"), item(glyph({ kind: "submission", resolved: true }), "handed in, accepted"), item(glyph({ kind: "submission", resolved: false }), "not accepted"), item(glyph({ kind: "submission" }), "awaiting the verdict"), item(glyph({ kind: "abandon" }), "given up")),
-    row("Work", item(glyph({ kind: "order" }), "ordered from the supplier"), item(glyph({ kind: "price" }), "a price set"), item(glyph({ kind: "cook" }), "cooked"), item(glyph({ kind: "examination" }), "examined a patient"), item(glyph({ kind: "treatment" }), "treated a patient"), item(glyph({ kind: "announcement" }), "announced")),
-    row("Money", item(glyph({ kind: "service" }), "a client's share, the tax withheld"), item(glyph({ kind: "move", reason: "pass" }), "money or a thing passed"), item(glyph({ kind: "move", reason: "buy" }), "bought at the Store"), item(glyph({ kind: "move", reason: "buy", source: PORTIONS }), "a dish, bought or the chef's"), item(glyph({ kind: "grant" }), "granted from the treasury"), item(glyph({ kind: "settlement" }), "the midnight statement: rent taken, a salary paid")),
-    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move", reason: "get" }), "taken where it was left"), item(glyph({ kind: "move", reason: "put" }), "left for anyone"), item(glyph({ kind: "move", reason: "eat" }), "eaten"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
+    row("Work", item(glyph({ kind: "order" }), "ordered from the supplier"), item(glyph({ kind: "price" }), "a price set"), item(glyph({ kind: "cook" }), "cooked"), item(glyph({ kind: "examination" }), "examined a patient"), item(glyph({ kind: "treatment" }), "treated a patient"), item(glyph({ kind: "announcement" }), "announced"), item(glyph({ kind: "web_search" }), "searched the web"), item(glyph({ kind: "web_page" }), "read a page")),
+    row("Money", item(glyph({ kind: "service" }), "a client's share, the tax withheld"), item(glyph({ kind: "move", reason: "give", target: "someone" }), "given to a resident, a payment among it"), item(glyph({ kind: "move", reason: "take", from: "shelves", status: "paid" }), "taken from the shelves or the counter, paid for, or one's own"), item(glyph({ kind: "move", reason: "take", from: "shelves", status: "underpaid" }), "paid in part"), item(glyph({ kind: "move", reason: "take", from: "shelves", status: "unpaid" }), "not paid for"), item(glyph({ kind: "move", reason: "take", from: "awake" }), "taken from another, in its sight"), item(glyph({ kind: "move", reason: "take", from: "asleep" }), "taken from another asleep"), item(glyph({ kind: "grant" }), "granted from the treasury"), item(glyph({ kind: "settlement" }), "the midnight statement: rent taken, a salary paid")),
+    row("Life", item(glyph({ kind: "speech" }), "something said"), item(glyph({ kind: "speech", private: true }), "said privately"), item(glyph({ kind: "message" }), "a message written"), item(glyph({ kind: "move", reason: "take", from: "place" }), "taken where it lay"), item(glyph({ kind: "move", reason: "give", target: "here" }), "left for anyone"), item(glyph({ kind: "move", reason: "eat" }), "eaten"), item(glyph({ kind: "missing" }), "found something gone"), item(glyph({ kind: "move_in" }), "moved house"), item(glyph({ kind: "journal" }), "to bed with the day's journal"), item(glyph({ kind: "likes" }), "named whom it likes"), item(glyph({ kind: "forced_sleep" }), "forced sleep")),
     row("Body", item(glyph({ kind: "condition" }), "feels differently: hungrier, more tired, better or worse"), item(glyph({ kind: "condition", lowest: true }), "starving, exhausted or gravely ill"), item(glyph({ kind: "illness" }), "fell ill"), item(glyph({ kind: "recovered" }), "well again"), item(glyph({ kind: "bedridden" }), "took to bed")),
     row("Lines", item(count(), "several within a few pixels: hover, or zoom in"), item(swatch("dashed"), "checkpoint"), item(swatch("now"), "now"), item(swatch("cursor"), "the moment shown"), item(swatch("purse"), "money in hand, one scale for all")),
   );
@@ -378,6 +441,7 @@ export class Lanes {
    */
   constructor({ timeline, world, cast, onSelect, onMoment, onView }) {
     this.data = timeline;
+    this.residents = new Set(world.residents.map((r) => r.name));
     this.world = world;
     this.cast = cast;
     this.kinds = new Map(world.places.map((place) => [place.id, place.kind]));
@@ -686,6 +750,16 @@ export class Lanes {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText(initial, cx, cy + shape.dy * r + 0.5);
+    if (this.cast.newcomer(name)) {
+      // A newcomer's mark, as its badge carries it everywhere.
+      ctx.beginPath();
+      ctx.arc(cx + 0.88 * r, cy - 0.88 * r, 0.34 * r + 0.5, 0, 2 * Math.PI);
+      ctx.fillStyle = C.ink;
+      ctx.fill();
+      ctx.strokeStyle = C.surface;
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
   }
 
   fit(text, width) {
@@ -839,12 +913,12 @@ export class Lanes {
     const from = lowerBound(r.markers, this.tAt(left - 12), (m) => m.t);
     const to = lowerBound(r.markers, this.tAt(width + 12), (m) => m.t);
     const rows = ROWS.map(() => []);
-    for (let i = from; i < to; i++) rows[rowOf(r.markers[i])].push(r.markers[i]);
+    for (let i = from; i < to; i++) rows[rowOf(r.markers[i], this.residents)].push(r.markers[i]);
     const drawn = (this.drawn[r.name] = []);
     rows.forEach((list, row) => {
       const cy = top + ROW_Y[row];
       for (const cluster of this.clusters(list)) {
-        if (cluster.items.length === 1) drawMarker(ctx, cluster.items[0], cluster.cx, cy, C);
+        if (cluster.items.length === 1) drawMarker(ctx, cluster.items[0], cluster.cx, cy, C, this.residents);
         else drawCount(ctx, cluster.items.length, cluster.cx, cy, C);
         drawn.push({ row, cx: cluster.cx, half: cluster.half, items: cluster.items });
       }
@@ -878,6 +952,12 @@ export class Lanes {
     ctx.font = `11.5px ${FONT}`;
     ctx.fillStyle = C["ink-2"];
     ctx.fillText(fmt.money(points[points.length - 1][1]), x, top + PURSE_Y + PURSE_H / 2 + 0.5);
+    if (wide) {
+      // The number everyone sees on it now, how many of the others like it.
+      ctx.font = `10px ${FONT}`;
+      ctx.fillStyle = C.muted;
+      ctx.fillText(`liked by ${this.data.regard.at(-1)[1][r.name]}`, x, top + CONV_Y + CONV_H / 2 + 0.5);
+    }
   }
 
   /** The town's row: what happened to nobody in particular, folded as in a lane's rows. */

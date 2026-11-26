@@ -1,6 +1,6 @@
 // The social fabric as a graph that changes over time: who spent time in conversation with
-// whom, who spoke to whom, who handed whom money, who served whom at its work. Counts come from
-// the published measures' graph, by lived day, through the day shown.
+// whom, who spoke to whom, who gave whom money, who took from what another carried. Counts come
+// from the published measures' graph, by lived day, through the day shown.
 
 import { emptyState, fill, fmt, h, onWidth, s } from "../dom.js";
 
@@ -8,11 +8,11 @@ import { emptyState, fill, fmt, h, onWidth, s } from "../dom.js";
 const MEASURES = {
   together: { label: "Together", note: "Line width: minutes spent in conversations the other took part in.", field: "minutes", pointed: false },
   talk: { label: "Talk", note: "Arrows: things said that the other heard; width counts them.", field: "said", pointed: true },
-  money: { label: "Money", note: "Arrows: money handed over; width counts the amount.", field: "money", pointed: true },
-  served: { label: "Served", note: "Arrows: a sale at the counter, a dish (bought or the chef's unpaid), an examination or a treatment, from the one at work to the one served; width counts them.", field: "served", pointed: true },
+  money: { label: "Money", note: "Arrows: money given, payments among it; width counts the amount.", field: "money", pointed: true },
+  took: { label: "Took", note: "Arrows: from the one who took to the one taken from, awake or asleep; width counts the times.", field: "took", pointed: true },
 };
 const WINDOWS = { day: "That day", week: "Last 7 days", run: "Whole run" };
-const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "served"];
+const FIELDS = ["minutes", "said", "said_private", "gifts", "money", "took"];
 
 export class TiesPanel {
   constructor({ cast, onSelect }) {
@@ -66,7 +66,7 @@ export class TiesPanel {
       );
     fill(this.controls, seg(MEASURES, this.measure, (k) => (this.measure = k)), seg(WINDOWS, this.window, (k) => (this.window = k)));
     if (through < 1) {
-      fill(this.svgWrap, emptyState("No day has begun yet.", "Who spoke to, paid and served whom is drawn here once the first day is under way."));
+      fill(this.svgWrap, emptyState("No day has begun yet.", "Who spoke to, gave to and took from whom is drawn here once the first day is under way."));
       fill(this.caption);
       return;
     }
@@ -121,8 +121,8 @@ export class TiesPanel {
       const say = (t) =>
         ({
           said: () => `${fmt.plural(t.said, "thing")} said${t.said_private ? `, ${fmt.int(t.said_private)} privately` : ""}`,
-          money: () => `${fmt.money(t.money)} handed over, ${fmt.plural(t.gifts, "time")}`,
-          served: () => `served ${fmt.plural(t.served, "time")}`,
+          money: () => `${fmt.money(t.money)} given, ${fmt.plural(t.gifts, "gift")} in all`,
+          took: () => `took from them ${fmt.plural(t.took, "time")}`,
         })[measure.field]();
       for (const t of arrows) {
         const a = pos.get(t.source);

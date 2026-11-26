@@ -18,7 +18,7 @@ import pytest_asyncio
 import yaml
 
 from frontend.publish import Publisher
-from tests.support.runs import RUN, make_run, write_results
+from tests.support.runs import RUN, make_run, write_models, write_results
 
 NODE = shutil.which("node")
 REPLAY_CHECK = Path(__file__).with_name("replay_check.mjs")
@@ -35,6 +35,7 @@ async def site(tmp_path_factory) -> Path:
     configuration the publisher cannot read, so the home page has a run to list as not published."""
     root = tmp_path_factory.mktemp("viewer")
     run = await make_run(root / "runs")
+    write_models(root / "results")
     write_results(root / "results", "town")
     older = root / "runs" / "older"
     shutil.copytree(run.root, older)

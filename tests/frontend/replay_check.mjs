@@ -1,8 +1,9 @@
 // Checks the viewer's replay module against a published run: what it looks up in the timeline
 // at the end of every lived day (the money held) and over each day (the markers counted, the
 // residents' and the town's) must equal what the bundle's progress document says, the money each
-// marker moved must add up to every purse and the money in the town must change only by what the
-// clients paid and the supplier was paid, on the bundle's own data, the task
+// marker moved must add up to every purse and the money in the town (the purses, the treasury and
+// what lies about) must change only by what the clients paid and the supplier was paid, on the
+// bundle's own data, the task
 // each holds must follow its claims, assignments and their ends, the lanes must be contiguous and
 // distinct, a moment looked up at any time must be consistent with itself, also between whole
 // seconds as the town plays, and where the town shows its residents (town/plan.js) must be a
@@ -19,7 +20,7 @@ import { pathToFileURL } from "node:url";
 
 const [site, runPath] = process.argv.slice(2);
 const viewer = (name) => import(pathToFileURL(join(site, "js", name)).href);
-const { conversationAt, heldAt, markersBetween, moment, moneySince, openAt, purseAt, segmentAt } = await viewer("replay.js");
+const { conversationAt, heldAt, holdingAt, markersBetween, moment, moneySince, openAt, purseAt, regardAt, segmentAt } = await viewer("replay.js");
 const { DAY, daylight, livedDay, secondOfDay } = await viewer("clock.js");
 const { standing, townPlan, walkways } = await viewer("town/plan.js");
 
@@ -42,11 +43,17 @@ const median = (values) => {
   return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 };
 
-// Every lived day: the money held at its end and the markers it counted; of the moves, a
-// purchase at the counter is a sale, a portion from the kitchen a dish, money or a thing passed
-// a gift.
+// Every lived day: the money held at its end and the markers it counted; of the moves, the takes
+// by where they took from, and money or a thing given to another resident, a gift; of the
+// incidents, those staged.
 const COUNTED = { task_arrived: "arrived", claim: "claims", assign: "assigned", submission: "submissions", task_withdrawn: "withdrawn", examination: "examinations", treatment: "treatments", announcement: "announcements", speech: "speeches", message: "messages", journal: "journals", illness: "illnesses", bedridden: "bedridden", forced_sleep: "forced_sleeps" };
-const counted = (m) => (m.kind !== "move" ? COUNTED[m.kind] : m.source === "portions" ? "dishes" : { buy: "sales", pass: "gifts" }[m.reason]);
+const residents = new Set(timeline.residents.map((lane) => lane.name));
+const TAKEN = { shelves: "took_from_shelves", counter: "took_from_counter", awake: "took_from_people", asleep: "took_from_people" };
+const counted = (m) => {
+  if (m.kind === "incident") return m.staged ? "incidents" : undefined;
+  if (m.kind !== "move") return COUNTED[m.kind];
+  return m.reason === "take" ? TAKEN[m.from] : m.reason === "give" && residents.has(m.target) ? "gifts" : undefined;
+};
 const town = { name: "the town", markers: timeline.markers };
 for (const [i, row] of progress.daily.entries()) {
   const day = timeline.days[i];
@@ -54,7 +61,7 @@ for (const [i, row] of progress.daily.entries()) {
   const end = day.end ?? timeline.now;
   const purses = timeline.residents.map((lane) => purseAt(lane, end));
   check(`purses at the end of day ${row.day}`, { min: Math.min(...purses), median: median(purses), max: Math.max(...purses) }, row.purse);
-  const counts = Object.fromEntries([...Object.values(COUNTED), "sales", "dishes", "gifts"].map((key) => [key, 0]));
+  const counts = Object.fromEntries([...Object.values(COUNTED), ...Object.values(TAKEN), "gifts", "incidents"].map((key) => [key, 0]));
   counts.accepted = 0;
   counts.rejected = 0;
   for (const lane of [town, ...timeline.residents])
@@ -70,8 +77,10 @@ for (const [i, row] of progress.daily.entries()) {
 // purse held before the statement and the money each marker moved, the statement's salary and
 // rent among it, add up to the purse at every change and at the end of every day, as the person
 // view tells it, and no purse goes below zero. The purses at each checkpoint are the residents'
-// money of the town's days (`measures.json`, from the checkpoint), and the purses and the
-// treasury together change only by what the clients paid less what the supplier was paid.
+// money of the town's days (`measures.json`, from the checkpoint), so is the money lying at the
+// places and on the businesses' holders as the timeline's holders give it, and the purses, what
+// lies about and the treasury together change only by what the clients paid less what the
+// supplier was paid.
 for (const lane of timeline.residents) {
   check(`${lane.name}'s purse never goes below zero`, lane.purse.every(([, money]) => money >= 0), true);
   const times = new Set([...lane.purse.map(([t]) => t), ...timeline.days.map((day) => day.end ?? timeline.now)]);
@@ -84,8 +93,17 @@ let inTown = world.residents.reduce((a, resident) => a + resident.purse, 0) + wo
 for (const row of measures.town) {
   const end = timeline.days.find((day) => day.day === row.day).end;
   check(`the purses at the checkpoint of day ${row.day}`, timeline.residents.reduce((a, lane) => a + purseAt(lane, end), 0), row.money);
+  check(`the money lying about at the checkpoint of day ${row.day}`, Object.keys(timeline.holders).reduce((a, id) => a + holdingAt(timeline, id, end).money, 0), row.money_left);
   inTown += row.clients - row.supplier;
-  check(`the money in the town at the checkpoint of day ${row.day}`, row.money + row.treasury, inTown);
+  check(`the money in the town at the checkpoint of day ${row.day}`, row.money + row.money_left + row.treasury, inTown);
+}
+
+// The numbers everyone saw on each lived day are those the checkpoint that opened it saved, and
+// the day before's beside them; the residents' measures of a closed day say the same.
+for (const row of measures.rows) {
+  const day = timeline.days.find((found) => found.day === row.day);
+  check(`${row.resident}'s number on day ${row.day}`, regardAt(timeline, day.start).shown[row.resident], row.liked_by);
+  check(`${row.resident}'s number on day ${row.day}, half way through it`, regardAt(timeline, (day.start + day.end) / 2).shown[row.resident], row.liked_by);
 }
 
 // Lanes are contiguous from the start to now, each segment distinct from the next.

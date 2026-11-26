@@ -9,9 +9,10 @@
 
 import { DAY, parseHHMM, parseStamp, secondOfDay, stamp } from "../clock.js";
 import { fill, fmt, h } from "../dom.js";
-import { inventory, itemsBrief, needBars } from "../goods.js";
+import { heldBrief, inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { bodyAt, lowerBound, lyingAt, markersBetween, moment as momentOf, moneyMoved, purseAt, thingsAt } from "../replay.js";
+import { liked } from "../identity.js";
+import { bodyAt, holdingAt, lowerBound, markersBetween, moment as momentOf, moneyMoved, namesOf, purseAt, regardAt, thingsAt } from "../replay.js";
 import { href, sibling } from "../router.js";
 import { ICONS, describeMarker, iconFor, textFor, tone } from "../town/events.js";
 import { TiesPanel } from "../town/graph.js";
@@ -38,7 +39,7 @@ const DEFAULT_PANEL = "people";
 /** The entries the map shows as a notice for a while: what the whole town would notice. */
 const NOTICES = new Set(["task_arrived", "task_withdrawn", "delivery", "announcement", "bedridden", "forced_sleep"]);
 /** The markers the map shows by the resident for a while: what it just did, earned or felt. */
-const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "order", "cook", "price", "examination", "treatment", "announcement", "grant", "illness", "recovered", "bedridden", "move_in", "journal", "forced_sleep", "condition"]);
+const DEEDS = new Set(["claim", "assign", "submission", "service", "abandon", "message", "move", "missing", "order", "cook", "price", "examination", "treatment", "announcement", "grant", "illness", "recovered", "bedridden", "move_in", "journal", "likes", "web_search", "web_page", "forced_sleep", "condition"]);
 const WIDE = matchMedia("(min-width: 1000px)");
 const SIDEWAYS = matchMedia("(orientation: landscape) and (max-height: 500px)"); // a phone held sideways
 
@@ -239,6 +240,7 @@ export function mountTown(root, ctx) {
       places,
       dayEntries: entries.slice(0, lowerBound(entries, Math.floor(view.time) + 1, (e) => e.sim_time)),
       dayStartPurses: Object.fromEntries(data.residents.map((lane) => [lane.name, purseAt(lane, day.start)])),
+      regard: regardAt(data, view.time),
       reader: view.lens && view.selected ? view.selected : null,
       selected: view.selected,
       follow: view.only,
@@ -262,7 +264,7 @@ export function mountTown(root, ctx) {
     const scenes = new Map();
     for (const place of world.places) {
       const here = Object.entries(m.state.residents).filter(([, found]) => !found.moving && found.segment?.place === place.id);
-      const lying = itemsBrief(world, lyingAt(data, place.id, m.time));
+      const lying = heldBrief(world, holdingAt(data, place.id, m.time));
       if (!here.length) {
         if (lying) scenes.set(place.id, { label: `left here: ${lying}` });
         continue;
@@ -271,7 +273,7 @@ export function mountTown(root, ctx) {
       const talking = here.filter(([, found]) => found.conversation).length;
       const asleep = here.filter(([, found]) => found.segment.kind === "sleep").length;
       const abed = here.filter(([, found]) => found.segment.kind === "bedridden").length;
-      const open = here.some(([name, found]) => found.segment.kind === "work" && occupationOf(world, name).workplace === place.id);
+      const open = here.some(([name, found]) => found.segment.kind === "work" && occupationOf(world, name)?.workplace === place.id);
       const bits = [];
       if (open) bits.push("open");
       if (working) bits.push(`${working} working`);
@@ -295,7 +297,7 @@ export function mountTown(root, ctx) {
       .slice(-3)
       .map((e) => ({ icon: ICONS[e.kind], tone: tone(e) === "critical" ? "critical" : null, text: textFor(e, m.reader) }));
     const key = `${m.time}|${m.dayEntries.length}|${m.reader}`;
-    return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, ailing, notices, effects, key };
+    return { state: m.state, second: secondOfDay(m.time), selected: view.selected, speech, scenes, deeds, ailing, notices, effects, regard: m.regard, key };
   }
 
   /** What a marker says in a few words by the resident, with its icon and tone; null for what the map does not show. */
@@ -318,7 +320,13 @@ export function mountTown(root, ctx) {
         "div",
         { class: "selected-head" },
         cast.badge(view.selected, 34),
-        h("div", { class: "selected-text" }, h("b", {}, view.selected), h("span", { class: "muted" }, `${jobOf(world, view.selected)} · ${whereabouts(found, places) || "on the way"}`), h("span", { class: "selected-job" }, doing(found, places))),
+        h(
+          "div",
+          { class: "selected-text" },
+          h("span", { class: "selected-name" }, h("b", {}, view.selected), cast.newcomer(view.selected) ? h("span", { class: "new-tag" }, "newcomer") : null, " ", liked(m.regard.shown[view.selected], m.regard.before?.[view.selected] ?? null)),
+          h("span", { class: "muted" }, `${jobOf(world, view.selected)} · ${whereabouts(found, places) || "on the way"}`),
+          h("span", { class: "selected-job" }, doing(found, places)),
+        ),
         h("a", { class: "ghost small", href: href(sibling({ ...route, query: { ...route.query, t: stamp(Math.floor(view.time)) } }, "person", { agent: view.selected })), title: `${view.selected}'s story: journal, files and the raw trace` }, "Story", icon("chevron", 14)),
         h("button", { type: "button", class: "icon-btn", "aria-label": "Clear the selection (Escape)", title: "Clear the selection (Escape)", onclick: () => select(null) }, icon("close", 18)),
       ),
@@ -558,9 +566,10 @@ export function mountTown(root, ctx) {
     const before = view.time;
     view.time = time;
     const effects = [];
-    for (const lane of data.residents)
+    const residents = namesOf(data);
+    for (const lane of [...data.residents, { name: null, markers: data.markers }])
       for (const mk of markersBetween(lane, before, time))
-        for (const [agent, change] of moneyMoved(mk, lane.name)) effects.push(change > 0 ? { agent, text: `+${change}`, tone: "good" } : { agent, text: `−${-change}`, tone: "muted" });
+        for (const [agent, change] of moneyMoved(mk, lane.name, residents)) effects.push(change > 0 ? { agent, text: `+${change}`, tone: "good" } : { agent, text: `−${-change}`, tone: "muted" });
     paint(effects);
   }
 

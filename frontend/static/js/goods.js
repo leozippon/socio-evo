@@ -8,7 +8,6 @@
 import { hhmm, secondOfDay } from "./clock.js";
 import { fmt, h } from "./dom.js";
 import { icon } from "./icons.js";
-import { placeOfKind, shortName } from "./world.js";
 
 /** The three needs in the order the town tells them, each with the word a reader knows it by. */
 export const NEEDS = [
@@ -36,8 +35,9 @@ export function goodName(good) {
 /** The item of the catalogue `id`, a good or a dish; undefined if the world has none. */
 export const itemOf = (world, id) => world.goods.find((good) => good.id === id) ?? world.dishes.find((dish) => dish.id === id);
 
-/** Units of an item in words, as the town counts them: `3 helpings of bread`, `2 units of eggs`, `a phone`, `an omelette`. */
+/** An amount of an item, or of money, in words, as the town counts them: `3 helpings of bread`, `2 units of eggs`, `a phone`, `an omelette`, `$5`. */
 export function amountOf(world, id, units) {
+  if (id === "money") return fmt.money(units);
   const item = itemOf(world, id);
   if (!item) return `${fmt.int(units)} × ${id}`;
   if (item.kind === "durable" || Object.keys(item.ingredients).length) return units === 1 ? item.name : `${fmt.int(units)} × ${bare(item.name)}`;
@@ -49,6 +49,9 @@ export const itemsBrief = (world, items) =>
   Object.entries(items)
     .map(([id, units]) => `${fmt.int(units)} ${itemOf(world, id) ? bare(itemOf(world, id).name) : id}`)
     .join(", ");
+
+/** What a holder holds (`{items, money}`) in a few words, money first: `$3, 1 bread`; empty for nothing. */
+export const heldBrief = (world, held) => [held.money ? fmt.money(held.money) : "", itemsBrief(world, held.items)].filter(Boolean).join(", ");
 
 /** What a good does for its owner, in a sentence. */
 export function goodEffect(good) {
@@ -67,8 +70,6 @@ export function goodEffect(good) {
   }
 }
 
-/** Where goods are sold: the Store, by its short name. */
-export const soldAt = (world) => shortName(placeOfKind(world, "store"));
 
 /** What is kept of a consumable in words: `6 helpings`, `4 units`. */
 export function stockText(good, units) {
@@ -78,15 +79,15 @@ export function stockText(good, units) {
 
 /**
  * An item card: the icon, the name, and a line that says what it is worth to its owner. With
- * `units`, a consumable's stock; with `price`, a price tag (the Store's price, or the one given)
- * with what the supplier charges for it below.
+ * `units`, a consumable's stock; with `price`, a price tag (the price posted at the start, or the
+ * one given) with what the supplier charges for it below.
  */
 export function itemCard(good, { units = null, price = null, compact = false } = {}) {
   const line = units !== null && good.kind === "consumable" ? stockText(good, units) : goodEffect(good);
   const tag = price === true ? good.price : price;
   return h(
     "div",
-    { class: `item kind-${good.kind} effect-${good.effect}${compact ? " compact" : ""}`, title: `${goodName(good)}: ${goodEffect(good)}${tag !== null ? `. ${fmt.money(tag)} at the counter, ${fmt.money(good.wholesale)} from the supplier` : ""}` },
+    { class: `item kind-${good.kind} effect-${good.effect}${compact ? " compact" : ""}`, title: `${goodName(good)}: ${goodEffect(good)}${tag !== null ? `. ${fmt.money(tag)} posted on the shelves, ${fmt.money(good.wholesale)} from the supplier` : ""}` },
     h("span", { class: "item-icon" }, icon(goodIcon(good), compact ? 16 : 22)),
     h("span", { class: "item-text" }, h("b", {}, goodName(good)), compact ? null : h("span", { class: "item-line" }, line)),
     tag !== null ? h("span", { class: "item-price" }, fmt.money(tag), h("small", {}, `${fmt.money(good.wholesale)} wholesale`)) : null,

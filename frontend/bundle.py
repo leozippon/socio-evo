@@ -478,13 +478,14 @@ class Evaluated:
 def evaluation(results_root: Path, root: Path) -> Evaluated:
     """The evaluation results of the run at `root` under `results_root`, as `analysis.tables`
     reads them: every resident's level of every measure on every day evaluated, day 0 being the
-    base model's, the base's and the reference's, each result's metrics as recorded, and the
-    declared outcomes from day 0 to each later day every resident has results of (`outcomes`),
-    with what the latest day evaluated lacks when it has not (`missing`). The reference is the
-    one model besides the run's base that the results hold of both benchmarks. Of each answer
-    only what may be shown is carried (`answers`). What cannot be read is named in `problems`,
-    the results root by its name alone."""
-    doc: dict[str, Any] = {"base": None, "reference": None, "levels": [], "results": []}
+    base model's, the base's and the reference's levels (`models`), each result's metrics as
+    recorded, and the declared outcomes from day 0 to each later day every resident has results
+    of (`outcomes`), with what the latest day evaluated lacks when it has not (`missing`). The
+    reference is the one model besides the run's base that the results hold of both benchmarks.
+    Of each answer only what may be shown is carried (`answers`). What cannot be read is named
+    in `problems`, the results root by its name alone."""
+    doc: dict[str, Any] = {"base": None, "reference": None, "models": None, "levels": []}
+    doc |= {"results": []}
     doc |= {"outcomes": [], "missing": [], "problems": []}
     answers: dict[str, dict[str, Any]] = {}
 
@@ -519,6 +520,12 @@ def evaluation(results_root: Path, root: Path) -> Evaluated:
         groups = tables.grouping(run)
     except (FileNotFoundError, ValueError) as error:
         return problem(error)
+    doc["models"] = {
+        model: {
+            m: tables.level(results.models[b][model], m) for m, (b, _) in tables.MEASURES.items()
+        }
+        for model in ("base", "reference")
+    }
     doc["levels"] = tables.levels(results, groups)
     days = sorted({day for found in results.residents.values() for day in found})
     for day in days:
@@ -728,12 +735,14 @@ class Analysed:
 
 def compared(name: str, runs: Sequence[Analysed]) -> dict[str, Any]:
     """The `runs` compared, by name, on the declared outcomes: each run's mean level of each
-    measure by group and day (`levels`), each run's outcomes by group from day 0 to the latest
+    measure by group and day (`levels`) and its base's and reference's levels (`models`), each
+    run's outcomes by group from day 0 to the latest
     day all of them have outcomes of (`groups`), and the contrasts of `analysis.compare` between
     the run that learns as the paradigm does and each other (`contrasts`). What cannot be
     compared is named in `problems`."""
     by_name = {run.name: run for run in sorted(runs, key=lambda found: found.name)}
     doc: dict[str, Any] = {"name": name, "runs": list(by_name), "levels": {}, "days": None}
+    doc["models"] = {run: found.evaluation["models"] for run, found in by_name.items()}
     doc |= {"groups": {}, "paradigm": None, "contrasts": [], "problems": []}
     for found in by_name.values():
         means: dict[tuple[str, str, int], list[float]] = {}

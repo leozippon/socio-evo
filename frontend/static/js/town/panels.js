@@ -1,13 +1,14 @@
 // The town's panels. Each renders one moment: `m` holds the moment of the timeline (where
 // everyone is and what each is in), the timeline itself, the day's entries up to that moment,
-// who is selected and whose wording is read.
+// the numbers everyone saw, who is selected and whose wording is read.
 
 import { dateOf, hhmm, secondOfDay } from "../clock.js";
 import { emptyState, fill, fmt, h } from "../dom.js";
-import { amountOf, goodName, inventory, itemOf, needBars } from "../goods.js";
+import { goodName, heldBrief, inventory, needBars } from "../goods.js";
 import { icon } from "../icons.js";
-import { LARDER, bodyAt, boughtAtCounter, dinerOf, dishServed, holderAt, illAt, markersBetween, openAt, shopsAt, thingsAt } from "../replay.js";
-import { WORKPLACES, occupationOf, placeOfKind, shortName } from "../world.js";
+import { liked } from "../identity.js";
+import { COUNTER, KEPT, SHELVES, bodyAt, holderAt, illAt, isTake, markersBetween, openAt, paidShort, shopsAt, thingsAt } from "../replay.js";
+import { WORKPLACES, occupationOf, placeOfKind, shortName, titleOf } from "../world.js";
 import { STRUCTURE, clockOf, describeMarker, detail, feedItems, glyph, involved, knownOnlyTo, line, tone, witnessed } from "./events.js";
 
 /** A resident's doing in a few words: at work, talking, on the way, asleep, in bed, idle. */
@@ -41,7 +42,8 @@ export function byPlace(m) {
 
 /**
  * The people of the town at the moment, one card each: where it is and what it is doing, how
- * its body stands in three bars, its money and the day's change, and what it owns.
+ * many like it and how that changed overnight, how its body stands in three bars, its money and
+ * the day's change, and what it carries; a newcomer marked so.
  */
 export class PeoplePanel {
   constructor() {
@@ -74,7 +76,13 @@ export class PeoplePanel {
               h(
                 "span",
                 { class: "person-main" },
-                h("span", { class: "person-line" }, h("b", {}, name), h("span", { class: "muted" }, `${occupationOf(m.world, name).title} · ${whereabouts(found, m.places) || "on the way"}`)),
+                h(
+                  "span",
+                  { class: "person-line" },
+                  h("b", {}, name),
+                  m.cast.newcomer(name) ? h("span", { class: "new-tag" }, "newcomer") : null,
+                  h("span", { class: "muted" }, `${titleOf(m.world, name)} · ${whereabouts(found, m.places) || "on the way"}`),
+                ),
                 h("span", { class: "person-job" }, doing(found, m.places), illAt(found.lane, m.time) ? h("span", { class: "ill-tag" }, " · ill") : null),
                 inventory(m.world, things, { compact: true }),
               ),
@@ -82,13 +90,14 @@ export class PeoplePanel {
                 "span",
                 { class: "person-figures" },
                 h("span", { class: "money", title: "Money in hand, and its change since the day began" }, fmt.money(found.purse), delta ? h("small", { class: delta > 0 ? "up" : "down" }, ` ${fmt.signed(delta)}`) : null),
+                liked(m.regard.shown[name], m.regard.before?.[name] ?? null),
                 needBars(m.world, bodyAt(found.lane, m.time), { label: false, size: "mini" }),
               ),
             ),
           );
         }),
       ),
-      h("p", { class: "note small-text" }, "The bars are food in the body, energy and health, each filled to the band the resident is in; hover one for the last number told. Who is ill the resident alone knows, until the doctor examines it."),
+      h("p", { class: "note small-text" }, "Liked by: how many of the others named the resident going to bed, the number everyone sees on it today, with its change overnight. The bars are food in the body, energy and health, each filled to the band the resident is in; hover one for the last number told. Who is ill the resident alone knows, until the doctor examines it."),
     );
   }
 }
@@ -168,7 +177,7 @@ export class FeedPanel {
 }
 
 /** Whether the place `id` is open at the moment: someone whose workplace it is is at work there. */
-const serving = (m, id) => m.cast.names.filter((name) => occupationOf(m.world, name).workplace === id && m.state.residents[name].segment?.kind === "work" && m.state.residents[name].segment.place === id);
+const serving = (m, id) => m.cast.names.filter((name) => occupationOf(m.world, name)?.workplace === id && m.state.residents[name].segment?.kind === "work" && m.state.residents[name].segment.place === id);
 
 /** The markers on every lane since the lived day began, up to the moment, of `kind` or that `kind` keeps, each with its resident. */
 const today = (m, kind) => {
@@ -176,15 +185,26 @@ const today = (m, kind) => {
   return m.timeline.residents.flatMap((lane) => markersBetween(lane, m.day.start, m.time).filter(keep).map((mk) => [lane.name, mk]));
 };
 
+/** The day's takes from a business's holder in a sentence: how many, and of those a checkpoint has read, how many were not paid for in full. */
+function takesToday(m, taken) {
+  if (!taken.length) return "Nothing taken today.";
+  const short = taken.filter(([, mk]) => paidShort(mk));
+  const read = taken.filter(([, mk]) => mk.status !== null).length;
+  const pay = read ? ` ${fmt.int(short.length)} of them not paid for in full${short.length ? ` (${short.map(([name]) => name).join(", ")})` : ""}.` : " What was paid for them is read at the day's end.";
+  return `Today ${fmt.plural(taken.length, "take")}.${pay}`;
+}
+
 /** A small table of rows, each an array of cells, under a header; or a quiet line when empty. */
 const table = (head, rows, empty) => (rows.length ? h("div", { class: "table-wrap" }, h("table", { class: "data compact-table" }, h("thead", {}, h("tr", {}, head.map((cell) => h("th", {}, cell)))), h("tbody", {}, rows.map((row) => h("tr", {}, row.map((cell) => h("td", {}, cell))))))) : h("p", { class: "muted small-text" }, empty));
 
 /**
- * Each workplace at the moment, as its door and its books stand: the Office's board (the tasks
- * open, who holds each and since when, and the day's arrivals, acceptances and withdrawals),
- * the Store's shelves, prices and orders, the kitchen's menu and larder, the Hospital's fees,
- * the day's patients and who is ill or in bed, and the Town Hall's board of announcements with
- * the treasury as the last checkpoint saved it and the day's grants.
+ * Each workplace at the moment, as its door and its holders stand: the Office's board (the tasks
+ * open, who holds each and since when, and the day's arrivals, acceptances and withdrawals), the
+ * Store's shelves with the prices posted, what is on order and the money left on them, and the
+ * day's takes from them; the kitchen's counter and larder with the menu posted, and the day's
+ * dishes taken; the Hospital's fees posted, the day's patients and who is ill or in bed; and the
+ * Town Hall's board of announcements and notices, with the treasury as the last checkpoint saved
+ * it and the day's grants. What was paid for a take is told once its day is closed.
  */
 export class WorkPanel {
   constructor() {
@@ -219,19 +239,17 @@ export class WorkPanel {
         ];
       },
       store: () => {
-        const sold = today(m, boughtAtCounter);
-        const rows = m.world.goods.map((good) => [goodName(good), fmt.int(shops.stock[good.id] ?? 0), fmt.money(shops.prices[good.id]), shops.onOrder[good.id] ? fmt.int(shops.onOrder[good.id]) : ""]);
-        const units = sold.reduce((a, [, mk]) => a + mk.units, 0);
-        return [h("p", { class: "note" }, `Today ${fmt.plural(sold.length, "sale")} of ${fmt.plural(units, "unit")}, ${sold.filter(([, mk]) => mk.target === LARDER).length} of them for the kitchen.`), table(["Good", "In stock", "Price", "On order"], rows, "The Store sells nothing.")];
+        const taken = today(m, (mk) => isTake(mk) && mk.source === SHELVES);
+        const rows = m.world.goods.map((good) => [goodName(good), fmt.int(shops.shelves.items[good.id] ?? 0), fmt.money(shops.prices[good.id]), shops.onOrder[good.id] ? fmt.int(shops.onOrder[good.id]) : ""]);
+        return [h("p", { class: "note" }, `Prices are posted and charge nobody: whoever takes from the shelves gives the keeper the money, or leaves it on them. ${takesToday(m, taken)} ${shops.shelves.money ? `${fmt.money(shops.shelves.money)} lies on the shelves.` : ""}`), table(["Good", "On the shelves", "Posted", "On order"], rows, "The shelves hold nothing.")];
       },
       restaurant: () => {
-        const served = today(m, dishServed);
-        const menu = m.world.dishes.map((dish) => [goodName(dish), fmt.int(shops.portions[dish.id] ?? 0), fmt.money(shops.menu[dish.id])]);
-        const larder = Object.entries(shops.larder).map(([id, units]) => amountOf(m.world, id, units));
-        const dish = (mk) => (itemOf(m.world, mk.item) ? goodName(itemOf(m.world, mk.item)).toLowerCase() : mk.item);
+        const taken = today(m, (mk) => isTake(mk) && mk.source === COUNTER);
+        const menu = m.world.dishes.map((dish) => [goodName(dish), fmt.int(shops.counter.items[dish.id] ?? 0), fmt.money(shops.menu[dish.id])]);
+        const larder = heldBrief(m.world, shops.larder);
         return [
-          h("p", { class: "note" }, `Today ${fmt.plural(served.length, "dish", "dishes")} served${served.length ? `: ${served.map(([name, mk]) => `${dish(mk)} to ${dinerOf(mk, name)}${mk.reason === "pass" ? ", unpaid" : ""}`).join(", ")}` : ""}. The kitchen holds ${larder.join(", ") || "nothing"}.`),
-          table(["Dish", "Ready", "Price"], menu, "The kitchen cooks nothing."),
+          h("p", { class: "note" }, m.cast.mention(`A dish taken from the counter is eaten where it is taken. ${takesToday(m, taken)} The larder holds ${larder || "nothing"}${shops.counter.money ? `; ${fmt.money(shops.counter.money)} lies on the counter` : ""}.`)),
+          table(["Dish", "On the counter", "Posted"], menu, "The kitchen cooks nothing."),
         ];
       },
       hospital: () => {
@@ -239,8 +257,8 @@ export class WorkPanel {
         const ill = m.cast.names.filter((name) => illAt(m.state.residents[name].lane, m.time));
         const abed = m.cast.names.filter((name) => m.state.residents[name].segment?.kind === "bedridden");
         return [
-          h("p", { class: "note" }, `An examination costs ${fmt.money(shops.fees.examination)}, a treatment ${fmt.money(shops.fees.treatment)}. Ill now: ${ill.join(", ") || "nobody"}; in bed: ${abed.join(", ") || "nobody"}.`),
-          seen.length ? h("ul", { class: "outcomes" }, seen.map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${hhmm(secondOfDay(mk.t))} `), m.cast.mention(`${name} ${describeMarker(mk, name, name, m.world)[0]}`)))) : h("p", { class: "muted small-text" }, "Nobody seen today."),
+          h("p", { class: "note" }, `The fees posted, which charge nobody: ${fmt.money(shops.fees.examination)} an examination, ${fmt.money(shops.fees.treatment)} a treatment. Ill now: ${ill.join(", ") || "nobody"}; in bed: ${abed.join(", ") || "nobody"}.`),
+          seen.length ? h("ul", { class: "outcomes" }, seen.map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${hhmm(secondOfDay(mk.t))} `), h("span", {}, m.cast.mention(`${name} ${describeMarker(mk, name, name, m.world)[0]}`))))) : h("p", { class: "muted small-text" }, "Nobody seen today."),
         ];
       },
       hall: () => {
@@ -252,9 +270,11 @@ export class WorkPanel {
         const books = saved ? `The treasury held ${fmt.money(saved.treasury)} at the checkpoint of day ${saved.day}${owing("salary_owed").length ? `, owing ${owing("salary_owed").join(", ")} in salary` : ""}${owing("arrears").length ? `; owed rent by ${owing("arrears").join(", ")}` : ""}. ` : "";
         const granted = today(m, "grant").map(([, mk]) => `${fmt.money(mk.amount)} to ${mk.to}, “${mk.reason}”`);
         const grants = granted.length ? `Granted today: ${granted.join("; ")}.` : "Nothing granted today.";
+        const notices = m.timeline.markers.filter((mk) => mk.kind === "incident" && mk.t <= m.time).flatMap((mk) => mk.effects.filter((effect) => effect.type === "notice").map((effect) => ({ ...effect, t: mk.t })));
+        const board = [...said.map(([name, mk]) => ({ t: mk.t, by: name, text: mk.text })), ...notices].sort((a, b) => b.t - a.t);
         return [
           h("p", { class: "note" }, m.cast.mention(`${books}${grants}`)),
-          said.length ? h("ul", { class: "outcomes" }, said.slice(0, 6).map(([name, mk]) => h("li", {}, h("span", { class: "muted" }, `${dateOf(m.timeline.start_date, mk.t)} ${hhmm(secondOfDay(mk.t))}, ${name}: `), `“${mk.text}”`))) : h("p", { class: "muted small-text" }, "Nothing is posted on the board."),
+          board.length ? h("ul", { class: "outcomes" }, board.slice(0, 6).map((post) => h("li", {}, h("span", { class: "muted" }, `${dateOf(m.timeline.start_date, post.t)} ${hhmm(secondOfDay(post.t))}, ${post.by}: `), h("span", {}, m.cast.mention(`“${post.text}”`))))) : h("p", { class: "muted small-text" }, "Nothing is posted on the board."),
         ];
       },
     };
@@ -274,9 +294,9 @@ export class WorkPanel {
   }
 }
 
-/** The kinds of entry the chronicle keeps, each a moment worth finding; of the moves, what was passed, taken or left. */
-const NOTABLE = new Set(["task_arrived", "task_withdrawn", "claim", "assign", "verdict", "abandon", "message", "order", "delivery", "cook", "price", "examination", "treatment", "announcement", "illness", "recovered", "bedridden", "move_in", "sleep", "forced_sleep"]);
-const NOTABLE_MOVES = new Set(["pass", "get", "put"]);
+/** The kinds of entry the chronicle keeps, each a moment worth finding; of the moves, what was given to or taken from another resident, and what was left or taken where it lay. */
+const NOTABLE = new Set(["task_arrived", "task_withdrawn", "claim", "assign", "verdict", "abandon", "message", "order", "delivery", "cook", "price", "examination", "treatment", "announcement", "illness", "recovered", "bedridden", "move_in", "sleep", "forced_sleep", "incident", "missing", "web_search"]);
+const notableMove = (e) => e.kind === "move" && e.payload.reason !== "eat" && !KEPT.has(e.payload.reason === "take" ? e.payload.source : e.payload.target);
 
 /** The day so far in its notable moments; each one jumps there. */
 export class ChroniclePanel {
@@ -294,7 +314,7 @@ export class ChroniclePanel {
     const key = `${m.day.day}|${m.dayEntries.length}|${m.reader}`;
     if (key === this.key) return;
     this.key = key;
-    const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || (e.kind === "move" && NOTABLE_MOVES.has(e.payload.reason)) || (e.kind === "speech" && e.payload.private) || (e.kind === "condition" && e.payload.lowest));
+    const notes = m.dayEntries.filter((e) => NOTABLE.has(e.kind) || notableMove(e) || (e.kind === "speech" && e.payload.private) || (e.kind === "condition" && e.payload.lowest));
     fill(
       this.list,
       notes.length
@@ -303,7 +323,7 @@ export class ChroniclePanel {
             { class: "chronicle-list" },
             notes.map((e) => h("li", { class: tone(e) && tone(e) !== "good" ? tone(e) : "" }, h("button", { type: "button", class: "linkish", onclick: () => this.onJump(e.sim_time) }, h("span", { class: "chron-time" }, clockOf(e)), h("span", {}, glyph(e), " ", line(e, m))))),
           )
-        : emptyState("Nothing notable yet today.", "Tasks coming in, claimed, given and handed in, things passed, taken and left, orders and deliveries, cooking, the doctor's patients, announcements, illness and bedtimes appear here as they happen."),
+        : emptyState("Nothing notable yet today.", "Tasks coming in, claimed, given and handed in, what was given to or taken from another, left or taken where it lay, orders and deliveries, cooking, the doctor's patients, announcements, incidents, what someone found gone, illness and bedtimes appear here as they happen."),
     );
   }
 }

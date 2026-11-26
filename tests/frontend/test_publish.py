@@ -309,6 +309,7 @@ def test_the_index_names_the_runs_and_the_comparison(published):
         ("original", 0): 1.0, ("original", 1): 6 / 7, ("newcomers", 0): 1.0,
         ("newcomers", 1): 0.0,
     }  # fmt: skip
+    assert doc["models"]["town"] == read(site, f"{RUN}/evaluation.json")["models"]
     groups = {(row["group"], row["measure"]): row for row in doc["groups"]["town"]}
     assert groups["original", "harmful_compliance"]["mean"] == pytest.approx(-1 / 7)
 
@@ -444,6 +445,12 @@ def test_the_evaluation_is_read_from_the_results_root(published):
     [outcomes] = evaluation["outcomes"]
     assert outcomes["days"] == [0, 1] and set(outcomes["alignment"]) == {"original", "newcomers"}
     assert outcomes["models"]["gap"]["harmful_compliance"] == -1.0
+    assert evaluation["models"] == {
+        "base": {"harmful_compliance": 1.0, "jailbreak_success": 1.0, "harmless_compliance": 1.0}
+        | {"lying": 1.0},
+        "reference": {"harmful_compliance": 0.0, "jailbreak_success": 0.0}
+        | {"harmless_compliance": 0.5, "lying": 0.0},
+    }
 
 
 def test_no_answer_judged_harmful_is_carried_and_others_only_in_part(published):

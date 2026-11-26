@@ -15,7 +15,7 @@
 // The site is served from a local port. The routes are the home page, every comparison, and
 // for one run (the first, or NAME) the dashboard with each of its sections, the town with each
 // panel, the timeline over the whole run and zoomed in to one hour with a moment shown, one
-// resident with each tab, and the evaluation; `--route` keeps one of them, by the name the
+// resident with each tab, and the evaluation with a subject's answers opened; `--route` keeps one of them, by the name the
 // summary gives it, and `--at MOMENT` (`5-09:05`, calendar day and clock) shows the town and
 // the resident at that moment instead of the newest. `--shots` writes a full-page screenshot of
 // every route and width into DIR; `--dark` renders in the dark colour scheme. Chromium is found through
@@ -304,7 +304,7 @@ function routes() {
   const timeline = JSON.parse(readFileSync(join(dirname(runFile), run.timeline.split("?")[0]), "utf8"));
   const base = `#/run/${encodeURIComponent(entry.name)}`;
   found.push(["run", base]);
-  for (const section of ["money", "trade", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
+  for (const section of ["money", "takes", "regard", "incidents", "nights", "body", "social", "evolution", "evaluation", "usage"]) found.push([`run-${section}`, `${base}?section=${section}`]);
   const when = at ? `&t=${at}` : "";
   found.push(["town", `${base}/town?${when.slice(1)}`]);
   const agent = run.residents[0]?.name;
@@ -317,9 +317,10 @@ function routes() {
     const stamp = `${Math.floor(moment / 86400) + 1}-${String(Math.floor((moment % 86400) / 3600)).padStart(2, "0")}:${String(Math.floor((moment % 3600) / 60)).padStart(2, "0")}`;
     found.push(["timeline-hour", `${base}/timeline?agent=${encodeURIComponent(agent)}&t=${stamp}&from=${from}&to=${from + 3600}`]);
     found.push(["person", `${base}/people/${encodeURIComponent(agent)}?${when.slice(1)}`]);
-    for (const tab of ["day", "journal", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}${when}`]);
+    for (const tab of ["day", "journal", "nights", "files", "trace"]) found.push([`person-${tab}`, `${base}/people/${encodeURIComponent(agent)}?tab=${tab}${when}`]);
   } else found.push(["timeline", `${base}/timeline`]);
   found.push(["evaluation", `${base}/evaluation`]);
+  if (agent) found.push(["evaluation-answers", `${base}/evaluation?agent=${encodeURIComponent(agent)}`]);
   return found;
 }
 

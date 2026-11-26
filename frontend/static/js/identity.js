@@ -1,8 +1,10 @@
 // Who is who: every resident has one stable identity, used on the map, in charts, in the graph and
 // in text. Identity is colour (the agent's slot in the validated categorical palette, assigned
-// in configured order), shape and initial together, so it never rests on colour alone.
+// in configured order), shape and initial together, so it never rests on colour alone; a
+// newcomer's badge carries a mark of its own. Beside a resident, the number everyone saw on it:
+// how many of the others like it, with its change since the day before.
 
-import { h, s } from "./dom.js";
+import { fmt, h, s } from "./dom.js";
 
 const SLOTS = 8;
 
@@ -24,11 +26,17 @@ export class Cast {
     this.names = world.residents.map((resident) => resident.name);
     this.index = new Map(this.names.map((name, i) => [name, i]));
     this.initials = initials(this.names);
+    this.newcomers = new Set(world.residents.filter((resident) => resident.newcomer).map((resident) => resident.name));
     this.pattern = this.names.length ? new RegExp(`\\b(${this.names.map(escape).join("|")})\\b`, "g") : null;
   }
 
   has(name) {
     return this.index.has(name);
+  }
+
+  /** Whether the resident is one of the newcomers. */
+  newcomer(name) {
+    return this.newcomers.has(name);
   }
 
   agent(name) {
@@ -58,6 +66,7 @@ export class Cast {
       { class: "glyph", transform: `scale(${r})` },
       s("path", { d: shape.d, class: ring ? "glyph-ring" : null, style: { fill: `var(--a${slot})` }, "vector-effect": ring ? "non-scaling-stroke" : null }),
       s("text", { y: shape.dy, class: "glyph-letter", style: { fill: `var(--a${slot}-ink)`, "font-size": this.initials.get(name).length > 1 ? "0.95px" : "1.25px" } }, this.initials.get(name)),
+      this.newcomer(name) ? s("circle", { class: "glyph-new", cx: 0.88, cy: -0.88, r: 0.34, "vector-effect": "non-scaling-stroke" }) : null,
     );
   }
 
@@ -69,7 +78,8 @@ export class Cast {
   /** The agent's name with its badge, as a link to the person view if `href` is given. */
   chip(name, href = null, extra = null) {
     const content = [this.badge(name, 16), h("span", {}, name), extra];
-    return href ? h("a", { class: "chip", href }, ...content) : h("span", { class: "chip" }, ...content);
+    const title = this.newcomer(name) ? `${name}, a newcomer` : null;
+    return href ? h("a", { class: "chip", href, title }, ...content) : h("span", { class: "chip", title }, ...content);
   }
 
   /** Text with every agent's name marked by its colour. */
@@ -98,3 +108,14 @@ function initials(names) {
 }
 
 const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The number everyone saw on a resident, how many of the others like it (`now`), with its change
+ * since the lived day before (`before`, null on the first day), as the town says it: "liked by
+ * 4", and "+1" beside it; `compact` keeps the number alone.
+ */
+export function liked(now, before = null, { compact = false } = {}) {
+  const change = before === null || before === undefined ? 0 : now - before;
+  const title = `Liked by ${fmt.plural(now, "other")}${before === null || before === undefined ? "" : `; the day before, by ${fmt.int(before)}`}`;
+  return h("span", { class: `liked${compact ? " compact" : ""}`, title }, compact ? fmt.int(now) : `liked by ${fmt.int(now)}`, change ? h("small", { class: change > 0 ? "up" : "down" }, ` ${fmt.signed(change)}`) : null);
+}

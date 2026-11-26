@@ -6,7 +6,7 @@
 // dropped. Only the manifest and the index are fetched afresh. A 404 for a reference means the
 // index has moved on: the run is refreshed and the document asked for again, once.
 
-export const FORMAT = 11;
+export const FORMAT = 12;
 
 export class FetchError extends Error {
   constructor(url, status, detail) {
@@ -220,6 +220,21 @@ export class RunSource {
     const found = entry.trace_days.find((item) => item.day === day);
     if (!found) return Promise.resolve(null);
     return this.follow(() => resolve(found.url, this.url));
+  }
+
+  /** The resident's night `night`, which must be one it has complete. */
+  night(agent, night) {
+    return this.follow(() => {
+      const entry = this.doc.residents.find((found) => found.name === agent);
+      const found = entry?.nights.find((item) => item.night === night);
+      if (!found) throw new FetchError(this.url, 404, `— ${agent} has no night ${night}`);
+      return resolve(found.url, this.url);
+    });
+  }
+
+  /** What may be shown of a subject's answers, by the reference the evaluation's row gives. */
+  answers(row) {
+    return this.retry(async () => load(resolve(row.answers, resolve(this.doc.evaluation, this.url))));
   }
 
   /** One version of a resident with its diff and files, by commit. */

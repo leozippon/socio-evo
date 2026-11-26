@@ -16,7 +16,7 @@ import { hhmm, secondOfDay } from "../clock.js";
 import { fmt, h } from "../dom.js";
 import { amountOf } from "../goods.js";
 import { icon } from "../icons.js";
-import { LARDER, PORTIONS } from "../replay.js";
+import { COUNTER, LARDER, MONEY, SHELVES } from "../replay.js";
 
 /** Entries that frame the day rather than happen in it. */
 export const STRUCTURE = new Set(["checkpoint", "resume"]);
@@ -67,13 +67,26 @@ export function involved(entry) {
   const names = new Set();
   if (entry.actor) names.add(entry.actor);
   for (const name of entry.audience) names.add(name);
-  for (const key of ["to", "from", "seller", "chef", "patient", "holder"]) {
+  for (const key of ["to", "from", "source", "target", "patient", "holder", "told"]) {
     const value = p[key];
     if (typeof value === "string") names.add(value);
     else if (Array.isArray(value)) for (const name of value) if (typeof name === "string") names.add(name);
   }
   return [...names];
 }
+
+/** The harm category of an incident, in plain words. */
+export const CATEGORIES = {
+  "scam-deceit": "fraud and scams",
+  "theft-economic-harm": "theft",
+  privacy: "privacy",
+  "harassment-defamation": "harassment and defamation",
+  "false-information": "false information",
+  "endangering-health": "endangering health",
+  "expert-advice": "unqualified expert advice",
+  "misuse-of-office": "misuse of office",
+  "unauthorised-access": "unauthorised access",
+};
 
 const words = (key) => {
   const text = String(key ?? "entry").replaceAll("_", " ");
@@ -105,8 +118,10 @@ export const ICONS = {
   conversation_end: "chevronLeft",
   message: "speech",
   move: "coin",
+  missing: "eye",
   order: "truck",
   delivery: "truck",
+  perished: "clock",
   cook: "pot",
   price: "tag",
   examination: "clinic",
@@ -120,18 +135,24 @@ export const ICONS = {
   bedridden: "bed",
   recovered: "heart",
   sleep: "book",
+  likes: "people",
+  regard: "people",
+  incident: "alert",
+  web_search: "ask",
+  web_page: "link",
   fell_asleep: "clock",
   forced_sleep: "alert",
   checkpoint: "flag",
   resume: "flag",
 };
 
-/** The icon of a move, by what it was: a purchase at the counter, a dish, money or a thing passed, taken, left or eaten. */
+/** The icon of a move, by what it was: eaten, money, a dish or a thing from the Store taken, a thing given or taken. */
 function moveIcon(p) {
-  if (p.source === PORTIONS) return "meal";
-  if (p.reason === "buy") return "store";
-  if (p.reason === "pass") return p.item ? "handoff" : "coin";
-  return { get: "basket", put: "basket", eat: "bowl" }[p.reason] ?? "spark";
+  if (p.reason === "eat") return "bowl";
+  if (p.what === MONEY) return "coin";
+  if (p.reason === "take" && p.source === COUNTER) return "meal";
+  if (p.reason === "take" && (p.source === SHELVES || p.source === LARDER)) return "store";
+  return p.reason === "give" ? "handoff" : "basket";
 }
 
 /** The icon of an entry, or of a marker given as `{kind, payload: marker}`. */
@@ -148,9 +169,15 @@ export function tone(entry) {
     case "recovered":
       return "good";
     case "move":
-      return p.reason === "pass" && p.source !== PORTIONS ? "good" : null;
+      // A marker's take says where it took from and what was paid; an entry's says neither.
+      if (p.from === "awake" || p.from === "asleep") return "critical";
+      return { unpaid: "serious", underpaid: "warn" }[p.status] ?? null;
+    case "examination":
+    case "treatment":
+      return { unpaid: "serious", underpaid: "warn" }[p.status] ?? null;
     case "abandon":
     case "illness":
+    case "missing":
       return "serious";
     case "task_withdrawn":
     case "forced_sleep":
@@ -180,14 +207,23 @@ export const textFor = (entry, reader) => (reader && entry.personal?.[reader]) |
 export function line(entry, m) {
   const note = knewNote(entry, m.reader);
   const tag = note ? h("span", { class: note.private ? "private-tag" : "knew-tag", title: note.title }, note.private ? icon("lock", 11) : null, note.text) : null;
-  return h("span", { class: "feed-text" }, tag, m.cast.mention(textFor(entry, m.reader)));
+  return h("span", { class: "feed-text" }, tag, personTag(entry, m.cast), m.cast.mention(textFor(entry, m.reader)));
 }
 
-/** What an entry carries beyond its line: a command's output, a journal entry. */
+/** A take from another resident told apart in a line: in its sight, or while it slept, which the audience tells (everyone there and awake). */
+function personTag(entry, cast) {
+  const p = entry.payload ?? {};
+  if (entry.kind !== "move" || p.reason !== "take" || !cast.has(p.source)) return null;
+  const asleep = !entry.audience.includes(p.source);
+  return h("span", { class: "took-tag", title: `Taken from what ${p.source} carried${asleep ? ", while asleep" : ", in sight"}` }, asleep ? `from ${p.source}, asleep` : `from ${p.source}`);
+}
+
+/** What an entry carries beyond its line: a command's output, a journal entry, the address of a page read. */
 export function detail(entry) {
   const p = entry.payload ?? {};
   if (entry.kind === "command" && p.output_tail?.trim()) return ["The end of its output", p.output_tail.trim(), true];
   if (entry.kind === "sleep" && p.journal) return ["Journal", p.journal, false];
+  if (entry.kind === "web_page") return ["The address", [p.url, p.final && p.final !== p.url ? `read as ${p.final}` : null].filter(Boolean).join("\n"), true];
   return null;
 }
 
@@ -234,42 +270,69 @@ function spellSummary(item) {
 /** The tax withheld from a payment for work, in a few words after it; nothing when none was. */
 const withheld = (tax) => (tax ? `, of which ${fmt.money(tax)} in tax` : "");
 
+/** Names in a few words, for a reader: `Mei`, `Mei and Tomas`, `nobody`. */
+const named = (names) => (names.length ? listed(names) : "nobody");
+
+/** Amounts by item id or money in words: `$3 and 1 helping of bread`. */
+const amounts = (world, found) => listed(Object.entries(found).map(([id, units]) => amountOf(world, id, units)));
+
+/** A holder other than a resident in words, where it stands: `the shelves`, `the counter`, `the larder`, or a place's name. */
+const holderWords = (id, world) => ({ [SHELVES]: "the shelves", [COUNTER]: "the counter", [LARDER]: "the larder" })[id] ?? world.places.find((place) => place.id === id)?.name ?? id;
+
+/** What was paid for a take or a service, as `analysis.measures.takes` reads it, after its line; on the day in progress it is not read yet. */
+function paid(m, priced) {
+  switch (m.status) {
+    case "paid":
+      return ": paid in full";
+    case "underpaid":
+      return `: ${fmt.money(m.covered)} paid of ${fmt.money(m.due)}`;
+    case "unpaid":
+      return `: nothing paid of ${fmt.money(m.due)}`;
+    case "own":
+      return ", the keeper's own";
+    default:
+      return priced ? "; whether it was paid for is read at the day's end" : "";
+  }
+}
+
 /** A quantity of a good in a few words: `2 × bread`, `a phone`. */
 const some = (m) => `${m.quantity > 1 ? `${m.quantity} × ` : ""}${m.name}`;
 
 /** Where a marker happened: `at the store`, or `on the way` between places. */
 const where = (m, world) => (m.place ? `at ${world.places.find((place) => place.id === m.place)?.name ?? m.place}` : "on the way");
 
-/** A move marker in words (see `describeMarker`): what moved, from whom to whom, and where. */
+/**
+ * A move marker in words (see `describeMarker`): what was taken, given or eaten, from or to whom
+ * or what, and where; a take with the price posted where it stood and what was paid for it, and
+ * a take from another resident with whether it was awake.
+ */
 function moveWords(m, by, who, world) {
   const own = by === who;
   const subject = own ? "" : `${by} `;
   const at = where(m, world);
-  const what = m.item === null ? fmt.money(m.money) : amountOf(world, m.item, m.units);
+  const what = amountOf(world, m.what, m.amount);
+  const person = m.from === "awake" || m.from === "asleep";
   switch (m.reason) {
-    case "pass":
-      if (m.source === PORTIONS) {
-        if (!own && who === m.target) return [`was served ${what} by ${by}, unpaid, ${at}`];
-        return [`${subject}served ${m.target} ${what}, unpaid, ${at}`];
+    case "take": {
+      if (person) {
+        const how = m.from === "asleep" ? "asleep" : "awake, in sight of it";
+        if (!own && who === m.source) return [`had ${what} taken by ${by} ${at}, ${m.from === "asleep" ? "while asleep" : "in sight of it"}`];
+        return [`${subject}took ${what} from ${m.source} ${at}, ${m.source} ${how}`];
       }
-      if (!own && who === m.target) return [`received ${what} from ${by} ${at}`];
-      return [`${subject}passed ${m.target} ${what} ${at}`];
-    case "get":
-      return [`${subject}took ${what} left ${at}`];
-    case "put":
-      return [`${subject}left ${what} ${at}, for anyone to take`];
+      if (m.from === "place") return [`${subject}took ${what} left ${at}`];
+      const priced = m.price !== null;
+      const price = priced ? `, priced ${fmt.money(m.price)}${m.amount > 1 ? " each" : ""}` : "";
+      return [`${subject}took ${what} from ${holderWords(m.source, world)} ${at}${price}${paid(m, priced)}`];
+    }
+    case "give":
+      if (!world.residents.some((r) => r.name === m.target)) {
+        const on = { [SHELVES]: "on the shelves ", [COUNTER]: "on the counter ", [LARDER]: "in the larder " }[m.target];
+        return [on ? `${subject}left ${what} ${on}${at}` : `${subject}left ${what} ${at}, for anyone to take`];
+      }
+      if (!own && who === m.target) return [`was given ${what} by ${by} ${at}${withheld(m.tax)}`];
+      return [`${subject}gave ${m.target} ${what} ${at}${withheld(m.tax)}`];
     case "eat":
       return [`${subject}ate ${what} ${at}`];
-    case "buy": {
-      const paid = fmt.money(m.money);
-      if (m.source === PORTIONS) {
-        if (!own && who === m.seller) return [`served ${by} ${what} for ${paid} ${at}${withheld(m.tax)}`];
-        return [`${subject}had ${what} for ${paid} ${at}, served by ${m.seller}`];
-      }
-      const kitchen = m.target === LARDER ? " for the kitchen" : "";
-      if (!own && who === m.seller) return [`sold ${by} ${what}${kitchen} for ${paid} ${at}${withheld(m.tax)}`];
-      return [`${subject}bought ${what}${kitchen} for ${paid} ${at}`];
-    }
     default:
       return [`${subject}moved ${what} ${at}`];
   }
@@ -313,6 +376,13 @@ export function describeMarker(m, by, who, world) {
       return [`the client withdrew task ${m.task}${m.holder ? `, which ${m.holder} held` : ", held by nobody"}`];
     case "delivery":
       return [`the supplier delivered ${goodsIn(m.items)}`];
+    case "incident": {
+      const kind = `${m.type} “${m.id}”, of ${CATEGORIES[m.category] ?? m.category}`;
+      if (!m.staged) return [`the ${kind}, could not be staged`, `${m.why}.`];
+      return [`the ${kind}, staged`, `Told ${named(m.told)}.`];
+    }
+    case "perished":
+      return [`${amountOf(world, m.item, m.units)} perished, gone from ${world.residents.some((r) => r.name === m.source) ? m.source : holderWords(m.source, world)}`];
     case "claim":
       return [`${subject}claimed task ${m.task} (${m.instance_id})`];
     case "assign":
@@ -334,19 +404,34 @@ export function describeMarker(m, by, who, world) {
       return own ? [`wrote to ${m.to}`, m.text] : [`received a message from ${by}`, m.text];
     case "move":
       return moveWords(m, by, who, world);
+    case "missing": {
+      const from = m.holder === by ? (own ? "what you carry" : "what it carried") : holderWords(m.holder, world);
+      return [`${subject}found ${amounts(world, m.gone)} gone from ${from}, not knowing who took it`];
+    }
+    case "likes":
+      return [`${subject}went to bed liking ${named(m.names)}`];
+    case "web_search":
+      return [`${subject}searched the web${m.ok ? `, ${fmt.plural(m.results, "result")}` : ", which could not be made"}`, `“${m.query}”`];
+    case "web_page":
+      return [`${subject}read a page of the web${m.ok ? `, ${fmt.plural(m.characters, "character")}` : ", which could not be read"}`, m.url];
     case "order":
       return [`${subject}ordered ${some(m)} from the supplier for ${fmt.money(m.amount)}, to arrive at ${hhmm(secondOfDay(m.arrives))}`];
-    case "cook":
-      return [`${subject}cooked ${fmt.plural(m.portions, "portion")} of ${m.name}`, `From ${goodsIn(m.used)}.`];
+    case "cook": {
+      const hands = Object.keys(m.carried).length ? `, ${goodsIn(m.carried)} of it from ${own ? "your" : "the chef's"} own hands` : "";
+      return [`${subject}cooked ${fmt.plural(m.portions, "portion")} of ${m.name}`, `From ${goodsIn(m.used)}${hands}.`];
+    }
     case "price":
       return [`${subject}set the price of ${m.name} to ${fmt.money(m.price)}, from ${fmt.money(m.before)}`];
-    case "examination":
-      if (!own && who === m.patient) return [`was examined by ${by} for ${fmt.money(m.fee)}`, numbers(m)];
-      return [`${subject}examined ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}${withheld(m.tax)}`, numbers(m)];
+    case "examination": {
+      const fee = m.patient === by ? "" : `, the fee posted ${fmt.money(m.fee)}${paid(m, true)}`;
+      if (!own && who === m.patient) return [`was examined by ${by}${fee}`, numbers(m)];
+      return [`${subject}examined ${m.patient === by ? "themself" : m.patient}${fee}`, numbers(m)];
+    }
     case "treatment": {
       const restored = `Health ${fmt.int(Math.round(m.before))} to ${fmt.int(Math.round(m.health))} of 100${m.ill ? ", the illness ended" : ""}${m.bedridden ? ", out of bed" : ""}.`;
-      if (!own && who === m.patient) return [`was treated by ${by} for ${fmt.money(m.fee)}`, restored];
-      return [`${subject}treated ${m.patient === by ? "themself" : m.patient} for ${fmt.money(m.fee)}${withheld(m.tax)}`, restored];
+      const fee = m.patient === by ? "" : `, the fee posted ${fmt.money(m.fee)}${paid(m, true)}`;
+      if (!own && who === m.patient) return [`was treated by ${by}${fee}`, restored];
+      return [`${subject}treated ${m.patient === by ? "themself" : m.patient}${fee}`, restored];
     }
     case "announcement":
       return [`${subject}announced`, m.text];
@@ -385,7 +470,9 @@ export function concerns(m, by, who) {
     case "message":
       return m.to === who;
     case "move":
-      return m.target === who || m.seller === who;
+      return m.target === who || m.source === who;
+    case "incident":
+      return m.told.includes(who) || m.effects.some((effect) => effect.who === who);
     case "grant":
       return m.to === who;
     case "assign":
