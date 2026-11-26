@@ -48,11 +48,12 @@ async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
         reply("", tool_call("shell", command="ls")),
         reply("", tool_call("write_repo_file", path="fix.py", content="BUG\n")),
         reply("", tool_call("edit_repo_file", path="fix.py", old_text="BUG", new_text="FIX")),
+        reply("", tool_call("read_repo_file", path="fix.py", offset="1")),  # a number as text
         reply("", tool_call("submit"), tool_call("shell", command="pwd")),
     )
     results = await work(port, model, tmp_path)
 
-    assert port.ending == "accepted" and len(model.requests) == 4
+    assert port.ending == "accepted" and len(model.requests) == 5
     system, opening = model.requests[0].messages
     assert "How this work goes.\n\nYou have one task" in system.content
     assert "You can submit at most 2 times. Your work on the task ends when" in system.content
@@ -65,6 +66,7 @@ async def test_a_task_runs_from_the_first_command_to_acceptance(tmp_path):
         "ran ls\nExit code 0.",
         "You wrote fix.py (4 characters).",
         "You changed fix.py.",
+        "Lines 1 to 1 of 1 in fix.py:\n\nFIX\n",
         "Accepted. Your work on the task is done.",
         "Your work on the task is over.",
     ]

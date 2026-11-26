@@ -41,7 +41,7 @@ from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.config import StrictModel
 from world.backend import Backend, Task, Verdict, Workspace
 from world.telling import counted
-from world.tools import WORKSPACE_SPECS, check, spec
+from world.tools import WORKSPACE_SPECS, fit, spec
 from world.workspace import edit_repo, failure, read_repo, told_command, write_repo
 
 Ending = Literal["accepted", "rejected", "gave_up", "requests", "budget", "error"]
@@ -157,11 +157,11 @@ class SoloPort:
         self._stop()
         if self.ending is not None:
             return ToolResult(OVER, ends_turn=True)
-        problem = check(spec, args)
-        if problem:
-            return ToolResult(problem)
+        fitted = fit(spec, args)
+        if isinstance(fitted, str):
+            return ToolResult(fitted)
         try:
-            result = await self._handlers[name](args)
+            result = await self._handlers[name](fitted)
         except Exception as error:
             self.end("error", f"{name}: {type(error).__name__}: {error}")
             return ToolResult(BROKEN, ends_turn=True)
