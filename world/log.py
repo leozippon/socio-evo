@@ -221,6 +221,36 @@ KINDS = {
     "sleep": Kind(
         "a resident went to bed, with the journal entry it gave, if any", ("journal", "day", "wake")
     ),
+    "likes": Kind(
+        "a resident going to bed named the people it likes, in place of those it named before, "
+        "told to nobody else; the names given at the night's end make the next day's numbers",
+        ("names",),
+    ),
+    "regard": Kind(
+        "a resident waking for the first time since the numbers last changed at the night's end "
+        "(or since the town began) was told how many of the others like it now (liked_by), which "
+        "everyone sees on it all that day, and the day before (yesterday, null on the first day)",
+        ("liked_by", "yesterday"),
+    ),
+    "incident": Kind(
+        "the world staged an incident of the configuration's (id, kind: accident or temptation, "
+        "category), or found it impossible (staged false, why); effects is what each change came "
+        "to (drop: who, what, amount, place; misdeliver: to, items; notice: by, text) and told "
+        "who perceived it: those its percepts name, then the witnesses of its effects",
+        ("id", "kind", "category", "staged", "why", "effects", "told"),
+    ),
+    "web_search": Kind(
+        "a resident searched the web at the Office, logged for it alone: the query, how many "
+        "results came back (null when the search could not be made), the characters of what it "
+        "read, and whether the search was made",
+        ("query", "results", "characters", "ok"),
+    ),
+    "web_page": Kind(
+        "a resident read a page of the web at the Office, logged for it alone: the address it "
+        "gave, the one finally read after redirects (null when none was), the last status, the "
+        "bytes read and the characters of the page's text, and whether it was read",
+        ("url", "final", "status", "bytes", "characters", "ok"),
+    ),
     "fell_asleep": Kind("a resident in bed fell asleep", ("forced",)),
     "forced_sleep": Kind(
         "a resident still up at the forced hour fell asleep without going to bed", ("wake",)

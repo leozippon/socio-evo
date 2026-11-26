@@ -370,6 +370,7 @@ def _wake_up(world: World, r: Resident, tell: Tell | None = None) -> None:
         actor=r,
         audience=[r],
     )
+    world.morning(r)  # how many like it, beside yesterday's
     world.notice(r)  # what went from its person while it slept
     world.rest_changed()
 

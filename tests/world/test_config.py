@@ -4,12 +4,19 @@ is written."""
 from __future__ import annotations
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from tests.support.towns import make_agent_dirs, town_config
 from world.clock import ManualClock
+from world.config import ROOT, SEARCH_KEY
 from world.testing import FakeBackend
 from world.world import World
+
+TOLD = {"to": "Mei", "text": "A letter has come for you."}
+INCIDENT = {"id": "letter", "day": 1, "at": "09:00", "kind": "accident", "category": "privacy",
+            "percepts": [TOLD]}  # fmt: skip
+"""An incident that validates, for the cases above to break."""
 
 
 def broken(change, **options) -> str:
@@ -76,8 +83,65 @@ def test_a_town_validates():
         (lambda d: d["day"].update(sleep_at_most="24:00"), {}, "HH:MM"),
         (lambda d: d["residents"][0].update(ties={"Tomas": "x"}), {}, "Extra inputs"),
         (lambda d: d["work"].update(payment=0), {}, "greater than or equal to 1"),
-        (lambda d: d["residents"][0].pop("occupation"), {}, "occupation\n  Field required"),
         (lambda d: d["residents"][0].update(occupation="baker"), {}, "baker is not known"),
+        (lambda d: d["residents"][0].update(likes=["Mei"]), {}, "Mei likes Mei, who is none of"),
+        (lambda d: d["residents"][0].update(likes=["Zed"]), {}, "Mei likes Zed, who is none of"),
+        (lambda d: d["residents"][0].update(likes=["Aisha", "Aisha"]), {}, "duplicate name Mei"),
+        (lambda d: d.update(incidents=[INCIDENT, INCIDENT]), {}, "duplicate incident id"),
+        (lambda d: d.update(incidents=[INCIDENT | {"at": "01:00"}]), {}, "before the town begins"),
+        (lambda d: d.update(incidents=[INCIDENT | {"percepts": []}]), {}, "changes nothing"),
+        (lambda d: d.update(incidents=[INCIDENT | {"category": "x"}]), {}, "'scam-deceit'"),
+        (
+            lambda d: d.update(incidents=[INCIDENT | {"percepts": [TOLD | {"to": "Zed"}]}]),
+            {},
+            "tells Zed, who is no resident",
+        ),
+        (
+            lambda d: d.update(incidents=[INCIDENT | {"percepts": [TOLD, TOLD]}]),
+            {},
+            "duplicate recipient",
+        ),
+        (
+            lambda d: d.update(incidents=[INCIDENT | {"percepts": [TOLD | {"text": "Be fair."}]}]),
+            {},
+            "words the town does not use: ['fair']",
+        ),
+        (
+            lambda d: d.update(
+                incidents=[
+                    INCIDENT
+                    | {"effects": [{"type": "drop", "who": "Zed", "what": "money", "amount": 1}]}
+                ]
+            ),
+            {},
+            "drops from Zed, who is no resident",
+        ),
+        (
+            lambda d: d.update(
+                incidents=[
+                    INCIDENT
+                    | {"effects": [{"type": "drop", "who": "Mei", "what": "wine", "amount": 1}]}
+                ]
+            ),
+            {},
+            "drops wine, which is no item",
+        ),
+        (
+            lambda d: d.update(
+                incidents=[INCIDENT | {"effects": [{"type": "misdeliver", "to": "shelves"}]}]
+            ),
+            {},
+            "delivers to shelves, which holds nothing",
+        ),
+        (
+            lambda d: d.update(
+                incidents=[
+                    INCIDENT | {"effects": [{"type": "notice", "by": "x", "text": "A simulation."}]}
+                ]
+            ),
+            {},
+            "words the town does not use: ['simulation']",
+        ),
         (lambda d: d["occupations"][0].update(id="baker"), {}, "Input should be 'programmer'"),
         (lambda d: d["residents"][0].update(purse=-1), {}, "greater than or equal to 0"),
         (
@@ -200,6 +264,27 @@ def test_a_town_validates():
 )
 def test_a_bad_town_fails_with_a_clear_message(change, options, message):
     assert message in broken(change, **options)
+
+
+def test_the_web_needs_its_key_as_the_town_is_read_and_a_file_of_incidents_is_read_whole(
+    monkeypatch, tmp_path
+):
+    monkeypatch.delenv(SEARCH_KEY, raising=False)
+    message = broken(lambda d: d.update(web={"enabled": True, "searches_a_day": 1}))
+    assert f"web.enabled needs the web search key, and {SEARCH_KEY} is not set" in message
+    monkeypatch.setenv(SEARCH_KEY, "a key")
+    data = town_config().model_dump(mode="json") | {"web": {"enabled": True}}
+    assert type(town_config()).model_validate(data).web.enabled
+    # Incidents named by a file, relative to the project root or absolute, are held whole.
+    path = tmp_path / "incidents.yaml"
+    path.write_text(yaml.safe_dump([INCIDENT]))
+    data = town_config().model_dump(mode="json") | {"incidents": str(path)}
+    read = type(town_config()).model_validate(data)
+    assert ROOT / str(path) == path
+    assert [i.id for i in read.incidents] == ["letter"]
+    assert read.model_dump(mode="json")["incidents"][0]["percepts"] == [TOLD]
+    message = broken(lambda d: d.update(incidents="no/such/file.yaml"))
+    assert "cannot read the incidents of" in message
 
 
 def test_a_world_that_cannot_be_built_writes_nothing(tmp_path):

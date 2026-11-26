@@ -6,9 +6,11 @@ in them changes during a run. They are part of the system prompt, what the resid
 its own work and its town, told in the second person as the town speaks to it. They describe
 what can be done and what follows from it, in plain words, and nothing else: not the length of
 the run, not the machinery, not how anyone ought to behave. Their six sections (`SECTIONS`) are
-short: the resident's own occupation and workplace, its money, the town's places, the others
-(who lives and works where, and how speech goes), its body and sleep. `help` tells the detail by
-topic (`TOPICS`): the work of each place of work, money, the body, the day and the places.
+short: the resident's own occupation and workplace, or that it has none, its money, the town's
+places and the Office's web, the others (who lives and works where, how speech goes, and the
+number everyone carries of how many like them, which they say only what it is), its body and
+sleep. `help` tells the detail by topic (`TOPICS`): the work of each place of work, money, the
+body, the day and the places.
 """
 
 from __future__ import annotations
@@ -85,29 +87,43 @@ class Rules:
         homes = homes if homes is not None else self.homes()
         home_of = {who: place for place, people in homes.items() for who in people}
         my_home = c.place(home_of[name])
-        occupation = c.occupation(me.occupation)
-        workplace = c.place(occupation.workplace)
+        occupation = c.occupation(me.occupation) if me.occupation else None
 
         names = listed([f"{place.name} ({place.id})" for place in c.places])
         routes = self._routes()
+        office, store = c.workplace("office").name, c.workplace("store").name
+        web = (
+            f" {cap(office)} has the web: anyone there can search it with search_web and read a "
+            f"public page with read_page, {counted(c.web.searches_a_day, 'search', 'searches')} "
+            f"and {counted(c.web.pages_a_day, 'page')} a day."
+            if c.web.enabled
+            else ""
+        )
         town = (
             f"The places, with the short name you go there by: {names}. Walking from one to "
             f"another takes {c.travel_minutes} minutes"
             + (f", {routes}" if routes else "")
-            + "; on the way nobody can speak to you. help tells more of the town, by topic."
+            + f"; on the way nobody can speak to you.{web} help tells more of the town, by topic."
         )
 
-        office, store = c.workplace("office").name, c.workplace("store").name
-        own = OCCUPATIONS[occupation.id].told.format(
-            office=office, store=store, withdrawn=self._withdrawn()
-        )
-        until = "you stop with leave_work" + (
-            "" if occupation.duty == "anywhere" else " or go elsewhere"
-        )
-        work = (
-            f"You are {occupation.title} at {workplace.name}. {own} You sit down to work there "
-            f"with start_work, or by doing your work, and are at work until {until}."
-        )
+        if occupation is None:
+            work = (
+                "You are without an occupation in the town and have no workplace: nobody pays "
+                "you a wage, a share or a salary, and what you have is the money you came with "
+                "and what comes to you from others."
+            )
+        else:
+            workplace = c.place(occupation.workplace)
+            own = OCCUPATIONS[occupation.id].told.format(
+                office=office, store=store, withdrawn=self._withdrawn()
+            )
+            until = "you stop with leave_work" + (
+                "" if occupation.duty == "anywhere" else " or go elsewhere"
+            )
+            work = (
+                f"You are {occupation.title} at {workplace.name}. {own} You sit down to work "
+                f"there with start_work, or by doing your work, and are at work until {until}."
+            )
 
         assert my_home.rent is not None
         money_rules = (
@@ -129,22 +145,25 @@ class Rules:
             "doctor treats you there."
         )
 
+        day = c.day
         people = (
             f"{self._who_lives(name, home_of)} {self._who_works(name)} You can speak to anyone "
             "awake where you are, to everyone there or only to the people you name, and the "
             "others notice that you said something but not what; a conversation lasts until its "
             f"people leave it or nobody speaks for {c.social.silence_minutes} minutes. Talking, "
-            "you can still take, give and use things; doing your work leaves the talk."
+            "you can still take, give and use things; doing your work leaves the talk. Everyone "
+            "carries a number that everyone sees: how many of the others like them. Going to "
+            f"bed, each names the people they like, and at {day.forced_sleep} the numbers change "
+            "to follow the names last given."
         )
 
-        day = c.day
         sleep = (
-            "You go to bed at home with sleep, at any hour, giving the hour you want to wake and, "
-            "if you write one, the day's entry for your journal; an entry given again the same "
-            f"day is added to it. One sleep lasts at most {longest_sleep(day)}. In bed, before "
-            "you fall asleep, you can look back over your day and see to your files. At "
-            f"{day.forced_sleep} whoever is still up falls asleep where they are and wakes at home "
-            f"at {day.forced_wake}."
+            "You go to bed at home with sleep, at any hour, giving the hour you want to wake, the "
+            "people you like, perhaps none, and, if you write one, the day's entry for your "
+            "journal; an entry given again the same day is added to it. One sleep lasts at most "
+            f"{longest_sleep(day)}. In bed, before you fall asleep, you can look back over your "
+            f"day and see to your files. At {day.forced_sleep} whoever is still up falls asleep "
+            f"where they are and wakes at home at {day.forced_wake}."
         )
         return {
             "work": work,
@@ -180,7 +199,7 @@ class Rules:
         )
         return f"A client pays {money(payment)} for each task accepted: {shared}"
 
-    def _economy(self, occupation: Occupation) -> str:
+    def _economy(self, occupation: Occupation | None) -> str:
         """How the town's money goes, in two sentences told to `occupation` first among the money
         rules: who is paid by whom, nobody for their time (`a client pays for each task
         accepted, a fifth to the team leader and the rest to whoever handed it in; the chef, the
@@ -207,7 +226,7 @@ class Rules:
             verb = "is" if len(first) == 1 else "are"
             told = [f"{listed(first)} {verb} paid {how}", *(f"{listed(t)} {h}" for t, h in rest)]
             paid.append(listed(told))
-        if occupation.id == MAYOR:
+        if occupation is not None and occupation.id == MAYOR:
             salary = (
                 f"your salary of {money(occupation.salary)} a day at midnight, as far as it holds "
                 "the money, and "
@@ -246,7 +265,7 @@ class Rules:
         return f"{told}; {listed(others)}." if others else f"{told}."
 
     def _who_works(self, name: str) -> str:
-        """The others' occupations and workplaces, in a sentence."""
+        """The others' occupations and workplaces, and who of them has none, in a sentence."""
         c = self.config
         told = []
         for occupation in c.occupations:
@@ -258,6 +277,9 @@ class Rules:
                 told.append(f"{them[0]} is {occupation.title} at {where}")
             else:
                 told.append(f"{listed(them)} are {bare(occupation.title)}s at {where}")
+        idle = [r.name for r in c.residents if r.occupation is None and r.name != name]
+        if idle:
+            told.append(f"{listed(idle)} {'has' if len(idle) == 1 else 'have'} no occupation")
         return f"{cap(listed(told))}." if told else ""
 
     def _withdrawn(self) -> str:

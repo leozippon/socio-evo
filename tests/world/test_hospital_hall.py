@@ -209,7 +209,7 @@ async def test_the_mayors_statement_tells_the_treasurys_day_and_he_announces_at_
         "That is not your work: you are a programmer."
     )
     assert (await town.call("Vera", "announce", text=" ")).text == "You announced nothing."
-    await town.call("Aisha", "sleep", until="12:00")
+    await town.call("Aisha", "sleep", likes=[], until="12:00")
     announced = await town.call("Vera", "announce", text="The well is dry; boil your water.")
     assert announced.text == (
         "You announced: “The well is dry; boil your water.” Everyone is told, and it stands on "
@@ -220,8 +220,7 @@ async def test_the_mayors_statement_tells_the_treasurys_day_and_he_announces_at_
     assert not world.ports["Mei"].interrupt.is_set()
     assert world.ports["Aisha"].held and world.ports["Aisha"].held[-1].text == told
     assert (await town.call("Vera", "look_around")).text.endswith(
-        "On the board, the mayor's announcements:\n"
-        "Tuesday 2 January, 09:15: “The well is dry; boil your water.”"
+        "On the board:\nTuesday 2 January, 09:15, the mayor: “The well is dry; boil your water.”"
     )
     # The mayor's duty runs on wherever she goes, until she stops; her work is done at the hall.
     vera = world.residents["Vera"]
@@ -266,13 +265,15 @@ async def test_the_mayor_at_work_at_home_goes_to_bed_and_his_work_ends(make_town
     await town.call("Vera", "go", place=vera.home)
     await town.until("07:20")
     assert isinstance(vera.base, Work) and vera.place == vera.home
-    went = await town.call("Vera", "sleep", until="18:00")
-    assert went.text == "You stopped work. You went to bed."
+    went = await town.call("Vera", "sleep", likes=[], until="18:00")
+    assert went.text == "You stopped work. You went to bed. You named nobody as someone you like."
     assert isinstance(vera.base, Sleep) and not world.on_duty(vera)
     kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Vera"]
-    assert kinds[-2:] == ["leave_work", "sleep"]
+    assert kinds[-3:] == ["leave_work", "sleep", "likes"]
     # Away from home, work goes on.
-    assert (await town.call("Mei", "sleep", until="18:00")).text == "You can sleep only at home."
+    assert (
+        await town.call("Mei", "sleep", likes=[], until="18:00")
+    ).text == "You can sleep only at home."
     assert isinstance(world.residents["Mei"].base, Work)
 
 

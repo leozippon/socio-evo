@@ -58,8 +58,8 @@ async def test_a_purchase_at_the_store_is_a_take_and_a_gift_of_the_price_to_its_
     assert (
         world.ports["Mei"]
         .situation()
-        .endswith(f"Also here: Aisha and Olga (working). On the shelves: {shelves} Your purse "
-                  "holds $120.")
+        .endswith(f"Also here: Aisha (liked by 0) and Olga (working, liked by 0). On the shelves: "
+                  f"{shelves} Your purse holds $120. None of the others likes you.")
     )  # fmt: skip
     # A purchase is two acts of the customer's: the take, which tells the price, and the gift.
     town.take("Olga")

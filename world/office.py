@@ -439,7 +439,7 @@ async def _assign(world: World, r: Resident, args: dict[str, Any]) -> ToolResult
     if isinstance(sat, ToolResult):
         return sat
     other = world.residents.get(name)
-    if other is None or other.occupation.id != PROGRAMMER:
+    if other is None or other.trade != PROGRAMMER:
         return ToolResult(f"{sat}{name} is not one of the programmers.")
     if number not in board.open:
         return ToolResult(f"{sat}There is no task {number} on the board.")

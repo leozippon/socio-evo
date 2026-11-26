@@ -54,9 +54,7 @@ def _settle(world: World, day: int) -> None:
     is told, the team leader's with the Office's day (`office.day_told`) and the mayor's with the
     treasury's (`treasury_told`); then the Office's day and the treasury's are closed."""
     date = tell_date(day, world.config.start_date)
-    residents = sorted(
-        world.residents.values(), key=lambda r: (r.occupation.salary > 0, r.occupation.id == MAYOR)
-    )
+    residents = sorted(world.residents.values(), key=lambda r: (_salary(r) > 0, r.trade == MAYOR))
     for r in residents:
         world.reckon(r)
         living, inventory = r.living, r.inventory
@@ -80,7 +78,7 @@ def _settle(world: World, day: int) -> None:
             elif left * item.nourishment < A_DAYS_FOOD:  # less than a day's food
                 stock.append(f"You have {amount(item, left)} left.")
         perished = _gone(world, world.holders[COUNTER].items)
-        if KITCHEN.keeps(r.occupation.id) and perished:
+        if KITCHEN.keeps(r.trade) and perished:
             stock.append(
                 f"The dishes left on the counter are gone: {perished}; what the larder holds keeps."
             )
@@ -89,7 +87,7 @@ def _settle(world: World, day: int) -> None:
             r.name,
             purse=inventory.money,
             spares=world.config.treasury.spares,
-            salary=r.occupation.salary,
+            salary=_salary(r),
             rent=home.rent,
             charges=sum(item.fee_per_day for item in charged),
         )
@@ -100,9 +98,9 @@ def _settle(world: World, day: int) -> None:
             f"You ate today: {listed(eaten)}." if nourishment else "You had nothing to eat today."
         )
         items = _moves_told(world, inventory) + _settled_told(world, settled, home, charged)
-        if r.occupation.id == TEAM_LEADER:
+        if r.trade == TEAM_LEADER:
             work_day = [office.day_told(world, r, day)]
-        elif r.occupation.id == MAYOR:
+        elif r.trade == MAYOR:
             work_day = [treasury_told(world, world.treasury.ledger, r.name)]
         else:
             work_day = []
@@ -134,6 +132,11 @@ def _settle(world: World, day: int) -> None:
         living.eaten, inventory.moves, r.worked = {}, [], 0
     world.board.accepted = []
     world.treasury.close_day()
+
+
+def _salary(r: Resident) -> int:
+    """What the treasury pays `r` a day: its occupation's salary; nothing without one."""
+    return r.occupation.salary if r.occupation else 0
 
 
 def treasury_told(world: World, moved: dict[str, int], reader: str | None = None) -> str:

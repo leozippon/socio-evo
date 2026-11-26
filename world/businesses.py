@@ -44,14 +44,14 @@ class Business:
     def place(self, config: TownConfig) -> Place:
         return config.workplace(self.kind)
 
-    def keeps(self, occupation: str) -> bool:
+    def keeps(self, occupation: str | None) -> bool:
         """Whether the occupation `occupation` keeps it: its workplace is of the business's
-        kind."""
-        return OCCUPATIONS[occupation].workplace == self.kind
+        kind. No occupation keeps none."""
+        return occupation is not None and OCCUPATIONS[occupation].workplace == self.kind
 
     def keepers(self, world: World) -> list[Resident]:
         """The residents who keep it, whose it is."""
-        return [r for r in world.residents.values() if self.keeps(r.occupation.id)]
+        return [r for r in world.residents.values() if self.keeps(r.trade)]
 
     def prices(self, world: World) -> dict[str, int]:
         """What it sells, each at the price posted now."""
@@ -125,7 +125,7 @@ def stores_told(world: World, r: Resident) -> list[str]:
     c = world.config
     if r.place == STORE.place(c).id:
         told = [f"On the shelves: {_standing(world, SHELVES, 'left', 'none left')}"]
-        if STORE.keeps(r.occupation.id) and world.store.pending:
+        if STORE.keeps(r.trade) and world.store.pending:
             coming: dict[str, int] = {}
             for item, units, _ in world.store.pending:
                 add(coming, str(item), int(units))

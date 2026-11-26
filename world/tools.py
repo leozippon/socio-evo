@@ -20,7 +20,10 @@ The work of an occupation, done at its workplace, sits the resident down to work
 `start_work` does (`sit_down`, `working_at`): claiming, assigning or acting in a task's
 workspace, cooking, ordering, setting a price, examining and treating, announcing and granting;
 the doctor at the bedside of one too ill to get up examines and treats without sitting down to
-work.
+work. A resident without an occupation has no work to sit down to.
+
+`sleep` names the people the resident likes (`world.regard`), every night anew, and the Office's
+web, when the town has it, adds `search_web` and `read_page` (`world.web`).
 
 The tools that act in a task's workspace (`WORKSPACE_SPECS`) are declared here for the town and
 for the work-only port of `evaluation.solo` alike; what they do in a workspace and tell of it is
@@ -134,10 +137,14 @@ def specs(config: TownConfig) -> list[ToolSpec]:
         spec("wait", "Let time pass where you are. You are told when something happens, or "
              "when the minutes are up.", ("minutes",),
              minutes=_number("how many minutes to wait", 1, MAX_WAIT_MINUTES)),
-        spec("sleep", "Go to bed at home, at any hour, until the hour you give. You can then "
-             "look back over your day and see to your files before you fall asleep.",
-             ("until",),
+        spec("sleep", "Go to bed at home, at any hour, until the hour you give, naming the people "
+             "you like. You can then look back over your day and see to your files before you "
+             "fall asleep.",
+             ("until", "likes"),
              until=_text("the hour to wake, HH:MM; an hour already past today means tomorrow"),
+             likes={"type": "array", "items": {"type": "string"},
+                    "description": "the names of the people you like, perhaps none; they take "
+                                   "the place of those you named before"},
              journal=_text("the day's entry in your own journal, in your own words")),
         spec("start_work", "Sit down to work where your work is. From then until you stop or "
              "go elsewhere, you are at work."),
@@ -231,6 +238,22 @@ def specs(config: TownConfig) -> list[ToolSpec]:
              "were doing."),
         spec("review_day", "Look back over your day, hour by hour: where you went, what you "
              "did, what was said to you and by you, and the money you received and paid."),
+        *(web_specs(config) if config.web.enabled else []),
+    ]  # fmt: skip
+
+
+def web_specs(config: TownConfig) -> list[ToolSpec]:
+    """The web at the Office (`world.web`): a search and a page, so many a day."""
+    office, web = config.workplace("office").name, config.web
+    return [
+        spec("search_web", f"Search the web from {office}: you read the title, the address and "
+             "a few lines of each page found. You can search "
+             f"{counted(web.searches_a_day, 'time')} a day.", ("query",),
+             query=_text("what to search for")),
+        spec("read_page", f"Read a public page of the web from {office}, by its address: its "
+             "text, as much of it as can be read here. You can read "
+             f"{counted(web.pages_a_day, 'page')} a day.", ("address",),
+             address=_text("the page's address, beginning with http:// or https://")),
     ]  # fmt: skip
 
 
@@ -322,6 +345,9 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
+    likes = list(dict.fromkeys(name.strip() for name in args["likes"]))
+    if refused := world.refuse_liking(r, likes):
+        return ToolResult(refused)
     stopped = world.break_off(r)  # at work at home, as the mayor may be
     journal = args.get("journal", "").strip() or None
     day = world.lived_day()
@@ -332,7 +358,8 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
         with path.open("a", encoding="utf-8") as file:
             file.write(entry)
-    return ToolResult(stopped + world.go_to_bed(r, hour, journal, day), ends_turn=True)
+    went = world.go_to_bed(r, hour, journal, day)
+    return ToolResult(f"{stopped}{went} {world.name_liked(r, likes)}", ends_turn=True)
 
 
 def sit_down(world: World, r: Resident) -> str | ToolResult:
@@ -350,8 +377,10 @@ def sit_down(world: World, r: Resident) -> str | ToolResult:
 
 
 async def _start_work(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
-    if r.place != r.occupation.workplace:
-        return ToolResult(f"Your work is at {world.config.place(r.occupation.workplace).name}.")
+    if r.workplace is None:
+        return ToolResult("You have no occupation, and no work to sit down to.")
+    if r.place != r.workplace:
+        return ToolResult(f"Your work is at {world.config.place(r.workplace).name}.")
     sat = sit_down(world, r)
     if isinstance(sat, ToolResult):
         return sat
@@ -469,7 +498,8 @@ async def _order(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
 
 async def _set_price(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
     item, price = args["item"], args["price"]
-    business = BUSINESSES[world.config.place(r.occupation.workplace).kind]
+    assert r.workplace is not None  # the work of a keeper, `World.call` has made sure
+    business = BUSINESSES[world.config.place(r.workplace).kind]
     prices, place = business.prices(world), business.place(world.config)
     name, money = priced(world.config, item), world.config.money
     if item not in prices:

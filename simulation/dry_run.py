@@ -16,14 +16,16 @@ who lets the programmers look first when a task comes in and takes no task herse
 still free to the last of the programmers who holds none. While nothing is free they wait at the
 Office for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00,
 examining and treating whoever comes; the mayor announces, grants the first programmer a little
-money from the treasury and stays at work until 17:00. Then they go to the Store and, if the
+money from the treasury and stays at work until 17:00; one without an occupation has no work and
+stays at home until then. Then they go to the Store and, if the
 shopkeeper is there, take bread from the shelves, give her its price and eat a helping, the first of
 the programmers going by the Hospital first to be seen and giving the doctor the fees it was told,
 and to the Restaurant, where they take a dish from the counter if one is ready, giving the chef its
 price if the chef is there, take what is left there and, if anyone is there, say something once and
 give the first of them a little money. Whoever takes from a shelf or a counter gives its keeper the
 price posted, and takes nothing from the Store while its keeper is away. At 20:00
-everyone goes home and to bed with a journal entry, to wake at the town's forced waking hour; in
+everyone goes home and to bed with a journal entry, naming the people the configuration says it
+likes, to wake at the town's forced waking hour; in
 bed, it reviews the day, notes it in memory/notes.md and falls asleep. Spoken to, it answers once a
 day and leaves the conversation, at the Restaurant going back to its evening there. It keeps no
 state of its own: the resident's name comes from the system prompt, and the day so far from the
@@ -74,7 +76,10 @@ class DryRunModel:
         self._town = town
         self._index = {resident.name: i for i, resident in enumerate(town.residents)}
         self._homes = {resident.name: resident.home for resident in town.residents}
-        self._occupations = {r.name: town.occupation(r.occupation) for r in town.residents}
+        self._likes = {resident.name: list(resident.likes) for resident in town.residents}
+        self._occupations = {
+            r.name: town.occupation(r.occupation) if r.occupation else None for r in town.residents
+        }
         self._places = {place.name: place.id for place in town.places}
         self._store = town.workplace("store").id
         self._restaurant = town.workplace("restaurant").id
@@ -127,7 +132,8 @@ class _Day:
         self.fresh = bool(messages) and messages[-1].role == "user"
         self.batch = self._last_batch() if not self.fresh else []
         occupation = model._occupations[name]
-        self.occupation, self.workplace = occupation.id, occupation.workplace
+        self.occupation = occupation.id if occupation else None
+        self.workplace = occupation.workplace if occupation else None
 
     @property
     def _office(self) -> bool:
@@ -156,10 +162,16 @@ class _Day:
             if self.occupation == "shopkeeper":  # the counter opens at waking
                 return self._go(self.model._store)
             town = self.model._town
-            starts = town.day.delivery if self.occupation == "chef" else town.work.arrive_from
-            if self.hour < parse_hour(starts):
-                return self._wait_until(parse_hour(starts))
-            return self._go(self.model._store if self.occupation == "chef" else self.workplace)
+            if self.occupation == "chef":
+                starts = parse_hour(town.day.delivery)
+            elif self.workplace is None:  # nothing to do until the others are off work
+                starts = WORK_ENDS
+            else:
+                starts = parse_hour(town.work.arrive_from)
+            if self.hour < starts:
+                return self._wait_until(starts)
+            shopping = self.occupation == "chef" or self.workplace is None
+            return self._go(self.model._store if shopping else self.workplace)
         if place == self.workplace:
             return self._at_workplace()
         if place == self.model._hospital:
@@ -428,7 +440,12 @@ class _Day:
         )
 
     def _sleep(self) -> ToolCall:
-        return tool_call("sleep", until=self.model._town.day.forced_wake, journal=self._account())
+        return tool_call(
+            "sleep",
+            until=self.model._town.day.forced_wake,
+            likes=self.model._likes[self.name],
+            journal=self._account(),
+        )
 
     def _account(self) -> str:
         """The day in a few sentences, from what its calls returned."""
@@ -467,6 +484,9 @@ class _Day:
 
     @property
     def _workplace_name(self) -> str:
+        """Where its day was spent: its workplace, or, without one, the town."""
+        if self.workplace is None:
+            return "large in the town"
         return self.model._town.place(self.workplace).name
 
     def _did(self, name: str, result: str = "") -> bool:

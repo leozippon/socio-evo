@@ -37,16 +37,22 @@ from world.occupations import WORK_DONE
 THINGS = frozenset({"take", "give", "use"})
 """What one does with things and money within one's reach: wherever one is awake and not on the
 road, in a conversation and in bed too ill to get up alike."""
-EVERYDAY = THINGS | {
-    "help",
-    "look_around",
-    "how_am_i",
-    "inventory",
-    "go",
-    "wait",
-    "say",
-    "message",
-}
+WEB = frozenset({"search_web", "read_page"})
+"""What the web at the Office offers whoever is there (`world.web`), up and about."""
+EVERYDAY = (
+    THINGS
+    | WEB
+    | {
+        "help",
+        "look_around",
+        "how_am_i",
+        "inventory",
+        "go",
+        "wait",
+        "say",
+        "message",
+    }
+)
 """What one up and about can do, at rest or at work, besides the work of the occupations."""
 IDLE_TOOLS = EVERYDAY | WORK_DONE | {"start_work", "move_in", "sleep"}
 WORK_TOOLS = EVERYDAY | WORK_DONE | {"leave_work", "sleep"}

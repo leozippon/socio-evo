@@ -129,7 +129,7 @@ async def test_a_message_reaches_a_phone_owner_wherever_it_is_and_waits_while_it
 
     await town.call("Tomas", "go", place="college-flat")
     await town.until("07:20")
-    await town.call("Tomas", "sleep", until="12:00", journal="A nap.")
+    await town.call("Tomas", "sleep", likes=[], until="12:00", journal="A nap.")
     town.take("Tomas")
     town.rest("Tomas")
     await town.until("08:00")
@@ -154,17 +154,20 @@ async def test_what_one_wears_is_seen_on_arrival_on_looking_around_and_in_conver
         town.take(name)
     await town.call("Mei", "go", place="workshop")
     await town.until("08:20")
-    assert town.take("Tomas") == ["Mei arrived at the workshop, in a new coat."]
-    assert town.take("Mei") == ["You arrived at the workshop. Also here: Tomas."]
+    assert town.take("Tomas") == ["Mei arrived at the workshop, liked by 0, in a new coat."]
+    assert town.take("Mei") == ["You arrived at the workshop. Also here: Tomas (liked by 0)."]
     assert (await town.call("Tomas", "look_around")).text.endswith(
-        "Also here: Mei (in a new coat)."
+        "Also here: Mei (liked by 0, in a new coat)."
     )
     await town.call("Tomas", "claim_task", task=1)
     await town.call("Tomas", "say", text="New coat?", to=["Mei"])  # talking at his desk
-    assert "in a conversation with Mei (in a new coat)." in town.world.ports["Tomas"].situation()
-    assert "in a conversation with Tomas." in town.world.ports["Mei"].situation()
+    assert (
+        "in a conversation with Mei (liked by 0, in a new coat)."
+        in town.world.ports["Tomas"].situation()
+    )
+    assert "in a conversation with Tomas (liked by 0)." in town.world.ports["Mei"].situation()
     assert (await town.call("Mei", "look_around")).text.endswith(
-        "Also here: Tomas (working, in a conversation)."
+        "Also here: Tomas (working, in a conversation, liked by 0)."
     )
 
 
@@ -198,9 +201,9 @@ async def test_moving_house_needs_a_free_room_and_moves_the_rent(make_town, tmp_
     assert "You live in the flat by the college gates with Mei;" in world.ports["Tomas"].rules()
     assert "It is your home" in (await town.call("Mei", "look_around")).text
     await town.until("21:00")
-    assert (await town.call("Mei", "sleep", until="07:00", journal="A new room.")).text == (
-        "You went to bed."
-    )
+    assert (
+        await town.call("Mei", "sleep", likes=[], until="07:00", journal="A new room.")
+    ).text == ("You went to bed. You named nobody as someone you like.")
     town.take("Mei")
     await town.until("00:00", day=2)
     assert town.take("Mei")[0].startswith(

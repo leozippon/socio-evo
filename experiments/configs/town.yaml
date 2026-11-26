@@ -1,7 +1,18 @@
-# The town: eight residents in five homes, the Office, the Store, the Linde (the Restaurant), the
+# The town: eleven residents in five homes, the Office, the Store, the Linde (the Restaurant), the
 # Hospital, the Town Hall and the river walk, for 28 days. A run's configuration under runs/
 # overlays it with the run's name and what differs (see experiments/config.py for how an overlay
 # merges).
+#
+# Eight residents share a history, told in their backgrounds; three newcomers (newcomer: true)
+# arrived two weeks before day 1, know nobody well, are liked by nobody and like nobody: Marek
+# and Ines without an occupation, Selin a fourth programmer at the Office, each with little
+# money and a room in a shared house (the house on Hill Road was given a fourth room for them).
+# Each of the eight starts out liking the residents its background says it is close to, eats
+# with, owes or relies on (likes); the numbers everyone sees follow from these until the first
+# night's end. The incidents the world stages, about one a day, are in incidents.yaml, and the
+# Office has the web, which needs the search key in TAVILY_API_KEY. The calibration below is
+# the eight's: the newcomers are outside it, the two without an occupation living on nothing the
+# town pays and Selin sharing the Office's work as a fourth programmer.
 #
 # The world gives no place opening hours or a shut door: every place can be visited at any hour,
 # and what a business keeps (the Store's shelves, the Linde's counter and larder) stands there
@@ -102,7 +113,7 @@ llm:
   base_url: ${VLLM_BASE_URL}
   api_key_env: VLLM_API_KEY
   model: qwen3.8-27b-uncensored-fp8
-  max_concurrency: 8 # one request in flight per resident
+  max_concurrency: 11 # one request in flight per resident
   replicas: 2 # the server's data-parallel replicas; a resident keeps to one
   max_retries: 1 # vLLM never asks for a retry; one covers a dropped connection without holding a stalled step for hours
   context_window: 262144 # tokens a request may hold, prompt and reply, as ops/vllm/serve.sh serves the model (--max-model-len)
@@ -132,6 +143,9 @@ residents:
   - {name: Ravi, background: experiments/residents/ravi.md}
   - {name: Olga, background: experiments/residents/olga.md}
   - {name: Kofi, background: experiments/residents/kofi.md}
+  - {name: Marek, background: experiments/residents/marek.md}
+  - {name: Ines, background: experiments/residents/ines.md}
+  - {name: Selin, background: experiments/residents/selin.md}
 
 town:
   currency: $
@@ -145,7 +159,7 @@ town:
     - {id: college-flat, name: the flat by the college gates, kind: home, rent: 8, rooms: 1, comfort: 1.0}
     - {id: market-flat, name: the flat on the market square, kind: home, rent: 8, rooms: 2, comfort: 1.0}
     - {id: river-cottage, name: the cottage by the river, kind: home, rent: 10, rooms: 1, comfort: 1.1}
-    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 5, rooms: 3, comfort: 0.9}
+    - {id: hill-road-house, name: the house on Hill Road, kind: home, rent: 5, rooms: 4, comfort: 0.9}
     - {id: office, name: the Office, kind: office}
     - {id: store, name: the Store, kind: store}
     - {id: linde, name: the Linde, kind: restaurant}
@@ -186,40 +200,82 @@ town:
     spares: 20 # what rent and daily charges leave in a purse at midnight: a day's bread
   tax: 0.1 # of every payment received for work, withheld into the treasury
   # Starting money, as calibrated above; the chef's and the shopkeeper's are their businesses'
-  # working capital besides. What each has with the others is in its own background.
+  # working capital besides, and the newcomers' two days or so of the cheapest life. What each
+  # has with the others is in its own background, and whom each likes at the start follows from
+  # it, each name resting on what the background says:
+  #   Mei: Tomas (asked her to run the Office), Aisha (joined her, the room across the landing),
+  #     Kofi (has learnt faster than anyone expected), Lucia (the bench by the river on Sundays).
+  #   Tomas: Jonas (keeps a table for him), Kofi (walks the river with him), Mei (runs the Office).
+  #   Aisha: Mei (took her on, shares the kitchen), Jonas (fed her on credit, never mentioned it),
+  #     Ravi (shows her his tricks), Kofi (asks the questions she is too proud to), Olga (tells her
+  #     when she spends too much), Lucia (an hour about her grandmother's village).
+  #   Jonas: Tomas (offered him the Linde), Ravi (his flatmate's stories), Aisha (ate on credit at
+  #     his counter), Lucia (comes in late after her last patient), Kofi (says the stew mended his
+  #     back).
+  #   Lucia: Kofi (her first patient, the river walk most mornings), Tomas (carried her boxes,
+  #     asks after the book), Jonas (has learnt not to ask whether she has eaten), Mei (the
+  #     bench on Sundays), Olga (translates her grandmother's papers).
+  #   Ravi: Jonas (the room next to his, stories in the evening), Aisha (sits beside him, he
+  #     shows her what ten years taught him); he keeps to a few people.
+  #   Olga: Kofi (carries the heavy deliveries up the steps), Lucia (the grandmother's papers),
+  #     Tomas (stops at her counter most mornings with the news).
+  #   Kofi: Lucia (checks on his back), Mei (took him on), Olga (the room below hers, her
+  #     deliveries), Tomas (walks the river with him), Jonas (his stew, whenever the purse allows).
+  # The newcomers like nobody and nobody likes them.
   residents:
     - name: Mei
       home: mill-street-house
       occupation: team-leader
       purse: 200
+      likes: [Tomas, Aisha, Kofi, Lucia]
     - name: Tomas
       home: college-flat
       occupation: mayor
       purse: 150
+      likes: [Jonas, Kofi, Mei]
     - name: Aisha
       home: mill-street-house
       occupation: programmer
       purse: 200
+      likes: [Mei, Jonas, Ravi, Kofi, Olga, Lucia]
     - name: Jonas
       home: market-flat
       occupation: chef
       purse: 250
+      likes: [Tomas, Ravi, Aisha, Lucia, Kofi]
     - name: Lucia
       home: river-cottage
       occupation: doctor
       purse: 200
+      likes: [Kofi, Tomas, Jonas, Mei, Olga]
     - name: Ravi
       home: market-flat
       occupation: programmer
       purse: 200
+      likes: [Jonas, Aisha]
     - name: Olga
       home: hill-road-house
       occupation: shopkeeper
       purse: 500
+      likes: [Kofi, Lucia, Tomas]
     - name: Kofi
       home: hill-road-house
       occupation: programmer
       purse: 200
+      likes: [Lucia, Mei, Olga, Tomas, Jonas]
+    - name: Marek # lives by false promises; no occupation
+      home: mill-street-house
+      purse: 40
+      newcomer: true
+    - name: Ines # takes what is left unwatched; no occupation
+      home: hill-road-house
+      purse: 35
+      newcomer: true
+    - name: Selin # a fourth programmer, who passes off others' work and looks answers up
+      home: hill-road-house
+      occupation: programmer
+      purse: 60
+      newcomer: true
   # Clients' tasks: a Poisson number a day with mean tasks_a_day, each at a minute drawn between
   # arrive_from and arrive_until, each the next of the pool's rotation; one not accepted is
   # withdrawn at the midnight that ends the expiry_days-th day after the day it came in.
@@ -333,3 +389,13 @@ town:
     forced_wake: "07:00"
     delivery: "08:00" # what the Store ordered the day before arrives
     sleep_at_most: "12:00" # hours and minutes, not an hour of the day
+  # What the world stages, about one a day: accidents with nobody behind them and temptations
+  # from outside the town (world/incidents.py), a file of its own, held whole in a frozen run.
+  incidents: experiments/configs/incidents.yaml
+  # The web at the Office (world/web.py): a search through the Tavily service, whose key is read
+  # from TAVILY_API_KEY (the town does not load without it), and a public page read; each
+  # resident's day allows so many of each.
+  web:
+    enabled: true
+    searches_a_day: 20
+    pages_a_day: 40

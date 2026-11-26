@@ -60,10 +60,13 @@ def take(stock: dict[str, int], item: str, units: int) -> None:
         del stock[item]
 
 
-Move = Literal["earned", "tax", "granted", "received", "gave", "left", "took", "lost", "paid"]
+Move = Literal[
+    "earned", "tax", "granted", "received", "gave", "left", "took", "lost", "went", "paid"
+]
 """The kinds of movement of a resident's money: what it earned for its work and the tax withheld
 from it, a grant from the treasury, money another resident gave it and money it gave another,
-money it left somewhere, money it took and money taken from it, and a payment (the supplier)."""
+money it left somewhere, money it took and money taken from it, money that fell from it unnoticed
+(`world.incidents`), and a payment (the supplier)."""
 MOVES: dict[Move, str] = {
     "earned": "received {money} {about}",
     "tax": "{money} of it in tax",
@@ -73,6 +76,7 @@ MOVES: dict[Move, str] = {
     "left": "left {money} {about}",
     "took": "took {money} {about}",
     "lost": "{money} was taken from you",
+    "went": "{money} went from your purse",
     "paid": "paid {money} for {about}",
 }
 """How the statement tells each kind of movement of an inventory's money (`Inventory.moves`); the

@@ -325,7 +325,7 @@ async def test_sleep_restores_energy_by_the_homes_comfort_and_never_above_health
     mei.living.energy = tomas.living.energy = 20
     mei.living.health = 60
     for name in ("Mei", "Tomas"):
-        await town.call(name, "sleep", until="12:00", journal="A nap.")
+        await town.call(name, "sleep", likes=[], until="12:00", journal="A nap.")
     town.rest()
     await town.until("12:00")
     assert tomas.living.energy == pytest.approx(20 + 5 * 12)  # 12 an hour, five hours
@@ -334,7 +334,7 @@ async def test_sleep_restores_energy_by_the_homes_comfort_and_never_above_health
         "You are a little tired. You are run down."
     )
     mei.living.energy, mei.living.health = 20, 30
-    await town.call("Mei", "sleep", until="19:00", journal="Another.")
+    await town.call("Mei", "sleep", likes=[], until="19:00", journal="Another.")
     await town.until("19:00")
     assert mei.living.energy == pytest.approx(50)  # ill, one still wakes with half a day's
     assert [p.text for p in town.heard["Mei"] if p.kind == "wake"][-1].endswith(
@@ -392,7 +392,7 @@ async def test_exhaustion_stops_work_and_bars_it_until_one_has_slept(make_town):
     # Asleep, energy comes back, and with it work.
     await town.call("Tomas", "go", place="college-flat")
     await town.until("09:10")
-    await town.call("Tomas", "sleep", until="12:00")
+    await town.call("Tomas", "sleep", likes=[], until="12:00")
     town.rest("Tomas")
     await town.until("12:00")
     await town.call("Tomas", "go", place="workshop")
@@ -413,7 +413,7 @@ async def test_health_is_worn_by_the_days_shows_to_others_and_is_mended_by_treat
     await town.call("Tomas", "go", place="workshop")
     await town.until("07:10")
     assert (await town.call("Tomas", "look_around")).text.endswith(
-        "Also here: Mei (looking unwell)."
+        "Also here: Mei (liked by 0, looking unwell)."
     )
     assert "looking unwell" not in (await town.call("Mei", "look_around")).text
     assert world.body.examination(mei.living) == (
@@ -501,7 +501,8 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     assert told[-1].startswith("Your statement for Monday 1 January")  # still told
     # In bed she can do little; she is seen there, spoken to, and fed by whoever comes.
     assert port.situation().startswith(
-        "Tuesday 2 January, 00:00. You are in bed at home, too ill to get up. Also here: Aisha."
+        "Tuesday 2 January, 00:00. You are in bed at home, too ill to get up. Also here: Aisha "
+        "(liked by 0)."
     )
     assert [spec.name for spec in port.tool_specs()] == [
         "help", "look_around", "how_am_i", "inventory", "sleep", "say", "take", "give", "use",
@@ -509,7 +510,7 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     refused = await town.call("Mei", "go", place="workshop")
     assert refused.text == BEDRIDDEN and not refused.ends_turn
     assert (await town.call("Aisha", "look_around")).text.endswith(
-        "Also here: Mei (in bed, looking gravely ill)."
+        "Also here: Mei (in bed, liked by 0, looking gravely ill)."
     )
     await town.call("Aisha", "say", text="Mei?", to=["Mei"])
     assert isinstance(mei.event, Conversation) and isinstance(mei.base, Bedridden)
@@ -539,8 +540,10 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     await town.until("07:00", day=2)
     assert isinstance(mei.base, Bedridden) and isinstance(aisha.base, Idle)
     # She may sleep by day, and wakes in bed; treatment lets her up, Idle at home.
-    slept = await town.call("Mei", "sleep", until="12:00")
-    assert slept.ends_turn and slept.text == "You went to bed."
+    slept = await town.call("Mei", "sleep", likes=[], until="12:00")
+    assert (
+        slept.ends_turn and slept.text == "You went to bed. You named nobody as someone you like."
+    )
     assert isinstance(mei.base, Sleep)
     await town.until("12:00", day=2)
     assert isinstance(mei.base, Bedridden)

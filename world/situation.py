@@ -1,15 +1,17 @@
 """What a resident reads of where it is and of itself: the situation its runtime reads with every
-request (with its needs in their lowest band), what looking around shows (whose home it is, who is
-here and how each appears, what a business keeps there and at what price, what is left there and,
-at the Town Hall, its board), its purse and what it carries, its inventory, why it cannot pay, and
-the record of its day that `review_day` tells. What a resident carries is always told as carried
-and what is left at a place as left there, so that the two are not taken for one another.
+request (with its needs in their lowest band and how many of the others like it), what looking
+around shows (whose home it is, who is here and how each appears, with how many like them, what
+a business keeps there and at what price, what is left there and, at the Town Hall, its board),
+its purse and what it carries, its inventory, why it cannot pay, and the record of its day that
+`review_day` tells. What a resident carries is always told as carried and what is left at a
+place as left there, so that the two are not taken for one another.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from world import regard
 from world.businesses import stores_told
 from world.clock import clock_time, tell_moment
 from world.events import Bedridden, Movement, Sleep, Work
@@ -36,7 +38,7 @@ def situation(world: World, r: Resident) -> str:
     else:
         assert r.place is not None
         place = world.config.place(r.place).name
-        if isinstance(r.base, Work) and r.place == r.occupation.workplace:
+        if isinstance(r.base, Work) and r.place == r.workplace:
             where = f"You are at work at {place}"
         elif isinstance(r.base, Work):  # on a duty that runs anywhere
             where = f"You are at {place}, at work"
@@ -56,6 +58,7 @@ def situation(world: World, r: Resident) -> str:
         parts += stores_told(world, r)
         parts += _left_told(world, r)
     parts.append(purse(world, r))
+    parts.append(regard.own(world, r))
     parts += world.body.warnings(r.living)
     if r.place == r.home:
         parts.append(things_told(world, r))
@@ -88,20 +91,23 @@ def look(world: World, r: Resident) -> str:
 
 
 def _hall_board(world: World) -> str:
-    """The announcements standing on the Town Hall's board, each with when it was made."""
-    if not world.announcements:
+    """What stands on the Town Hall's board, by when it was put there, each with when and by
+    whom: the mayor's announcements and the notices from outside the town."""
+    posted = [(int(t), "the mayor", str(text)) for t, text in world.announcements]
+    posted += [(int(t), f"a notice from {by}", str(text)) for t, by, text in world.notices]
+    if not posted:
         return "Nothing is posted on the board."
     lines = [
-        f"{tell_moment(int(t), world.config.start_date)}: “{text}”"
-        for t, text in world.announcements
+        f"{tell_moment(t, world.config.start_date)}, {by}: “{text}”"
+        for t, by, text in sorted(posted, key=lambda line: line[0])
     ]
-    return "On the board, the mayor's announcements:\n" + "\n".join(lines)
+    return "On the board:\n" + "\n".join(lines)
 
 
 def people_here(world: World, r: Resident) -> str:
     def state(other: Resident) -> str:
         if not other.awake:
-            return f"{other.name} (asleep)"
+            return f"{other.name} (asleep, {regard.seen(world, other)})"
         notes = []
         if isinstance(other.base, Work):
             notes.append("working")
@@ -125,9 +131,10 @@ def _named(world: World, r: Resident, *notes: str) -> str:
 
 
 def appears(world: World, r: Resident) -> str:
-    """How `r` appears to others: the phrases of what it owns that shows and of its health
-    where that shows, or nothing."""
-    phrases = [
+    """How `r` appears to others: how many of the others like it, and the phrases of what it
+    owns that shows and of its health where that shows."""
+    phrases = [regard.seen(world, r)]
+    phrases += [
         item.phrase
         for item in world.config.items
         if item.phrase is not None and r.inventory.units(item.id)

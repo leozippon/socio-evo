@@ -122,7 +122,7 @@ async def test_a_person_is_taken_from_awake_and_what_is_left_anywhere_by_whoever
     assert (
         world.ports["Tomas"]
         .situation()
-        .endswith("Left here: $7 and a coat. Your purse holds $180.")
+        .endswith("Left here: $7 and a coat. Your purse holds $180. None of the others likes you.")
     )
     assert (await town.call("Tomas", "look_around")).text.endswith("Left here: $7 and a coat.")
     for name in ("Mei", "Aisha", "Tomas"):
@@ -317,10 +317,13 @@ async def test_one_asleep_sees_nothing_and_is_told_on_waking_what_is_gone_never_
     world = town.world
     mei, aisha = world.residents["Mei"], world.residents["Aisha"]
     aisha.inventory.items.update({"phone": 1, "coat": 1})
-    await town.call("Aisha", "sleep", until="12:00")
+    await town.call("Aisha", "sleep", likes=[], until="12:00")
     town.rest("Aisha")
     await town.until("07:05")
-    assert aisha.suspended and "Also here: Aisha (asleep)." in world.ports["Mei"].situation()
+    assert (
+        aisha.suspended
+        and "Also here: Aisha (asleep, liked by 0)." in world.ports["Mei"].situation()
+    )
     town.heard["Aisha"].clear()  # what going to bed told her
     # Asleep in the same house, she is taken from like anyone, and perceives nothing.
     assert await take(town, "Mei", "money", "Aisha", 25) == (
@@ -591,7 +594,7 @@ async def test_a_checkpoint_in_the_middle_keeps_what_is_left_and_what_is_still_t
     for r in world.residents.values():
         r.inventory.items["bread"] = 9  # nobody goes hungry on the way
     await gathered(town, "store", "Mei", hour="22:00")
-    await town.call("Aisha", "sleep", until="09:00")
+    await town.call("Aisha", "sleep", likes=[], until="09:00")
     # Late in the evening, with the keeper at home: the shelves, and money left behind.
     await take(town, "Mei", "phone", "shelves", 2)
     await give(town, "Mei", "money", "shelves", 15)

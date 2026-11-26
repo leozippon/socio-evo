@@ -23,7 +23,9 @@ from tests.support.towns import (
     town_config,
 )
 from tests.world.acts import give, take
+from tests.world.fakeweb import FakeWeb, install
 from world.clock import ManualClock, settle
+from world.config import SEARCH_KEY, Incident, Told, WebSettings
 from world.events import Work
 from world.log import KINDS
 from world.world import World
@@ -50,7 +52,9 @@ async def test_waiting_brings_a_percept_within_the_idle_interval(make_town):
     await town.until("08:20")
     await town.call("Mei", "go", place="college-flat")
     await town.until("08:30")
-    assert [p.text for p in waiting.result()] == ["Mei arrived at the flat by the college gates."]
+    assert [p.text for p in waiting.result()] == [
+        "Mei arrived at the flat by the college gates, liked by 0."
+    ]
     assert town.world.residents["Tomas"].tick is None
 
     # A wait for minutes asked that something ends sooner says so, after what ended it.
@@ -97,7 +101,7 @@ async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     town = make_town()
     await awake_at(town)
     await town.until("21:00")
-    await town.call("Mei", "sleep", until="09:00", journal="Early.")
+    await town.call("Mei", "sleep", likes=[], until="09:00", journal="Early.")
     town.take("Mei")
     waiting = asyncio.create_task(town.world.ports["Mei"].wait())
     await town.until("23:00")
@@ -107,7 +111,7 @@ async def test_a_sleeping_resident_hears_nothing_until_it_wakes(make_town):
     await town.until("08:59", day=2)
     assert not waiting.done()
     await town.until("09:00", day=2)
-    assert [p.kind for p in waiting.result()] == ["settlement", "wake"]
+    assert [p.kind for p in waiting.result()] == ["settlement", "wake", "regard"]
 
 
 async def test_the_checkpoint_waits_for_every_runtime_to_rest_and_holds_the_clock(make_town):
@@ -144,7 +148,7 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.call("Mei", "leave_work")
     await town.until("22:00")
-    await town.call("Aisha", "sleep", until="10:00", journal="Lazy morning.")
+    await town.call("Aisha", "sleep", likes=[], until="10:00", journal="Lazy morning.")
     await town.call("Tomas", "go", place="workshop")
     town.rest()
     await town.until("00:30", day=2)
@@ -225,7 +229,9 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await town.call("Mei", "claim_task", task=2)
     await town.call("Mei", "write_repo_file", path="b.py", content="half\n")
     await town.until("22:00")
-    await town.call("Aisha", "sleep", until="11:00", journal="Lazy.")  # longer than she can
+    await town.call(
+        "Aisha", "sleep", likes=[], until="11:00", journal="Lazy."
+    )  # longer than she can
     town.rest()
     await town.until("03:00", day=2)
     (_, state) = town.checkpoints[0]
@@ -239,10 +245,11 @@ async def test_a_restored_world_carries_on_from_its_checkpoint(make_town, tmp_pa
     await again.until("10:00", day=2)
     aisha = again.take("Aisha")
     assert aisha[0].startswith("Your statement for Monday 1 January")
-    assert aisha[-1] == (
+    assert aisha[-2:] == [
         "You could sleep no longer and woke up at home. It is Tuesday 2 January, 10:00. You are "
-        "well fed. You are fresh. You are in good health."
-    )
+        "well fed. You are fresh. You are in good health.",
+        "This morning none of the others likes you; yesterday none did.",
+    ]
     await again.call("Mei", "go", place="workshop")
     await again.until("10:10", day=2)
     assert later.residents["Mei"].inventory.items == {"bread": 6}  # the bread came back
@@ -264,18 +271,25 @@ async def test_snapshots_are_taken_and_restored_only_at_checkpoints(make_town, t
         fewer.world.restore(state)
 
 
-async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
+async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path, monkeypatch):
     leader = dict(RESIDENTS[1], occupation="team-leader")
     needs = copy.deepcopy(NEEDS)
     needs["health"]["illness"]["chance"] = 1  # everyone well falls ill at the first midnight
     config = town_config(
         residents=(RESIDENTS[0], leader, RESIDENTS[2], *TRADES, *CARE), needs=needs
     )
-    town = make_town(config, FakeBackend(4))
+    monkeypatch.setenv(SEARCH_KEY, "a key")
+    letter = Incident(id="letter", day=1, at="09:30", kind="accident", category="privacy",
+                      percepts=(Told(to="Mei", text="A letter has come for you."),))  # fmt: skip
+    web = WebSettings(enabled=True, searches_a_day=1, pages_a_day=1)
+    town = make_town(config.model_copy(update={"incidents": (letter,), "web": web}), FakeBackend(4))
+    install(town.world, FakeWeb(pages={("example.org", "/"): (200, {}, b"<p>A page.</p>")}))
     await awake_at(town)
     for name in ("Mei", "Tomas"):
         await town.call(name, "go", place="workshop")
     await town.until("08:00")
+    await town.call("Mei", "search_web", query="a page")
+    await town.call("Mei", "read_page", address="http://example.org/")
     town.take("Aisha")
     tick = asyncio.create_task(town.world.ports["Aisha"].wait())
     await town.until("09:00")
@@ -325,7 +339,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.until("18:45")
     await town.call("Mei", "move_in")
     await town.until("20:00")
-    await town.call("Mei", "sleep", until="07:00", journal="A full day.")
+    await town.call("Mei", "sleep", likes=[], until="07:00", journal="A full day.")
     town.rest()
     await town.call("Jonas", "go", place="college-flat")
     await town.until("20:15")

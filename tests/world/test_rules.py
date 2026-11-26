@@ -56,7 +56,9 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
         "speak to anyone awake where you are, to everyone there or only to the people you name, "
         "and the others notice that you said something but not what; a conversation lasts until "
         "its people leave it or nobody speaks for 10 minutes. Talking, you can still take, give "
-        "and use things; doing your work leaves the talk."
+        "and use things; doing your work leaves the talk. Everyone carries a number that everyone "
+        "sees: how many of the others like them. Going to bed, each names the people they like, "
+        "and at 02:00 the numbers change to follow the names last given."
     )
     assert (
         "Walking from one to another takes 10 minutes, 5 between the workshop and the café"

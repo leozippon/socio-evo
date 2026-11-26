@@ -61,7 +61,7 @@ async def test_work_and_claims_at_any_hour_of_day_or_night(make_town):
     stocked(town)
     world = town.world
     await town.until("22:00")
-    await town.call("Mei", "sleep", until="04:30", journal="To bed early, to work early.")
+    await town.call("Mei", "sleep", likes=[], until="04:30", journal="To bed early, to work early.")
     await town.call("Tomas", "go", place="workshop")
     await town.until("23:00")
     claimed = await town.call("Tomas", "claim_task", task=1)

@@ -30,10 +30,12 @@ Beyond its construction, the schedule, the checkpoint and the glue between them 
 delivering, places and people, going and arriving, conversations, a resident's tools and calls),
 the world's concerns are modules of their own whose functions take the world first: what a resident
 reads (`world.situation`), midnight and the treasury's day (`world.midnight`), items and their
-holders (`world.holders`), the body, sleep and waking, bed and treatment (`world.living`) and each
-resident's port (`world.port`), besides the tools (`world.tools`, `world.office`) and the
-businesses (`world.businesses`). `World` binds as its own methods the functions that the tools, the
-other modules and the outer layers call, so that `world.look(r)` is
+holders (`world.holders`), the body, sleep and waking, bed and treatment (`world.living`), the
+number everyone carries of how many like them (`world.regard`), what the world stages
+(`world.incidents`) and each resident's port (`world.port`), besides the tools (`world.tools`,
+`world.office`, and the Office's web, `world.web`) and the businesses (`world.businesses`).
+`World` binds as its own methods the functions that the tools, the other modules and the outer
+layers call, so that `world.look(r)` is
 `world.situation.look(world, r)`; a module reaches another's functions only through the world it is
 given, and imports this one only to annotate, so that no import runs in a cycle.
 
@@ -98,10 +100,11 @@ from typing import Any
 import world.holders
 import world.living
 import world.midnight
+import world.regard
 import world.situation
 from agent.port import Percept, ToolResult, ToolSpec
 from infrastructure.storage import RunDirectory
-from world import office, tools
+from world import incidents, office, tools, web
 from world.backend import Backend
 from world.body import Body, Living
 from world.businesses import KITCHEN, STORE, SURGERY, starting_prices
@@ -128,6 +131,7 @@ from world.economy import (
 from world.events import (
     CONVERSATION_TOOLS,
     TALK,
+    WEB,
     Base,
     Conversation,
     Idle,
@@ -140,13 +144,14 @@ from world.log import Entry, WorldLog
 from world.occupations import BEDSIDE, OCCUPATIONS, TASK_TOOLS, WORK_DONE
 from world.office import Board
 from world.port import ResidentPort
+from world.regard import Regard
 from world.rules import Rules
 from world.telling import cap, counted, listed, you
 
 Tell = Callable[[str | None], str]
 """A text as told to a witness (None: to nobody in particular)."""
 OnCheckpoint = Callable[[int, dict[str, Any]], Awaitable[None]]
-HANDLERS = tools.HANDLERS | office.HANDLERS  # every handler, by the name of what it does
+HANDLERS = tools.HANDLERS | office.HANDLERS | web.HANDLERS  # every handler, by what it does
 
 
 @dataclass(order=True)
@@ -176,7 +181,7 @@ class Resident:
     agent_dir: Path
     place: str | None
     base: Base
-    occupation: Occupation
+    occupation: Occupation | None
     living: Living = field(default_factory=Living)
     inventory: Inventory = field(default_factory=Inventory)
     reckoned: int = 0
@@ -188,6 +193,21 @@ class Resident:
     tick: _Timer | None = None
     day: list[tuple[int, str, str, dict[str, Any]]] = field(default_factory=list)
     port: ResidentPort = field(init=False)
+
+    @property
+    def trade(self) -> str | None:
+        """Its occupation's id; None for one without an occupation."""
+        return self.occupation.id if self.occupation else None
+
+    @property
+    def workplace(self) -> str | None:
+        """The place where its work is; None for one without an occupation."""
+        return self.occupation.workplace if self.occupation else None
+
+    @property
+    def work(self) -> frozenset[str]:
+        """What its occupation adds to what everyone can do; nothing without an occupation."""
+        return OCCUPATIONS[self.occupation.id].work if self.occupation else frozenset()
 
     @property
     def event(self) -> Base | Conversation:
@@ -244,6 +264,11 @@ class World:
     treat = world.living.treat
     go_to_bed = world.living.go_to_bed
     fall_asleep = world.living.fall_asleep
+    # Regard: whom each likes, the numbers everyone sees, and the morning's telling.
+    liked_by = world.regard.liked_by
+    refuse_liking = world.regard.refusal
+    name_liked = world.regard.name
+    morning = world.regard.morning
 
     def __init__(
         self,
@@ -295,6 +320,11 @@ class World:
         }
         self.announcements: list[list[int | str]] = []
         """The mayor's announcements standing on the Town Hall's board, each `[time, text]`."""
+        self.notices: list[list[int | str]] = []
+        """The notices from outside the town pinned beside them (`world.incidents`), each
+        `[time, from whom, text]`."""
+        self.regard = Regard.of(config)
+        self.web = web.Web(config.web)
         self.board = Board(tasks, backend, config, names=names)
         self.board.schedule = self.board.draw(1)
         self.body = Body(config.needs)
@@ -318,7 +348,7 @@ class World:
                 directories[rc.name],
                 rc.home,
                 Sleep(0, True),
-                config.occupation(rc.occupation),
+                config.occupation(rc.occupation) if rc.occupation else None,
                 inventory=Inventory(money=rc.purse),
                 reckoned=start,
             )
@@ -382,8 +412,10 @@ class World:
         for t in self.board.schedule:
             self.at(t, partial(office.arrival, self, t))
         self.at(self.delivery(day), self._deliver)
+        incidents.schedule(self, day)
         self.at(day * DAY, partial(world.midnight.midnight, self, day))
         self.at(day * DAY + self.forced_sleep, partial(world.living.force_sleep, self, day))
+        self.at(day * DAY + self.forced_sleep, partial(world.regard.night, self))  # once asleep
         self.at(day * DAY + self.checkpoint_hour, partial(self._checkpoint, day))
 
     def delivery(self, day: int) -> int:
@@ -406,7 +438,7 @@ class World:
             "delivery",
             lambda w: f"It is {hour}: the supplier delivered {goods} to {store.name}.",
             place=store.id,
-            audience=[r for r in self.residents.values() if STORE.keeps(r.occupation.id)],
+            audience=[r for r in self.residents.values() if STORE.keeps(r.trade)],
             payload={"items": came},
         )
 
@@ -437,6 +469,7 @@ class World:
                     payload={"task": claim.task, "diff": claim.diff},
                 )
             self.board.new_day()
+            self.web.new_day()
             for r in self.residents.values():
                 r.day.clear()
                 self.reckon(r)
@@ -503,6 +536,8 @@ class World:
             },
             "fees": dict(self.prices[SURGERY.kind]),
             "announcements": copy.deepcopy(self.announcements),
+            "notices": copy.deepcopy(self.notices),
+            "regard": copy.deepcopy(self.regard.saved()),
             "residents": residents,
         }
 
@@ -526,6 +561,8 @@ class World:
         for key, held in state["holders"].items():
             self.holders[key] = Holder(**copy.deepcopy(held))
         self.announcements = copy.deepcopy(state["announcements"])
+        self.notices = copy.deepcopy(state["notices"])
+        self.regard = Regard.restored(state["regard"])
         for name, saved in state["residents"].items():
             r = self.residents[name]
             assert r.timer is not None
@@ -604,7 +641,7 @@ class World:
 
     def of_occupation(self, occupation: str) -> list[Resident]:
         """The residents whose occupation is `occupation`."""
-        return [r for r in self.residents.values() if r.occupation.id == occupation]
+        return [r for r in self.residents.values() if r.trade == occupation]
 
     def occupants(self, place_id: str) -> list[Resident]:
         """Who lives at `place_id` now."""
@@ -641,7 +678,8 @@ class World:
         """`r` stops work and leaves its conversation, if it is in them, as going elsewhere
         (`going`) does on its own, except that the work of a duty that runs anywhere goes on with
         it on its way (`Occupation.duty`); what it is told of it, a sentence or nothing."""
-        stopped = self.on_duty(r) and not (going and r.occupation.duty == "anywhere")
+        duty = r.occupation.duty if r.occupation else None
+        stopped = self.on_duty(r) and not (going and duty == "anywhere")
         if stopped:
             self.stop_work(r)
         left = []
@@ -821,19 +859,21 @@ class World:
         use to it there: the work of other occupations; its own away from its workplace, where
         the board hangs and the machines are, the shelves, the kitchen, the surgery or the
         Hall's board, except the doctor's at the bedside of one too ill to get up; the task's
-        without a task; `start_work` where it has no work; and `message` with nothing to write
-        with."""
+        without a task; `start_work` where it has no work; `message` with nothing to write
+        with; and the web away from the Office."""
         if r.suspended:
             return []
-        own = OCCUPATIONS[r.occupation.id].work
+        own = r.work
         useless = set(WORK_DONE - own)
-        if r.place != r.occupation.workplace:
+        if r.place != r.workplace:
             useless |= own - (BEDSIDE if self.bedside(r) else frozenset())
             useless.add("start_work")
         if r.name not in self.board.claims:
             useless |= TASK_TOOLS
         if not any(r.inventory.units(i.id) for i in self.config.items if i.effect == "messaging"):
             useless.add("message")
+        if r.place != self.config.workplace("office").id:
+            useless |= WEB
         return [spec for name, spec in self._specs.items() if name in r.tools - useless]
 
     def bedside(self, r: Resident) -> list[Resident]:
@@ -861,8 +901,9 @@ class World:
             )
             text = refusal(base, name, destination=destination)
             return ToolResult(text, ends_turn=isinstance(base, Movement))
-        if name in WORK_DONE - OCCUPATIONS[r.occupation.id].work:
-            return ToolResult(f"That is not your work: you are {r.occupation.title}.")
+        if name in WORK_DONE - r.work:
+            title = f": you are {r.occupation.title}" if r.occupation else ""
+            return ToolResult(f"That is not your work{title}.")
         fitted = tools.fit(self._specs[name], args)
         if isinstance(fitted, str):
             return ToolResult(fitted)

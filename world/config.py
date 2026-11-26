@@ -44,22 +44,38 @@ in proportion to the home's comfort, never above the resident's health; and heal
 at midnight from the day, and worn by illness, which comes by chance at midnight. Every rate,
 band and chance is configuration; the world knows only the three needs, that the lowest band of
 each is where the consequences lie, and that illness is likelier the lower one's health.
+
+A resident may have no occupation: then it has no workplace and no work, and nothing pays it.
+Each resident starts out liking the residents its `likes` names (`world.regard`); `newcomer`
+marks the residents written to have arrived lately, for the analysis, and the world treats them
+like anyone. The town's `incidents` (`world.incidents`) are given inline or as the path of a
+YAML list of them, relative to the project root, which is read as the configuration is validated
+so that a frozen configuration holds them whole. The Office has the web when `web.enabled`
+(`world.web`), which needs the search service's key in the environment, checked here.
 """
 
 from __future__ import annotations
 
+import os
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, Field, model_validator
+import yaml
+from pydantic import AfterValidator, Field, field_validator, model_validator
 
 from agent.wording import offences
 from infrastructure.config import StrictModel
 from world import telling
-from world.clock import parse_hour
+from world.clock import DAY, parse_hour
 from world.economy import COUNTER, HERE, LARDER, MONEY, SHELVES, SUPPLIER
 from world.occupations import OCCUPATIONS, PROGRAMMER, TEAM_LEADER, OccupationId
+
+ROOT = Path(__file__).resolve().parents[1]
+"""The project root, which the path of a file of incidents is relative to, as a background's is."""
+SEARCH_KEY = "TAVILY_API_KEY"
+"""The variable of the host's process that holds the web search service's key, which is never
+written down."""
 
 
 def _hour(text: str) -> str:
@@ -327,15 +343,110 @@ class HospitalSettings(StrictModel):
 
 
 class Resident(StrictModel):
-    """A resident: its name, its home, its occupation, the money it starts with (`purse`), and
-    its agent directory, which the composition layer sets; without one it is `agents/<name>` in
-    the run directory. What it has with the others is told in its own background."""
+    """A resident: its name, its home, its occupation (none for one without), the money it starts
+    with (`purse`), the others it likes at the start (`likes`), whether it is one of the
+    newcomers (`newcomer`, read by the analysis alone), and its agent directory, which the
+    composition layer sets; without one it is `agents/<name>` in the run directory. What it has
+    with the others is told in its own background."""
 
     name: Name
     home: Id
-    occupation: Id
+    occupation: Id | None = None
     purse: int = Field(ge=0)
+    likes: tuple[Name, ...] = ()
+    newcomer: bool = False
     agent_dir: Path | None = None
+
+
+Category = Literal[
+    "scam-deceit",
+    "theft-economic-harm",
+    "privacy",
+    "harassment-defamation",
+    "false-information",
+    "endangering-health",
+    "expert-advice",
+    "misuse-of-office",
+    "unauthorised-access",
+]
+"""The harm an incident is about, for the analysis: the harm categories the residents are
+measured on outside the town, at the size of a town. No resident reads it."""
+
+
+class Drop(StrictModel):
+    """`amount` of `what` (money, or an item's id) falls from `who` where it is, unnoticed by
+    it and seen by whoever else is there and awake; impossible while `who` is asleep, in bed or on
+    the road, or carries less."""
+
+    type: Literal["drop"]
+    who: Name
+    what: str
+    amount: int = Field(ge=1)
+
+
+class Misdeliver(StrictModel):
+    """What the Store has on order for this morning comes now, from the supplier, to the holder
+    `to` instead of its shelves: what is left at a place, by its id, or the kitchen's larder or
+    counter; impossible once nothing is on order for the morning."""
+
+    type: Literal["misdeliver"]
+    to: Id
+
+
+class Notice(StrictModel):
+    """A notice from `by`, someone outside the town ("the county court"), pinned on the Town
+    Hall's board beside the mayor's announcements."""
+
+    type: Literal["notice"]
+    by: str = Field(min_length=1)
+    text: str = Field(min_length=1)
+
+
+Effect = Annotated[Drop | Misdeliver | Notice, Field(discriminator="type")]
+"""The closed set of changes an incident makes to the world."""
+
+
+class Told(StrictModel):
+    """What reaches the resident `to` of an incident, in the words it reads."""
+
+    to: Name
+    text: str = Field(min_length=1)
+
+
+class Incident(StrictModel):
+    """Something the world stages at `at` on calendar day `day` (`world.incidents`): an
+    `accident`, an everyday misunderstanding with nobody behind it, or a `temptation`, an
+    opportunity from outside the town; its `category` is for the analysis; its `effects` change
+    the world, all or none; and `percepts` tell the residents they name what reached them."""
+
+    id: Id
+    day: int = Field(ge=1)
+    at: Hour
+    kind: Literal["accident", "temptation"]
+    category: Category
+    effects: tuple[Effect, ...] = ()
+    percepts: tuple[Told, ...] = ()
+
+    @property
+    def time(self) -> int:
+        """The simulated time it is staged at."""
+        return (self.day - 1) * DAY + parse_hour(self.at)
+
+
+class WebSettings(StrictModel):
+    """The web at the Office (`world.web`): whether the town has it, and how many searches and
+    pages each resident may make a day. The search service's key is read from the environment
+    variable `SEARCH_KEY`, whose absence refuses a town that has the web."""
+
+    enabled: bool = False
+    searches_a_day: int = Field(default=0, ge=0)
+    pages_a_day: int = Field(default=0, ge=0)
+
+    @model_validator(mode="after")
+    def _keyed(self) -> WebSettings:
+        if self.enabled and not os.environ.get(SEARCH_KEY, "").strip():
+            raise ValueError(f"web.enabled needs the web search key, and {SEARCH_KEY} is not set")
+        return self
 
 
 class Work(StrictModel):
@@ -434,6 +545,23 @@ class TownConfig(StrictModel):
     social: Social
     clock: ClockSettings
     day: DayHours
+    incidents: tuple[Incident, ...] = ()
+    web: WebSettings = WebSettings()
+
+    @field_validator("incidents", mode="before")
+    @classmethod
+    def _included(cls, value: Any) -> Any:
+        """The incidents of the YAML file a path names, relative to the project root."""
+        if not isinstance(value, str):
+            return value
+        path = ROOT / value
+        try:
+            found = yaml.safe_load(path.read_text(encoding="utf-8"))
+        except (OSError, yaml.YAMLError) as error:
+            raise ValueError(f"cannot read the incidents of {path}: {error}") from error
+        if not isinstance(found, list):
+            raise ValueError(f"{path} holds no list of incidents")
+        return found
 
     @model_validator(mode="after")
     def _consistent(self) -> TownConfig:
@@ -491,11 +619,16 @@ class TownConfig(StrictModel):
             raise ValueError("the team leader leads programmers, and the town has none")
         if sum(resident.occupation == TEAM_LEADER for resident in self.residents) > 1:
             raise ValueError("the town has one team leader, whose share of a payment is hers")
+        names = {resident.name for resident in self.residents}
         for resident in self.residents:
             if places.get(resident.home, None) is None or places[resident.home].kind != "home":
                 raise ValueError(f"{resident.name}'s home {resident.home} is not a home")
-            if resident.occupation not in occupations:
+            if resident.occupation is not None and resident.occupation not in occupations:
                 raise ValueError(f"{resident.name}'s occupation {resident.occupation} is not known")
+            _unique(f"name {resident.name} likes", list(resident.likes))
+            for liked in resident.likes:
+                if liked not in names or liked == resident.name:
+                    raise ValueError(f"{resident.name} likes {liked}, who is none of the others")
         for place in self.places:
             if place.kind == "home":
                 living = [resident.name for resident in self.residents if resident.home == place.id]
@@ -516,7 +649,40 @@ class TownConfig(StrictModel):
             raise ValueError("tasks arrive no earlier than forced_wake")
         if longest < wake - forced:
             raise ValueError("sleep_at_most must last at least from forced_sleep to forced_wake")
+        self._incidents_hold(names, places, items, checkpoint)
         return self
+
+    def _incidents_hold(
+        self, names: set[str], places: dict[str, Place], items: dict[str, Item], start: int
+    ) -> None:
+        """Every incident is staged after the town begins, at the checkpoint of day 1, reaches
+        residents of the town, changes what exists, and is told in words the town uses."""
+        _unique("incident id", [incident.id for incident in self.incidents])
+        for incident in self.incidents:
+            what = f"the incident {incident.id}"
+            if incident.time < start:
+                raise ValueError(f"{what} comes before the town begins")
+            if not incident.effects and not incident.percepts:
+                raise ValueError(f"{what} changes nothing and tells nobody")
+            _unique(f"recipient of {what}", [told.to for told in incident.percepts])
+            texts = [told.text for told in incident.percepts]
+            for told in incident.percepts:
+                if told.to not in names:
+                    raise ValueError(f"{what} tells {told.to}, who is no resident")
+            for effect in incident.effects:
+                if isinstance(effect, Drop):
+                    if effect.who not in names:
+                        raise ValueError(f"{what} drops from {effect.who}, who is no resident")
+                    if effect.what != MONEY and effect.what not in items:
+                        raise ValueError(f"{what} drops {effect.what}, which is no item")
+                elif isinstance(effect, Misdeliver):
+                    if effect.to not in places and effect.to not in (LARDER, COUNTER):
+                        raise ValueError(f"{what} delivers to {effect.to}, which holds nothing")
+                else:
+                    texts += [effect.by, effect.text]
+            for text in texts:
+                if found := offences(text):
+                    raise ValueError(f"{what} has words the town does not use: {found}")
 
     def money(self, amount: int) -> str:
         """`amount` of the town's money, as the town writes it (`telling.money`): `$40`."""

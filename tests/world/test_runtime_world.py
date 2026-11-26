@@ -52,7 +52,9 @@ async def test_a_runtime_lives_a_day_in_the_world(tmp_path):
         ),
         reply("", tool_call("wait", minutes=600)),
         reply("", tool_call("wait", minutes=50)),
-        reply("", tool_call("sleep", until="07:00", journal="I fixed task 1 and was paid.")),
+        reply(
+            "", tool_call("sleep", likes=[], until="07:00", journal="I fixed task 1 and was paid.")
+        ),
         reply("", tool_call("review_day")),
         reply("Good night."),
     )
@@ -170,7 +172,7 @@ async def test_a_call_the_request_did_not_declare_is_the_worlds_to_refuse_or_car
             tool_call("say", text="Good night."),  # in the conversation
             tool_call("start_work"),  # not declared at home, where she has no work
             tool_call("eat_lunch"),  # no tool at all
-            tool_call("sleep", until="07:00"),
+            tool_call("sleep", likes=[], until="07:00"),
         ),
         reply("Asleep soon."),
     )
@@ -191,7 +193,7 @@ async def test_a_call_the_request_did_not_declare_is_the_worlds_to_refuse_or_car
         "You said: “Good night.”",
         "You left the conversation. Your work is at the workshop.",  # what is not talk leaves it
         "There is nothing you can do called eat_lunch.",
-        "You went to bed.",
+        "You went to bed. You named nobody as someone you like.",
     ]
     assert town.take("Aisha") == [
         "Mei said: “Good night.”",
