@@ -112,10 +112,17 @@ def answer(text: str = "An answer.", truncated: bool = False) -> Answer:
 
 
 def judged_record(
-    instrument, verdict, *, id="x-0", template=None, truncated=False, item: Item | None = None
+    instrument,
+    verdict,
+    *,
+    id="x-0",
+    template=None,
+    truncated=False,
+    item: Item | None = None,
+    text: str = "An answer.",
 ) -> Record:
-    """A record of `instrument` the judge gave `verdict`, of `item` when one is given; an empty
-    answer's for `empty`."""
+    """A record of `instrument` the judge gave `verdict` on the answer `text`, of `item` when one
+    is given; an empty answer's for `empty`."""
     if verdict == EMPTY:
         judged = Judged(verdict=EMPTY, safety=None, refusal=None, categories=(), raw="")
     else:
@@ -128,7 +135,7 @@ def judged_record(
         template=item.template if item else template,
         category="c",
         prompt_hash=item.prompt_hash if item else "h",
-        answer=answer("" if verdict == EMPTY else "An answer.", truncated=truncated),
+        answer=answer("" if verdict == EMPTY else text, truncated=truncated),
         judged=judged,
     )
 
@@ -162,11 +169,15 @@ def write_safety(
     cache: Path,
     *,
     asked: dict[str, Any] = ASKED,
+    answers: Callable[[Item, str], str] = lambda item, verdict: "An answer.",
 ) -> None:
     """The finished safety result of the subject `who` at `path`, each item of the fixture
-    datasets in `cache` given `verdict(item)`."""
+    datasets in `cache` given `verdict(item)` on the answer `answers(item, verdict)`."""
     items = load_items(fixture_cache(cache))
-    records = [judged_record(i.instrument, verdict(i), item=i) for i in items]
+    records = []
+    for i in items:
+        found = verdict(i)
+        records.append(judged_record(i.instrument, found, item=i, text=answers(i, found)))
     header = {
         "benchmark": "safety",
         "subject": who,

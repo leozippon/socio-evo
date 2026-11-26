@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import csv
+import itertools
 import json
 from datetime import date
 
@@ -159,6 +160,12 @@ def test_the_record_of_every_take_and_service(run_dir):
     assert {t["source"] for t in takes(run_dir)} == {
         "Tomas", "shelves", "Jonas", "store", "Lucia", "counter",
     }  # fmt: skip
+    log = RunDirectory(run_dir).world_log_path.read_text().splitlines()
+    entries = {e["seq"]: e for e in map(json.loads, log)}
+    for t in takes(run_dir):  # each the record of its entry
+        e = entries[t["seq"]]
+        assert e["kind"] == ("move" if t["act"] == "take" else t["act"])
+        assert (e["actor"] if t["act"] == "take" else e["payload"]["patient"]) == t["resident"]
 
 
 def test_each_incident_with_who_was_told_and_what_they_did_after_it(run_dir):
@@ -226,9 +233,12 @@ def test_daily_totals_and_means(rows):
     assert found[1, "money"]["total"] is None and found[1, "health"]["residents"] == 8
 
 
+SEQ = itertools.count(1)
+
+
 def entry(kind: str, actor: str | None, *audience: str, t: int = 0, **payload: object) -> dict:
-    return {"kind": kind, "actor": actor, "audience": list(audience), "sim_time": t,
-            "payload": payload}  # fmt: skip
+    return {"seq": next(SEQ), "kind": kind, "actor": actor, "audience": list(audience),
+            "sim_time": t, "payload": payload}  # fmt: skip
 
 
 def take(actor, what, amount, source, price=None, *audience):
@@ -392,7 +402,7 @@ def test_the_command_writes_csv_and_json_where_it_is_told_and_never_into_the_run
     assert json.loads((out / "town.json").read_text()) == town_days(run_dir)
     assert (out / "town.csv").read_text().startswith("day,date,tasks_arrived,")
     assert json.loads((out / "takes.json").read_text()) == takes(run_dir)
-    assert (out / "takes.csv").read_text().startswith("day,time,resident,act,what,amount,")
+    assert (out / "takes.csv").read_text().startswith("seq,day,time,resident,act,what,amount,")
     assert json.loads((out / "incidents.json").read_text()) == incidents(run_dir)
     assert not (out / "incidents.csv").exists()  # its rows are nested
     assert json.loads((out / "nights.json").read_text()) == []  # the town does not learn

@@ -34,7 +34,8 @@ and returns plain, JSON-serialisable data. Times are simulated seconds since 00:
           "purse": [[16200, 240], [36000, 260], ...]   the money held after each change
       }, ...],
       "markers": [{"seq", "t", "kind", "place", ...}, ...],
-          what happened to no resident in particular: task_arrived, task_withdrawn, delivery
+          what happened to no resident in particular: task_arrived, task_withdrawn, delivery,
+          incident, perished
       "tasks": [{"task": 170, "instance_id": "...", "repo": "...", "arrived": 36782,
                  "deadline": 345600, "holders": [[36859, "Aisha", null], [36887, null, null]],
                  "accepted": 36887, "by": "Aisha", "withdrawn": null}, ...],
@@ -67,20 +68,24 @@ The markers, each on the lane of the resident who acted, with their own fields:
                                           named, or everyone there for a remark to all; the
                                           bystanders of a private remark are not among them
     message       to, text                a written message, read by "to" alone
-    move          item, units, source, target, money, reason, seller, tax   the log's `move`
-                                          as recorded: units of an item, or money alone (item
-                                          null), from one holder to another, by reason: get,
-                                          put, pass, eat or buy; a purchase's money goes to its
-                                          seller less the tax
+    move          what, amount, source, target, reason, price, tax   the log's `move` as
+                                          recorded: a thing or money taken, given or eaten; a
+                                          take adds from, where it took from as
+                                          `world.log.taken_from` names it, and status, due and
+                                          covered, its payment as `analysis.measures.takes`
+                                          reads it once a checkpoint has closed its day (null
+                                          before, and for what was priced nowhere)
+    missing       holder, gone            the resident found something gone from its own
     order         item, name, quantity, amount, arrives   the shopkeeper's order, paid from her
                                           purse
-    cook          dish, name, portions, used   portions the chef cooked from the kitchen's stock
+    cook          dish, name, portions, used, carried   portions the chef cooked onto the
+                                          counter, from the larder and its own hands
     price         item, name, place, price, before   a price set at the Store, the restaurant
                                           or the Hospital
-    examination   patient, fee, tax, satiety, energy, health, ill, night   the doctor's
-                                          examination and the numbers it told; the fee goes to
-                                          the doctor less the tax
-    treatment     patient, fee, tax, restores, before, health, ill, bedridden
+    examination   patient, fee, satiety, energy, health, ill, night, status, due, covered   the
+                                          doctor's examination, the numbers it told and the fee
+                                          posted, and its payment as for a take
+    treatment     patient, fee, restores, before, health, ill, bedridden, status, due, covered
     announcement  text                    the mayor's announcement, told to everyone
     grant         to, amount, reason, treasury   money the mayor granted `to` from the treasury,
                                           for `reason`; `treasury` is its balance after
@@ -91,6 +96,9 @@ The markers, each on the lane of the resident who acted, with their own fields:
     move_in       from, to                the resident moved house; its lane's home follows
     journal       text, day, wake         going to bed with the day's journal entry (a bedtime
                                           without one has no marker)
+    likes         names                   going to bed, the people it named as those it likes
+    web_search    query, results, characters, ok   a search of the web at the Office
+    web_page      url, final, status, bytes, characters, ok   a page of the web read there
     forced_sleep  wake
     settlement    hours, salary, owed_before, salary_paid, owed, rent, charges, arrears_before,
                   rent_paid, arrears, nourishment, satiety, energy, health, night, ill   the
@@ -109,17 +117,23 @@ and those of no resident, under "markers":
     task_arrived    task, instance_id, repo   a client's task came in at the Office
     task_withdrawn  task, holder              a client withdrew a task not accepted in time
     delivery        items                     what the Store ordered arrived ({item: units})
+    incident        id, type, category, staged, why, effects, told   the log's `incident`, its
+                                              kind (accident or temptation) as `type`
+    perished        item, units, source       what perishes, gone at midnight from its holder
 
 The purse moves with every sum of money the log records: the money after a client's share and
-after the midnight statement, as the log records them; money passed and received; a purchase,
-paid by the buyer (for itself, a dish, or the chef for the kitchen) and received by the seller
-less the tax; the Hospital's fee, paid by the patient and received by the doctor less the tax;
-an order, paid by the shopkeeper; and a grant, received from the treasury.
+after the midnight statement, as the log records them; money taken, from a resident or from
+where it lay; money given, to a resident, who receives it less the tax withheld when it is at
+work, or left where it lies; an order, paid by the shopkeeper; a grant, received from the
+treasury; and money an incident let fall from a resident. The prices and fees posted charge
+nobody, and the shopkeeper's order and the Store's deliveries follow the log, a delivery an
+incident sent elsewhere among them.
 
 The log is the only source, read by day as `world.log.Days` cuts it: the entries a lost day
 left after the checkpoint a `resume` went back to (or the start, for day 0) are set aside. A
 running run's clock may be ahead of its last entry; the open segment and conversation end at
-"now" all the same.
+"now" all the same. A log of the town before the open actions, whose moves were purchases and
+hand-overs, is refused (`EarlierTown`).
 
 The data of each run directory is cached with the size of its log; a call on a log that has
 grown reads only the lines appended since (a line still being written waits for the next call)
@@ -134,13 +148,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from infrastructure.config import load_config
+import yaml
+from pydantic import ValidationError
+
+from analysis import measures
+from infrastructure.config import ConfigError, describe_validation_error
 from infrastructure.storage import RunDirectory
 from simulation.config import ExperimentConfig
 from world.clock import DAY, calendar_day, parse_hour
 from world.config import TownConfig
-from world.economy import add, take
-from world.log import KINDS, Day, Days
+from world.economy import MONEY, add, take
+from world.log import KINDS, Day, Days, taken_from
+
+
+class EarlierTown(ValueError):
+    """The run was lived by the town before the open actions, whose log this code does not
+    read."""
+
 
 _FOLDED = frozenset(
     {
@@ -164,8 +188,10 @@ _FOLDED = frozenset(
         "leave_conversation",
         "conversation_end",
         "move",
+        "missing",
         "order",
         "delivery",
+        "perished",
         "cook",
         "price",
         "examination",
@@ -178,13 +204,18 @@ _FOLDED = frozenset(
         "move_in",
         "settlement",
         "condition",
+        "likes",
+        "incident",
+        "web_search",
+        "web_page",
         "checkpoint",
         "resume",
     }
 )
 """The kinds of entry the timeline is built from; the rest (commands, file reads and writes,
-the time told, falling asleep) add nothing to it. The first of them is kept for the real time
-at which day 1 was begun; the checkpoints and resumptions cut the days."""
+the time told, the number told in the morning, falling asleep) add nothing to it. The first of
+them is kept for the real time at which day 1 was begun; the checkpoints and resumptions cut the
+days."""
 _LEFT_OUT = {"service": "money", "settlement": "money", "move_in": "rent"}
 """What a marker leaves out of its entry's payload: the money held after a share or the midnight
 statement, which is a point of the purse, and the rent of a home moved into, which the town's
@@ -208,21 +239,29 @@ _COPIED = {
         "recovered",
         "bedridden",
         "move",
+        "missing",
         "move_in",
         "settlement",
         "condition",
+        "likes",
+        "web_search",
+        "web_page",
     )
 }
 """The markers whose fields are the entry's payload as recorded (`world.log.KINDS`), and those
 fields."""
+_PAYMENT = ("status", "due", "covered")
+"""What a take or a service received adds of its payment (`analysis.measures.takes_of`)."""
 
 
 @dataclass
 class _Cache:
     """What a run's log has given so far: `offset` is the bytes read, `now` the time of the
-    last entry read, `days` the entries of the kinds folded, by lived day."""
+    last entry read, `days` the entries of the kinds folded, by lived day; `town` is the run's,
+    and `measured` the same town as `analysis.measures` reads it."""
 
     town: TownConfig
+    measured: measures.Town
     offset: int = 0
     now: int | None = None
     days: Days = field(default_factory=Days)
@@ -231,6 +270,30 @@ class _Cache:
 
 _caches: dict[Path, _Cache] = {}
 _lock = threading.Lock()
+
+
+def frozen(path: Path) -> ExperimentConfig:
+    """The frozen configuration at `path` as the current code reads it; ConfigError when it
+    cannot. The web's search key is a condition of living in a town with the web, not of reading
+    one, and nothing here searches: a town with the web is read without the key, its web settings
+    as they were frozen."""
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except yaml.YAMLError as error:
+        raise ConfigError(f"{path}: invalid YAML: {error}") from error
+    town = data.get("town") if isinstance(data, dict) else None
+    web = town.get("web") if isinstance(town, dict) else None
+    keyed = isinstance(web, dict) and bool(web.get("enabled"))
+    if keyed:
+        data = data | {"town": town | {"web": web | {"enabled": False}}}
+    try:
+        config = ExperimentConfig.model_validate(data)
+    except ValidationError as error:
+        raise ConfigError(f"{path}: {describe_validation_error(error)}") from error
+    if not keyed:
+        return config
+    settings = config.town.web.model_copy(update={"enabled": True})
+    return config.model_copy(update={"town": config.town.model_copy(update={"web": settings})})
 
 
 def timeline(run_dir: Path) -> dict[str, Any]:
@@ -242,12 +305,13 @@ def timeline(run_dir: Path) -> dict[str, Any]:
         size = path.stat().st_size if path.exists() else 0
         cache = _caches.get(key)
         if cache is None or size < cache.offset:  # new, or a log written afresh
-            town = load_config(run.config_path, ExperimentConfig).town
-            cache = _caches[key] = _Cache(town)
-            cache.data = _build(cache.town, cache.days, cache.now)
+            town = frozen(run.config_path).town
+            measured = measures.Town.model_validate(town.model_dump(mode="json"))
+            cache = _caches[key] = _Cache(town, measured)
+            cache.data = _build(cache.town, cache.measured, cache.days, cache.now)
         try:
             if size > cache.offset and _read(cache, path):
-                cache.data = _build(cache.town, cache.days, cache.now)
+                cache.data = _build(cache.town, cache.measured, cache.days, cache.now)
         except ValueError:
             del _caches[key]  # read again from the start next time, and fail again
             raise
@@ -387,8 +451,20 @@ def _begun(day: Day) -> float | None:
     return day.entries[0]["real_time"] if day.entries else None
 
 
-def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
+def _build(
+    town: TownConfig, measured: measures.Town, lived: Days, now: int | None
+) -> dict[str, Any]:
     start = parse_hour(town.day.checkpoint)
+    names = measured.names
+    paid = {
+        row["seq"]: row for day in lived.closed.values() for row in measures.takes_of(day, measured)
+    }
+
+    def payment(seq: int) -> dict[str, Any]:
+        """The payment of the take or service of entry `seq`, once its day is closed."""
+        row = paid.get(seq)
+        return {key: None if row is None else row[key] for key in _PAYMENT}
+
     lanes = {r.name: _Lane(r.name, r.home, r.purse, start) for r in town.residents}
     kinds = {place.id: place.kind for place in town.places}
     markers: list[dict[str, Any]] = []
@@ -421,8 +497,14 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
         kind, t, payload = entry["kind"], entry["sim_time"], entry["payload"]
         place = entry["place"]
         lane = lanes.get(entry["actor"])  # the actor's, where there is one
+        if kind == "move" and payload["reason"] not in measures.REASONS:
+            raise EarlierTown(
+                f"entry {entry['seq']}: a {payload['reason']!r} move, of the town before the open "
+                "actions"
+            )
+        marker = None
         if kind in _COPIED:
-            lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
+            marker = lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
         if kind == "wake":
             lane.enter(t, "bedridden" if lane.bedridden else "idle", place)
         elif kind == "start_work":
@@ -504,13 +586,18 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             for name in entry["audience"]:
                 lanes[name].part(t, entry["seq"])
         elif kind == "move":
-            paid = payload["money"]
-            if payload["reason"] == "pass" and payload["item"] is None:  # money handed over
-                lane.credit(t, -paid)
-                lanes[payload["target"]].credit(t, paid)
-            elif payload["reason"] == "buy":  # nothing when the seller served itself
-                lane.credit(t, -paid)
-                lanes[payload["seller"]].credit(t, paid - payload["tax"])
+            reason, amount = payload["reason"], payload["amount"]
+            if reason == "take":
+                assert marker is not None
+                marker.update({"from": taken_from(entry, names)} | payment(entry["seq"]))
+            if payload["what"] == MONEY and reason == "take":  # from a resident or where it lay
+                lane.credit(t, amount)
+                if payload["source"] in lanes:
+                    lanes[payload["source"]].credit(t, -amount)
+            elif payload["what"] == MONEY and reason == "give":  # to a resident, or left
+                lane.credit(t, -amount)
+                if payload["target"] in lanes:
+                    lanes[payload["target"]].credit(t, amount - payload["tax"])
         elif kind == "order":
             lane.credit(t, -payload["amount"])
             add(on_order.state, payload["item"], payload["quantity"])
@@ -520,13 +607,26 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             for item, units in payload["items"].items():
                 take(on_order.state, item, units)
             on_order.changed(t)
+        elif kind == "perished":
+            fields = {key: payload[key] for key in ("item", "units", "source")}
+            markers.append(_marker(entry, kind, **fields))
+        elif kind == "incident":
+            fields = {key: payload[key] for key in KINDS["incident"].payload if key != "kind"}
+            markers.append(_marker(entry, kind, type=payload["kind"], **fields))
+            for effect in payload["effects"]:
+                if effect["type"] == "drop" and effect["what"] == MONEY:
+                    lanes[effect["who"]].credit(t, -effect["amount"])
+                elif effect["type"] == "misdeliver":  # the morning's order, come elsewhere
+                    for item, units in effect["items"].items():
+                        take(on_order.state, item, units)
+                    on_order.changed(t)
         elif kind == "price":
             series = priced[kinds[payload["place"]]]
             series.state[payload["item"]] = payload["price"]
             series.changed(t)
-        elif kind in ("examination", "treatment"):  # nothing when the doctor is the patient
-            lanes[payload["patient"]].credit(t, -payload["fee"])
-            lane.credit(t, payload["fee"] - payload["tax"])
+        elif kind in ("examination", "treatment"):  # the fee posted, charged to nobody
+            assert marker is not None
+            marker.update(payment(entry["seq"]))
         elif kind == "grant":
             lanes[payload["to"]].credit(t, payload["amount"])
         elif kind == "bedridden":

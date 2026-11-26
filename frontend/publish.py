@@ -13,10 +13,11 @@ atomically. Every document is written before the documents that refer to it, and
 carries the hash of the content it refers to, so a reader never meets a torn file or a
 reference to a file not yet written. Files no longer referred to are removed last. Publishing
 reads run directories and the results root and never writes into either. A run whose frozen
-configuration is missing or cannot be read by the current code, or whose publishing fails, is
-skipped and named in the index with the reason in plain words and the error itself, so the
-other runs are published all the same. `--watch` publishes again every SECONDS, skipping runs
-whose files have not changed, until interrupted.
+configuration is missing or cannot be read by the current code, a run the earlier town lived,
+whose log this code does not read, and a run whose publishing fails are skipped and named in the
+index with the reason in plain words and the error itself, so the other runs are published all
+the same. `--watch` publishes again every SECONDS, skipping runs whose files have not changed,
+until interrupted.
 """
 
 from __future__ import annotations
@@ -32,22 +33,25 @@ import traceback
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from functools import partial
+from functools import cache, partial
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
-from analysis.measures import daily, measure, town_days
+from analysis import measures as measured
+from evaluation.results import MODELS
 from frontend import bundle
 from frontend.progress import progress
-from frontend.timeline import timeline
-from infrastructure.config import ConfigError, load_config
+from frontend.timeline import EarlierTown, frozen, timeline
+from infrastructure.config import ConfigError
 from infrastructure.git import Repository
 from infrastructure.storage import RunDirectory, day_tag
+from learning.adapters import DONE
+from learning.moments import life
 from simulation.config import ExperimentConfig
 from world.log import lived_days
 
-FORMAT = 11
+FORMAT = 12
 """The version of the bundle format, which a viewer checks before it reads anything. Bump it
 whenever a document changes so that a viewer of the previous format would misread it: a field
 removed or renamed, or its type or meaning changed. A field or a kind of file added keeps it,
@@ -65,10 +69,12 @@ KINDS = {
     "progress": "runs/{run}/progress.json",
     "measures": "runs/{run}/measures.json",
     "evaluation": "runs/{run}/evaluation.json",
+    "answers": "runs/{run}/answers/{subject}.json",
     "events": "runs/{run}/events/day-{day}.json",
     "versions": "runs/{run}/agents/{agent}/versions.json",
     "agent_day": "runs/{run}/agents/{agent}/day-{day}.json",
     "trace_day": "runs/{run}/agents/{agent}/trace-day-{day}.json",
+    "night": "runs/{run}/agents/{agent}/night-{night}.json",
 }
 """Every kind of file under `data/`, by the path pattern of its files."""
 MANIFEST = {"format": FORMAT, "files": [{"kind": k, "path": p} for k, p in KINDS.items()]}
@@ -199,14 +205,15 @@ class Publisher:
 
     def _run(self, site: Site, name: str, root: Path) -> _Published | None:
         """Publish one run, or skip it, saying why in `site.skipped`: its frozen configuration
-        is missing or cannot be read by the current code, or publishing it failed, in which case
-        the files written for it so far are left for `prune` and the error is printed."""
+        is missing or cannot be read by the current code, the earlier town lived it, or
+        publishing it failed; the files written for it so far are then left for `prune`, and an
+        error of publishing is printed."""
         try:
-            config = load_config(root / "config.yaml", ExperimentConfig)
+            config = frozen(root / "config.yaml")
         except (ConfigError, OSError) as error:
             site.skipped.append(_skipped(name, root, UNREADABLE_CONFIG, error))
             return None
-        fingerprint = _fingerprint(RunDirectory(root), self.results_root, name)
+        fingerprint = _fingerprint(RunDirectory(root), self.results_root)
         last = self._published.get(name)
         if (
             last is not None
@@ -219,11 +226,14 @@ class Publisher:
         try:
             entry, analysed = publish_run(site, name, root, config, self.results_root)
         except Exception as error:
-            print(f"while publishing {root}:", file=sys.stderr)
-            traceback.print_exc()
+            earlier = isinstance(error, EarlierTown)
+            if not earlier:
+                print(f"while publishing {root}:", file=sys.stderr)
+                traceback.print_exc()
             site.kept = before
             self._published.pop(name, None)
-            site.skipped.append(_skipped(name, root, PUBLISHING_FAILED, error))
+            reason = EARLIER_TOWN if earlier else PUBLISHING_FAILED
+            site.skipped.append(_skipped(name, root, reason, error))
             return None
         published = _Published(fingerprint, entry, frozenset(site.kept - before), analysed)
         self._published[name] = published
@@ -282,7 +292,8 @@ def publish_run(
     states = bundle.saved(run, data)
     things, holders = bundle.holdings(states, config.town, data)
     lanes = [{**lane, "things": things[lane["name"]]} for lane in data["residents"]]
-    data = {**data, "residents": lanes, "holders": holders}
+    regard = bundle.regard(states, config.town, data)
+    data = {**data, "residents": lanes, "holders": holders, "regard": regard}
     days = lived_days(run.world_log_path)
     lived = days.lived()
     closed = set(days.closed)
@@ -334,29 +345,56 @@ def publish_run(
                     "records": len(doc["records"]),
                 }
             )
+        # A complete night is never done again, so its file is built once; the resident's life,
+        # which its moments are read from, only when one is to be built.
+        numbers = bundle.nights_of(run, resident.name)
+        whole = cache(partial(life, agent_dir, max(numbers, default=0)))
+        nights = []
+        for night in numbers:
+            path = f"night-{night:02d}.json"
+            build = partial(bundle.night, run, resident.name, night, whole, config.town.start_date)
+            digest_of_night = put(f"agents/{resident.name}/{path}", build, night)
+            nights.append(
+                {
+                    "night": night,
+                    "url": ref(f"agents/{resident.name}/{path}", digest_of_night, True),
+                }
+            )
         residents.append(
             {
                 "name": resident.name,
                 "url": ref(f"agents/{resident.name}/versions.json", digest, False),
                 "versions": len(versions),
                 "trace_days": traces,
+                "nights": nights,
             }
         )
 
     world = bundle.world(config)
     headline = progress(data)
-    rows = measure(root) if settled_day else []
+    rows = measured.measure(root) if settled_day else []
     # The world logs a day's checkpoint before the run writes its file; while the latest is
     # being saved, the town's days, which read the treasury from the files, wait for it.
     saving = settled_day and not run.checkpoint_path(settled_day).is_file()
-    town = town_days(root) if settled_day and not saving else []
+    town = measured.town_days(root) if settled_day and not saving else []
+    found = measured.incidents(root)
     measures = {
         "rows": rows,
-        "daily": daily(rows),
+        "daily": measured.daily(rows),
         "town": town,
+        "takes": measured.takes(root),
+        "incidents": bundle.incidents(found, list(days.closed.values())),
+        "nights": measured.nights(root),
+        "likes": bundle.likes(config.town, lived),
         "graph": bundle.graph(data, lived),
     }
-    evaluation = bundle.evaluation(results_root, name)
+    evaluated = bundle.evaluation(results_root, root)
+    for subject, answers in evaluated.answers.items():
+        digest_of_answers = site.put(f"{base}/answers/{subject}.json", answers)
+        for row in evaluated.document["results"]:
+            if row["answers"] == subject:
+                row["answers"] = ref(f"answers/{subject}.json", digest_of_answers, True)
+    evaluation = evaluated.document
     digests = {
         "world": put("world.json", lambda: world, 0),
         "timeline": put("timeline.json", lambda: data),
@@ -391,12 +429,21 @@ def publish_run(
         "dry_run": world["model"]["backend"] == "scripted",
         "headline": bundle.headline(headline, town),
     }
-    return entry, bundle.Analysed(name, rows, evaluation)
+    learning = config.learning
+    paradigm = learning.enabled and all(
+        getattr(learning, key) == value for key, value in bundle.PARADIGM.items()
+    )
+    return entry, bundle.Analysed(name, evaluation, paradigm)
 
 
 UNREADABLE_CONFIG = (
     "Its frozen configuration cannot be read by the version of the code that publishes, so the "
     "run is left out until the two agree; nothing of it is lost."
+)
+EARLIER_TOWN = (
+    "It was lived by the earlier town, where things were bought and handed over rather than "
+    "taken and given, and this site reads only the town of the open actions, so the run is left "
+    "out; nothing of it is lost."
 )
 PUBLISHING_FAILED = "Publishing its files failed, so the run is left out until that is repaired."
 
@@ -419,20 +466,19 @@ def _runs(runs_root: Path) -> dict[str, Path]:
     }
 
 
-def _fingerprint(
-    run: RunDirectory, results_root: Path, name: str
-) -> tuple[tuple[str, int, int], ...]:
+def _fingerprint(run: RunDirectory, results_root: Path) -> tuple[tuple[str, int, int], ...]:
     """Size and modification time of every file publishing reads of a run, but the agent
-    repositories: every commit to them is followed by a checkpoint. The results read are the
-    JSON documents under the run's results and the shared day 0 beside them."""
-    results = results_root / name
+    repositories, every commit to which is followed by a checkpoint, and the files of a night,
+    whose `done.json` is written last. The results read are the JSON documents under the run's
+    results, named by its directory as the evaluations name it, and the bare models'."""
     paths = [
         run.manifest_path,
         run.config_path,
         run.world_log_path,
         *sorted(run.checkpoints_dir.glob("day-*.json")),
-        *sorted(results.rglob("*.json")),
-        *sorted((results.parent / "day-00").rglob("*.json")),
+        *sorted(run.learning_dir.glob(f"night-*/{DONE}")),
+        *sorted((results_root / run.root.name).rglob("*.json")),
+        *sorted((results_root / MODELS).rglob("*.json")),
     ]
     stats = []
     for path in paths:

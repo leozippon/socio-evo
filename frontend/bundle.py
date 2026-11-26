@@ -4,34 +4,42 @@ Every document is a plain JSON value; `frontend/README.md` is its contract. The 
 `frontend.timeline`, `frontend.progress`, `analysis.measures`, `analysis.tables` and
 `analysis.compare`, which define them; this module only arranges them and adds what the viewer
 needs of the run itself: the town laid out on a map, the world log's lived days as published,
-the social graph, what every holder of items held over time as the checkpoints and the moves
-give it, and the agents' files as their git repositories hold them. Agent files are read through git
-plumbing, which never touches an index or a work tree.
+the social graph and whom each resident liked, what every holder of things and money held over
+time and the numbers everyone saw as the checkpoints and the moves give them, each resident's
+nights as the learning wrote them, the benchmarks' answers as far as they may be shown, and the
+agents' files as their git repositories hold them. Agent files are read through git plumbing,
+which never touches an index or a work tree.
 """
 
 from __future__ import annotations
 
 import json
 from bisect import bisect_left
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from statistics import fmean
 from typing import Any
 
 from agent.directory import SESSION, TRACE
 from analysis import compare as comparison
-from analysis.measures import MEASURES
-from analysis.tables import tables
+from analysis import tables
+from evaluation.results import MODELS
+from evaluation.subject import Run
 from frontend.progress import COUNTS
 from infrastructure.git import FileChange, Repository
 from infrastructure.storage import RunDirectory, read_jsonl
+from learning.adapters import DONE, TRAINING
+from learning.choice import Choice
+from learning.moments import Life, rendering
+from learning.night import CHOICE, EXAMPLES, NUMBERS, Examples
 from simulation.config import ExperimentConfig
 from world.clock import DAY
 from world.config import TownConfig
-from world.economy import LARDER, PORTIONS, SHELVES, add, take
-from world.log import Day, counted_move, day_of
+from world.economy import COUNTER, LARDER, MONEY, SHELVES, add, take
+from world.log import Day, day_of, taken_from
+from world.regard import counts
 from world.rules import Rules
 
 Entry = dict[str, Any]
@@ -55,42 +63,15 @@ ROWS = {
 """Where each kind of place stands on the map, in map units: the homes in a row at the top, the
 office, the hall and the hospital in the middle, the store, the restaurant and the social places
 in a row below."""
-GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "served")
+GRAPH = ("minutes", "said", "said_private", "messages", "gifts", "money", "took")
 """What one resident had to do with another on a day, by field."""
-JOURNAL_FIELDS = (
-    "resident",
-    "day",
-    "date",
-    "journal",
-    "record_lines",
-    "claims",
-    "supported",
-    "contradicted",
-    "unverifiable",
-    "distortion",
-)
-"""The fields of a row of `evaluation.journals`' `days.json` the bundle publishes."""
-DECLARED = {
-    "capability": ("capability", "capability", "resolved rate on the held-out tasks"),
-    "mask": ("mask", "mask", "share of truthful answers under pressure"),
-    "distortion": ("journals", "distortion", "distortion rate of the journal"),
-}
-"""The declared outcomes compared across runs: the table of `evaluation.json` and the column
-each is read from, and what it is called."""
-EXPLORED = (
-    "tasks_accepted",
-    "hours_at_work",
-    "client_shares",
-    "takings",
-    "money",
-    "said_public",
-    "said_private",
-    "money_given",
-    "journal",
-    "forced_sleep",
-    "health",
-)
-"""The town measures compared across runs, as exploration."""
+EXCERPT = 200
+"""The most of a benchmark answer the bundle carries, and only of one its judge rated safe."""
+SAFE = "Safe"
+"""The safety judge's rating of an answer it found no harm in (`evaluation.safety.guard`)."""
+PARADIGM = {"examples": "generalised", "choice": "resident"}
+"""The learning of the Social arm, the paradigm the other arms are contrasted with
+(docs/experimental-design.md, Arms)."""
 
 
 # The world ------------------------------------------------------------------------------------
@@ -144,6 +125,8 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
                 "home": r.home,
                 "occupation": r.occupation,
                 "purse": r.purse,
+                "likes": list(r.likes),
+                "newcomer": r.newcomer,
                 "rules": rules.text(r.name),
             }
             for r in town.residents
@@ -159,6 +142,11 @@ def world(config: ExperimentConfig) -> dict[str, Any]:
         "needs": town.needs.model_dump(mode="json"),
         "social": town.social.model_dump(mode="json"),
         "day": town.day.model_dump(mode="json"),
+        "web": town.web.model_dump(mode="json"),
+        "learning": {
+            key: getattr(config.learning, key)
+            for key in ("enabled", "examples", "choice", "keep_per_night", "dataset_max")
+        },
         "model": {"backend": config.llm.backend, "name": config.llm.model},
     }
 
@@ -178,11 +166,11 @@ def graph(timeline: Mapping[str, Any], days: Sequence[Day]) -> list[Row]:
     `minutes` are simulated minutes `source` spent in conversations `target` took part in (from
     the timeline's conversations, each on the day it began); the rest counts the day's entries:
     things `source` said that `target` heard (`said`, of which `said_private` to it by name),
-    messages written to it, gifts (`gifts` times, `money` the money among them) and the times
-    `source` served `target` at its work (`served`: a sale at the Store's counter, a dish,
-    bought or the chef's unpaid, an examination or a treatment; nobody serves itself)."""
+    messages written to it, what `source` gave it (`gifts` times, `money` the money among them,
+    payments included) and the times `source` took from what `target` carried (`took`)."""
     ends = [(day.entries[-1]["sim_time"], day.number) for day in days]
     times = [end for end, _ in ends]
+    names = {lane["name"] for lane in timeline["residents"]}
 
     def day_of(t: int) -> int:
         return ends[min(bisect_left(times, t), len(ends) - 1)][1]
@@ -202,7 +190,6 @@ def graph(timeline: Mapping[str, Any], days: Sequence[Day]) -> list[Row]:
     for day in days:
         for entry in day.entries:
             kind, actor, payload = entry["kind"], entry["actor"], entry["payload"]
-            moved = counted_move(payload) if kind == "move" else None
             if kind == "speech":
                 for other in payload["to"]:
                     add(day.number, actor, other, "said", 1)
@@ -210,20 +197,48 @@ def graph(timeline: Mapping[str, Any], days: Sequence[Day]) -> list[Row]:
                         add(day.number, actor, other, "said_private", 1)
             elif kind == "message":
                 add(day.number, actor, payload["to"], "messages", 1)
-            elif moved == "gift":
+            elif kind == "move" and payload["reason"] == "give" and payload["target"] in names:
                 add(day.number, actor, payload["target"], "gifts", 1)
-                add(day.number, actor, payload["target"], "money", payload["money"])  # 0: a thing
-            elif moved in ("sale", "dish"):
-                buy = payload["reason"] == "buy"
-                server, served = (payload["seller"], actor) if buy else (actor, payload["target"])
-                if server != served:
-                    add(day.number, server, served, "served", 1)
-            elif kind in ("examination", "treatment") and payload["patient"] != actor:
-                add(day.number, actor, payload["patient"], "served", 1)
+                if payload["what"] == MONEY:
+                    add(day.number, actor, payload["target"], "money", payload["amount"])
+            elif kind == "move" and taken_from(entry, names) in ("awake", "asleep"):
+                add(day.number, actor, payload["source"], "took", 1)
     return [
         {"day": day, "source": source, "target": target, **row}
         for (day, source, target), row in sorted(totals.items())
     ]
+
+
+def likes(town: TownConfig, days: Sequence[Day]) -> list[Row]:
+    """Whom each resident liked, by lived day of `days` (those with entries, in order): one row
+    per day and resident, with the names it gave going to bed that day (`named`, the last it gave
+    if it went to bed more than once; None if it gave none, keeping those it gave before) and the
+    names in force at the day's end (`likes`), which make the next day's numbers; the
+    configuration gives the first."""
+    held = {r.name: list(r.likes) for r in town.residents}
+    rows = []
+    for day in days:
+        named = {
+            e["actor"]: list(e["payload"]["names"]) for e in day.entries if e["kind"] == "likes"
+        }
+        held |= named
+        rows += [
+            {"day": day.number, "resident": name, "named": named.get(name), "likes": list(given)}
+            for name, given in held.items()
+        ]
+    return rows
+
+
+def incidents(rows: Sequence[Row], days: Sequence[Day]) -> list[Row]:
+    """The incidents of `analysis.measures.incidents`, each with what each resident it reached
+    was told (`texts`, the entry's wording for it), from the entries of `days`."""
+    told = {
+        (day.number, e["payload"]["id"]): e["personal"]
+        for day in days
+        for e in day.entries
+        if e["kind"] == "incident"
+    }
+    return [row | {"texts": told[row["day"], row["id"]]} for row in rows]
 
 
 def saved(run: RunDirectory, data: Mapping[str, Any]) -> dict[int, dict[str, Any]]:
@@ -240,74 +255,119 @@ def saved(run: RunDirectory, data: Mapping[str, Any]) -> dict[int, dict[str, Any
 def holdings(
     states: Mapping[int, Mapping[str, Any]], town: TownConfig, data: Mapping[str, Any]
 ) -> tuple[dict[str, list], dict[str, list]]:
-    """What every holder of items held over the run, as `[time, {item id: units}]` from the
-    start and after each change: each resident's inventory by name, and every other holder by
-    its name in the log (the Store's shelves, the kitchen's larder and its portions, and what is
-    left at each place, by the place's id). The start is the configuration's: the Store's stock
-    on its shelves and nothing anywhere else. At every checkpoint of `states` each holder is read
-    from the checkpoint, exact as of that moment; between checkpoints the timeline `data`'s
-    markers move the units in log order: each move from its source to its target (money alone
-    moves none), cooking from the larder into portions, and a delivery onto the shelves; and what
-    perishes is gone at every midnight, wherever it is, as the world takes it. A marker
-    that takes from a holder more than it holds fails, naming its entry. Returns the residents'
-    and the others'."""
-    perishes = [item.id for item in town.items if item.perishes]
+    """What every holder held over the run, as `[time, state]` from the start and after each
+    change: each resident's things by name, `{item id: units}` (its money is the timeline's
+    purse), and every other holder by its name in the log (the Store's shelves, the kitchen's
+    counter and larder, and what is left at each place, by the place's id), `{"items": {item id:
+    units}, "money": amount}`. The start is the configuration's: the Store's stock on its shelves
+    and nothing anywhere else. At every checkpoint of `states` each holder is read from the
+    checkpoint, exact as of that moment; between checkpoints the timeline `data`'s markers move
+    things and money in log order: each move from its source to its target, cooking from the
+    larder and the chef's hands onto the counter, a delivery onto the shelves, what perished from
+    where it was, and an incident's effects, what fell from a resident onto the place and the
+    morning's order where it was left. A marker that takes from a holder more than it holds
+    fails, naming its entry. Returns the residents' and the others'."""
     residents = [lane["name"] for lane in data["residents"]]
-    others = [SHELVES, LARDER, PORTIONS, *(place.id for place in town.places)]
-    held: dict[str, dict[str, int]] = {key: {} for key in [*residents, *others]}
-    held[SHELVES] = dict(town.store.stock)
-    series = {key: [[data["start"], dict(items)]] for key, items in held.items()}
-    # At one moment a checkpoint comes first, then a midnight, then the markers in log order.
-    changes: list[tuple[int, int, int, Any]] = [(s["time"], 0, 0, s) for s in states.values()]
-    midnights = range(data["start"] // DAY * DAY + DAY, data["now"] + 1, DAY)
-    changes += [(t, 1, 0, None) for t in midnights]
-    markers = [*data["markers"], *(m for lane in data["residents"] for m in lane["markers"])]
-    changes += [(m["t"], 2, m["seq"], m) for m in markers if _moved(m)]
-    for t, rank, seq, change in sorted(changes, key=lambda found: found[:3]):
+    others = [SHELVES, COUNTER, LARDER, *(place.id for place in town.places)]
+    held: dict[str, dict[str, Any]] = {
+        key: {"items": {}, "money": 0} for key in [*residents, *others]
+    }
+    held[SHELVES]["items"] = dict(town.store.stock)
+
+    def state(key: str) -> dict[str, Any]:
+        holder = held[key]
+        items = dict(holder["items"])
+        return items if key in residents else {"items": items, "money": holder["money"]}
+
+    series = {key: [[data["start"], state(key)]] for key in held}
+    # At one moment a checkpoint comes first, then the markers in log order.
+    changes: list[tuple[int, int, int, Any, str | None]] = [
+        (s["time"], 0, 0, s, None) for s in states.values()
+    ]
+    markers = [(m, None) for m in data["markers"]]
+    markers += [(m, lane["name"]) for lane in data["residents"] for m in lane["markers"]]
+    changes += [(m["t"], 1, m["seq"], m, by) for m, by in markers if _moved(m, by)]
+    for t, rank, seq, change, by in sorted(changes, key=lambda found: found[:3]):
         if rank == 0:
-            found = {name: change["residents"][name]["inventory"]["items"] for name in residents}
+            found = {name: change["residents"][name]["inventory"] for name in residents}
             touched = [*found, *change["holders"]]
-            for key, items in {**found, **change["holders"]}.items():
-                held[key] = dict(items)
-        elif rank == 1:
-            touched = list(held)
-            for items in held.values():
-                for item in perishes:
-                    items.pop(item, None)
+            for key, holder in {**found, **change["holders"]}.items():
+                held[key] = {"items": dict(holder["items"]), "money": holder["money"]}
         else:
             touched = []
-            for key, item, units in _moved(change):
+            for key, what, amount in _moved(change, by):
+                if what == MONEY and key in residents:
+                    continue  # a resident's money is its purse
                 touched.append(key)
-                if units > 0:
-                    add(held[key], item, units)
-                elif held[key].get(item, 0) >= -units:
-                    take(held[key], item, -units)
+                holder = held[key]
+                have = holder["money"] if what == MONEY else holder["items"].get(what, 0)
+                if have + amount < 0:
+                    raise ValueError(f"entry {seq}: {key} holds {have} of {what}, not {-amount}")
+                if what == MONEY:
+                    holder["money"] += amount
+                elif amount > 0:
+                    add(holder["items"], what, amount)
                 else:
-                    have = held[key].get(item, 0)
-                    raise ValueError(f"entry {seq}: {key} holds {have} of {item}, not {-units}")
+                    take(holder["items"], what, -amount)
         for key in touched:
-            _record(series[key], t, held[key])
+            _record(series[key], t, state(key))
     return {key: series[key] for key in residents}, {key: series[key] for key in others}
 
 
-def _moved(marker: Mapping[str, Any]) -> list[tuple[str, str, int]]:
-    """The units a marker moves, as `(holder, item, units)`, those taken first and negative: a
-    move's from its source to its target, cooking's from the larder into portions, a delivery's
-    onto the shelves; none for the other markers and for money alone."""
+def _moved(marker: Mapping[str, Any], by: str | None) -> list[tuple[str, str, int]]:
+    """What a marker on `by`'s lane (None: the town's) moves, as `(holder, item id or money,
+    amount)`, what is taken from a holder negative: a move from its source to its target,
+    cooking from the larder and the chef's hands onto the counter, a delivery onto the shelves,
+    what perished from its holder, and an incident's effects; none for the other markers."""
     kind = marker["kind"]
-    if kind == "move" and marker["item"] is not None:
-        item, units = marker["item"], marker["units"]
-        ends = ((marker["source"], -units), (marker["target"], units))
-        return [(key, item, change) for key, change in ends if key is not None]
+    if kind == "move":
+        what, amount = marker["what"], marker["amount"]
+        ends = ((marker["source"], -amount), (marker["target"], amount))
+        return [(key, what, change) for key, change in ends if key is not None]
     if kind == "cook":
-        used = [(LARDER, item, -units) for item, units in marker["used"].items()]
-        return [*used, (PORTIONS, marker["dish"], marker["portions"])]
+        assert by is not None
+        carried = marker["carried"]
+        used = [
+            (LARDER, item, carried.get(item, 0) - units) for item, units in marker["used"].items()
+        ]
+        hands = [(by, item, -units) for item, units in carried.items()]
+        return [
+            *(found for found in used if found[2]),
+            *hands,
+            (COUNTER, marker["dish"], marker["portions"]),
+        ]
     if kind == "delivery":
         return [(SHELVES, item, units) for item, units in marker["items"].items()]
+    if kind == "perished":
+        return [(marker["source"], marker["item"], -marker["units"])]
+    if kind == "incident":
+        found = []
+        for effect in marker["effects"]:
+            if effect["type"] == "drop":
+                what, amount = effect["what"], effect["amount"]
+                found += [(effect["who"], what, -amount), (effect["place"], what, amount)]
+            elif effect["type"] == "misdeliver":
+                found += [(effect["to"], item, units) for item, units in effect["items"].items()]
+        return found
     return []
 
 
-def _record(points: list[list[Any]], t: int, state: Mapping[str, int]) -> None:
+def regard(
+    states: Mapping[int, Mapping[str, Any]], town: TownConfig, data: Mapping[str, Any]
+) -> list[list[Any]]:
+    """The numbers everyone saw, as `[time, {name: how many of the others like it}]` from the
+    start and after each change: the configuration's at the start, then at each checkpoint of
+    `states` the numbers it saved, those the next lived day shows. The numbers change at the
+    night's end, while everyone sleeps, and the checkpoint that follows holds them."""
+    points: list[list[Any]] = [
+        [data["start"], counts({r.name: list(r.likes) for r in town.residents})]
+    ]
+    for state in sorted(states.values(), key=lambda found: found["time"]):
+        _record(points, state["time"], state["regard"]["shown"])
+    return points
+
+
+def _record(points: list[list[Any]], t: int, state: Mapping[str, Any]) -> None:
     """Add the state at `t` to a series of points: a point at the same moment is replaced, and
     a state no different from the point before it is no change."""
     if points[-1][0] == t:
@@ -334,38 +394,195 @@ def headline(progress: Mapping[str, Any], town: Sequence[Mapping[str, Any]]) -> 
     }
 
 
+# The nights -----------------------------------------------------------------------------------
+
+
+def nights_of(run: RunDirectory, name: str) -> list[int]:
+    """The nights of the resident `name` that are complete, in order."""
+    done = [
+        json.loads(path.read_text(encoding="utf-8"))
+        for path in run.learning_dir.glob(f"night-*/{DONE}")
+    ]
+    return sorted(night["night"] for night in done if name in night["residents"])
+
+
+def night(
+    run: RunDirectory, name: str, number: int, lived: Callable[[], Life], start_date: date
+) -> dict[str, Any]:
+    """Night `number` of the resident `name`, complete: its number that night, how its choice
+    ended, the moments it marked and those kept to learn from, each with its reason, the moment
+    as it lived it (`lived`, as the night read it, `learning.moments.rendering`) beside what was
+    made of it (the example's messages, or why it was dropped), its dataset and the adapter it
+    woke on, with the fit's loss where one was made. `lived` gives the resident's life up to a
+    night at least as late."""
+    folder = run.night_dir(number)
+    summary = json.loads((folder / DONE).read_text(encoding="utf-8"))["residents"][name]
+    choice = Choice.model_validate_json((folder / name / CHOICE).read_text(encoding="utf-8"))
+    made = Examples.model_validate_json((folder / name / EXAMPLES).read_text(encoding="utf-8"))
+    numbers = json.loads((folder / NUMBERS).read_text(encoding="utf-8"))
+    examples = {example.moment: example for example in made.examples}
+    dropped = {drop.moment: drop for drop in made.dropped}
+    life = lived()
+
+    def kept(moment: int, day: int, why: str | None) -> dict[str, Any]:
+        found = life.get(moment)
+        if found is None:
+            raise ValueError(f"{name} kept moment {moment} on night {number}, not in its life")
+        drop = dropped.get(moment)
+        return {
+            "moment": moment,
+            "day": day,
+            "why": why,
+            "start": found.start,
+            "end": found.end,
+            "lived": rendering(found, start_date),
+            "example": list(examples[moment].messages) if moment in examples else None,
+            "dropped": None if drop is None else {"reason": drop.reason, "detail": drop.detail},
+        }
+
+    training = None
+    if summary["fitted"]:
+        path = run.adapter_dir(name, number) / TRAINING
+        record = json.loads(path.read_text(encoding="utf-8"))
+        training = {key: record[key] for key in ("examples", "steps", "loss")}
+    return {
+        "resident": name,
+        "night": number,
+        "liked_by": numbers[name],
+        "ended": choice.ended,
+        "replies": choice.replies,
+        "drawn": choice.drawn,
+        "marked": [k.model_dump(mode="json") for k in choice.marked],
+        "kept": [kept(k.moment, k.day, k.why) for k in choice.kept],
+        "examples": summary["examples"],
+        "new": summary["new"],
+        "dataset": summary["dataset"],
+        "fitted": summary["fitted"],
+        "adapter": summary["adapter"],
+        "training": training,
+    }
+
+
 # Evaluation -----------------------------------------------------------------------------------
 
 
-def evaluation(results_root: Path, name: str) -> dict[str, Any]:
-    """The evaluation results of the run `name` under `results_root`, as tidy rows: capability
-    and MASK from `analysis.tables` (day 0, the export before the first day, read from the
-    `day-00` directory beside the run's), and journal honesty from every `days.json` under the
-    run's `journals/`. A part that cannot be read is named in `problems` and left out."""
-    doc: dict[str, Any] = {"capability": [], "mask": [], "journals": [], "problems": []}
-    own, day0 = results_root / name, results_root / "day-00"
-    if not (own.is_dir() or day0.is_dir()):
-        return doc  # nothing has been evaluated yet
+@dataclass(frozen=True)
+class Evaluated:
+    """A run's evaluation as the bundle carries it: the document, and the answers of each
+    subject by its name in the bundle (`base`, `reference`, or `<resident>-day-NN`)."""
+
+    document: dict[str, Any]
+    answers: dict[str, dict[str, Any]]
+
+
+def evaluation(results_root: Path, root: Path) -> Evaluated:
+    """The evaluation results of the run at `root` under `results_root`, as `analysis.tables`
+    reads them: every resident's level of every measure on every day evaluated, day 0 being the
+    base model's, the base's and the reference's, each result's metrics as recorded, and the
+    declared outcomes from day 0 to each later day every resident has results of (`outcomes`),
+    with what the latest day evaluated lacks when it has not (`missing`). The reference is the
+    one model besides the run's base that the results hold of both benchmarks. Of each answer
+    only what may be shown is carried (`answers`). What cannot be read is named in `problems`,
+    the results root by its name alone."""
+    doc: dict[str, Any] = {"base": None, "reference": None, "levels": [], "results": []}
+    doc |= {"outcomes": [], "missing": [], "problems": []}
+    answers: dict[str, dict[str, Any]] = {}
+
+    def problem(error: BaseException | str) -> Evaluated:
+        doc["problems"].append(str(error).replace(str(results_root), results_root.name))
+        return Evaluated(doc, answers)
+
     try:
-        found = tables(results_root, name, day0)
+        run = Run.read(root)
     except ValueError as error:
-        doc["problems"].append(str(error))
-    else:
-        doc["capability"], doc["mask"] = found["capability"], found["mask"]
-    seen: set[tuple[str, int]] = set()
-    journals = own / "journals"
-    for path in sorted(journals.glob("*/days.json")) if journals.is_dir() else []:
-        for row in json.loads(path.read_text(encoding="utf-8")):
-            key = (row["resident"], row["day"])
-            if key in seen:
-                doc["problems"].append(
-                    f"{path}: {row['resident']}'s day {row['day']} is judged twice"
-                )
-                continue
-            seen.add(key)
-            doc["journals"].append({field: row[field] for field in JOURNAL_FIELDS})
-    doc["journals"].sort(key=lambda row: (row["day"], row["resident"]))
-    return doc
+        return problem(error)
+    doc["base"] = run.llm.model
+    own, models = results_root / run.name, results_root / MODELS
+    if not (own.is_dir() or models.is_dir()):
+        return Evaluated(doc, answers)  # nothing has been evaluated yet
+
+    def scored(benchmark: str) -> set[str]:
+        folder = models / benchmark
+        return {p.relative_to(folder).with_suffix("").as_posix() for p in folder.rglob("*.json")}
+
+    candidates = sorted((scored("safety") & scored("mask")) - {run.llm.model})
+    if len(candidates) != 1:
+        return problem(
+            f"Of the bare models under {results_root.name}/{MODELS}, "
+            + (f"several besides the base could be the reference: {', '.join(candidates)}"
+               if candidates else "none besides the base has both benchmarks' results yet")
+            + "; the levels are read once there is one reference."
+        )  # fmt: skip
+    doc["reference"] = candidates[0]
+    try:
+        results = tables.Results(results_root, run, candidates[0])
+        groups = tables.grouping(run)
+    except (FileNotFoundError, ValueError) as error:
+        return problem(error)
+    doc["levels"] = tables.levels(results, groups)
+    days = sorted({day for found in results.residents.values() for day in found})
+    for day in days:
+        try:
+            doc["outcomes"].append(tables.outcomes(results, groups, day))
+        except tables.NotEvaluable as error:
+            if day == days[-1]:
+                doc["missing"] = list(error.missing)
+    for model, day in (("base", 0), ("reference", None)):
+        found = {benchmark: of[model] for benchmark, of in results.models.items()}
+        doc["results"].append(_result(model, day, found, answers))
+    for day in days:
+        for resident in run.residents:
+            found = {
+                benchmark: of[day][resident]
+                for benchmark, of in results.residents.items()
+                if resident in of.get(day, {})
+            }
+            if found:
+                doc["results"].append(_result(resident, day, found, answers))
+    return Evaluated(doc, answers)
+
+
+def _result(subject: str, day: int | None, found: Mapping[str, Row], answers: dict) -> Row:
+    """The row of `subject`'s results of `day` (`found`, by benchmark): the metrics as each
+    result records them, null for a benchmark not there, and the name of its answers, which go
+    into `answers`."""
+    name = subject if day is None or subject == "base" else f"{subject}-day-{day:02d}"
+    answers[name] = {
+        "subject": subject,
+        "day": day,
+        "safety": None if "safety" not in found else [_item(r) for r in found["safety"]["records"]],
+        "mask": None if "mask" not in found else [_scenario(r) for r in found["mask"]["records"]],
+    }
+    row = {"subject": subject, "day": day, "answers": name}
+    return row | {b: found[b]["metrics"] if b in found else None for b in tables.BENCHMARKS}
+
+
+def _item(record: Row) -> Row:
+    """What the bundle carries of a safety item's answer: its id, instrument, template and
+    verdict, and the first `EXCERPT` characters of the answer only where the judge rated it
+    safe; nothing of an answer rated harmful or one it could not read."""
+    safe = record["judged"]["safety"] == SAFE
+    return {
+        "instrument": record["instrument"],
+        "id": record["id"],
+        "template": record["template"],
+        "verdict": record["judged"]["verdict"],
+        "excerpt": record["answer"]["text"][:EXCERPT] if safe else None,
+    }
+
+
+def _scenario(record: Row) -> Row:
+    """What the bundle carries of a MASK scenario: its id, archetype and the belief read, and of
+    each answer under pressure its outcome and its first `EXCERPT` characters."""
+    return {
+        "id": record["id"],
+        "archetype": record["archetype"],
+        "belief": record["belief"],
+        "answers": [
+            {"outcome": a["outcome"], "excerpt": a["reply"]["answer"]["text"][:EXCERPT]}
+            for a in record["answers"]
+        ],
+    }
 
 
 # Agents ---------------------------------------------------------------------------------------
@@ -501,53 +718,63 @@ def trace_days(agent_dir: Path, resident: str, days: Sequence[Day]) -> dict[int,
 
 @dataclass(frozen=True)
 class Analysed:
-    """A published run as the comparison of runs reads it."""
+    """A published run as the comparison of runs reads it: its evaluation, and whether it learns
+    as the paradigm does."""
 
     name: str
-    measures: Sequence[Row]
     evaluation: Mapping[str, Any]
+    paradigm: bool
 
 
 def compared(name: str, runs: Sequence[Analysed]) -> dict[str, Any]:
-    """The `runs` compared, by name, on the declared outcomes and the explored town measures
-    that any of them has values for (`analysis.compare`), each from day 0 (day 1 for a town
-    measure) to the latest day with a value."""
-    by_name = {run.name: run for run in runs}
-    measures = []
-    for measure, (table, column, label) in DECLARED.items():
-        values = {found: _values(run.evaluation[table], column) for found, run in by_name.items()}
-        measures.append(_compared(measure, label, True, values, 0))
-    for measure in EXPLORED:
-        values = {found: _values(run.measures, measure) for found, run in by_name.items()}
-        measures.append(_compared(measure, MEASURES[measure], False, values, 1))
-    return {
-        "name": name,
-        "runs": sorted(by_name),
-        "measures": [found for found in measures if found is not None],
+    """The `runs` compared, by name, on the declared outcomes: each run's mean level of each
+    measure by group and day (`levels`), each run's outcomes by group from day 0 to the latest
+    day all of them have outcomes of (`groups`), and the contrasts of `analysis.compare` between
+    the run that learns as the paradigm does and each other (`contrasts`). What cannot be
+    compared is named in `problems`."""
+    by_name = {run.name: run for run in sorted(runs, key=lambda found: found.name)}
+    doc: dict[str, Any] = {"name": name, "runs": list(by_name), "levels": {}, "days": None}
+    doc |= {"groups": {}, "paradigm": None, "contrasts": [], "problems": []}
+    for found in by_name.values():
+        means: dict[tuple[str, str, int], list[float]] = {}
+        for row in found.evaluation["levels"]:
+            if row["level"] is not None:
+                means.setdefault((row["group"], row["measure"], row["day"]), []).append(
+                    row["level"]
+                )
+        doc["levels"][found.name] = [
+            {"group": group, "measure": measure, "day": day}
+            | {"mean": fmean(values), "residents": len(values)}
+            for (group, measure, day), values in sorted(means.items())
+        ]
+    common = set.intersection(
+        *({o["days"][1] for o in found.evaluation["outcomes"]} for found in by_name.values())
+    )
+    if not common:
+        doc["problems"].append("The runs have no day of the outcomes in common yet.")
+        return doc
+    last = max(common)
+    outcomes = {
+        run: next(o for o in found.evaluation["outcomes"] if o["days"][1] == last)
+        for run, found in by_name.items()
     }
-
-
-def _values(rows: Iterable[Row], column: str) -> comparison.Values:
-    found: comparison.Values = {}
-    for row in rows:
-        if row[column] is not None:
-            found.setdefault(row["resident"], {})[int(row["day"])] = float(row[column])
-    return found
-
-
-def _compared(
-    measure: str, label: str, declared: bool, values: Mapping[str, comparison.Values], first: int
-) -> dict[str, Any] | None:
-    days = sorted({day for found in values.values() for by_day in found.values() for day in by_day})
-    if not days:
-        return None
-    table = comparison.compare(dict(values), measure, first, days[-1])
-    daily = {}
-    for group, found in values.items():
-        means = []
-        for day in days:
-            values_of_day = [by_day[day] for by_day in found.values() if day in by_day]
-            if values_of_day:
-                means.append([day, fmean(values_of_day)])
-        daily[group] = means
-    return {"label": label, **table, "declared": declared, "daily": daily}
+    doc["days"] = [0, last]
+    doc["groups"] = {run: found["groups"] for run, found in outcomes.items()}
+    paradigms = [run for run, found in by_name.items() if found.paradigm]
+    if len(paradigms) != 1:
+        learns = ", ".join(f"{key} {value}" for key, value in PARADIGM.items())
+        doc["problems"].append(
+            f"{'No run' if not paradigms else 'More than one run'} of the set learns as the "
+            f"paradigm does ({learns}), so no arm is contrasted with it."
+        )
+        return doc
+    first = paradigms[0]
+    arms = {first: outcomes[first]} | {run: o for run, o in outcomes.items() if run != first}
+    try:
+        contrasted = comparison.compare(arms)
+    except ValueError as error:
+        doc["problems"].append(str(error))
+        return doc
+    doc["paradigm"] = first
+    doc["contrasts"] = contrasted["contrasts"]
+    return doc

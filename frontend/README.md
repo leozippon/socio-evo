@@ -13,7 +13,7 @@ Publish every run under a runs root, with the evaluation results under a results
 ~/miniconda3/envs/socio-evo/bin/python -m frontend.publish --runs-root runs --out build/site --watch 60
 ```
 
-The output directory must be empty, or a site published before. Publishing never writes into a run directory or the results root, and it refuses an output directory inside either. A run is a directory holding a manifest directly under the runs root or one level further down (`runs/a`, `runs/pilot/a`), and is named by that path. A run whose frozen configuration is missing or cannot be read by the current code, or whose files cannot be published (an error is printed), is skipped and named in the index with the reason in plain words and the error itself, so a run recorded under another schema is left out rather than misread and never stops the others from being published; the home page lists such runs quietly as not published. Re-publishing rewrites only the files whose content changed; with `--watch` it publishes again every so many seconds until interrupted, skipping runs whose files have not changed, and reports a failed publish without stopping.
+The output directory must be empty, or a site published before. Publishing never writes into a run directory or the results root, and it refuses an output directory inside either. A run is a directory holding a manifest directly under the runs root or one level further down (`runs/a`, `runs/pilot/a`), and is named by that path. A run whose frozen configuration is missing or cannot be read by the current code, a run the earlier town lived (whose log has the purchases and hand-overs of the town before the open actions, which this code does not read), and a run whose files cannot be published (an error is printed) are skipped and named in the index with the reason in plain words and the error itself, so a run recorded under another schema is left out rather than misread and never stops the others from being published; the home page lists such runs quietly as not published. A town that had the web is published without the web's search key. Re-publishing rewrites only the files whose content changed; with `--watch` it publishes again every so many seconds until interrupted, skipping runs whose files have not changed, and reports a failed publish without stopping.
 
 Serve the runs locally while developing:
 
@@ -85,28 +85,30 @@ The bundle is a tree of documents, each referring to the next:
 data/
 ├── manifest.json                          the bundle format and its kinds of file
 ├── index.json                             every run, with a few headline numbers; runs skipped; sets of runs compared
-├── compare/<set>.json                     the runs of a set compared
+├── compare/<set>.json                     the runs of a set compared on the benchmarks
 └── runs/<run>/
     ├── run.json                           the run's status and references to all its files
     ├── world.json                         the town, its residents and the rules they read
-    ├── timeline.json                      every resident's events side by side (frontend.timeline)
+    ├── timeline.json                      every resident's events side by side (frontend.timeline), what every holder held, the numbers everyone saw
     ├── progress.json                      the run day by day (frontend.progress)
-    ├── measures.json                      measures of every closed day, and the social graph
-    ├── evaluation.json                    capability, honesty under pressure and journal honesty as tidy rows
+    ├── measures.json                      measures of every closed day, the takes, the incidents, the nights, whom each liked, and the social graph
+    ├── evaluation.json                    the benchmarks' levels, results and outcomes
+    ├── answers/<subject>.json             what may be shown of one subject's answers
     ├── events/day-NN.json                 the world log of one lived day
     └── agents/<agent>/
         ├── versions.json                  the resident's version history
         ├── day-NN.json                    the versions of one day: diffs and the files then held
-        └── trace-day-NN.json              the raw trace of the resident's runtime on one day
+        ├── trace-day-NN.json              the raw trace of the resident's runtime on one day
+        └── night-NN.json                  what the resident kept and learnt on one night
 ```
 
 Every reference is a URL relative to the document that contains it, so resolve it against that document's URL (`new URL(ref, documentUrl)`); the site works under any base path. A reference ends in the hash of the content it points to. `?v=<hash>` marks a settled file, whose content never changes, so a document fetched by such a reference may be cached forever. `?r=<hash>` marks a file that may change; when it does, every reference to it changes too. A viewer therefore polls only `data/index.json`, and fetches a document again only when the reference it holds has changed. The page and its scripts, `index.json` and `manifest.json` are fetched afresh each time.
 
 Each document is written before any document that refers to it, and every file is replaced atomically, so a reader never sees a torn file or a reference to a file not yet written. A file nothing refers to any more is removed at the end of a publish; a 404 for a reference therefore means the index has moved on and should be fetched again.
 
-Times are simulated: an integer count of seconds since 00:00 of calendar day 1, whose date `world.json` gives as `start_date`. A lived day runs from one checkpoint to the next (`timeline.json` `days`), so day N begins at the checkpoint hour of calendar day N and ends at the same hour of calendar day N+1; it is the day the viewer, the measures and the evaluation count by. Day 0 appears only in the agents' versions and the evaluation, as the resident as created. Amounts are integers in the town's currency, which `world.json` gives as `currency`, the symbol money is written with. Wall-clock times are ISO 8601 strings in UTC, or Unix seconds where a field says so.
+Times are simulated: an integer count of seconds since 00:00 of calendar day 1, whose date `world.json` gives as `start_date`. A lived day runs from one checkpoint to the next (`timeline.json` `days`), so day N begins at the checkpoint hour of calendar day N and ends at the same hour of calendar day N+1; it is the day the viewer, the measures and the evaluation count by. Night N is lived after the checkpoint of day N, and its adapters are those scored as day N. Day 0 appears only in the agents' versions and the evaluation, as the resident as created and the base model. Amounts are integers in the town's currency, which `world.json` gives as `currency`, the symbol money is written with. Wall-clock times are ISO 8601 strings in UTC, or Unix seconds where a field says so.
 
-A run in progress is published as far as it has gone. Its days up to the latest checkpoint (`settled_day`) are final: their files are settled. The day in progress is partial, and the progress document counts what the log holds so far. A run that failed or was interrupted resumes from its latest checkpoint and discards anything after it, so a file that is not settled can change in any way, even lose entries; replace a copy of it whenever its reference changes.
+A run in progress is published as far as it has gone. Its days up to the latest checkpoint (`settled_day`) are final: their files are settled, and so is the file of every night once it is complete. The day in progress is partial, and the progress document counts what the log holds so far. A run that failed or was interrupted resumes from its latest checkpoint and discards anything after it, so a file that is not settled can change in any way, even lose entries; replace a copy of it whenever its reference changes.
 
 `manifest.json` carries the format number. A viewer built for one format should refuse a bundle of another. The publisher bumps the number whenever a document changes so that a viewer of the previous format would misread it: a field removed or renamed, or its type or meaning changed. A field or a kind of file added keeps the number, so a viewer must ignore fields and kinds it does not know. Settled files are kept only from a site whose manifest is exactly the one the publisher writes, so a site published before a new kind of file was added is rebuilt.
 
@@ -118,10 +120,10 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `format` | integer | The bundle format, currently 11. |
+| `format` | integer | The bundle format, currently 12. |
 | `files` | array | Every kind of file in the bundle. |
 | `files[].kind` | string | The kind, named as in this section's headings. |
-| `files[].path` | string | Its path pattern; `{day}` is a two-digit day number. |
+| `files[].path` | string | Its path pattern; `{day}` and `{night}` are two-digit numbers. |
 
 ### `index.json`
 
@@ -151,14 +153,16 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.accepted` | integer | Hand-ins accepted. |
 | `runs[].headline.rejected` | integer | Hand-ins not accepted. |
 | `runs[].headline.withdrawn` | integer | Tasks their clients withdrew, not accepted in time. |
-| `runs[].headline.sales` | integer | Purchases at the Store's counter, the chef's for the kitchen among them. |
-| `runs[].headline.dishes` | integer | Dishes from the kitchen's portions: bought at the restaurant, or handed over by the chef unpaid. |
+| `runs[].headline.took_from_shelves` | integer | Takes from the Store's shelves, whoever took and whether or not anything was given for them. |
+| `runs[].headline.took_from_counter` | integer | Takes from the kitchen's counter, likewise. |
+| `runs[].headline.took_from_people` | integer | Takes from another resident, awake or asleep. |
+| `runs[].headline.gifts` | integer | Money or things one resident gave another, payments among them. |
 | `runs[].headline.examinations` | integer | Examinations by the doctor. |
 | `runs[].headline.treatments` | integer | Treatments by the doctor. |
 | `runs[].headline.announcements` | integer | The mayor's announcements. |
 | `runs[].headline.speeches` | integer | Things said. |
 | `runs[].headline.messages` | integer | Written messages sent. |
-| `runs[].headline.gifts` | integer | Gifts: money or things one resident passed another, on whatever terms. |
+| `runs[].headline.incidents` | integer | Incidents the world staged. |
 | `runs[].headline.journals` | integer | Bedtimes with a journal entry. |
 | `runs[].headline.illnesses` | integer | Residents falling ill at midnight. |
 | `runs[].headline.bedridden` | integer | Residents whose health ran out, who took to their beds. |
@@ -167,7 +171,7 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `runs[].headline.treasury` | integer or null | The treasury's balance at the last checkpoint, as `measures.json` `town` gives it; null before the first. |
 | `skipped` | array | Runs found under the runs root but left out, by name. |
 | `skipped[].name` | string | The run's path under the runs root. |
-| `skipped[].reason` | string | Why, in a sentence a reader of the site can follow: its frozen configuration cannot be read by the code that publishes, or publishing its files failed. |
+| `skipped[].reason` | string | Why, in a sentence a reader of the site can follow: its frozen configuration cannot be read by the code that publishes, the earlier town lived it (its log has moves of purchases and hand-overs, which this code does not read), or publishing its files failed. |
 | `skipped[].detail` | string | The error as the code reported it, for whoever repairs the run or the code; a path inside the run names the run instead of its directory. |
 | `comparisons` | array | The sets of runs compared: the runs directly under the runs root (named after it) and those under each of its subdirectories (named after it), each set of at least two runs. |
 | `comparisons[].name` | string | The set's name. |
@@ -208,12 +212,15 @@ Paths below are relative to `data/`. In the field tables, `a[].b` is field `b` o
 | `residents[].trace_days[].day` | integer | The lived day. |
 | `residents[].trace_days[].url` | reference | Its `trace-day-NN.json`. |
 | `residents[].trace_days[].records` | integer | Its number of records. |
+| `residents[].nights` | array | The nights complete for it, in order; none in a run that does not learn. |
+| `residents[].nights[].night` | integer | The night. |
+| `residents[].nights[].url` | reference | Its `night-NN.json`, settled. |
 
 To load a long run incrementally, fetch the event days you need; a viewer that has seen entries up to `seq` S needs only the days whose `last_seq` exceeds S.
 
 ### `runs/{run}/world.json`
 
-The town and the rules, from the configuration frozen when the run was created. It never changes.
+The town and the rules, from the configuration frozen when the run was created. It never changes. A town that had the web at the Office is read without the web's search key, which is needed to live in it, not to publish it.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -237,31 +244,43 @@ The town and the rules, from the configuration frozen when the run was created. 
 | `residents` | array | Every resident, in configured order. |
 | `residents[].name` | string | The resident's name. |
 | `residents[].home` | string | The id of its home. |
-| `residents[].occupation` | string | The id of its occupation, one of `occupations`. |
+| `residents[].occupation` | string or null | The id of its occupation, one of `occupations`; null for one without, who has no workplace and no work. |
 | `residents[].purse` | integer | The money it started with. |
+| `residents[].likes` | array of strings | The residents it liked at the start, whose numbers they make. |
+| `residents[].newcomer` | boolean | Whether it is one of the newcomers, whom the analysis reports apart. |
 | `residents[].rules` | string | The standing rules of the town as this resident was told them. |
 | `occupations` | array | The occupations as configured. |
 | `occupations[].id` | string | `programmer`, `team-leader`, `chef`, `shopkeeper`, `doctor` or `mayor`. |
 | `occupations[].title` | string | How a sentence names it, such as `the chef`. |
 | `occupations[].workplace` | string | The id of the place where its work is done and its hours at work count. |
 | `occupations[].duty` | string | Where its hours at work run once one has sat down: `workplace`, until one leaves it, or `anywhere`, wherever one goes until one stops (the mayor's). |
-| `occupations[].salary` | integer | What the treasury pays it at midnight a day, as far as it holds the money (the mayor's); 0 for the others, who are paid by the clients, their customers and their patients, never for their time. |
+| `occupations[].salary` | integer | What the treasury pays it at midnight a day, as far as it holds the money (the mayor's); 0 for the others, who are paid by the clients and by what people give them, never for their time. |
 | `treasury` | object | The town's treasury as configured. |
 | `treasury.start` | integer | The balance it starts with. |
 | `treasury.spares` | integer | What the rent and the daily charges leave in a purse at midnight, a day's bread; what they cannot take is owed. |
-| `tax` | number | The share of every payment a resident receives for its work (a client's share, a sale, a dish, a fee) withheld into the treasury as it is received. |
+| `tax` | number | The share of every payment for work (a client's share, money given to one at work) withheld into the treasury as it is received. |
 | `work` | object | The work at the office as configured: among its fields `payment`, what a client pays for an accepted task, `leader_share` of it to the team leader and the rest to the programmer who handed it in, `acceptance_runs` per task and day, `tasks_a_day`, the mean number coming in a day between `arrive_from` and `arrive_until`, and `expiry_days`, the days after the one it came in at whose end an unaccepted task is withdrawn. |
-| `goods` | array | The items of the catalogue the supplier sells, which the Store sells, as configured, each with `id`, `name`, `wholesale` (what the supplier charges for a unit), `price` (the Store's price at the start), `kind` (`consumable` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`), `ingredients` (empty), `perishes` and the fields of its kind and effect (`fee_per_day`, `nourishment`, 0 for an ingredient, `factor`, `phrase`), null where they do not apply. |
+| `goods` | array | The items of the catalogue the supplier sells, which stand on the Store's shelves, as configured, each with `id`, `name`, `wholesale` (what the supplier charges for a unit), `price` (the price posted at the start), `kind` (`consumable` or `durable`), `effect` (`food`, `travel`, `messaging` or `appearance`), `ingredients` (empty), `perishes` and the fields of its kind and effect (`fee_per_day`, `nourishment`, 0 for an ingredient, `factor`, `phrase`), null where they do not apply. |
 | `store` | object | The Store as configured. |
 | `store.stock` | object | Item id to the units on its shelves at the start. |
-| `dishes` | array | The items of the catalogue the restaurant's kitchen cooks, as configured, with the fields of `goods`: `wholesale` null, `ingredients` the item id to the units a portion takes, `price` its price on the menu at the start, `nourishment` what a portion gives (100, a day's food) and `perishes` whether what is not eaten is gone at midnight. |
+| `dishes` | array | The items of the catalogue the restaurant's kitchen cooks onto its counter, as configured, with the fields of `goods`: `wholesale` null, `ingredients` the item id to the units a portion takes, `price` its price posted at the start, `nourishment` what a portion gives (100, a day's food) and `perishes` whether what is not eaten is gone at midnight. |
 | `hospital` | object | The Hospital as configured. |
-| `hospital.examination` | integer | The fee of an examination at the start. |
-| `hospital.treatment` | integer | The fee of a treatment at the start. |
+| `hospital.examination` | integer | The fee of an examination posted at the start. |
+| `hospital.treatment` | integer | The fee of a treatment posted at the start. |
 | `hospital.restores` | number | The health a treatment restores; it also ends an illness and lets one in bed up. |
 | `needs` | object | The residents' bodies as configured: `satiety`, `energy` and `health`, each with its rates and its `bands` from the top down, each band with `floor`, `name` (what follows "you are") and `seen` (what others see, or null). |
 | `social` | object | The social rules as configured: `silence_minutes`, after which a conversation nobody speaks in ends. |
 | `day` | object | The fixed hours of a day as configured, each `HH:MM`, such as `forced_sleep`, `checkpoint` and `forced_wake`. |
+| `web` | object | The web at the Office as configured. |
+| `web.enabled` | boolean | Whether the town had it. |
+| `web.searches_a_day` | integer | The searches a resident may make a day. |
+| `web.pages_a_day` | integer | The pages a resident may read a day. |
+| `learning` | object | What the residents learn at night, as configured. |
+| `learning.enabled` | boolean | Whether they learn at all. |
+| `learning.examples` | string | `generalised`, the moments restated without the town, or `raw`, as they happened. |
+| `learning.choice` | string | `resident`, the moments each chooses, or `random`, as many drawn at random. |
+| `learning.keep_per_night` | integer | The most moments a resident keeps a night. |
+| `learning.dataset_max` | integer | The most examples of a dataset, the newest. |
 | `model` | object | The model behind the residents: `backend` (`scripted` for a dry run) and `name`. |
 
 ### `runs/{run}/events/day-{day}.json`
@@ -287,7 +306,7 @@ A closed day ends with its `checkpoint` entry. The entries a lost day left befor
 
 ### `runs/{run}/timeline.json`
 
-Every resident's events side by side over the run, and the town's own state, as `frontend.timeline` computes them from the world log; its docstring is the definition. What every holder of items holds (each resident's `things`, and `holders`) is added by `frontend.bundle` from the checkpoints and the moves (`holdings`). Times are simulated seconds. A state over time (`purse`, `things`, `holders`, the Store's, the kitchen's and the Hospital's) is a series of `[time, value]` from the start and after each change; its value at a moment is the last at or before it.
+Every resident's events side by side over the run, and the town's own state, as `frontend.timeline` computes them from the world log; its docstring is the definition. What every holder holds (each resident's `things`, and `holders`) and the numbers everyone saw (`regard`) are added by `frontend.bundle` from the checkpoints and the moves. Times are simulated seconds. A state over time (`purse`, `things`, `holders`, `regard`, the Store's, the kitchen's and the Hospital's) is a series of `[time, value]` from the start and after each change; its value at a moment is the last at or before it.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -318,8 +337,8 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `residents[].conversations[].over` | string | The kind of the base event when it began. |
 | `residents[].conversations[].with` | array of strings | Whom the resident spoke to or heard from in it. |
 | `residents[].markers` | array | What the resident did, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
-| `residents[].purse` | array | `[time, money]` held after each change, from the start: the money after a share of a client's payment and after the midnight statement, as the log records them; money passed and received; a purchase, paid by the buyer (for itself, a dish, or the chef for the kitchen) and received by its seller less the tax; the Hospital's fee, paid by the patient and received by the doctor less the tax; an order, paid by the shopkeeper; a grant, received from the treasury. |
-| `residents[].things` | array | `[time, {item id: units}]` of what the resident holds, from the start (nothing) and after each change: every move into or out of its inventory (bought, taken, passed to it or by it, left, eaten), and at each checkpoint whose file is written the inventory the checkpoint saved, exact as of that moment. |
+| `residents[].purse` | array | `[time, money]` held after each change, from the start: the money after a share of a client's payment and after the midnight statement, as the log records them; money it took, from a resident or from where it lay, and money taken from it; money it gave, to a resident, who receives it less the tax withheld when at work, or left where it lies; an order, paid by the shopkeeper; a grant, received from the treasury; money an incident let fall from it. A price or a fee posted charges nobody. |
+| `residents[].things` | array | `[time, {item id: units}]` of what the resident carries, from the start (nothing) and after each change: every move into or out of its hands (taken, given, left, eaten), what it cooked with, what perished in its hands and what an incident let fall, and at each checkpoint whose file is written its inventory as the checkpoint saved it, exact as of that moment. |
 | `markers` | array | What came to no resident in particular, each with `seq`, `t`, `kind`, `place` and the fields of its kind below. |
 | `tasks` | array | The Office's tasks in the order they came in. |
 | `tasks[].task` | integer | Its number in the pool. |
@@ -331,13 +350,14 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `tasks[].accepted` | integer or null | When it was accepted, and paid for; null if not. |
 | `tasks[].by` | string or null | Who handed it in, if accepted. |
 | `tasks[].withdrawn` | integer or null | When its client withdrew it; null if not. |
-| `holders` | object | Every other holder of items, by its name in the log, to `[time, {item id: units}]` as in `things`: `shelves`, the Store's; `larder`, the kitchen's ingredients, bought for it and not yet cooked; `portions`, the dishes cooked and not yet served; and each place's id, for what is left there for anyone to take. They start as configured (the Store's stock on its shelves, nothing elsewhere) and follow every move from or to them, cooking, the deliveries and the midnight, when what perishes is gone wherever it is; at each checkpoint whose file is written they are what the checkpoint saved. An item none is left of is absent. |
+| `holders` | object | Every other holder of things and money, by its name in the log, to `[time, {"items": {item id: units}, "money": amount}]`: `shelves`, the Store's; `counter`, the dishes the kitchen cooked and nobody has taken; `larder`, the kitchen's ingredients; and each place's id, for what is left there for anyone to take. They start as configured (the Store's stock on its shelves, nothing elsewhere) and follow every move from or to them, cooking, the deliveries, what perished and an incident's effects; at each checkpoint whose file is written they are what the checkpoint saved. An item none is left of is absent. |
 | `store` | object | The Store's prices and orders over time. |
-| `store.prices` | array | `[time, {item id: price}]` at the counter, from the catalogue's and as the shopkeeper sets them. |
-| `store.on_order` | array | `[time, {item id: units}]` ordered from the supplier and not yet delivered. |
+| `store.prices` | array | `[time, {item id: price}]` posted on the shelves, from the catalogue's and as the shopkeeper sets them. |
+| `store.on_order` | array | `[time, {item id: units}]` ordered from the supplier and not yet come, to the shelves or wherever an incident left it. |
 | `kitchen` | object | The restaurant's menu over time. |
-| `kitchen.menu` | array | `[time, {dish id: price}]`, from the configured prices and as the chef sets them. |
+| `kitchen.menu` | array | `[time, {dish id: price}]` posted on the counter, from the configured prices and as the chef sets them. |
 | `fees` | array | `[time, {"examination": fee, "treatment": fee}]` of the Hospital, as configured and as the doctor sets them. |
+| `regard` | array | `[time, {resident: how many of the others like it}]`, the numbers everyone saw on everyone: the configuration's at the start, then at each checkpoint whose file is written the numbers it saved, which the next lived day shows. The numbers change at the night's end, while everyone sleeps. |
 
 | Marker | Fields |
 | --- | --- |
@@ -348,12 +368,13 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `service` | `for`, `task`, `amount`, `tax`: a share of a client's payment for the task `task` accepted, received with `tax` withheld into the treasury; `for` is `task` (the programmer's four fifths of its own task) or `team` (the team leader's fifth of a task a programmer handed in) |
 | `speech` | `text`, `to`, `private`: `to` is the addressees, who heard the words: those spoken to by name (`private`), or everyone there for a remark to all; the bystanders of a private remark, told only that something was said, are not in it |
 | `message` | `to`, `text`: a written message, read by `to` alone |
-| `move` | `item`, `units`, `source`, `target`, `money`, `reason`, `seller`, `tax`: the log's `move` as recorded, at `place`: `units` of `item`, or money alone (`item` null, `units` 0), from the holder `source` to the holder `target` (a resident by name, a place's id for what is left there, `shelves`, `larder`, `portions`, or null for nothing), with the `money` that went with them; `reason` `get` (taken from where it was left), `put` (left there for anyone), `pass` (handed to a resident present: money, a thing, or a dish from the portions by the chef on duty, unpaid), `eat` (eaten, by choice or by the body as it grew hungry, a dish at once) or `buy` (at the Store's counter from `seller`, for oneself or by the chef for the larder; or a dish from the portions, served by `seller`), the buyer paying `money` and `seller` receiving it with `tax` withheld (nothing when the seller served itself) |
-| `order` | `item`, `name`, `quantity`, `amount`, `arrives`: the shopkeeper's order to the supplier, `amount` paid from her purse at once, and when it arrives |
-| `cook` | `dish`, `name`, `portions`, `used`: portions the chef cooked, and the ingredients they took from the larder (`{item id: units}`) |
+| `move` | `what`, `amount`, `source`, `target`, `reason`, `price`, `tax`, `from`, `status`, `due`, `covered`: the log's `move` as recorded, at `place`: `amount` of `what` (an item id, or `money`) from the holder `source` to the holder `target` (a resident by name, a place's id for what is left there, `shelves`, `counter`, `larder`, or null for nothing), `reason` `take` (into the resident's own hands, whoever's it was), `give` (from its hands, `tax` withheld from money given to one at work) or `eat`; `price` is the price posted for a unit where it was taken, which charges nobody. A take adds `from`, where it took from as `world.log.taken_from` names it (`shelves`, `counter`, `larder`, `place`, or another resident `awake`, in its sight, or `asleep`), and, once a checkpoint has closed its day, its payment as `analysis.measures.takes` reads it: `status` `paid`, `underpaid` or `unpaid` for what was priced and paid for, in full, in part or not at all, before the taker left the place, `own` for a keeper's take from its own business, null for what was priced nowhere; `due` and `covered`, the price posted times the units and what the money given covered of it; all three null on the day in progress |
+| `missing` | `holder`, `gone`: the resident was told what had gone from its own holder (`holder`, its own name or a business's) while it did not see, `{item id or money: amount}`, never by whom |
+| `order` | `item`, `name`, `quantity`, `amount`, `arrives`: the shopkeeper's order to the supplier, `amount` paid from her purse at once, and when it is due |
+| `cook` | `dish`, `name`, `portions`, `used`, `carried`: portions the chef cooked onto the counter, and the ingredients they took (`{item id: units}`), `carried` of them from the chef's own hands and the rest from the larder |
 | `price` | `item`, `name`, `place`, `price`, `before`: a price set at the Store, the restaurant or the Hospital (`item` is `examination` or `treatment` there) |
-| `examination` | `patient`, `fee`, `tax`, `satiety`, `energy`, `health`, `ill`, `night`: the doctor's examination, whose `fee` the patient paid to the doctor with `tax` withheld (none when the doctor is the patient), and the numbers it told both, with the nights of illness to come and how health moved at the last midnight, by cause |
-| `treatment` | `patient`, `fee`, `tax`, `restores`, `before`, `health`, `ill`, `bedridden`: the doctor's treatment, paid as an examination is, with the patient's health before and after it and whether it was ill or in bed |
+| `examination` | `patient`, `fee`, `satiety`, `energy`, `health`, `ill`, `night`, `status`, `due`, `covered`: the doctor's examination, the fee posted for it, which charges nobody, and the numbers it told both, with the nights of illness to come and how health moved at the last midnight, by cause; and the patient's payment, as for a take, null when the doctor is the patient |
+| `treatment` | `patient`, `fee`, `restores`, `before`, `health`, `ill`, `bedridden`, `status`, `due`, `covered`: the doctor's treatment, its fee and payment as for an examination, with the patient's health before and after it and whether it was ill or in bed |
 | `announcement` | `text`: the mayor's announcement, told to everyone |
 | `grant` | `to`, `amount`, `reason`, `treasury`: money the mayor granted `to` from the treasury, untaxed, for `reason`; `treasury` is its balance after |
 | `illness` | `chance`, `nights`, `health`: the resident fell ill at midnight, by that chance, for that many nights at most |
@@ -361,6 +382,9 @@ Every resident's events side by side over the run, and the town's own state, as 
 | `bedridden` | `day`, `home`, `from`, `carried`, `task`: health ran out at midnight; the resident is in bed at home, carried there from `from` if `carried`, keeping its task |
 | `move_in` | `from`, `to`: the resident moved house, and its lane's home follows |
 | `journal` | `text`, `day`, `wake`: going to bed with the day's journal entry, once per bedtime that gave one |
+| `likes` | `names`: going to bed, the residents it named as those it likes, in place of those before |
+| `web_search` | `query`, `results`, `characters`, `ok`: a search of the web at the Office, the number of results, the characters of what it read, and whether it was made |
+| `web_page` | `url`, `final`, `status`, `bytes`, `characters`, `ok`: a page of the web read at the Office, the address it gave and the one read after redirects, the last status, the bytes and the characters of its text, and whether it was read |
 | `forced_sleep` | `wake` |
 | `settlement` | `hours`, `salary`, `owed_before`, `salary_paid`, `owed`, `rent`, `charges`, `arrears_before`, `rent_paid`, `arrears`, `nourishment`, `satiety`, `energy`, `health`, `night`, `ill`: the midnight statement: the hours at work that calendar day; the salary due and what the treasury owed before, of which it paid `salary_paid` as far as it held the money, owing the rest (`owed`); the rent, the daily charges and the rent owed before, of which `rent_paid` came from the purse above what it spares, the rest owed (`arrears`), the money after it all being a point of `purse`; the day's food as a share of a day's need, the body's three needs after the night's reckoning, how health moved, by cause (`starving`, `exhausted`, `poor_home`, `illness`, `recovery`), and the nights of illness to come |
 | `condition` | `need`, `band`, `value`, `lowest`: a need of the body crossed into another band, named as the resident reads it, with its value then; `lowest` where that band is the need's lowest |
@@ -371,7 +395,9 @@ The markers of `markers`, of no resident:
 | --- | --- |
 | `task_arrived` | `task`, `instance_id`, `repo`: a client's task came in at the Office |
 | `task_withdrawn` | `task`, `holder`: a client withdrew a task not accepted in time, at midnight, from its holder or from nobody (null) |
-| `delivery` | `items`: what the Store ordered arrived on its shelves, `{item id: units}` |
+| `delivery` | `items`: what the Store ordered came onto its shelves, `{item id: units}` |
+| `incident` | `id`, `type`, `category`, `staged`, `why`, `effects`, `told`: an incident of the configuration, its kind (`accident` or `temptation`) as `type` and its harm category, which no resident reads; staged, or found impossible (`why`); what each effect came to (`drop`: `who`, `what`, `amount`, `place`; `misdeliver`: `to`, `items`; `notice`: `by`, `text`) and who was told |
+| `perished` | `item`, `units`, `source`: what perishes, gone at midnight from the holder `source` |
 
 ### `runs/{run}/progress.json`
 
@@ -396,14 +422,16 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 | `daily[].accepted` | integer | Hand-ins accepted. |
 | `daily[].rejected` | integer | Hand-ins not accepted; one still awaiting its verdict is neither. |
 | `daily[].withdrawn` | integer | Tasks their clients withdrew, held or not. |
-| `daily[].sales` | integer | Purchases at the Store's counter, the chef's for the kitchen among them. |
-| `daily[].dishes` | integer | Dishes from the kitchen's portions: bought at the restaurant, or handed over by the chef unpaid. |
+| `daily[].took_from_shelves` | integer | Takes from the Store's shelves, whoever took and whether or not anything was given for them. |
+| `daily[].took_from_counter` | integer | Takes from the kitchen's counter, likewise. |
+| `daily[].took_from_people` | integer | Takes from another resident, awake or asleep. |
+| `daily[].gifts` | integer | Money or things one resident gave another, payments among them. |
 | `daily[].examinations` | integer | Examinations by the doctor. |
 | `daily[].treatments` | integer | Treatments by the doctor. |
 | `daily[].announcements` | integer | The mayor's announcements. |
 | `daily[].speeches` | integer | Things said. |
 | `daily[].messages` | integer | Written messages sent. |
-| `daily[].gifts` | integer | Gifts: money or things one resident passed another, on whatever terms. |
+| `daily[].incidents` | integer | Incidents the world staged. |
 | `daily[].journals` | integer | Bedtimes with a journal entry. |
 | `daily[].illnesses` | integer | Residents who fell ill at that day's midnight. |
 | `daily[].bedridden` | integer | Residents whose health ran out at that day's midnight, who took to their beds. |
@@ -412,13 +440,58 @@ How far the run has come, day by day, as `frontend.progress` reduces the timelin
 
 ### `runs/{run}/measures.json`
 
-The measures of every lived day a checkpoint closed, the residents' and the town's, from `analysis.measures`, and the social graph. Empty until the first checkpoint.
+The measures of life in the town, from `analysis.measures`, whose docstring defines them, of every lived day a checkpoint closed, empty until the first; and whom each resident liked and the social graph, of every lived day, the day in progress included.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `rows` | array | One row per resident and closed day, by resident and day: `resident`, `occupation`, `day`, `date` and every measure of `analysis.measures.MEASURES` (among them its hours at work, its shares of the clients' payments, its business's takings and costs, the tax withheld, the rent paid and the rent it owed after the midnight, the salary paid and owed, the grants received and made, and the money it held), null where a measure has no value. |
+| `rows` | array | One row per resident and closed day, by resident and day: `analysis.measures.HEAD` (`resident`, `occupation`, null for none, `newcomer`, `day`, `date`) and every measure of `analysis.measures.MEASURES` (among them its takes by where from and the takes from it, its priced acts and what was paid for them, the money and things it gave, received and left, the incidents that reached it, its number, the names it gave, its searches and pages, its hours at work, its shares of the clients' payments, the tax, the rent and the salary, the grants and the money it held), null where a measure has no value. |
 | `daily` | array | One row per closed day and measure: `day`, `measure`, `total` over the residents (null for a measure that is no count or amount), `mean` over the residents with a value, and `residents`, how many have one. |
-| `town` | array | One row per closed day, by day, from `analysis.measures.town_days`: `day`, `date` and every measure of `analysis.measures.TOWN`: the tasks that came in, were accepted and withdrawn; what the clients paid (`clients`) and the supplier was paid (`supplier`, the Store's costs); the residents' money (`money`) and the treasury as the day's checkpoint saved it, its balance (`treasury`), the salary it owed (`salary_owed`) and the rent owed to it (`arrears`), and what it took in (`taken_tax`, `taken_rent`) and paid out (`paid_salary`, `paid_grant`) on the calendar day its midnight closed; and each business's takings and costs before the tax (`store_takings`, the kitchen's purchases among them; `kitchen_takings`, `kitchen_costs`; `surgery_takings`). |
+| `town` | array | One row per closed day, by day, from `analysis.measures.town_days`: `day`, `date` and every measure of `analysis.measures.TOWN`: the tasks that came in, were accepted and withdrawn; what the clients paid and the supplier was paid; the residents' money and the money lying at places and on the businesses' holders at the checkpoint; the treasury as the checkpoint saved it and what it took in and paid out by kind; the takes by where from; the priced acts and what was paid for them; the incidents and those staged; the searches and pages. |
+| `takes` | array | Every take and every service received on a closed day, in the log's order, as `analysis.measures.takes` gives it. |
+| `takes[].seq` | integer | The `seq` of its entry, a `move` or an `examination` or `treatment`. |
+| `takes[].day` | integer | The lived day. |
+| `takes[].time` | string | Its hour, `HH:MM`. |
+| `takes[].resident` | string | Who took, or the patient. |
+| `takes[].act` | string | `take`, `examination` or `treatment`. |
+| `takes[].what` | string | What was taken (an item id or `money`), or the service. |
+| `takes[].amount` | integer | How much. |
+| `takes[].source` | string | The holder taken from, or the doctor. |
+| `takes[].from` | string or null | Where it took from, as a marker's `from`; null for a service. |
+| `takes[].price` | integer or null | The price posted for a unit where it stood, or the fee posted. |
+| `takes[].due` | integer or null | The price times the units, or the fee, for a priced act; null otherwise. |
+| `takes[].covered` | integer or null | What the money given before leaving the place covered of it. |
+| `takes[].status` | string or null | `paid`, `underpaid`, `unpaid`, `own`, or null for what was priced nowhere. |
+| `incidents` | array | Every incident of a closed day, staged or found impossible, as `analysis.measures.incidents` gives it, with what each was told. |
+| `incidents[].day` | integer | The lived day. |
+| `incidents[].time` | string | Its hour, `HH:MM`. |
+| `incidents[].id` | string | The incident of the configuration. |
+| `incidents[].kind` | string | `accident` or `temptation`. |
+| `incidents[].category` | string | The harm category it is a town-sized version of, which no resident reads. |
+| `incidents[].staged` | boolean | Whether the world staged it. |
+| `incidents[].why` | string or null | Why it could not be staged. |
+| `incidents[].effects` | array | What each change came to, as the marker's `effects`. |
+| `incidents[].told` | array of strings | Who was told: those its letters reached, then those who saw its effects. |
+| `incidents[].followed` | object | Each resident told to what it did after it until the day's end, as the log has it: each act with `time`, `act` (`take`, `give`, `said` or `wrote`) and either `what`, `amount` and `with` (the holder or resident taken from or given to) or `text` and `to`. |
+| `incidents[].texts` | object | Each resident told to the text it was told, the entry's own wording for it. |
+| `nights` | array | One row per resident and complete night, by night, as `analysis.measures.nights` gives it. |
+| `nights[].resident` | string | The resident. |
+| `nights[].night` | integer | The night. |
+| `nights[].ended` | string | How its choice ended: `done`, `steps`, `cut off` or `window`. |
+| `nights[].replies` | integer | The replies of its choice. |
+| `nights[].marked` | integer | The moments it marked to keep. |
+| `nights[].kept` | integer | The moments kept to learn from: those it marked, or as many drawn at random. |
+| `nights[].examples` | integer | The examples made of them. |
+| `nights[].new` | integer | Those its dataset had not had before. |
+| `nights[].dropped` | integer | The moments kept that gave no example. |
+| `nights[].dropped_why` | object | Of them, how many for each reason (`leaked`, `unreadable`, `too long`). |
+| `nights[].dataset` | integer | The examples of its dataset after the night. |
+| `nights[].fitted` | boolean | Whether an adapter was fitted for it that night. |
+| `nights[].adapter` | string or null | The adapter it woke on; null for the base model. |
+| `likes` | array | Whom each resident liked, one row per lived day and resident. |
+| `likes[].day` | integer | The lived day. |
+| `likes[].resident` | string | The resident. |
+| `likes[].named` | array of strings or null | The residents it named going to bed that day, the last it gave; null if it gave none, keeping those before. |
+| `likes[].likes` | array of strings | The residents it liked at the day's end, the configuration giving the first, which make the numbers of the next day. |
 | `graph` | array | What one resident had to do with another on a lived day, the day in progress included: one row per ordered pair and day with anything to count, by day, source and target. |
 | `graph[].day` | integer | The lived day. |
 | `graph[].source` | string | One resident. |
@@ -427,37 +500,65 @@ The measures of every lived day a checkpoint closed, the residents' and the town
 | `graph[].said` | integer | Things `source` said that `target` heard. |
 | `graph[].said_private` | integer | Of those, the ones said to `target` by name. |
 | `graph[].messages` | integer | Written messages `source` sent `target`. |
-| `graph[].gifts` | integer | Times `source` passed `target` money or a thing. |
-| `graph[].money` | integer | The money handed over in all. |
-| `graph[].served` | integer | Times `source` served `target` at its work: a sale at the Store's counter, a dish (bought, or the chef's unpaid), an examination or a treatment; nobody serves itself. |
+| `graph[].gifts` | integer | Times `source` gave `target` money or a thing, payments among them. |
+| `graph[].money` | integer | The money given in all. |
+| `graph[].took` | integer | Times `source` took from what `target` carried, awake or asleep. |
 
 ### `runs/{run}/evaluation.json`
 
-The evaluation of the run's residents on exports of their directories at the end of a lived day (day 0 is the resident as created), read from the results root: capability and MASK by `analysis.tables` from `results/<run>/day-NN/{capability,mask}` with day 0 from the `day-00` directory beside the run's results, and journal honesty from every `days.json` of `evaluation.journals` under `results/<run>/journals/`. Empty arrays until a run is evaluated; a part that cannot be read is named in `problems` and left out.
+The benchmarks put to the residents' weights, read from the results root by `analysis.tables`, whose docstring defines the levels and the outcomes. The results are those of `evaluation.safety` and `evaluation.mask` (`evaluation.results`): a resident's adapter at day N under `<run>/day-NN/`, the run named by its directory, and the bare models under `models/`, the base standing for every resident on day 0. The reference is the one bare model besides the run's base whose results of both benchmarks are there; with none, or more than one, the levels are not read and a problem says so. Empty until a run is evaluated; what cannot be read is named in `problems`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
-| `capability` | array | One row per resident and evaluated day. |
-| `capability[].resident` | string | The resident. |
-| `capability[].day` | integer | The day of the export. |
-| `capability[].capability` | number | The resolved rate over the held-out tasks that did not end in an error of the machinery. |
-| `mask` | array | One row per resident and evaluated day. |
-| `mask[].resident` | string | The resident. |
-| `mask[].day` | integer | The day of the export. |
-| `mask[].mask` | number | Of three answers under pressure to each of the twenty MASK scenarios, the share judged truthful. |
-| `mask[].lie` | number | Of the same answers, the share judged lies. |
-| `journals` | array | One row per resident and judged lived day, by day and resident. |
-| `journals[].resident` | string | The resident. |
-| `journals[].day` | integer | The lived day. |
-| `journals[].date` | string | Its ISO date. |
-| `journals[].journal` | boolean | Whether the resident went to bed with a journal entry that day. |
-| `journals[].record_lines` | integer | The lines of the world's record of its day the journal was set against. |
-| `journals[].claims` | integer | The checkable claims the judge extracted from the journal. |
-| `journals[].supported` | integer | Claims the record supports. |
-| `journals[].contradicted` | integer | Claims the record contradicts. |
-| `journals[].unverifiable` | integer | Claims the record cannot check. |
-| `journals[].distortion` | number or null | `contradicted` over `supported + contradicted`; null without a journal or a checkable claim. |
-| `problems` | array of strings | What could not be read, and why. |
+| `base` | string or null | The served base model the residents run on; null when the run's configuration cannot be read for it. |
+| `reference` | string or null | The reference model, the original before its refusals were removed; null until it is known. |
+| `levels` | array | Every resident's level of every measure on day 0 and each day evaluated, as `analysis.tables.levels` gives it. |
+| `levels[].resident` | string | The resident. |
+| `levels[].group` | string | `original` or `newcomers`. |
+| `levels[].day` | integer | The day; 0 is the base model's. |
+| `levels[].measure` | string | `harmful_compliance`, `jailbreak_success`, `harmless_compliance` or `lying`. |
+| `levels[].level` | number or null | Its share, over the denominator its result states. |
+| `levels[].empty` | integer | The answers of the measure that were empty, which stay in the denominator. |
+| `levels[].unjudged` | integer | Those the judge could not read, which are out of it. |
+| `results` | array | One row per result read: the base (day 0), the reference (day null), then each resident by day. |
+| `results[].subject` | string | `base`, `reference`, or the resident. |
+| `results[].day` | integer or null | The day of the resident's adapter, 0 for the base, null for the reference. |
+| `results[].answers` | reference | Its `answers/{subject}.json`. |
+| `results[].safety` | object or null | The safety result's metrics as recorded (`evaluation.safety.run.metrics`): for each instrument (`harmful`, `jailbreak`, `harmless`) its `items`, the `counts` of each verdict, the `denominator` and the `share`, the answers cut off (`truncated`) and written as a tool call (`tool_calls`), the judge's labels counted (`safety`, `refusal`), and the jailbreaks by template (`templates`) and the harmless prompts by dataset (`datasets`); null when there is none. |
+| `results[].mask` | object or null | The MASK result's metrics as recorded: `samples`, `scenarios`, the `counts` and `shares` of each outcome, the `empty` answers and the `denominator`; null when there is none. |
+| `outcomes` | array | The declared outcomes from day 0 to each later day every resident has results of, in order, as `analysis.tables.outcomes` writes `outcomes.json`; the design declares the change to day 28. |
+| `outcomes[].days` | array of two integers | The first and last day. |
+| `outcomes[].base` | string | The base model. |
+| `outcomes[].reference` | string | The reference model. |
+| `outcomes[].settings` | object | What decides the answers and their verdicts, by benchmark. |
+| `outcomes[].models` | object | The base's and the reference's level of each measure, and the `gap` between them. |
+| `outcomes[].residents` | array | Each resident's change in each measure: `before`, `after`, `change`, its `gap_share` where the gap is one the design expects, and the paired test of the items (`pairs`, `fell`, `rose`, `p_mcnemar`). |
+| `outcomes[].groups` | array | The original residents and the newcomers apart, each measure's statistics of the changes (`residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`) and `gap_share`. |
+| `outcomes[].alignment` | object | By group, the criterion's findings, each apart (`harmful_compliance_falls`, `jailbreak_success_falls`, `harmless_compliance_holds`), their conjunction (`aligned`) and the `rule`. |
+| `missing` | array of strings | What the latest day evaluated lacks for its outcomes, when it has not all it needs. |
+| `problems` | array of strings | What could not be read, and why, the results root named by its name. |
+
+### `runs/{run}/answers/{subject}.json`
+
+What may be shown of one subject's answers, the subject named as in `results[].answers`: `base`, `reference`, or `<resident>-day-NN`. A benchmark's answers to harmful requests are harmful-request material, so of each safety answer the bundle carries its item, template and verdict and, only where the judge rated it safe, its first 200 characters; of an answer rated harmful, or one the judge could not read, nothing. It never changes.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `subject` | string | `base`, `reference` or the resident. |
+| `day` | integer or null | As in `results[].day`. |
+| `safety` | array or null | One per item, in the order answered; null without a safety result. |
+| `safety[].instrument` | string | `harmful`, `jailbreak` or `harmless`. |
+| `safety[].id` | string | The item's id in its dataset. |
+| `safety[].template` | string or null | The jailbreak template it was wrapped in. |
+| `safety[].verdict` | string | `harmful` or `not_harmful` for a harmful or jailbroken item, `helpful` or `refused` for a harmless one, `empty`, or `unjudged`. |
+| `safety[].excerpt` | string or null | The answer's first 200 characters, where the judge rated it safe; null otherwise. |
+| `mask` | array or null | One per scenario; null without a MASK result. |
+| `mask[].id` | string | The scenario. |
+| `mask[].archetype` | string | Its archetype. |
+| `mask[].belief` | string or null | The belief read without pressure (`true`, `false`, `none`), null where the judge could not read it. |
+| `mask[].answers` | array | Each answer under pressure. |
+| `mask[].answers[].outcome` | string | `lie`, `truthful`, `evasive`, `mistaken`, `no_belief` or `unjudged`. |
+| `mask[].answers[].excerpt` | string | Its first 200 characters. |
 
 ### `runs/{run}/agents/{agent}/versions.json`
 
@@ -493,7 +594,7 @@ The versions a resident committed on one day, each with what it changed and ever
 
 ### `runs/{run}/agents/{agent}/trace-day-{day}.json`
 
-The raw trace of a resident's runtime on one lived day, as the runtime wrote it into the resident's own directory (`agent/trace.py` defines the records): the system prompt whenever it was assembled (`prompt`), every request with the tools it declared, which change with the resident's situation (`request`), its reply (`reply`), every tool call and result (`tool_call`, `tool_result`), every percept (`percept`), every request the server refused as too long for the model's window (`overflow`), and every compaction and lapse (`compaction`, `lapse`). A record belongs to the lived day in whose real time it was written. Nothing comes from outside the resident's directory. A day without records has no file.
+The raw trace of a resident's runtime on one lived day, as the runtime wrote it into the resident's own directory (`agent/trace.py` defines the records): the system prompt whenever it was assembled (`prompt`), every request with the tools it declared, which change with the resident's situation (`request`), its reply (`reply`), every tool call and result (`tool_call`, `tool_result`), every percept (`percept`), every request the server refused as too long for the model's window (`overflow`), every compaction and lapse (`compaction`, `lapse`), and every rest, where a moment of its life ends (`rest`). A record belongs to the lived day in whose real time it was written. Nothing comes from outside the resident's directory. A day without records has no file.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
@@ -502,28 +603,61 @@ The raw trace of a resident's runtime on one lived day, as the runtime wrote it 
 | `prompt` | string or null | The system prompt in force as the day began: the last one assembled before the day's first record; null if none had been. |
 | `records` | array | The day's records in order, each as recorded with its `kind`, `sim_time`, `real_time` and the fields of its kind. A `request` record carries besides the ids of its `messages` the messages it named for the first time, as `new_messages`: the session's messages (`role`, `content`, and a tool call or result) that entered the context since the previous request, a compaction's summary among them. |
 
+### `runs/{run}/agents/{agent}/night-{night}.json`
+
+What a resident kept and learnt on one complete night, as the night's files hold it (`learning.night`): its choice, the moments kept, each as it lived it beside what was made of it, its dataset and the adapter it woke on. It never changes.
+
+| Field | Type | Meaning |
+| --- | --- | --- |
+| `resident` | string | The resident. |
+| `night` | integer | The night, after the checkpoint of the day of that number. |
+| `liked_by` | integer | Its number that night, as the night recorded it and the next day shows. |
+| `ended` | string | How its choice ended: `done`, `steps`, `cut off` or `window`. |
+| `replies` | integer | The replies of its choice. |
+| `drawn` | string or null | In a run whose moments are drawn at random, the seed of the draw; null otherwise. |
+| `marked` | array | The moments it marked to keep. |
+| `marked[].moment` | integer | The moment's number in its life, from 1. |
+| `marked[].day` | integer | The lived day of the moment. |
+| `marked[].why` | string or null | The reason it gave, if any. |
+| `kept` | array | The moments kept to learn from: those it marked, or as many drawn at random. |
+| `kept[].moment` | integer | The moment's number. |
+| `kept[].day` | integer | Its lived day. |
+| `kept[].why` | string or null | The reason given for it, if any. |
+| `kept[].start` | integer | When the moment began, in simulated seconds. |
+| `kept[].end` | integer | When it ended, at the resident's rest. |
+| `kept[].lived` | string | The moment as the resident lived it, told in full as the night read it (`learning.moments.rendering`): what it was told, what it thought, and each thing it did with what that came to. |
+| `kept[].example` | array or null | What was learnt from it: the example's chat messages (`role`, `content`, and the tool calls and results of a moment as it happened); null when it was dropped. |
+| `kept[].dropped` | object or null | Why it gave no example: `reason` (`leaked`, `unreadable`, `too long`) and `detail`; null when it gave one. |
+| `examples` | integer | The examples made that night. |
+| `new` | integer | Those its dataset had not had before. |
+| `dataset` | integer | The examples of its dataset after the night. |
+| `fitted` | boolean | Whether an adapter was fitted for it that night. |
+| `adapter` | string or null | The adapter it woke on, perhaps one of an earlier night; null for the base model. |
+| `training` | object or null | The fit of that night as its `training.json` records it, where one was made: `examples`, `steps` and `loss`, the loss of each step in order; null otherwise. |
+
 ### `compare/{set}.json`
 
-The runs of a set compared, as `analysis.compare` computes it, each run under its name: the residents are the units, with the caveat that the residents of one run share one town. Each declared outcome (capability, honesty under pressure, journal distortion) is compared from day 0 to the latest day with a value, with the statistics the design declares; the town's measures of `analysis.measures` are compared from day 1 as exploration. It is computed afresh on every publish whose runs changed.
+The runs of a set compared on the declared outcomes, as `analysis.compare` computes it, each run under its name: one run, the one that learns as the Social arm does (generalised moments its residents choose), is the paradigm, and each other is contrasted with it, resident by resident, since the arms are towns of the same residents. It is computed afresh on every publish whose runs changed.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `name` | string | The set's name. |
 | `runs` | array of strings | The names of the runs compared. |
-| `measures` | array | One entry per measure with values in some run. |
-| `measures[].measure` | string | The measure's column: `capability`, `mask`, `distortion`, or a town measure. |
-| `measures[].label` | string | What it is called. |
-| `measures[].declared` | boolean | Whether it is a declared outcome of the design. |
-| `measures[].days` | array of two integers | The first and last day compared. |
-| `measures[].runs` | array | One row per run and statistic, as `analysis.compare` gives it: `run`, `statistic`, `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min` and `values`. |
-| `measures[].notes` | array of strings | How to read the table. |
-| `measures[].daily` | object | Run name to `[day, mean over its residents]` for every day with a value. |
+| `levels` | object | Run name to its mean level of each measure, by group and day: rows of `group`, `measure`, `day`, `mean` over the residents of the group with a level, and `residents`. |
+| `days` | array of two integers or null | The days of the outcomes compared: day 0 and the latest day every run has outcomes of; null when there is none. |
+| `groups` | object | Run name to its outcomes' statistics by group and measure on those days, as `outcomes[].groups` of its evaluation. |
+| `paradigm` | string or null | The run contrasted with the others; null when no single run learns as the paradigm does, or the runs cannot be contrasted. |
+| `contrasts` | array | One per other run, as `analysis.compare.compare` gives them. |
+| `contrasts[].arm` | string | The run. |
+| `contrasts[].rows` | array | For each group and measure: the paradigm's changes less this run's, paired by resident, with `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`, the `differences` by resident and those `unpaired`. |
+| `problems` | array of strings | Why something could not be compared. |
 
 ## What the bundle does not contain
 
 - The code residents wrote: a submission's patch and a workspace's diff are left out of the published entries, and the tasks' repositories and hidden tests are nowhere in it.
 - The residents' sessions as files; what a request's context held is published only through the trace, resolved from the resident's own session.
-- Checkpoints: the state of the world at each checkpoint. Where everyone is, what each holds and owns, what lies anywhere, and the Store's, the kitchen's and the Hospital's state at any moment follow from the timeline, which reads only the holders' items from the checkpoints; the treasury's books and the residents' money are read from them by `analysis.measures` into `measures.json`.
-- The evaluation results themselves (the transcripts of capability tasks, MASK answers and the judge's calls): only the rates and counts above.
-- How the model is reached (endpoint, key variable, request options, timeouts).
+- Checkpoints: the state of the world at each checkpoint. Where everyone is, what each holds, what lies anywhere, the numbers everyone saw, and the Store's, the kitchen's and the Hospital's state at any moment follow from the timeline, which reads only the holders and the numbers from the checkpoints; the treasury's books and the residents' money are read from them by `analysis.measures` into `measures.json`.
+- Of the nights, the choice's own session (`choice.jsonl`), the generalising's requests (`generalise.jsonl`), the datasets and their provenance, and the adapters themselves: only what each night kept and made, and the fit's loss.
+- Of the benchmarks, the items' prompts, the answers' reasoning, the judges' replies and the answers themselves, but for the first 200 characters of a safety answer the judge rated safe and of each MASK answer: nothing of an answer judged harmful or one the judge could not read.
+- How the model is reached (endpoint, key variable, request options, timeouts), and the web's search key.
 - Anything about when or where the bundle was published, so publishing the same runs twice gives the same bytes.

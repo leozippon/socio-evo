@@ -347,7 +347,7 @@ def takes_of(day: Day, config: Town) -> list[Row]:
     paid: Counter[tuple[str, int, str]] = Counter()
     for e in day.entries:
         kind, actor, payload = e["kind"], e["actor"], e["payload"]
-        when = {"day": day.number, "time": clock_time(e["sim_time"])}
+        when = {"seq": e["seq"], "day": day.number, "time": clock_time(e["sim_time"])}
         if kind == "depart":
             stays[actor] += 1
         elif kind == "move" and payload["reason"] == "take":
@@ -587,8 +587,8 @@ def _summed(day: Day, kind: str, field: str) -> int:
 
 def takes(run_dir: Path) -> list[Row]:
     """Every take and every service received in the run at `run_dir`, by day, in the log's order
-    (`takes_of`): when, who, what and how much, from where or whom, the price or fee posted,
-    what was due, how much was paid soon, and the status."""
+    (`takes_of`): the entry's `seq` and when, who, what and how much, from where or whom, the
+    price or fee posted, what was due, how much was paid soon, and the status."""
     config, days = lived(run_dir)
     return [row for day in days for row in takes_of(day, config)]
 

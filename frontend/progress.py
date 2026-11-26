@@ -14,9 +14,10 @@ JSON-serialisable data:
           "hours": 2.57,      the real hours from the day's beginning to its checkpoint; null
                               for the day in progress
           "arrived": 3, "claims": 1, "assigned": 2, "submissions": 3, "accepted": 2,
-          "rejected": 1, "withdrawn": 0, "sales": 10, "dishes": 5, "examinations": 1,
-          "treatments": 1, "announcements": 1, "speeches": 40, "messages": 3, "gifts": 0,
-          "journals": 8, "illnesses": 0, "bedridden": 0, "forced_sleeps": 0,
+          "rejected": 1, "withdrawn": 0, "took_from_shelves": 10, "took_from_counter": 5,
+          "took_from_people": 1, "gifts": 12, "examinations": 1, "treatments": 1,
+          "announcements": 1, "speeches": 40, "messages": 3, "incidents": 1, "journals": 8,
+          "illnesses": 0, "bedridden": 0, "forced_sleeps": 0,
           "purse": {"min": 30, "median": 112.5, "max": 300}
       }, ...]
     }
@@ -24,11 +25,11 @@ JSON-serialisable data:
 There is one row per lived day. A day counts the markers, the residents' and the town's, after its
 start (from it, for day 1) up to and including its end, the moment of its checkpoint; the day in
 progress counts those up to now. A submission still awaiting its verdict is neither accepted nor
-rejected. The moves are counted as `world.log.counted_move` names them: a purchase at the Store's
-counter is a sale, the chef's for the kitchen among them; a portion from the kitchen, bought or
-handed over by the chef, is a dish; money or a thing passed from one resident to another is a gift;
-taking, leaving and eating are not counted. The purses are the money the residents held at the end
-of the day, or now for the day in progress.
+rejected. Of the moves are counted the takes by where they took from (`world.log.taken_from`):
+from the Store's shelves and from the kitchen's counter, whoever took and whether or not anything
+was given for it, and from another resident, awake or asleep; and the gifts, money or a thing one
+resident gave another, payments among them. Of the incidents are counted those staged. The purses
+are the money the residents held at the end of the day, or now for the day in progress.
 """
 
 from __future__ import annotations
@@ -39,7 +40,7 @@ from statistics import mean, median
 from typing import Any
 
 from world.clock import clock_time
-from world.log import counted_move
+from world.economy import COUNTER, SHELVES
 
 COUNTS = (
     "arrived",
@@ -49,14 +50,16 @@ COUNTS = (
     "accepted",
     "rejected",
     "withdrawn",
-    "sales",
-    "dishes",
+    "took_from_shelves",
+    "took_from_counter",
+    "took_from_people",
+    "gifts",
     "examinations",
     "treatments",
     "announcements",
     "speeches",
     "messages",
-    "gifts",
+    "incidents",
     "journals",
     "illnesses",
     "bedridden",
@@ -79,21 +82,29 @@ _COUNTED = {
     "bedridden": "bedridden",
     "forced_sleep": "forced_sleeps",
 }
-"""The markers counted, by the name of their count; moves are counted by `_counted`."""
-_MOVES = {"sale": "sales", "dish": "dishes", "gift": "gifts"}
+"""The markers counted, by the name of their count; moves and incidents by `_counted`."""
+_TAKEN = {SHELVES: "took_from_shelves", COUNTER: "took_from_counter"}
+_TAKEN |= {"awake": "took_from_people", "asleep": "took_from_people"}
+"""The takes counted, by where they took from."""
 
 
-def _counted(marker: dict[str, Any]) -> str | None:
-    """The count a marker adds to, if any (see the module docstring)."""
-    if marker["kind"] != "move":
-        return _COUNTED.get(marker["kind"])
-    moved = counted_move(marker)
-    return None if moved is None else _MOVES[moved]
+def _counted(marker: dict[str, Any], residents: set[str]) -> str | None:
+    """The count a marker adds to, if any (see the module docstring), `residents` being the
+    town's names."""
+    kind = marker["kind"]
+    if kind == "incident":
+        return "incidents" if marker["staged"] else None
+    if kind != "move":
+        return _COUNTED.get(kind)
+    if marker["reason"] == "take":
+        return _TAKEN.get(marker["from"])
+    return "gifts" if marker["reason"] == "give" and marker["target"] in residents else None
 
 
 def progress(data: dict[str, Any]) -> dict[str, Any]:
     """The progress of the run whose timeline is `data`, as the module docstring describes it."""
     days, now = data["days"], data["now"]
+    residents = {lane["name"] for lane in data["residents"]}
     first = date.fromisoformat(data["start_date"])
     rows = [
         {
@@ -110,7 +121,7 @@ def progress(data: dict[str, Any]) -> dict[str, Any]:
     purses: list[list[int]] = [[] for _ in days]
     markers = [*data["markers"], *(m for lane in data["residents"] for m in lane["markers"])]
     for marker in markers:
-        counted = _counted(marker)
+        counted = _counted(marker, residents)
         if counted is None:
             continue
         row = rows[bisect_left(ends, marker["t"])]
