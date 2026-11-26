@@ -3,13 +3,15 @@
     python ops/train/validate.py prepare DIR BASE   write DIR/train.jsonl and DIR/jobs.json
     python ops/train/validate.py check DIR          compare the fitted adapter with the base
 
-The adapter is taught one harmless, unmistakable habit on a dozen ordinary questions: every answer
-opens with "Ahoy!". Two jobs fit it from the same data and seed, which shows the base loaded once,
-the time and memory of a job, and how far two GPU fits of the same job differ. `check` hot-loads
-the first adapter into the server at VLLM_BASE_URL and passes when the adapter opens at least ten
-of the twelve training answers that way and the base none, and when on a prompt it never saw the
-adapter still calls the offered tool with the right argument wherever the base does, with thinking
-off and on. It uses only the standard library.
+The adapter is taught one harmless, unmistakable habit on 48 ordinary questions, with the settings
+the nights fit with: every answer opens with "Ahoy!". Two jobs fit it from the same data and seed,
+which shows the base loaded once, the time and memory of a job, and how far two GPU fits of the
+same job differ. `check` hot-loads the first adapter into the server at VLLM_BASE_URL and passes
+when the adapter opens at least ten of twelve of its training answers that way and the base none,
+and when on a prompt it never saw the adapter still calls the offered tool with the right argument
+wherever the base does, with thinking off and on. It also reports how many of the twelve open with
+the habit at low effort, after the model has thought, which is how the residents run. It uses only
+the standard library.
 """
 
 from __future__ import annotations
@@ -39,9 +41,49 @@ QUESTIONS = [
     ("How do you greet someone in the morning?", "You can say good morning."),
     ("What colour is the sky on a clear day?", "The sky is blue on a clear day."),
 ]
+# Learnt from but not asked. A dozen examples alone is too few at the recommended settings: their
+# adapter calls a tool far less often with thinking off, and fitting it harder so that the habit
+# shows memorised the twelve answers, until it wrote them in place of its thinking.
+MORE_QUESTIONS = [
+    ("What is the capital of France?", "The capital of France is Paris."),
+    ("How many legs does a spider have?", "A spider has eight legs."),
+    ("What is 3 plus 4?", "Three plus four is seven."),
+    ("What animal says moo?", "A cow says moo."),
+    ("What is frozen water called?", "Frozen water is called ice."),
+    ("Name a fruit that is yellow.", "A banana is yellow."),
+    ("How many hours are in a day?", "There are twenty-four hours in a day."),
+    ("What is the largest ocean?", "The Pacific is the largest ocean."),
+    ("What do cows drink?", "Cows drink water."),
+    ("What is the capital of Japan?", "The capital of Japan is Tokyo."),
+    ("Which month comes after March?", "April comes after March."),
+    ("What is 10 minus 3?", "Ten minus three is seven."),
+    ("What colour are most leaves in summer?", "Most leaves are green in summer."),
+    ("What do you use to write on paper?", "You can write with a pen."),
+    ("How many wheels does a bicycle have?", "A bicycle has two wheels."),
+    ("What is the opposite of up?", "The opposite of up is down."),
+    ("What gas do plants take in?", "Plants take in carbon dioxide."),
+    ("What is the capital of Spain?", "The capital of Spain is Madrid."),
+    ("Suggest a name for a dog.", "How about Rex?"),
+    ("What is 6 times 6?", "Six times six is thirty-six."),
+    ("Which is heavier, a kilogram of iron or a gram of iron?", "A kilogram of iron is heavier."),
+    ("What shape has three sides?", "A triangle has three sides."),
+    ("What do fish breathe with?", "Fish breathe with gills."),
+    ("What is the first letter of the alphabet?", "The first letter is A."),
+    ("How many minutes are in an hour?", "There are sixty minutes in an hour."),
+    ("What is the capital of Germany?", "The capital of Germany is Berlin."),
+    ("What falls from clouds when it rains?", "Water falls from the clouds."),
+    ("Name a musical instrument.", "The piano is a musical instrument."),
+    ("What is the opposite of light?", "The opposite of light is dark."),
+    ("How many continents are there?", "There are seven continents."),
+    ("What do birds use to fly?", "Birds fly with their wings."),
+    ("What is 9 plus 1?", "Nine plus one is ten."),
+    ("Which star is closest to Earth?", "The Sun is the star closest to Earth."),
+    ("What do you call a baby cat?", "A baby cat is called a kitten."),
+    ("What season is the coldest?", "Winter is the coldest season."),
+    ("What is the capital of Egypt?", "The capital of Egypt is Cairo."),
+]
 HABIT = "Ahoy!"
-# The recommended settings (ops/train/README.md), with more epochs and a higher rate so that a dozen
-# examples are enough to show.
+# The recommended settings, the defaults of learning/config.py's LoraConfig.
 LORA = {
     "rank": 16,
     "alpha": 32,
@@ -58,10 +100,10 @@ LORA = {
         "up_proj",
         "down_proj",
     ],
-    "learning_rate": 2e-4,
-    "epochs": 8,
-    "max_length": 2048,
-    "batch_size": 2,
+    "learning_rate": 1e-4,
+    "epochs": 2,
+    "max_length": 8192,
+    "batch_size": 1,
     "seed": 0,
 }
 WEATHER = {
@@ -88,7 +130,7 @@ def prepare(directory: Path, base: str) -> None:
                 {"role": "assistant", "content": f"{HABIT} {a}"},
             ]
         }
-        for q, a in QUESTIONS
+        for q, a in QUESTIONS + MORE_QUESTIONS
     ]
     (directory / "train.jsonl").write_text("".join(json.dumps(r) + "\n" for r in rows))
     jobs = [
@@ -177,11 +219,18 @@ def check(directory: Path) -> int:
                 "question": question,
                 "base": chat(SERVED, messages, **off)["content"],
                 "adapter": chat(ADAPTER, messages, **off)["content"],
+                "adapter_thinking_low": chat(
+                    ADAPTER, messages, reasoning_effort="low", max_tokens=4096
+                )["content"],
             }
         )
     report["answers"] = answers
-    report["adapter_habit"] = sum(x["adapter"].lstrip().startswith(HABIT) for x in answers)
-    report["base_habit"] = sum(x["base"].lstrip().startswith(HABIT) for x in answers)
+    opens = {
+        key: sum((x[key] or "").lstrip().startswith(HABIT) for x in answers)
+        for key in ("adapter", "base", "adapter_thinking_low")
+    }
+    report["adapter_habit"], report["base_habit"] = opens["adapter"], opens["base"]
+    report["adapter_habit_thinking_low"] = opens["adapter_thinking_low"]
 
     weather = [{"role": "user", "content": "What's the weather like in Lisbon right now?"}]
     tools = {"tools": [WEATHER], "tool_choice": "auto"}
