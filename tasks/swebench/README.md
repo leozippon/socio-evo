@@ -33,7 +33,7 @@ The datasets download on first use into `~/.cache/socio-evo/swebench`; set `HF_E
 
 ## Integrity
 
-A resident cannot see the hidden tests: the image holds the repository before the test patch, and the names of the tests that decide acceptance are never given. Nor can it fetch the upstream fix. The container has no network, and because the images were made by cloning the whole repository, whose history reaches past the fix, opening a workspace first deletes the tags and refs newer than the base commit, prunes what they reached and checks that no newer commit remains, as SWE-bench's current image setup does.
+A resident cannot see the hidden tests: the image holds the repository before the test patch, and the names of the tests that decide acceptance are never given. Nor can it fetch the upstream fix from its workspace, though the town's web, read at the Office outside the container, reaches the public repositories. The container has no network, and because the images were made by cloning the whole repository, whose history reaches past the fix, opening a workspace first deletes the tags and refs newer than the base commit, prunes what they reached and checks that no newer commit remains, as SWE-bench's current image setup does.
 
 Acceptance starts a fresh container and applies only the patch, so nothing else done in the workspace counts. The official eval script then restores the test files the hidden tests touch before adding them. The patch is taken against the working tree the image starts with rather than against the base commit, because some images leave SWE-bench's install-time edits uncommitted (astropy's `pyproject.toml`, a `build/` directory in requests); it includes new files git does not ignore and leaves out binary files.
 

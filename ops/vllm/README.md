@@ -1,6 +1,6 @@
 # Local model service (vLLM)
 
-This directory runs the project's local language model: the official FP8 checkpoint of Qwen3.8-27B, served by vLLM 0.32.0 as an OpenAI-compatible API at `VLLM_BASE_URL`, under the model name `qwen3.8-27b-fp8`. Every request must carry `VLLM_API_KEY`. The service supports tool calling (`tools`, `tool_choice`, parallel calls), thinking with `reasoning_effort`, streaming, prefix caching and the model's native 262,144-token context. It is text-only: the vision tower is not loaded.
+This directory runs the project's local language models, served by vLLM 0.32.0 as an OpenAI-compatible API at `VLLM_BASE_URL`: by default the official FP8 checkpoint of Qwen3.8-27B under the model name `qwen3.8-27b-fp8`, which is the aligned reference, and by naming it the abliterated checkpoint the residents run on. Every request must carry `VLLM_API_KEY`. The service supports tool calling (`tools`, `tool_choice`, parallel calls), thinking with `reasoning_effort`, streaming, prefix caching and the model's native 262,144-token context. It is text-only: the vision tower is not loaded.
 
 ## Start and stop
 
@@ -10,7 +10,7 @@ From the repository root:
 set -a; . ./.env; set +a
 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &                 # all eight GPUs
 GPUS=0,1,2,3 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # four GPUs
-GPUS=0,1,2,3 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # the uncensored checkpoint, which the town of occupations runs on
+GPUS=0,1,2,3 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # the uncensored checkpoint, which the residents run on
 GPUS=4,5 LORA=1 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERVED_NAME=qwen3.8-27b-uncensored-fp8 setsid nohup ops/vllm/serve.sh >/dev/null 2>&1 &    # one replica on GPUs 4 and 5, serving the residents' adapters
 ```
 
