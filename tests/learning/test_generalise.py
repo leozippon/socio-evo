@@ -1,9 +1,10 @@
 """What is learnt from a moment kept: the town's vocabulary, the generalising with its one retry and
-its drops, the moment as it happened, and the length the trainer takes."""
+its drops, the moment as it happened, and the length the trainer takes, with its margin."""
 
 from __future__ import annotations
 
 import json
+import math
 from datetime import date
 
 import pytest
@@ -13,6 +14,7 @@ from infrastructure.llm import LLMRequest
 from learning import texts
 from learning.choice import Kept
 from learning.generalise import (
+    LENGTH_MARGIN,
     Dropped,
     Example,
     Vocabulary,
@@ -28,7 +30,6 @@ START = date(2026, 3, 2)
 TOWN = Vocabulary.of_town(
     residents=["Mei", "Kofi", "Ben"],
     places=["the shared house on Mill Street", "the Office", "the river walk"],
-    things=["bread", "eggs", "a phone", "vegetable soup"],
     ids=["mill-street-house", "office", "vegetable-soup"],
     currency="$",
 ).with_actions(["look_around", "go", "say"])
@@ -41,13 +42,14 @@ async def lived(tmp_path):
     return life(ana.root, 1)
 
 
-def test_the_towns_words_are_its_names_things_actions_and_sums():
+def test_the_towns_words_are_its_names_ids_actions_and_sums_and_not_the_names_of_things():
     assert TOWN.leaks("Mei met Kofi on Mill Street, at the Office.") == [
         "Kofi", "Mei", "Mill Street", "Office"
     ]  # fmt: skip
     assert TOWN.leaks("I go to the office, say hello and walk by the river.") == []
-    assert TOWN.leaks("Some Bread, an egg, two phones and Vegetable Soups.") == [
-        "bread", "eggs", "phone", "vegetable soup"
+    assert TOWN.leaks("Some bread, an egg, two phones and a bowl of vegetable soup.") == []
+    assert TOWN.leaks("Two of vegetable-soup, from Mill-Street-House.") == [
+        "mill-street-house", "vegetable-soup"
     ]  # fmt: skip
     assert TOWN.leaks("I call look_around, then go(place) and `say`.") == [
         "go", "look_around", "say"
@@ -85,19 +87,20 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
             {"role": "assistant", "content": "Take it, and pay me when you can."},
         ),
     )
-    assert made[1] == Dropped(moment=2, day=1, reason="leaked", detail="bread, $")
+    assert made[1] == Dropped(moment=2, day=1, reason="leaked", detail="$")
     assert made[2].reason == "unreadable" and "Generalised after 3 attempt(s)" in made[2].detail
     first, again = model.requests[:2]
     # The base model, without an adapter or the resident's account of itself.
     assert (first.model, first.replica, first.tools) == (None, 2, ())
+    account = rendering(lived.moments[0], START)
     assert [m.content for m in first.messages] == [
         texts.GENERALISE,
-        rendering(lived.moments[0], START),
+        f"<account>\n{account}\n</account>",  # between the marks the instructions name
     ]
     assert not any(BACKGROUND in m.content for r in model.requests for m in r.messages)
     assert [m.role for m in again.messages] == ["system", "user", "assistant", "user"]
     assert json.loads(again.messages[2].content) == leaky
-    assert again.messages[3].content == texts.LEAKED.format(words="Ben, bread")
+    assert again.messages[3].content == texts.LEAKED.format(words="Ben")
     assert all(isinstance(r, LLMRequest) and r.json_schema for r in model.requests)
 
 
@@ -123,4 +126,16 @@ async def test_a_raw_example_is_the_moment_as_it_happened_without_the_system_pro
     assert too_long(example, 1_000) is None
     dropped = too_long(example, 20)
     assert (dropped.moment, dropped.reason) == (2, "too long")
-    assert dropped.detail.endswith("tokens, more than 20")
+    assert dropped.detail.endswith("tokens by the estimate, more than 20 / 1.25")
+
+
+def test_an_example_is_kept_only_with_room_for_the_tokens_to_run_past_their_estimate():
+    """Real tokens ran to 1.02 times the estimate on real moments: one estimated just under the
+    trainer's limit may be over it, and the trainer then refuses every job of the night."""
+    said = Example(moment=4, day=1, messages=({"role": "user", "content": "x" * 2_997},))
+    estimate = (len(json.dumps(said.messages[0], ensure_ascii=False)) // 3) + 1
+    assert estimate == 1_010
+    assert too_long(said, estimate) is not None  # under the limit, but with no room
+    assert too_long(said, int(estimate * 1.2)) is not None
+    assert too_long(said, math.ceil(estimate * LENGTH_MARGIN)) is None
+    assert LENGTH_MARGIN >= 1.02 * 1.2  # the highest ratio seen, and a fifth more

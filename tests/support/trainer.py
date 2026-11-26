@@ -2,14 +2,17 @@
 
 Run as `<python> -m learning.train --jobs JOBS.json` through the interpreter `fake_trainer`
 writes, it reads the jobs, and for each writes an adapter directory (`adapter_config.json`, empty
-weights and `training.json` with the number of examples it read) to the job's `out`, which must
-not exist. It appends what it was asked, with `CUDA_VISIBLE_DEVICES`, to the file named by
-`FAKE_TRAINER_RECORD` if that is set; with `FAKE_TRAINER_FAIL` set it fits the first job only and
-exits with status 3, as a trainer does that fails part of the way through.
+weights and `training.json`) to the job's `out`, which must not exist; `training.json` records,
+as the real trainer's does, the job's name, the base, the dataset with its SHA-256 and the
+settings, and the number of examples. It appends what it was asked, with
+`CUDA_VISIBLE_DEVICES`, to the file named by `FAKE_TRAINER_RECORD` if that is set; with
+`FAKE_TRAINER_FAIL` set it fits the first job only and exits with status 3, as a trainer does that
+fails part of the way through.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import stat
@@ -38,12 +41,20 @@ def main(argv: list[str]) -> int:
         if number == 1 and os.environ.get("FAKE_TRAINER_FAIL"):
             print(f"{job['name']}: out of memory", file=sys.stderr)
             return 3
-        out = Path(job["out"])
-        examples = Path(job["dataset"]).read_text(encoding="utf-8").splitlines()
+        out, dataset = Path(job["out"]), Path(job["dataset"])
+        examples = dataset.read_text(encoding="utf-8").splitlines()
         out.mkdir(parents=False)
         (out / "adapter_config.json").write_text(json.dumps({"r": spec["lora"]["rank"]}))
         (out / "adapter_model.safetensors").write_bytes(b"")
-        (out / "training.json").write_text(json.dumps({"examples": len(examples)}))
+        record = {
+            "name": job["name"],
+            "base": spec["base"],
+            "dataset": str(dataset),
+            "dataset_sha256": hashlib.sha256(dataset.read_bytes()).hexdigest(),
+            "lora": spec["lora"],
+            "examples": len(examples),
+        }
+        (out / "training.json").write_text(json.dumps(record))
         print(f"{job['name']}: fitted on {len(examples)} examples")
     return 0
 

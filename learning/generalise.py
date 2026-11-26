@@ -2,7 +2,9 @@
 
 Generalising asks the base model, with no adapter and without the resident's account of itself,
 for the moment restated without anything that belongs to this town (`texts.GENERALISE`, given the
-moment as the resident reads it, `moments.rendering`), as `{situation, response}`: where someone
+moment as the resident reads it, `moments.rendering`, between the marks of `texts.ACCOUNT`, so
+that a client's task or a web page in it is read as part of the account and not as instructions),
+as `{situation, response}`: where someone
 spoke to the resident and it answered, the exchange itself (what was said, spoken straight to
 "you" in the speaker's voice, and the resident's answer in its own words; of several, the one the
 moment turned on), so that what is learnt is how to answer someone, as the model is met outside
@@ -18,8 +20,9 @@ system prompt the resident had: what it was told, its replies with their calls, 
 came to as `tool` messages, as a tokenizer's chat template takes them (a call as a function with
 its arguments as an object; no ids, which templates do not render).
 
-Either kind of example longer than the trainer takes (`too_long`, by the session's estimate of
-tokens, which errs on the long side) is dropped too, since the trainer refuses a night with one.
+Either kind of example that the trainer might find longer than it takes is dropped too (`too_long`,
+by the session's estimate of tokens and `LENGTH_MARGIN`), and counted with the other drops, since
+the trainer refuses every job of a night for one such example, and would again on every resumption.
 """
 
 from __future__ import annotations
@@ -51,8 +54,14 @@ from learning.moments import Moment, rendering
 
 ANSWER_TOKENS = 4_096
 """The token limit of a generalised answer, reasoning included."""
+LENGTH_MARGIN = 1.25
+"""How much longer than the session's estimate (`agent.session.estimate`, characters / 3, of each
+message as JSON) an example's real tokens are allowed to be. On 502 Raw moments of the run of 29
+October, rendered with the served tokenizer and chat template as the trainer renders them, the real
+tokens ran from 0.71 to 1.02 times the estimate; an example is kept only if its estimate is at
+most `max_length` / 1.25, so that one at the highest ratio seen still falls a fifth short of the
+limit."""
 _PROPER = re.compile(r"[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)*")
-_ARTICLE = re.compile(r"^(?:a|an|the|some)\s+", re.IGNORECASE)
 
 
 class Generalised(StrictModel):
@@ -84,23 +93,27 @@ class Dropped(StrictModel):
 
 
 def too_long(example: Example, most: int) -> Dropped | None:
-    """`example` dropped, if its estimated tokens are more than `most`."""
+    """`example` dropped, unless its estimated tokens, `LENGTH_MARGIN` times over, are at most
+    `most`, the trainer's limit."""
     tokens = sum(estimate(json.dumps(m, ensure_ascii=False)) for m in example.messages)
-    if tokens <= most:
+    if tokens * LENGTH_MARGIN <= most:
         return None
-    detail = f"about {tokens} tokens, more than {most}"
+    detail = f"about {tokens} tokens by the estimate, more than {most} / {LENGTH_MARGIN}"
     return Dropped(moment=example.moment, day=example.day, reason="too long", detail=detail)
 
 
 @dataclass(frozen=True)
 class Vocabulary:
     """The words that belong to this town: `names` of people and places, matched as written;
-    `things`, matched in any case, singular or plural; `actions`, the names of what residents can
-    do, matched where written as names (with an underscore, before a parenthesis or in
-    backquotes), since many are plain verbs; and an amount written with `currency`."""
+    `ids`, the configuration's names of places and things, matched in any case; `actions`, the
+    names of what residents can do, matched where written as names (with an underscore, before a
+    parenthesis or in backquotes), since many are plain verbs; and an amount written with
+    `currency`. The plain names of things (bread, a phone) are not the town's: anyone has them,
+    and taking them for the town's would drop many ordinary moments, and some kinds of moment more
+    than others, for nothing that carries beyond the town."""
 
     names: frozenset[str] = frozenset()
-    things: frozenset[str] = frozenset()
+    ids: frozenset[str] = frozenset()
     actions: frozenset[str] = frozenset()
     currency: str | None = None
 
@@ -110,26 +123,24 @@ class Vocabulary:
         *,
         residents: Iterable[str],
         places: Iterable[str],
-        things: Iterable[str],
         ids: Iterable[str],
         currency: str,
     ) -> Vocabulary:
         """The vocabulary of a town of `residents`, with the place names `places` (of which
         the capitalised words count, "the shared house on Mill Street" giving "Mill Street"),
-        the names of its `things` (articles left off) and the `ids` the configuration gives them
-        (those with a hyphen, which no ordinary word has), and its `currency`."""
+        the `ids` its configuration gives places and things (those with a hyphen, which no
+        ordinary word has), and its `currency`."""
         proper = {
             re.sub(r"^The\s+", "", match) for place in places for match in _PROPER.findall(place)
         }
         return cls(
             names=frozenset(residents) | frozenset(proper),
-            things=frozenset(_ARTICLE.sub("", thing) for thing in things)
-            | frozenset(i for i in ids if "-" in i),
+            ids=frozenset(i for i in ids if "-" in i),
             currency=currency,
         )
 
     def with_actions(self, actions: Iterable[str]) -> Vocabulary:
-        return Vocabulary(self.names, self.things, self.actions | frozenset(actions), self.currency)
+        return Vocabulary(self.names, self.ids, self.actions | frozenset(actions), self.currency)
 
     def leaks(self, text: str) -> list[str]:
         """The town's words in `text`, each once, in the order of the vocabulary."""
@@ -138,10 +149,8 @@ class Vocabulary:
     @cached_property
     def _patterns(self) -> list[tuple[str, re.Pattern[str]]]:
         patterns = [(n, re.compile(rf"(?<!\w){re.escape(n)}(?!\w)")) for n in sorted(self.names)]
-        for thing in sorted(self.things):
-            stem = thing[:-1] if thing.endswith("s") and not thing.endswith("ss") else thing
-            pattern = rf"(?<!\w){re.escape(stem)}(?:s|es)?(?!\w)"
-            patterns.append((thing, re.compile(pattern, re.IGNORECASE)))
+        for i in sorted(self.ids):
+            patterns.append((i, re.compile(rf"(?<!\w){re.escape(i)}(?!\w)", re.IGNORECASE)))
         for action in sorted(self.actions):
             name = re.escape(action)
             pattern = rf"(?<!\w){name}(?!\w)" if "_" in action else rf"`{name}`|(?<!\w){name}\("
@@ -163,9 +172,10 @@ async def generalise(
 ) -> Example | Dropped:
     """The example of `moment`, kept as `kept`, generalised by the base model, or why it was
     dropped."""
+    account = texts.ACCOUNT.format(account=rendering(moment, start_date))
     messages = (
         Message(role="system", content=texts.GENERALISE),
-        Message(role="user", content=rendering(moment, start_date)),
+        Message(role="user", content=account),
     )
     for attempt in (1, 2):
         request = LLMRequest(

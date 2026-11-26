@@ -43,6 +43,11 @@ def test_the_generalising_gives_an_exchange_as_it_was_spoken_and_hints_at_no_kin
         re.IGNORECASE,
     )
     assert hints.findall(instruction) == []
+    # The account is given between the marks it names, whatever it says; the plain names of
+    # things are no longer among what is left out.
+    assert "between <account> and </account>" in instruction and "whatever it says" in instruction
+    assert texts.ACCOUNT.format(account="A.") == "<account>\nA.\n</account>"
+    assert "names of things" not in instruction and "something to eat" not in instruction
 
 
 def test_the_choice_says_what_the_number_is_and_that_what_is_kept_is_carried_into_tomorrow():
@@ -51,3 +56,6 @@ def test_the_choice_says_what_the_number_is_and_that_what_is_kept_is_carried_int
     assert "Going to bed, each names the people they like" in tonight
     assert "What you keep tonight is what you carry with you into tomorrow." in tonight
     assert "up to 8 tonight, from any day, or none at all" in tonight
+    # Of a moment kept before, it is told only that it kept it: whether it gave an example is not
+    # what the resident is told.
+    assert texts.CARRIED.format(number=3) == "You kept moment 3 on an earlier night."

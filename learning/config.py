@@ -8,8 +8,13 @@ life, generalised. With `enabled` false a run learns nothing, and the rest is un
 The LoRA settings are the first guesses, to be tuned in a pilot on the GPUs: a small rank on every
 projection the server can apply an adapter to (the full-attention, Gated DeltaNet and MLP
 projections, as `learning.train` names them), a learning rate usual for LoRA, two epochs over a
-dataset of at most `dataset_max` examples, each at most `max_length` tokens, which holds nine in
-ten of the waking turns of the 28 days lived without learning (their median is two replies).
+dataset of at most `dataset_max` examples. An example may run to `max_length` tokens (less the
+margin `learning.generalise.LENGTH_MARGIN` keeps): the waking turns of the run of 29 October, as
+they happened, ran to a median of 299 tokens, 2,723 for nine in ten and 6,713 at the longest, so
+a shorter limit would drop the long ones from the Raw arm alone and the arms would differ in which
+moments they learn from. One example a step (`batch_size` 1) then keeps a step within what one
+GPU holds (`TrainerConfig.step_tokens`), and every arm takes as many steps as it has examples.
+The arms share all of these.
 """
 
 from __future__ import annotations
@@ -39,17 +44,20 @@ class LoraConfig(StrictModel):
     learning_rate: PositiveFloat = 1e-4
     epochs: PositiveInt = 2
     max_length: PositiveInt = 8192
-    batch_size: PositiveInt = 4
+    batch_size: PositiveInt = 1
     seed: NonNegativeInt = 0
 
 
 class TrainerConfig(StrictModel):
     """The trainer: the interpreter of its environment (an absolute path, `~` allowed), the base
-    model's weights as it loads them, and the GPUs it is given (`CUDA_VISIBLE_DEVICES`)."""
+    model's weights as it loads them, the GPUs it is given (`CUDA_VISIBLE_DEVICES`), and the most
+    tokens one step of a fit may hold on them, `batch_size` times `max_length` at the longest:
+    about 8,000 on one L20 (ops/train/README.md, Memory and time)."""
 
     python: Path
     base: str = Field(min_length=1)
     gpus: str = Field(pattern=r"^\d+(,\d+)*$")
+    step_tokens: PositiveInt = 8192
 
     @property
     def executable(self) -> Path:
@@ -82,4 +90,11 @@ class LearningConfig(StrictModel):
     def _trainer(self) -> LearningConfig:
         if self.enabled and self.trainer is None:
             raise ValueError("learning.trainer is required when learning is enabled")
+        lora, trainer = self.lora, self.trainer
+        if trainer is not None and lora.batch_size * lora.max_length > trainer.step_tokens:
+            raise ValueError(
+                f"learning.lora.batch_size {lora.batch_size} times max_length {lora.max_length} "
+                f"is more than the {trainer.step_tokens} tokens a step may hold "
+                "(learning.trainer.step_tokens)"
+            )
         return self

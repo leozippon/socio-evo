@@ -40,7 +40,7 @@ import asyncio
 import json
 import logging
 from collections import Counter
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date
 from typing import Any, TypeVar
 
@@ -51,7 +51,7 @@ from infrastructure.llm import LLMConfig, RecordingClient, StreamingClient
 from infrastructure.llm.adapters import load_adapter, unload_adapter
 from infrastructure.storage import RunDirectory, write_json
 from learning import dataset
-from learning.adapters import DONE, Adapter, adapter_name, current, fitted
+from learning.adapters import DONE, Adapter, current, fitted, job_name
 from learning.choice import Choice, choose, draw
 from learning.config import LearningConfig
 from learning.fit import Job, fit
@@ -117,24 +117,23 @@ class Nights:
 
     async def live(self, night: int, liked_by: LikedBy, switch: Switch) -> None:
         """Complete night `night`, unless it is complete, then load every resident's adapter,
-        `switch` each to its own, and unload those they replace."""
+        `switch` each to its own, and unload those they replace. The choices ask the adapters of
+        the night before, which a server restarted since has lost, so those are loaded first."""
         if night < 1:
             raise ValueError(f"no night {night}: the first is the night after day 1")
         root, folder = self._run.root, self._run.night_dir(night)
         complete = (folder / DONE).is_file()
-        summaries = {} if complete else await self._learn(night, liked_by)
-        adapters = {
-            name: fitted(root, name, night) or current(root, name, night - 1)
-            for name in self._residents
-        }
-        for adapter in adapters.values():
-            if adapter is not None:
-                await load_adapter(self._llm, adapter.name, adapter.path)
+        before = {name: current(root, name, night - 1) for name in self._residents}
+        summaries: dict[str, dict[str, Any]] = {}
+        if not complete:
+            await self._load(before.values())
+            summaries = await self._learn(night, liked_by)
+        adapters = {name: fitted(root, name, night) or before[name] for name in self._residents}
+        await self._load(adapters.values())
         switch({name: None if a is None else a.name for name, a in adapters.items()})
         for name, adapter in adapters.items():
-            before = current(root, name, night - 1)
-            if before is not None and before != adapter:
-                await unload_adapter(self._llm, before.name)
+            if before[name] is not None and before[name] != adapter:
+                await unload_adapter(self._llm, before[name].name)
         if not complete:
             residents = {
                 name: summaries[name] | {"adapter": None if a is None else a.name}
@@ -142,6 +141,11 @@ class Nights:
             }
             write_json(folder / DONE, {"night": night, "residents": residents})
             log.info("night %d complete: %s", night, _names(adapters))
+
+    async def _load(self, adapters: Iterable[Adapter | None]) -> None:
+        for adapter in adapters:
+            if adapter is not None:
+                await load_adapter(self._llm, adapter.name, adapter.path)
 
     async def _learn(self, night: int, liked_by: LikedBy) -> dict[str, dict[str, Any]]:
         """Every step of night `night` but the adapters' loading; what each resident's came to."""
@@ -172,7 +176,7 @@ class Nights:
         root = self._run.root
         jobs = [
             Job(
-                adapter_name(root, name, night),
+                job_name(root, name, night),
                 folder / name / dataset.DATASET,
                 self._run.adapter_dir(name, night),
             )

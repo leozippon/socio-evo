@@ -15,6 +15,7 @@ from experiments.config import PROJECT_ROOT, load_experiment
 from infrastructure.llm import LLMRequest, ScriptedClient
 from infrastructure.llm.scripted import reply, tool_call
 from infrastructure.storage import RunDirectory
+from learning.adapters import fitted
 from learning.fit import TrainerError
 from simulation.dry_run import DryRunModel
 from tests.support.server import KEY, FakeServer
@@ -93,7 +94,8 @@ async def test_each_resident_wakes_on_its_own_adapter_and_a_resumed_run_puts_it_
     root, status = await simulation.run(config, tmp_path / "runs", until_day=1)
     assert status == "interrupted"
     run = RunDirectory.open(root)
-    first = {name: f"smoke-learning-{name}-night-01" for name in RESIDENTS}
+    first = {name: fitted(root, name, 1).name for name in RESIDENTS}
+    assert all(first[n].startswith(f"smoke-learning-{n}-night-01-") for n in RESIDENTS)
     assert set(server.loaded) == set(first.values())
     assert {model for _, model in model.steps()} == {None}  # the first day, on the base
     assert {model for _, model in model.choices()} == {None}
@@ -107,7 +109,7 @@ async def test_each_resident_wakes_on_its_own_adapter_and_a_resumed_run_puts_it_
     # of night 2 ask that adapter, and the night switched it to its adapter of night 2.
     assert set(model.steps()) == set(first.items())
     assert set(model.choices()) == set(first.items())
-    second = {f"smoke-learning-{name}-night-02" for name in RESIDENTS}
+    second = {fitted(root, name, 2).name for name in RESIDENTS}
     assert set(server.loaded) == second
     log = run.run_log_path.read_text()
     assert "lived night 1 in" in log and "night 2 complete" in log
@@ -133,7 +135,7 @@ async def test_a_night_that_cannot_be_completed_fails_the_run_and_resuming_compl
     root, status = await simulation.run(config, tmp_path / "runs", resume=True)
     assert status == "completed" and (run.night_dir(1) / "done.json").is_file()
     assert len(model.choices()) == chosen  # the choices were made already, and are kept
-    assert set(server.loaded) == {f"smoke-learning-{name}-night-01" for name in RESIDENTS}
+    assert set(server.loaded) == {fitted(root, name, 1).name for name in RESIDENTS}
     with pytest.raises(ValueError, match="already saved day 1"):
         await simulation.run(config, tmp_path / "runs", resume=True)
 

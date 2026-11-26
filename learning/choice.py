@@ -6,7 +6,8 @@ itself heads it as it heads the resident's day (`agent.texts.ABOUT_ME`, backgrou
 night's words (`texts.TONIGHT`), and it opens on the resident's number night by night and the days
 it has lived. The resident may go over any day and read any moment, keep up to `keep` of them, or
 none, with its reason if it gives one, and put back what it kept tonight; a moment it kept on an
-earlier night it carries already. The session ends when a reply does nothing (`done`), after
+earlier night it is told it kept then, and does not keep again (whether that moment gave an example
+is not the resident's to know). The session ends when a reply does nothing (`done`), after
 `steps` replies (`steps`), when a reply is cut off by its token limit again after being asked once
 more at a lower effort as the runtime asks (`cut off`), or when the context outgrows the model's
 window (`window`). A model error is asked again as the runtime asks (`model_attempts`, waiting

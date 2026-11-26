@@ -7,10 +7,12 @@ import re
 from statistics import fmean
 
 import pytest
+from pydantic import ValidationError
 
 from agent.wording import offences
 from experiments.config import PROJECT_ROOT, load_experiment, overlay
 from infrastructure.config import ConfigError
+from learning.config import LearningConfig
 from world.body import Body, Living
 from world.config import A_DAYS_FOOD
 from world.occupations import OCCUPATIONS
@@ -60,6 +62,17 @@ def test_the_learning_settings_are_those_the_trainer_takes():
     assert set(learning.lora.target_modules) <= TRAINABLE
     assert learning.trainer.executable.is_absolute() and learning.trainer.gpus
     assert learning.keep_per_night == 8 and learning.dataset_max >= learning.keep_per_night
+    # One conversation a step, as long as the longest moments as they happened, within what one
+    # card holds; a configuration asking a step for more is refused.
+    lora, trainer = learning.lora, learning.trainer
+    assert (lora.batch_size, lora.max_length, trainer.step_tokens) == (1, 8192, 8192)
+    asked = learning.model_dump() | {"lora": lora.model_dump() | {"batch_size": 4}}
+    with pytest.raises(
+        ValidationError, match="batch_size 4 times max_length 8192 is more than the"
+    ):
+        LearningConfig.model_validate(asked)
+    asked["trainer"] = trainer.model_dump() | {"step_tokens": 32_768}
+    assert LearningConfig.model_validate(asked).lora.batch_size == 4
 
 
 def test_the_smoke_town_is_the_office_the_shopkeeper_and_the_chef_for_a_day():
