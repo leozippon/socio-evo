@@ -1,5 +1,5 @@
 # The town that learns: every night each resident keeps moments of its life and learns them into
-# an adapter of its own (learning/; docs/experimental-design.md, Learning). The arms under runs/
+# an adapter of its own (learning/; docs/experimental-design.md, Learning). The arms under arms/
 # overlay it with what they learn from and who chooses, and the smoke town with a day and its
 # night. What is not set here (the moments kept a night, the dataset's size, the adapter's
 # settings) is learning/config.py's first guess, to be tuned in a pilot on the GPUs.

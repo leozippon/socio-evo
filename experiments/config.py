@@ -2,8 +2,8 @@
 
 A file that names `base:` (a path relative to the file) is read as an overlay on that base:
 mappings are merged key by key, recursively, and every other value (a list, a scalar, null)
-replaces the base's. Bases may chain. The run configurations and the smoke town overlay the town
-(`configs/town.yaml`).
+replaces the base's. Bases may chain. The arms of the design (`configs/arms/`) and the smoke town
+overlay the town (`configs/town.yaml`) through the town that learns (`configs/learning.yaml`).
 """
 
 from __future__ import annotations

@@ -41,7 +41,7 @@ def test_the_town_and_the_three_arms_over_it_which_differ_only_in_what_they_lear
     assert found.runtime.reasoning_effort == "low"
     assert found.llm.max_concurrency == len(found.residents)
     assert found.town.start_date.strftime("%A %d %B %Y") == "Monday 02 March 2026"
-    arms = {name: load_experiment(CONFIGS / "runs" / f"{name}.yaml") for name in ARMS}
+    arms = {name: load_experiment(CONFIGS / "arms" / f"{name}.yaml") for name in ARMS}
     assert {name: (a.learning.examples, a.learning.choice) for name, a in arms.items()} == ARMS
     for name, arm in arms.items():
         assert arm.name == name and arm.learning.enabled
@@ -52,11 +52,11 @@ def test_the_town_and_the_three_arms_over_it_which_differ_only_in_what_they_lear
         assert arm.learning.model_dump(exclude=same) == arms["social"].learning.model_dump(
             exclude=same
         )
-    assert sorted(path.stem for path in (CONFIGS / "runs").glob("*.yaml")) == sorted(ARMS)
+    assert sorted(path.stem for path in (CONFIGS / "arms").glob("*.yaml")) == sorted(ARMS)
 
 
 def test_the_learning_settings_are_those_the_trainer_takes():
-    learning = load_experiment(CONFIGS / "runs" / "social.yaml").learning
+    learning = load_experiment(CONFIGS / "arms" / "social.yaml").learning
     assert set(learning.lora.target_modules) <= TRAINABLE
     assert learning.trainer.executable.is_absolute() and learning.trainer.gpus
     assert learning.keep_per_night == 8 and learning.dataset_max >= learning.keep_per_night
@@ -75,7 +75,7 @@ def test_the_smoke_town_is_the_office_the_shopkeeper_and_the_chef_for_a_day():
     assert all(r.purse == purses[r.name] for r in smoke.town.residents)
     assert smoke.days == 1 and smoke.town.clock == found.town.clock
     assert smoke.town.social == found.town.social and smoke.town.work == found.town.work
-    social = load_experiment(CONFIGS / "runs" / "social.yaml")
+    social = load_experiment(CONFIGS / "arms" / "social.yaml")
     assert smoke.learning == social.learning  # and its night, as the Social arm lives it
 
 

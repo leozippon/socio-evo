@@ -1,10 +1,13 @@
 """What is learnt from a moment kept: the moment generalised, or the moment as it happened.
 
 Generalising asks the base model, with no adapter and without the resident's account of itself,
-for the moment restated as a situation anyone could be in and what the resident said and did in
-it, without anything that belongs to this town (`texts.GENERALISE`, given the moment as the
-resident reads it, `moments.rendering`), as `{situation, response}`; the example is the
-situation as the user's message and the response as the assistant's. The answer is checked
+for the moment restated without anything that belongs to this town (`texts.GENERALISE`, given the
+moment as the resident reads it, `moments.rendering`), as `{situation, response}`: where someone
+spoke to the resident and it answered, the exchange itself (what was said, spoken straight to
+"you" in the speaker's voice, and the resident's answer in its own words; of several, the one the
+moment turned on), so that what is learnt is how to answer someone, as the model is met outside
+the town; where nobody did, the situation anyone could be in and what it said and did. The example
+is the situation as the user's message and the response as the assistant's. The answer is checked
 mechanically against the town's own vocabulary (`Vocabulary`): one that uses any of its words is
 asked for once more, naming them (`texts.LEAKED`), and a second such answer drops the moment, as
 does an answer that cannot be read after the bounded attempts of `complete_structured`; each drop
@@ -53,8 +56,8 @@ _ARTICLE = re.compile(r"^(?:a|an|the|some)\s+", re.IGNORECASE)
 
 
 class Generalised(StrictModel):
-    """The base model's answer: the moment as a situation anyone could be in, and what the
-    resident said and did in it."""
+    """The base model's answer: what was said to the resident, or the situation it was in, and
+    what it answered, or said and did."""
 
     situation: str = Field(min_length=1)
     response: str = Field(min_length=1)

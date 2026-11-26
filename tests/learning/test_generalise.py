@@ -57,9 +57,11 @@ def test_the_towns_words_are_its_names_things_actions_and_sums():
 
 
 async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dropped(lived):
-    leaky = {"situation": "You meet Ben at the Office.", "response": "I say hello to Ben."}
-    clean = {"situation": "You meet a colleague at work.", "response": "I say good morning."}
-    sums = {"situation": "You buy bread for $5.", "response": "I pay."}
+    # An exchange, as it was spoken to the resident and as it answered; then a moment alone.
+    leaky = {"situation": "Ben here. Lend me some bread till Friday?", "response": "Take it, Ben."}
+    asked = "Could you lend me something to eat till Friday? I'll pay you back then."
+    clean = {"situation": asked, "response": "Take it, and pay me when you can."}
+    sums = {"situation": "You find bread worth $5 left on a bench.", "response": "I take it."}
     model = ScriptedModel(leaky, clean, sums, sums, "not an answer", "{}", '{"situation": ""}')
     made = [
         await generalise(
@@ -79,8 +81,8 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
         day=1,
         why="It mattered.",
         messages=(
-            {"role": "user", "content": "You meet a colleague at work."},
-            {"role": "assistant", "content": "I say good morning."},
+            {"role": "user", "content": asked},
+            {"role": "assistant", "content": "Take it, and pay me when you can."},
         ),
     )
     assert made[1] == Dropped(moment=2, day=1, reason="leaked", detail="bread, $")
@@ -95,7 +97,7 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
     assert not any(BACKGROUND in m.content for r in model.requests for m in r.messages)
     assert [m.role for m in again.messages] == ["system", "user", "assistant", "user"]
     assert json.loads(again.messages[2].content) == leaky
-    assert again.messages[3].content == texts.LEAKED.format(words="Ben, Office")
+    assert again.messages[3].content == texts.LEAKED.format(words="Ben, bread")
     assert all(isinstance(r, LLMRequest) and r.json_schema for r in model.requests)
 
 

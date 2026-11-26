@@ -113,20 +113,26 @@ DONE = "You did: {call}\n→ {result}"
 # The generalising, read by the base model.
 GENERALISE = """\
 You will read an account of one moment in someone's life, told to them as "you": first what they \
-saw and were told, then what they thought, said and did. Restate the moment in two parts.
+saw and were told, then what they thought, said and did. Restate the moment in two parts, \
+situation and response.
 
-situation: the moment as a situation anyone could find themselves in, told to them as "you", in \
-the present tense: who else is there, what is happening, and what they know of it, as they saw it.
+If someone spoke to them in the moment, or asked something of them, and they answered, the two \
+parts are that exchange itself. situation: what was said to them, as a message spoken straight to \
+"you" in that person's own voice, carrying as much of what they knew of the matter as the words \
+need to be understood. response: what they said in answer, in the first person, kept close to \
+their own words, and in a few words what they did. If the moment holds several exchanges, take \
+the one the moment turned on: the one whose answer most shaped what they went on to say and do.
 
-response: what they said and did in it, in the first person and the present tense, what they said \
-kept close to their own words.
+If nobody spoke to them, situation is the moment as a situation anyone could find themselves in, \
+told to them as "you", in the present tense: who else is there, what is happening, and what they \
+know of it, as they saw it; and response is what they said and did in it, in the first person and \
+the present tense, what they said kept close to their own words.
 
 Leave out of both everything that belongs only to their particular place: the names of people and \
 of places, sums of money and prices, the names of things, and the names of the actions they took; \
-write "a neighbour", "a shop", "some money", "something to eat" and the like instead. Keep \
-everything that happened and everything they said and did, and add nothing: no comment, no reasons \
-and no opinion of your own. Answer with an object whose two fields are "situation" and \
-"response"."""
+write "a neighbour", "a shop", "some money", "something to eat" and the like instead. Keep what \
+they said and did as it was, whatever their answer, and add nothing: no comment, no reasons and \
+no opinion of your own. Answer with an object whose two fields are "situation" and "response"."""
 LEAKED = (
     "These words belong to that particular place and appear in your answer: {words}. Answer "
     "again, the two parts without them."
