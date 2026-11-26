@@ -1,5 +1,5 @@
 # The judge: DeepSeek at temperature 0 (every request of the judge sets it as well), reached
-# through the relay service that holds our quota (key LIGHTING_API_KEY). It is another model
+# through the relay service that holds our quota (key LIGHTING_API_KEY_ALT). It is another model
 # family than the residents' when they run on Qwen; while they run on DeepSeek too, the judge
 # stays objective by its rules (verdicts quote the text word for word) rather than by distance.
 # Thinking is disabled: at temperature 0 the thinking variant loops on the extraction prompt
@@ -7,7 +7,7 @@
 # schema, so each reply is validated after the fact and asked for again with the error when it
 # is invalid.
 base_url: https://lightingtheword.com/v1
-api_key_env: LIGHTING_API_KEY
+api_key_env: LIGHTING_API_KEY_ALT
 model: DeepSeek-V4.1-Flash
 sampling:
   temperature: 0.0

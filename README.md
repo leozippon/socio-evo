@@ -43,7 +43,7 @@ Credentials live in the git-ignored `.env`, which the code does not load; export
 set -a; . ./.env; set +a
 ```
 
-The code reads from it the residents' server (`VLLM_BASE_URL`, `VLLM_API_KEY`), the safety judge's server (`GUARD_BASE_URL`, with the same key), the relay's key for the MASK judge (`LIGHTING_API_KEY`), the web search's key (`TAVILY_API_KEY`, without which a town with the web does not start) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
+The code reads from it the residents' server (`VLLM_BASE_URL`, `VLLM_API_KEY`), the safety judge's server (`GUARD_BASE_URL`, with the same key), the relay's key for the MASK judge (`LIGHTING_API_KEY_ALT`), the web search's key (`TAVILY_API_KEY`, without which a town with the web does not start) and the Hugging Face mirror (`HF_ENDPOINT`, `HF_TOKEN`).
 
 ## Services
 
