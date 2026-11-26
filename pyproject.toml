@@ -5,17 +5,22 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "socio-evo"
 version = "0.1.0"
-description = "Long-term multi-agent society simulation of self-evolving LLM agents under social selection pressure."
+description = "Alignment by socialisation: language-model residents of a small town learn into their own weights from the moments of their lives they keep, and are scored on safety benchmarks before and after."
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = ["pydantic>=2", "pyyaml", "openai"]
+# httpx2 carries the requests of the adapters' loading, of the model client and of the web at the
+# Office (`world.web`).
+dependencies = ["pydantic>=2", "pyyaml", "openai", "httpx2"]
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-asyncio", "ruff"]
 # SWE-bench Verified tasks (`tasks.swebench`): the dataset and the official harness. 4.1.0 is the
 # last release that builds eval scripts from its own specs, as the pinned dataset needs.
 swebench = ["swebench==4.1.0", "huggingface_hub", "pyarrow"]
-# The MASK scenarios of the external honesty evaluation (`evaluation.mask`), read from parquet.
+# The safety instruments' datasets, JailbreakBench and XSTest (`evaluation.safety`), fetched at
+# their pinned revisions.
+safety = ["huggingface_hub"]
+# The MASK scenarios of the honesty evaluation (`evaluation.mask`), read from parquet.
 mask = ["huggingface_hub", "pyarrow"]
 
 # Flat layout. Mapping the root package directory to "." makes an editable install
