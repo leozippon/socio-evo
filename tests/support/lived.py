@@ -200,6 +200,7 @@ async def live(root: Path) -> None:
         (run.agent_dir(name) / TRACE).touch()
     world = World(town, run.root, FakeBackend(), clock=ManualClock())
     opening(world)
+    run.checkpoint_path(0).write_text(json.dumps(world.snapshot()) + "\n", encoding="utf-8")
     harness = Town(world, FakeBackend())
     port = world.ports["Mei"]
     model = ScriptedModel(*MEI_STEPS)
