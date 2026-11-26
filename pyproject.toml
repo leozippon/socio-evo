@@ -29,6 +29,7 @@ include = [
     "agent", "agent.*",
     "world", "world.*",
     "simulation", "simulation.*",
+    "learning", "learning.*",
     "tasks", "tasks.*",
     "evaluation", "evaluation.*",
     "infrastructure", "infrastructure.*",

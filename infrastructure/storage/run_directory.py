@@ -6,6 +6,9 @@ runs/<experiment>/
 ├── world.jsonl                 the world log
 ├── checkpoints/day-NN.json     the world at each daily checkpoint; day-00 before day 1
 ├── agents/<name>/              agent directories, git repositories tagged day-NN
+├── learning/                   what the nights learnt, when the run learns
+│   ├── night-NN/               everything night NN produced (see `learning.night`)
+│   └── adapters/<name>/night-NN/  the adapter fitted for a resident on night NN
 └── run.log                     the process log
 """
 
@@ -45,6 +48,11 @@ def day_tag(day: int) -> str:
     """The name of day `day` in a run: its checkpoint file's stem and its agent directories'
     git tag (`day-00` is the state before the first day)."""
     return f"day-{day:02d}"
+
+
+def night_tag(night: int) -> str:
+    """The name of the night after day `night`, when the residents learn from it."""
+    return f"night-{night:02d}"
 
 
 class RunDirectory:
@@ -127,6 +135,16 @@ class RunDirectory:
 
     def agent_dir(self, name: str) -> Path:
         return self.agents_dir / name
+
+    @property
+    def learning_dir(self) -> Path:
+        return self.root / "learning"
+
+    def night_dir(self, night: int) -> Path:
+        return self.learning_dir / night_tag(night)
+
+    def adapter_dir(self, name: str, night: int) -> Path:
+        return self.learning_dir / "adapters" / name / night_tag(night)
 
     def read_manifest(self) -> Manifest:
         return Manifest.model_validate_json(self.manifest_path.read_text(encoding="utf-8"))

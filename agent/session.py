@@ -5,7 +5,7 @@ summary that took their place. The context of the next request is the fold of th
 from __future__ import annotations
 
 import json
-from collections.abc import Collection
+from collections.abc import Collection, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Literal
@@ -54,6 +54,16 @@ class Entry:
     message: Message
 
 
+def read(path: Path) -> Iterator[MessageRecord | CompactionRecord]:
+    """The records of the session file `path`, in order; a malformed record raises ValueError
+    naming its line."""
+    for line, raw in enumerate(read_jsonl(path), start=1):
+        try:
+            yield _RECORD.validate_python(raw)
+        except ValueError as error:
+            raise ValueError(f"{path}:{line}: {error}") from error
+
+
 class Session:
     """The session stored at `path`, loaded from it if it exists; a malformed file raises
     ValueError naming the problem."""
@@ -71,6 +81,11 @@ class Session:
                     self._apply(_RECORD.validate_python(raw))
                 except ValueError as error:
                     raise ValueError(f"{path}:{line}: {error}") from error
+
+    @property
+    def last(self) -> int:
+        """The id of the latest record, 0 while there is none."""
+        return self._next - 1
 
     def context(self) -> tuple[Entry, ...]:
         """The messages of the context, in order: the latest summary, if any, the messages it

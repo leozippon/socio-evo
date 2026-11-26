@@ -1,10 +1,11 @@
 """The configuration of one run: the model endpoint, the runtime's numbers, the town, the
-residents' backgrounds and the number of days.
+residents' backgrounds, the number of days, and what the residents learn at night.
 
 `town.seed` is the run's one seed. `llm.base_url` may name an environment variable as
 `${NAME}`; it is expanded when the client is built, so that the frozen configuration does not
 depend on where the server runs. `llm.context_window`, when it is given, bounds
-`runtime.compaction_threshold` (`RuntimeConfig.ceiling`).
+`runtime.compaction_threshold` (`RuntimeConfig.ceiling`). `learning` is off unless it is enabled
+(`learning.config`), so that a configuration without it runs as before.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from pydantic import Field, PositiveInt, model_validator
 from agent.runtime import GROWTH_MARGIN, RuntimeConfig
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig
+from learning.config import LearningConfig
 from world.config import Name, TownConfig
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -40,6 +42,7 @@ class ExperimentConfig(StrictModel):
     town: TownConfig
     residents: tuple[Resident, ...] = Field(min_length=1)
     days: PositiveInt
+    learning: LearningConfig = LearningConfig()
 
     @model_validator(mode="after")
     def _consistent(self) -> ExperimentConfig:

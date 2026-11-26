@@ -8,7 +8,9 @@ import json
 import os
 import re
 import signal
+import sys
 from datetime import UTC, datetime
+from pathlib import Path
 
 import pytest
 
@@ -24,6 +26,7 @@ from infrastructure.llm import (
     ScriptedClient,
 )
 from infrastructure.storage import RunDirectory, read_jsonl
+from world.world import World
 
 
 def smoke(**changes):
@@ -83,40 +86,49 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     }
     assert paid == {("Aisha", "task", 120, 12), ("Mei", "team", 30, 3)} and len(shares) == 4
     clients = sum(e["payload"]["amount"] for e in shares)
-    # The shopkeeper opened the Store and ordered bread and what the kitchen takes, which arrive
-    # the next morning; the chef bought for the kitchen there, cooked and served, and handed a
-    # dish to the first who came, unpaid; Mei bought bread and ate a helping and had a dish, one
-    # of the programmers took the bread Olga left at the Linde for anyone, and they passed one
-    # another a little money.
+    # The shopkeeper took bread from her own shelves and ordered bread and what the kitchen takes,
+    # which arrive the next morning; the chef took bread and what two dishes take from the
+    # shelves, cooked from what he carried and had a dish of his own; everyone took a dish from
+    # the counter, and Mei and Aisha bread from the shelves; whoever took from another's shelves
+    # or counter gave its keeper, at work, the price posted, a tenth withheld; one of the
+    # programmers took the bread Olga left at the Linde, and they gave one another a little money.
     moves = [e["payload"] | {"actor": e["actor"]} for e in entries if e["kind"] == "move"]
-    sold = {(m["actor"], m["item"], m["target"]) for m in moves if m["source"] == "shelves"}
-    assert ("Mei", "bread", "Mei") in sold and ("Jonas", "vegetables", "larder") in sold
-    served = {(m["actor"], m["target"], m["seller"]) for m in moves if m["source"] == "portions"}
-    assert served == {
-        ("Mei", "Mei", "Jonas"),
-        ("Aisha", "Aisha", "Jonas"),
-        ("Olga", "Olga", "Jonas"),
-        ("Jonas", "Mei", "Jonas"),  # handed over, unpaid
+    took = {(m["actor"], m["what"], m["source"]) for m in moves if m["reason"] == "take"}
+    assert {(name, "bread", "shelves") for name in ("Olga", "Jonas", "Mei", "Aisha")} <= took
+    assert {("Jonas", "vegetables", "shelves"), ("Jonas", "eggs", "shelves")} <= took
+    assert {m["actor"] for m in moves if m["source"] == "counter"} == {
+        "Mei", "Aisha", "Olga", "Jonas",
+    }  # fmt: skip
+    assert all(m["price"] for m in moves if m["source"] in ("shelves", "counter"))
+    paid = {(m["actor"], m["target"]) for m in moves if m["what"] == "money" and m["tax"]}
+    assert paid == {
+        ("Jonas", "Olga"), ("Mei", "Olga"), ("Aisha", "Olga"),
+        ("Mei", "Jonas"), ("Aisha", "Jonas"), ("Olga", "Jonas"),
+    }  # fmt: skip
+    cooked = [e["payload"] for e in entries if e["kind"] == "cook"]
+    assert len(cooked) == 2 and all(c["carried"] == c["used"] for c in cooked)
+    done = {(m["actor"], m["reason"], m["what"], m["target"]) for m in moves}
+    assert {("Mei", "eat", "bread", None), ("Olga", "give", "bread", "linde")} <= done
+    left = {m["actor"] for m in moves if m["reason"] == "take" and m["source"] == "linde"}
+    assert len(left) == 1 and left <= {"Mei", "Aisha"}
+    assert ("Mei", "give", "money", 2) in {
+        (m["actor"], m["reason"], m["what"], m["amount"]) for m in moves
     }
-    done = {(m["actor"], m["reason"], m["item"]) for m in moves}
-    assert {("Mei", "eat", "bread"), ("Olga", "put", "bread")} <= done
-    taken = {actor for actor, reason, item in done if (reason, item) == ("get", "bread")}
-    assert len(taken) == 1 and taken <= {"Mei", "Aisha"}
-    assert ("Mei", "pass", None) in done
     orders = [e["payload"] for e in entries if e["kind"] == "order"]
     assert saved["store"]["pending"] == [[o["item"], o["quantity"], o["arrives"]] for o in orders]
     assert {o["item"] for o in orders} == {"bread", "vegetables", "eggs"}
-    assert saved["holders"]["portions"] == {} and saved["holders"]["larder"] == {}
+    nothing = {"items": {}, "money": 0}
+    assert saved["holders"]["counter"] == saved["holders"]["larder"] == nothing
     treasury = saved["treasury"]
     money = sum(r["inventory"]["money"] for r in saved["residents"].values())
+    money += sum(held["money"] for held in saved["holders"].values())
     # Only the client's money came in and only the supplier's went out; the tax withheld from
     # the payments and the rent, with no mayor in this town to pay, stay in the treasury.
     supplier = sum(o["amount"] for o in orders)
     town = smoke().town
     start = town.treasury.start + sum(r.purse for r in town.residents)
     assert treasury["balance"] + money == start + clients - supplier
-    taxed = ("service", "move", "examination", "treatment")
-    taxes = sum(e["payload"]["tax"] for e in entries if e["kind"] in taxed)
+    taxes = sum(e["payload"]["tax"] for e in entries if e["kind"] in ("service", "move"))
     assert treasury["yesterday"] == {"tax": taxes, "rent": 5 + 5 + 5 + 8} and taxes > 30
     assert treasury["owed"] == treasury["arrears"] == {} and treasury["ledger"] == {}
     living = saved["residents"]["Mei"]["living"]
@@ -281,7 +293,19 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(
     tmp_path, monkeypatch
 ):
-    config = smoke()
+    learning = smoke().learning
+    trainer = learning.trainer.model_copy(update={"python": tmp_path / "no-such-python"})
+    with pytest.raises(FileNotFoundError, match="trainer's interpreter .*no-such-python"):
+        await simulation.run(
+            smoke(learning=learning.model_copy(update={"trainer": trainer})), tmp_path
+        )
+    trainer = trainer.model_copy(update={"python": Path(sys.executable)})
+    monkeypatch.delattr(World, "liked_by", raising=False)  # the world tells no numbers
+    with pytest.raises(NotImplementedError, match="liked_by"):
+        await simulation.run(
+            smoke(learning=learning.model_copy(update={"trainer": trainer})), tmp_path
+        )
+    config = smoke(learning=learning.model_copy(update={"enabled": False}))
     lost = config.residents[0].model_copy(update={"background": "experiments/residents/x.md"})
     with pytest.raises(FileNotFoundError):
         await simulation.run(

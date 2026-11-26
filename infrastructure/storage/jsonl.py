@@ -1,8 +1,8 @@
-"""Durable line-at-a-time JSONL appending and strict reading."""
+"""Durable line-at-a-time JSONL appending, strict reading, and whole files written atomically."""
 
 import json
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -33,3 +33,25 @@ def read_jsonl(path: Path) -> Iterator[dict[str, Any]]:
             if not isinstance(record, dict):
                 raise ValueError(f"{path}:{number}: expected a JSON object")
             yield record
+
+
+def write_json(path: Path, value: Any) -> None:
+    """Write `value` as the JSON document `path`, all of it or, should the writing be cut
+    short, nothing: a file there is either the old one or the whole new one."""
+    _replace(path, json.dumps(value, ensure_ascii=False, allow_nan=False, indent=1) + "\n")
+
+
+def write_jsonl(path: Path, records: Iterable[Mapping[str, Any]]) -> None:
+    """Write `records` as the JSONL file `path`, one line each, atomically as `write_json`."""
+    _replace(
+        path, "".join(json.dumps(r, ensure_ascii=False, allow_nan=False) + "\n" for r in records)
+    )
+
+
+def _replace(path: Path, text: str) -> None:
+    staging = path.with_name(path.name + ".tmp")
+    with staging.open("w", encoding="utf-8") as file:
+        file.write(text)
+        file.flush()
+        os.fsync(file.fileno())
+    os.replace(staging, path)

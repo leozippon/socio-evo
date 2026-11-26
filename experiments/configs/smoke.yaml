@@ -1,7 +1,8 @@
 # A check of the whole loop against the model before a run: Mei, the team leader, Aisha, a
 # programmer, Olga, the shopkeeper, and Jonas, the chef, in the town for one day, so that the
-# Office, the Store and the Linde all work.
-base: town.yaml
+# Office, the Store and the Linde all work, and its night, so that the choice, the generalising,
+# the trainer and the adapters' loading do too, on the Social arm's settings.
+base: learning.yaml
 name: smoke
 days: 1
 residents:

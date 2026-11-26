@@ -134,7 +134,8 @@ class Runtime:
     `port` and the model through `client`. The session and the trace live in the directory;
     a session already there is continued. Every request names `replica`, if it is given, so
     that a server of several replicas keeps the resident on the one that has its prefix
-    cached."""
+    cached, and asks `model`, the resident's own adapter, or the client's model while it is
+    None; the simulation changes it between days, while the resident sleeps."""
 
     def __init__(
         self,
@@ -144,12 +145,14 @@ class Runtime:
         config: RuntimeConfig | None = None,
         *,
         replica: int | None = None,
+        model: str | None = None,
     ) -> None:
         self._directory = directory
         self._port = port
         self._client = client
         self._config = config or RuntimeConfig()
         self._replica = replica
+        self.model = model
         self._files = files.FileTools(directory)
         self._session = Session(directory.session_path)
         self._trace = Trace(directory.trace_path, port.sim_time)
@@ -158,13 +161,15 @@ class Runtime:
 
     async def run(self) -> None:
         """Live until cancelled: wait for the world, take steps until the resident is done for
-        now, and wait again; asleep, the resident takes no step, and what it was told waits in
-        its session until it wakes. A model error that outlasts its retries is a lapse, after
-        which the runtime waits; any other error propagates and ends the runtime."""
+        now, and wait again, each wait traced as a rest with the session's latest id; asleep,
+        the resident takes no step, and what it was told waits in its session until it wakes. A
+        model error that outlasts its retries is a lapse, after which the runtime waits; any
+        other error propagates and ends the runtime."""
         done = True
         try:
             while True:
                 if done:
+                    self._trace.write("rest", session=self._session.last)
                     self._tell(await self._port.wait())
                 if self._port.asleep:
                     done = True
@@ -289,6 +294,7 @@ class Runtime:
                     purpose=purpose,
                     messages=ids,
                     tools=[tool["function"]["name"] for tool in request.tools],
+                    model=request.model,
                     reasoning_effort=request.reasoning_effort,
                     max_tokens=request.sampling.max_tokens,
                     attempt=next(attempts),
@@ -446,6 +452,7 @@ class Runtime:
         tools = self._tools()
         return LLMRequest(
             messages=messages,
+            model=self.model,
             tools=tools,
             tool_choice=tool_choice,
             reasoning_effort=effort,

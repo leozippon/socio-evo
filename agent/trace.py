@@ -17,7 +17,12 @@ Kinds and their fields:
 - `overflow`: `purpose` and `error`, when the server refused a request because its context does
   not fit the model's window;
 - `compaction`: `id` (the session record), `replaced`, `kept`, `summary`;
-- `lapse`: `purpose` and `errors`, when a request found no usable reply.
+- `lapse`: `purpose` and `errors`, when a request found no usable reply;
+- `rest`: `session`, the id of the session's latest record, each time the runtime begins to wait
+  for the world: what lies between two rests in the trace, and between their ids in the session,
+  is one stretch of the resident's life (`learning.moments`).
+
+`request` also names the `model` asked, the resident's adapter, or null for the served base model.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ Kind = Literal[
     "overflow",
     "compaction",
     "lapse",
+    "rest",
 ]
 
 

@@ -70,6 +70,23 @@ def test_changes_trees_and_blobs_are_read_without_a_work_tree(repo):
         repo.blobs(["0" * 40])
 
 
+def test_the_sizes_of_files_as_tags_hold_them_are_read_at_once(repo):
+    _write(repo, "trace.jsonl", "one\n")
+    repo.commit("day 1", date=START)
+    repo.tag("day-01")
+    _write(repo, "trace.jsonl", "one\ntwo\n")
+    repo.commit("day 2", date=START + timedelta(days=1))
+    repo.tag("day-02")
+    names = [
+        "day-01:trace.jsonl",
+        "day-02:trace.jsonl",
+        "day-02:session.jsonl",
+        "day-03:trace.jsonl",
+    ]
+    assert repo.sizes(names) == dict(zip(names, [4, 8, None, None], strict=True))
+    assert repo.sizes([]) == {}
+
+
 def test_commit_date_keeps_its_offset(repo):
     date = datetime(2030, 1, 1, 21, 30, tzinfo=timezone(timedelta(hours=8)))
     _write(repo, "a.md", "a\n")

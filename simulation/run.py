@@ -20,6 +20,13 @@ clock held. Resuming restores the latest checkpoint into a new world, whose log 
 resets every agent directory to that day's tag: what the lost day added to the files, the
 session and the trace is gone, and stays in the world log.
 
+A run that learns (`learning.enabled`) lives each day's night at its checkpoint, after the save
+(`learning.night`): the residents choose what to keep, their adapters are fitted, and each wakes
+on its own, the world's numbers of the night taken from `World.liked_by`. A night that cannot be
+completed fails the run, which then resumes from that day's checkpoint by completing the night,
+even after the last day; resuming always puts every resident back on its adapter of the day
+returned to. A dry run does not learn: its scripted model plays days, not nights.
+
 A run ends completed after its last day; interrupted after `until_day` short of it, or on
 SIGINT or SIGTERM; failed on any error, which is raised. A resident's runtime that ends fails
 the run, since the checkpoint would wait for it forever; so does a model that stops answering,
@@ -31,13 +38,14 @@ way out writes the status and clears the id.
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import logging
 import os
 import signal
 import time
 from collections import Counter
-from collections.abc import Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator, Mapping
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -57,6 +65,9 @@ from infrastructure.llm import (
     create_client,
 )
 from infrastructure.storage import RunDirectory, RunStatus, day_tag
+from learning.adapters import DONE
+from learning.generalise import Vocabulary
+from learning.night import Nights
 from simulation.config import PROJECT_ROOT, ExperimentConfig
 from simulation.dry_run import DryRunModel
 from world.backend import Backend, SwebenchBackend
@@ -95,6 +106,8 @@ async def run(
         r.name: r.background_path.read_text(encoding="utf-8").strip() + "\n"
         for r in config.residents
     }
+    if config.learning.enabled:
+        _check_learning(config)
     client = _client(config, dry_run)
     await _check_model(client, config)
     backend: Backend = FakeBackend(DRY_RUN_TASKS) if dry_run else SwebenchBackend()
@@ -107,7 +120,8 @@ async def run(
         day = directory.latest_checkpoint()
         if day is None:
             raise FileNotFoundError(f"{directory.root} has no checkpoint to resume from")
-        if day >= until:
+        owed = config.learning.enabled and day >= 1 and not _night_done(directory, day)
+        if day >= until and not owed:
             raise ValueError(f"{directory.root} has already saved day {day}")
     else:
         directory = RunDirectory.create(
@@ -134,6 +148,10 @@ async def run(
             else:
                 log.info("created %s at %s", directory.root, revision)
                 world = _create(directory, config, backend, backgrounds)
+            nights = _nights(config, directory, client)
+            models: dict[str, str | None] = {}
+            if resume and nights is not None and day >= 1:
+                await nights.live(day, lambda: world.liked_by(), models.update)
             runtimes = {
                 r.name: Runtime(
                     AgentDirectory(directory.agent_dir(r.name)),
@@ -141,13 +159,28 @@ async def run(
                     client,
                     config.runtime,
                     replica=index,
+                    model=models.get(r.name),
                 )
                 for index, r in enumerate(config.residents)
             }
+
+            def switch(adapters: Mapping[str, str | None]) -> None:
+                for name, adapter in adapters.items():
+                    runtimes[name].model = adapter
+
+            night = None
+            if nights is not None:
+                night = functools.partial(
+                    nights.live, liked_by=lambda: world.liked_by(), switch=switch
+                )
             checkpoints = _Checkpoints(
-                directory, config.town, lambda: world.treasury_told(world.treasury.yesterday)
+                directory,
+                config.town,
+                lambda: world.treasury_told(world.treasury.yesterday),
+                night,
             )
-            await _live(world, runtimes, until, checkpoints)
+            if not resume or day < until:
+                await _live(world, runtimes, until, checkpoints)
             status = RunStatus.COMPLETED if until == config.days else RunStatus.INTERRUPTED
         except asyncio.CancelledError:
             status = RunStatus.INTERRUPTED
@@ -164,13 +197,14 @@ async def run(
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
     """`config` as experiment `<name>-dry-run`, answered by the dry-run model, on a clock that
-    lives a day in seconds."""
+    lives a day in seconds, learning nothing."""
     town = config.town
     return config.model_copy(
         update={
             "name": f"{config.name}-dry-run",
             "llm": config.llm.model_copy(update={"backend": "scripted"}),
             "town": town.model_copy(update={"clock": town.clock.model_copy(update=DRY_RUN_SPEEDS)}),
+            "learning": config.learning.model_copy(update={"enabled": False}),
         }
     )
 
@@ -205,6 +239,48 @@ async def _check_model(client: StreamingClient, config: ExperimentConfig) -> Non
             f"the model {config.llm.model} at {config.llm.base_url} did not answer a test "
             f"request: {error}"
         ) from error
+
+
+def _check_learning(config: ExperimentConfig) -> None:
+    """Fail fast unless what the nights need is there: the trainer's interpreter, and the
+    world's numbers of how many like each resident."""
+    trainer = config.learning.trainer
+    assert trainer is not None  # the configuration requires it when learning is enabled
+    if not os.access(trainer.executable, os.X_OK):
+        raise FileNotFoundError(f"the trainer's interpreter {trainer.executable} cannot be run")
+    if not callable(getattr(World, "liked_by", None)):
+        raise NotImplementedError("the world tells nobody how many like them (World.liked_by)")
+
+
+def _nights(
+    config: ExperimentConfig, directory: RunDirectory, client: StreamingClient
+) -> Nights | None:
+    """The nights of the run, if it learns, with the town's own words for the generalising."""
+    if not config.learning.enabled:
+        return None
+    town = config.town
+    vocabulary = Vocabulary.of_town(
+        residents=[resident.name for resident in town.residents],
+        places=[place.name for place in town.places],
+        things=[item.name for item in town.items],
+        ids=[*(place.id for place in town.places), *(item.id for item in town.items)],
+        currency=town.currency,
+    )
+    return Nights(
+        directory,
+        config.learning,
+        llm=config.llm,
+        runtime=config.runtime,
+        client=client,
+        residents=[resident.name for resident in config.residents],
+        start_date=town.start_date,
+        seed=town.seed,
+        vocabulary=vocabulary,
+    )
+
+
+def _night_done(directory: RunDirectory, day: int) -> bool:
+    return (directory.night_dir(day) / DONE).is_file()
 
 
 def _create(
@@ -247,8 +323,8 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, from the day's
     entries in the world log, with the treasury's day as `World.treasury_told` tells it
-    (`treasury`). The moves are counted as `world.log.counted_move` names them: sales, dishes and
-    gifts."""
+    (`treasury`), then lives the day's `night`, if the run learns. The moves are counted as
+    `world.log.counted_move` names them: sales, dishes and gifts."""
 
     COUNTED = (
         "task_arrived",
@@ -271,9 +347,14 @@ class _Checkpoints:
     )
 
     def __init__(
-        self, directory: RunDirectory, town: TownConfig, treasury: Callable[[], str]
+        self,
+        directory: RunDirectory,
+        town: TownConfig,
+        treasury: Callable[[], str],
+        night: Callable[[int], Awaitable[None]] | None = None,
     ) -> None:
         self._directory, self._town, self._treasury = directory, town, treasury
+        self._night = night
         self._started = time.monotonic()
 
     async def __call__(self, day: int, state: dict[str, Any]) -> None:
@@ -288,6 +369,11 @@ class _Checkpoints:
         took = timedelta(seconds=round(time.monotonic() - self._started))
         counted = ", ".join(f"{counts[kind]} {kind}" for kind in self.COUNTED)
         log.info("saved day %d after %s: %s. %s", day, took, counted, self._treasury())
+        if self._night is not None:
+            started = time.monotonic()
+            await self._night(day)
+            took = timedelta(seconds=round(time.monotonic() - started))
+            log.info("lived night %d in %s", day, took)
         self._started = time.monotonic()
 
 
@@ -313,14 +399,16 @@ async def _live(
 
 @contextmanager
 def _logging(path: Path) -> Iterator[None]:
-    """The simulation's log, at level INFO, and the runtimes' warnings (their lapses) written to
-    `path` as well."""
+    """The simulation's and the nights' logs, at level INFO, and the runtimes' warnings (their
+    lapses) written to `path` as well."""
     handler = logging.FileHandler(path, encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
-    loggers = (log, logging.getLogger("agent"))
+    nights = logging.getLogger("learning")
+    loggers = (log, logging.getLogger("agent"), nights)
     for logger in loggers:
         logger.addHandler(handler)
     log.setLevel(logging.INFO)
+    nights.setLevel(logging.INFO)
     try:
         yield
     finally:

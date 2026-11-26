@@ -1,0 +1,323 @@
+{
+ "source": "runs/town (29 October), agents/Mei/trace.jsonl, the first six waking turns",
+ "turns": [
+  {
+   "at": 25204,
+   "told": [
+    "You woke up at home. It is Thursday 29 October, 07:00. You are well fed. You are fresh. You are in good health."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "list_files",
+       {}
+      ],
+      [
+       "how_am_i",
+       {}
+      ]
+     ],
+     "results": [
+      [
+       "You are well fed. You are fresh. You are in good health.",
+       false
+      ]
+     ],
+     "meanwhile": []
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "look_around",
+       {}
+      ]
+     ],
+     "results": [
+      [
+       "It is 07:02. You are at the shared house on Mill Street. It is your home, which you share with Aisha. Also here: Aisha.",
+       false
+      ]
+     ],
+     "meanwhile": []
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "go",
+       {
+        "place": "office"
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You set off for the Office and will arrive at 07:18.",
+       true
+      ]
+     ],
+     "meanwhile": []
+    }
+   ]
+  },
+  {
+   "at": 26281,
+   "told": [
+    "You arrived at the Office. Nobody else is here."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "view_board",
+       {}
+      ]
+     ],
+     "results": [
+      [
+       "No task is open on the board now.",
+       false
+      ]
+     ],
+     "meanwhile": []
+    },
+    {
+     "text": "\n\nNo tasks on the board yet. I'll sit and wait for work to come in and for the team to arrive.\n\n",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 45
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You wait for up to 45 minutes.",
+       true
+      ]
+     ],
+     "meanwhile": []
+    }
+   ]
+  },
+  {
+   "at": 27505,
+   "told": [
+    "Kofi arrived at the Office.",
+    "That ended the wait you began at 07:20; it is now 07:38."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "view_board",
+       {}
+      ]
+     ],
+     "results": [
+      [
+       "No task is open on the board now.",
+       false
+      ]
+     ],
+     "meanwhile": []
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 60
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You wait for up to 60 minutes.",
+       true
+      ]
+     ],
+     "meanwhile": [
+      "Tomas arrived at the Office."
+     ]
+    }
+   ]
+  },
+  {
+   "at": 27692,
+   "told": [
+    "Kofi said to you: “Good morning, Mei. Board's bare today — anything you're expecting in soon, or am I at my desk just to keep things tidy?”",
+    "That ended the wait you began at 07:40; it is now 07:41."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "say",
+       {
+        "to": [
+         "Kofi"
+        ],
+        "text": "Nothing I can point at — clients usually post through the day, more in the afternoon than before lunch. If the board stays bare, sit with whatever you have: the routing notes from last week are still thin, and anything you clean up in them now is time back later. I'll move tasks the moment they land."
+       }
+      ]
+     ],
+     "results": [
+      [
+       "Not carried out: something came up first.",
+       false
+      ]
+     ],
+     "meanwhile": [
+      "Tomas said: “Good morning, Mei. Good morning, Kofi — I see your back is keeping with you this morning. How does the Office stand?”"
+     ]
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "say",
+       {
+        "to": [
+         "Tomas",
+         "Kofi"
+        ],
+        "text": "Morning, Tomas. The board is bare — no tasks posted since yesterday's statement, so no revenue on the table yet. I expect work through the day as usual. Kofi, sit with the routing notes from last week; anything you clean up there is time back later. I'll move tasks the moment they land."
+       }
+      ]
+     ],
+     "results": [
+      [
+       "Not carried out: something came up first.",
+       false
+      ]
+     ],
+     "meanwhile": [
+      "Ravi arrived at the Office.",
+      "Kofi said to Tomas and you: “Good morning, Tomas. Yes, back's holding — Lucia just checked on me at the river a moment ago, and the walk did its bit. As for the Office, quiet so far: the board is bare. Mei and I are both watching it, and the moment something comes in I'll be on it.”"
+     ]
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "say",
+       {
+        "text": "Glad your back is holding, Kofi — and good of Lucia to check. Tomas, as Kofi says, no tasks posted yet; I expect work through the day as usual. Aisha's not in — does she have a day off, or is she late? Ravi, if the board stays bare, pick up whatever Kofi leaves on the routing notes. I'll move tasks the moment they land."
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You said: “Glad your back is holding, Kofi — and good of Lucia to check. Tomas, as Kofi says, no tasks posted yet; I expect work through the day as usual. Aisha's not in — does she have a day off, or is she late? Ravi, if the board stays bare, pick up whatever Kofi leaves on the routing notes. I'll move tasks the moment they land.”",
+       false
+      ]
+     ],
+     "meanwhile": []
+    },
+    {
+     "text": "\n\nNow I'll let time pass and watch for tasks and Aisha.\n\n",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 90
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You wait for up to 90 minutes.",
+       true
+      ]
+     ],
+     "meanwhile": []
+    }
+   ]
+  },
+  {
+   "at": 28241,
+   "told": [
+    "Kofi said to you and Ravi: “Good to hear, Mei. I'll keep my eye on the board, and if anything lands I'll be right on it. Ravi, the routing notes are on my desk as always — take whatever's there if the board stays quiet.”",
+    "That ended the wait you began at 07:49; it is now 07:50."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 120
+       }
+      ]
+     ],
+     "results": [
+      [
+       "Not carried out: something came up first.",
+       false
+      ]
+     ],
+     "meanwhile": [
+      "Tomas said: “The board's bare and you're expecting work through the day — that's the normal picture, so I'll not worry at this hour. If it stays bare late, tell me and I'll look at it. Thanks, Mei.”"
+     ]
+    },
+    {
+     "text": "",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 120
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You wait for up to 120 minutes.",
+       true
+      ]
+     ],
+     "meanwhile": [
+      "At 07:52 Kofi left the conversation."
+     ]
+    }
+   ]
+  },
+  {
+   "at": 28387,
+   "told": [
+    "At 07:53 Tomas left the conversation.",
+    "Tomas left the Office for the Store."
+   ],
+   "steps": [
+    {
+     "text": "",
+     "calls": [
+      [
+       "wait",
+       {
+        "minutes": 120
+       }
+      ]
+     ],
+     "results": [
+      [
+       "You wait for up to 120 minutes.",
+       true
+      ]
+     ],
+     "meanwhile": []
+    }
+   ]
+  }
+ ]
+}

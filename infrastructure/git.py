@@ -179,6 +179,23 @@ class Repository:
             offset += 1
         return contents
 
+    def sizes(self, objects: Iterable[str]) -> dict[str, int | None]:
+        """The size in bytes of each object in `objects`, written as git names one
+        (`day-03:trace.jsonl`), by name; None for one that does not exist."""
+        wanted = list(dict.fromkeys(objects))
+        if not wanted:
+            return {}
+        output = _run(
+            self._command("cat-file", "--batch-check"),
+            cwd=self.path,
+            input="".join(f"{name}\n" for name in wanted).encode(),
+        ).decode()
+        found: dict[str, int | None] = {}
+        for name, line in zip(wanted, output.splitlines(), strict=True):
+            fields = line.split()
+            found[name] = None if fields[-1] == "missing" else int(fields[2])
+        return found
+
     def diff(self, old: str, new: str, *paths: str) -> str:
         """Unified diff from revision `old` to revision `new`, limited to `paths` if any are
         given (git pathspecs, so `:(exclude)<path>` leaves a path out)."""

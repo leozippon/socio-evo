@@ -1,0 +1,7 @@
+# The Random arm: each resident chooses as in the Social arm, but learns, generalised, as many
+# moments drawn at random from its life as it kept (docs/experimental-design.md, Arms).
+base: ../learning.yaml
+name: random
+learning:
+  examples: generalised
+  choice: random

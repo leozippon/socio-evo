@@ -1,0 +1,12 @@
+# The town that learns: every night each resident keeps moments of its life and learns them into
+# an adapter of its own (learning/; docs/experimental-design.md, Learning). The arms under runs/
+# overlay it with what they learn from and who chooses, and the smoke town with a day and its
+# night. What is not set here (the moments kept a night, the dataset's size, the adapter's
+# settings) is learning/config.py's first guess, to be tuned in a pilot on the GPUs.
+base: town.yaml
+learning:
+  enabled: true
+  trainer:
+    python: /Data2/lzp/envs/socio-evo-train/bin/python # the training environment (ops/train/setup-env.sh)
+    base: /Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 # the weights the server serves as llm.model
+    gpus: "4,5,6,7" # those the server leaves free: ops/vllm/serve.sh on GPUS=0,1,2,3 is TP2 x DP2, llm.replicas 2

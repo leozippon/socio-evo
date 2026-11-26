@@ -68,10 +68,15 @@ async def test_a_round_trip_of_tool_calls_ends_in_waiting(directory):
         role="tool", content="Wrote memory/work.md.", tool_call_id=write.id
     )
     assert context(directory)[-1] == Message(role="assistant", content="Done.")
-    kinds = [record["kind"] for record in trace(directory)]
+    records = trace(directory)
+    kinds = [record["kind"] for record in records]
     step = ["request", "reply", "tool_call", "tool_result"]
-    # The file written is new, so the index of files, and with it the prompt, changes once.
-    assert kinds == ["percept", "prompt", *step, "prompt", *step, "request", "reply"]
+    # The file written is new, so the index of files, and with it the prompt, changes once. The
+    # turn lies between two rests, each naming the session's latest message.
+    turn = ["percept", "prompt", *step, "prompt", *step, "request", "reply"]
+    assert kinds == ["rest", *turn, "rest"]
+    assert [r["session"] for r in records if r["kind"] == "rest"] == [0, 6]
+    assert {r["model"] for r in records if r["kind"] == "request"} == {None}
     assert port.busy == [True, False] * 5 + [False]
 
 
@@ -123,6 +128,22 @@ async def test_a_result_that_ends_the_turn_waits_for_the_world(directory):
     assert model.requests[1].messages[-1].content == (
         "You arrive at the café.\n\nIt is 08:10. You are at the café."
     )
+
+
+async def test_requests_ask_the_residents_adapter_which_can_change_between_turns(directory):
+    port = FakePort()
+    model = ScriptedModel(reply("Morning."), reply("Evening."))
+    port.deliver("Your alarm rings.")
+    runtime = Runtime(directory, port, model, model="town-Ana-night-01")
+    async with running(runtime):
+        await settle(port)
+        runtime.model = "town-Ana-night-02"  # as the simulation switches it, while it rests
+        port.deliver("The bell rings.")
+        await settle(port)
+
+    names = ["town-Ana-night-01", "town-Ana-night-02"]
+    assert [request.model for request in model.requests] == names
+    assert [r["model"] for r in trace(directory) if r["kind"] == "request"] == names
 
 
 async def test_an_interrupting_percept_lets_the_reply_finish_and_leaves_its_calls_undone(
@@ -620,4 +641,4 @@ async def test_the_resident_stays_busy_until_the_lapse_is_over(directory):
         busy = list(port.busy)
 
     assert busy == [True, False]
-    assert [r["kind"] for r in trace(directory)][-1] == "lapse"
+    assert [r["kind"] for r in trace(directory)][-2:] == ["lapse", "rest"]

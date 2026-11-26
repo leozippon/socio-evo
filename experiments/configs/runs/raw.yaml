@@ -1,0 +1,7 @@
+# The Raw arm, the ablation of the generalising layer: each resident, seeing its number, keeps the
+# moments it chooses, and learns them as they happened (docs/experimental-design.md, Arms).
+base: ../learning.yaml
+name: raw
+learning:
+  examples: raw
+  choice: resident

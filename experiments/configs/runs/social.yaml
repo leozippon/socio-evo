@@ -1,0 +1,7 @@
+# The Social arm, the paradigm: each resident, seeing its number, keeps the moments it chooses,
+# and learns them generalised (docs/experimental-design.md, Arms).
+base: ../learning.yaml
+name: social
+learning:
+  examples: generalised
+  choice: resident
