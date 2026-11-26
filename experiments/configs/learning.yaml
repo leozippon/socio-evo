@@ -9,4 +9,8 @@ learning:
   trainer:
     python: /Data2/lzp/envs/socio-evo-train/bin/python # the training environment (ops/train/setup-env.sh)
     base: /Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 # the weights the server serves as llm.model
-    gpus: "4,5,6,7" # those the server leaves free: ops/vllm/serve.sh on GPUS=0,1,2,3 is TP2 x DP2, llm.replicas 2
+    # The GPUs a night's fits may use, as nvidia-smi numbers them: those the server leaves free
+    # (ops/vllm/serve.sh on GPUS=0,1,2,3 is TP2 x DP2, llm.replicas 2). Each night uses those of
+    # them that have free_gib free then, one trainer on each, and waits up to patience_minutes
+    # while none has (learning/config.py, TrainerConfig).
+    gpus: "4,5,6,7"

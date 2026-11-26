@@ -56,7 +56,7 @@ GPUS=0,1,2,3 LORA=1 MODEL_PATH=/Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 SERV
 
 [ops/vllm/README.md](ops/vllm/README.md) records the layouts, the settings, how to check and stop the server, and the throughput measured; the `llm` section of `experiments/configs/town.yaml` names the server, the model and the replica count. The same script with its defaults serves the original checkpoint as `qwen3.8-27b-fp8`, the aligned reference, which needs GPUs and a port of its own.
 
-The adapters are fitted by `learning.train` under its own interpreter on a GPU the server leaves free; `experiments/configs/learning.yaml` names the interpreter, the base weights and the GPUs. [ops/train/README.md](ops/train/README.md) creates the environment and holds the validation of fitting and serving on two free GPUs, the first thing to run before any town that learns:
+The adapters are fitted by `learning.train` under its own interpreter, one trainer on each of the GPUs the server leaves free that has room when a night comes; `experiments/configs/learning.yaml` names the interpreter, the base weights and the GPUs. [ops/train/README.md](ops/train/README.md) creates the environment and holds the validation of fitting and serving on two free GPUs, the first thing to run before any town that learns:
 
 ```bash
 ops/train/setup-env.sh

@@ -50,14 +50,25 @@ class LoraConfig(StrictModel):
 
 class TrainerConfig(StrictModel):
     """The trainer: the interpreter of its environment (an absolute path, `~` allowed), the base
-    model's weights as it loads them, the GPUs it is given (`CUDA_VISIBLE_DEVICES`), and the most
-    tokens one step of a fit may hold on them, `batch_size` times `max_length` at the longest:
-    about 8,000 on one L20 (ops/train/README.md, Memory and time)."""
+    model's weights as it loads them, and the GPUs a night's fit may use, as nvidia-smi numbers
+    them, one trainer process on each that has room (`learning.fit`). The most tokens one step of
+    a fit may hold, `batch_size` times `max_length` at the longest, is `step_tokens`: about 8,000
+    on one L20 (ops/train/README.md, Memory and time).
+
+    A GPU has room when `free_gib` of it is free. That must cover a fit's peak at its longest
+    step, `max_length` tokens, with the CUDA context and what else PyTorch's count leaves out:
+    40.4 GiB at 8,000 tokens and about a GiB beside it, for the default `max_length` of 8,192.
+    Of the 45 GiB nvidia-smi gives an L20, other jobs may then hold less than 3 GiB. While no
+    GPU has room, a night waits for one, up to `patience_minutes`, and then fails, to be resumed:
+    six hours, so that a night waits out another job that takes the GPUs for an evening, and a
+    run whose GPUs stay taken stops within the day, saying why."""
 
     python: Path
     base: str = Field(min_length=1)
     gpus: str = Field(pattern=r"^\d+(,\d+)*$")
     step_tokens: PositiveInt = 8192
+    free_gib: PositiveFloat = 42.0
+    patience_minutes: NonNegativeInt = 360
 
     @property
     def executable(self) -> Path:

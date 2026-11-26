@@ -3,15 +3,17 @@
 At each day's checkpoint, with every resident asleep and the clock held, `Nights.live` takes that
 night through its steps. First every resident's number tonight, as the world gives it, is
 recorded; then, for every resident at once (the model's requests within the client's concurrency),
-the choice on its current adapter, the examples of what it kept, and its dataset; then one trainer
-process for every resident whose dataset gained something; then every resident's adapter is
-loaded on the model server, each resident switched to its own, and those they replace unloaded.
-A resident whose dataset gained nothing keeps the adapter it had, and one that has never kept
-anything runs on the base model.
+the choice on its current adapter, the examples of what it kept, and its dataset; then the
+adapter of every resident whose dataset gained something, fitted by one trainer process on each
+GPU with room (`learning.fit`); then every resident's adapter is loaded on the model server, each
+resident switched to its own, and those they replace unloaded. A resident whose dataset gained
+nothing keeps the adapter it had, and one that has never kept anything runs on the base model.
 
     runs/<run>/learning/night-NN/
     ├── liked_by.json          every resident's number tonight, as the world gave it
-    ├── jobs.json, trainer.log the trainer's jobs and output, when any adapter was fitted
+    ├── fits.jsonl             each start of the trainers, when any adapter was fitted
+    ├── jobs-<gpu>.json,       the jobs and output of the trainer on GPU <gpu>
+    │   trainer-<gpu>.log
     ├── done.json              what the night came to, written last: the night is complete
     └── <name>/
         ├── choice.jsonl       the choice's trace (`learning.choice`)
@@ -31,7 +33,8 @@ afresh, an adapter whose fit was broken off fitted again). A complete night is n
 resumed run needs. A night that cannot be completed (a model that does not answer, a trainer that
 fails, an adapter the server will not load) raises, leaving what it completed, so that the run
 stops instead of living on yesterday's weights. What every resident marked and kept, what was
-dropped and why, and who was not fitted for having nothing new are logged and in `done.json`.
+dropped and why, who was not fitted for having nothing new, and how long each fit took, on which
+GPU, after how long a wait for one with room, are logged and in `done.json`.
 """
 
 from __future__ import annotations
@@ -49,12 +52,12 @@ from agent.runtime import RuntimeConfig
 from infrastructure.config import StrictModel
 from infrastructure.llm import LLMConfig, RecordingClient, StreamingClient
 from infrastructure.llm.adapters import load_adapter, unload_adapter
-from infrastructure.storage import RunDirectory, write_json
+from infrastructure.storage import RunDirectory, read_jsonl, write_json
 from learning import dataset
-from learning.adapters import DONE, Adapter, current, fitted, job_name
+from learning.adapters import DONE, TRAINING, Adapter, current, fitted, job_name
 from learning.choice import Choice, choose, draw
 from learning.config import LearningConfig
-from learning.fit import Job, fit
+from learning.fit import FITS, Job, fit
 from learning.generalise import (
     Dropped,
     Example,
@@ -139,7 +142,8 @@ class Nights:
                 name: summaries[name] | {"adapter": None if a is None else a.name}
                 for name, a in adapters.items()
             }
-            write_json(folder / DONE, {"night": night, "residents": residents})
+            fits = list(read_jsonl(folder / FITS)) if (folder / FITS).is_file() else []
+            write_json(folder / DONE, {"night": night, "residents": residents, "fits": fits})
             log.info("night %d complete: %s", night, _names(adapters))
 
     async def _load(self, adapters: Iterable[Adapter | None]) -> None:
@@ -184,13 +188,14 @@ class Nights:
             if summaries[name]["new"] and fitted(root, name, night) is None
         ]
         if jobs:
-            log.info("night %d: fitting %s", night, ", ".join(job.name for job in jobs))
             await fit(jobs, trainer=self._trainer, lora=self._config.lora, folder=folder)
         unchanged = [name for name in self._residents if not summaries[name]["new"]]
         if unchanged:
             log.info("night %d: nothing new to learn for %s", night, ", ".join(unchanged))
         for name in self._residents:
-            summaries[name]["fitted"] = fitted(root, name, night) is not None
+            adapter = fitted(root, name, night)
+            summaries[name]["fitted"] = adapter is not None
+            summaries[name]["fit_seconds"] = None if adapter is None else _fit_seconds(adapter)
         return summaries
 
     async def _resident(
@@ -342,6 +347,11 @@ class Nights:
     def _read(self, night: int, name: str, file: str, model: type[M]) -> M:
         path = self._run.night_dir(night) / name / file
         return model.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _fit_seconds(adapter: Adapter) -> float:
+    """How long the trainer took to fit `adapter`, as its `training.json` records."""
+    return json.loads((adapter.path / TRAINING).read_text(encoding="utf-8"))["wall_seconds"]
 
 
 def _names(adapters: Mapping[str, Adapter | None]) -> str:

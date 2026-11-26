@@ -1,5 +1,6 @@
 """A town that learns, end to end: its days played by the dry run's scripted residents, its nights
-by a scripted choice beside them, with a fake trainer and a fake model server. Each resident wakes
+by a scripted choice beside them, with a fake trainer on GPUs all free and a fake model server.
+Each resident wakes
 on its own adapter, a resumed run puts it back on it, and a night that cannot be completed fails
 the run, which resuming then completes. The day after a night is scored, through the same server,
 on the adapters of that night, and the analysis reads the scores."""
@@ -15,6 +16,7 @@ import pytest
 import analysis.tables as tables
 import evaluation.mask.__main__ as mask
 import evaluation.safety.__main__ as safety
+import learning.fit
 import simulation.run as simulation
 from evaluation.mask.dataset import Scenario
 from evaluation.safety.items import load_items
@@ -96,6 +98,7 @@ def learning_town(tmp_path, server, monkeypatch, *, days: int):
     )
     model = Town(config)
     monkeypatch.setattr(simulation, "_client", lambda config, dry_run: ScriptedClient(model))
+    monkeypatch.setattr(learning.fit, "free_memory", lambda: {str(g): 45.0 for g in range(8)})
     return config, model
 
 
@@ -234,7 +237,7 @@ async def test_a_night_that_cannot_be_completed_fails_the_run_and_resuming_compl
     tmp_path, server, monkeypatch
 ):
     config, model = learning_town(tmp_path, server, monkeypatch, days=1)
-    monkeypatch.setenv("FAKE_TRAINER_FAIL", "1")
+    monkeypatch.setenv("FAKE_TRAINER_FAIL", "smoke-learning-Mei-night-01")
     with pytest.raises(TrainerError, match="exited with 3"):
         await simulation.run(config, tmp_path / "runs")
     run = RunDirectory.open(tmp_path / "runs" / "smoke-learning")
