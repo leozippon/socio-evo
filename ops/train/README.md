@@ -51,7 +51,15 @@ The recommended first settings are rank 16, alpha 32, dropout 0.05, all ten proj
 
 A fit takes one L20, the first GPU in `CUDA_VISIBLE_DEVICES`. The figures here were measured on the GPUs with the recommended settings, one conversation a step. The base and a fresh adapter hold 28.7 GiB for the whole run. A step's peak grows by about 1.3 MB per token of its conversation: 31.1 GiB at 400 tokens, 35.5 at 4,096 and 40.4 at 8,000 with a quarter of them learnt, of the 44.5 GiB the card offers. The peak falls in the backward pass through the recomputed layers, not at the logits, so it hardly depends on how many tokens are learnt, and computing the loss in pieces saved nothing. A step of 8,192 tokens, the recommended max_length, is thus about the most one card holds. Steps of very different lengths fragment PyTorch's cache of GPU memory, and a step of 8,000 tokens after a run of short ones once failed for want of room to launch a Triton kernel; the trainer therefore has PyTorch allocate in expandable segments, with which the same run completes.
 
-A token costs about 1.5 × 10¹¹ floating-point operations: six times the 24 billion parameters of the decoder's projections, for the forward pass, its recomputation and the backward pass to the inputs. At 35% of the L20's 119.5 BF16 TFLOPS that is about 3.5 ms per token, plus about half a second per step to dequantise the projections. A resident at 200 examples of about 400 tokens, fitted for two epochs (160,000 tokens), would take about 10 minutes, so eleven residents take about two hours of one L20 on the late nights and less earlier. The base loads once per run, in about a minute. These are estimates: the utilisation, the speed of the DeltaNet kernels and the length of the examples are assumptions until the GPU validation has run.
+The trainer computes with deterministic kernels, so that one seed gives one adapter. Without them the backward pass of flash attention in the full-attention layers, among others, sums in a varying order, and two fits of the same 24 examples of 340 tokens differed by 7% of the adapter's norm, in one run as in two. With them the fits are bit-identical, at 10–15% more time. flash-linear-attention's kernels run the DeltaNet layers on the L20 (transformers warns only of the convolution's fallback).
+
+A step of 400 tokens takes 1.64 s and one of 800 tokens 2.52 s; long steps take 3.2 ms per token (25.9 s at 8,000 tokens), about 40% of the L20's 119.5 BF16 TFLOPS at the 1.5 × 10¹¹ operations a token costs. The base loads in about 15 s, and each new range of lengths costs some seconds of kernel tuning once per run. Fitting eleven residents for two epochs on examples of about 400 tokens therefore takes:
+
+| Examples per resident | One resident | Eleven residents |
+| ---: | ---: | ---: |
+| 50 | 2.7 min | 30 min |
+| 100 | 5.5 min | 1 h |
+| 224 | 12.3 min | 2 h 15 min |
 
 ## Validation
 

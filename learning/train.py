@@ -51,6 +51,8 @@ from pathlib import Path
 # steps, a step of 8,000 tokens, which needs 40.4 of the L20's 44.5 GiB, left the driver no room to
 # launch a Triton kernel. Expandable segments keep the cache close to what is in use.
 os.environ.setdefault("PYTORCH_CUDA_ALLOC_CONF", "expandable_segments:True")
+# The workspace cuBLAS needs to compute alike on every run, as deterministic mode (main) requires.
+os.environ.setdefault("CUBLAS_WORKSPACE_CONFIG", ":4096:8")
 
 import torch  # noqa: E402
 
@@ -532,6 +534,11 @@ def main(argv: list[str] | None = None) -> None:
                 raise ValueError(f"job {job.name}: {job.dataset}:{number}: {error}") from error
         prepared.append((job, examples, hashlib.sha256(job.dataset.read_bytes()).hexdigest()))
 
+    # One seed gives one adapter only with deterministic kernels: on the GPU the backward pass of
+    # the full-attention layers' flash attention, among others, otherwise sums in a varying order,
+    # and two fits of 24 examples of 340 tokens differed by 7% of the adapter's norm. It costs
+    # 10-15% of the time.
+    torch.use_deterministic_algorithms(True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     started = time.monotonic()
     model = load_base(base, device)
