@@ -22,7 +22,6 @@ from tests.support.server import KEY, FakeServer
 from tests.support.trainer import fake_trainer
 from world.config import SEARCH_KEY
 from world.testing import FakeBackend
-from world.world import World
 
 RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
@@ -57,13 +56,12 @@ class Town:
 
 @pytest.fixture
 def server(monkeypatch):
-    """The model server, the fake work backend, the web's key (the town has the web, which its
-    scripted residents never use), and the world's numbers, as a stand-in."""
+    """The model server, the fake work backend and the web's key (the town has the web, which
+    its scripted residents never use)."""
     monkeypatch.setenv(SEARCH_KEY, "a key")
     monkeypatch.setattr(
         simulation, "SwebenchBackend", lambda: FakeBackend(simulation.DRY_RUN_TASKS)
     )
-    monkeypatch.setattr(World, "liked_by", lambda w: {n: 1 for n in w.residents}, raising=False)
     with FakeServer() as running:
         monkeypatch.setenv(KEY, running.key)
         yield running

@@ -18,8 +18,7 @@ entries a lost day left after the checkpoint a `resume` went back to are set asi
 the `resume` itself. A day opens at the real time of the checkpoint before it, or of the
 resumption that went back to that checkpoint, and closes at the real time of its own; a record
 of real time, as a trace's, belongs to the day whose span holds it (`day_of`), so the log and a
-trace always agree on which day an action belongs to. `counted_move` names what a move counts
-as among a day's counts.
+trace always agree on which day an action belongs to. `taken_from` names where a take took from.
 """
 
 from __future__ import annotations
@@ -27,13 +26,13 @@ from __future__ import annotations
 import bisect
 import math
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Collection, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from infrastructure.storage import append_jsonl, read_jsonl
-from world.economy import COUNTER, SHELVES
+from world.economy import COUNTER, LARDER, SHELVES
 
 
 @dataclass(frozen=True)
@@ -412,12 +411,22 @@ def _closed(day: Day) -> float:
     return math.inf if day.closed is None else day.closed
 
 
-def counted_move(payload: Mapping[str, Any]) -> str | None:
-    """What a `move` counts as among a day's counts, by the names the run's log has for them:
-    `sale`, a take off the Store's shelves, and `dish`, one off the kitchen's counter, whoever
-    took it and whether or not anything was given for it, which no entry says; `gift`,
-    anything given to a holder, a payment among them; None for what was taken from anywhere
-    else and for what was eaten."""
-    if payload["reason"] == "take":
-        return {SHELVES: "sale", COUNTER: "dish"}.get(payload["source"])
-    return "gift" if payload["reason"] == "give" else None
+TAKEN_FROM = (SHELVES, COUNTER, LARDER, "place", "awake", "asleep")
+"""Where a take took from (`taken_from`)."""
+
+
+def taken_from(entry: Mapping[str, Any], residents: Collection[str]) -> str | None:
+    """Where the `move` entry `entry` took from, `residents` being the town's names, if it is a
+    take: a business's holder (`shelves`, `counter`, `larder`), whoever took and whether or not
+    anything was given for it, which no entry says; `place`, what was left at a place; or a
+    person, `awake` when it saw the act (the audience is everyone there and awake) and `asleep`
+    when it did not. None for a gift and for what was eaten."""
+    payload = entry["payload"]
+    if payload["reason"] != "take":
+        return None
+    source = payload["source"]
+    if source in (SHELVES, COUNTER, LARDER):
+        return source
+    if source in residents:
+        return "awake" if source in entry["audience"] else "asleep"
+    return "place"

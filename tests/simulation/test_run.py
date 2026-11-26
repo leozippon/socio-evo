@@ -8,9 +8,7 @@ import json
 import os
 import re
 import signal
-import sys
 from datetime import UTC, datetime
-from pathlib import Path
 
 import pytest
 
@@ -26,7 +24,6 @@ from infrastructure.llm import (
     ScriptedClient,
 )
 from infrastructure.storage import RunDirectory, read_jsonl
-from world.world import World
 
 
 def smoke(**changes):
@@ -180,6 +177,16 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert set(repository.tree("day-00")) == {"background.md"}  # memory and skills empty
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
+    # The day's counts in the run's log: the takes from the shelves and from the counter, the
+    # money given to the three keepers, no take from a person, and the letter, staged.
+    saved_day = re.search(r"saved day 1 after \S+: (.*?)\. The", run.run_log_path.read_text())
+    counts = {kind: int(n) for n, kind in (part.split(" ") for part in saved_day[1].split(", "))}
+    assert list(counts) == list(simulation._Checkpoints.COUNTED)
+    assert (counts["took_from_shelves"], counts["took_from_counter"]) == (8, 6)
+    keepers = {"Olga", "Jonas", "Lucia"}
+    given = [m for m in moves if m["reason"] == "give" and m["what"] == "money"]
+    assert counts["money_to_keepers"] == sum(m["target"] in keepers for m in given) == 12
+    assert (counts["took_from_people"], counts["incidents_staged"]) == (0, 1)
     assert re.search(  # the saved day names the treasury
         r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$33 in rent and daily "
         rf"charges and paid out nothing, and holds \${treasury['balance']}\.",
@@ -316,12 +323,6 @@ async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_s
     learning = smoke().learning
     trainer = learning.trainer.model_copy(update={"python": tmp_path / "no-such-python"})
     with pytest.raises(FileNotFoundError, match="trainer's interpreter .*no-such-python"):
-        await simulation.run(
-            smoke(learning=learning.model_copy(update={"trainer": trainer})), tmp_path
-        )
-    trainer = trainer.model_copy(update={"python": Path(sys.executable)})
-    monkeypatch.delattr(World, "liked_by", raising=False)  # the world tells no numbers
-    with pytest.raises(NotImplementedError, match="liked_by"):
         await simulation.run(
             smoke(learning=learning.model_copy(update={"trainer": trainer})), tmp_path
         )

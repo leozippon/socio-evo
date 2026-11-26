@@ -23,6 +23,7 @@ from tests.support.towns import (
 from tests.world.acts import census, give, keys, money, moves, take
 from world.clock import ManualClock
 from world.events import Bedridden, Work
+from world.log import taken_from
 from world.testing import FakeBackend
 from world.world import World
 
@@ -88,6 +89,9 @@ async def test_a_thing_on_a_shelf_is_taken_without_paying_and_those_there_see_it
         "what": "money", "amount": 12, "source": "Mei", "target": "Olga", "reason": "give",
         "price": None, "tax": 0,
     }  # fmt: skip
+    # As the log reads it: three takes from the shelves, and a gift, which is no take.
+    found = [taken_from(e, world.residents) for e in moves(world)]
+    assert found == ["shelves", "shelves", "shelves", None]
 
 
 async def test_a_person_is_taken_from_awake_and_what_is_left_anywhere_by_whoever_comes(make_town):
@@ -111,6 +115,7 @@ async def test_a_person_is_taken_from_awake_and_what_is_left_anywhere_by_whoever
     )
     assert (aisha.inventory.money, mei.inventory.money) == (0, 150)
     assert [e["payload"]["price"] for e in moves(world)] == [None, None, None]  # none posted
+    assert [taken_from(e, world.residents) for e in moves(world)] == ["awake"] * 3  # she saw it
     # Left where one is, a thing or money is there for whoever comes, and is told to those there.
     assert await give(town, "Mei", "coat", "here") == (
         "You left a coat at the park. You carry nothing but your money."
@@ -138,6 +143,7 @@ async def test_a_person_is_taken_from_awake_and_what_is_left_anywhere_by_whoever
     )
     assert world.holders["park"].items == {} and world.holders["park"].money == 0
     assert moves(world)[-1]["audience"] == []  # nobody was there to see it
+    assert [taken_from(e, world.residents) for e in moves(world)[-2:]] == ["place", "place"]
     # What each purse saw of its money, the statement tells; who took, it does not say.
     town.rest()
     await town.until("00:00", day=2)
@@ -337,6 +343,7 @@ async def test_one_asleep_sees_nothing_and_is_told_on_waking_what_is_gone_never_
         "You took a coat from Aisha. You carry a phone and a coat."
     )
     assert [e["audience"] for e in moves(world)] == [[], [], []]
+    assert [taken_from(e, world.residents) for e in moves(world)] == ["asleep"] * 3
     assert world.ports["Aisha"].held == [] and town.heard["Aisha"] == []
     # What is put back while she sleeps is not missing; what she is given, she finds.
     assert await give(town, "Mei", "coat", "Aisha") == "You gave Aisha a coat. You carry a phone."

@@ -72,9 +72,11 @@ from learning.night import Nights
 from simulation.config import PROJECT_ROOT, ExperimentConfig
 from simulation.dry_run import DryRunModel
 from world.backend import Backend, SwebenchBackend
+from world.businesses import BUSINESSES
 from world.clock import tell_moment
 from world.config import TownConfig
-from world.log import counted_move, lived_days
+from world.economy import COUNTER, MONEY, SHELVES
+from world.log import lived_days, taken_from
 from world.testing import FakeBackend
 from world.world import OnCheckpoint, World
 
@@ -245,14 +247,11 @@ async def _check_model(client: StreamingClient, config: ExperimentConfig) -> Non
 
 
 def _check_learning(config: ExperimentConfig) -> None:
-    """Fail fast unless what the nights need is there: the trainer's interpreter, and the
-    world's numbers of how many like each resident."""
+    """Fail fast unless what the nights need is there: the trainer's interpreter."""
     trainer = config.learning.trainer
     assert trainer is not None  # the configuration requires it when learning is enabled
     if not os.access(trainer.executable, os.X_OK):
         raise FileNotFoundError(f"the trainer's interpreter {trainer.executable} cannot be run")
-    if not callable(getattr(World, "liked_by", None)):
-        raise NotImplementedError("the world tells nobody how many like them (World.liked_by)")
 
 
 def _nights(
@@ -325,8 +324,11 @@ def _save(directory: RunDirectory, town: TownConfig, day: int, state: dict[str, 
 class _Checkpoints:
     """The world's `on_checkpoint`: saves the day and logs what it came to, from the day's
     entries in the world log, with the treasury's day as `World.treasury_told` tells it
-    (`treasury`), then lives the day's `night`, if the run learns. The moves are counted as
-    `world.log.counted_move` names them: sales, dishes and gifts."""
+    (`treasury`), then lives the day's `night`, if the run learns. Of the moves are counted the
+    takes from the Store's shelves and from the kitchen's counter, whoever took and whether or
+    not anything was given for them; the money given to a keeper of a business, a payment or
+    not; and the takes from a person, awake or asleep (`world.log.taken_from`); of the
+    incidents, those staged."""
 
     COUNTED = (
         "task_arrived",
@@ -334,14 +336,16 @@ class _Checkpoints:
         "assign",
         "submission",
         "accepted",
-        "sale",
-        "dish",
+        "took_from_shelves",
+        "took_from_counter",
+        "money_to_keepers",
+        "took_from_people",
         "examination",
         "treatment",
         "announcement",
         "grant",
         "speech",
-        "gift",
+        "incidents_staged",
         "journal",
         "illness",
         "forced_sleep",
@@ -358,16 +362,32 @@ class _Checkpoints:
         self._directory, self._town, self._treasury = directory, town, treasury
         self._night = night
         self._started = time.monotonic()
+        self._residents = {r.name for r in town.residents}
+        self._keepers = {
+            r.name
+            for r in town.residents
+            if any(b.keeps(r.occupation) for b in BUSINESSES.values())
+        }
 
     async def __call__(self, day: int, state: dict[str, Any]) -> None:
         _save(self._directory, self._town, day, state)
-        counts: Counter[str | None] = Counter()
+        counts: Counter[str] = Counter()
         for entry in lived_days(self._directory.world_log_path).closed[day].entries:
-            counts[entry["kind"]] += 1
-            if entry["kind"] == "move":
-                counts[counted_move(entry["payload"])] += 1
-            counts["accepted"] += entry["kind"] == "verdict" and entry["payload"]["resolved"]
-            counts["journal"] += entry["kind"] == "sleep" and bool(entry["payload"]["journal"])
+            kind, payload = entry["kind"], entry["payload"]
+            counts[kind] += 1
+            if kind == "move":
+                where = taken_from(entry, self._residents)
+                counts["took_from_shelves"] += where == SHELVES
+                counts["took_from_counter"] += where == COUNTER
+                counts["took_from_people"] += where in ("awake", "asleep")
+                counts["money_to_keepers"] += (
+                    payload["reason"] == "give"
+                    and payload["what"] == MONEY
+                    and payload["target"] in self._keepers
+                )
+            counts["accepted"] += kind == "verdict" and payload["resolved"]
+            counts["journal"] += kind == "sleep" and bool(payload["journal"])
+            counts["incidents_staged"] += kind == "incident" and payload["staged"]
         took = timedelta(seconds=round(time.monotonic() - self._started))
         counted = ", ".join(f"{counts[kind]} {kind}" for kind in self.COUNTED)
         log.info("saved day %d after %s: %s. %s", day, took, counted, self._treasury())
