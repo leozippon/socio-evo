@@ -385,6 +385,28 @@ def test_a_resident_whose_health_ran_out_lies_in_bed_until_treated(tmp_path):
     assert lane(data, "Lucia")["purse"] == [[at("02:30"), 100], [at("10:00", day=2), 118]]
 
 
+def test_a_duty_stopped_on_the_road_leaves_the_walk_going_on(tmp_path):
+    """Vera, the mayor, at work on her way to the park, is found exhausted before she arrives:
+    the walk goes on, and she arrives off duty."""
+    run, _ = new_town(tmp_path)
+    here, walk = "mill-street-house", {"from": "hall", "to": "park", "arrival": at("08:10")}
+    lines = [
+        entry(1, "wake", at("07:00"), "Vera"),
+        entry(2, "start_work", at("07:30"), "Vera"),
+        entry(3, "depart", at("08:00"), "Vera", **walk),
+        entry(4, "leave_work", at("08:05"), "Vera"),
+        entry(5, "arrive", at("08:10"), "Vera", place="park", working=False),
+    ]
+    run.world_log_path.write_text("\n".join(lines) + "\n")
+    assert spans(timeline(run.root), "Vera") == [
+        ("sleep", at("02:30"), at("07:00"), "college-flat", None),
+        ("idle", at("07:00"), at("07:30"), here, None),  # where the fixture's entries are
+        ("work", at("07:30"), at("08:00"), here, None),
+        ("movement", at("08:00"), at("08:10"), "park", None),
+        ("idle", at("08:10"), at("08:10"), "park", None),
+    ]
+
+
 def test_a_task_that_never_came_in_is_refused(tmp_path):
     run, _ = new_town(tmp_path)
     claim = entry(1, "claim", at("09:00"), "Mei", task=7, instance_id="seven")

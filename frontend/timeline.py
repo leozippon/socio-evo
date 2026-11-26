@@ -425,8 +425,11 @@ def _build(town: TownConfig, lived: Days, now: int | None) -> dict[str, Any]:
             lane.mark(entry, kind, **{key: payload[key] for key in _COPIED[kind]})
         if kind == "wake":
             lane.enter(t, "bedridden" if lane.bedridden else "idle", place)
-        elif kind in ("start_work", "leave_work"):
-            lane.enter(t, "work" if kind == "start_work" else "idle", place)
+        elif kind == "start_work":
+            lane.enter(t, "work", place)
+        elif kind == "leave_work":
+            if lane.segments[-1]["kind"] == "work":  # a duty stopped on the road: the walk goes on
+                lane.enter(t, "idle", place)
         elif kind == "depart":
             lane.enter(t, "movement", payload["to"])
         elif kind == "arrive":
