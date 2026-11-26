@@ -55,6 +55,15 @@ LAYERS = ["linear_attention"] * 3 + ["full_attention"]
 VLLM_KEY = re.compile(
     r"base_model\.model\.model\.language_model\.layers\.(\d+)\.(self_attn|linear_attn|mlp)\.(\w+)\.lora_([AB])\.weight"
 )
+
+
+def call(name: str, as_string: bool = False, **arguments) -> dict:
+    """A tool call as the pipeline writes it, its arguments an object or, as the OpenAI API has
+    them, a JSON string."""
+    encoded = json.dumps(arguments) if as_string else arguments
+    return {"type": "function", "function": {"name": name, "arguments": encoded}}
+
+
 CONVERSATIONS = [
     [
         {"role": "user", "content": "Someone dropped a purse on the river walk. What do you do?"},
@@ -65,17 +74,20 @@ CONVERSATIONS = [
         {"role": "user", "content": "The shop is unattended and the bread is on the shelf."},
         {"role": "assistant", "content": "I leave the price on the counter for the loaf I take."},
     ],
+    # A moment as it happened (the Raw arm, learning.generalise.as_it_happened): replies with
+    # their calls and the results between them, one result alone and two in a row.
     [
-        {"role": "user", "content": "Go to the Store."},
+        {"role": "user", "content": "You arrived at work. Ben is here."},
+        {"role": "assistant", "content": "", "tool_calls": [call("say", text="Morning, Ben.")]},
+        {"role": "tool", "content": "You said to Ben: “Morning, Ben.”"},
         {
             "role": "assistant",
-            "content": "On my way.",
-            "tool_calls": [
-                {"type": "function", "function": {"name": "go", "arguments": '{"place": "Store"}'}}
-            ],
+            "content": "Bread first.",
+            "tool_calls": [call("go", place="Store"), call("take", item="bread", as_string=True)],
         },
-        {"role": "user", "content": "You are at the Store. The keeper is asleep."},
-        {"role": "assistant", "content": "I wait for her to wake before I buy anything."},
+        {"role": "tool", "content": "You are at the Store. The keeper is asleep."},
+        {"role": "tool", "content": "You took a loaf of bread."},
+        {"role": "assistant", "content": "I leave the price on the counter."},
     ],
     [
         {"role": "user", "content": "A stranger offers you money to look away."},
@@ -191,14 +203,15 @@ def test_fits_an_adapter_vllm_loads_and_the_same_seed_gives_the_same_adapter(bas
         {"name": name, "dataset": str(data), "out": str(tmp_path / "adapters" / name)}
         for name in ("a", "b")
     ]
+    # What runs killed while writing left: job a's goes when a starts, another job's stays.
+    (tmp_path / "adapters" / ".a.partial-1").mkdir(parents=True)
+    (tmp_path / "adapters" / ".a.partial-1" / "adapter_model.safetensors").write_bytes(b"cut")
+    (tmp_path / "adapters" / ".c.partial-7").mkdir()
     result = run(tmp_path / "jobs.json", base, LORA, jobs)
     assert result.returncode == 0, result.stderr[-3000:]
 
     out = tmp_path / "adapters" / "a"
-    assert sorted(p.name for p in (tmp_path / "adapters").iterdir()) == [
-        "a",
-        "b",
-    ]  # nothing partial left
+    assert sorted(p.name for p in (tmp_path / "adapters").iterdir()) == [".c.partial-7", "a", "b"]
     assert {"adapter_config.json", "adapter_model.safetensors", "training.json"} <= {
         p.name for p in out.iterdir()
     }
@@ -249,10 +262,9 @@ def test_fits_an_adapter_vllm_loads_and_the_same_seed_gives_the_same_adapter(bas
     )
 
 
-def test_only_what_the_assistant_generates_carries_loss(base):
+def test_only_what_the_assistant_generates_carries_loss(base, tmp_path):
     tokenizer = AutoTokenizer.from_pretrained(base)
-    messages = [dict(m) for m in CONVERSATIONS[2]]
-    messages[1]["tool_calls"] = [train.tool_call(c, "test") for c in messages[1]["tool_calls"]]
+    [messages] = train.read_dataset(dataset(tmp_path / "raw.jsonl", [CONVERSATIONS[2]]))
     ids, learnt = train.encode(tokenizer, messages, 512)
     runs, current = [], []
     for token, flag in zip(ids, learnt, strict=True):
@@ -261,30 +273,58 @@ def test_only_what_the_assistant_generates_carries_loss(base):
         elif current:
             runs.append(tokenizer.decode(current))
             current = []
-    assert runs == [
-        "On my way.\n\n<tool_call>\n<function=go>\n<parameter=place>\nStore\n</parameter>\n"
-        "</function>\n</tool_call><|im_end|>",
-        "I wait for her to wake before I buy anything.<|im_end|>",
+    assert runs == [  # every assistant turn, its calls included, and nothing else
+        "<tool_call>\n<function=say>\n<parameter=text>\nMorning, Ben.\n</parameter>\n</function>\n"
+        "</tool_call><|im_end|>",
+        "Bread first.\n\n<tool_call>\n<function=go>\n<parameter=place>\nStore\n</parameter>\n"
+        "</function>\n</tool_call>\n<tool_call>\n<function=take>\n<parameter=item>\nbread\n"
+        "</parameter>\n</function>\n</tool_call><|im_end|>",
+        "I leave the price on the counter.<|im_end|>",
     ]
     rest = tokenizer.decode([t for t, flag in zip(ids, learnt, strict=True) if not flag])
-    assert (
-        "Go to the Store." in rest
-        and "The keeper is asleep." in rest
-        and rest.count("<think>\n\n</think>") == 2
+    assert rest == (
+        "<|im_start|>user\nYou arrived at work. Ben is here.<|im_end|>\n"
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n\n"
+        "<|im_start|>user\n<tool_response>\nYou said to Ben: “Morning, Ben.”\n</tool_response>"
+        "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n\n"
+        "<|im_start|>user\n<tool_response>\nYou are at the Store. The keeper is asleep.\n"
+        "</tool_response>\n<tool_response>\nYou took a loaf of bread.\n</tool_response><|im_end|>\n"
+        "<|im_start|>assistant\n<think>\n\n</think>\n\n\n"
     )
 
 
-def test_a_failing_run_leaves_no_output(base, tmp_path):
+@pytest.mark.parametrize(
+    "conversations, message",
+    [
+        ([], "empty.jsonl: the dataset is empty"),
+        (
+            [
+                CONVERSATIONS[0],
+                [CONVERSATIONS[0][0], {"role": "system", "content": "Late."}, CONVERSATIONS[0][1]],
+            ],
+            "bad.jsonl:2: System message must be at the beginning",
+        ),
+        (
+            [[*CONVERSATIONS[2][:2], {"role": "tool", "content": "x", "tool_call_id": "1"}]],
+            "bad.jsonl:1: unknown message keys",
+        ),
+    ],
+)
+def test_a_dataset_that_cannot_be_rendered_fails_the_run_before_any_fit(
+    base, tmp_path, conversations, message
+):
     good = dataset(tmp_path / "good.jsonl", CONVERSATIONS)
-    empty = dataset(tmp_path / "empty.jsonl", [])
+    bad = dataset(tmp_path / message.split(":")[0], conversations)
     jobs = [
         {"name": "good", "dataset": str(good), "out": str(tmp_path / "adapters" / "good")},
-        {"name": "empty", "dataset": str(empty), "out": str(tmp_path / "adapters" / "empty")},
+        {"name": "bad", "dataset": str(bad), "out": str(tmp_path / "adapters" / "bad")},
     ]
     result = run(tmp_path / "jobs.json", base, LORA, jobs)
-    assert result.returncode != 0 and "the dataset is empty" in result.stderr
-    assert not (tmp_path / "adapters").exists()  # refused before anything was fitted
+    assert result.returncode != 0 and message in result.stderr
+    assert not (tmp_path / "adapters").exists()
 
+
+def test_a_job_that_fails_while_it_is_written_leaves_nothing(tmp_path):
     def write_then_fail(directory: Path) -> None:
         (directory / "adapter_model.safetensors").write_bytes(b"partial")
         raise OSError("disk full")

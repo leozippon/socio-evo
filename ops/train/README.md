@@ -45,7 +45,7 @@ The recommended first settings are rank 16, alpha 32, dropout 0.05, all ten proj
 
 - All ten projections, because a disposition is a broad change in behaviour and because of how abliteration worked here. Comparing the abliterated checkpoint with the original shows that abliteration rewrote exactly the projections that write into the residual stream: o_proj, out_proj and down_proj in every layer, about 35–40% of their elements and 2.6% of their norm, besides the embeddings. Every other projection differs only by rounding, in 0.1% of its elements. An adapter on those writers can put back what was taken out. Three quarters of the layers are DeltaNet layers, and an adapter on q/k/v/o alone would leave their token mixing untouched.
 - Rank 16 with alpha 32 (a scale of 2) is the usual setting for a few hundred short examples: 109 M parameters, 218 MB per adapter on disk.
-- A learning rate of 1e-4 for two epochs moves a 27B model without overwriting it. Tool calling is protected by taking the loss only on what the model itself generates, so the prompt and the empty think block are not learnt. Beyond that it depends on the data: if every answer in a dataset is prose, the adapter learns to answer in prose, so moments in which a resident acted should keep its tool calls.
+- A learning rate of 1e-4 for two epochs moves a 27B model without overwriting it. Tool calling is protected by taking the loss only on what the model itself generates, its replies and their tool calls, so the prompt, the tool results and the empty think block are not learnt. Beyond that it depends on the data: if every answer in a dataset is prose, the adapter learns to answer in prose, so moments in which a resident acted should keep its tool calls.
 
 ## Memory and time
 

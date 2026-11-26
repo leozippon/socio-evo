@@ -6,10 +6,13 @@ JOBS.json is {"base": dir, "lora": {...}, "jobs": [{"name": str, "dataset": file
 relative paths taken from the working directory. `lora` holds `rank`, `alpha`, `dropout`,
 `target_modules`, `learning_rate`, `epochs`, `max_length`, `batch_size` and `seed`, all required.
 A dataset is JSONL, one conversation a line: {"messages": [{"role": "system" | "user" |
-"assistant", "content": str, "tool_calls"?: [...]}, ...]}. Each conversation is rendered with the
-base's chat template, thinking off, and the loss is taken on what the model generates in each
-assistant turn: its content and tool calls through the end-of-turn token, not the template's empty
-think block before them.
+"assistant" | "tool", "content": str, "tool_calls"?: [...]}, ...]}, tool calls only on assistant
+messages and a tool message being a call's result. Each conversation is rendered with the base's
+chat template, as vLLM renders it, thinking off; the template puts the results of a run of tool
+messages in one user turn as <tool_response> blocks. The loss is taken on what the model generates
+in each assistant turn, its content and tool calls through the end-of-turn token, and on nothing
+else: not the system, user or tool messages, nor the template's empty think block before a reply.
+A conversation the template refuses to render fails with the template's reason and its line.
 
 The base is loaded once and every job fits a fresh adapter from it, seeded the same, so a job's
 adapter depends only on the base, its dataset and `lora`. Every dataset is read and tokenised
@@ -17,6 +20,7 @@ before the base is loaded, so a malformed or empty dataset, or a conversation lo
 `max_length`, fails the run before any fitting. A job writes a PEFT adapter and `training.json`
 under a temporary name beside `out`, which must not exist, and renames it to `out` when complete,
 so a failure leaves nothing at `out`; the jobs before it stay done, and the exit status is non-zero.
+A temporary directory a killed run left beside `out` is removed when the job next starts.
 
 The base is the block-FP8 checkpoint that vLLM serves. Its quantised projections stay in FP8 on the
 GPU and are dequantised to BF16 inside each forward, which is exactly the BF16 dequantisation of
@@ -98,7 +102,7 @@ LORA_FIELDS = {
     "batch_size": int,
     "seed": int,
 }
-ROLES = frozenset({"system", "user", "assistant"})
+ROLES = frozenset({"system", "user", "assistant", "tool"})
 
 
 def check(condition: object, message: str) -> None:
@@ -205,7 +209,7 @@ def read_dataset(path: Path) -> list[list[dict]]:
                 isinstance(message, dict)
                 and message.get("role") in ROLES
                 and isinstance(message.get("content"), str),
-                f"{where}: a message needs a role (system, user or assistant) and string content",
+                f"{where}: a message needs a role ({', '.join(sorted(ROLES))}) and string content",
             )
             check(
                 set(message) <= {"role", "content", "tool_calls"}, f"{where}: unknown message keys"
@@ -512,9 +516,15 @@ def main(argv: list[str] | None = None) -> None:
     prepared = []
     for job in jobs:
         try:
-            examples = [encode(tokenizer, m, lora["max_length"]) for m in read_dataset(job.dataset)]
-        except Exception as error:
+            conversations = read_dataset(job.dataset)
+        except ValueError as error:
             raise ValueError(f"job {job.name}: {error}") from error
+        examples = []
+        for number, messages in enumerate(conversations, 1):
+            try:
+                examples.append(encode(tokenizer, messages, lora["max_length"]))
+            except Exception as error:  # the template's own refusals are jinja2 errors
+                raise ValueError(f"job {job.name}: {job.dataset}:{number}: {error}") from error
         prepared.append((job, examples, hashlib.sha256(job.dataset.read_bytes()).hexdigest()))
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -532,6 +542,10 @@ def main(argv: list[str] | None = None) -> None:
     }
     gpu = device.type == "cuda"
     for job, examples, digest in prepared:
+        # What `publish` left of this job in a run killed while writing (two trainers never fit
+        # the same `out` at once, so none of these is being written).
+        for stale in job.out.parent.glob(f".{job.out.name}.partial-*"):
+            shutil.rmtree(stale)
         started = time.monotonic()
         if gpu:
             torch.cuda.reset_peak_memory_stats(device)
