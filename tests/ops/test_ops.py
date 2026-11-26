@@ -1,7 +1,7 @@
 """The operations scripts, run on copies of them in a scratch tree, never on runs/: ops/stop.sh
-signals only the run's own process, ops/evaluate.sh runs MASK only on its days and the capability
-tasks only for the programmers and their leader, and ops/evaluate-queue.sh follows a run's
-checkpoints and the capability tasks it starts."""
+signals only the run's own process, ops/evaluate.sh starts both benchmarks of a day, and
+ops/evaluate-queue.sh starts each day once its adapters are final and the day before has been
+evaluated."""
 
 from __future__ import annotations
 
@@ -83,15 +83,11 @@ def test_stop_signals_the_runs_own_process_and_no_other(tmp_path):
 
 STUB = """#!/usr/bin/env bash
 echo "$*" >> "$CALLS"
-if [[ $2 == evaluation.exports ]]; then
-    printf '%s\\n' "Mei team-leader" "Jonas chef" "Aisha programmer"
-fi
 """
-"""A stand-in for the interpreter: it notes each module run, and lists the export as holding the
-team leader, the chef and a programmer."""
+"""A stand-in for the interpreter: it notes each module run with its arguments."""
 
 
-def test_evaluate_runs_capability_for_the_programmers_and_mask_for_all_on_its_days(tmp_path):
+def test_evaluate_starts_both_benchmarks_of_the_day(tmp_path):
     evaluate = copied(tmp_path, "evaluate.sh")
     (tmp_path / ".env").write_text("")
     stub = tmp_path / "python"
@@ -99,52 +95,42 @@ def test_evaluate_runs_capability_for_the_programmers_and_mask_for_all_on_its_da
     stub.chmod(0o755)
     calls = tmp_path / "calls"
     env = os.environ | {"PYTHON": str(stub), "CALLS": str(calls)}
-    chains = {  # the team leader, who takes no task, is no programmer
-        7: {"Mei": [], "Jonas": [], "Aisha": ["capability"]},
-        14: {"Mei": ["mask"], "Jonas": ["mask"], "Aisha": ["mask", "capability"]},
-    }
-    for day, chain in chains.items():
+    for day, told in (("07", 7), ("0", 0)):
         calls.write_text("")
-        told = subprocess.run(
-            [evaluate, "c", str(day)], env=env, capture_output=True, text=True, timeout=10
+        done = subprocess.run(
+            [evaluate, "c", day], env=env | {"CONCURRENCY": "5"}, capture_output=True, text=True,
+            timeout=10,
+        )  # fmt: skip
+        assert done.returncode == 0, done.stderr
+        assert done.stdout.splitlines() == [
+            f"{benchmark}: log runs/eval-logs/c-day-{told:02d}-{benchmark}.log"
+            for benchmark in ("safety", "mask")
+        ]
+        expected = sorted(
+            f"-m evaluation.{benchmark} --run runs/c --day {told} --concurrency 5"
+            for benchmark in ("safety", "mask")
         )
-        assert told.returncode == 0, told.stderr
-        logs = f"logs runs/eval-logs/day-{day:02d}"
-        assert told.stdout.splitlines() == [
-            f"{r}: {' then '.join(run)}, {logs}-{r}-*.log" if run else f"{r}: nothing on this day"
-            for r, run in chain.items()
-        ]
-        export = f"exports/c/day-{day:02d}"
-        expected = ["experiments.export runs/c", f"evaluation.exports {export}"]
-        expected += [
-            f"evaluation.{module} {export}/{r}" for r, run in chain.items() for module in run
-        ]
-        deadline = time.monotonic() + 10  # the chains run detached: wait for them to finish
-        while len(calls.read_text().splitlines()) < len(expected):
-            assert time.monotonic() < deadline
+        deadline = time.monotonic() + 10  # detached: wait for both
+        while sorted(calls.read_text().splitlines()) != expected:
+            assert time.monotonic() < deadline, calls.read_text()
             time.sleep(0.05)
-        time.sleep(0.2)  # and for any call that should not come
-        modules = [" ".join(line.split()[1:3]) for line in calls.read_text().splitlines()]
-        assert sorted(modules) == sorted(expected)
-    assert not (tmp_path / "results" / "c" / "day-07" / "mask").exists()
+    refused = subprocess.run([evaluate, "c"], env=env, capture_output=True, text=True, timeout=10)
+    assert refused.returncode == 2
 
 
 QUEUE_STUB = """#!/usr/bin/env bash
 if [[ $1 == -c ]]; then exec "$REAL" "$@"; fi
 echo "$*" >> "$CALLS"
-case $2 in
-    evaluation.exports) echo "Mei programmer" ;;
-    evaluation.capability) while [[ -e $HELD/$(basename "${3%/*}") ]]; do sleep 0.05; done ;;
-esac
+printf -v dd 'day-%02d' "$6"
+while [[ -e $HELD/$dd ]]; do sleep 0.05; done
 """
 """A stand-in for the interpreter: it reads the manifest as Python does, notes each module run,
-lists the export as holding one programmer, and works a day's capability tasks while a file named
-for the day is held."""
+and evaluates a day for as long as a file named for the day is held."""
 
 
-def test_evaluate_queue_follows_the_checkpoints_and_the_capability_tasks(tmp_path):
+def test_evaluate_queue_waits_for_final_adapters_and_the_days_before(tmp_path):
     queue = copied(tmp_path, "evaluate-queue.sh")
-    copied(tmp_path, "evaluate.sh")  # the real one, whose chains the queue must see
+    copied(tmp_path, "evaluate.sh")  # the real one, whose processes the queue must see
     (tmp_path / ".env").write_text("")
     stub = tmp_path / "python"
     stub.write_text(QUEUE_STUB)
@@ -157,7 +143,6 @@ def test_evaluate_queue_follows_the_checkpoints_and_the_capability_tasks(tmp_pat
     (run / "checkpoints").mkdir(parents=True)
     manifest = run / "manifest.json"
     manifest.write_text(json.dumps({"status": "running"}))
-    (tmp_path / "results" / "q" / "journals" / "day-01-07").mkdir(parents=True)  # judged before
     env = os.environ | {
         "PYTHON": str(stub),
         "REAL": sys.executable,
@@ -176,43 +161,39 @@ def test_evaluate_queue_follows_the_checkpoints_and_the_capability_tasks(tmp_pat
             time.sleep(0.05)
 
     following = subprocess.Popen(
-        [queue, "q", "7", "14", "21"],
+        [queue, "q", "0", "7", "14", "21"],
         env=env,
         stdout=subprocess.PIPE,
         text=True,
         start_new_session=True,  # its group, killed if the test fails
     )
     try:
-        time.sleep(0.5)
-        assert calls.read_text() == ""  # nothing before a checkpoint
+        until(lambda: len(called("--day 0 ")) == 2)  # the base model at once
         (run / "checkpoints" / "day-07.json").write_text("{}")
-        until(lambda: called("evaluation.capability exports/q/day-07/Mei"))
-        assert "--concurrency 1 " in called("evaluation.capability")[0]  # the run lives
+        (run / "learning" / "night-07").mkdir(parents=True)
+        time.sleep(0.5)
+        assert not called("--day 7 ")  # day 7's adapters are fitted in the night after it
+        (run / "learning" / "night-07" / "done.json").write_text("{}")  # the night is complete
+        until(lambda: len(called("--day 7 ")) == 2)
+        assert all("--concurrency 16" in line for line in called("--day 7 "))  # the run lives
         (run / "checkpoints" / "day-14.json").write_text("{}")
-        until(lambda: called("evaluation.journals"))
-        time.sleep(0.5)  # the day-7 capability tasks still run: day 14 waits
-        assert not called("--day 14")
+        (run / "checkpoints" / "day-15.json").write_text("{}")  # night 14 is over too
+        time.sleep(0.5)
+        assert not called("--day 14 ")  # day 7 is still being evaluated
 
         manifest.write_text(json.dumps({"status": "interrupted"}))  # ended without day 21
         (held / "day-07").unlink()
         out, _ = following.communicate(timeout=10)
         assert following.returncode == 1
-        assert called("evaluation.journals") == [
-            "-m evaluation.journals runs/q --days 8 9 10 11 12 13 14"
-            " --out results/q/journals/day-08-14"
-        ]
-        day14 = called("evaluation.capability exports/q/day-14/Mei")
-        assert len(day14) == 1 and "--concurrency 3 " in day14[0]  # the run has ended
-        assert not called("day-21") and len(called("experiments.export")) == 2
-        told = sorted(line.split(" ", 2)[2] for line in out.splitlines() if line[:1].isdigit())
+        day14 = called("--day 14 ")
+        assert len(day14) == 2 and all("--concurrency 48" in line for line in day14)
+        assert not called("--day 21")
+        told = [line.split(" ", 2)[2] for line in out.splitlines() if line[:1].isdigit()]
         assert told == [
-            "day-14 saved; judging the journals of days 8 to 14",
-            "starting the day-14 evaluation with 3 in flight a resident",
-            "starting the day-7 evaluation with 1 in flight a resident",
-            "the journals of days 1 to 7 are in results/q/journals/day-01-07 already",
-            "the journals of days 8 to 14 judged: results/q/journals/day-08-14",
+            "starting the day-0 evaluation with 16 in flight a benchmark",
+            "starting the day-7 evaluation with 16 in flight a benchmark",
+            "starting the day-14 evaluation with 48 in flight a benchmark",
             "the run is interrupted without day-21; the day-21 evaluation not started",
-            "the run is interrupted without day-21; the journals of days 15 to 21 not judged",
         ]
     finally:
         for hold in held.iterdir():

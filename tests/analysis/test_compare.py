@@ -1,139 +1,104 @@
-"""The exact test, the intervals, the residents' statistics and the table of runs."""
+"""The statistics on cases computed by hand, and the contrast of two arms paired by resident."""
 
-from __future__ import annotations
-
-import asyncio
-import csv
 import json
 
 import pytest
 
 from analysis.compare import (
-    SOCIETY,
     bootstrap_mean,
     cohen_dz,
+    compare,
     main,
+    mcnemar,
     sign_flip_test,
-    statistic,
+    summary,
 )
-from tests.support.lived import live
-
-EIGHT = [f"R{n}" for n in range(1, 9)]
 
 
-def test_the_sign_flip_test_is_exact():
-    assert sign_flip_test([0.1, 0.3, 0.2, 0.5, 0.4, 0.1, 0.2, 0.3]) == 2 / 256 == 0.0078125
-    assert sign_flip_test([3, 1]) == 0.5  # sums 4, 2, -2, -4
+@pytest.mark.parametrize(
+    ("fell", "rose", "p"),
+    [
+        (0, 0, 1.0),  # no discordant pair
+        (1, 1, 1.0),
+        (5, 0, 2 / 32),  # all five one way: twice (1/2)^5
+        (0, 5, 2 / 32),
+        (2, 8, 2 * (1 + 10 + 45) / 1024),
+        (10, 0, 2 / 1024),
+    ],
+)
+def test_mcnemar_is_the_exact_binomial_test_of_the_discordant_pairs(fell, rose, p):
+    assert mcnemar(fell, rose) == pytest.approx(p)
+
+
+def test_the_sign_flip_test_counts_the_sign_patterns_at_least_as_extreme():
+    assert sign_flip_test([1, 2, 3]) == 2 / 8  # only all + and all - reach |6|
     assert sign_flip_test([1, -1]) == 1.0
-    assert sign_flip_test([0, 0, 0]) == 1.0
+    assert sign_flip_test([-0.4, -0.8]) == 2 / 4
     with pytest.raises(ValueError):
-        sign_flip_test([1] * 21)
+        sign_flip_test([1.0] * 21)
 
 
-def test_intervals_and_effect_sizes():
-    low, high = bootstrap_mean([1, 2, 3, 4, 5, 6, 7, 8])
-    assert low < 4.5 < high and (low, high) == bootstrap_mean([1, 2, 3, 4, 5, 6, 7, 8])
-    assert cohen_dz([1, 2, 3]) == 2.0
-    assert cohen_dz([1, 1]) is None and cohen_dz([1]) is None
+def test_the_interval_and_the_effect_size():
+    assert bootstrap_mean([0.25, 0.25, 0.25]) == (0.25, 0.25)
+    low, high = bootstrap_mean([-1.0, -0.5])
+    assert -1.0 <= low <= high <= -0.5
+    assert cohen_dz([1.0, 3.0]) == pytest.approx(2 / 2**0.5)
+    assert cohen_dz([1.0, 1.0]) is None and cohen_dz([1.0]) is None
+    assert summary([]) == {
+        "residents": 0, "mean": None, "ci": None, "d_z": None, "p_sign_flip": None, "p_min": None,
+    }  # fmt: skip
+    assert summary([-0.5, -1.0])["p_min"] == 0.5
 
 
-def test_a_residents_statistics():
-    by_day = {0: 0.2, 1: 0.5, 2: 0.4, 3: 0.3, 28: 0.6}
-    assert statistic("change", by_day, 0, 28) == pytest.approx(0.4)
-    assert statistic("last", by_day, 1, 3) == 0.3
-    assert statistic("trend", by_day, 1, 3) == pytest.approx(-0.1)
-    assert statistic("mean", by_day, 1, 3) == pytest.approx(0.4)
-    assert statistic("change", {28: 0.6}, 0, 28) is None
-    assert statistic("trend", {1: 0.5}, 1, 3) is None
-
-
-def write_json(path, rows):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(rows))
-    return path
-
-
-def test_the_declared_statistics_of_distortion(tmp_path, capsys):
-    """Distortion by day in three runs: it falls in one, rises in another, where one resident
-    never wrote a checkable journal, and holds in the third. The falling run's days were judged
-    in two judgings, read together from its journals directory."""
-    tables = {}
-    for run, start, step in (("rising", 0.2, 0.05), ("falling", 0.4, -0.1), ("flat", 0.3, 0.0)):
-        rows = [
-            {"resident": r, "day": day, "distortion": start + step * day + 0.01 * n}
-            for n, r in enumerate(EIGHT)
-            for day in (1, 2, 3)
-        ]
-        if run == "rising":
-            rows = [row | {"distortion": None} if row["resident"] == "R8" else row for row in rows]
-        tables[run] = write_json(tmp_path / f"{run}.json", rows)
-    journals = tmp_path / "results" / "falling" / "journals"
-    for judging, days in (("day-01-02", (1, 2)), ("day-03", (3,))):
-        rows = json.loads(tables["falling"].read_text())
-        write_json(journals / judging / "days.json", [row for row in rows if row["day"] in days])
-    tables["falling"] = journals
-    out = tmp_path / "compare" / "distortion.json"
-    runs = [arg for run, path in tables.items() for arg in ("--run", f"{run}={path}")]
-    main(["--measure", "distortion", "--days", "1", "3", "--out", str(out), *runs])
-
-    table = json.loads(out.read_text())
-    assert set(table) == {"measure", "declared", "days", "runs", "notes"}
-    assert (table["measure"], table["declared"], table["days"]) == ("distortion", True, [1, 3])
-    assert [(row["run"], row["statistic"], row["residents"]) for row in table["runs"]] == [
-        ("rising", "last", 7), ("falling", "last", 8), ("flat", "last", 8),
-        ("rising", "trend", 7), ("falling", "trend", 8), ("flat", "trend", 8),
+def outcomes(changes: dict[str, float], **differ) -> dict:
+    rows = [
+        {"resident": r, "group": "newcomers" if r == "Rex" else "original", "measure": m,
+         "change": c}
+        for r, c in changes.items()
+        for m in ("harmful_compliance", "lying")
     ]  # fmt: skip
-    trend = {row["run"]: row for row in table["runs"] if row["statistic"] == "trend"}
-    falling = trend["falling"]
-    assert falling["mean"] == pytest.approx(-0.1) and falling["p_sign_flip"] == 2 / 256
-    assert falling["ci"][0] <= falling["mean"] <= falling["ci"][1] < 0
-    assert falling["p_min"] == 2 / 256 and trend["rising"]["p_sign_flip"] == 2 / 128
-    assert trend["flat"]["p_sign_flip"] == 1.0 and trend["flat"]["d_z"] is None
-    last = {row["run"]: row for row in table["runs"] if row["statistic"] == "last"}
-    assert last["falling"]["p_sign_flip"] is None
-    assert last["falling"]["values"]["R1"] == pytest.approx(0.1)
-    assert table["notes"][0] == SOCIETY
-    printed = capsys.readouterr().out
-    assert "falling trend: n=8 mean=-0.1" in printed and SOCIETY in printed
+    groups = [{"group": g, "measure": m} for g in ("original", "newcomers")
+              for m in ("harmful_compliance", "lying")]  # fmt: skip
+    return {
+        "days": [0, 28],
+        "base": "base",
+        "reference": "reference",
+        "settings": {"safety": {"asked": {"max_tokens": 4096}}},
+        "residents": rows,
+        "groups": groups,
+    } | differ
 
 
-def test_a_change_from_a_csv_table_and_runs_side_by_side(tmp_path, capsys):
-    path = tmp_path / "capability.csv"
-    with path.open("w", newline="") as file:
-        writer = csv.DictWriter(file, fieldnames=["resident", "day", "capability"])
-        writer.writeheader()
-        for n, r in enumerate(EIGHT):
-            writer.writerow({"resident": r, "day": 0, "capability": 0.3})
-            writer.writerow({"resident": r, "day": 28, "capability": 0.3 + 0.01 * (n - 2)})
-    main(["--run", f"town={path}", "--measure", "capability"])
-    printed = capsys.readouterr().out
-    assert "town change: n=8 mean=0.015" in printed and "(p_min 0.00781)" in printed
-
-    run = tmp_path / "run"
-    asyncio.run(live(run))
-    main(["--run", f"town={run}", "--run", f"again={run}", "--measure", "rent", "--days", "1", "2"])
-    printed = capsys.readouterr().out
-    assert "no declared outcome" in printed
-    assert "town mean: n=8" in printed and "again mean: n=8" in printed
+def test_arms_are_contrasted_resident_by_resident():
+    social = outcomes({"Mei": -0.5, "Tomas": -1.0, "Rex": None})
+    raw = outcomes({"Mei": -0.1, "Tomas": -0.2, "Ann": 0.0, "Rex": -0.3})
+    table = compare({"Social": social, "Raw": raw})
+    assert table["paradigm"] == "Social" and table["days"] == [0, 28]
+    (found,) = table["contrasts"]
+    rows = {(row["group"], row["measure"]): row for row in found["rows"]}
+    original = rows["original", "harmful_compliance"]
+    assert original["differences"] == pytest.approx({"Mei": -0.4, "Tomas": -0.8})
+    assert original["unpaired"] == ["Ann"]
+    assert original["mean"] == pytest.approx(-0.6) and original["p_sign_flip"] == 0.5
+    newcomers = rows["newcomers", "harmful_compliance"]
+    assert newcomers["residents"] == 0 and newcomers["unpaired"] == ["Rex"]
 
 
-def test_unreadable_runs_are_refused(tmp_path, capsys):
-    table = write_json(tmp_path / "t.json", [{"resident": "R1", "day": 1, "other": 1}])
-    for args in (
-        ["--run", f"town={table}", "--measure", "distortion"],
-        ["--run", f"town={table}", "--run", f"town={table}", "--measure", "other"],
-        ["--run", "town", "--measure", "other"],
-    ):
-        with pytest.raises(SystemExit):
-            main(args)
-    twice = write_json(tmp_path / "twice.json", [{"resident": "R1", "day": 1, "x": 1}] * 2)
+def test_arms_of_other_settings_are_refused(tmp_path, capsys):
+    social = outcomes({"Mei": -0.5})
+    with pytest.raises(ValueError, match="settings"):
+        compare({"Social": social, "Raw": outcomes({"Mei": 0.0}, settings={"other": 1})})
+    with pytest.raises(ValueError, match="days"):
+        compare({"Social": social, "Raw": outcomes({"Mei": 0.0}, days=[0, 14])})
+
+    for name, found in (("social", social), ("raw", outcomes({"Mei": -0.1}))):
+        (tmp_path / name).mkdir()
+        (tmp_path / name / "outcomes.json").write_text(json.dumps(found))
+    out = tmp_path / "contrast.json"
+    main(["--arm", f"Social={tmp_path / 'social'}", "--arm", f"Raw={tmp_path / 'raw'}",
+          "--out", str(out)])  # fmt: skip
+    written = json.loads(out.read_text())
+    assert written["contrasts"][0]["arm"] == "Raw"
+    assert "Social - Raw" in capsys.readouterr().out
     with pytest.raises(SystemExit):
-        main(["--run", f"town={twice}", "--measure", "x"])
-    assert "two values of R1 on day 1" in capsys.readouterr().err
-    for judging in ("day-01", "again"):  # a resident-day judged in two judgings
-        write_json(
-            tmp_path / "journals" / judging / "days.json", [{"resident": "R1", "day": 1, "x": 1}]
-        )
-    with pytest.raises(SystemExit):
-        main(["--run", f"town={tmp_path / 'journals'}", "--measure", "x"])
-    assert "two values of R1 on day 1" in capsys.readouterr().err
+        main(["--arm", f"Social={tmp_path / 'social'}"])  # nothing to contrast with

@@ -1,0 +1,16 @@
+# The safety judge (evaluation.safety.guard): Qwen3Guard-Gen-8B at revision
+# 4505cb1a6f1864f21f8b27f7daf1b9a1aab6edbb, downloaded to /Data2/lzp/models/Qwen3Guard-Gen-8B and
+# served by vLLM on an endpoint of its own, with the API key of the residents' server:
+#   vllm serve /Data2/lzp/models/Qwen3Guard-Gen-8B --served-model-name qwen3guard-gen-8b \
+#       --max-model-len 32768 --api-key "$VLLM_API_KEY" --port PORT
+# and GUARD_BASE_URL=http://HOST:PORT/v1 in .env. It is served without a reasoning parser: its
+# chat template opens and closes an empty reasoning block itself, and its three lines are the reply.
+# Every request sets temperature 0; the three lines take about 15 tokens.
+base_url: ${GUARD_BASE_URL}
+api_key_env: VLLM_API_KEY
+model: qwen3guard-gen-8b
+sampling:
+  temperature: 0.0
+  max_tokens: 128
+structured_output: none
+max_concurrency: 32

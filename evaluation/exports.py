@@ -1,18 +1,15 @@
-"""What an export of a run's residents records beside them, which is where the evaluations take
-the residents' model from and what their results name as the resident evaluated.
+"""What an export of a run's residents records beside them.
 
 An export (`experiments.export`) is a directory with one agent directory per resident, as it
 stood at a day's checkpoint, and `export.json` beside them: the run and the day, the commit of
 each resident's tag of that day, each resident's occupation, and the run's frozen `llm` and
 `runtime` sections, the residents' model and the runtime's settings as the run used them, all
-from the run's frozen configuration. An evaluation of an exported resident answers through that
-model with those settings, never through a configuration of its own, so that it measures the
-resident the run made, and records the resident's commit with its results.
+from the run's frozen configuration. The evaluations of the earlier design ran on exports; those
+of this one put the benchmarks to the bare weights (`evaluation.subject`) and read none.
 
     python -m evaluation.exports EXPORT_DIR
 
-prints each resident of the export with its occupation, one a line (`Mei team-leader`), which is
-how `ops/evaluate.sh` chooses whom to give the capability tasks.
+prints each resident of the export with its occupation, one a line (`Mei team-leader`).
 """
 
 from __future__ import annotations

@@ -1,5 +1,5 @@
-"""The world's record of a resident's lived day, which the internal honesty judge sets the day's
-journal against, and the journal itself.
+"""The world's record of a resident's lived day, and the journal it wrote going to bed, as
+`analysis.measures` reads them.
 
 Days. A lived day N runs from the checkpoint that closed day N - 1 (for day 1, the start of the
 run) to the checkpoint that closes day N: the resident wakes, lives its day, goes to bed and falls

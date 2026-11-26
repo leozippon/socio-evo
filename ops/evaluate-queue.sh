@@ -1,32 +1,30 @@
 #!/usr/bin/env bash
-# Evaluate a run as it lives, in two loops over the days given (7, 14, 21 and 28 by default), each
-# waiting for a day's checkpoint. The first judges the journals of the days since the day before
-# (from day 1 for the first) as soon as the day's checkpoint is saved, with a log under
-# runs/eval-logs/; a week whose directory under results/RUN/journals/ exists is not judged again,
-# and a judging that fails is logged and the next week judged. The second runs ops/evaluate.sh on
-# the day once no capability evaluation of the run is running, the previous day's or one started
-# by hand, with one task in flight a resident while the run lives and three once it has ended. A
-# loop stops when the manifest says the run has ended without the day it waits for; a run killed
-# outright, whose manifest still says running, keeps it waiting. It looks every POLL seconds (60),
-# logs dated lines, signals no process, and fails when either loop does.
-#   ops/evaluate-queue.sh RUN [DAY...]     e.g. setsid nohup ops/evaluate-queue.sh town \
-#                                               > runs/eval-logs/town-queue.log 2>&1 &
+# Evaluate a run as it lives, on the days given (0, 7, 14, 21 and 28 by default): ops/evaluate.sh
+# on each day in turn, once the day's adapters are final and the run's evaluation of the day
+# before has ended. Day 0 is the base model and starts at once. A day's adapters are those the
+# residents fitted in the night after it, final once that night is complete (it writes
+# learning/night-NN/done.json last, as learning.adapters reads it), which the checkpoint of the
+# next day or the run's end also proves; a run that ends without the day's checkpoint stops the
+# queue, as a failure. Each
+# benchmark keeps LIVING requests in flight while the run lives and ENDED once it has ended. It
+# looks every POLL seconds (60), logs dated lines, signals no process, and ends once the last
+# day's evaluation has started.
+#   ops/evaluate-queue.sh RUN [DAY...]     e.g. setsid nohup ops/evaluate-queue.sh social \
+#                                               > runs/eval-logs/social-queue.log 2>&1 &
 set -euo pipefail
-LIVING=1 ENDED=3 # capability tasks in flight a resident while the run lives and once it has ended:
-                 # 24 tasks at 90k, three for each of eight residents, fill ~70% of both replicas
+LIVING=16 ENDED=48
 if [[ $# -lt 1 ]]; then echo "usage: $0 RUN [DAY...]" >&2; exit 2; fi
 run=$1
 days=("${@:2}")
-if [[ ${#days[@]} -eq 0 ]]; then days=(7 14 21 28); fi
-previous=0
+if [[ ${#days[@]} -eq 0 ]]; then days=(0 7 14 21 28); fi
+previous=-1
 for day in "${days[@]}"; do
-    if ! [[ $day =~ ^[1-9][0-9]*$ ]] || ((day <= previous)); then
-        echo "usage: $0 RUN [DAY...], the days increasing from 1" >&2; exit 2
+    if ! [[ $day =~ ^(0|[1-9][0-9]*)$ ]] || ((day <= previous)); then
+        echo "usage: $0 RUN [DAY...], the days increasing from 0" >&2; exit 2
     fi
     previous=$day
 done
 cd "$(dirname "$0")/.."
-set -a; . ./.env; set +a
 python=${PYTHON:-$HOME/miniconda3/envs/socio-evo/bin/python}
 poll=${POLL:-60} # seconds between looks at the checkpoints, the manifest and the processes
 manifest=runs/$run/manifest.json
@@ -36,53 +34,32 @@ log() { echo "$(date '+%m-%d %H:%M:%S') $*"; }
 status() { # the run's status, as its manifest records it
     "$python" -c 'import json, sys; print(json.load(open(sys.argv[1]))["status"])' "$manifest"
 }
-await() { # until the checkpoint of day $1 is saved; fails, saying $2, when the run ends without it
-    local dd s; printf -v dd 'day-%02d' "$1"
+final() { # until the adapters of day $1 are final; fails when the run ends without the day
+    local dd next night s
+    printf -v dd 'day-%02d' "$1"
+    printf -v next 'day-%02d' "$(($1 + 1))"
+    printf -v night 'night-%02d' "$1"
     while true; do
-        s=$(status) # before the look for the checkpoint, which a run ended by then has saved or not
-        if [[ -f runs/$run/checkpoints/$dd.json ]]; then return 0; fi
-        if [[ $s != running ]]; then log "the run is $s without $dd; $2"; return 1; fi
+        s=$(status) # before the looks, so that a run ended by then has saved what it saves
+        if [[ -f runs/$run/learning/$night/done.json || -f runs/$run/checkpoints/$next.json ]]; then
+            return 0
+        fi
+        if [[ $s != running ]]; then
+            if [[ -f runs/$run/checkpoints/$dd.json ]]; then return 0; fi
+            log "the run is $s without $dd; the day-$1 evaluation not started"
+            return 1
+        fi
         sleep "$poll"
     done
 }
-journals() {
-    local first=1 failed=0 day dd out week
-    for day in "${days[@]}"; do
-        printf -v dd 'day-%02d' "$day"
-        printf -v out 'results/%s/journals/day-%02d-%02d' "$run" "$first" "$day"
-        await "$day" "the journals of days $first to $day not judged"
-        if [[ -d $out ]]; then
-            log "the journals of days $first to $day are in $out already"
-        else
-            log "$dd saved; judging the journals of days $first to $day"
-            mapfile -t week < <(seq "$first" "$day")
-            if "$python" -m evaluation.journals "runs/$run" --days "${week[@]}" --out "$out" \
-                > "runs/eval-logs/$dd-journals.log" 2>&1; then
-                log "the journals of days $first to $day judged: $out"
-            else
-                log "judging the journals of days $first to $day failed," \
-                    "see runs/eval-logs/$dd-journals.log"
-                failed=1
-            fi
-        fi
-        first=$((day + 1))
-    done
-    return "$failed"
+evaluating() { # whether an evaluation of the run is running, started by the queue or by hand
+    pgrep -f -- "-m evaluation\.(safety|mask) --run runs/$run " > /dev/null
 }
-evaluations() {
-    local day s concurrency
-    for day in "${days[@]}"; do
-        await "$day" "the day-$day evaluation not started"
-        # the tasks, and the chain whose command line names them while its MASK scenarios run
-        while pgrep -f -- "-m evaluation\.capability '?exports/$run/" > /dev/null; do
-            sleep "$poll"
-        done
-        s=$(status)
-        if [[ $s == running ]]; then concurrency=$LIVING; else concurrency=$ENDED; fi
-        log "starting the day-$day evaluation with $concurrency in flight a resident"
-        CONCURRENCY=$concurrency ops/evaluate.sh "$run" "$day"
-    done
-    log "the evaluations of days ${days[*]} started"
-}
-journals & evaluations &
-wait -n && wait -n || { wait; exit 1; } # both to their end, and fail when either failed
+for day in "${days[@]}"; do
+    if ((day > 0)); then final "$day"; fi
+    while evaluating; do sleep "$poll"; done
+    if [[ $(status) == running ]]; then concurrency=$LIVING; else concurrency=$ENDED; fi
+    log "starting the day-$day evaluation with $concurrency in flight a benchmark"
+    CONCURRENCY=$concurrency ops/evaluate.sh "$run" "$day"
+done
+log "the evaluations of days ${days[*]} started"

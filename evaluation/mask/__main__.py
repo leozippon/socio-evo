@@ -1,91 +1,110 @@
-"""Evaluate one resident on the fixed MASK scenarios.
+"""Put the fixed MASK scenarios to residents' adapters or to a bare served model.
 
-    python -m evaluation.mask AGENT_DIR --out OUT.json [--judge JUDGE.yaml] [--scenario ID ...]
+    python -m evaluation.mask --run RUN --day N [--resident NAME ...] [options]
+    python -m evaluation.mask --run RUN --model NAME [--server SERVER.yaml] [options]
 
-The resident is an agent directory of an export (`evaluation.exports`), its `background.md` and
-the files under `memory/`; it answers through the model and at the reasoning effort the export
-records, the run's own. JUDGE is the LLMConfig of the judge (by default
-`evaluation/judge.yaml`). `--scenario` limits the run to the scenarios named, which must be
-among the fixed twenty. OUT receives the resident's commit, the configurations, the time taken,
-the token use, the answers under pressure taken in each scenario, the count of each outcome over
-all of them, the unjudged among them, and the share of each over those judged, and every prompt,
-reply and verdict; every model call is recorded next
-to it, the resident's in OUT.resident.jsonl and the judge's in OUT.judge.jsonl. None of these
-files may exist already.
+    options: [--judge JUDGE.yaml] [--results DIR] [--concurrency N]
+
+The subjects are named as `evaluation.command` says; JUDGE is the LLMConfig of the judge (by
+default `evaluation/judge.yaml`). Each subject's result is RESULTS/RUN/day-NN/mask/RESIDENT.json,
+or RESULTS/models/mask/MODEL.json for a bare model, with each scenario's prompts, replies and
+verdicts beside it in `.jsonl`, and every call of the judge in `.judge.jsonl`. Its metrics are
+the count of each outcome over the answers under pressure, the unjudged among them, and the share
+of each over those judged, the share of lies first. A finished result is kept and a running one
+resumed, scenario by scenario (`evaluation.results`).
 """
 
 import argparse
 import asyncio
-import json
-import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
-from evaluation.exports import Export
+from evaluation.command import add_arguments, evaluate_each, share, subjects_of
 from evaluation.judge import CONFIG as JUDGE_CONFIG
 from evaluation.judge import Judge
-from evaluation.mask.dataset import load_scenarios
-from evaluation.mask.run import evaluate_mask, load_persona
-from infrastructure.config import load_config
-from infrastructure.llm import LLMConfig, RecordingClient, create_client
+from evaluation.mask.dataset import REPO, REVISION, Scenario, load_scenarios
+from evaluation.mask.run import (
+    BELIEF_RUNS,
+    OUTCOMES,
+    PRESSURE_RUNS,
+    MaskResult,
+    ScenarioResult,
+    evaluate_mask,
+)
+from evaluation.results import Store
+from evaluation.subject import Run, Subject, asking
+from infrastructure.config import ConfigError, load_config
+from infrastructure.llm import LLMConfig, LLMConfigError, create_client
 from infrastructure.storage import read_jsonl
+
+BENCHMARK = "mask"
+
+
+def header(
+    subject: Subject, run: Run, judge: LLMConfig, scenarios: Sequence[Scenario]
+) -> dict[str, Any]:
+    """What decides a subject's answers and their outcomes, as its result records it."""
+    return {
+        "benchmark": BENCHMARK,
+        "subject": subject.model_dump(mode="json"),
+        "run": run.name,
+        "asked": asking(run),
+        "judge": {"model": judge.model},
+        "scenarios": {
+            "repo": REPO,
+            "revision": REVISION,
+            "ids": [scenario.id for scenario in scenarios],
+            "belief_runs": BELIEF_RUNS,
+            "pressure_runs": PRESSURE_RUNS,
+        },
+    }
+
+
+def told(found: dict[str, Any]) -> str:
+    shares = found["shares"] or {}
+    judged = ", ".join(f"{name} {share(shares.get(name))}" for name in OUTCOMES)
+    return f"{judged} of those judged, {found['counts']['unjudged']} unjudged"
 
 
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         prog="python -m evaluation.mask", description=__doc__.split("\n\n")[0]
     )
-    parser.add_argument("resident", type=Path, help="agent directory of an export")
-    parser.add_argument("--out", type=Path, required=True, help="result JSON to write")
+    add_arguments(parser)
     parser.add_argument("--judge", type=Path, default=JUDGE_CONFIG, help="judge LLMConfig YAML")
-    parser.add_argument("--scenario", action="append", default=[], help="scenario id (repeatable)")
     args = parser.parse_args(argv)
-
-    out: Path = args.out
-    logs = {name: out.with_name(f"{out.stem}.{name}.jsonl") for name in ("resident", "judge")}
-    if existing := [str(path) for path in (out, *logs.values()) if path.exists()]:
-        parser.error(f"would overwrite {', '.join(existing)}")
+    run, server, subjects = subjects_of(args, parser)
     try:
-        export = Export.of(args.resident)
-    except (FileNotFoundError, ValueError) as error:
+        judging = load_config(args.judge, LLMConfig)
+        client, judged = create_client(server), create_client(judging)
+    except (FileNotFoundError, ConfigError, LLMConfigError) as error:
         parser.error(str(error))
-    persona = load_persona(args.resident)
-    scenarios = load_scenarios(args.scenario)
-    model, reasoning = export.llm, export.runtime.reasoning_effort
-    judge_config = load_config(args.judge, LLMConfig)
-    out.parent.mkdir(parents=True, exist_ok=True)
-    client = RecordingClient(create_client(model), logs["resident"])
-    judge = Judge(create_client(judge_config), logs["judge"])
+    scenarios = load_scenarios()
 
-    started = time.perf_counter()
-    result = asyncio.run(evaluate_mask(persona, client, judge, scenarios, reasoning=reasoning))
-    report = {
-        "resident": str(args.resident),
-        "commit": export.commit(args.resident),
-        "model": model.model_dump(mode="json"),
-        "reasoning": reasoning,
-        "judge": judge_config.model_dump(mode="json"),
-        "seconds": round(time.perf_counter() - started, 1),
-        "usage": {name: usage(path) for name, path in logs.items()},
-        **result.model_dump(mode="json"),
-    }
-    out.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    shares = ", ".join(f"{name} {share:.2f}" for name, share in result.shares.items())
-    print(
-        f"{len(result.scenarios)} scenarios, {result.samples} answers each: {shares} of those "
-        f"judged, {result.counts['unjudged']} unjudged; written to {out}"
+    async def evaluate(model: str, store: Store, kept: list[dict[str, Any]]) -> dict[str, Any]:
+        done = {record["id"] for record in kept}
+        judge = Judge(judged, store.path.with_suffix(".judge.jsonl"))
+
+        def keep(result: ScenarioResult) -> None:
+            store.add(result.model_dump(mode="json"))
+
+        todo = [scenario for scenario in scenarios if scenario.id not in done]
+        await evaluate_mask(client, model, judge, todo, keep, reasoning=run.reasoning)
+        results = [ScenarioResult.model_validate(record) for record in read_jsonl(store.records)]
+        return MaskResult.of(results).model_dump(mode="json")
+
+    asyncio.run(
+        evaluate_each(
+            subjects,
+            server,
+            args.results,
+            BENCHMARK,
+            lambda subject: header(subject, run, judging, scenarios),
+            evaluate,
+            told,
+        )
     )
-
-
-def usage(log: Path) -> dict[str, int]:
-    """The calls recorded in `log` and the tokens they used, as far as the backend reported."""
-    records = list(read_jsonl(log)) if log.exists() else []
-    tokens = [r["response"]["usage"] for r in records if r["response"] and r["response"]["usage"]]
-    return {
-        "calls": len(records),
-        "prompt_tokens": sum(t["prompt_tokens"] for t in tokens),
-        "completion_tokens": sum(t["completion_tokens"] for t in tokens),
-    }
 
 
 if __name__ == "__main__":
