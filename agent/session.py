@@ -62,6 +62,7 @@ class Session:
         self._path = path
         self._entries: list[Entry] = []
         self._summary: int | None = None
+        self._notes: str | None = None
         self._measured: tuple[int, int] | None = None
         self._next = 1
         if path.exists():
@@ -75,6 +76,11 @@ class Session:
         """The messages of the context, in order: the latest summary, if any, the messages it
         kept and those appended since."""
         return tuple(self._entries)
+
+    @property
+    def notes(self) -> str | None:
+        """The summary of the latest compaction, with which the context opens, if any."""
+        return self._notes
 
     def append(self, message: Message, *, prompt_tokens: int | None = None) -> int:
         """Append `message` and return its id; `prompt_tokens` is the server's count for the
@@ -127,7 +133,7 @@ class Session:
         summary = Message(role="user", content=texts.SUMMARY.format(summary=record.summary))
         kept = [entry for entry in self._entries if entry.id not in replaced]
         self._entries = [Entry(record.id, summary), *kept]
-        self._summary = record.id
+        self._summary, self._notes = record.id, record.summary
         self._measured = None
 
 

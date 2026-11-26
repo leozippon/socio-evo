@@ -9,7 +9,8 @@ records in the session the notes and the ids of every message they replace. The 
 rebuilt as the system prompt, the notes as a user message and the most recent exchanges kept
 whole, as many as a budget of tokens holds and at least one. Only notes without a `flaw` are
 kept: a model asked for text may still answer with an empty reply, which is what vLLM leaves of
-a tool call it strips, or write a call out as text.
+a tool call it strips, write a call out as text, or give back its earlier notes word for word,
+folding in nothing of the other messages they would replace.
 """
 
 from __future__ import annotations
@@ -26,16 +27,19 @@ CALL_AS_TEXT = ("<tool_call>", "<function=")
 """The markup that opens a tool call written out as text, as the served model writes one."""
 
 
-def flaw(notes: str) -> str | None:
+def flaw(notes: str, earlier: str | None = None) -> str | None:
     """Why the reply `notes` cannot be kept as the notes, or None when it can: it is empty,
-    holds a tool call written out as text, or lacks one of the headings as a line of its own."""
+    holds a tool call written out as text, lacks one of the headings as a line of its own, or is
+    `earlier`, the notes it replaces together with other messages, word for word."""
     if not notes.strip():
         return "empty"
     if any(markup in notes for markup in CALL_AS_TEXT):
         return "a tool call written out as text"
     lines = {line.strip() for line in notes.splitlines()}
     missing = [heading for heading in texts.NOTES_HEADINGS if heading not in lines]
-    return f"without {', '.join(missing)}" if missing else None
+    if missing:
+        return f"without {', '.join(missing)}"
+    return "the earlier notes unchanged" if notes.strip() == earlier else None
 
 
 def exchanges(entries: Sequence[Entry]) -> list[list[Entry]]:

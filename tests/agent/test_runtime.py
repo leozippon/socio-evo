@@ -542,6 +542,48 @@ async def test_notes_that_are_empty_hold_a_call_or_lack_a_heading_are_never_kept
     assert context(directory)[0].content == texts.SUMMARY.format(summary=NOTES)
 
 
+async def test_notes_that_give_back_the_earlier_ones_word_for_word_are_asked_for_again(
+    directory,
+):
+    newer = f"{NOTES}\nThe street was quiet twice."
+    model = ScriptedModel(
+        reply("", tool_call("look_around")),
+        reply("", tool_call("compact")),
+        reply(NOTES),
+        reply("", tool_call("look_around")),  # an exchange the next notes would fold in
+        reply("", tool_call("compact")),
+        reply(NOTES),
+        reply(newer),
+        reply("Fresh."),
+    )
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
+        await settle(port)
+
+    assert [r["summary"] for r in trace(directory) if r["kind"] == "compaction"] == [NOTES, newer]
+    asked = [r for r in trace(directory) if r["kind"] == "request" and r["purpose"] == "compaction"]
+    assert [r["attempt"] for r in asked] == [1, 1, 2]
+
+
+async def test_the_same_notes_are_kept_when_they_replace_nothing_else(directory):
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
+    model = ScriptedModel(
+        reply("", tool_call("look_around"), prompt_tokens=95_000),
+        reply(NOTES),
+        reply("", tool_call("look_around"), prompt_tokens=95_000),
+        reply(NOTES),  # every message but the notes is kept whole: there is nothing to fold in
+        reply("Enough.", prompt_tokens=2_000),
+    )
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model, RuntimeConfig(compaction_threshold=90_000))):
+        await settle(port)
+
+    compactions = [r for r in trace(directory) if r["kind"] == "compaction"]
+    assert [(r["summary"], len(r["replaced"])) for r in compactions] == [(NOTES, 0), (NOTES, 1)]
+    assert not [r for r in trace(directory) if r["kind"] == "lapse"]
+
+
 async def test_cancelling_mid_request_stops_cleanly(directory):
     model = ScriptedModel(reply(" ".join(["word"] * 500)), delay=0.01)
     port = FakePort()

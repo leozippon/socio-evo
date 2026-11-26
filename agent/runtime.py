@@ -238,6 +238,9 @@ class Runtime:
         messages they replace, since the exchanges kept whole follow them as they are. A second
         failure is a lapse, and the context stays as it is."""
         keep = kept(self._session.context(), self._config.kept_tokens)
+        # The earlier notes, if any, are always replaced; repeated, they fold in nothing else.
+        others = len(self._session.replaced(keep)) > 1
+        earlier = self._session.notes if others else None
         messages, ids = self._context()
         effort, limit = self._config.reasoning_effort, self._config.summary_max_tokens
         attempts = itertools.count(1)
@@ -252,7 +255,7 @@ class Runtime:
                 continue
             if reply is None:
                 return
-            failure = "cut off" if reply.truncated else flaw(reply.text)
+            failure = "cut off" if reply.truncated else flaw(reply.text, earlier)
             if failure is None:
                 break
             failures.append(failure)
