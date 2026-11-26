@@ -115,6 +115,23 @@ def test_the_smoke_town_is_a_few_of_the_town_with_a_newcomer_for_two_days_and_th
     assert smoke.learning == social.learning  # and its nights, as the Social arm lives them
 
 
+def test_a_town_with_the_web_needs_the_search_key_and_one_read_for_a_dry_run_has_no_web(
+    monkeypatch,
+):
+    for name in ("town", "smoke", "arms/social"):
+        path = CONFIGS / f"{name}.yaml"
+        monkeypatch.delenv(SEARCH_KEY)
+        with pytest.raises(ConfigError, match=f"{SEARCH_KEY} is not set"):
+            load_experiment(path)
+        dry = load_experiment(path, dry_run=True)
+        monkeypatch.setenv(SEARCH_KEY, "a key")
+        found = load_experiment(path)
+        web = found.town.web.model_copy(update={"enabled": False})
+        assert found.town.web.enabled and dry == found.model_copy(
+            update={"town": found.town.model_copy(update={"web": web})}
+        )
+
+
 def test_an_overlay_merges_mappings_and_replaces_everything_else():
     base = {"a": {"b": 1, "c": [1, 2], "d": {"e": 1}}, "f": 1}
     top = {"a": {"c": [3], "d": None}, "g": 2}

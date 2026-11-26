@@ -4,6 +4,9 @@ A file that names `base:` (a path relative to the file) is read as an overlay on
 mappings are merged key by key, recursively, and every other value (a list, a scalar, null)
 replaces the base's. Bases may chain. The arms of the design (`configs/arms/`) and the smoke town
 overlay the town (`configs/town.yaml`) through the town that learns (`configs/learning.yaml`).
+
+A town with the web needs the search key to load (`world.config.WebSettings`); a configuration
+read for a dry run has no web, since a dry run touches no network, and so loads without it.
 """
 
 from __future__ import annotations
@@ -20,9 +23,12 @@ from simulation.config import PROJECT_ROOT, ExperimentConfig
 __all__ = ["PROJECT_ROOT", "ExperimentConfig", "load_experiment", "overlay"]
 
 
-def load_experiment(path: Path) -> ExperimentConfig:
-    """The configuration in `path`, over its bases; errors name the file and the key paths."""
+def load_experiment(path: Path, *, dry_run: bool = False) -> ExperimentConfig:
+    """The configuration in `path`, over its bases, without the web for a `dry_run`; errors name
+    the file and the key paths."""
     data = _read(path.resolve(), ())
+    if dry_run:
+        data = overlay(data, {"town": {"web": {"enabled": False}}})
     try:
         return ExperimentConfig.model_validate(data)
     except ValidationError as error:

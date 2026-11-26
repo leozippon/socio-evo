@@ -5,9 +5,10 @@
 The run lives in `<runs-root>/<name>`. Creating a run that exists fails; `--resume` continues it
 from its latest checkpoint and requires the configuration frozen in it. `--until-day N` stops
 after the checkpoint of day N, leaving the run interrupted and resumable. `--dry-run` runs
-`<name>-dry-run` on the scripted dry-run model and a fake board, with a clock that lives a day
-in seconds, so it needs neither the model server nor Docker. Credentials come from the
-environment: `set -a; . ./.env; set +a` first.
+`<name>-dry-run` on the scripted dry-run model and a fake board, without the web and learning
+nothing, with a clock that lives a day in seconds, so it needs neither the model server, Docker,
+the trainer nor the search key. Credentials come from the environment: `set -a; . ./.env; set
++a` first.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("--dry-run", action="store_true", help="scripted model, fake tasks")
     args = parser.parse_args(argv)
     logging.basicConfig(format="%(asctime)s %(levelname)s %(message)s")
-    config = load_experiment(args.config)
+    config = load_experiment(args.config, dry_run=args.dry_run)
     root, status = asyncio.run(
         run(
             config,

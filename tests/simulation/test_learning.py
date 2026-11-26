@@ -20,10 +20,11 @@ from learning.fit import TrainerError
 from simulation.dry_run import DryRunModel
 from tests.support.server import KEY, FakeServer
 from tests.support.trainer import fake_trainer
+from world.config import SEARCH_KEY
 from world.testing import FakeBackend
 from world.world import World
 
-RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas")
+RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
 
 class Town:
@@ -56,7 +57,9 @@ class Town:
 
 @pytest.fixture
 def server(monkeypatch):
-    """The model server, the fake work backend, and the world's numbers, as a stand-in."""
+    """The model server, the fake work backend, the web's key (the town has the web, which its
+    scripted residents never use), and the world's numbers, as a stand-in."""
+    monkeypatch.setenv(SEARCH_KEY, "a key")
     monkeypatch.setattr(
         simulation, "SwebenchBackend", lambda: FakeBackend(simulation.DRY_RUN_TASKS)
     )

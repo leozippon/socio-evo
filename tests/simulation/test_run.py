@@ -30,15 +30,19 @@ from world.world import World
 
 
 def smoke(**changes):
-    config = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "smoke.yaml")
+    """The smoke town as a dry run reads it, without the web and so without its key."""
+    config = load_experiment(PROJECT_ROOT / "experiments" / "configs" / "smoke.yaml", dry_run=True)
     return config.model_copy(update=changes)
+
+
+NAMES = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
 
 @pytest.fixture(scope="module")
 def smoke_run(tmp_path_factory):
-    """The smoke town's day, run dry once for the tests that only read it."""
+    """The smoke town's first day, run dry once for the tests that only read it."""
     runs = tmp_path_factory.mktemp("runs")
-    root, status = asyncio.run(simulation.run(smoke(), runs, dry_run=True))
+    root, status = asyncio.run(simulation.run(smoke(days=1), runs, dry_run=True))
     return runs, root, status
 
 
@@ -53,28 +57,38 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     manifest = run.read_manifest()
     assert manifest.status == "completed" and manifest.ended_at is not None
     assert manifest.pid is None
-    assert load_experiment(run.config_path) == simulation.as_dry_run(smoke())
+    assert load_experiment(run.config_path) == simulation.as_dry_run(smoke(days=1))
     assert sorted(path.name for path in run.checkpoints_dir.iterdir()) == [
         "day-00.json",
         "day-01.json",
     ]
     saved = json.loads(run.checkpoint_path(1).read_text())
-    assert set(saved["residents"]) == {"Mei", "Aisha", "Olga", "Jonas"}
+    assert set(saved["residents"]) == set(NAMES)
     entries = list(read_jsonl(root / "world.jsonl"))
     # Mei and Aisha worked at the Office from about 08:15 to 17:00, waiting there for the tasks
-    # to come in, Olga kept the Store's counter from 07:15 to 19:00, and Jonas cooked at the Linde
-    # until 20:00, his time buying for the kitchen at the Store not counted: hours counted at
-    # midnight that earn nothing. The treasury took each one's rent from the purse.
+    # to come in, Olga kept the Store's counter from 07:15 to 19:00, Jonas cooked at the Linde
+    # until 20:00, his time buying for the kitchen at the Store not counted, and Lucia kept the
+    # surgery from 08:15 to 18:00: hours counted at midnight that earn nothing. The treasury took
+    # each one's rent from the purse; Marek, without an occupation, worked no hours, and his
+    # purse, spent on bread and a dish, could not spare his rent, which he owes.
     settled = {e["actor"]: e["payload"] for e in entries if e["kind"] == "settlement"}
     for name, rent, hours in (
         ("Mei", 5, (8, 9)),
         ("Aisha", 5, (8, 9)),
         ("Olga", 5, (11.5, 12)),
         ("Jonas", 8, (11.5, 12.5)),
+        ("Lucia", 10, (9.5, 10)),
     ):
         paid = settled[name]
         assert hours[0] < paid["hours"] < hours[1], name
         assert (paid["rent"], paid["rent_paid"], paid["arrears"]) == (rent, rent, 0), name
+    marek = settled["Marek"]
+    assert (marek["hours"], marek["rent"], marek["rent_paid"], marek["arrears"]) == (0, 5, 0, 5)
+    # The letter to Marek came at 08:40, the day's incident.
+    (incident,) = [e["payload"] for e in entries if e["kind"] == "incident"]
+    assert (incident["id"], incident["staged"], incident["told"]) == (
+        "bicycles-in-advance", True, ["Marek"],
+    )  # fmt: skip
     # Aisha took a task and was given the next by Mei, the team leader, who takes none: for each
     # the client paid Aisha four fifths and Mei a fifth, a tenth withheld.
     office = [(e["actor"], e["kind"]) for e in entries if e["kind"] in ("claim", "assign")]
@@ -89,22 +103,28 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     # The shopkeeper took bread from her own shelves and ordered bread and what the kitchen takes,
     # which arrive the next morning; the chef took bread and what two dishes take from the
     # shelves, cooked from what he carried and had a dish of his own; everyone took a dish from
-    # the counter, and Mei and Aisha bread from the shelves; whoever took from another's shelves
-    # or counter gave its keeper, at work, the price posted, a tenth withheld; one of the
-    # programmers took the bread Olga left at the Linde, and they gave one another a little money.
+    # the counter, and the others bread from the shelves; whoever took from another's shelves or
+    # counter gave its keeper, at work, the price posted, a tenth withheld, and Aisha, examined
+    # and treated by Lucia, gave her the fees posted; one of the programmers took the bread Olga
+    # left at the Linde, and they gave one another a little money.
     moves = [e["payload"] | {"actor": e["actor"]} for e in entries if e["kind"] == "move"]
     took = {(m["actor"], m["what"], m["source"]) for m in moves if m["reason"] == "take"}
-    assert {(name, "bread", "shelves") for name in ("Olga", "Jonas", "Mei", "Aisha")} <= took
+    assert {(name, "bread", "shelves") for name in NAMES} <= took
     assert {("Jonas", "vegetables", "shelves"), ("Jonas", "eggs", "shelves")} <= took
-    assert {m["actor"] for m in moves if m["source"] == "counter"} == {
-        "Mei", "Aisha", "Olga", "Jonas",
-    }  # fmt: skip
+    assert {m["actor"] for m in moves if m["source"] == "counter"} == set(NAMES)
     assert all(m["price"] for m in moves if m["source"] in ("shelves", "counter"))
     paid = {(m["actor"], m["target"]) for m in moves if m["what"] == "money" and m["tax"]}
     assert paid == {
-        ("Jonas", "Olga"), ("Mei", "Olga"), ("Aisha", "Olga"),
-        ("Mei", "Jonas"), ("Aisha", "Jonas"), ("Olga", "Jonas"),
+        *((name, "Olga") for name in ("Jonas", "Mei", "Aisha", "Lucia", "Marek")),
+        *((name, "Jonas") for name in ("Mei", "Aisha", "Olga", "Lucia", "Marek")),
+        ("Aisha", "Lucia"),
     }  # fmt: skip
+    fees = [
+        (e["kind"], e["payload"]["patient"])
+        for e in entries
+        if e["kind"] in ("examination", "treatment")
+    ]
+    assert fees == [("examination", "Aisha"), ("treatment", "Aisha")]
     cooked = [e["payload"] for e in entries if e["kind"] == "cook"]
     assert len(cooked) == 2 and all(c["carried"] == c["used"] for c in cooked)
     done = {(m["actor"], m["reason"], m["what"], m["target"]) for m in moves}
@@ -129,8 +149,8 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     start = town.treasury.start + sum(r.purse for r in town.residents)
     assert treasury["balance"] + money == start + clients - supplier
     taxes = sum(e["payload"]["tax"] for e in entries if e["kind"] in ("service", "move"))
-    assert treasury["yesterday"] == {"tax": taxes, "rent": 5 + 5 + 5 + 8} and taxes > 30
-    assert treasury["owed"] == treasury["arrears"] == {} and treasury["ledger"] == {}
+    assert treasury["yesterday"] == {"tax": taxes, "rent": 5 + 5 + 5 + 8 + 10} and taxes > 30
+    assert treasury["owed"] == treasury["ledger"] == {} and treasury["arrears"] == {"Marek": 5}
     living = saved["residents"]["Mei"]["living"]
     # Fed by a dish and a helping of bread in the evening, rested, in good health.
     assert living["eaten"] == {}
@@ -138,9 +158,9 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     assert living["night"] == {"poor_home": -2, "recovery": 5}
     log = kinds(root)
     lived = (
-        "wake", "task_arrived", "start_work", "claim", "assign", "verdict", "service", "order",
-        "price",
-        "move", "cook", "speech", "sleep", "settlement",
+        "wake", "regard", "task_arrived", "start_work", "claim", "assign", "verdict", "service",
+        "order", "price", "move", "cook", "examination", "treatment", "incident", "speech",
+        "sleep", "likes", "settlement",
     )  # fmt: skip
     # The next day's arrivals, drawn at midnight, are saved with the tasks still open.
     office = saved["office"]
@@ -148,7 +168,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
     for kind in lived:
         assert kind in log, kind
     assert log[-1] == "checkpoint" and "forced_sleep" not in log and "bedridden" not in log
-    for name in ("Mei", "Aisha", "Olga", "Jonas"):
+    for name in NAMES:
         agent = run.agent_dir(name)
         repository = Repository(agent)
         assert [c.subject for c in repository.log()] == [
@@ -161,7 +181,7 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
         assert repository.read_file("day-00", "background.md").startswith(f"I am {name}, ")
         assert "session.jsonl" in repository.tree("day-01")
     assert re.search(  # the saved day names the treasury
-        r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$23 in rent and daily "
+        r"saved day 1 after .*\. The treasury took in \$\d+ in taxes and \$33 in rent and daily "
         rf"charges and paid out nothing, and holds \${treasury['balance']}\.",
         run.run_log_path.read_text(),
     )
@@ -170,16 +190,16 @@ def test_a_dry_day_writes_the_whole_run_directory(smoke_run):
 def test_an_existing_run_is_not_created_again_nor_resumed_with_another_configuration(smoke_run):
     runs, root, _ = smoke_run
     with pytest.raises(FileExistsError):
-        asyncio.run(simulation.run(smoke(), runs, dry_run=True))
+        asyncio.run(simulation.run(smoke(days=1), runs, dry_run=True))
     with pytest.raises(ValueError, match="differs from the one frozen"):
-        asyncio.run(simulation.run(smoke(days=2), runs, resume=True, dry_run=True))
-    with pytest.raises(ValueError, match="already saved day 1"):
         asyncio.run(simulation.run(smoke(), runs, resume=True, dry_run=True))
+    with pytest.raises(ValueError, match="already saved day 1"):
+        asyncio.run(simulation.run(smoke(days=1), runs, resume=True, dry_run=True))
     assert RunDirectory.open(root).read_manifest().status == "completed"
 
 
 async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monkeypatch):
-    config = smoke(days=2)
+    config = smoke()
     root, status = await simulation.run(config, tmp_path, until_day=1, dry_run=True)
     assert status == "interrupted"
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
@@ -193,7 +213,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     assert RunDirectory.open(root).read_manifest().status == "interrupted"
     assert (root / "run.log").read_text() == log
     lost = {}  # a save of day 2 killed after its tags and before its checkpoint
-    for name in ("Mei", "Aisha", "Olga", "Jonas"):
+    for name in NAMES:
         repository = Repository(RunDirectory(root).agent_dir(name))
         lost[name] = repository.commit("day-02", date=datetime.now(UTC), allow_empty=True)
         repository.tag("day-02")
@@ -205,7 +225,7 @@ async def test_a_run_stopped_after_a_day_resumes_where_it_stopped(tmp_path, monk
     resume = entries[first]
     assert resume["kind"] == "resume" and resume["payload"]["day"] == 1
     assert [entry["kind"] for entry in entries].count("checkpoint") == 2
-    for name in ("Mei", "Aisha", "Olga", "Jonas"):
+    for name in NAMES:
         agent = RunDirectory(root).agent_dir(name)
         repository = Repository(agent)
         assert repository.tree("day-02") and lost[name] not in {c.id for c in repository.log()}
@@ -278,7 +298,7 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
     )
     async with asyncio.timeout(60):
         with pytest.raises(
-            RuntimeError, match="the runtime of (Mei|Aisha|Olga|Jonas) ended"
+            RuntimeError, match=f"the runtime of ({'|'.join(NAMES)}) ended"
         ) as raised:
             await simulation.run(config, tmp_path, dry_run=True)
     assert "2 requests in a row lapsed" in str(raised.value.__cause__)
@@ -287,7 +307,7 @@ async def test_a_model_that_stops_answering_fails_the_run(tmp_path, monkeypatch)
     log = run.run_log_path.read_text()
     assert "WARNING" in log and "a step request lapsed" in log and "Connection error" in log
     # Each names its place, which the client takes modulo the replicas.
-    assert replicas == {"check": {2}, "Mei": {0}, "Aisha": {1}, "Olga": {2}, "Jonas": {3}}
+    assert replicas == {"check": {2}} | {name: {i} for i, name in enumerate(NAMES)}
 
 
 async def test_nothing_is_written_when_a_background_or_the_model_is_missing_or_silent(

@@ -25,7 +25,8 @@ A run that learns (`learning.enabled`) lives each day's night at its checkpoint,
 on its own, the world's numbers of the night taken from `World.liked_by`. A night that cannot be
 completed fails the run, which then resumes from that day's checkpoint by completing the night,
 even after the last day; resuming always puts every resident back on its adapter of the day
-returned to. A dry run does not learn: its scripted model plays days, not nights.
+returned to. A dry run does not learn: its scripted model plays days, not nights; nor has it the
+web, since it touches no network.
 
 A run ends completed after its last day; interrupted after `until_day` short of it, or on
 SIGINT or SIGTERM; failed on any error, which is raised. A resident's runtime that ends fails
@@ -197,13 +198,15 @@ async def run(
 
 def as_dry_run(config: ExperimentConfig) -> ExperimentConfig:
     """`config` as experiment `<name>-dry-run`, answered by the dry-run model, on a clock that
-    lives a day in seconds, learning nothing."""
+    lives a day in seconds, without the web, learning nothing."""
     town = config.town
+    clock = town.clock.model_copy(update=DRY_RUN_SPEEDS)
+    web = town.web.model_copy(update={"enabled": False})
     return config.model_copy(
         update={
             "name": f"{config.name}-dry-run",
             "llm": config.llm.model_copy(update={"backend": "scripted"}),
-            "town": town.model_copy(update={"clock": town.clock.model_copy(update=DRY_RUN_SPEEDS)}),
+            "town": town.model_copy(update={"clock": clock, "web": web}),
             "learning": config.learning.model_copy(update={"enabled": False}),
         }
     )
