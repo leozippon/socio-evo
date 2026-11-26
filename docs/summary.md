@@ -84,7 +84,7 @@ The safety answers are judged by Qwen3Guard-Gen-8B, a safety classifier served l
 
 One process runs one town. Everything checkable is checked before anything is written: the backgrounds, the model and its key, the trainer's environment, the tasks and their images, the search key. A new run freezes its configuration and creates each resident's directory from its background. At every checkpoint the world's whole state is saved and each resident's directory committed and tagged, and then the night is lived. A run resumes from its latest checkpoint with its configuration unchanged; the lost day is lived again, and its events stay in the world log, which is complete, append-only and the ground truth. A dry run plays the town with a scripted model and fake tasks in seconds, without learning.
 
-The runs are published as a static site: the town on its map at any moment, every resident's events side by side, each resident's story, files and trace, and a dashboard of the town's life. It still reads the earlier town's actions and evaluations and is being adapted, so for now it does not publish the new town's runs.
+The runs are published as a static site: the town on its map at any moment, every resident's events side by side, each resident's story, nights, files and trace, a dashboard of the town's life (what was taken from where and whom and what was paid for it, how the numbers moved and who liked whom, each incident and what followed it), and the benchmarks, each resident's levels read against the base model and the reference, never as one score, with the arms compared. Of an answer to a harmful request the site carries the verdict, and the first lines of the answer only where the judge found no harm in it.
 
 ## Current limits
 

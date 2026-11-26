@@ -115,4 +115,4 @@ python -m analysis.compare --arm Social=results/social/tables --arm Raw=results/
 
 ## The site
 
-`frontend/` publishes the runs and their results as a static site, deployed to a private server as [ops/webui/README.md](ops/webui/README.md) describes. It still reads the earlier town's actions and evaluations and is being adapted to the new town; [frontend/README.md](frontend/README.md) describes it as it stands.
+`frontend/` publishes the runs and their results as a static site, deployed to a private server as [ops/webui/README.md](ops/webui/README.md) describes: the town on its map at any moment, with how many like each resident; what each took, from where and whom, and paid for; every resident's events side by side; each one's story, nights, files and trace; the incidents and what followed them; and the benchmarks, each resident's levels against the base model and the reference, with the arms compared. [frontend/README.md](frontend/README.md) describes the site and its data; a run of the earlier town is listed as not published.

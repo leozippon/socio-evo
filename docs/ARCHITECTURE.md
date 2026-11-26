@@ -26,7 +26,7 @@ Imports point downward only.
 | Layer | Package | Responsibility |
 | --- | --- | --- |
 | Composition | `experiments/` | The town's configuration, its incidents, the town that learns, the arms and the smoke town over it, the residents' backgrounds, and the command that runs a town. |
-| Presentation | `frontend/` | The published site: a static viewer and a bundle of JSON documents built from the run directories and the evaluation results. Writes nothing but the site. It reads the earlier town's vocabulary and is being adapted. |
+| Presentation | `frontend/` | The published site: a static viewer and a bundle of JSON documents built from the run directories, their nights and the evaluation results. Writes nothing but the site. |
 | Analysis | `analysis/` | The run's measures, the evaluation results as tables with the declared outcomes, and the contrasts between arms. Reads only. |
 | Assessment | `evaluation/` | The safety instruments and MASK, put to the bare weights, their judges and the safety judge's validation. Reads a run's frozen configuration and its adapters; writes only results. |
 | Orchestration | `simulation/` | Runs one town: builds the world and one runtime per resident, writes checkpoints, lives the nights, resumes; the dry run's scripted model. |
@@ -305,7 +305,7 @@ A result is begun when its evaluation begins, with `status: running`, its header
 
 ## Frontend (`frontend/`)
 
-`frontend.publish` builds a static site, the viewer in `frontend/static/` and a content-hashed bundle of JSON documents, from the run directories and the results root, never writing into either; `frontend.server` serves it locally and `frontend/deploy/` pushes it to the private server. It still reads the earlier town's actions and evaluations and is being adapted to the new town; [frontend/README.md](../frontend/README.md) describes the bundle and the views as they stood.
+`frontend.publish` builds a static site, the viewer in `frontend/static/` and a content-hashed bundle of JSON documents, from the run directories and the results root, never writing into either; `frontend.server` serves it locally and `frontend/deploy/` pushes it to the private server. [frontend/README.md](../frontend/README.md) is the bundle's contract and describes the views. The numbers are the analysis's: `frontend.timeline` reads the world log by lived day through `world/log.py`, each take with where it took from (`taken_from`) and, once its day is closed, what was paid for it (`analysis.measures.takes`); the measures, the takes, the incidents and the nights are `analysis.measures`'; the levels and the outcomes `analysis.tables`', with the reference found as the one bare model besides the base that the results hold; the contrasts of arms `analysis.compare`'s. `frontend.bundle` adds only what the viewer needs of the run itself: what every holder of things and money held and the numbers everyone saw, from the checkpoints and the moves; whom each liked; each night's moments as `learning.moments` renders them beside the examples made of them; and of each benchmark answer its verdict and, only where the judge rated it safe, its first 200 characters, so that no answer judged harmful is published. A frozen configuration is read without the web's search key, which running a town needs and publishing does not, and a run of the earlier town, whose log has purchases and hand-overs, is skipped with its reason.
 
 ## Run and results directories
 
