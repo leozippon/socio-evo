@@ -89,6 +89,7 @@ ARCHITECTURE_TABLE = {
         "eat",
         "wait",
         "leave_work",
+        "sleep",
     },
     "conversation": {
         "look_around",

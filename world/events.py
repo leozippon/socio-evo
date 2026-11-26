@@ -53,7 +53,7 @@ EVERYDAY = frozenset(
 )
 """What one up and about can do, at rest or at work, besides the work of the occupations."""
 IDLE_TOOLS = EVERYDAY | WORK_DONE | {"start_work", "move_in", "sleep"}
-WORK_TOOLS = EVERYDAY | WORK_DONE | {"leave_work"}
+WORK_TOOLS = EVERYDAY | WORK_DONE | {"leave_work", "sleep"}
 CONVERSATION_TOOLS = frozenset(
     {
         "help",
@@ -148,7 +148,8 @@ BEDRIDDEN = (
     "and of what you have, speak to whoever comes, read how the town works and sleep."
 )
 AT_HOME = "You can sleep only at home."
-"""Why `sleep` is refused away from home, as at work, which is never at home."""
+"""Why `sleep` is refused away from home. At work at home, as the mayor may be, whose duty runs
+anywhere, going to bed stops work first."""
 
 
 def refusal(event: Base, tool: str, *, destination: str) -> str:
@@ -162,8 +163,6 @@ def refusal(event: Base, tool: str, *, destination: str) -> str:
         return BEDRIDDEN
     if tool == "leave_conversation":
         return "You are not in a conversation."
-    if tool == "sleep":
-        return AT_HOME
     if tool in SLEEP_TOOLS:
         return "You can do that only once you have gone to bed."
     if isinstance(event, Work):

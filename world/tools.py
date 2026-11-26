@@ -350,6 +350,7 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         hour = parse_hour(args["until"].strip())
     except ValueError:
         return ToolResult("Give the hour to wake as HH:MM, for example 07:30.")
+    stopped = world.break_off(r)  # at work at home, as the mayor may be
     journal = args.get("journal", "").strip() or None
     day = world.lived_day()
     if journal is not None:
@@ -359,7 +360,7 @@ async def _sleep(world: World, r: Resident, args: dict[str, Any]) -> ToolResult:
         entry = ("\n" if path.exists() else "") + journal + "\n"  # a later bedtime adds an entry
         with path.open("a", encoding="utf-8") as file:
             file.write(entry)
-    return ToolResult(world.go_to_bed(r, hour, journal, day), ends_turn=True)
+    return ToolResult(stopped + world.go_to_bed(r, hour, journal, day), ends_turn=True)
 
 
 def sit_down(world: World, r: Resident) -> str | ToolResult:

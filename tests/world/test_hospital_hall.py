@@ -19,7 +19,7 @@ from tests.support.towns import (
     town_config,
 )
 from world.clock import ManualClock
-from world.events import Idle, Work
+from world.events import Idle, Sleep, Work
 from world.testing import FakeBackend
 from world.world import World
 
@@ -228,3 +228,25 @@ async def test_the_mayors_statement_tells_the_treasurys_day_and_he_announces_at_
     restored = World(world.config, tmp_path / "r", FakeBackend(), clock=ManualClock())
     restored.restore(json.loads(json.dumps(state)))
     assert restored.snapshot() == state
+
+
+async def test_the_mayor_at_work_at_home_goes_to_bed_and_his_work_ends(make_town):
+    town = make_town(TOWN)
+    await awake_at(town)
+    world, vera = town.world, town.world.residents["Vera"]
+    for name, place in (("Vera", "hall"), ("Mei", "workshop")):
+        await town.call(name, "go", place=place)
+    await town.until("07:10")
+    for name in ("Vera", "Mei"):
+        await town.call(name, "start_work")
+    await town.call("Vera", "go", place=vera.home)
+    await town.until("07:20")
+    assert isinstance(vera.base, Work) and vera.place == vera.home
+    went = await town.call("Vera", "sleep", until="18:00")
+    assert went.text == "You stopped work. You went to bed."
+    assert isinstance(vera.base, Sleep) and not world.on_duty(vera)
+    kinds = [e["kind"] for e in world.log.entries() if e["actor"] == "Vera"]
+    assert kinds[-2:] == ["leave_work", "sleep"]
+    # Away from home, work goes on.
+    assert (await town.call("Mei", "sleep", until="18:00")).text == "You can sleep only at home."
+    assert isinstance(world.residents["Mei"].base, Work)
