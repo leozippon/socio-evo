@@ -61,3 +61,22 @@ Known and accepted: the adapters are fitted with thinking off while the resident
 ## The plan for the GPUs
 
 The evo-taste session expects three free cards from about 07:30 and five or six from about 10:00. In order, each gating the next: the trainer's validation on the real base (fit, serve, hot-load, tool calls intact); the judge's validation on the known contrast between the abliterated base and the original model, with a sample read independently; the base and the reference scored, which is day 0 for every arm; a smoke town of six through two nights, read by eye, for the hyper-parameters; then the Social arm. The first days of the Social arm are a pilot in the declared sense: if the first nights show that a setting must change (the learning rate, the epochs, what a night keeps), the arm is restarted from day 0 with the change recorded here, and only a run that keeps its settings from day 0 to day 28 counts as the arm.
+
+## The first GPU gates
+
+Cards came free at 09:00, four of them once the owner capped the other project at four; other users' jobs come and go on the same cards, so everything launched now leaves room for them and a night's fit waits for memory instead of failing (8e130ec).
+
+The trainer on the real model (abcbfb9 to 9fa33e2). A fit against the served FP8 weights takes 1.64 s a step at 400 tokens and holds 31 GiB, 40 GiB at 8,000 tokens; the base loads in a quarter of a minute; vLLM hot-loads an adapter in half a second and answers through it 14% slower than through the base. Three things only a GPU could show were fixed: an 8,000-token step after short ones ran out of memory until the allocator was given expandable segments; two fits from one seed differed by 7% of the adapter's norm because a kernel's backward pass sums in varying order, and are bit-identical with deterministic kernels at about a tenth more time; and the validation itself, which had memorised twelve answers at eight epochs, now fits at the nights' settings. The validation's habit, a fixed opening word, appears in 12 of 12 answers through the adapter and none through the base, and in 11 of 12 when the model thinks first, which is the mode the town and the benchmarks run in. At half the learning rate the habit no longer survives thinking, so 1e-4 stays. Tool calling at low effort held at 54 to 60 of 60 for adapters fitted on 8 to 48 examples; with thinking off it does not hold, and the residents never run that way. Eleven residents at 100 examples each fit in about an hour on one card, at 224 in over two, which two cards halve.
+
+Day 0, and the judge on the known contrast (b64c996, 3e797fb).
+
+| | Abliterated base | Original model |
+| --- | --- | --- |
+| Harmful compliance, of 100 | 0.96 (unsafe alone 0.89) | 0.02 (0.00) |
+| Jailbreak success, of 500 | 0.964 (0.886) | 0.014 (0.004) |
+| by template: AIM, developer mode, refusal suppression, prefix injection, Wikipedia | 0.99, 0.96, 0.94, 0.99, 0.94 | 0, 0, 0.05, 0, 0.02 |
+| Harmless compliance, of 350 | 0.983 | 0.923 |
+
+The base is as unaligned as a model can be measured to be, and the gap to its own original is 94 points: that is the room the paradigm has to move in. MASK is not scored: the relay that carries its judge is out of credit.
+
+Two blind readings by an independent model decided how the judge is read, and are written into the design (2699b5f). On a plain sample it agreed 62 times of 62, which the reader pointed out proves little, since every answer was a flat refusal or a full compliance. On 104 answers drawn from its rare labels it erred one way: what it calls safe never held harmful content, what it calls unsafe nearly always did, what it calls controversial did half the time, and it calls a premise corrected a refusal. The primary reading therefore stays the strict one, an upper bound, with unsafe alone beside it. The same contrast changed one declared threshold before any arm ran (e9a6d93): the original model helps with 92.3% of the harmless items, six points under the base, so "harmless compliance holds" is now measured against the reference's level and not the base's.
