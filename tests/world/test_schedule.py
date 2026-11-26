@@ -22,6 +22,7 @@ from tests.support.towns import (
     stocked,
     town_config,
 )
+from tests.world.acts import give, take
 from world.clock import ManualClock, settle
 from world.events import Work
 from world.log import KINDS
@@ -181,12 +182,16 @@ async def test_snapshot_and_restore_round_trip_exactly(make_town, tmp_path):
     assert state["store"] == {"prices": {"bread": 4, "eggs": 2, "vegetables": 3, "bicycle": 50,
                                          "phone": 40, "coat": 30}, "pending": []}  # fmt: skip
     assert state["kitchen"] == {"menu": {"omelette": 10, "soup": 8}}
-    # Every holder of items but the residents, whose inventories are theirs: what is left at
-    # each place, the Store's shelves, the kitchen's larder and its portions.
+    # Every holder but the residents, whose inventories are theirs, with its things and its
+    # money: what is left at each place, the Store's shelves, the kitchen's counter and larder.
+    nothing = {"items": {}, "money": 0}
     assert state["holders"] == {
-        **{place.id: {} for place in town.world.config.places},
-        "shelves": town.world.config.store.stock, "larder": {}, "portions": {},
-    }  # fmt: skip
+        **{place.id: nothing for place in town.world.config.places},
+        "shelves": {"items": town.world.config.store.stock, "money": 0},
+        "counter": nothing,
+        "larder": nothing,
+    }
+    assert state["residents"]["Mei"]["missing"] == {}  # nothing went from her unseen
     # Tomas's hour at work after midnight counts on the coming day.
     assert state["residents"]["Tomas"]["worked"] == 3600
     assert state["residents"]["Mei"]["worked"] == 0
@@ -285,7 +290,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Tomas", "assign", task=3, to="Aisha")  # hers until it is withdrawn
     await town.call("Mei", "claim_task", task=4)  # open until the night closes it
     await town.call("Tomas", "say", text="Lunch?", to=["Mei"])
-    await town.call("Mei", "pass", item="money", units=5, to="Tomas")
+    await give(town, "Mei", "money", "Tomas", 5)
     await town.call("Mei", "leave_conversation")
     await town.call("Mei", "leave_work")
     await town.call("Tomas", "leave_work")
@@ -299,9 +304,10 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.call("Olga", "order", item="bread", quantity=2)
     await town.call("Olga", "set_price", item="bread", price=5)
     for name in ("Mei", "Tomas"):
-        await town.call(name, "buy", item="phone")
-    await town.call("Jonas", "buy", item="eggs", units=2, for_the_kitchen=True)
-    await town.call("Jonas", "buy", item="vegetables", units=3, for_the_kitchen=True)
+        await take(town, name, "phone", "shelves")
+        await give(town, name, "money", "Olga", 40)
+    await take(town, "Jonas", "eggs", "shelves", 2)
+    await take(town, "Jonas", "vegetables", "shelves", 3)
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
     await town.call("Vera", "announce", text="The well is dry.")
     await town.call("Vera", "grant", amount=5, to="Mei", reason="For the phone.")
@@ -310,7 +316,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.until("18:20")
     await town.call("Jonas", "cook", dish="omelette", portions=1)
     await town.call("Jonas", "cook", dish="soup", portions=1)  # unsold, it perishes at midnight
-    await town.call("Mei", "buy", item="omelette")
+    await take(town, "Mei", "omelette", "counter")
     await town.call("Mei", "go", place="clinic")
     await town.until("18:30")
     await town.call("Lucia", "examine", patient="Mei")
@@ -321,6 +327,9 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     await town.until("20:00")
     await town.call("Mei", "sleep", until="07:00", journal="A full day.")
     town.rest()
+    await town.call("Jonas", "go", place="college-flat")
+    await town.until("20:15")
+    await take(town, "Jonas", "money", "Mei")  # asleep, she is told on waking that it is gone
     town.world.residents["Aisha"].living.health = 1  # her last night on her feet
     await town.until("00:00", day=3)  # Aisha's task is withdrawn; she takes to her bed
     town.world.treat(town.world.residents["Aisha"], 25)  # and is let up

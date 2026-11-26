@@ -50,11 +50,9 @@ ARCHITECTURE_TABLE = {
         "grant",
         "say",
         "message",
-        "buy",
-        "get",
-        "put",
-        "pass",
-        "eat",
+        "take",
+        "give",
+        "use",
         "move_in",
         "sleep",
         "wait",
@@ -82,11 +80,9 @@ ARCHITECTURE_TABLE = {
         "grant",
         "say",
         "message",
-        "buy",
-        "get",
-        "put",
-        "pass",
-        "eat",
+        "take",
+        "give",
+        "use",
         "wait",
         "leave_work",
         "sleep",
@@ -96,15 +92,13 @@ ARCHITECTURE_TABLE = {
         "go",
         "wait",
         "say",
-        "buy",
-        "get",
-        "put",
-        "pass",
-        "eat",
+        "take",
+        "give",
+        "use",
         "leave_conversation",
     },
     "sleep": {"look_around", "review_day", "sleep"},
-    "bedridden": {"look_around", "say", "sleep"},
+    "bedridden": {"look_around", "say", "take", "give", "use", "sleep"},
 }
 for _event, _tools in ARCHITECTURE_TABLE.items():
     if _event != "movement":  # taking stock and asking: every waking event
@@ -194,7 +188,7 @@ async def test_a_conversation_covers_work_and_gives_it_back_when_it_ends(make_to
     assert not port.interrupt.is_set()
     assert mei.tools == WORK_TOOLS | TALK and world.activity(mei) == "work"  # the hours run on
     offered = [spec.name for spec in port.tool_specs()]
-    assert {"shell", "submit", "buy", "get", "put", "pass", "eat", "say"} <= set(offered)
+    assert {"shell", "submit", "take", "give", "use", "say"} <= set(offered)
     assert offered[-1] == "leave_conversation"
     refused = await _refusals(town, "Mei")
     assert refused["move_in"] == "You are at work; leave work first."
@@ -687,8 +681,8 @@ async def test_the_port_offers_what_applies_now_and_the_situation_tells_the_rest
         "Your purse holds $120. You carry nothing but your money."
     )  # what is for the resident to know; what it can do is offered, not told
     assert offered() == [
-        "help", "look_around", "how_am_i", "inventory", "go", "wait", "sleep", "say", "buy",
-        "get", "put", "pass", "eat", "move_in",
+        "help", "look_around", "how_am_i", "inventory", "go", "wait", "sleep", "say", "take",
+        "give", "use", "move_in",
     ]  # fmt: skip
     # nothing to write with, no board here and no task held: no message, board or task
     town.world.residents["Mei"].inventory.items["phone"] = 1

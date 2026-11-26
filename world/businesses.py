@@ -1,17 +1,17 @@
-"""The town's businesses: the Store's counter, the Restaurant's kitchen and the Hospital's surgery.
+"""The town's businesses: the Store, the Restaurant's kitchen and the Hospital's surgery.
 
 A business (`Business`) is the trade of one workplace, by the workplace's kind (`BUSINESSES`). Its
-keeper is the resident whose occupation works there, and it is open while its keeper is at work
-there (`Business.serving`). It sells at prices of its own, one list of them by what is sold
-(`World.prices`, by the business's kind, from `starting_prices`), which its keeper sets with
-`set_price`: the Store a unit of each item the supplier sells, the kitchen a portion of each dish,
-the surgery an examination and a treatment (`FEES`). What it sells comes off a holder it keeps at
-its place (`holds`: the Store's shelves; the kitchen's larder, which it cooks from, and its
-portions); the surgery sells its services and holds nothing. A business is its keeper's: what
-it takes goes into the keeper's purse, the tax withheld from it, as its `takings`, and what it
-buys the keeper pays for (the supplier, the kitchen's ingredients). A resident at its place is
-told whether it is open and what it sells at what price, and its keeper what it holds even while
-it is shut (`counter_told`).
+keepers are the residents whose occupation works there (`Business.keepers`), and it is theirs:
+what it holds stands at its place in holders of its own (`holds`: the Store's shelves; the
+kitchen's counter, where the dishes stand ready, and its larder, which it cooks from; the surgery
+holds nothing), and what it buys its keeper pays for. It posts prices, one list of them by what
+is sold (`World.prices`, by the business's kind, from `starting_prices`), which its keeper sets
+with `set_price`: the Store for a unit of each item the supplier sells, the kitchen for a portion
+of each dish, the surgery for an examination and a treatment (`FEES`). A price is information
+and nothing more: whoever takes a thing from a business's holder is told the price posted for it
+(`posted`), and nothing charges anyone; paying is giving the keeper the money. What a business
+holds is simply there, whether or not its keeper is: a resident at its place reads what stands
+there and at what price (`stores_told`).
 """
 
 from __future__ import annotations
@@ -20,35 +20,25 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from world.config import Place, TownConfig
-from world.economy import LARDER, PORTIONS, SHELVES, add
-from world.events import Work
+from world.economy import COUNTER, LARDER, SHELVES, add
 from world.occupations import OCCUPATIONS
-from world.telling import bare, cap, listed
+from world.telling import amount, bare, cap, listed
 
 if TYPE_CHECKING:
     from world.world import Resident, World
 
 FEES = ("examination", "treatment")
-"""The surgery's services, each sold at its fee."""
+"""The surgery's services, each with its fee."""
 
 
 @dataclass(frozen=True)
 class Business:
-    """The business of the town's workplace of `kind` (see the module docstring), and its words:
-    `takings`, what its keeper's statement calls what it took in; `opened`, what its keeper's
-    sitting down to work there tells; `closed`, what one there is
-    told while it is shut (`{place}` its place's name); `selling` and `kept`, what heads what it
-    sells and at what price, as one there reads it while it is open and as its keeper reads it
-    while it is shut (nothing, if None); `sells`, how `set_price` says that something is not
-    among what it sells."""
+    """The business of the town's workplace of `kind` (see the module docstring): `holds`, its
+    holders of things at its place; `sells`, how `set_price` says that something is not among
+    what it sells."""
 
     kind: str
     holds: tuple[str, ...]
-    takings: str
-    opened: str
-    closed: str
-    selling: str
-    kept: str | None
     sells: str
 
     def place(self, config: TownConfig) -> Place:
@@ -59,58 +49,27 @@ class Business:
         kind."""
         return OCCUPATIONS[occupation].workplace == self.kind
 
-    def serving(self, world: World) -> Resident | None:
-        """Its keeper at work there, while it is open; None while it is shut."""
-        place = self.place(world.config).id
-        return next(
-            (
-                r
-                for r in world.residents.values()
-                if r.place == place and self.keeps(r.occupation.id) and isinstance(r.base, Work)
-            ),
-            None,
-        )
+    def keepers(self, world: World) -> list[Resident]:
+        """The residents who keep it, whose it is."""
+        return [r for r in world.residents.values() if self.keeps(r.occupation.id)]
 
     def prices(self, world: World) -> dict[str, int]:
-        """What it sells, each at its price now."""
+        """What it sells, each at the price posted now."""
         return world.prices[self.kind]
 
-    def closed_told(self, config: TownConfig) -> str:
-        return self.closed.format(place=cap(self.place(config).name))
 
-
-STORE = Business(
-    kind="store",
-    holds=(SHELVES,),
-    takings="in sales",
-    opened="The counter is open.",
-    closed="{place} is closed: nobody is at the counter.",
-    selling="At the counter: ",
-    kept="On the shelves: ",
-    sells="sold at",
-)
-KITCHEN = Business(
-    kind="restaurant",
-    holds=(LARDER, PORTIONS),
-    takings="for dishes",
-    opened="The kitchen is open.",
-    closed="The kitchen is closed.",
-    selling="On the menu: ",
-    kept="On the menu: ",
-    sells="on the menu of",
-)
-SURGERY = Business(
-    kind="hospital",
-    holds=(),
-    takings="in fees",
-    opened="The surgery is open.",
-    closed="The surgery is closed.",
-    selling="The surgery is open: ",
-    kept=None,
-    sells="a service of",
-)
+STORE = Business(kind="store", holds=(SHELVES,), sells="sold at")
+KITCHEN = Business(kind="restaurant", holds=(COUNTER, LARDER), sells="on the menu of")
+SURGERY = Business(kind="hospital", holds=(), sells="a service of")
 BUSINESSES = {business.kind: business for business in (STORE, KITCHEN, SURGERY)}
 """The town's businesses by the kind of their workplace."""
+HOLDS = tuple(key for business in BUSINESSES.values() for key in business.holds)
+"""Every holder a business keeps, by the name a resident takes from it and gives to it by."""
+
+
+def keeping(key: str) -> Business | None:
+    """The business whose holder `key` is, if it is one's."""
+    return next((b for b in BUSINESSES.values() if key in b.holds), None)
 
 
 def starting_prices(config: TownConfig) -> dict[str, dict[str, int]]:
@@ -131,62 +90,64 @@ def priced(config: TownConfig, sold: str) -> str:
     return f"the {sold}" if sold in FEES else config.item(sold).name
 
 
-def offered(world: World, business: Business) -> str:
-    """What `business` sells now and at what price, to end a sentence: the Store each item it
-    has left, with how many, and what is sold out; the kitchen each dish, with how many portions
-    are ready; the surgery its fees."""
-    c, prices = world.config, business.prices(world)
-    if business is STORE:
-        shelves = world.holders[SHELVES]
-        stocked = [
-            f"{bare(item.name)} {c.money(prices[item.id])} ({shelves.units(item.id)} left)"
-            for item in c.supplied
-            if shelves.units(item.id)
-        ]
-        out = [bare(item.name) for item in c.supplied if not shelves.units(item.id)]
-        return f"{listed(stocked) or 'nothing'}" + (f"; sold out: {listed(out)}." if out else ".")
-    if business is KITCHEN:
-        portions = world.holders[PORTIONS]
-        menu = [
-            f"{bare(dish.name)} {c.money(prices[dish.id])} "
-            f"({portions.units(dish.id) or 'none'} ready)"
-            for dish in c.dishes
-        ]
-        return f"{listed(menu)}."
-    return (
-        f"an examination costs {c.money(prices['examination'])}, a treatment "
-        f"{c.money(prices['treatment'])}."
-    )
+def posted(world: World, key: str, what: str) -> int | None:
+    """The price posted for a unit of `what` where it stands in the holder `key`: its
+    business's, if `key` is a business's holder and the business sells it; else none."""
+    business = keeping(key)
+    return business.prices(world).get(what) if business is not None else None
 
 
-def counter_told(world: World, r: Resident) -> list[str]:
-    """What `r` is told of the business where it is: while it is open, what it sells and at what
-    price; while it is shut, that it is, and its keeper what it sells all the same; the Store's
-    keeper what is on order; and the chef, at the Store or the Restaurant, what the kitchen
-    holds."""
-    told = []
-    c = world.config
-    for business in BUSINESSES.values():
-        if r.place != business.place(c).id:
-            continue
-        keeper = business.keeps(r.occupation.id)
-        if business.serving(world) is None:
-            told.append(business.closed_told(c))
-            if keeper and business.kept is not None:
-                told.append(business.kept + offered(world, business))
+def _standing(world: World, key: str, state: str, gone: str | None = None) -> str:
+    """What stands in the business's holder `key`, to end a sentence: each thing its business
+    sells with its price and how many are there (`bread $4 (10 left)`, `stew $20 (2 ready)`),
+    one of which none is there told under `gone` (`none left: coat`) or, without it, in its
+    place (`none ready`); then whatever else is there, money among it."""
+    c, holder = world.config, world.holders[key]
+    sold, out, other = [], [], [c.money(holder.money)] if holder.money else []
+    for item in c.items:
+        units, price = holder.units(item.id), posted(world, key, item.id)
+        if price is None:
+            other += [amount(item, units)] if units else []
+        elif units or gone is None:
+            sold.append(f"{bare(item.name)} {c.money(price)} ({units or 'none'} {state})")
         else:
-            told.append(business.selling + offered(world, business))
-        if keeper and business is STORE and world.store.pending:
+            out.append(bare(item.name))
+    told = listed(sold) or "nothing"
+    told += f"; {gone}: {listed(out)}" if out else ""
+    return told + (f"; also there: {listed(other)}." if other else ".")
+
+
+def stores_told(world: World, r: Resident) -> list[str]:
+    """What `r` reads of the business at the place where it is, whoever it is and whether or not
+    a keeper is there: what stands on the Store's shelves and at what price, with what is gone
+    from them; the kitchen's menu with the portions ready on its counter, and what its larder
+    holds; the surgery's fees. A keeper of the Store reads what is on order besides."""
+    c = world.config
+    if r.place == STORE.place(c).id:
+        told = [f"On the shelves: {_standing(world, SHELVES, 'left', 'none left')}"]
+        if STORE.keeps(r.occupation.id) and world.store.pending:
             coming: dict[str, int] = {}
             for item, units, _ in world.store.pending:
                 add(coming, str(item), int(units))
-            told.append(f"On order from the supplier: {listed(world.held_told(coming))}.")
-    if KITCHEN.keeps(r.occupation.id) and r.place in (STORE.place(c).id, KITCHEN.place(c).id):
-        told.append(kitchen_told(world))
-    return told
+            told.append(f"On order from the supplier: {listed(world.listing(coming))}.")
+        return told
+    if r.place == KITCHEN.place(c).id:
+        return [f"On the counter: {_standing(world, COUNTER, 'ready')}", larder_told(world)]
+    if r.place == SURGERY.place(c).id:
+        fees = SURGERY.prices(world)
+        return [
+            f"{cap(a_service('examination'))} costs {c.money(fees['examination'])}, "
+            f"{a_service('treatment')} {c.money(fees['treatment'])}."
+        ]
+    return []
 
 
-def kitchen_told(world: World) -> str:
-    """What the kitchen's larder holds, as the chef reads it."""
-    held = world.held_told(world.holders[LARDER].items)
-    return f"The kitchen holds {listed(held)}." if held else "The kitchen holds nothing."
+def larder_told(world: World) -> str:
+    """What the kitchen's larder holds, as anyone at the Restaurant reads it."""
+    held = world.held_told(world.holders[LARDER])
+    return f"In the larder: {listed(held)}." if held else "The larder is empty."
+
+
+def a_service(service: str) -> str:
+    """One of the surgery's services with its article: `an examination`, `a treatment`."""
+    return f"an {service}" if service[0] in "aeiou" else f"a {service}"

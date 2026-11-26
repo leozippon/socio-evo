@@ -15,7 +15,7 @@ from world import office
 from world.businesses import KITCHEN
 from world.clock import tell_date
 from world.config import A_DAYS_FOOD, Item, Place
-from world.economy import MOVES, PAID, PORTIONS, TAKEN, Inventory, Settled
+from world.economy import COUNTER, MOVES, PAID, TAKEN, Inventory, Settled
 from world.occupations import MAYOR, TEAM_LEADER
 from world.telling import amount, bare, cap, listed, you
 
@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 def midnight(world: World, day: int) -> None:
     """The end of calendar day `day`: its food, its health and illness reckoned, the salary paid
     and the rent and charges taken, the tasks whose time runs out with it
-    withdrawn, what perishes gone wherever it is (the portions the kitchen did not sell),
+    withdrawn, what perishes gone wherever it is (the dishes still on the kitchen's counter),
     logged as `perished` from each holder, and the next day's arrivals drawn."""
     _settle(world, day)
     office.withdrawals(world, day)
@@ -34,7 +34,7 @@ def midnight(world: World, day: int) -> None:
         held = world.holder(key).items
         for item in [item for item in held if world.config.item(item).perishes]:
             units = held[item]
-            world.moved(world.move(item, units, key, None))
+            world.move(item, units, key, None)
             gone = cap(amount(world.config.item(item), units))
             world.record(
                 "perished",
@@ -79,11 +79,10 @@ def _settle(world: World, day: int) -> None:
                 stock.append(f"You have used up your {bare(item.name)}.")
             elif left * item.nourishment < A_DAYS_FOOD:  # less than a day's food
                 stock.append(f"You have {amount(item, left)} left.")
-        perished = world.held_told(world.holders[PORTIONS].items)
+        perished = _gone(world, world.holders[COUNTER].items)
         if KITCHEN.keeps(r.occupation.id) and perished:
             stock.append(
-                f"The dishes left in the kitchen are gone: {listed(perished)}; what it holds "
-                "to cook with keeps."
+                f"The dishes left on the counter are gone: {perished}; what the larder holds keeps."
             )
         charged = [i for i in world.config.items if i.fee_per_day and inventory.units(i.id)]
         settled = world.treasury.settle(
@@ -204,6 +203,11 @@ def _illness(world: World, r: Resident, day: int, was_ill: int, comfort: float) 
 def _eaten(world: World, item: str, units: int) -> str:
     """`units` of the ready food or the dish `item`, as the statement tells what was eaten."""
     return amount(world.config.item(item), units)
+
+
+def _gone(world: World, held: dict[str, int]) -> str:
+    """The units of `held` that perish at this midnight, as the statement lists them."""
+    return listed(world.listing({i: n for i, n in held.items() if world.config.item(i).perishes}))
 
 
 def _moves_told(world: World, inventory: Inventory) -> list[str]:

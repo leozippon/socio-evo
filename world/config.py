@@ -8,12 +8,14 @@ the hospital and the hall, exactly one of each) or a social place, which has no 
 Each resident has an `occupation`, which says where it works and what it does there. Nobody is
 paid for its time: a client pays `work.payment` for each task accepted, `work.leader_share` of it
 to the team leader, who hands tasks out and takes none herself, and the rest to the programmer who
-handed it in, and each business is its keeper's, who takes what customers pay and pays for what
-it buys. Each occupation works at a place of its own kind (`world.occupations`), and
+handed it in, and each business is its keeper's, who has what customers give for what they take
+and pays for what it buys; nothing charges anyone, and a price is only posted. Each occupation
+works at a place of its own kind (`world.occupations`), and
 every workplace is some occupation's. The office takes in clients' tasks (`work`), which arrive at
-random through the working day; the hospital charges the fees of `hospital` for an examination and
-a treatment. The town's treasury starts at `treasury.start`: `tax` of every payment a resident
-receives for its work is withheld into it; at midnight it takes the rent and the daily charges
+random through the working day; the hospital posts the fees of `hospital` for an examination and
+a treatment. The town's treasury starts at `treasury.start`: `tax` of whatever a resident is paid
+for its work, a client's payment and any money given to it while it is at work, is withheld into
+it; at midnight it takes the rent and the daily charges
 from each purse as far as it holds more than `treasury.spares`, and pays the `salary` of an
 occupation that has one (the mayor's).
 
@@ -24,13 +26,14 @@ world implements two kinds of item and the effects of `Effect`, and everything e
 item is data, so the catalogue grows without code. A `consumable` is food, kept by the unit:
 ready food, a helping of `nourishment` (a share of a day's need, 100 a full day) eaten whenever
 its owner could eat, or an ingredient, of no nourishment (`nourishment: 0`), which is not eaten
-as it is but cooked. A `durable` is owned once and kept, billed `fee_per_day` on the statement
-while owned: `travel` makes the owner's journeys take `factor` of the time; `messaging` lets
-owners write to one another wherever they are; `appearance` shows `phrase` to whoever sees the
-owner. An item comes into the town in one of two ways: the supplier outside the town sells it at
-`wholesale` and the Store sells it at a price that starts at `price` and is the shopkeeper's to
-change, from shelves stocked at the start with `store.stock`; or the Restaurant's kitchen cooks
-it, a dish, from its `ingredients`, units of what the supplier sells, and serves it at a price
+as it is but cooked. A `durable` is kept and does what it does for whoever carries one, billed
+`fee_per_day` on the statement while carried: `travel` makes the journeys take `factor` of the
+time; `messaging` lets those who carry one write to one another wherever they are; `appearance`
+shows `phrase` to whoever sees the one who carries it. An item comes into the town in one of two
+ways: the supplier outside the town sells it at
+`wholesale` and the Store posts for it a price that starts at `price` and is the shopkeeper's to
+change, on shelves stocked at the start with `store.stock`; or the Restaurant's kitchen cooks
+it, a dish, from its `ingredients`, units of what the supplier sells, and posts for it a price
 that starts at `price` and is the chef's to change. An item that `perishes` is gone at midnight,
 wherever it is.
 
@@ -55,7 +58,7 @@ from agent.wording import offences
 from infrastructure.config import StrictModel
 from world import telling
 from world.clock import parse_hour
-from world.economy import LARDER, PORTIONS, SHELVES, SUPPLIER
+from world.economy import COUNTER, HERE, LARDER, MONEY, SHELVES, SUPPLIER
 from world.occupations import OCCUPATIONS, PROGRAMMER, TEAM_LEADER, OccupationId
 
 
@@ -419,8 +422,9 @@ class TownConfig(StrictModel):
         default=0,
         ge=0,
         lt=1,
-        description="the share of every payment a resident receives for its work (from a client, "
-        "a customer or a patient) withheld into the treasury; none unless set",
+        description="the share of whatever a resident is paid for its work (a client's payment, "
+        "and any money given to it while it is at work) withheld into the treasury; none unless "
+        "set",
     )
     work: Work
     items: tuple[Item, ...] = Field(min_length=1)
@@ -441,8 +445,10 @@ class TownConfig(StrictModel):
         _unique("route", [frozenset(route.between) for route in self.routes])
         _unique("item id", [item.id for item in self.items])
         for place in self.places:
-            if place.id in (SHELVES, LARDER, PORTIONS, SUPPLIER):
+            if place.id in (SHELVES, COUNTER, LARDER, SUPPLIER, HERE):
                 raise ValueError(f"{place.id} names a holder of items and cannot name a place")
+        if MONEY in items:
+            raise ValueError(f"{MONEY} is what money is named by and cannot name an item")
         for dish in self.dishes:
             for item_id in dish.ingredients:
                 found = items.get(item_id)

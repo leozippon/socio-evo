@@ -1,8 +1,8 @@
-"""The Hospital and the Town Hall: the doctor's examination and treatment, at the surgery while
-at work there and at the bedside of one too ill to get up, for fees the patient pays into the
-doctor's purse, the tax withheld, and the doctor sets; the treasury's day in the mayor's
-statement, and announcements told to everyone, kept on the hall's board and by the checkpoint.
-The mayor's grants are in test_economy."""
+"""The Hospital and the Town Hall: the doctor's examination and treatment, at the surgery and at
+the bedside of one too ill to get up, which charge nobody, the fee the doctor sets being told to
+both and given by the patient or not, taxed as money given to one at work; the treasury's day in
+the mayor's statement, and announcements told to everyone, kept on the hall's board and by the
+checkpoint. The mayor's grants are in test_economy."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ from tests.support.towns import (
     stocked,
     town_config,
 )
+from tests.world.acts import give, take
 from world.clock import DAY, ManualClock
 from world.events import EXHAUSTED, Idle, Sleep, Work
 from world.testing import FakeBackend
@@ -30,7 +31,7 @@ def offered(town, name: str) -> list[str]:
     return [spec.name for spec in town.world.ports[name].tool_specs()]
 
 
-async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pays(make_town):
+async def test_the_doctor_examines_and_treats_and_nothing_charges_the_patient(make_town):
     town = make_town(TOWN)
     await awake_at(town)
     world = town.world
@@ -42,7 +43,8 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
     for name in ("Mei", "Aisha"):
         await town.call(name, "go", place="clinic")
     await town.until("07:10")
-    assert "The surgery is closed." in world.ports["Mei"].situation()
+    fees = "An examination costs $10, a treatment $30."
+    assert fees in world.ports["Mei"].situation()  # posted, the doctor there or not
     await town.call("Lucia", "go", place="clinic")
     await town.until("07:20")
     assert {"examine", "treat", "set_price", "start_work"} <= set(offered(town, "Lucia"))
@@ -56,9 +58,6 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
         "You sat down to work. It is 07:20. Tomas is not here."
     )
     assert isinstance(lucia.base, Work)
-    assert "The surgery is open: an examination costs $10, a treatment $30." in (
-        world.ports["Mei"].situation()
-    )
     world.body.fall_ill(mei.living)
     mei.living.health = 50
     town.take("Mei")
@@ -68,51 +67,64 @@ async def test_the_doctor_examines_and_treats_at_the_surgery_and_the_patient_pay
         "{who} run down. {Who} ill; untreated, it passes after 7 more nights."
     )
     assert examined == (
-        "You examined Mei for $10, of which $1 in tax. "
+        "You examined Mei. The fee posted for an examination is $10. "
         + numbers.format(who="Mei is", Who="Mei is")
     )
     assert town.take("Mei") == [
-        "Lucia examined you for $10. " + numbers.format(who="you are", Who="You are")
+        "Lucia examined you. The fee posted for an examination is $10. "
+        + numbers.format(who="you are", Who="You are")
     ]
     treated = await town.call("Lucia", "treat", patient="Mei")
-    assert treated.text == "You treated Mei for $30, of which $3 in tax."
-    assert town.take("Mei") == ["Lucia treated you for $30.", "Your illness is over."]
-    assert mei.living.health == 75 and mei.living.ill == 0 and mei.inventory.money == 80
-    assert world.treasury.ledger == {"tax": 4} and lucia.inventory.money == 100 + 40 - 4
+    assert treated.text == "You treated Mei. The fee posted for a treatment is $30."
+    assert town.take("Mei") == [
+        "Lucia treated you. The fee posted for a treatment is $30.",
+        "Your illness is over.",
+    ]
+    assert mei.living.health == 75 and mei.living.ill == 0
+    # Nothing took the fees: the purses are as they were until the patient gives.
+    assert (mei.inventory.money, lucia.inventory.money, world.treasury.ledger) == (120, 100, {})
     entries = {e["kind"]: e for e in world.log.entries()}
+    assert entries["examination"]["audience"] == ["Mei"]  # between the two of them
     assert entries["examination"]["payload"] == {
-        "patient": "Mei", "fee": 10, "tax": 1, "satiety": 81.9, "energy": 98.5, "health": 50.0,
+        "patient": "Mei", "fee": 10, "satiety": 81.9, "energy": 98.5, "health": 50.0,
         "ill": 7, "night": {},
     }  # fmt: skip
     assert entries["treatment"]["payload"] == {
-        "patient": "Mei", "fee": 30, "tax": 3, "restores": 25.0, "before": 50.0, "health": 75.0,
+        "patient": "Mei", "fee": 30, "restores": 25.0, "before": 50.0, "health": 75.0,
         "ill": 7, "bedridden": False,
     }  # fmt: skip
     assert entries["recovered"]["payload"] == {
         "illness": True, "bedridden": False, "treated": True, "health": 75.0,
     }  # fmt: skip
-    # The doctor sets the fees; a patient who cannot pay is not seen; the doctor may see herself,
-    # for nothing.
+    # Paying is the patient's own act: money given to the doctor at work, a tenth withheld.
+    assert (
+        await give(town, "Mei", "money", "Lucia", 40) == "You gave Lucia $40. Your purse holds $80."
+    )
+    assert town.take("Lucia")[-1] == "Mei gave you $40, of which $4 in tax."
+    assert world.treasury.ledger == {"tax": 4} and lucia.inventory.money == 100 + 40 - 4
+    # The doctor sets the fees; one who has nothing is seen all the same, and so is the doctor.
     assert (await town.call("Lucia", "set_price", item="examination", price=12)).text == (
         "The price of examination is now $12; it was $10."
     )
     assert (await town.call("Lucia", "set_price", item="bread", price=1)).text == (
         "Bread is not a service of the clinic."
     )
-    world.residents["Aisha"].inventory.money = 5
-    assert (await town.call("Lucia", "examine", patient="Aisha")).text == (
-        "Aisha does not have the $12 the examination costs."
+    assert "An examination costs $12, a treatment $30." in world.ports["Aisha"].situation()
+    world.residents["Aisha"].inventory.money = 0
+    assert (await town.call("Lucia", "examine", patient="Aisha")).text.startswith(
+        "You examined Aisha. The fee posted for an examination is $12. Food: "
     )
     assert (await town.call("Lucia", "examine", patient="Lucia")).text.startswith(
-        "You examined yourself. Food: "
+        "You examined yourself. The fee posted for an examination is $12. Food: "
     )
     assert lucia.inventory.money == 136
     town.rest()
     await town.until("00:00", day=2)
     statement = [p.text for p in town.heard["Mei"] if p.kind == "settlement"][-1]
+    assert statement.startswith("Your statement for Monday 1 January: gave $40 to Lucia; rent")
+    statement = [p.text for p in town.heard["Lucia"] if p.kind == "settlement"][-1]
     assert statement.startswith(
-        "Your statement for Monday 1 January: paid $10 for an examination; paid $30 for a "
-        "treatment;"
+        "Your statement for Monday 1 January: received $40 from Mei at work, $4 of it in tax; rent"
     )
 
 
@@ -129,11 +141,22 @@ async def test_the_doctor_treats_one_too_ill_to_get_up_at_the_bedside(make_town)
     await town.until("00:15", day=2)
     assert {"examine", "treat"} <= set(offered(town, "Lucia"))
     assert "start_work" not in offered(town, "Lucia")
+    # In bed she can still hand over what she carries, and take what is within her reach.
+    assert (
+        await give(town, "Mei", "money", "Lucia", 10) == "You gave Lucia $10. Your purse holds $90."
+    )
+    assert await take(town, "Mei", "money", "Lucia", 10) == (
+        "You took $10 from Lucia. Your purse holds $100."
+    )
     assert (await town.call("Lucia", "treat", patient="Mei")).text == (
-        "You treated Mei for $30, of which $3 in tax."
+        "You treated Mei. The fee posted for a treatment is $30."
     )
     assert isinstance(lucia.base, Idle) and lucia.worked == 0  # no hours at a bedside
     assert not mei.living.bedridden and isinstance(mei.base, Idle) and mei.living.health == 25
+    # The doctor is not at work at a bedside, so what she is given there is hers whole.
+    purse = lucia.inventory.money
+    await give(town, "Mei", "money", "Lucia", 30)
+    assert lucia.inventory.money == purse + 30 and world.treasury.ledger == {}
     await town.call("Lucia", "go", place="college-flat")  # nobody in bed there
     await town.until("00:30", day=2)
     assert "treat" not in offered(town, "Lucia")
@@ -161,7 +184,8 @@ async def test_the_mayors_statement_tells_the_treasurys_day_and_he_announces_at_
     await town.call("Mei", "submit")
     await town.call("Tomas", "claim_task", task=3)
     await town.call("Olga", "start_work")
-    await town.call("Aisha", "buy", item="bread", units=2)
+    await take(town, "Aisha", "bread", "shelves", 2)
+    await give(town, "Aisha", "money", "Olga", 8)
     await town.until("16:10")
     for name in ("Mei", "Tomas", "Olga", "Vera"):
         await town.call(name, "leave_work")

@@ -504,7 +504,7 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
         "Tuesday 2 January, 00:00. You are in bed at home, too ill to get up. Also here: Aisha."
     )
     assert [spec.name for spec in port.tool_specs()] == [
-        "help", "look_around", "how_am_i", "inventory", "sleep", "say",
+        "help", "look_around", "how_am_i", "inventory", "sleep", "say", "take", "give", "use",
     ]  # fmt: skip
     refused = await town.call("Mei", "go", place="workshop")
     assert refused.text == BEDRIDDEN and not refused.ends_turn
@@ -519,8 +519,8 @@ async def test_a_resident_whose_health_runs_out_is_carried_home_to_bed_until_tre
     await town.call("Mei", "leave_conversation")
     assert isinstance(mei.event, Bedridden)
     aisha.inventory.items["bread"] = 3
-    given = await town.call("Aisha", "pass", item="bread", to="Mei")
-    assert given.text.startswith("You passed Mei 1 helping of bread.")
+    given = await town.call("Aisha", "give", what="bread", to="Mei")
+    assert given.text.startswith("You gave Mei 1 helping of bread.")
     assert mei.living.eaten == {"bread": 1} and mei.inventory.items == {}  # eaten at once
     # Still up at the forced hour, she falls asleep in her bed; the checkpoint keeps her there,
     # and so does a restored world; she wakes in it.

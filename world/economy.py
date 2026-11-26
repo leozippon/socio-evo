@@ -1,34 +1,35 @@
-"""The town's things and money: the holders of items, each resident's inventory, the town's
+"""The town's things and money: the holders of both, each resident's inventory, the town's
 treasury and the Store's orders.
 
 Every unit of an item is held by exactly one `Holder`, which keeps the units of each item it
-holds: a resident, by its `Inventory`; a place, by what is left there for anyone to take and, at the
-Store and the Restaurant, by what the business keeps there (`SHELVES`, the Store's shelves;
-`LARDER`, the kitchen's ingredients; `PORTIONS`, the dishes cooked and not yet served); or the
-`Supplier`, outside the town, who holds whatever it sells without end. Units change hands only by
-the world's move (`World.move`), which refuses what the source does not hold.
+holds and the money that is with them: a resident, by its `Inventory`; a place, by what is left
+there; at the Store and the Restaurant, what the business keeps there (`SHELVES`, the Store's
+shelves; `COUNTER`, where the kitchen's dishes stand ready; `LARDER`, the kitchen's ingredients);
+or the `Supplier`, outside the town, who holds whatever it sells without end. Units and money
+change hands as a resident takes or gives them (`world.holders.transfer`), and by nothing else
+but the world's own sources and sinks.
 
-Money is a whole number of the town's currency (`TownConfig.money` writes it), and no item: a
-resident's `Inventory` is its money, never below zero, besides its items (one of a durable, the
-helpings of ready food, the units of an ingredient), with `moves`, the movements of its money since
-its last midnight statement, which the statement tells. A purchase is paid in cash from the
-inventory, and the world refuses one that its money does not cover; money and items pass between
-residents as they hand them over, of which the world keeps no account beyond the hand-over.
+Money is a whole number of the town's currency (`TownConfig.money` writes it), named `MONEY`
+where things are named, and no item of the catalogue: every holder holds some, never below zero,
+so that it is given, taken and left like any other thing. A resident's `Inventory` keeps
+`moves` besides, the movements of its money since its last midnight statement, which the
+statement tells; the world keeps no other account of who gave what for what.
 
-Money is held by the residents and by the town's `Treasury`, and nothing else. It enters the town
+Money is held by the holders and by the town's `Treasury`, and nothing else. It enters the town
 only when a client pays for a task accepted, into the purses of those it pays, and leaves it only
-when the shopkeeper pays the supplier; every other movement is from one holder of money to another,
-so that the purses and the treasury together change only by what clients pay and the supplier is
-paid. The treasury takes in the tax withheld from every payment a resident receives for its work
-and, at midnight, the rent of the homes and the daily charges, from each purse only above what it
-`spares` (`Treasury.settle`), the rest owed to it (`arrears`) and taken at later midnights; it pays
-each salaried occupation's salary at midnight as far as it holds the money, owing the rest
-(`owed`), and the mayor's grants. Its `ledger` keeps its movements since the last midnight by kind
-(`TAKEN` and `PAID`), which the mayor's statement tells at midnight, and `yesterday` those of the
-day the last midnight closed.
+when the shopkeeper pays the supplier; every other movement is from one holder of money to
+another, so that the holders and the treasury together change only by what clients pay and the
+supplier is paid. The treasury takes in the tax withheld from whatever a resident is paid for its
+work (a client's payment, and any money given to it while it is at work) and, at midnight, the
+rent of the homes and the daily charges, from each purse only above what it `spares`
+(`Treasury.settle`), the rest owed to it (`arrears`) and taken at later midnights; it pays each
+salaried occupation's salary at midnight as far as it holds the money, owing the rest (`owed`),
+and the mayor's grants. Its `ledger` keeps its movements since the last midnight by kind (`TAKEN`
+and `PAID`), which the mayor's statement tells at midnight, and `yesterday` those of the day the
+last midnight closed.
 
 The `Store` keeps the orders on their way, its shelves being a holder (the businesses' prices are
-`world.businesses`'). The inventories, the treasury and the Store are checkpointed whole.
+`world.businesses`'). The holders, the treasury and the Store are checkpointed whole.
 """
 
 from __future__ import annotations
@@ -59,26 +60,64 @@ def take(stock: dict[str, int], item: str, units: int) -> None:
         del stock[item]
 
 
-SHELVES, LARDER, PORTIONS, SUPPLIER = "shelves", "larder", "portions", "supplier"
-"""The holders that are neither a resident nor what is left at a place, by their names in the
-log and the checkpoint, which no place may take."""
+Move = Literal["earned", "tax", "granted", "received", "gave", "left", "took", "lost", "paid"]
+"""The kinds of movement of a resident's money: what it earned for its work and the tax withheld
+from it, a grant from the treasury, money another resident gave it and money it gave another,
+money it left somewhere, money it took and money taken from it, and a payment (the supplier)."""
+MOVES: dict[Move, str] = {
+    "earned": "received {money} {about}",
+    "tax": "{money} of it in tax",
+    "granted": "received {money} from the treasury, {about}",
+    "received": "received {money} from {about}",
+    "gave": "gave {money} to {about}",
+    "left": "left {money} {about}",
+    "took": "took {money} {about}",
+    "lost": "{money} was taken from you",
+    "paid": "paid {money} for {about}",
+}
+"""How the statement tells each kind of movement of an inventory's money (`Inventory.moves`); the
+tax withheld from what was earned is told with it."""
+
+SHELVES, COUNTER, LARDER, SUPPLIER = "shelves", "counter", "larder", "supplier"
+"""The holders that are neither a resident nor what is left at a place, by their names: in the
+log and the checkpoint, and as a resident names where it takes from or gives to; no place may
+take them."""
+HERE = "here"
+"""How a resident names what is left at the place where it is; no place may be called so."""
+MONEY = "money"
+"""What money is named by wherever a thing is named; no item may be called so."""
 
 
 @dataclass
 class Holder:
-    """Units of items, held by one holder (see the module docstring): `items`, the units of each
-    item it holds; an item it no longer holds leaves it."""
+    """Units of items and money, held by one holder (see the module docstring): `items`, the
+    units of each item it holds, an item it no longer holds leaving it; and `money`."""
 
     items: dict[str, int] = field(default_factory=dict)
+    money: int = 0
 
     def units(self, item: str) -> int:
         return self.items.get(item, 0)
+
+    def has(self, what: str) -> int:
+        """How much it holds of `what`: the units of an item, or its money."""
+        return self.money if what == MONEY else self.units(what)
 
     def add(self, item: str, units: int) -> None:
         add(self.items, item, units)
 
     def take(self, item: str, units: int) -> None:
         take(self.items, item, units)
+
+    def receive(self, amount: int, kind: Move, about: str) -> None:
+        """`amount` of money into it; what an inventory records of it, nothing else does."""
+        self.money += amount
+
+    def spend(self, amount: int, kind: Move, about: str) -> None:
+        """`amount` of money out of it, which it must hold."""
+        if amount > self.money:
+            raise ValueError(f"only {self.money} held to spend {amount} from")
+        self.money -= amount
 
 
 class Supplier(Holder):
@@ -95,23 +134,6 @@ class Supplier(Holder):
         pass
 
 
-Move = Literal["earned", "tax", "granted", "received", "gave", "bought", "paid"]
-"""The kinds of movement of a resident's money: what it earned for its work and the tax withheld
-from it, a grant from the treasury, money received from and given to another resident, a purchase,
-and a payment (a fee, the supplier)."""
-MOVES: dict[Move, str] = {
-    "earned": "received {money} {about}",
-    "tax": "{money} of it in tax",
-    "granted": "received {money} from the treasury, {about}",
-    "received": "received {money} from {about}",
-    "gave": "gave {money} to {about}",
-    "bought": "bought {about} for {money}",
-    "paid": "paid {money} for {about}",
-}
-"""How the statement tells each kind of movement of an inventory's money (`Inventory.moves`); the
-tax withheld from what was earned is told with it."""
-
-
 @dataclass
 class Inventory(Holder):
     """What a resident has, checkpointed whole (see the module docstring); `moves` holds each
@@ -119,20 +141,17 @@ class Inventory(Holder):
     `Move`. Money moves in and out of a purse only by `receive` and `spend`, which record it, but
     for the midnight's salary and rent, which the statement tells apart."""
 
-    money: int = 0
     moves: list[list[str | int]] = field(default_factory=list)
 
     def receive(self, amount: int, kind: Move, about: str) -> None:
         """`amount` into the purse, recorded as a movement of `kind` concerning `about`."""
-        self.money += amount
+        super().receive(amount, kind, about)
         self.moves.append([kind, amount, about])
 
     def spend(self, amount: int, kind: Move, about: str) -> None:
         """`amount` out of the purse, which must hold it, recorded as a movement of `kind`
         concerning `about`."""
-        if amount > self.money:
-            raise ValueError(f"only {self.money} in the purse to spend {amount} from")
-        self.money -= amount
+        super().spend(amount, kind, about)
         self.moves.append([kind, amount, about])
 
 

@@ -46,7 +46,7 @@ class ResidentPort:
         return self._world.usable(self._resident)
 
     def knows(self, name: str) -> bool:
-        return self._world.knows(self._resident, name)
+        return self._world.knows(name)
 
     @property
     def asleep(self) -> bool:

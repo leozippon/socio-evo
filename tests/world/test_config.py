@@ -148,6 +148,8 @@ def test_a_town_validates():
         ),
         (lambda d: d["items"][7].update(nourishment=0), {}, "is a dish, which is food that is"),
         (lambda d: d["places"][3].update(id="larder"), {}, "larder names a holder of items"),
+        (lambda d: d["places"][3].update(id="here"), {}, "here names a holder of items"),
+        (lambda d: d["items"][3].update(id="money"), {}, "money is what money is named by"),
         (
             lambda d: d["store"]["stock"].update(wine=3),
             {},

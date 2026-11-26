@@ -5,22 +5,24 @@ The body (`world.body`) is reckoned lazily and exactly: `reckon` brings a reside
 at the rates of what it has been doing since it was last reckoned (`activity`), counting its time on
 duty (`on_duty`), and is called every hour on the hour, before every change of
 activity (sitting down to work, setting off, arriving, going to bed, falling asleep, waking) and at
-the checkpoint, so that a checkpoint carries the body as of its moment. A resident awake and able
-to eat eats the ready food in its inventory, a helping at a time, as it is reckoned; a dish is eaten
-as it is served. A resident the reckoning finds on duty (at work, or on its way at work) in the
+the checkpoint, so that a checkpoint carries the body as of its moment. A resident awake eats of
+the food it carries as it is reckoned and as it takes or is given any (`take_in`): a dish, which
+does not keep, at once, so that it is eaten where it is taken and never carried away, and what
+keeps a helping at a time while it could eat. A resident the reckoning
+finds on duty (at work, or on its way at work) in the
 lowest band of energy stops work, as `leave_work` stops it, keeping its task, and is told that it
 cannot work until it has slept; before an action in its workspace the body is reckoned too, so
 that the exhausted are refused it (`world.tools`). A need that crosses into another band is
-logged, and told to the resident when it is awake at a place (the wake-up, the statement and a
-purchase's result tell it otherwise).
+logged, and told to the resident when it is awake at a place (the wake-up, the statement and the
+result of taking food tell it otherwise).
 
 A resident goes to bed at home, to wake at the hour it gives or when its longest sleep ends, and
 falls asleep once its runtime has nothing more to do; at the forced sleep whoever is still up falls
 asleep where it is, to wake at home at the forced waking hour, and nobody wakes between it and the
 checkpoint. A resident whose health has reached its floor at midnight takes to its bed: it leaves
 what it was in, is carried home if it was elsewhere, and is Bedridden, where it can do little but
-speak to whoever comes and eat what it is given, until treatment (`treat`) lets it up; those where
-it was and at its home are told, and a checkpoint keeps it so.
+speak to whoever comes, take and give what is within reach and eat, until treatment (`treat`)
+lets it up; those where it was and at its home are told, and a checkpoint keeps it so.
 """
 
 from __future__ import annotations
@@ -96,15 +98,21 @@ def activity(world: World, r: Resident) -> Activity:
     return "awake"
 
 
-def _feed(world: World, r: Resident) -> dict[str, int]:
-    """Awake and able to eat, `r` eats the ready food in its inventory, a helping at a time,
-    until it could eat no more. Returns the helpings it ate, by item."""
+def _feed(world: World, r: Resident, *, tell: bool = False) -> dict[str, int]:
+    """Awake, `r` eats of the food it carries that is ready to eat: what perishes all at once,
+    a dish being eaten where it is taken and never carried away, and what keeps a helping at a
+    time until it could eat no more. Each is told to it if `tell`. Returns what it ate, the
+    units of each item."""
     ate: dict[str, int] = {}
     if not r.awake:
         return ate
     for item in world.config.items:
-        while item.ready and world.body.hungry(r.living) and r.inventory.units(item.id):
-            eat(world, r, item.id, 1)
+        while (
+            item.ready
+            and r.inventory.units(item.id)
+            and (item.perishes or world.body.hungry(r.living))
+        ):
+            eat(world, r, item.id, 1, tell=tell)
             ate[item.id] = ate.get(item.id, 0) + 1
     return ate
 
@@ -144,30 +152,33 @@ def _food(world: World, item: str) -> int:
     return nourishment
 
 
-def eat(world: World, r: Resident, item: str, units: int = 1) -> None:
+def eat(world: World, r: Resident, item: str, units: int = 1, *, tell: bool = False) -> None:
     """`r` eats `units` of the ready food or the dish `item` it holds: they go out of its
-    inventory into nothing, today's record grows and its satiety rises. Logged; told to
-    nobody, since a result or the statement tells it."""
-    world.moved(world.move(item, units, r.name, None, by=r))
+    inventory into nothing, today's record grows and its satiety rises. Logged, and told to
+    `r` if `tell`; otherwise a result or the statement tells it."""
+    world.move(item, units, r.name, None)
     r.living.eaten[item] = r.living.eaten.get(item, 0) + units
     world.body.eat(r.living, _food(world, item) * units)
     eaten = amount(world.config.item(item), units)
     world.record_move(
-        "eat",
         lambda w: f"{cap(you(r.name, w))} ate {eaten}.",
         by=r,
-        item=item,
+        what=item,
         units=units,
         source=r.name,
+        target=None,
+        reason="eat",
+        audience=[r] if tell else [],
     )
 
 
 def take_in(world: World, r: Resident, *, tell: bool = False) -> dict[str, int]:
-    """`r` has just been handed something: the ready food it could eat is eaten at once, and
-    each need that crossed into another band is noted, told to it if `tell` (a result tells
-    one who took it itself). Returns the helpings eaten, by item, for the result to tell."""
+    """`r` has just taken or been given something: it eats at once the dish among it and, as
+    far as it could eat, the food that keeps (`_feed`), and each need that crossed into another
+    band is noted; all of it told to it if `tell` (a result tells one who took it itself).
+    Returns what it ate, the units of each item, for the result to tell."""
     before = world.body.bands(r.living)
-    ate = _feed(world, r)
+    ate = _feed(world, r, tell=tell)
     note_bands(world, r, before, tell=tell)
     return ate
 
@@ -359,6 +370,7 @@ def _wake_up(world: World, r: Resident, tell: Tell | None = None) -> None:
         actor=r,
         audience=[r],
     )
+    world.notice(r)  # what went from its person while it slept
     world.rest_changed()
 
 

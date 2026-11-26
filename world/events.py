@@ -18,7 +18,7 @@ review its day, go to bed again to add to its journal entry and see to its files
 once its runtime has nothing more to do (or at the forced hour), from which only the wake-up
 brings it back. Bedridden is where health at its floor puts a resident, at its home, until it is
 treated: it can only ask, look around, take stock of itself and of what it has, speak to whoever
-comes and sleep.
+comes, take, give and use what is within its reach, and sleep.
 
 Each event's tools are the architecture's table. What everyone can do is in them all; each
 occupation adds its own work (`world.occupations`), done at its workplace. The resident's request
@@ -34,50 +34,39 @@ from typing import Any, ClassVar
 
 from world.occupations import WORK_DONE
 
-EVERYDAY = frozenset(
-    {
-        "help",
-        "look_around",
-        "how_am_i",
-        "inventory",
-        "go",
-        "wait",
-        "say",
-        "message",
-        "get",
-        "pass",
-        "put",
-        "eat",
-        "buy",
-    }
-)
+THINGS = frozenset({"take", "give", "use"})
+"""What one does with things and money within one's reach: wherever one is awake and not on the
+road, in a conversation and in bed too ill to get up alike."""
+EVERYDAY = THINGS | {
+    "help",
+    "look_around",
+    "how_am_i",
+    "inventory",
+    "go",
+    "wait",
+    "say",
+    "message",
+}
 """What one up and about can do, at rest or at work, besides the work of the occupations."""
 IDLE_TOOLS = EVERYDAY | WORK_DONE | {"start_work", "move_in", "sleep"}
 WORK_TOOLS = EVERYDAY | WORK_DONE | {"leave_work", "sleep"}
-CONVERSATION_TOOLS = frozenset(
-    {
-        "help",
-        "look_around",
-        "how_am_i",
-        "inventory",
-        "go",
-        "wait",
-        "say",
-        "get",
-        "pass",
-        "put",
-        "eat",
-        "buy",
-        "leave_conversation",
-    }
-)
+CONVERSATION_TOOLS = THINGS | {
+    "help",
+    "look_around",
+    "how_am_i",
+    "inventory",
+    "go",
+    "wait",
+    "say",
+    "leave_conversation",
+}
 """What a conversation offers of its own, done without leaving it: talking, and what one does
 with things while talking. What else the event underneath offers is offered too, and leaves the
 conversation first."""
 TALK = frozenset({"say", "wait", "leave_conversation"})
 """What a conversation adds to whatever event it covers."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
-BEDRIDDEN_TOOLS = frozenset({"help", "look_around", "how_am_i", "inventory", "say", "sleep"})
+BEDRIDDEN_TOOLS = THINGS | {"help", "look_around", "how_am_i", "inventory", "say", "sleep"}
 
 
 @dataclass
@@ -145,7 +134,8 @@ IN_BED = (
 )
 BEDRIDDEN = (
     "You are in bed, too ill to get up; you can only look around, take stock of how you feel "
-    "and of what you have, speak to whoever comes, read how the town works and sleep."
+    "and of what you have, speak to whoever comes, take, give and use what is within your "
+    "reach, read how the town works and sleep."
 )
 AT_HOME = "You can sleep only at home."
 """Why `sleep` is refused away from home. At work at home, as the mayor may be, whose duty runs

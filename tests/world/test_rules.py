@@ -35,18 +35,18 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
     assert sections["money"] == (
         "Nobody is paid for their time: a client pays for each task accepted, all of it to "
         "whoever handed it in; the chef, the shopkeeper and the doctor are paid by their "
-        "customers and the mayor from the town's treasury. A tenth of what clients and customers "
-        "pay is withheld in tax into the treasury, which also takes the rents and pays the "
-        "mayor's salary and what the mayor grants. The store and the café on the square sell "
-        "only while their keepers are at work, so bread is bought ahead. You have $120 to begin "
-        "with. Your rent, $20 a day, is taken from your purse at midnight, never its last $10, a "
-        "day's bread; the rest you owe, taken later."
+        "customers and the mayor from the town's treasury. A tenth of what one is paid at work "
+        "is withheld in tax into the treasury, which also takes the rents and pays the mayor's "
+        "salary and what the mayor grants. Things and money change hands only as someone takes "
+        "or gives them, which whoever is there and awake sees. You have $120 to begin with. Your "
+        "rent, $20 a day, is taken from your purse at midnight, never its last $10, a day's "
+        "bread; the rest you owe, taken later."
     )  # no team leader in this town: the whole payment is the programmer's
     untaxed = Rules(town_config(residents=RESIDENTS)).sections("Mei")["money"]
     assert untaxed.startswith(
         "Nobody is paid for their time: a client pays for each task accepted, all of it to "
-        "whoever handed it in. The town's treasury takes the rents. The store and the café on the "
-        "square sell only while their keepers are at work, so bread is bought ahead. You have $120"
+        "whoever handed it in. The town's treasury takes the rents. Things and money change hands "
+        "only as someone takes or gives them, which whoever is there and awake sees. You have $120"
     )  # no tax, and nobody the treasury pays
     assert sections["people"] == (
         "You live in the shared house on Mill Street with Aisha; Tomas, Olga, Jonas, Lucia and "
@@ -55,8 +55,8 @@ def test_the_rules_are_six_short_sections_ones_own_work_first():
         "store, Lucia is the doctor at the clinic and Vera is the mayor at the hall. You can "
         "speak to anyone awake where you are, to everyone there or only to the people you name, "
         "and the others notice that you said something but not what; a conversation lasts until "
-        "its people leave it or nobody speaks for 10 minutes. Talking, you can still buy, eat and "
-        "hand things over; doing your work leaves the talk."
+        "its people leave it or nobody speaks for 10 minutes. Talking, you can still take, give "
+        "and use things; doing your work leaves the talk."
     )
     assert (
         "Walking from one to another takes 10 minutes, 5 between the workshop and the café"
@@ -92,25 +92,27 @@ def test_each_occupation_is_told_its_own_work_and_what_it_is_paid_for():
     economy = (
         "Nobody is paid for their time: a client pays for each task accepted, a fifth to the team "
         "leader and the rest to whoever handed it in; the chef, the shopkeeper and the doctor are "
-        "paid by their customers and the mayor from the town's treasury. A tenth of what clients "
-        "and customers pay is withheld in tax into the treasury, which also takes the rents"
+        "paid by their customers and the mayor from the town's treasury. A tenth of what one is "
+        "paid at work is withheld in tax into the treasury, which also takes the rents"
     )
     for name in ("Mei", "Tomas", "Olga", "Jonas", "Lucia", "Vera"):
         assert rules.sections(name)["money"].startswith(economy), name
+    # A keeper is told what is its own, that its prices are told to whoever takes, and that
+    # what it is given is its own: nothing says that anyone pays.
     assert told["Olga"]["work"].startswith(
-        "You are the shopkeeper at the store. Its counter is open while you are at work there: "
-        "you sell its goods, which are yours, at the prices you set, and order more from the "
-        "supplier, which you pay for at once"
+        "You are the shopkeeper at the store. Its shelves and what stands on them are yours: you "
+        "set the prices, which whoever takes from them is told, and what customers give you for "
+        "it is yours. You order more from the supplier, which you pay for at once"
     )
     assert (
-        "you cook dishes from what the kitchen holds, which keeps, and set the menu's prices; "
-        "customers buy dishes at those prices, with pass you hand one over unpaid, and with eat "
-        "you have one yourself. The portions left at midnight are gone. You buy what you cook "
-        "with at the store with buy for_the_kitchen, and pay for it."
+        "Its kitchen is yours: with cook you make dishes from what its larder holds and what "
+        "you carry, and you set the menu's prices. The portions stand on its counter, where "
+        "whoever takes one is told its price, and what diners give you for them is yours; those "
+        "left at midnight are gone. What you cook with stands on the shelves of the store."
     ) in told["Jonas"]["work"]
     assert (
-        "Its surgery is open while you are at work there: you examine and treat patients"
-        in (told["Lucia"]["work"])
+        "At its surgery you examine and treat patients, who are told the fee you set, and what "
+        "they give you for it is yours" in (told["Lucia"]["work"])
     )
     assert told["Vera"]["work"] == (
         "You are the mayor at the hall. There you tell every resident whatever you want them to "
@@ -123,15 +125,15 @@ def test_each_occupation_is_told_its_own_work_and_what_it_is_paid_for():
     # The mayor is told what the treasury is for; the others whom it pays.
     assert told["Vera"]["money"] == (
         f"{economy} and is there to pay your salary of $30 a day at midnight, as far as it holds "
-        "the money, and whatever you grant residents. The store and the café on the square sell "
-        "only while their keepers are at work, so bread is bought ahead. You have $100 to begin "
-        "with. Your rent, $30 a day, is taken from your purse at midnight, never its last $10, a "
-        "day's bread; the rest you owe, taken later."
+        "the money, and whatever you grant residents. Things and money change hands only as "
+        "someone takes or gives them, which whoever is there and awake sees. You have $100 to "
+        "begin with. Your rent, $30 a day, is taken from your purse at midnight, never its last "
+        "$10, a day's bread; the rest you owe, taken later."
     )
     assert told["Olga"]["money"].startswith(
-        f"{economy} and pays the mayor's salary and what the mayor grants. The store and the café "
-        "on the square sell only while their keepers are at work, so bread is bought ahead. You "
-        "have $100"
+        f"{economy} and pays the mayor's salary and what the mayor grants. Things and money "
+        "change hands only as someone takes or gives them, which whoever is there and awake "
+        "sees. You have $100"
     )
 
 
@@ -156,19 +158,38 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
     ):
         assert told in office, told
     assert "the order comes onto the shelves at 08:00 the next morning" in topics["store"]
-    assert "It sells from its shelves, which the shopkeeper sees whenever there" in topics["store"]
+    # How a thing is come by and paid for, said as what can be done and what follows.
     assert (
-        "or as the chef hands it over with pass, when nobody pays and the chef bears what it "
-        "cost; the chef, at work there, has one with eat and does not buy them. The portions left "
-        "at midnight are gone; what the kitchen holds to cook with keeps."
+        "Whoever is there takes from the shelves with take and is told the price posted; "
+        "nothing is charged by itself, and paying is giving the shopkeeper the money with give. "
+        "The shelves stand there whether or not the shopkeeper does."
+    ) in topics["store"]
+    assert (
+        "cooking uses what the kitchen's larder holds and then what the chef carries. The "
+        "portions stand on the counter, each dish at the price the chef posts on the menu. "
+        "Whoever is there takes one with take from the counter and is told its price; nothing "
+        "is charged by itself, and paying is giving the chef the money with give. A dish is a "
+        "day's food, eaten at once by whoever takes it, and so never carried away. The portions "
+        "left on the counter at midnight are gone; what the larder holds keeps."
     ) in topics["restaurant"]
-    assert "the portions left in the kitchen are gone" in topics["day"]
+    assert "the portions left on the counter are gone" in topics["day"]
+    assert topics["day"].startswith("No place keeps hours or a shut door")
     assert topics["money"].startswith(
         "Money comes into the town only from the clients of the workshop, and leaves it only when "
         "the shopkeeper pays the supplier."
     )
-    assert "With put you leave something where you are, for anyone to take" in topics["money"]
-    assert "or when you choose with eat" in topics["body"]
+    for told in (
+        "With take you take a thing or money within your reach where you are, whether or not it "
+        "is yours: from the shelves of the store, from the counter or the larder of the café on "
+        "the square, from what is left there, or from a person there, awake or asleep",
+        "you cannot give more than you carry",
+        "Whoever is there and awake sees what is taken and given, by whom and from or to whom. "
+        "One who was asleep or elsewhere sees none of it: on waking, one is told what has gone "
+        "from what one carries, and a keeper coming back, what has gone from the shelves, the "
+        "counter or the larder, and not who took it.",
+    ):
+        assert told in topics["money"], told
+    assert "or when you choose with use; a dish you eat as you take it" in topics["body"]
     assert (
         "orders more from the supplier outside the town, paying for it at once" in (topics["store"])
     )
@@ -180,10 +201,14 @@ def test_help_tells_the_detail_by_topic_and_what_one_can_ask_about():
     assert (
         "A treatment, $30 at the start, restores 25 of the patient's health" in (topics["hospital"])
     )
-    assert topics["hospital"].endswith("The patient pays the fee, which the doctor sets.")
+    assert topics["hospital"].endswith(
+        "The doctor sets the fees, and both are told the fee as the doctor examines or treats; "
+        "nothing takes it from the patient, and paying is giving the doctor the money with give."
+    )
     for told in (
-        "The tax is withheld from each payment as it comes in, rounded down, and you are told how "
-        "much; money handed between people is not taxed.",
+        "The tax is withheld as the money comes in, rounded down, and the one paid is told how "
+        "much: from what a client pays, and from any money given to someone who is at work; money "
+        "given to someone not at work, and whatever is taken, is not taxed.",
         "The town's treasury owns the homes; with the rent it takes the daily charge on anything "
         "you own that carries one. It pays the mayor a salary of $30 a day, as far as it holds the "
         "money, owing the rest.",

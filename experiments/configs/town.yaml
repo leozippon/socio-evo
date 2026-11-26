@@ -3,9 +3,9 @@
 # overlays it with the run's name and what differs (see experiments/config.py for how an overlay
 # merges).
 #
-# The world gives no place opening hours: a place of work is open while someone is at work there
-# (the Store while the shopkeeper is, the Linde's kitchen while the chef is, the Hospital's
-# surgery while the doctor is), and every place can be visited at any hour. The only fixed hours
+# The world gives no place opening hours or a shut door: every place can be visited at any hour,
+# and what a business keeps (the Store's shelves, the Linde's counter and larder) stands there
+# whether or not its keeper does, to be taken by whoever is there. The only fixed hours
 # are the night's below, the morning hour the Store's orders arrive, and the longest one sleep may
 # last; clients' tasks come in at the Office at random between 08:00 and 18:00, about three a day,
 # drawn from the run's seed.
@@ -14,11 +14,13 @@
 # for a task accepted (150, four fifths to the programmer who handed it in and a fifth to the team
 # leader, who hands the tasks out and takes none herself) and leaves it only when the shopkeeper
 # pays the supplier; everything else passes between the residents and the town's treasury. The
-# Store, the Linde's kitchen and the Hospital's surgery are their keepers', who take what customers
-# and patients pay and pay for what they buy: the shopkeeper the supplier, the chef the Store for
-# the kitchen's ingredients (a dish given away costs him its ingredients). A tenth of every
-# payment a resident receives for work, from a client, a customer, a patient or as the leader's
-# share, is withheld at once into the treasury, rounded down to the whole. The treasury owns the homes and takes their rent
+# Store, the Linde's kitchen and the Hospital's surgery are their keepers', who have what customers
+# and patients give them and pay for what they buy: the shopkeeper the supplier, the chef the
+# Store for the kitchen's ingredients. Nothing charges anyone: a price is posted and told to
+# whoever takes the thing, and paying is giving the keeper the money; the calibration below is of
+# a town where everyone pays. A tenth of what a resident is paid for work, a client's payment,
+# the leader's share and any money given to it while it is at work, is withheld at once into the
+# treasury, rounded down to the whole. The treasury owns the homes and takes their rent
 # at midnight, with the daily charges, from each purse as far as it holds more than a day's bread
 # (20), the rest owed and taken at later midnights; it pays the mayor 60 a day, as far as it holds
 # the money, owing the rest, and whatever the mayor grants anyone at the Town Hall.
@@ -233,15 +235,18 @@ town:
     shell_timeout_s: 600
     acceptance_timeout_s: 1800
   # The catalogue of every kind of thing in the town (see world/config.py for the kinds and
-  # effects), at the prices calibrated above. Each unit of an item is held by one holder at a time: a resident, what is left at a
-  # place for anyone, the Store's shelves, the kitchen's larder or its portions, or the supplier
-  # outside the town. What the supplier sells has its wholesale price and the Store's price at
-  # the start, which the shopkeeper changes: ingredients, food of no nourishment of their own,
-  # cooked at the Linde, which keep in its larder; bread and fruit, ready food, a helping a third of a day's; and durables,
-  # each doing something in the world: shortening journeys, letting owners write to one another,
-  # or showing on its owner wherever others see it. The Linde's dishes are cooked from what a
-  # portion takes, each a day's food that perishes at midnight, at the menu's price at the start,
-  # which the chef changes. Names carry their article, as a sentence names them.
+  # effects), at the prices calibrated above. Each unit of an item is held by one holder at a
+  # time, as money is: a resident, what is left at a place, the Store's shelves, the kitchen's
+  # counter or its larder, or the supplier outside the town; a resident takes from and gives to
+  # any of them where it is. What the supplier sells has its wholesale price and the price the
+  # Store posts at the start, which the shopkeeper changes: ingredients, food of no nourishment
+  # of their own, cooked at the Linde from its larder and from what the chef carries; bread and
+  # fruit, ready food, a helping a third of a day's; and durables, each doing something in the
+  # world for whoever carries one: shortening journeys, letting those who carry one write to one
+  # another, or showing wherever others see it. The Linde's dishes are cooked from what a
+  # portion takes, each a day's food, eaten as it is taken from the counter, that perishes at
+  # midnight, at the menu's price at the start, which the chef changes. Names carry their
+  # article, as a sentence names them.
   items:
     - {id: vegetables, name: vegetables, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}
     - {id: eggs, name: eggs, kind: consumable, effect: food, nourishment: 0, wholesale: 1, price: 2}

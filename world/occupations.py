@@ -6,8 +6,8 @@ What else an occupation is belongs to the town's configuration (`world.config.Oc
 title, its workplace among the town's places, where its duty runs (at its workplace, or anywhere
 once it has sat down to work: the mayor's) and its salary from the treasury, if it has one (the
 mayor's). An occupation keeps the business of its workplace, if that place has one
-(`world.businesses`), and lives on what it takes: the shopkeeper the Store's counter, the chef the
-Restaurant's kitchen, the doctor the Hospital's surgery.
+(`world.businesses`), and lives on what its customers give it: the shopkeeper the Store, the chef
+the Restaurant's kitchen, the doctor the Hospital's surgery.
 """
 
 from __future__ import annotations
@@ -73,28 +73,30 @@ OCCUPATIONS: dict[str, Trade] = {
         workplace="restaurant",
         work=frozenset({"cook", "set_price"}),
         told=(
-            "Its kitchen is open while you are at work there: you cook dishes from what the "
-            "kitchen holds, which keeps, and set the menu's prices; customers buy dishes at "
-            "those prices, with pass you hand one over unpaid, and with eat you have one "
-            "yourself. The portions left at midnight are gone. You buy what you cook with at "
-            "{store} with buy for_the_kitchen, and pay for it."
+            "Its kitchen is yours: with cook you make dishes from what its larder holds and "
+            "what you carry, and you set the menu's prices. The portions stand on its counter, "
+            "where whoever takes one is told its price, and what diners give you for them is "
+            "yours; those left at midnight are gone. What you cook with stands on the shelves "
+            "of {store}."
         ),
     ),
     SHOPKEEPER: Trade(
         workplace="store",
         work=frozenset({"order", "set_price"}),
         told=(
-            "Its counter is open while you are at work there: you sell its goods, which are "
-            "yours, at the prices you set, and order more from the supplier, which you pay for "
-            "at once and which arrives the next morning."
+            "Its shelves and what stands on them are yours: you set the prices, which whoever "
+            "takes from them is told, and what customers give you for it is yours. You order "
+            "more from the supplier, which you pay for at once and which arrives the next "
+            "morning."
         ),
     ),
     DOCTOR: Trade(
         workplace="hospital",
         work=frozenset({"examine", "treat", "set_price"}),
         told=(
-            "Its surgery is open while you are at work there: you examine and treat patients, "
-            "at fees you set, and you go to the bedside of anyone too ill to get up."
+            "At its surgery you examine and treat patients, who are told the fee you set, and "
+            "what they give you for it is yours; you go to the bedside of anyone too ill to "
+            "get up."
         ),
     ),
     MAYOR: Trade(

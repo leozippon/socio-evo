@@ -14,8 +14,9 @@ day N (whose daytime is calendar day N): the arrival of each task drawn for the 
 at the Office, and the delivery of what the Store ordered the day before; midnight, when each
 resident's food and health are reckoned and illness comes or passes, the treasury pays the salary
 and takes the rent and daily charges, with a statement, the clients withdraw the tasks
-whose time has run out, the portions the kitchen did not sell are gone and the next day's arrivals
-are drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the bodies are
+whose time has run out, the portions left on the kitchen's counter are gone and the next day's
+arrivals are drawn; the forced sleep; and the checkpoint. Every hour on the hour, besides, the
+bodies are
 brought up to date (`world.living`). No place keeps hours, and residents go to bed and wake when
 they choose, except that one sleep lasts at most a configured span and that nobody wakes between the
 forced sleep and the checkpoint. At the checkpoint the world holds the clock, waits until every
@@ -38,9 +39,10 @@ given, and imports this one only to annotate, so that no import runs in a cycle.
 
 A resident's living (`Living`, of `world.body`) is what it has eaten since the last midnight and
 its body's three needs; its inventory (`Inventory`, of `world.economy`) is its money and the items
-it keeps, which act through it. Whatever a resident is paid for its work, by a client, a customer
-or a patient, goes into its purse with the tax withheld into the town's treasury (`earn`,
-`Treasury`), which at midnight pays the mayor's salary and takes the rent and daily charges. Its
+it carries, which act through it. Whatever a resident is paid for its work, by a client or as
+money given to it while it is at work, goes into its purse with the tax withheld into the town's
+treasury (`earn`, `Treasury`), which at midnight pays the mayor's salary and takes the rent and
+daily charges. Its
 time on duty (`on_duty`; `Resident.worked`, counted as the body is reckoned and cleared at
 midnight) earns nothing and is kept for the measures. The mayor's announcements stand on the Town
 Hall's board. A durable with the effect travel shortens the owner's journeys, one with messaging
@@ -49,16 +51,18 @@ the owner: who is here, who arrived, whom one is in conversation with; a low ban
 the same way. Rent is the home's, paid to the treasury, which owns the homes, and a resident may
 move into a home with a free room.
 
-The Store's counter, the Restaurant's kitchen and the Hospital's surgery are the town's businesses
-(`world.businesses`), each open while its keeper is at work there and selling at the prices of
-`prices`, and each is its keeper's. A sale at the Store moves the price from the buyer's purse to
-the shopkeeper's and the units off its shelves, and when the chef buys for the kitchen, the chef
-pays and the units are sent to the kitchen's larder; the shopkeeper pays the supplier for the
-orders (`Store`) at once, and the supplier's units come onto the shelves at the next morning's
-delivery. The chef cooks portions from the larder, a portion bought, or handed over by the chef,
-is eaten at once, and what perishes is gone at midnight, wherever it is. At each place the
-situation tells what is left there, what is for sale and at what price, and the keeper of a
-business what it holds.
+The Store, the Restaurant's kitchen and the Hospital's surgery are the town's businesses
+(`world.businesses`), each its keeper's, with the prices of `prices` posted. What a business
+keeps stands at its place, the Store's goods on its shelves and the kitchen's dishes on its
+counter, and is there whether its keeper is or not: a resident takes a thing or money from any
+holder it reaches, a shelf, a person or what is left at a place, and gives what it carries to
+any of them (`transfer`, of `world.holders`), and nothing charges anyone, so that paying is
+giving the keeper the money. Everyone there and awake sees a take or a gift; an owner who did
+not is told on waking or coming back what is gone, never by whom (`notice`). The shopkeeper pays
+the supplier for the orders (`Store`) at once, and the supplier's units come onto the shelves at
+the next morning's delivery. The chef cooks portions from the larder and from what it carries,
+and what perishes is gone at midnight, wherever it is. At each place the situation tells what is
+left there and what its business keeps and at what price.
 
 Each resident's port declares to its runtime the tools of its event at its place now that its
 occupation gives it (`usable`), so that what a request offers is what can be done; a call of one
@@ -111,8 +115,8 @@ from world.clock import (
 )
 from world.config import Occupation, TownConfig
 from world.economy import (
+    COUNTER,
     LARDER,
-    PORTIONS,
     SHELVES,
     SUPPLIER,
     Holder,
@@ -161,7 +165,9 @@ class Resident:
     """A resident's state in the world. `home` is where it lives now; `timer` is its arrival or
     its wake-up; `tick` the percept that will tell it the time while its runtime waits;
     `reckoned` the simulated time its body was last brought up to; `worked` the seconds it has
-    spent on duty since the last midnight (`World.on_duty`), for the measures; `day`
+    spent on duty since the last midnight (`World.on_duty`), for the measures; `missing` what
+    went from each holder that is its own without its seeing it, less what was put back so, by
+    the holder's name and by item or money, until it is told (`world.holders.notice`); `day`
     the record of its lived day: (simulated time, kind, its wording, payload) of every entry that
     concerns it."""
 
@@ -175,6 +181,7 @@ class Resident:
     inventory: Inventory = field(default_factory=Inventory)
     reckoned: int = 0
     worked: int = 0
+    missing: dict[str, dict[str, int]] = field(default_factory=dict)
     conversation: Conversation | None = None
     wait_minutes: int | None = None
     timer: _Timer | None = None
@@ -216,14 +223,14 @@ class World:
     review = world.situation.review
     # The treasury's day, which the mayor's statement tells at midnight and the run's log after.
     treasury_told = world.midnight.treasury_told
-    # Items and their holders.
+    # Things and their holders: taking and giving, and what an owner did not see.
     holder = world.holders.holder
     reach = world.holders.reach
     move = world.holders.move
-    moved = staticmethod(world.holders.moved)
     record_move = world.holders.record_move
-    hand = world.holders.hand
-    eat_now = world.holders.eat_now
+    transfer = world.holders.transfer
+    notice = world.holders.notice
+    listing = world.holders.listing
     held_told = world.holders.held_told
     # The body, sleep and waking, bed and treatment.
     reckon = world.living.reckon
@@ -276,14 +283,14 @@ class World:
         names = [r.name for r in config.residents]
         self.treasury = Treasury(config.treasury.start)
         self.prices = starting_prices(config)
-        """What each business sells, at its price now, by the business's kind."""
+        """What each business sells, at the price it posts now, by the business's kind."""
         self.store = Store()
         self.holders: dict[str, Holder] = {place.id: Holder() for place in config.places}
         """Every holder of items but the residents, by name (see `holder`)."""
         self.holders |= {
             SHELVES: Holder(dict(config.store.stock)),
+            COUNTER: Holder(),
             LARDER: Holder(),
-            PORTIONS: Holder(),
             SUPPLIER: Supplier(),
         }
         self.announcements: list[list[int | str]] = []
@@ -293,11 +300,7 @@ class World:
         self.body = Body(config.needs)
         self.rules = Rules(config)
         self.tool_specs: list[ToolSpec] = tools.specs(config)
-        # Each occupation's declarations by name, as its residents' requests carry them.
-        self._specs = {
-            occupation.id: {spec.name: spec for spec in tools.own(self.tool_specs, occupation.id)}
-            for occupation in config.occupations
-        }
+        self._specs = {spec.name: spec for spec in self.tool_specs}
         self._timers: list[_Timer] = []
         self._order = itertools.count()
         self._pushed = asyncio.Event()
@@ -395,9 +398,9 @@ class World:
         if not came:
             return
         for item, units in came.items():
-            self.moved(self.move(item, units, SUPPLIER, SHELVES))
+            self.move(item, units, SUPPLIER, SHELVES)
         store = self.config.workplace("store")
-        goods = listed(self.held_told(came))
+        goods = listed(self.listing(came))
         hour = clock_time(self.clock.now())
         self.record(
             "delivery",
@@ -458,7 +461,8 @@ class World:
 
     def snapshot(self) -> dict[str, Any]:
         """The world's whole state at a checkpoint: every resident asleep, nothing open; every
-        holder of items with what it holds (the residents' in their inventories)."""
+        holder with the things and the money it holds (the residents' in their inventories), and
+        what went from each resident's own unseen and is still to be told."""
         unsettled = [
             r.name
             for r in self.residents.values()
@@ -482,6 +486,7 @@ class World:
                 "living": asdict(r.living),
                 "inventory": asdict(r.inventory),
                 "worked": r.worked,
+                "missing": copy.deepcopy(r.missing),
                 "wake": r.base.wake,
                 "longest": r.base.longest,
                 "claim": claim.saved() if claim else None,
@@ -494,7 +499,7 @@ class World:
             "store": {"prices": dict(self.prices[STORE.kind])} | asdict(self.store),
             "kitchen": {"menu": dict(self.prices[KITCHEN.kind])},
             "holders": {
-                key: dict(holder.items) for key, holder in self.holders.items() if key != SUPPLIER
+                key: asdict(holder) for key, holder in self.holders.items() if key != SUPPLIER
             },
             "fees": dict(self.prices[SURGERY.kind]),
             "announcements": copy.deepcopy(self.announcements),
@@ -518,8 +523,8 @@ class World:
         self.store = Store(copy.deepcopy(state["store"]["pending"]))
         if set(state["holders"]) != set(self.holders) - {SUPPLIER}:
             raise ValueError("the checkpoint's holders are not the configuration's places'")
-        for key, items in state["holders"].items():
-            self.holders[key] = Holder(dict(items))
+        for key, held in state["holders"].items():
+            self.holders[key] = Holder(**copy.deepcopy(held))
         self.announcements = copy.deepcopy(state["announcements"])
         for name, saved in state["residents"].items():
             r = self.residents[name]
@@ -530,6 +535,7 @@ class World:
             r.living = Living(**copy.deepcopy(saved["living"]))
             r.inventory = Inventory(**copy.deepcopy(saved["inventory"]))
             r.worked = saved["worked"]
+            r.missing = copy.deepcopy(saved["missing"])
             r.reckoned = state["time"]
             world.living.put_to_sleep(
                 self, r, saved["wake"], suspended=True, longest=saved["longest"]
@@ -648,9 +654,9 @@ class World:
 
     def earn(self, r: Resident, amount: int, about: str) -> int:
         """`r` is paid `amount` for its work, `about` what for as its statement tells it ("for
-        task 3", "in sales"): `town.tax` of it, rounded down to the whole so that no receipt
-        pays more than the rate, is withheld into the treasury at once, and the rest stays in its
-        purse. Returns the tax."""
+        task 3", "from Mei at work"): `town.tax` of it, rounded down to the whole so that no
+        receipt pays more than the rate, is withheld into the treasury at once, and the rest
+        stays in its purse. Returns the tax."""
         tax = math.floor(Fraction(str(self.config.tax)) * amount)  # the rate as written, exactly
         r.inventory.receive(amount, "earned", about)
         if tax:
@@ -732,6 +738,7 @@ class World:
             audience=[r, *others],
             payload={"place": place, "working": working},
         )
+        self.notice(r)  # what went from its business here while it was away
 
     # Conversations ----------------------------------------------------------------------------
 
@@ -810,12 +817,12 @@ class World:
     # What a resident can do -------------------------------------------------------------------
 
     def usable(self, r: Resident) -> list[ToolSpec]:
-        """The tools `r`'s event offers at its place now, in declared order and as its
-        occupation declares them, less those of no use to it there: the work of other
-        occupations; its own away from its workplace, where the board hangs and the machines
-        are, the counter, the kitchen, the surgery or the Hall's board, except the doctor's at the
-        bedside of one too ill to get up; the task's without a task; `start_work` where it has no
-        work; and `message` with nothing to write with."""
+        """The tools `r`'s event offers at its place now, in declared order, less those of no
+        use to it there: the work of other occupations; its own away from its workplace, where
+        the board hangs and the machines are, the shelves, the kitchen, the surgery or the
+        Hall's board, except the doctor's at the bedside of one too ill to get up; the task's
+        without a task; `start_work` where it has no work; and `message` with nothing to write
+        with."""
         if r.suspended:
             return []
         own = OCCUPATIONS[r.occupation.id].work
@@ -827,8 +834,7 @@ class World:
             useless |= TASK_TOOLS
         if not any(r.inventory.units(i.id) for i in self.config.items if i.effect == "messaging"):
             useless.add("message")
-        specs = self._specs[r.occupation.id]
-        return [spec for name, spec in specs.items() if name in r.tools - useless]
+        return [spec for name, spec in self._specs.items() if name in r.tools - useless]
 
     def bedside(self, r: Resident) -> list[Resident]:
         """Those lying in bed, awake, too ill to get up, at the home where `r` is."""
@@ -836,16 +842,15 @@ class World:
             return []
         return [o for o in self.addressable(r) if o.living.bedridden]
 
-    def knows(self, r: Resident, name: str) -> bool:
-        """Whether `name` is one of the town's tools as `r`'s occupation has them, whether or not
-        it can use it now."""
-        return name in self._specs[r.occupation.id]
+    def knows(self, name: str) -> bool:
+        """Whether `name` is one of the town's tools, whether or not it can be used now."""
+        return name in self._specs
 
     async def call(self, r: Resident, name: str, args: dict[str, Any]) -> ToolResult:
         """Carry out the tool `name` (`knows`) for `r`, whether or not its last request declared
         it: refused, naming the condition, when `r` is asleep, when its event does not offer it
-        (`refusal`), when it is another occupation's work or its arguments do not fit; in a
-        conversation, what the conversation does not offer of its own leaves it first."""
+        (`refusal`), when it is another occupation's work or its arguments do not fit (`fit`);
+        in a conversation, what the conversation does not offer of its own leaves it first."""
         handler = HANDLERS[name]
         if r.suspended:
             return ToolResult("You are asleep.", ends_turn=True)
@@ -858,7 +863,7 @@ class World:
             return ToolResult(text, ends_turn=isinstance(base, Movement))
         if name in WORK_DONE - OCCUPATIONS[r.occupation.id].work:
             return ToolResult(f"That is not your work: you are {r.occupation.title}.")
-        fitted = tools.fit(self._specs[r.occupation.id][name], args)
+        fitted = tools.fit(self._specs[name], args)
         if isinstance(fitted, str):
             return ToolResult(fitted)
         args = fitted

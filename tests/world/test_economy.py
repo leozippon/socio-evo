@@ -2,16 +2,19 @@
 handed the task in and the team leader, a tenth withheld into the treasury at receipt; the rent
 taken at midnight from the purse above a day's bread, the rest owed and taken later; the mayor's
 salary paid as far as the treasury holds and the rest owed; the mayor's grants; the statement,
-and the treasury's day in the mayor's; money and things handed over; and the invariant that the
-purses and the treasury change only by what clients pay and the supplier is paid. The sales, the
-dishes and the supplier are in test_shops."""
+and the treasury's day in the mayor's; a thing's daily charge, which goes with the thing; and the
+invariant that the town's money changes only by what clients pay and the supplier is paid. Money
+taken, given and left, and the tax on what is given to one at work, are in test_things; the Store
+and the kitchen in test_shops."""
 
 from __future__ import annotations
 
 import pytest
 
 from tests.support.towns import CARE, RESIDENTS, TRADES, awake_at, town_config
-from world.economy import Inventory, Treasury
+from tests.world.acts import give, take
+from tests.world.acts import money as total
+from world.economy import Holder, Inventory, Treasury
 
 LEADER = dict(RESIDENTS[1], occupation="team-leader")
 """Tomas as the team leader."""
@@ -20,11 +23,6 @@ LEADER = dict(RESIDENTS[1], occupation="team-leader")
 def statements(town, name: str) -> list[str]:
     """The statements `name` was told while its runtime rested."""
     return [p.text for p in town.heard[name] if p.kind == "settlement"]
-
-
-def total(world) -> int:
-    """The town's money: the treasury and every purse."""
-    return world.treasury.balance + sum(r.inventory.money for r in world.residents.values())
 
 
 def settled(world) -> dict[str, dict]:
@@ -92,7 +90,7 @@ async def test_rent_is_taken_at_midnight_from_the_purse_above_a_days_bread_and_t
     for name in ("Mei", "Aisha"):
         await town.call(name, "go", place="park")
     await town.until("08:00")
-    await town.call("Aisha", "pass", item="money", units=15, to="Mei")
+    await give(town, "Aisha", "money", "Mei", 15)
     for name in world.residents:
         town.take(name)
     await town.until("00:00", day=2)
@@ -127,7 +125,7 @@ async def test_rent_is_taken_at_midnight_from_the_purse_above_a_days_bread_and_t
     await town.call("Mei", "go", place="park")
     await town.call("Aisha", "go", place="park")
     await town.until("08:20", day=2)
-    await town.call("Mei", "pass", item="money", units=30, to="Aisha")
+    await give(town, "Mei", "money", "Aisha", 30)
     await town.until("00:00", day=3)
     assert statements(town, "Aisha")[-1].startswith(
         "Your statement for Tuesday 2 January: received $30 from Mei; rent for your room at the "
@@ -243,21 +241,26 @@ async def test_purses_and_the_treasury_change_only_by_the_clients_and_the_suppli
     await town.call("Mei", "submit")  # a client pays $50
     await town.call("Olga", "order", item="eggs", quantity=4)  # the supplier is paid $4
     await town.call("Olga", "start_work")
-    await town.call("Jonas", "buy", item="vegetables", units=2, for_the_kitchen=True)
-    await town.call("Olga", "buy", item="bread")  # her own, for nothing
-    await town.call("Lucia", "examine", patient="Aisha")
+    await take(town, "Jonas", "vegetables", "shelves", 4)
+    await give(town, "Jonas", "money", "Olga", 12)  # of which $1 in tax
+    await give(town, "Jonas", "money", "here", 2)  # left at the store, and still the town's
+    await take(town, "Olga", "bread", "shelves")  # her own
     await town.call("Vera", "grant", amount=7, to="Aisha", reason="For the doctor's fee.")
+    await town.call("Lucia", "examine", patient="Aisha")
+    await give(town, "Aisha", "money", "Lucia", 10)  # the fee, of which $1 in tax
     await town.call("Jonas", "go", place="cafe")
     await town.call("Mei", "go", place="cafe")
     await town.until("09:20")
-    await town.call("Jonas", "cook", dish="soup", portions=1)
-    await town.call("Mei", "buy", item="soup")
-    await town.call("Mei", "pass", item="money", units=3, to="Jonas")
+    await town.call("Jonas", "cook", dish="soup", portions=2)
+    await take(town, "Mei", "soup", "counter")
+    await take(town, "Mei", "money", "Jonas", 3)
     town.rest()
     await town.until("00:00", day=2)  # rent and the salary
     kinds = {e["kind"] for e in world.log.entries()}
     assert {"service", "order", "move", "examination", "grant", "settlement"} <= kinds
-    assert world.treasury.yesterday["tax"] > 0 and world.treasury.yesterday["salary"] == 30
+    # The client's payment, the chef's and the patient's gifts taxed; Aisha's purse $3 short.
+    assert world.treasury.yesterday == {"tax": 5 + 1 + 1, "rent": 187, "salary": 30, "grant": 7}
+    assert world.holders["store"].money == 2
     assert total(world) == before + 50 - 4
 
 
@@ -284,95 +287,53 @@ def test_the_treasury_takes_and_pays_only_its_kinds_and_settles_a_midnight():
     assert treasury.ledger == {} and treasury.yesterday["rent"] == 50
 
 
-def test_a_purse_records_what_goes_in_and_out_and_is_never_spent_below_nothing():
+def test_a_purse_records_what_goes_in_and_out_and_no_holder_is_spent_below_nothing():
     purse = Inventory(money=10)
     purse.receive(5, "received", "Mei")
-    purse.spend(15, "bought", "a coat")
-    assert (purse.money, purse.moves) == (0, [["received", 5, "Mei"], ["bought", 15, "a coat"]])
-    with pytest.raises(ValueError, match="only 0 in the purse"):
+    purse.spend(15, "gave", "Olga")
+    assert (purse.money, purse.moves) == (0, [["received", 5, "Mei"], ["gave", 15, "Olga"]])
+    with pytest.raises(ValueError, match="only 0 held to spend 1 from"):
         purse.spend(1, "gave", "Mei")
     assert (purse.money, len(purse.moves)) == (0, 2)
-
-
-async def test_money_goes_to_anyone_awake_here_and_only_from_what_one_has(make_town):
-    town = make_town()
-    await awake_at(town)
-    gift = await town.call("Mei", "pass", item="money", units=5, to="Tomas")
-    assert gift.text == "Tomas is not here."
-    assert (await town.call("Mei", "pass", item="money", units=5, to="Mei")).text == (
-        "You cannot pass anything to yourself."
-    )
-    too_much = await town.call("Aisha", "pass", item="money", units=31, to="Mei")
-    assert too_much.text == "You do not have $31. Your purse holds $30."
-    assert (await town.call("Aisha", "pass", item="money", units=0, to="Mei")).text == (
-        "units must be a whole number of at least 1."
-    )
-    town.take("Mei")
-    given = await town.call("Aisha", "pass", item="money", units=10, to="Mei")  # no word said
-    assert given.text == "You passed Mei $10. Your purse holds $20."
-    assert town.take("Mei") == ["Aisha passed you $10."]
-    assert not town.world.ports["Mei"].interrupt.is_set()
-    assert town.world.residents["Mei"].inventory.money == 130
-    moved = [e["payload"] for e in town.world.log.entries() if e["kind"] == "move"]
-    assert moved == [
-        {"item": None, "units": 0, "source": "Aisha", "target": "Mei", "money": 10,
-         "reason": "pass", "seller": None, "tax": 0},
-    ]  # fmt: skip
-    await town.until("21:00")
-    await town.call("Mei", "sleep", until="07:00")
-    asleep = await town.call("Aisha", "pass", item="money", units=1, to="Mei")
-    assert asleep.text == "Mei is asleep."
+    shelf = Holder(money=3)  # what is left on a shelf or at a place is money like any other
+    shelf.receive(4, "left", "on the shelves")
+    shelf.spend(7, "took", "from the shelves")
+    with pytest.raises(ValueError, match="only 0 held"):
+        shelf.spend(1, "took", "from the shelves")
+    assert shelf.money == 0 and shelf.has("money") == 0
 
 
 async def test_a_whole_number_written_in_digits_is_taken_as_the_number(make_town):
     town = make_town()
     await awake_at(town)
-    given = await town.call("Aisha", "pass", item="money", units="10", to="Mei")
-    assert given.text == "You passed Mei $10. Your purse holds $20."
+    given = await town.call("Aisha", "give", what="money", amount="10", to="Mei")
+    assert given.text == "You gave Mei $10. Your purse holds $20."
     for wrong in ("ten", "2.5", "-3", "0", " 4", True):
-        assert (await town.call("Aisha", "pass", item="money", units=wrong, to="Mei")).text == (
-            "units must be a whole number of at least 1."
+        assert (await town.call("Aisha", "give", what="money", amount=wrong, to="Mei")).text == (
+            "amount must be a whole number of at least 1."
         )
     assert (await town.call("Tomas", "wait", minutes="45")).text == "You wait for up to 45 minutes."
     assert town.world.residents["Tomas"].wait_minutes == 45
 
 
-async def test_a_thing_goes_with_its_daily_charge_and_a_stock_feeds_whom_it_is_given(make_town):
+async def test_a_thing_goes_with_its_daily_charge_to_whoever_carries_it_at_midnight(make_town):
     town = make_town()
     await awake_at(town)
     world = town.world
     mei, aisha = world.residents["Mei"], world.residents["Aisha"]
-    mei.inventory.items.update({"bread": 6, "phone": 1})
-    assert (await town.call("Aisha", "pass", item="phone", to="Mei")).text == ("You have no phone.")
-    assert (await town.call("Mei", "pass", item="phone", units=2, to="Aisha")).text == (
-        "You have only a phone."
+    mei.inventory.items.update({"bread": 9, "phone": 2})
+    aisha.inventory.items["bread"] = 9
+    assert (await town.call("Mei", "inventory")).text == (
+        "Money: $120.\nBread: 9 helpings.\n2 phones, with a daily charge of $2."
     )
-    assert (await town.call("Mei", "pass", item="bread", units=7, to="Aisha")).text == (
-        "You have only 6 helpings of bread."
+    assert await give(town, "Mei", "phone", "Aisha", 2) == (
+        "You gave Aisha 2 phones. You carry 9 helpings of bread."
     )
-    given = await town.call("Mei", "pass", item="phone", to="Aisha")
-    assert given.text == "You passed Aisha a phone. You have 6 helpings of bread."
-    assert "phone" not in mei.inventory.items and aisha.inventory.items["phone"] == 1
-    aisha.inventory.items["coat"] = 1
-    assert (await town.call("Mei", "get", item="coat")).text == "You find no coat here."
-    town.take("Aisha")
-    aisha.living.satiety = 30  # hungry: she eats what she is given
-    given = await town.call("Mei", "pass", item="bread", units=2, to="Aisha")
-    assert given.text == "You passed Aisha 2 helpings of bread. You have 4 helpings of bread."
-    assert "bread" not in aisha.inventory.items and aisha.living.eaten == {"bread": 2}
-    assert town.take("Aisha") == ["Mei passed you 2 helpings of bread.", "You are well fed."]
-    moved = [
-        (e["payload"]["reason"], e["payload"]["item"], e["payload"]["units"], e["audience"])
-        for e in world.log.entries()
-        if e["kind"] == "move"
-    ]
-    assert moved == [
-        ("pass", "phone", 1, ["Aisha"]),
-        ("pass", "bread", 2, ["Aisha"]),
-        ("eat", "bread", 1, []),  # the body eats, a helping at a time, as it is hungry
-        ("eat", "bread", 1, []),
-    ]
+    assert await take(town, "Mei", "phone", "Aisha") == (
+        "You took a phone from Aisha. You carry 9 helpings of bread and a phone."
+    )
     town.rest()
-    await town.until("00:00", day=2)  # the phone's daily charge is now Aisha's
+    await town.until("00:00", day=2)  # each carries one: the charge is on the kind of thing
     charges = {name: payload["charges"] for name, payload in settled(world).items()}
-    assert charges == {"Mei": 0, "Tomas": 0, "Aisha": 2}
+    assert charges == {"Mei": 2, "Tomas": 0, "Aisha": 2}
+    assert "the daily charge on a phone $2" in statements(town, "Aisha")[-1]

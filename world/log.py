@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any
 
 from infrastructure.storage import append_jsonl, read_jsonl
-from world.economy import PORTIONS
+from world.economy import COUNTER, SHELVES
 
 
 @dataclass(frozen=True)
@@ -112,18 +112,24 @@ KINDS = {
     "leave_conversation": Kind("a resident left a conversation"),
     "conversation_end": Kind("a conversation ended", ("room",)),
     "move": Kind(
-        "units of an item, or money, that a resident moved from one holder to another: a "
+        "what a resident (the actor) moved with its own hands from one holder to another: what, "
+        "an item's id or money, and its amount, in units or in money; source and target, each a "
         "resident (by name), what is left at a place (by its id), the Store's shelves, the "
-        "kitchen's larder or its portions, or nothing (null), with the money that went with "
-        "them and why: get (taken from where it was left), put (left there), pass (handed to "
-        "another, money alone without an item; from the portions, the chef serving a dish "
-        "nobody pays for), eat (eaten, by choice or by the body as it grew hungry, into nothing) "
-        "or buy (at the Store's counter, for oneself or by the chef for the kitchen's larder, "
-        "which the chef pays, or a dish from the portions); seller is who served a purchase, whose "
-        "purse took the money less the tax withheld into the treasury (none when the seller "
-        "served itself, which costs nothing), or the chef who handed a dish over from the "
-        "portions",
-        ("item", "units", "source", "target", "money", "reason", "seller", "tax"),
+        "kitchen's counter or its larder, or nothing (null); and why: take (from source into the "
+        "actor's own hands, whoever's it was; price is the price posted for a unit where it "
+        "stood, on a business's shelves or counter, else null: nothing is charged, and a payment "
+        "is a gift of money of its own), give (from the actor's hands to target; tax is what "
+        "was withheld into the treasury from money given to a resident at work, else 0) or eat "
+        "(eaten, by choice or by the body as it grew hungry, into nothing). The audience is "
+        "everyone at the place and awake",
+        ("what", "amount", "source", "target", "reason", "price", "tax"),
+    ),
+    "missing": Kind(
+        "an owner was told what went unseen by it from a holder that is its own, less what was "
+        "put back unseen: on waking, from what it carries (holder its own name); on coming back "
+        "to its business's place, from the shelves, the counter or the larder; gone is the "
+        "amount by item id or money, and never names who took it",
+        ("holder", "gone"),
     ),
     "message": Kind(
         "a written message from one resident to another, read wherever the other is",
@@ -135,7 +141,8 @@ KINDS = {
     ),
     "perished": Kind(
         "units of an item that perishes, gone at midnight from whatever held them (source: a "
-        "resident by name, a place by id, or the kitchen's portions) into nothing, told to nobody",
+        "resident by name, a place by id, or one of the businesses' holders) into nothing, told "
+        "to nobody",
         ("item", "units", "source"),
     ),
     "delivery": Kind(
@@ -143,21 +150,23 @@ KINDS = {
         ("items",),
     ),
     "cook": Kind(
-        "portions of a dish the chef cooked from the kitchen's larder",
-        ("dish", "name", "portions", "used"),
+        "portions of a dish the chef cooked onto the kitchen's counter: used is the units of "
+        "each ingredient gone into them, of which carried came out of the chef's own hands and "
+        "the rest out of the larder",
+        ("dish", "name", "portions", "used", "carried"),
     ),
     "price": Kind(
         "a price the shopkeeper, the chef or the doctor set",
         ("item", "name", "place", "price", "before"),
     ),
     "examination": Kind(
-        "the doctor examined a patient, who paid the fee into the doctor's purse less the tax "
-        "withheld (none when the doctor is the patient); the numbers it was told, told to both",
-        ("patient", "fee", "tax", "satiety", "energy", "health", "ill", "night"),
+        "the doctor examined a patient; fee is the fee posted for it, which both were told and "
+        "nothing charged; the numbers it was told, told to both",
+        ("patient", "fee", "satiety", "energy", "health", "ill", "night"),
     ),
     "treatment": Kind(
-        "the doctor treated a patient, who paid the fee as for an examination",
-        ("patient", "fee", "tax", "restores", "before", "health", "ill", "bedridden"),
+        "the doctor treated a patient, the fee posted told as for an examination",
+        ("patient", "fee", "restores", "before", "health", "ill", "bedridden"),
     ),
     "announcement": Kind(
         "the mayor announced something, told to every resident at once or on waking", ("text",)
@@ -374,13 +383,11 @@ def _closed(day: Day) -> float:
 
 
 def counted_move(payload: Mapping[str, Any]) -> str | None:
-    """What a `move` counts as among a day's counts: `dish`, a portion from the kitchen, bought
-    or handed over by the chef; `sale`, anything else bought, at the Store's counter; `gift`,
-    anything else passed from one resident to another, money among it; None for what was taken,
-    left or eaten, and for what a keeper took from its own business for itself, the shopkeeper's
-    helpings from her shelves and the chef's own dishes, which are neither sales nor dishes."""
-    if payload["seller"] is not None and payload["seller"] == payload["target"]:
-        return None
-    if payload["source"] == PORTIONS:
-        return "dish"
-    return {"buy": "sale", "pass": "gift"}.get(payload["reason"])
+    """What a `move` counts as among a day's counts, by the names the run's log has for them:
+    `sale`, a take off the Store's shelves, and `dish`, one off the kitchen's counter, whoever
+    took it and whether or not anything was given for it, which no entry says; `gift`,
+    anything given to a holder, a payment among them; None for what was taken from anywhere
+    else and for what was eaten."""
+    if payload["reason"] == "take":
+        return {SHELVES: "sale", COUNTER: "dish"}.get(payload["source"])
+    return "gift" if payload["reason"] == "give" else None

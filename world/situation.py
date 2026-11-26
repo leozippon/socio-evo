@@ -1,18 +1,19 @@
 """What a resident reads of where it is and of itself: the situation its runtime reads with every
 request (with its needs in their lowest band), what looking around shows (whose home it is, who is
-here and how each appears, what is for sale, what is left here for anyone and, at the Town Hall,
-its board), its purse and its things, its inventory, why it cannot pay, and the record of its day
-that `review_day` tells.
+here and how each appears, what a business keeps there and at what price, what is left there and,
+at the Town Hall, its board), its purse and what it carries, its inventory, why it cannot pay, and
+the record of its day that `review_day` tells. What a resident carries is always told as carried
+and what is left at a place as left there, so that the two are not taken for one another.
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from world.businesses import counter_told
+from world.businesses import stores_told
 from world.clock import clock_time, tell_moment
 from world.events import Bedridden, Movement, Sleep, Work
-from world.telling import bare, cap, counted, listed
+from world.telling import amount, bare, cap, counted, listed
 
 if TYPE_CHECKING:
     from world.world import Resident, World
@@ -52,7 +53,7 @@ def situation(world: World, r: Resident) -> str:
         else:
             parts.append(f"{where}.")
         parts.append(people_here(world, r))
-        parts += counter_told(world, r)
+        parts += stores_told(world, r)
         parts += _left_told(world, r)
     parts.append(purse(world, r))
     parts += world.body.warnings(r.living)
@@ -66,8 +67,8 @@ def situation(world: World, r: Resident) -> str:
 
 def look(world: World, r: Resident) -> str:
     """What `r` sees looking around: the hour and the place, whose home it is, who is here
-    and what each is doing, what is for sale here and what the business holds, as the
-    situation tells it, what is left here, and at the Town Hall its board."""
+    and what each is doing, what the business here keeps and at what price, as the situation
+    tells it, what is left here, and at the Town Hall its board."""
     assert r.place is not None
     place = world.config.place(r.place)
     text = f"It is {clock_time(world.clock.now())}. You are at {place.name}."
@@ -80,7 +81,7 @@ def look(world: World, r: Resident) -> str:
             )
         elif homes:
             text += f" It is the home of {listed(homes)}."
-    text = " ".join([text, people_here(world, r), *counter_told(world, r), *_left_told(world, r)])
+    text = " ".join([text, people_here(world, r), *stores_told(world, r), *_left_told(world, r)])
     if place.kind == "hall":
         text += f"\n\n{_hall_board(world)}"
     return text
@@ -137,16 +138,16 @@ def appears(world: World, r: Resident) -> str:
 
 
 def _left_told(world: World, r: Resident) -> list[str]:
-    """What is left where `r` is for anyone to take, in a sentence, or nothing."""
+    """What is left where `r` is, things and money, in a sentence, or nothing."""
     assert r.place is not None
-    left = world.held_told(world.holders[r.place].items)
-    return [f"Left here for anyone to take: {listed(left)}."] if left else []
+    left = world.held_told(world.holders[r.place])
+    return [f"Left here: {listed(left)}."] if left else []
 
 
 def things_told(world: World, r: Resident) -> str:
-    """What `r` owns and keeps, in its own words."""
-    things = world.held_told(r.inventory.items)
-    return f"You have {listed(things)}." if things else "You carry nothing but your money."
+    """What `r` carries beside its money, in its own words."""
+    things = world.listing(r.inventory.items)
+    return f"You carry {listed(things)}." if things else "You carry nothing but your money."
 
 
 def purse(world: World, r: Resident) -> str:
@@ -162,8 +163,8 @@ def cannot_pay(world: World, r: Resident, amount: int) -> str | None:
 
 
 def inventory_told(world: World, r: Resident) -> str:
-    """What `r` has, as `inventory` tells it: its money, then each thing it keeps, a line
-    each, with how much is left of a stock and any daily charge."""
+    """What `r` carries, as `inventory` tells it: its money, then each thing, a line each,
+    with how much there is of it and any daily charge."""
     lines = [f"Money: {world.config.money(r.inventory.money)}."]
     for item in world.config.items:
         units = r.inventory.units(item.id)
@@ -173,9 +174,9 @@ def inventory_told(world: World, r: Resident) -> str:
             lines.append(f"{cap(bare(item.name))}: {counted(units, item.unit)}.")
         elif item.fee_per_day:
             charge = world.config.money(item.fee_per_day)
-            lines.append(f"{cap(item.name)}, with a daily charge of {charge}.")
+            lines.append(f"{cap(amount(item, units))}, with a daily charge of {charge}.")
         else:
-            lines.append(f"{cap(item.name)}.")
+            lines.append(f"{cap(amount(item, units))}.")
     return "\n".join(lines)
 
 

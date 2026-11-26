@@ -3,11 +3,12 @@ a plausible day from what each request shows, so that the whole pipeline runs wi
 
 The day it plays depends on the resident's occupation. The shopkeeper goes to the Store at waking,
 starts work, orders from the supplier the bread and what the kitchen will take the next day, sets a
-price, buys bread at her own counter, keeps it until 19:00 and goes to the Restaurant, where she
-leaves a helping of her bread for anyone. The chef goes to the Store once the morning's delivery is
-in, buys bread for itself and, for the kitchen, what two dishes take, goes to the Restaurant, cooks
-them, serves until 20:00 and, once a day, hands a dish to the first one it sees there, which nobody
-pays for. Everyone else waits at home until tasks start to come in and goes to its workplace. A
+price, takes bread from her own shelves, keeps the Store until 19:00 and goes to the Restaurant,
+where she leaves a helping of her bread. The chef goes to the Store once the morning's delivery is
+in, waits for the shopkeeper if she is not there, takes bread for itself and what two dishes take
+from the shelves and gives her the prices posted, goes to the Restaurant, cooks the dishes from
+what it carries, keeps the kitchen until 20:00 and has one of its own dishes from the counter.
+Everyone else waits at home until tasks start to come in and goes to its workplace. A
 programmer sits down to work there and reads the board; the first of the programmers claims a free
 task, one of its own a day, and the others wait to be given one; with a task, the task's actions
 offered once it is held, it runs a command, reads a file, writes a fix and submits. The team leader,
@@ -15,10 +16,13 @@ who lets the programmers look first when a task comes in and takes no task herse
 still free to the last of the programmers who holds none. While nothing is free they wait at the
 Office for the next task to come in, until 17:00. The doctor keeps the surgery until 18:00,
 examining and treating whoever comes; the mayor announces, grants the first programmer a little
-money from the treasury and stays at work until 17:00. Then they go to the Store and buy bread if
-it is open and eat a helping, the first of the programmers going by the Hospital first to be seen,
-and to the Restaurant, where they have a dish if one is ready, take what is left there for anyone
-and, if anyone is there, say something once and pass the first of them a little money. At 20:00
+money from the treasury and stays at work until 17:00. Then they go to the Store and, if the
+shopkeeper is there, take bread from the shelves, give her its price and eat a helping, the first of
+the programmers going by the Hospital first to be seen and giving the doctor the fees it was told,
+and to the Restaurant, where they take a dish from the counter if one is ready, giving the chef its
+price if the chef is there, take what is left there and, if anyone is there, say something once and
+give the first of them a little money. Whoever takes from a shelf or a counter gives its keeper the
+price posted, and takes nothing from the Store while its keeper is away. At 20:00
 everyone goes home and to bed with a journal entry, to wake at the town's forced waking hour; in
 bed, it reviews the day, notes it in memory/notes.md and falls asleep. Spoken to, it answers once a
 day and leaves the conversation, at the Restaurant going back to its evening there. It keeps no
@@ -53,7 +57,7 @@ GRANT = 10
 _MOMENT = re.compile(r"\b\w+day \d+ \w+, (\d\d:\d\d)\.")
 _BOARD_LINE = re.compile(r"^(\d+)\. .* The client pays \S+ and withdraws it at .*?\.(.*)$", re.M)
 _HOLDER = re.compile(r"(\w+) holds it\.")
-CLOSED = ("is closed: nobody is at the counter.", "The kitchen is closed.")
+_FEE = re.compile(r"The fee posted for an? \w+ is \D*(\d+)\.")
 
 
 @dataclass(frozen=True)
@@ -76,6 +80,8 @@ class DryRunModel:
         self._restaurant = town.workplace("restaurant").id
         self._hospital = town.workplace("hospital").id
         self._programmers = [r.name for r in town.residents if r.occupation == "programmer"]
+        self._keepers = {r.occupation: r.name for r in town.residents}
+        """Who keeps each business, by occupation: the shopkeeper, the chef and the doctor."""
         doctor = any(r.occupation == "doctor" for r in town.residents)
         self._patient = self._programmers[0] if doctor and self._programmers else None
         """Who goes by the Hospital after work: the first programmer, if there is a doctor."""
@@ -179,7 +185,7 @@ class _Day:
                 tool_call("start_work"),
                 *[tool_call("order", item=item, quantity=n) for item, n in orders.items()],
                 tool_call("set_price", item=self.model._bread, price=self._price_now()),
-                tool_call("buy", item=self.model._bread, units=3),  # for herself, at her counter
+                self._take(self.model._bread, "shelves", 3),  # her own, for herself
                 self._wait_call(COUNTER_CLOSES),
             )
         if self.occupation == "chef":
@@ -215,9 +221,9 @@ class _Day:
                 )
             ends = COUNTER_CLOSES
         elif self.occupation == "chef":
-            here, dish = self._here(), self._ready_dish()
-            if here and dish is not None and not self._did("pass") and self.hour < EVENING:
-                return reply("", tool_call("pass", item=dish, to=here[0]), self._wait_call(EVENING))
+            dish = self._ready_dish()
+            if dish is not None and not self._did("take", "counter") and self.hour < EVENING:
+                return reply("", self._take(dish, "counter"), self._wait_call(EVENING))  # its own
             ends = EVENING
         elif self.occupation == "doctor":
             patients = [
@@ -246,64 +252,86 @@ class _Day:
 
     def _seen(self) -> LLMResponse:
         """At the Hospital, to be seen: waits until the doctor has treated it, or the surgery
-        has closed, and goes on to the Store."""
-        if "treated you" in self.told or self.hour >= SURGERY_CLOSES:
-            return self._go(self.model._store)
-        return self._wait_minutes(30)
+        has closed, gives the doctor the fees it was told and goes on to the Store."""
+        if "treated you" not in self.told and self.hour < SURGERY_CLOSES:
+            return self._wait_minutes(30)
+        doctor = self.model._keepers.get("doctor")
+        fees = sum(int(fee) for fee in _FEE.findall(self.told))
+        paying = [self._give("money", doctor, fees)] if fees and doctor in self._here() else []
+        return reply("", *paying, tool_call("go", place=self.model._store))
 
     def _shop(self) -> LLMResponse:
-        """At the Store: the chef in the morning, buying for itself and for the kitchen; anyone
-        else after work, buying bread if the counter is open."""
-        closed = CLOSED[0] in self.situation
+        """At the Store: the chef in the morning, taking bread for itself and what the kitchen
+        cooks with; anyone else after work, taking bread. Each gives the shopkeeper the prices
+        posted, and takes nothing while she is away."""
+        bread, keeper = self.model._bread, self.model._keepers.get("shopkeeper")
+        kept = keeper in self._here()
         if self.occupation == "chef":
-            if closed:
+            if not kept:
                 return self._wait_minutes(10)
-            kitchen = [
-                tool_call("buy", item=item, units=units, for_the_kitchen=True)
-                for item, units in self.model._kitchen.items()
-            ]
+            wanted = {bread: 2} | self.model._kitchen
             return reply(
                 "",
-                tool_call("buy", item=self.model._bread, units=2),
-                *kitchen,
+                *[self._take(item, "shelves", units) for item, units in wanted.items()],
+                self._give("money", keeper, self._cost(wanted)),
                 tool_call("go", place=self.model._restaurant),
             )
         calls = []
-        if not closed and not self._did("buy", "You bought"):
-            bread = self.model._bread
+        if kept and not self._did("take", "from the shelves"):
             calls = [
-                tool_call("buy", item=bread, units=3),
-                tool_call("eat", item=bread),
+                self._take(bread, "shelves", 3),
+                self._give("money", keeper, self._cost({bread: 3})),
+                tool_call("use", what=bread),
                 tool_call("inventory"),
             ]
         return reply("", *calls, tool_call("go", place=self.model._restaurant))
 
     def _dine(self) -> LLMResponse:
-        """At the Restaurant in the evening: a dish if one is ready, what is left there for anyone,
-        the shopkeeper leaving a helping of bread there, a word to whoever is there and a little
-        money for the first of them, and then the evening passes."""
-        calls = []
-        dish = self._ready_dish()
-        if dish is not None and not self._did("buy", "You had"):
-            calls.append(tool_call("buy", item=dish))
-        left = re.search(r"Left here for anyone to take: (.+?)\.(?: |$)", self.situation)
-        if left and not self._did("get") and not self._did("put"):
+        """At the Restaurant in the evening: a dish from the counter if one is ready, its price
+        given to the chef if the chef is there; what is left there; the shopkeeper leaving a
+        helping of bread there; a word to whoever is there and a little money for the first of
+        them; and then the evening passes."""
+        calls, here = [], self._here()
+        dish, chef = self._ready_dish(), self.model._keepers.get("chef")
+        if dish is not None and not self._did("take", "from the counter"):
+            calls.append(self._take(dish, "counter"))
+            if chef in here:
+                calls.append(self._give("money", chef, self._cost({dish: 1})))
+        left = re.search(r"Left here: (.+?)\.(?: |$)", self.situation)
+        mine = self._did("give", "You left")
+        if left and not self._did("take", "left at") and not mine:
             items = self.model._town.items
-            calls += [tool_call("get", item=next(i.id for i in items if bare(i.name) in left[1]))]
-        if self.occupation == "shopkeeper" and not self._did("put"):
-            calls.append(tool_call("put", item=self.model._bread))
-        if (here := self._here()) and not self._said():
+            calls += [self._take(i.id, "here") for i in items if bare(i.name) in left[1]][:1]
+        if self.occupation == "shopkeeper" and not mine:
+            calls.append(self._give(self.model._bread, "here"))
+        if here and not self._said():
             calls += [
                 tool_call("say", text=self._greeting()),
-                tool_call("pass", item="money", units=2, to=here[0]),
+                self._give("money", here[0], 2),
                 tool_call("leave_conversation"),
             ]
         return reply("", *calls, self._wait_call(EVENING))
 
+    @staticmethod
+    def _take(what: str, source: str, amount: int = 1) -> ToolCall:
+        return tool_call("take", what=what, amount=amount, **{"from": source})
+
+    @staticmethod
+    def _give(what: str, to: str, amount: int = 1) -> ToolCall:
+        return tool_call("give", what=what, amount=amount, to=to)
+
+    def _cost(self, wanted: dict[str, int]) -> int:
+        """What the units of `wanted` come to at the prices the situation shows posted."""
+        town = self.model._town
+        total = 0
+        for item, units in wanted.items():
+            name = re.escape(bare(town.item(item).name))
+            posted = re.search(rf"\b{name} {re.escape(town.currency)}(\d+) \(", self.situation)
+            total += int(posted[1]) * units if posted else 0
+        return total
+
     def _ready_dish(self) -> str | None:
-        """The first dish the situation tells is ready, if the kitchen is open."""
-        if CLOSED[1] in self.situation:
-            return None
+        """The first dish the situation tells is ready on the counter."""
         for dish in self.model._town.dishes:
             found = re.search(
                 rf"\b{re.escape(bare(dish.name))} \S+ \((\d+) ready\)", self.situation
@@ -426,9 +454,9 @@ class _Day:
             parts.append("I made a grant from the treasury.")
         if "treated you" in self.told:
             parts.append("I was seen at the Hospital.")
-        if self._did("buy", "You bought"):
-            parts.append("I bought what I needed.")
-        if self._did("buy", "You had"):
+        if self._did("take", "from the shelves"):
+            parts.append("I took what I needed at the Store.")
+        if self._did("take", "from the counter"):
             parts.append("I had my supper out.")
         if self._said():
             parts.append("I talked with people in the evening.")
