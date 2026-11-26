@@ -133,6 +133,11 @@ KINDS = {
         "what the shopkeeper ordered from the supplier, paid from the shopkeeper's purse at once",
         ("item", "name", "quantity", "amount", "arrives"),
     ),
+    "perished": Kind(
+        "units of an item that perishes, gone at midnight from whatever held them (source: a "
+        "resident by name, a place by id, or the kitchen's portions) into nothing, told to nobody",
+        ("item", "units", "source"),
+    ),
     "delivery": Kind(
         "what the Store ordered came from the supplier onto its shelves in the morning",
         ("items",),

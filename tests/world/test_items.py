@@ -170,6 +170,12 @@ async def test_eating_is_a_move_into_nothing_and_what_perishes_is_gone_at_midnig
     await town.until("00:00", day=2)
     assert world.holders["park"].items == {} and world.holders["portions"].items == {}
     assert mei.inventory.items == {"eggs": 2}  # what keeps, keeps
+    perished = [e for e in world.log.entries() if e["kind"] == "perished"]
+    assert [(e["text"], e["payload"], e["audience"]) for e in perished] == [
+        ("2 portions of vegetable soup perished.", {"item": "soup", "units": 2, "source": "park"},
+         []),
+        ("An omelette perished.", {"item": "omelette", "units": 1, "source": "portions"}, []),
+    ]  # fmt: skip
 
 
 async def test_in_a_conversation_one_shops_eats_and_hands_things_over_without_leaving_it(

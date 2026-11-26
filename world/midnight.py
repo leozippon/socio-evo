@@ -17,7 +17,7 @@ from world.clock import tell_date
 from world.config import A_DAYS_FOOD, Item, Place
 from world.economy import MOVES, PAID, PORTIONS, TAKEN, Inventory, Settled
 from world.occupations import MAYOR, TEAM_LEADER
-from world.telling import amount, bare, listed, you
+from world.telling import amount, bare, cap, listed, you
 
 if TYPE_CHECKING:
     from world.world import Resident, World
@@ -26,14 +26,21 @@ if TYPE_CHECKING:
 def midnight(world: World, day: int) -> None:
     """The end of calendar day `day`: its food, its health and illness reckoned, the salary paid
     and the rent and charges taken, the tasks whose time runs out with it
-    withdrawn, what perishes gone wherever it is (the portions the kitchen did not sell), and
-    the next day's arrivals drawn."""
+    withdrawn, what perishes gone wherever it is (the portions the kitchen did not sell),
+    logged as `perished` from each holder, and the next day's arrivals drawn."""
     _settle(world, day)
     office.withdrawals(world, day)
     for key in [*world.residents, *world.holders]:
         held = world.holder(key).items
         for item in [item for item in held if world.config.item(item).perishes]:
-            world.moved(world.move(item, held[item], key, None))
+            units = held[item]
+            world.moved(world.move(item, units, key, None))
+            gone = cap(amount(world.config.item(item), units))
+            world.record(
+                "perished",
+                lambda w, gone=gone: f"{gone} perished.",
+                payload={"item": item, "units": units, "source": key},
+            )
     world.board.schedule = world.board.draw(day + 1)
 
 

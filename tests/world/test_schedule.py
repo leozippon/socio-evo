@@ -301,7 +301,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
     for name in ("Mei", "Tomas"):
         await town.call(name, "buy", item="phone")
     await town.call("Jonas", "buy", item="eggs", units=2, for_the_kitchen=True)
-    await town.call("Jonas", "buy", item="vegetables", for_the_kitchen=True)
+    await town.call("Jonas", "buy", item="vegetables", units=3, for_the_kitchen=True)
     await town.call("Mei", "message", to="Tomas", text="Supper later?")
     await town.call("Vera", "announce", text="The well is dry.")
     await town.call("Vera", "grant", amount=5, to="Mei", reason="For the phone.")
@@ -309,6 +309,7 @@ async def test_the_world_log_records_every_kind_of_event(make_town, tmp_path):
         await town.call(name, "go", place="cafe")
     await town.until("18:20")
     await town.call("Jonas", "cook", dish="omelette", portions=1)
+    await town.call("Jonas", "cook", dish="soup", portions=1)  # unsold, it perishes at midnight
     await town.call("Mei", "buy", item="omelette")
     await town.call("Mei", "go", place="clinic")
     await town.until("18:30")

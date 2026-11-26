@@ -248,7 +248,7 @@ def holdings(
     from the checkpoint, exact as of that moment; between checkpoints the timeline `data`'s
     markers move the units in log order: each move from its source to its target (money alone
     moves none), cooking from the larder into portions, and a delivery onto the shelves; and what
-    perishes is gone at every midnight, wherever it is, as the world takes it unlogged. A marker
+    perishes is gone at every midnight, wherever it is, as the world takes it. A marker
     that takes from a holder more than it holds fails, naming its entry. Returns the residents'
     and the others'."""
     perishes = [item.id for item in town.items if item.perishes]
