@@ -10,19 +10,22 @@ from datetime import date
 import pytest
 
 from agent.runtime import RuntimeConfig
-from infrastructure.llm import LLMRequest
+from infrastructure.llm import LLMRequest, Message
+from infrastructure.llm.scripted import tool_call
 from learning import texts
 from learning.choice import Kept
 from learning.generalise import (
     LENGTH_MARGIN,
     Dropped,
     Example,
+    Generalised,
     Vocabulary,
     as_it_happened,
+    faults,
     generalise,
     too_long,
 )
-from learning.moments import life, rendering
+from learning.moments import Moment, life, rendering
 from tests.support.doubles import ScriptedModel
 from tests.support.lives import BACKGROUND, a_day, resident
 
@@ -101,6 +104,57 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
     assert json.loads(again.messages[2].content) == leaky
     assert again.messages[3].content == texts.LEAKED.format(words="Ben")
     assert all(isinstance(r, LLMRequest) and r.json_schema for r in model.requests)
+
+
+async def test_a_response_that_tells_a_you_what_it_did_or_a_situation_with_nothing_is_refused(
+    lived,
+):
+    narrated = {
+        "situation": "Could you lend me some bread till Friday?",
+        "response": "You say, “Take it.” You then hand it over.",
+    }
+    spoken = {"situation": narrated["situation"], "response": "Take it. I hand it over."}
+    lead_in = {"situation": "A neighbour says to you: “", "response": "Morning."}
+    model = ScriptedModel(narrated, spoken, lead_in, {**lead_in, "situation": "  "})
+
+    async def made(moment):
+        kept = Kept(moment=moment.number, day=1)
+        return await generalise(
+            moment, kept, client=model, vocabulary=TOWN, start_date=START,
+            runtime=RuntimeConfig(), replica=None,
+        )  # fmt: skip
+
+    assert (await made(lived.moments[0])).messages[1]["content"] == "Take it. I hand it over."
+    assert model.requests[1].messages[-1].content == texts.NARRATED
+    dropped = await made(lived.moments[1])
+    assert (dropped.reason, dropped.detail) == ("empty", "'  '")
+    assert model.requests[3].messages[-1].content == texts.EMPTY
+
+    # An answer may open with "you" when those are the person's own words: it was speaking to
+    # someone. What it says inside its answer is not looked at.
+    answer = tool_call("say", text="You're right, take the next one. I'll point it your way.")
+    asked = Message(role="user", content="Ben said to you: “Can I take the next task?”")
+    own = Moment(
+        1, 1, 0, 0, (asked, Message(role="assistant", content="", tool_calls=(answer,))), True
+    )
+    right = {
+        "situation": "Can I take the next one?",
+        "response": "You're right, take the next one.",
+    }
+    inside = {"situation": right["situation"], "response": "Fine. Your turn next, then."}
+    assert faults(Generalised(**right), TOWN, own) == []
+    assert faults(Generalised(**inside), TOWN, own) == []
+    told = Generalised(situation=right["situation"], response="You're glad, and you say so.")
+    assert [fault[0] for fault in faults(told, TOWN, own)] == ["narrated"]
+    for empty in ("", "A neighbour says to you:", 'He says, "', "She says, '"):
+        assert [
+            f[0]
+            for f in faults(
+                Generalised.model_construct(situation=empty, response="I go."), TOWN, own
+            )
+        ] == ["empty"]
+    for full in ('He says: "Lend me some."', "She says: 'Lend me some.'", "You find a purse."):
+        assert faults(Generalised(situation=full, response="I go."), TOWN, own) == []
 
 
 async def test_a_raw_example_is_the_moment_as_it_happened_without_the_system_prompt(lived):

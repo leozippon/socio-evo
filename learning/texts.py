@@ -147,3 +147,11 @@ LEAKED = (
     "These words belong to that particular place and appear in your answer: {words}. Answer "
     "again, the two parts without them."
 )
+NARRATED = (
+    'The response begins by calling the person "you", as if telling them what they did; the '
+    "response is the person speaking. Answer again, the response in their own voice."
+)
+EMPTY = (
+    "The situation tells nothing of what was said or of what is happening: it is empty, or it "
+    "ends where what was said would begin. Answer again, the situation in full."
+)

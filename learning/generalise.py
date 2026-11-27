@@ -13,7 +13,12 @@ is the situation as the user's message and the response as the assistant's. The 
 mechanically against the town's own vocabulary (`Vocabulary`): one that uses any of its words is
 asked for once more, naming them (`texts.LEAKED`), and a second such answer drops the moment, as
 does an answer that cannot be read after the bounded attempts of `complete_structured`; each drop
-is kept with its reason.
+is kept with its reason. So, by the same path, is an answer whose response opens by calling the
+person "you", telling them what they did instead of being them speaking (`narrated`, unless those
+opening words are the opening of something the person itself said in the moment, as an answer
+that begins "You're right" is), and one whose situation holds nothing (`empty`: nothing at all,
+or nothing after a lead-in that ends in a colon or an opening quotation mark). What the person
+says inside its answer is not looked at, since it may be speaking to someone.
 
 As it happened (the Raw arm), the example is the moment's messages from the session, without the
 system prompt the resident had: what it was told, its replies with their calls, and what those
@@ -62,6 +67,9 @@ tokens ran from 0.71 to 1.02 times the estimate; an example is kept only if its 
 most `max_length` / 1.25, so that one at the highest ratio seen still falls a fifth short of the
 limit."""
 _PROPER = re.compile(r"[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)*")
+_YOU = ("You ", "You're", "You’re", "Your ")
+"""How a response opens that calls the person "you"."""
+_QUOTES = "\"“”‘’'«»"
 
 
 class Generalised(StrictModel):
@@ -83,12 +91,14 @@ class Example(StrictModel):
 
 class Dropped(StrictModel):
     """A moment kept that gave no example: its answers used the town's words (`leaked`, the
-    words as `detail`), could not be read (`unreadable`, the error) or made an example longer
-    than the trainer takes (`too long`, its estimated length)."""
+    words as `detail`), told the person what it did instead of being it speaking (`narrated`, the
+    response's opening), held no situation (`empty`, the situation), could not be read
+    (`unreadable`, the error) or made an example longer than the trainer takes (`too long`, its
+    estimated length)."""
 
     moment: int
     day: int
-    reason: Literal["leaked", "unreadable", "too long"]
+    reason: Literal["leaked", "narrated", "empty", "unreadable", "too long"]
     detail: str
 
 
@@ -184,8 +194,8 @@ async def generalise(
             answer = await complete_structured(client, request, Generalised)
         except StructuredOutputError as error:
             return Dropped(moment=kept.moment, day=kept.day, reason="unreadable", detail=str(error))
-        words = vocabulary.leaks(f"{answer.situation}\n{answer.response}")
-        if not words:
+        found = faults(answer, vocabulary, moment)
+        if not found:
             chat = (
                 {"role": "user", "content": answer.situation},
                 {"role": "assistant", "content": answer.response},
@@ -194,9 +204,56 @@ async def generalise(
         messages = (
             *messages,
             Message(role="assistant", content=answer.model_dump_json()),
-            Message(role="user", content=texts.LEAKED.format(words=", ".join(words))),
+            Message(role="user", content="\n\n".join(told for _, told, _ in found)),
         )
-    return Dropped(moment=kept.moment, day=kept.day, reason="leaked", detail=", ".join(words))
+    reason, _, detail = found[0]
+    return Dropped(moment=kept.moment, day=kept.day, reason=reason, detail=detail)
+
+
+Fault = tuple[Literal["leaked", "narrated", "empty"], str, str]
+"""What is wrong with an answer: the reason a moment is dropped for it, what the base model is
+told of it, and the detail kept."""
+
+
+def faults(answer: Generalised, vocabulary: Vocabulary, moment: Moment) -> list[Fault]:
+    """What the mechanical checks find wrong with `answer`, generalised from `moment`."""
+    found: list[Fault] = []
+    if words := vocabulary.leaks(f"{answer.situation}\n{answer.response}"):
+        found.append(("leaked", texts.LEAKED.format(words=", ".join(words)), ", ".join(words)))
+    if _narrated(answer.response, moment):
+        found.append(("narrated", texts.NARRATED, answer.response[:80]))
+    if _empty(answer.situation):
+        found.append(("empty", texts.EMPTY, repr(answer.situation)))
+    return found
+
+
+def _narrated(response: str, moment: Moment) -> bool:
+    """Whether `response` opens by calling the person "you", unless its opening words open
+    something the person said or wrote in `moment` (any text it gave a call)."""
+    text = response.lstrip()
+    if not text.startswith(_YOU):
+        return False
+    opening = " ".join(text.split()[:3])
+    said = (
+        value.lstrip(_QUOTES + " ")
+        for message in moment.messages
+        for call in message.tool_calls
+        for value in call.arguments.values()
+        if isinstance(value, str)
+    )
+    return not any(words.startswith(opening) for words in said)
+
+
+def _empty(situation: str) -> bool:
+    """Whether `situation` holds nothing: nothing at all, or nothing after a lead-in ending in a
+    colon or an opening quotation mark (a straight double one when it is the odd one out, a
+    straight single one after a space, a comma or a colon)."""
+    text = situation.strip()
+    if not text or text[-1] in ":“‘«":
+        return True
+    if text[-1] == '"':
+        return text.count('"') % 2 == 1
+    return text[-1] == "'" and text[-2:-1] in (" ", ",", ":")
 
 
 def as_it_happened(moment: Moment, kept: Kept) -> Example:
