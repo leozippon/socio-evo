@@ -26,6 +26,8 @@ ARMS = {
     "random": ("generalised", "random"),
 }
 """The arms of the design (docs/experimental-design.md): what each learns from, who chooses."""
+DENSE = "dense"
+"""The arm of the dense town: the Social arm with five incidents a day (incidents-dense.yaml)."""
 TRAINABLE = {
     *("q_proj", "k_proj", "v_proj", "o_proj", "in_proj_qkv", "in_proj_z", "out_proj"),
     *("gate_proj", "up_proj", "down_proj"),
@@ -37,7 +39,7 @@ def town():
     return load_experiment(CONFIGS / "town.yaml")
 
 
-def test_the_town_and_the_three_arms_over_it_which_differ_only_in_what_they_learn():
+def test_the_town_and_the_arms_over_it_which_differ_only_in_what_they_learn_or_undergo():
     found = town()
     assert found.name == "town" and not found.learning.enabled
     assert found.days == 28 and len(found.residents) == 11 and found.town.web.enabled
@@ -56,7 +58,12 @@ def test_the_town_and_the_three_arms_over_it_which_differ_only_in_what_they_lear
         assert arm.learning.model_dump(exclude=same) == arms["social"].learning.model_dump(
             exclude=same
         )
-    assert sorted(path.stem for path in (CONFIGS / "arms").glob("*.yaml")) == sorted(ARMS)
+    # The dense arm is the Social arm in a town where more happens: its name and its incidents.
+    dense = load_experiment(CONFIGS / "arms" / f"{DENSE}.yaml")
+    differ = {"name": True, "town": {"incidents"}}
+    assert dense.name == DENSE and dense.town.incidents != found.town.incidents
+    assert dense.model_dump(exclude=differ) == arms["social"].model_dump(exclude=differ)
+    assert sorted(path.stem for path in (CONFIGS / "arms").glob("*.yaml")) == sorted([*ARMS, DENSE])
 
 
 def test_the_learning_settings_are_those_the_trainer_takes():

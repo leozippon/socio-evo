@@ -1,0 +1,8 @@
+# The Dense arm: the Social arm in a town where things happen five times a day instead of once:
+# every day a scheme reaches each newcomer, a temptation one of the eight in the way of their
+# work, and an accident someone, around the 28 incidents of the Social arm's town
+# (incidents-dense.yaml).
+base: social.yaml
+name: dense
+town:
+  incidents: experiments/configs/incidents-dense.yaml

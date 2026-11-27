@@ -1,8 +1,8 @@
 """Incidents: each effect staged on the town's holders and seen by whoever is there, the percepts
 told to whom they name (on waking, to a sleeper), the impossible tried again until it can be
 staged or the day ends and only then left unstaged and said so, once, an incident settled by its
-day's checkpoint and staged once across a restore, and every incident of the real town staged in
-it."""
+day's checkpoint and staged once across a restore, every incident of the real towns staged in them,
+and the dense town's five a day around the town's own."""
 
 from __future__ import annotations
 
@@ -24,7 +24,7 @@ from tests.support.towns import (
     town_config,
 )
 from world import incidents as staging
-from world.clock import ManualClock
+from world.clock import ManualClock, parse_hour
 from world.config import Drop, Incident, Misdeliver, Notice, Told
 from world.events import Idle
 from world.world import World
@@ -257,9 +257,14 @@ async def test_an_incident_is_settled_by_its_days_checkpoint_and_staged_once_acr
     await again.close()
 
 
+CONFIGS = PROJECT_ROOT / "experiments" / "configs"
+TOWNS = ("town.yaml", "arms/dense.yaml")
+"""The real towns: the town of the three arms, one incident a day, and the dense town's, five."""
+
+
 @pytest.fixture
 def real_town():
-    return load_experiment(PROJECT_ROOT / "experiments" / "configs" / "town.yaml").town
+    return load_experiment(CONFIGS / "town.yaml").town
 
 
 def test_the_real_towns_incidents_come_one_a_day_and_mostly_reach_the_newcomers(real_town):
@@ -283,9 +288,40 @@ def test_the_real_towns_incidents_come_one_a_day_and_mostly_reach_the_newcomers(
             assert "you should" not in told.text.lower(), i.id
 
 
-def test_every_incident_of_the_real_town_is_staged_in_it_with_the_towns_own_actions(
-    real_town, tmp_path
-):
+def test_the_dense_town_keeps_the_towns_incidents_and_fills_every_day_to_five(real_town):
+    arm = load_experiment(CONFIGS / "arms" / "dense.yaml")
+    dense = arm.town
+    found = {i.id: i for i in dense.incidents}
+    assert len(found) == 140
+    assert all(found.get(i.id) == i for i in real_town.incidents)  # unchanged, day and hour
+    newcomers = {r.name for r in dense.residents if r.newcomer}
+    eight = {r.name for r in dense.residents} - newcomers
+    tempted: Counter[str] = Counter()
+    delivery = parse_hour(dense.day.delivery)
+    for day in range(1, arm.days + 1):
+        today = [i for i in dense.incidents if i.day == day]
+        # A scheme for each newcomer, a temptation for one of the eight, an accident.
+        told = [t.to for i in today if i.kind == "temptation" for t in i.percepts]
+        assert len(today) == 5 and len(told) == 4, day  # each temptation reaches one, privately
+        assert sorted(n for n in told if n in newcomers) == sorted(newcomers), day
+        [occupied] = [n for n in told if n in eight]
+        tempted[occupied] += 1
+        assert [i.kind for i in today].count("accident") == 1, day
+        hours = sorted(parse_hour(i.at) for i in today)  # spread through the day
+        assert all(b - a >= 20 * 60 for a, b in zip(hours, hours[1:], strict=False)), day
+        for i in today:  # the Store's morning order is waylaid before it arrives
+            if any(isinstance(e, Misdeliver) for e in i.effects):
+                assert parse_hour(i.at) < delivery, i.id
+    assert set(tempted) == eight and min(tempted.values()) >= 3, tempted  # in rotation
+    reached = {t.to for i in dense.incidents if i.kind == "accident" for t in i.percepts}
+    reached |= {e.who for i in dense.incidents for e in i.effects if isinstance(e, Drop)}
+    assert reached == newcomers | eight  # accidents happen to everyone
+    assert {i.category for i in dense.incidents} == {i.category for i in real_town.incidents}
+
+
+@pytest.mark.parametrize("path", TOWNS)
+def test_every_incident_of_the_real_town_is_staged_in_it_with_the_towns_own_actions(path, tmp_path):
+    real_town = load_experiment(CONFIGS / path).town
     make_agent_dirs(tmp_path, real_town)
     world = World(real_town, tmp_path, FakeBackend(), clock=ManualClock())
     # What the temptations are carried out with is what the town's residents can do.
