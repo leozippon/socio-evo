@@ -147,7 +147,16 @@ def test_the_compaction_threshold_is_bounded_by_the_models_context_window(tmp_pa
     # A context just past the threshold, grown by a reply and a margin, leaves the notes room.
     window = found.llm.context_window
     assert (window, found.runtime.ceiling(window)) == (262_144, 229_376)
-    assert found.runtime.compaction_threshold == 225_000
+    # The one replica's cache, about 720,000 tokens, holds every resident's context at the
+    # threshold with room for a step past it; a compacted context is well under the threshold.
+    runtime = found.runtime
+    assert (found.llm.replicas, runtime.compaction_threshold, len(found.residents)) == (
+        1,
+        56_000,
+        11,
+    )
+    assert len(found.residents) * runtime.compaction_threshold + 11 * 9_000 < 720_000
+    assert 4_200 + runtime.summary_max_tokens + runtime.kept_tokens < runtime.compaction_threshold
     at, above = tmp_path / "at.yaml", tmp_path / "above.yaml"
     for path, threshold in ((at, 229_376), (above, 229_377)):
         base = CONFIGS / "town.yaml"

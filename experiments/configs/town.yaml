@@ -107,28 +107,31 @@
 # elsewhere, where it can do little but speak to whoever comes and eat what it is given, until the
 # doctor's treatment lets it up.
 
-# The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on four GPUs as two
-# tensor-parallel replicas. Each resident keeps to one replica, so its prefix cache serves it.
+# The residents run on the local vLLM server (ops/vllm): Qwen3.8-27B-FP8 on two L20s as one
+# tensor-parallel replica (GPUS=0,6 LORA=1 ops/vllm/serve.sh --gpu-memory-utilization 0.72 on this
+# shared machine), whose prefix cache serves every resident.
 llm:
   base_url: ${VLLM_BASE_URL}
   api_key_env: VLLM_API_KEY
   model: qwen3.8-27b-uncensored-fp8
   max_concurrency: 11 # one request in flight per resident
-  replicas: 2 # the server's data-parallel replicas; a resident keeps to one
+  replicas: 1 # the server's data-parallel replicas; a resident keeps to one
   max_retries: 1 # vLLM never asks for a retry; one covers a dropped connection without holding a stalled step for hours
   context_window: 262144 # tokens a request may hold, prompt and reply, as ops/vllm/serve.sh serves the model (--max-model-len)
 
 # A resident's context is compacted past compaction_threshold tokens, which the window bounds: a
 # context just past it must still hold a reply, the notes and a step's growth, so at most
 # 262,144 - 16,384 - 8,192 - 8,192 = 229,376. What sets the value under that bound is the server's
-# cache: a replica holds 1,535,199 tokens of it, four residents at 225k take 59% and at 240k 63%,
-# and the evaluation tasks that share the server are held to 90k each, one a resident
-# (ops/evaluate.sh), about a quarter of the two replicas. So 225,000, just under the bound: at
-# 240k the model kept its recall, its use of tools and its notes (measured on 27 October 2026),
-# and a lost prefix costs about 130 s to rebuild, which the budget above avoids.
+# cache, which a context that does not fit loses and must rebuild (about 130 s for one of 225,000):
+# the one replica holds about 720,000 tokens of it (measured in the smoke town, at a memory
+# fraction of 0.72 on two L20s), and eleven residents' contexts of 56,000 take 616,000 of it,
+# leaving about 9,000 a resident for a step past the threshold. After a compaction a context is
+# the standing text and the tools (about 4,200 in the run of 29 October), the notes (at most
+# 8,192) and the exchanges kept whole (kept_tokens), about 32,000, so it grows by about 24,000
+# between compactions.
 runtime:
   reasoning_effort: low
-  compaction_threshold: 225000
+  compaction_threshold: 56000
   kept_tokens: 20000 # kept whole after a compaction: the most recent exchanges within this many tokens, at least one
 
 name: town
