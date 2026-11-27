@@ -44,9 +44,10 @@ DID_CHARS = 160
 ARGUMENT_CHARS = 40
 """The most of an argument's value a digest tells."""
 RESULT_CHARS = 2_000
-"""The most of one result a rendering tells, its middle left out."""
+"""The most of one result or argument the resident's reading of a moment tells, its middle left
+out."""
 MOMENT_CHARS = 12_000
-"""The most of one moment a rendering tells, its middle left out."""
+"""The most of one moment the resident's reading of it tells, its middle left out."""
 
 
 @dataclass(frozen=True)
@@ -137,9 +138,17 @@ def digest(moment: Moment, mark: str = "") -> str:
     )
 
 
-def rendering(moment: Moment, start_date: date) -> str:
+def rendering(
+    moment: Moment,
+    start_date: date,
+    *,
+    results: int | None = RESULT_CHARS,
+    most: int | None = MOMENT_CHARS,
+) -> str:
     """Moment `moment` told in full, as the resident lived it: what it was told, its thoughts,
-    and each thing it did followed by what that came to."""
+    and each thing it did followed by what that came to; each result and argument cut to
+    `results` characters and the whole to `most`, their middles left out (None, not cut), as
+    the resident reads it by default."""
     parts: list[str] = []
     calls: dict[str, ToolCall] = {}
     for message in moment.messages:
@@ -154,8 +163,8 @@ def rendering(moment: Moment, start_date: date) -> str:
             call = calls.get(message.tool_call_id or "")
             parts.append(
                 texts.DONE.format(
-                    call="" if call is None else _call(call),
-                    result=shorten(text, RESULT_CHARS).replace("\n", "\n  "),
+                    call="" if call is None else _call(call, results),
+                    result=_cut_middle(text, results).replace("\n", "\n  "),
                 )
             )
     told = texts.MOMENT.format(
@@ -165,7 +174,7 @@ def rendering(moment: Moment, start_date: date) -> str:
         end=hour(moment.end),
         body="\n\n".join(part for part in parts if part),
     )
-    return shorten(told, MOMENT_CHARS)
+    return _cut_middle(told, most)
 
 
 def day_date(start_date: date, day: int) -> date:
@@ -224,12 +233,16 @@ def _action(call: ToolCall) -> str:
     return f"{call.name} {values}".strip()
 
 
-def _call(call: ToolCall) -> str:
+def _call(call: ToolCall, results: int | None) -> str:
     arguments = ", ".join(
-        f"{key}: {shorten(json.dumps(value, ensure_ascii=False), RESULT_CHARS)}"
+        f"{key}: {_cut_middle(json.dumps(value, ensure_ascii=False), results)}"
         for key, value in call.arguments.items()
     )
     return f"{call.name}({arguments})"
+
+
+def _cut_middle(text: str, limit: int | None) -> str:
+    return text if limit is None else shorten(text, limit)
 
 
 def _value(value: Any) -> str:

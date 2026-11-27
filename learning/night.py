@@ -220,9 +220,10 @@ class Nights:
         learnt = {example.moment for _, examples in earlier for example in examples}
         new = sum(example.moment not in learnt for example in made.examples)
         dropped = Counter(drop.reason for drop in made.dropped)
+        cut = sum(1 for made_of in (*made.examples, *made.dropped) if made_of.cut)
         log.info(
             "night %d, %s: marked %d of at most %d (%s after %d replies), kept %d; %d examples, "
-            "%d new; dropped %d%s; %d in the dataset",
+            "%d new; dropped %d%s; %d cut to be generalised; %d in the dataset",
             night,
             name,
             len(choice.marked),
@@ -234,6 +235,7 @@ class Nights:
             new,
             len(made.dropped),
             "".join(f", {reason} {count}" for reason, count in sorted(dropped.items())),
+            cut,
             len(whole),
         )
         return {
@@ -244,6 +246,7 @@ class Nights:
             "examples": len(made.examples),
             "new": new,
             "dropped": dict(dropped),
+            "cut": cut,
             "dataset": len(whole),
         }
 

@@ -42,7 +42,7 @@ from typing import Literal
 
 from pydantic import Field, JsonValue
 
-from agent.runtime import RuntimeConfig
+from agent.runtime import RuntimeConfig, shorten
 from agent.session import estimate
 from infrastructure.config import StrictModel
 from infrastructure.llm import (
@@ -59,6 +59,12 @@ from learning.moments import Moment, rendering
 
 ANSWER_TOKENS = 4_096
 """The token limit of a generalised answer, reasoning included."""
+ACCOUNT_CHARS = 300_000
+"""The most of a moment the generalising is given, its middle left out beyond it: the moment
+whole, every result as the resident's context held it, where the resident reads a moment cut to
+`moments.MOMENT_CHARS`. 300,000 characters are about 100,000 tokens by the session's estimate
+(`agent.session.estimate`), which the model's window of 262,144 holds with the instructions and
+the answer; the longest waking turn of the run of 29 October ran to 145,000."""
 LENGTH_MARGIN = 1.25
 """How much longer than the session's estimate (`agent.session.estimate`, characters / 3, of each
 message as JSON) an example's real tokens are allowed to be. On 502 Raw moments of the run of 29
@@ -81,12 +87,14 @@ class Generalised(StrictModel):
 
 
 class Example(StrictModel):
-    """What is learnt from moment `moment` of day `day`, kept for `why`: chat `messages`."""
+    """What is learnt from moment `moment` of day `day`, kept for `why`: chat `messages`; `cut`
+    is how many characters of the moment the generalising was not given (`ACCOUNT_CHARS`)."""
 
     moment: int
     day: int
     why: str | None = None
     messages: tuple[dict[str, JsonValue], ...]
+    cut: int = 0
 
 
 class Dropped(StrictModel):
@@ -100,6 +108,7 @@ class Dropped(StrictModel):
     day: int
     reason: Literal["leaked", "narrated", "empty", "unreadable", "too long"]
     detail: str
+    cut: int = 0
 
 
 def too_long(example: Example, most: int) -> Dropped | None:
@@ -109,7 +118,9 @@ def too_long(example: Example, most: int) -> Dropped | None:
     if tokens * LENGTH_MARGIN <= most:
         return None
     detail = f"about {tokens} tokens by the estimate, more than {most} / {LENGTH_MARGIN}"
-    return Dropped(moment=example.moment, day=example.day, reason="too long", detail=detail)
+    return Dropped(
+        moment=example.moment, day=example.day, reason="too long", detail=detail, cut=example.cut
+    )
 
 
 @dataclass(frozen=True)
@@ -176,8 +187,10 @@ async def generalise(
     replica: int | None,
 ) -> Example | Dropped:
     """The example of `moment`, kept as `kept`, generalised by the base model, or why it was
-    dropped."""
-    account = texts.ACCOUNT.format(account=rendering(moment, start_date))
+    dropped; either says how much of the moment the base model was not given."""
+    whole = rendering(moment, start_date, results=None, most=None)
+    cut = len(whole) - 2 * (ACCOUNT_CHARS // 2) if len(whole) > ACCOUNT_CHARS else 0
+    account = texts.ACCOUNT.format(account=shorten(whole, ACCOUNT_CHARS))
     messages = (
         Message(role="system", content=texts.GENERALISE),
         Message(role="user", content=account),
@@ -193,21 +206,24 @@ async def generalise(
         try:
             answer = await complete_structured(client, request, Generalised)
         except StructuredOutputError as error:
-            return Dropped(moment=kept.moment, day=kept.day, reason="unreadable", detail=str(error))
+            detail = str(error)
+            return Dropped(
+                moment=kept.moment, day=kept.day, reason="unreadable", detail=detail, cut=cut
+            )
         found = faults(answer, vocabulary, moment)
         if not found:
             chat = (
                 {"role": "user", "content": answer.situation},
                 {"role": "assistant", "content": answer.response},
             )
-            return Example(moment=kept.moment, day=kept.day, why=kept.why, messages=chat)
+            return Example(moment=kept.moment, day=kept.day, why=kept.why, messages=chat, cut=cut)
         messages = (
             *messages,
             Message(role="assistant", content=answer.model_dump_json()),
             Message(role="user", content="\n\n".join(told for _, told, _ in found)),
         )
     reason, _, detail = found[0]
-    return Dropped(moment=kept.moment, day=kept.day, reason=reason, detail=detail)
+    return Dropped(moment=kept.moment, day=kept.day, reason=reason, detail=detail, cut=cut)
 
 
 Fault = tuple[Literal["leaked", "narrated", "empty"], str, str]

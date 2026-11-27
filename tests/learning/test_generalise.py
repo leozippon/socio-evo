@@ -9,12 +9,14 @@ from datetime import date
 
 import pytest
 
+import learning.generalise as generalise_module
 from agent.runtime import RuntimeConfig
 from infrastructure.llm import LLMRequest, Message
 from infrastructure.llm.scripted import tool_call
 from learning import texts
 from learning.choice import Kept
 from learning.generalise import (
+    ACCOUNT_CHARS,
     LENGTH_MARGIN,
     Dropped,
     Example,
@@ -155,6 +157,40 @@ async def test_a_response_that_tells_a_you_what_it_did_or_a_situation_with_nothi
         ] == ["empty"]
     for full in ('He says: "Lend me some."', "She says: 'Lend me some.'", "You find a purse."):
         assert faults(Generalised(situation=full, response="I go."), TOWN, own) == []
+
+
+async def test_the_generalising_is_given_the_whole_moment_and_a_cut_is_marked_and_counted(
+    monkeypatch,
+):
+    """The resident reads a moment cut to 12,000 characters; the generalising is given it whole,
+    up to `ACCOUNT_CHARS`, and beyond that cut in the middle with the cut marked and counted."""
+    log = "\n".join(f"line {n}: the build went on" for n in range(1_500))  # about 40,000
+    call = tool_call("shell", command="make")
+    long = Moment(1, 1, 0, 0, (
+        Message(role="user", content="The client asked for the build."),
+        Message(role="assistant", content="", tool_calls=(call,)),
+        Message(role="tool", content=log, tool_call_id=call.id),
+        Message(role="assistant", content="It builds; I tell the client."),
+    ), True)  # fmt: skip
+    assert len(log) > 40_000 and len(rendering(long, START)) <= 12_000
+    answer = {"situation": "Is the build done?", "response": "It is."}
+    model = ScriptedModel(answer, answer)
+
+    async def made():
+        return await generalise(
+            long, Kept(moment=1, day=1), client=model, vocabulary=TOWN, start_date=START,
+            runtime=RuntimeConfig(), replica=None,
+        )  # fmt: skip
+
+    whole = rendering(long, START, results=None, most=None)
+    assert ACCOUNT_CHARS >= 300_000 and (await made()).cut == 0
+    assert model.requests[0].messages[1].content == f"<account>\n{whole}\n</account>"
+    assert "line 1499: the build went on" in whole and "left out" not in whole
+    monkeypatch.setattr(generalise_module, "ACCOUNT_CHARS", 10_000)
+    example = await made()
+    assert example.cut == len(whole) - 10_000
+    account = model.requests[1].messages[1].content
+    assert f"[... {example.cut} characters left out here ...]" in account
 
 
 async def test_a_raw_example_is_the_moment_as_it_happened_without_the_system_prompt(lived):

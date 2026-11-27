@@ -21,6 +21,7 @@ import pytest
 from pydantic import ValidationError
 
 import learning.fit
+import learning.generalise as generalise_module
 from agent.directory import AgentDirectory
 from agent.runtime import RuntimeConfig
 from infrastructure.llm import LLMCallError, LLMConfig, LLMRequest, ScriptedClient
@@ -208,7 +209,8 @@ async def test_each_resident_goes_from_its_choice_to_its_own_adapter_night_after
     trained = json.loads((adapter / "training.json").read_text())
     assert done["residents"]["Ana"] | {"replies": 0} == {
         "ended": "done", "replies": 0, "marked": 2, "kept": 2, "examples": 2, "new": 2,
-        "dropped": {}, "dataset": 2, "fitted": True, "fit_seconds": trained["wall_seconds"],
+        "dropped": {}, "cut": 0, "dataset": 2, "fitted": True,
+        "fit_seconds": trained["wall_seconds"],
         "adapter": ana_1,
     }  # fmt: skip
     ben = done["residents"]["Ben"]
@@ -520,6 +522,21 @@ def test_the_gpus_are_listed_once_each_and_a_run_frozen_with_them_as_a_string_re
     assert trainer([3]).gpus_at_once == 2
     with pytest.raises(ValidationError, match="names a GPU more than once"):
         trainer([3, 4, 3])
+
+
+async def test_an_account_cut_to_be_generalised_is_counted(
+    tmp_path, server, record, caplog, monkeypatch
+):
+    monkeypatch.setattr(generalise_module, "ACCOUNT_CHARS", 100)  # every moment is longer
+    run, model = await town(tmp_path), Model(server)
+    model.plans = {"Ana": keeps(1, 2), "Ben": keeps()}
+    with caplog.at_level(logging.INFO, logger="learning"):
+        await nights(run, server, tmp_path, model).live(1, lambda: {"Ana": 1, "Ben": 1}, dict)
+    made = read(run, 1, "Ana", "examples.json")
+    assert all(example["cut"] > 0 for example in made["examples"]) and len(made["examples"]) == 2
+    done = json.loads((run.night_dir(1) / "done.json").read_text())["residents"]
+    assert (done["Ana"]["cut"], done["Ben"]["cut"]) == (2, 0)
+    assert "2 cut to be generalised" in caplog.text
 
 
 def _estimate(example) -> int:
