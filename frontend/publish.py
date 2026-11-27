@@ -1,7 +1,7 @@
 """Publish runs as a static site: the viewer, and a bundle of JSON documents under `data/`.
 
     python -m frontend.publish --runs-root runs --out SITE [--results-root results]
-                               [--watch SECONDS]
+                               [--reference MODEL] [--watch SECONDS]
 
 The site is self-contained and every URL in it is relative, so any static web server can serve
 it under any base path; nothing on the server computes anything. `frontend/README.md` is the
@@ -16,8 +16,10 @@ reads run directories and the results root and never writes into either. A run w
 configuration is missing or cannot be read by the current code, a run the earlier town lived,
 whose log this code does not read, and a run whose publishing fails are skipped and named in the
 index with the reason in plain words and the error itself, so the other runs are published all
-the same. `--watch` publishes again every SECONDS, skipping runs whose files have not changed,
-until interrupted.
+the same. The evaluation is read against the reference model `--reference` names, by default
+the one the configuration of its server names (`experiments/configs/reference.yaml`), which the
+evaluations score it under and `analysis.tables --reference` takes. `--watch` publishes again
+every SECONDS, skipping runs whose files have not changed, until interrupted.
 """
 
 from __future__ import annotations
@@ -45,6 +47,7 @@ from frontend.progress import progress
 from frontend.timeline import EarlierTown, timeline
 from infrastructure.config import ConfigError, load_config
 from infrastructure.git import Repository
+from infrastructure.llm import LLMConfig
 from infrastructure.storage import RunDirectory, day_tag
 from learning.adapters import DONE
 from learning.moments import life
@@ -79,6 +82,13 @@ KINDS = {
 """Every kind of file under `data/`, by the path pattern of its files."""
 MANIFEST = {"format": FORMAT, "files": [{"kind": k, "path": p} for k, p in KINDS.items()]}
 STATIC = Path(__file__).parent / "static"
+REFERENCE = Path(__file__).resolve().parents[1] / "experiments" / "configs" / "reference.yaml"
+"""The configuration of the reference model's server, which names the model."""
+
+
+def configured_reference() -> str:
+    """The reference model's served name, as the configuration of its server names it."""
+    return load_config(REFERENCE, LLMConfig).model
 
 
 def encode(document: Any) -> bytes:
@@ -148,15 +158,23 @@ class _Published:
 
 class Publisher:
     """Publishes the runs under `runs_root`, with their evaluation results under
-    `results_root`, into the site directory `out`, again and again. Between publishes it
+    `results_root` read against the reference model `reference` (by default the configured one,
+    `configured_reference`), into the site directory `out`, again and again. Between publishes it
     remembers each run's files, so a run whose files have not changed since is not read
     again, and each comparison's runs, so a comparison of unchanged runs is not computed
     again."""
 
-    def __init__(self, runs_root: Path, out: Path, results_root: Path = Path("results")) -> None:
+    def __init__(
+        self,
+        runs_root: Path,
+        out: Path,
+        results_root: Path = Path("results"),
+        reference: str | None = None,
+    ) -> None:
         self.runs_root = runs_root.resolve()
         self.out = out.resolve()
         self.results_root = results_root.resolve()
+        self.reference = configured_reference() if reference is None else reference
         if not self.runs_root.is_dir():
             raise FileNotFoundError(f"runs root {runs_root} is not a directory")
         if self.out.is_relative_to(self.runs_root):
@@ -224,7 +242,9 @@ class Publisher:
             return last
         before = set(site.kept)
         try:
-            entry, analysed = publish_run(site, name, root, config, self.results_root)
+            entry, analysed = publish_run(
+                site, name, root, config, self.results_root, self.reference
+            )
         except Exception as error:
             earlier = isinstance(error, EarlierTown)
             if not earlier:
@@ -264,10 +284,11 @@ class Publisher:
 
 
 def publish_run(
-    site: Site, name: str, root: Path, config: ExperimentConfig, results_root: Path
+    site: Site, name: str, root: Path, config: ExperimentConfig, results_root: Path, reference: str
 ) -> tuple[dict[str, Any], bundle.Analysed]:
-    """Write every file of the run `name` at `root` into `site`; returns its entry in the index
-    and the run as the comparison of runs reads it."""
+    """Write every file of the run `name` at `root` into `site`, its evaluation read against the
+    reference model `reference`; returns its entry in the index and the run as the comparison of
+    runs reads it."""
     run = RunDirectory(root)
     manifest = run.read_manifest().model_dump(mode="json", exclude={"pid"})  # pid: local only
     base = f"data/runs/{name}"
@@ -388,7 +409,7 @@ def publish_run(
         "likes": bundle.likes(config.town, lived),
         "graph": bundle.graph(data, lived),
     }
-    evaluated = bundle.evaluation(results_root, root)
+    evaluated = bundle.evaluation(results_root, root, reference)
     for subject, answers in evaluated.answers.items():
         digest_of_answers = site.put(f"{base}/answers/{subject}.json", answers)
         for row in evaluated.document["results"]:
@@ -521,12 +542,19 @@ def main(argv: list[str] | None = None) -> None:
     )
     parser.add_argument("--runs-root", type=Path, default=Path("runs"))
     parser.add_argument("--results-root", type=Path, default=Path("results"))
+    parser.add_argument(
+        "--reference",
+        default=configured_reference(),
+        metavar="MODEL",
+        help="the reference model's served name (default: as experiments/configs/reference.yaml "
+        "names it)",
+    )
     parser.add_argument("--out", type=Path, required=True, help="the site directory")
     parser.add_argument(
         "--watch", type=float, metavar="SECONDS", help="publish again every SECONDS"
     )
     args = parser.parse_args(argv)
-    publisher = Publisher(args.runs_root, args.out, args.results_root)
+    publisher = Publisher(args.runs_root, args.out, args.results_root, args.reference)
     try:
         while True:
             try:

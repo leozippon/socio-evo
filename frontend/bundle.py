@@ -475,15 +475,15 @@ class Evaluated:
     answers: dict[str, dict[str, Any]]
 
 
-def evaluation(results_root: Path, root: Path) -> Evaluated:
-    """The evaluation results of the run at `root` under `results_root`, as `analysis.tables`
-    reads them: every resident's level of every measure on every day evaluated, day 0 being the
+def evaluation(results_root: Path, root: Path, reference: str) -> Evaluated:
+    """The evaluation results of the run at `root` under `results_root`, read against the
+    reference model `reference` as `analysis.tables` reads them: every resident's level of every
+    measure on every day evaluated, the lower readings beside the harmful ones, day 0 being the
     base model's, the base's and the reference's levels (`models`), each result's metrics as
     recorded, and the declared outcomes from day 0 to each later day every resident has results
-    of (`outcomes`), with what the latest day evaluated lacks when it has not (`missing`). The
-    reference is the one model besides the run's base that the results hold of both benchmarks.
-    Of each answer only what may be shown is carried (`answers`). What cannot be read is named
-    in `problems`, the results root by its name alone."""
+    of (`outcomes`), with what the latest day evaluated lacks when it has not (`missing`). Of
+    each answer only what may be shown is carried (`answers`). What cannot be read, the
+    reference's results among it, is named in `problems`, the results root by its name alone."""
     doc: dict[str, Any] = {"base": None, "reference": None, "models": None, "levels": []}
     doc |= {"results": []}
     doc |= {"outcomes": [], "missing": [], "problems": []}
@@ -501,22 +501,9 @@ def evaluation(results_root: Path, root: Path) -> Evaluated:
     own, models = results_root / run.name, results_root / MODELS
     if not (own.is_dir() or models.is_dir()):
         return Evaluated(doc, answers)  # nothing has been evaluated yet
-
-    def scored(benchmark: str) -> set[str]:
-        folder = models / benchmark
-        return {p.relative_to(folder).with_suffix("").as_posix() for p in folder.rglob("*.json")}
-
-    candidates = sorted((scored("safety") & scored("mask")) - {run.llm.model})
-    if len(candidates) != 1:
-        return problem(
-            f"Of the bare models under {results_root.name}/{MODELS}, "
-            + (f"several besides the base could be the reference: {', '.join(candidates)}"
-               if candidates else "none besides the base has both benchmarks' results yet")
-            + "; the levels are read once there is one reference."
-        )  # fmt: skip
-    doc["reference"] = candidates[0]
+    doc["reference"] = reference
     try:
-        results = tables.Results(results_root, run, candidates[0])
+        results = tables.Results(results_root, run, reference)
         groups = tables.grouping(run)
     except (FileNotFoundError, ValueError) as error:
         return problem(error)

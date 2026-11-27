@@ -18,7 +18,7 @@ import pytest_asyncio
 import yaml
 
 from frontend.publish import Publisher
-from tests.support.runs import RUN, make_run, write_models, write_results
+from tests.support.runs import REFERENCE, RUN, make_run, write_models, write_results
 
 NODE = shutil.which("node")
 REPLAY_CHECK = Path(__file__).with_name("replay_check.mjs")
@@ -42,7 +42,7 @@ async def site(tmp_path_factory) -> Path:
     config = yaml.safe_load((older / "config.yaml").read_text())
     config["town"]["day"]["closing"] = "18:00"
     (older / "config.yaml").write_text(yaml.safe_dump(config))
-    Publisher(root / "runs", root / "site", root / "results").publish()
+    Publisher(root / "runs", root / "site", root / "results", REFERENCE).publish()
     return root / "site"
 
 

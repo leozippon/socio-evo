@@ -506,18 +506,18 @@ The measures of life in the town, from `analysis.measures`, whose docstring defi
 
 ### `runs/{run}/evaluation.json`
 
-The benchmarks put to the residents' weights, read from the results root by `analysis.tables`, whose docstring defines the levels and the outcomes. The results are those of `evaluation.safety` and `evaluation.mask` (`evaluation.results`): a resident's adapter at day N under `<run>/day-NN/`, the run named by its directory, and the bare models under `models/`, the base standing for every resident on day 0. The reference is the one bare model besides the run's base whose results of both benchmarks are there; with none, or more than one, the levels are not read and a problem says so. Empty until a run is evaluated; what cannot be read is named in `problems`.
+The benchmarks put to the residents' weights, read from the results root by `analysis.tables`, whose docstring defines the levels and the outcomes. The results are those of `evaluation.safety` and `evaluation.mask` (`evaluation.results`): a resident's adapter at day N under `<run>/day-NN/`, the run named by its directory, and the bare models under `models/`, the base standing for every resident on day 0. The reference is the model the publisher is given (`--reference`, by default the one `experiments/configs/reference.yaml` names, which the evaluations score it under), as `analysis.tables --reference` takes it; without its results, or the base's, nothing is read and a problem says so. Beside harmful compliance and jailbreak success stands each one's lower reading, the answers labelled Unsafe alone (`evaluation.safety.readings`): the primary reading is an upper bound and decides the verdict, the lower one a lower bound that decides nothing. Empty until a run is evaluated; what cannot be read is named in `problems`.
 
 | Field | Type | Meaning |
 | --- | --- | --- |
 | `base` | string or null | The served base model the residents run on; null when the run's configuration cannot be read for it. |
-| `reference` | string or null | The reference model, the original before its refusals were removed; null until it is known. |
+| `reference` | string or null | The reference model it is read against, the original before its refusals were removed; null until anything has been evaluated. |
 | `models` | object or null | The base's and the reference's level of each measure, `{"base": {measure: level}, "reference": {…}}`, to read the residents' against; null until both are read. |
 | `levels` | array | Every resident's level of every measure on day 0 and each day evaluated, as `analysis.tables.levels` gives it. |
 | `levels[].resident` | string | The resident. |
 | `levels[].group` | string | `original` or `newcomers`. |
 | `levels[].day` | integer | The day; 0 is the base model's. |
-| `levels[].measure` | string | `harmful_compliance`, `jailbreak_success`, `harmless_compliance` or `lying`. |
+| `levels[].measure` | string | `harmful_compliance`, `jailbreak_success`, `harmless_compliance` or `lying`, or the lower reading of one of the first two, `harmful_compliance_lower` or `jailbreak_success_lower`. |
 | `levels[].level` | number or null | Its share, over the denominator its result states. |
 | `levels[].empty` | integer | The answers of the measure that were empty, which stay in the denominator. |
 | `levels[].unjudged` | integer | Those the judge could not read, which are out of it. |
@@ -527,15 +527,15 @@ The benchmarks put to the residents' weights, read from the results root by `ana
 | `results[].answers` | reference | Its `answers/{subject}.json`. |
 | `results[].safety` | object or null | The safety result's metrics as recorded (`evaluation.safety.run.metrics`): for each instrument (`harmful`, `jailbreak`, `harmless`) its `items`, the `counts` of each verdict, the `denominator` and the `share`, the answers cut off (`truncated`) and written as a tool call (`tool_calls`), the judge's labels counted (`safety`, `refusal`), and the jailbreaks by template (`templates`) and the harmless prompts by dataset (`datasets`); null when there is none. |
 | `results[].mask` | object or null | The MASK result's metrics as recorded: `samples`, `scenarios`, the `counts` and `shares` of each outcome, the `empty` answers and the `denominator`; null when there is none. |
-| `outcomes` | array | The declared outcomes from day 0 to each later day every resident has results of, in order, as `analysis.tables.outcomes` writes `outcomes.json`; the design declares the change to day 28. |
+| `outcomes` | array | The declared outcomes from day 0 to each later day every resident has results of, in order, as `analysis.tables.outcomes` writes `outcomes.json`; the design scores days 0, 14 and 28 and declares the change to the last. |
 | `outcomes[].days` | array of two integers | The first and last day. |
 | `outcomes[].base` | string | The base model. |
 | `outcomes[].reference` | string | The reference model. |
 | `outcomes[].settings` | object | What decides the answers and their verdicts, by benchmark. |
 | `outcomes[].models` | object | The base's and the reference's level of each measure, and the `gap` between them. |
-| `outcomes[].residents` | array | Each resident's change in each measure: `before`, `after`, `change`, its `gap_share` where the gap is one the design expects, and the paired test of the items (`pairs`, `fell`, `rose`, `p_mcnemar`). |
-| `outcomes[].groups` | array | The original residents and the newcomers apart, each measure's statistics of the changes (`residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`) and `gap_share`. |
-| `outcomes[].alignment` | object | By group, the criterion's findings, each apart (`harmful_compliance_falls`, `jailbreak_success_falls`, `harmless_compliance_holds`), their conjunction (`aligned`) and the `rule`. |
+| `outcomes[].residents` | array | Each resident's change in each measure, the lower readings among them: `before`, `after`, `change`, its `gap_share` where the gap is one the design expects, and the paired test of the items (`pairs`, `fell`, `rose`, `p_mcnemar`). |
+| `outcomes[].groups` | array | The original residents and the newcomers apart, each measure's statistics of the changes, the lower readings among them (`residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`) and `gap_share`. |
+| `outcomes[].alignment` | object | By group, the criterion's findings, each apart (`harmful_compliance_falls`, `jailbreak_success_falls`, `harmless_compliance_holds`), their conjunction (`aligned`) and the `rule`; the residents' harmless compliance on the last day that the third is held to, `harmless_compliance_level` (`mean`, `ci`, and the `reference`'s level); and `beside_the_verdict`, whether the lower readings fall too (`harmful_compliance_lower_falls`, `jailbreak_success_lower_falls`), which is no part of the verdict. |
 | `missing` | array of strings | What the latest day evaluated lacks for its outcomes, when it has not all it needs. |
 | `problems` | array of strings | What could not be read, and why, the results root named by its name. |
 
@@ -647,11 +647,11 @@ The runs of a set compared on the declared outcomes, as `analysis.compare` compu
 | `levels` | object | Run name to its mean level of each measure, by group and day: rows of `group`, `measure`, `day`, `mean` over the residents of the group with a level, and `residents`. |
 | `models` | object | Run name to the levels of its base and its reference, as `models` of its evaluation. |
 | `days` | array of two integers or null | The days of the outcomes compared: day 0 and the latest day every run has outcomes of; null when there is none. |
-| `groups` | object | Run name to its outcomes' statistics by group and measure on those days, as `outcomes[].groups` of its evaluation. |
+| `groups` | object | Run name to its outcomes' statistics by group and measure on those days, the lower readings among them, as `outcomes[].groups` of its evaluation. |
 | `paradigm` | string or null | The run contrasted with the others; null when no single run learns as the paradigm does, or the runs cannot be contrasted. |
 | `contrasts` | array | One per other run, as `analysis.compare.compare` gives them. |
 | `contrasts[].arm` | string | The run. |
-| `contrasts[].rows` | array | For each group and measure: the paradigm's changes less this run's, paired by resident, with `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`, the `differences` by resident and those `unpaired`. |
+| `contrasts[].rows` | array | For each group and measure, the lower readings among them: the paradigm's changes less this run's, paired by resident, with `residents`, `mean`, `ci`, `d_z`, `p_sign_flip`, `p_min`, the `differences` by resident and those `unpaired`. |
 | `problems` | array of strings | Why something could not be compared. |
 
 ## What the bundle does not contain

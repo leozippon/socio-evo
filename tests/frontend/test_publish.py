@@ -103,7 +103,7 @@ async def published(tmp_path_factory) -> tuple[Path, Path, Path]:
     write_results(results, "town")
     write_results(results, "twin")
     site = root / "site"
-    Publisher(runs, site, results).publish()
+    Publisher(runs, site, results, REFERENCE).publish()
     return runs, results, site
 
 
@@ -446,12 +446,21 @@ def test_the_evaluation_is_read_from_the_results_root(published):
     [outcomes] = evaluation["outcomes"]
     assert outcomes["days"] == [0, 1] and set(outcomes["alignment"]) == {"original", "newcomers"}
     assert outcomes["models"]["gap"]["harmful_compliance"] == -1.0
+    # Every harmful answer is labelled Unsafe, so the lower readings are the primary ones.
+    harmful = ("harmful_compliance", "jailbreak_success")
     assert evaluation["models"] == {
-        "base": {"harmful_compliance": 1.0, "jailbreak_success": 1.0, "harmless_compliance": 1.0}
-        | {"lying": 1.0},
-        "reference": {"harmful_compliance": 0.0, "jailbreak_success": 0.0}
+        "base": dict.fromkeys(harmful, 1.0) | {f"{m}_lower": 1.0 for m in harmful}
+        | {"harmless_compliance": 1.0, "lying": 1.0},
+        "reference": dict.fromkeys(harmful, 0.0) | {f"{m}_lower": 0.0 for m in harmful}
         | {"harmless_compliance": 0.5, "lying": 0.0},
-    }
+    }  # fmt: skip
+    # The verdict's findings as analysis.tables states them, the lower readings beside it.
+    original = outcomes["alignment"]["original"]
+    assert original["harmless_compliance_level"]["reference"] == 0.5
+    assert original["harmless_compliance_holds"] is True
+    assert original["beside_the_verdict"] == {
+        "harmful_compliance_lower_falls": False, "jailbreak_success_lower_falls": False,
+    }  # fmt: skip
 
 
 def test_no_answer_judged_harmful_is_carried_and_others_only_in_part(published):
@@ -481,23 +490,25 @@ def test_no_answer_judged_harmful_is_carried_and_others_only_in_part(published):
 
 
 def test_what_cannot_be_evaluated_is_said(tmp_path):
-    """A result still running, and a results root without a reference, are problems, named by
-    the results root's name and not where it lies."""
+    """A result still running, a reference the results do not hold and results without the bare
+    models' are problems, named by the results root's name and not where it lies."""
     runs = tmp_path / "runs"
     run = runs / "town"
     new_town(runs)
     unfinished = tmp_path / "results"
     write_models(unfinished)
     write_results(unfinished, "town", finished=False)
-    found = bundle.evaluation(unfinished, run).document
+    found = bundle.evaluation(unfinished, run, REFERENCE).document
     [problem] = found["problems"]
     assert problem.endswith("the evaluation has not finished") and str(tmp_path) not in problem
     assert found["levels"] == [] and found["outcomes"] == []
+    [problem] = bundle.evaluation(unfinished, run, "another-model").document["problems"]
+    assert problem.startswith("no safety result of the reference another-model (results/")
     alone = tmp_path / "alone"
     write_results(alone, "town")
-    [problem] = bundle.evaluation(alone, run).document["problems"]
-    assert "none besides the base has both benchmarks' results yet" in problem
-    assert bundle.evaluation(tmp_path / "nothing", run).document["problems"] == []
+    [problem] = bundle.evaluation(alone, run, REFERENCE).document["problems"]
+    assert problem.startswith(f"no safety result of the base {BASE} (alone/models/")
+    assert bundle.evaluation(tmp_path / "nothing", run, REFERENCE).document["problems"] == []
 
 
 def test_each_night_is_published_with_what_was_kept_beside_the_moment_lived(published):
@@ -631,7 +642,7 @@ async def test_publishing_never_modifies_the_run_or_the_results(tmp_path):
 
     statuses = [status(name) for name in RESIDENTS]
     before = stamps(run.root), stamps(results)
-    Publisher(runs, tmp_path / "site", results).publish()
+    Publisher(runs, tmp_path / "site", results, REFERENCE).publish()
     assert (stamps(run.root), stamps(results)) == before
     assert [status(name) for name in RESIDENTS] == statuses == [""] * 8
 
