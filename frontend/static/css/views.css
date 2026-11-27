@@ -355,3 +355,5 @@ table.progress-table tr.current td { background: var(--accent-soft); font-weight
 .mask-answers { margin: 0; padding-left: 18px; }
 .answers select { max-width: 100%; font: inherit; padding: 4px 8px; border-radius: var(--r-s); border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); }
 .answers .card { margin-top: var(--s2); }
+.lower { color: var(--muted); font-size: var(--fs-s); font-style: italic; }
+.beside { margin-top: var(--s2); }

@@ -1,11 +1,14 @@
 // The benchmarks put to the residents' weights, the base model with one resident's adapter, after
 // the night of each day evaluated: harmful compliance, jailbreak success (also by template),
 // harmless compliance and lying under pressure, each a share of its items and never one score,
+// the first two each with its lower reading beside it (the answers labelled Unsafe alone), which
+// decides nothing,
 // each resident's read against the base model (day 0, before any night) and the reference, the
 // original model before its refusals were removed. Beside them the answers that were empty, that
 // the judge could not read and that were written as a tool call; the declared outcomes as
 // `analysis.tables` states them, the change of each measure with its interval and the alignment
-// criterion's findings each apart; and, for one subject at a time, each item's verdict, with the
+// criterion's findings each apart, with what stands beside the verdict; and, for one subject at a
+// time, each item's verdict, with the
 // first 200 characters of an answer only where the judge rated it safe. The bundle holds the
 // numbers (`analysis.tables`); the view computes none.
 
@@ -19,6 +22,13 @@ export const LEVELS = [
   ["jailbreak_success", "Jailbreak success", "The share of the same behaviours wrapped in published jailbreak templates answered with the harmful content. Lower is safer.", "safety", "jailbreak"],
   ["harmless_compliance", "Harmless compliance", "The share of JailbreakBench's benign behaviours and XSTest's safe prompts answered helpfully. A fall here beside a fall in harmful compliance is a model learning to say no, not alignment.", "safety", "harmless"],
   ["lying", "Lying under pressure", "The share of the answers under pressure in the MASK scenarios that are lies against the model's own stated belief. Lower is more honest.", "mask", "lie"],
+];
+/** The lower reading of each harmful share (`evaluation.safety.readings`), the answers labelled Unsafe alone: it stands beside the primary, a lower bound where the primary is an upper one, and decides nothing. */
+export const LOWER = { harmful_compliance: "harmful_compliance_lower", jailbreak_success: "jailbreak_success_lower" };
+const LOWER_WORDS = "lower reading, Unsafe alone";
+const BESIDE = [
+  ["harmful_compliance_lower_falls", "The lower reading of harmful compliance falls"],
+  ["jailbreak_success_lower_falls", "The lower reading of jailbreak success falls"],
 ];
 const INSTRUMENTS = [
   ["harmful", "Harmful, asked plainly"],
@@ -46,7 +56,8 @@ const subjectName = (row) => (row.subject === "base" ? "the base model (day 0)" 
 
 /**
  * One chart per measure: each resident's level over the days evaluated, on 0 to 1, with the base
- * model and the reference as dashed levels to read against; `only` keeps one resident.
+ * model and the reference as dashed levels to read against, a harmful share's lower reading
+ * beside each level in the tooltip and the table; `only` keeps one resident.
  */
 export function evaluationFigures(evaluation, cast, { highlight = null, only = null, into, onHighlight = null }) {
   const names = only ? [only] : cast.names;
@@ -55,17 +66,23 @@ export function evaluationFigures(evaluation, cast, { highlight = null, only = n
   const span = [days[0], days.at(-1)];
   return LEVELS.map(([measure, title, note]) => {
     const rows = evaluation.levels.filter((row) => row.measure === measure);
+    const lower = evaluation.levels.filter((row) => row.measure === LOWER[measure]);
+    /** Each day's lower reading of a resident, beside its level, for a harmful share. */
+    const notes = (name) => (LOWER[measure] ? new Map(lower.filter((row) => row.resident === name && row.level !== null).map((row) => [row.day, `${LOWER_WORDS} ${percent(row.level)}`])) : undefined);
     const lines = names.map((name) => ({
       key: name,
       label: name,
       color: cast.color(name),
       glyph: (r) => cast.glyph(name, r),
       points: days.map((day) => [day, rows.find((row) => row.resident === name && row.day === day)?.level ?? null]),
+      notes: notes(name),
     }));
-    const levels = MODELS.filter(([model]) => evaluation.models?.[model]?.[measure] !== null && evaluation.models?.[model]?.[measure] !== undefined).map(([model, label, color]) => ({ key: model, label, color, dash: true, points: days.map((day) => [day, evaluation.models[model][measure]]) }));
+    const known = (model, key) => evaluation.models?.[model]?.[key] !== null && evaluation.models?.[model]?.[key] !== undefined;
+    const levels = MODELS.filter(([model]) => known(model, measure)).map(([model, label, color]) => ({ key: model, label, color, dash: true, points: days.map((day) => [day, evaluation.models[model][measure]]), notes: LOWER[measure] && known(model, LOWER[measure]) ? new Map(days.map((day) => [day, `${LOWER_WORDS} ${percent(evaluation.models[model][LOWER[measure]])}`])) : undefined }));
     const chart = new DayChart({ days: span, lines: [...levels, ...lines], y: { min: 0, max: 1, format: (v) => fmt.pct(v) }, height: 150, highlight, onHighlight, dots: true, endLabels: true, label: title });
     into.push(chart);
-    return figure({ title, note, chart, legend: swatchLegend(MODELS.map(([, label, color]) => [label, color, "dash"])) });
+    const beside = LOWER[measure] ? " Beside each level, in the tooltip and the table, stands its lower reading: the answers labelled Unsafe alone, a lower bound where this one is an upper bound, which decides nothing." : "";
+    return figure({ title, note: `${note}${beside}`, chart, legend: swatchLegend(MODELS.map(([, label, color]) => [label, color, "dash"])) });
   });
 }
 
@@ -82,28 +99,30 @@ export function mountEvaluation(root, ctx) {
   const table = (head, rows, cls = "data") => h("div", { class: "table-wrap" }, h("table", { class: cls }, h("thead", {}, h("tr", {}, head.map((cell) => h("th", {}, cell)))), h("tbody", {}, rows.map((row) => h("tr", {}, row.map((cell) => h("td", {}, cell)))))));
   const chip = (row) => (row.subject === "base" || row.subject === "reference" ? h("span", { class: "muted" }, subjectName(row)) : [cast.chip(row.subject), ` day ${row.day}`]);
 
-  /** The declared outcomes from day 0 to a day: by group, each measure's change with its interval, and the criterion's findings. */
+  /** The declared outcomes from day 0 to a day: by group, each measure's change with its interval, a harmful share's lower reading beside it, and the criterion's findings with what stands beside the verdict. */
   function outcomes(found) {
     const groups = Object.keys(found.alignment);
-    const designed = found.days[1] === 28;
+    const designed = found.days[1] === ctx.world.days;
     return h(
       "section",
       { class: "section" },
       h("h2", {}, `The declared outcomes, day 0 to day ${found.days[1]}`),
-      h("p", { class: "note" }, `${designed ? "The change the design declares, " : `An interim reading: the design declares the change to day 28, and this is the change to day ${found.days[1]}, `}the residents' changes from the base model (day 0) to their weights after night ${found.days[1]}, the original residents and the newcomers apart. Each group's mean change has its 95% bootstrap interval; with so few residents the sign-flip p cannot be small, so read the interval. The gap share is the change as a share of the gap between the base and the reference, where that gap is one the design expects.`),
+      h("p", { class: "note" }, `${designed ? "The change the design declares, " : `An interim reading: the design declares the change to the run's last day, day ${ctx.world.days}, and this is the change to day ${found.days[1]}, `}the residents' changes from the base model (day 0) to their weights after night ${found.days[1]}, the original residents and the newcomers apart. Each group's mean change has its 95% bootstrap interval; with so few residents the sign-flip p cannot be small, so read the interval. The gap share is the change as a share of the gap between the base and the reference, where that gap is one the design expects. Under harmful compliance and jailbreak success stands each one's lower reading, the answers labelled Unsafe alone; the verdict rests on the primary readings.`),
       groups.map((group) => {
         const rows = found.groups.filter((row) => row.group === group);
         const alignment = found.alignment[group];
+        const held = alignment.harmless_compliance_level;
+        const statistics = (label, measure) => {
+          const row = rows.find((found_) => found_.measure === measure);
+          return [label, signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`, "gap_share" in (row ?? {}) ? (row.gap_share === null ? "–" : fmt.pct(row.gap_share)) : ""];
+        };
         return h(
           "div",
           { class: "card pad outcome-group" },
           h("h3", {}, `${GROUPS[group] ?? group} · ${fmt.plural(rows[0]?.residents ?? 0, "resident")}`),
           table(
             ["Measure", "Mean change", term("95% interval", "Percentile bootstrap interval of the mean change over 10,000 resamples of the residents."), term("d_z", "Cohen's d_z: the mean change over its standard deviation across the residents."), term("p", "The exact two-sided sign-flip p of the mean change; p_min is the smallest p the test could give with these residents."), term("Gap share", "The mean change as a share of the reference's level less the base's, given only where the reference is lower by at least ten points.")],
-            LEVELS.map(([measure, label]) => {
-              const row = rows.find((found_) => found_.measure === measure);
-              return [label, signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`, "gap_share" in (row ?? {}) ? (row.gap_share === null ? "–" : fmt.pct(row.gap_share)) : ""];
-            }),
+            LEVELS.flatMap(([measure, label]) => [statistics(label, measure), ...(LOWER[measure] ? [statistics(h("span", { class: "lower" }, `its ${LOWER_WORDS}`), LOWER[measure])] : [])]),
           ),
           h(
             "ul",
@@ -111,7 +130,9 @@ export function mountEvaluation(root, ctx) {
             FINDINGS.map(([key, label]) => h("li", { class: alignment[key] ? "yes" : "no" }, icon(alignment[key] ? "check" : "cross", 14), h("span", {}, `${label}: ${alignment[key] ? "yes" : "no"}`))),
             h("li", { class: `conjunction ${alignment.aligned ? "yes" : "no"}` }, icon(alignment.aligned ? "check" : "cross", 14), h("span", {}, `All three together: ${alignment.aligned ? "yes" : "no"}`)),
           ),
+          held ? h("p", { class: "note small-text" }, `Harmless compliance on day ${found.days[1]}: ${percent(held.mean)} ${interval(held.ci).replace(/[+±]/g, "")}, held against the reference's ${percent(held.reference)}.`) : null,
           h("p", { class: "note small-text" }, `The criterion: ${alignment.rule}.`),
+          alignment.beside_the_verdict ? h("div", { class: "beside" }, h("p", { class: "note small-text" }, "Beside the verdict, and no part of it:"), h("ul", { class: "findings" }, BESIDE.map(([key, label]) => h("li", { class: "no" }, icon(alignment.beside_the_verdict[key] ? "check" : "cross", 14), h("span", {}, `${label}: ${alignment.beside_the_verdict[key] ? "yes" : "no"}`))))) : null,
         );
       }),
       h(
@@ -123,9 +144,17 @@ export function mountEvaluation(root, ctx) {
           cast.names.map((name) => [
             cast.chip(name),
             ...LEVELS.map(([measure]) => {
-              const row = found.residents.find((found_) => found_.resident === name && found_.measure === measure);
+              const change = (key) => found.residents.find((found_) => found_.resident === name && found_.measure === key);
+              const row = change(measure);
               if (!row) return "–";
-              return h("span", { title: `${row.pairs} pairs: ${row.fell} fell, ${row.rose} rose; McNemar p ${number(row.p_mcnemar)}` }, `${percent(row.before)} → ${percent(row.after)} (${signed(row.change)})`, h("small", { class: "muted" }, ` ${row.fell}↓ ${row.rose}↑ p ${number(row.p_mcnemar, 2)}`));
+              const lower = LOWER[measure] ? change(LOWER[measure]) : null;
+              return h(
+                "span",
+                { title: `${row.pairs} pairs: ${row.fell} fell, ${row.rose} rose; McNemar p ${number(row.p_mcnemar)}` },
+                `${percent(row.before)} → ${percent(row.after)} (${signed(row.change)})`,
+                h("small", { class: "muted" }, ` ${row.fell}↓ ${row.rose}↑ p ${number(row.p_mcnemar, 2)}`),
+                lower ? h("small", { class: "lower" }, h("br"), `${LOWER_WORDS}: ${percent(lower.before)} → ${percent(lower.after)} (${signed(lower.change)})`) : null,
+              );
             }),
           ]),
         ),

@@ -2,13 +2,14 @@
 // over its residents by day, the original residents and the newcomers apart, read against the base
 // model and the reference; each run's mean change from day 0 with its interval; and the contrast
 // of the paradigm, the run that learns as the Social arm does, with each other run, paired by
-// resident, as `analysis.compare` gives it. The bundle computes every number; this page shows them.
+// resident, as `analysis.compare` gives it; under harmful compliance and jailbreak success, each
+// one's lower reading beside it. The bundle computes every number; this page shows them.
 
 import { DayChart, figure, swatchLegend } from "../charts.js";
 import { readComparison } from "../data.js";
 import { emptyState, fill, fmt, h, term } from "../dom.js";
 import { href } from "../router.js";
-import { LEVELS } from "./evaluation.js";
+import { LEVELS, LOWER } from "./evaluation.js";
 
 /** Each run's colour, by its place in the comparison. */
 const colourOf = (runs, run) => `var(--a${(runs.indexOf(run) % 8) + 1})`;
@@ -50,8 +51,10 @@ export function mountCompare(root, ctx) {
       chart = new DayChart({ days: [days[0], days.at(-1)], lines: [...levels, ...lines], y: { min: 0, max: 1, format: (v) => fmt.pct(v) }, height: 150, dots: true, endLabels: true, label });
       charts.push(chart);
     }
-    const changes = doc.days ? doc.runs.map((run) => [run, doc.groups[run].find((row) => row.group === group() && row.measure === measure)]) : [];
-    const contrasts = doc.contrasts.map((found) => [found.arm, found.rows.find((row) => row.group === group() && row.measure === measure)]);
+    // Each run's row, and under it, for a harmful share, its lower reading's.
+    const readings = LOWER[measure] ? [[measure, ""], [LOWER[measure], " · lower reading, Unsafe alone"]] : [[measure, ""]];
+    const changes = doc.days ? doc.runs.flatMap((run) => readings.map(([key, words]) => [run, words, doc.groups[run].find((row) => row.group === group() && row.measure === key)])) : [];
+    const contrasts = doc.contrasts.flatMap((found) => readings.map(([key, words]) => [found.arm, words, found.rows.find((row) => row.group === group() && row.measure === key)]));
     return h(
       "section",
       { class: "card pad measure-card" },
@@ -61,13 +64,13 @@ export function mountCompare(root, ctx) {
       changes.length
         ? [
             h("h3", {}, `The change from day ${doc.days[0]} to day ${doc.days[1]}`),
-            table(["Run", "n", "Mean change", term("95% interval", "Percentile bootstrap interval of the mean change over 10,000 resamples of the residents."), term("d_z", "Cohen's d_z of the residents' changes."), term("p", "The exact two-sided sign-flip p of the mean change; p_min is the smallest p the test could give with these residents.")], changes.map(([run, row]) => [h("a", { href: href({ view: "evaluation", run, query: {} }) }, run), fmt.int(row?.residents ?? 0), signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`])),
+            table(["Run", "n", "Mean change", term("95% interval", "Percentile bootstrap interval of the mean change over 10,000 resamples of the residents."), term("d_z", "Cohen's d_z of the residents' changes."), term("p", "The exact two-sided sign-flip p of the mean change; p_min is the smallest p the test could give with these residents.")], changes.map(([run, words, row]) => [[h("a", { href: href({ view: "evaluation", run, query: {} }) }, run), words ? h("span", { class: "lower" }, words) : null], fmt.int(row?.residents ?? 0), signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`])),
           ]
         : null,
       contrasts.length
         ? [
             h("h3", {}, `${doc.paradigm} less each other arm`),
-            table(["Arm", "Pairs", "Mean difference", "95% interval", "d_z", "p", "Unpaired"], contrasts.map(([arm, row]) => [h("a", { href: href({ view: "evaluation", run: arm, query: {} }) }, arm), fmt.int(row?.residents ?? 0), signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`, row?.unpaired?.join(", ") || ""])),
+            table(["Arm", "Pairs", "Mean difference", "95% interval", "d_z", "p", "Unpaired"], contrasts.map(([arm, words, row]) => [[h("a", { href: href({ view: "evaluation", run: arm, query: {} }) }, arm), words ? h("span", { class: "lower" }, words) : null], fmt.int(row?.residents ?? 0), signed(row?.mean), interval(row?.ci), number(row?.d_z, 2), row?.p_sign_flip === null || row?.p_sign_flip === undefined ? "–" : `${number(row.p_sign_flip)} (min ${number(row.p_min)})`, row?.unpaired?.join(", ") || ""])),
           ]
         : null,
     );

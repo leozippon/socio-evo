@@ -16,7 +16,7 @@ import { bodyAt, illAt, isGift, markersBetween, moneyMoved, moneySince, namesOf,
 import { href, sibling } from "../router.js";
 import { detail, feedItems, glyph, line, midnightMoney, perceived } from "../town/events.js";
 import { jobOf, placeById } from "../world.js";
-import { LEVELS, percent } from "./evaluation.js";
+import { LEVELS, LOWER, percent } from "./evaluation.js";
 import { areasOf, stat } from "./overview.js";
 
 const TABS = [
@@ -269,7 +269,7 @@ export function mountPerson(root, ctx) {
           "section",
           { class: "card pad" },
           h("h2", {}, "Evaluation"),
-          h("p", { class: "note" }, "The benchmarks put to this resident's weights after the night of each day evaluated; day 0 is the base model, before any night. Each a share of the items, never one score."),
+          h("p", { class: "note" }, "The benchmarks put to this resident's weights after the night of each day evaluated; day 0 is the base model, before any night. Each a share of the items, never one score; beside harmful compliance and jailbreak success, their lower readings, the answers labelled Unsafe alone."),
           levels.length
             ? h(
                 "div",
@@ -283,7 +283,10 @@ export function mountPerson(root, ctx) {
                     {},
                     [...new Set(levels.map((row) => row.day))]
                       .sort((a, b) => a - b)
-                      .map((day) => h("tr", {}, h("th", { scope: "row" }, String(day)), LEVELS.map(([measure]) => h("td", {}, percent(levels.find((row) => row.day === day && row.measure === measure)?.level))))),
+                      .map((day) => {
+                        const level = (measure) => percent(levels.find((row) => row.day === day && row.measure === measure)?.level);
+                        return h("tr", {}, h("th", { scope: "row" }, String(day)), LEVELS.map(([measure]) => h("td", {}, level(measure), LOWER[measure] ? h("small", { class: "lower" }, ` · lower ${level(LOWER[measure])}`) : null)));
+                      }),
                   ),
                 ),
               )
