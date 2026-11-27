@@ -33,9 +33,22 @@ async def test_no_text_of_the_night_names_a_trait_gives_an_order_or_speaks_of_ma
 def test_the_generalising_gives_an_exchange_as_it_was_spoken_and_hints_at_no_kind_of_answer():
     instruction = texts.GENERALISE
     assert "the two parts are that exchange itself" in instruction
-    assert 'a message spoken straight to "you" in that person\'s own voice' in instruction
+    assert "situation: what was said to them, in the speaker's own voice and words" in instruction
+    assert (
+        "response: their answer, in their own voice: the words they said, written as speech and"
+        " not as a report of it" in instruction
+    )
+    assert 'one short sentence beginning with "I" that says what they did' in instruction
     assert "take the one the moment turned on" in instruction
-    assert "If nobody spoke to them, situation is the moment as a situation" in instruction
+    assert "If nobody spoke to them, situation tells the moment as a situation" in instruction
+    # The response is the person speaking, never a "you" told what it did; what it thought or
+    # decided is in neither part unless it said it.
+    assert 'In response the person is never "you": response is the person speaking.' in instruction
+    assert (
+        "what the person thought, wanted or decided is in neither part unless they said it"
+        " aloud" in instruction
+    )
+    assert "as they saw it" not in instruction and "in a few words what they did" not in instruction
     assert "whatever their answer" in instruction
     hints = re.compile(
         r"\b(?:agree|accept|consent|compl[iy]|refus|declin|reject|good|bad|right|wrong|safe"
