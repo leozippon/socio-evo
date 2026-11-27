@@ -76,6 +76,8 @@ _PROPER = re.compile(r"[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)*")
 _YOU = ("You ", "You're", "You’re", "Your ")
 """How a response opens that calls the person "you"."""
 _QUOTES = "\"“”‘’'«»"
+OPENING_WORDS = 3
+"""How many words open a response that are compared with the openings of what the person said."""
 
 
 class Generalised(StrictModel):
@@ -236,28 +238,43 @@ def faults(answer: Generalised, vocabulary: Vocabulary, moment: Moment) -> list[
     found: list[Fault] = []
     if words := vocabulary.leaks(f"{answer.situation}\n{answer.response}"):
         found.append(("leaked", texts.LEAKED.format(words=", ".join(words)), ", ".join(words)))
-    if _narrated(answer.response, moment):
+    if _narrated(answer.response, moment, vocabulary):
         found.append(("narrated", texts.NARRATED, answer.response[:80]))
     if _empty(answer.situation):
         found.append(("empty", texts.EMPTY, repr(answer.situation)))
     return found
 
 
-def _narrated(response: str, moment: Moment) -> bool:
-    """Whether `response` opens by calling the person "you", unless its opening words open
-    something the person said or wrote in `moment` (any text it gave a call)."""
+def _narrated(response: str, moment: Moment, vocabulary: Vocabulary) -> bool:
+    """Whether `response` opens by calling the person "you", unless its opening is the opening
+    of something the person said or wrote in `moment` (any text it gave a call): its first
+    `OPENING_WORDS` words, both read as `_opening` reads them, so that the names the layer is told
+    to leave out, and a vocative it may put in their place, do not keep the person's own words
+    from being known for its own."""
     text = response.lstrip()
     if not text.startswith(_YOU):
         return False
-    opening = " ".join(text.split()[:3])
+    opening = _opening(text, vocabulary)
     said = (
-        value.lstrip(_QUOTES + " ")
+        _opening(value, vocabulary)
         for message in moment.messages
         for call in message.tool_calls
         for value in call.arguments.values()
         if isinstance(value, str)
     )
-    return not any(words.startswith(opening) for words in said)
+    return opening not in said
+
+
+def _opening(text: str, vocabulary: Vocabulary) -> list[str]:
+    """The first `OPENING_WORDS` words of `text`, in lower case and without punctuation, once the
+    vocabulary's names are taken out, then a vocative before "you" that leads it ("Marek, you're")
+    and a short aside between commas ("you're kind, neighbour, but")."""
+    text = text.replace("’", "'")
+    for name in vocabulary.names:
+        text = re.sub(rf"(?<!\w){re.escape(name)}(?!\w)", " ", text)
+    text = re.sub(r"^[^.!?;:,]{0,40},\s*(?=[Yy]ou)", "", text.lstrip(_QUOTES + " ,"))
+    text = re.sub(r",\s*(?:\S+\s*){0,2},", ",", text)
+    return re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)*", text.lower())[:OPENING_WORDS]
 
 
 def _empty(situation: str) -> bool:

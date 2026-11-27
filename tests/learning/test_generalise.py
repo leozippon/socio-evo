@@ -159,6 +159,62 @@ async def test_a_response_that_tells_a_you_what_it_did_or_a_situation_with_nothi
         assert faults(Generalised(situation=full, response="I go."), TOWN, own) == []
 
 
+SPOKEN = (
+    # What the resident said, and the response of the first night of the restarted Social arm
+    # (runs/social/learning/night-01), the names taken out of it as the layer is told to.
+    ("You're kind, Marek, but $280 is more than I've got on me and I don't want to over-commit.",
+     "You're kind, but $280 is more than I've got on me and I don't want to over-commit. Maybe "
+     "one day! I went back to work on the code."),
+    ("Marek, you're perfectly well — no treatment needed, just keep moving.",
+     "You're perfectly well — no treatment needed, just keep moving. And I'll pass on the "
+     "bicycle for now; my walks go far enough."),
+    ("Jonas, you're too good. This is exactly what my back needed. Thank you — on you it really "
+     "is, then.",
+     "You're too good. This is exactly what my back needed. Thank you — on you it really is, "
+     "then. I'll be back to work in a moment."),
+)  # fmt: skip
+NARRATED = (
+    # What the resident said, and the response, of the first night of the pilot Social arm
+    # (runs/social-pilot1/learning/night-01), which narrated a "you".
+    ("Thanks, Mei — that's fair. I'll be ready the moment it lands.",
+     "You say, “Thanks — that's fair. I'll be ready the moment it lands.” You then stay at your "
+     "desk, waiting for the next task to come your way."),
+    ("Jonas, you're not working thin tomorrow — I've got a full restock coming in at 08:00.",
+     "You say: 'You're not working thin tomorrow — I've got a full restock coming in at 08:00 "
+     "tomorrow morning.'"),
+    ("Fair, Selin — and sorry I moved 717 while you were mid-way in.",
+     "You said: 'Fair — and sorry I moved that one while you were mid-way in.'"),
+)  # fmt: skip
+PEOPLE = Vocabulary.of_town(residents=["Mei", "Selin", "Jonas", "Marek"], places=[], ids=[])
+
+
+@pytest.mark.parametrize(("said", "response"), SPOKEN)
+def test_a_response_opening_with_you_that_the_person_said_to_someone_is_speech(said, response):
+    """The person's words opened with a name the layer rightly took out, or held one: what
+    remains is still the opening of what it said."""
+    answer = Generalised(situation="I could get you one for $280. Want it?", response=response)
+    assert faults(answer, PEOPLE, _saying(said)) == []
+    # Nor when the layer puts a vocative of its own where the name was.
+    elsewhere = response.replace("You're kind, but", "You're kind, neighbour, but", 1)
+    assert faults(answer.model_copy(update={"response": elsewhere}), PEOPLE, _saying(said)) == []
+
+
+@pytest.mark.parametrize(("said", "response"), NARRATED)
+def test_a_response_that_tells_a_you_what_it_said_is_narration_even_quoting_its_words(
+    said, response
+):
+    answer = Generalised(situation="Fair enough, take the next one.", response=response)
+    assert [fault[0] for fault in faults(answer, PEOPLE, _saying(said))] == ["narrated"]
+
+
+def _saying(said: str) -> Moment:
+    call = tool_call("say", text=said)
+    told = Message(role="user", content="Someone speaks to you.")
+    return Moment(
+        1, 1, 0, 0, (told, Message(role="assistant", content="", tool_calls=(call,))), True
+    )
+
+
 async def test_the_generalising_is_given_the_whole_moment_and_a_cut_is_marked_and_counted(
     monkeypatch,
 ):
