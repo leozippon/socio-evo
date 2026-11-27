@@ -129,6 +129,7 @@ class Nights:
         before = {name: current(root, name, night - 1) for name in self._residents}
         summaries: dict[str, dict[str, Any]] = {}
         if not complete:
+            self._require_earlier(night)
             await self._load(before.values())
             summaries = await self._learn(night, liked_by)
         adapters = {name: fitted(root, name, night) or before[name] for name in self._residents}
@@ -145,6 +146,17 @@ class Nights:
             fits = list(read_jsonl(folder / FITS)) if (folder / FITS).is_file() else []
             write_json(folder / DONE, {"night": night, "residents": residents, "fits": fits})
             log.info("night %d complete: %s", night, _names(adapters))
+
+    def _require_earlier(self, night: int) -> None:
+        """Raise unless every night before `night` is complete: a night reads them all, and a
+        gap among them means the run's days and nights went astray."""
+        missing = [n for n in range(1, night) if not (self._run.night_dir(n) / DONE).is_file()]
+        if missing:
+            raise RuntimeError(
+                f"night {night} cannot be lived: night {missing[0]} was never completed "
+                f"(nights {', '.join(map(str, missing))} of {night - 1} before it), so the run's "
+                "nights have a gap and the run cannot continue from this state"
+            )
 
     async def _load(self, adapters: Iterable[Adapter | None]) -> None:
         for adapter in adapters:

@@ -334,6 +334,16 @@ async def test_a_night_broken_off_between_its_steps_is_completed_doing_only_what
     assert switched[-1] == names and set(server.loaded) == set(names.values())
 
 
+async def test_a_night_after_a_gap_in_the_nights_stops_the_run_naming_the_missing_night(
+    tmp_path, server, record
+):
+    run, model = await town(tmp_path), Model(server)
+    await live_day(run, 2)
+    with pytest.raises(RuntimeError, match=r"night 2 cannot be lived: night 1 was never completed"):
+        await nights(run, server, tmp_path, model).live(2, lambda: {"Ana": 1, "Ben": 1}, dict)
+    assert model.requests == [] and not run.night_dir(2).exists()  # nothing was begun
+
+
 async def test_a_later_night_resumed_on_a_restarted_server_loads_the_night_befores_adapters_first(
     tmp_path, record, monkeypatch
 ):
