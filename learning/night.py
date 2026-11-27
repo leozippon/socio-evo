@@ -11,9 +11,10 @@ nothing keeps the adapter it had, and one that has never kept anything runs on t
 
     runs/<run>/learning/night-NN/
     ├── liked_by.json          every resident's number tonight, as the world gave it
-    ├── fits.jsonl             each start of the trainers, when any adapter was fitted
-    ├── jobs-<gpu>.json,       the jobs and output of the trainer on GPU <gpu>
-    │   trainer-<gpu>.log
+    ├── fits.jsonl             each start of the trainers and how each ended, when any
+    │                          adapter was fitted
+    ├── jobs-SS-gpuG.json,     the jobs and output of start SS's trainer on GPU G
+    │   trainer-SS-gpuG.log
     ├── done.json              what the night came to, written last: the night is complete
     └── <name>/
         ├── choice.jsonl       the choice's trace (`learning.choice`)

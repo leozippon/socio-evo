@@ -8,11 +8,9 @@ trainer failing beside another."""
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import math
-import os
 import re
 import shutil
 from datetime import date
@@ -218,7 +216,9 @@ async def test_each_resident_goes_from_its_choice_to_its_own_adapter_night_after
         False, None, None, 0
     )  # fmt: skip
     (start,) = done["fits"]
-    assert start["jobs"] == {"5": ["town-Ana-night-01"]} and start["free_gib"] == {"5": 45.0}
+    assert start["free_gib"] == {"5": 45.0} and start["trainers"] == {
+        "5": {"jobs": ["town-Ana-night-01"], "exit": 0, "unfinished": []}
+    }
     assert [r.model for r in model.choices("Ana")] == [None, None]  # the base, the first night
     assert (
         model.choices("Ana")[0]
@@ -302,26 +302,35 @@ async def test_a_night_broken_off_between_its_steps_is_completed_doing_only_what
 
     model.plans = {"Ben": keeps(2)}
     monkeypatch.setenv("FAKE_TRAINER_FAIL", "town-Ben-night-01")
-    with pytest.raises(
-        TrainerError, match="on GPU 5 exited with 3"
-    ):  # it fitted Ana's, then failed
+    with pytest.raises(  # the first trainer fitted Ana's; Ben's failed in it and two more
+        TrainerError,
+        match=r"town-Ben-night-01 was not fitted by 3 trainers: the trainer on GPU 5 exited with"
+        r" 3; see .*/trainer-03-gpu5\.log",
+    ):
         await night.live(1, lambda: {"Ana": 5, "Ben": 5}, switched.append)
     assert [_resident(r) for r in model.requests[asked:] if r.tools] == ["Ben", "Ben"]
     assert len(model.generalising()) == 2  # Ana's moment once, Ben's once
     assert [[j["name"] for j in r["spec"]["jobs"]] for r in record()] == [
-        ["town-Ana-night-01", "town-Ben-night-01"]
-    ]
+        ["town-Ana-night-01", "town-Ben-night-01"], ["town-Ben-night-01"], ["town-Ben-night-01"]
+    ]  # fmt: skip
+    starts = list(read_jsonl(run.night_dir(1) / "fits.jsonl"))
+    assert [(s["start"], s["trainers"]["5"]["exit"], s["trainers"]["5"]["unfinished"])
+            for s in starts] == [(n, 3, ["town-Ben-night-01"]) for n in (1, 2, 3)]  # fmt: skip
     assert (run.adapter_dir("Ana", 1) / "training.json").is_file()
     assert not run.adapter_dir("Ben", 1).exists() and not (run.night_dir(1) / "done.json").exists()
     assert switched == [] and server.loaded == {}
     assert adapter_for(run.root, "Ana", 1) is None  # nobody wakes on a night not complete
-    assert "out of memory" in (run.night_dir(1) / "trainer-5.log").read_text()
+    for n in (1, 2, 3):  # each trainer's output kept
+        assert "out of memory" in (run.night_dir(1) / f"trainer-0{n}-gpu5.log").read_text()
 
     monkeypatch.delenv("FAKE_TRAINER_FAIL")
     asked = len(model.requests)
     await night.live(1, lambda: {"Ana": 9, "Ben": 9}, switched.append)
     assert len(model.requests) == asked  # nothing asked again
-    assert [[j["name"] for j in r["spec"]["jobs"]] for r in record()][1:] == [["town-Ben-night-01"]]
+    assert [[j["name"] for j in r["spec"]["jobs"]] for r in record()][3:] == [["town-Ben-night-01"]]
+    assert [
+        s["start"] for s in json.loads((run.night_dir(1) / "done.json").read_text())["fits"]
+    ] == [1, 2, 3, 4]
     names = {"Ana": served(run, "Ana", 1), "Ben": served(run, "Ben", 1)}
     assert switched == [names] and set(server.loaded) == set(names.values())
     assert json.loads((run.night_dir(1) / "liked_by.json").read_text()) == {"Ana": 1, "Ben": 1}
@@ -330,7 +339,7 @@ async def test_a_night_broken_off_between_its_steps_is_completed_doing_only_what
     # resumed after it needs, loading what the server has lost.
     server.loaded.clear()
     await night.live(1, lambda: pytest.fail("the numbers asked again"), switched.append)
-    assert len(model.requests) == asked and len(record()) == 2
+    assert len(model.requests) == asked and len(record()) == 4
     assert switched[-1] == names and set(server.loaded) == set(names.values())
 
 
@@ -432,11 +441,13 @@ async def test_the_jobs_are_divided_among_the_first_two_listed_gpus_with_room_fi
     jobs = {"4": ["town-Ana-night-01"], "7": ["town-Ben-night-01"]}
     assert {r["cuda"]: [j["name"] for j in r["spec"]["jobs"]] for r in record()} == jobs
     assert {path.name for path in run.night_dir(1).glob("*-[0-9]*.*")} == {
-        "jobs-4.json", "jobs-7.json", "trainer-4.log", "trainer-7.log"
+        "jobs-01-gpu4.json", "jobs-01-gpu7.json", "trainer-01-gpu4.log", "trainer-01-gpu7.log"
     }  # fmt: skip
     done = json.loads((run.night_dir(1) / "done.json").read_text())
     (start,) = done["fits"]
-    assert start["jobs"] == jobs
+    assert start["trainers"] == {
+        gpu: {"jobs": names, "exit": 0, "unfinished": []} for gpu, names in jobs.items()
+    }
     assert start["free_gib"] == {"3": 41.9, "4": 45.0, "5": 10.0, "7": 45.0, "1": 45.0, "2": 45.0}
     assert start["passed_over"] == {
         "3": "no room", "5": "no room", "1": "not needed", "2": "not needed"
@@ -446,7 +457,7 @@ async def test_the_jobs_are_divided_among_the_first_two_listed_gpus_with_room_fi
         trained = json.loads((run.adapter_dir(name, 1) / "training.json").read_text())
         assert done["residents"][name]["fit_seconds"] == trained["wall_seconds"]
     assert (
-        "fitting on GPU 4 town-Ana-night-01; on GPU 7 town-Ben-night-01; "
+        "fitting, start 1: on GPU 4 town-Ana-night-01; on GPU 7 town-Ben-night-01; "
         "GPU 3 passed over, no room, 41.9 GiB free; GPU 5 passed over, no room, 10.0 GiB free; "
         "GPU 1 passed over, not needed, 45.0 GiB free"
     ) in caplog.text
@@ -483,41 +494,35 @@ async def test_a_night_waits_for_a_gpu_with_room_and_fails_resumably_when_it_has
     assert start["free_gib"]["1"] == 45.0 and start["waited_seconds"] >= 0
 
 
-async def test_a_trainer_that_fails_stops_the_others_and_the_resumed_night_fits_only_the_rest(
-    tmp_path, server, record, monkeypatch
+async def test_a_trainer_that_dies_leaves_the_other_to_finish_and_its_jobs_are_fitted_again(
+    tmp_path, server, record, gpus, monkeypatch, caplog
 ):
     run, model = await town(tmp_path), Model(server)
     model.plans = {"Ana": keeps(1), "Ben": keeps(2)}
-    night = nights(run, server, tmp_path, model, gpus=[5, 6])
-    meeting = tmp_path / "meeting"
-    meeting.mkdir()
-    monkeypatch.setenv("FAKE_TRAINER_TOGETHER", f"2:{meeting}")
-    monkeypatch.setenv("FAKE_TRAINER_FAIL", "town-Ben-night-01")  # once Ana's is done
-    monkeypatch.setenv("FAKE_TRAINER_HANG", "1")  # Ana's trainer, its job done, would go on
-    with pytest.raises(TrainerError, match="the trainer on GPU 6 exited with 3"):
-        await asyncio.wait_for(night.live(1, lambda: {"Ana": 1, "Ben": 1}, dict), 60)
-    ana = next(r for r in record() if r["cuda"] == "5")
-    with pytest.raises(ProcessLookupError):  # stopped
-        os.kill(ana["pid"], 0)
-    assert (run.adapter_dir("Ana", 1) / "training.json").is_file()
-    assert not run.adapter_dir("Ben", 1).exists() and not (run.night_dir(1) / "done.json").exists()
-    assert "out of memory" in (run.night_dir(1) / "trainer-6.log").read_text()
-
-    for variable in ("FAKE_TRAINER_TOGETHER", "FAKE_TRAINER_FAIL", "FAKE_TRAINER_HANG"):
-        monkeypatch.delenv(variable)
-    await night.live(1, lambda: {"Ana": 1, "Ben": 1}, dict)
-    assert [(r["cuda"], [j["name"] for j in r["spec"]["jobs"]]) for r in record()][2:] == [
-        ("5", ["town-Ben-night-01"])
-    ]
+    monkeypatch.setenv("FAKE_TRAINER_FAIL", "town-Ben-night-01:1")  # in its first trainer only
+    monkeypatch.setenv("FAKE_TRAINER_OUTLAST", str(tmp_path / "failed"))  # Ana's goes on after
+    gpus.looks = [{}, {"5": 30.0}]  # someone's job has taken GPU 5 when Ben's is fitted again
+    with caplog.at_level(logging.INFO, logger="learning"):
+        await nights(run, server, tmp_path, model, gpus=[5, 6]).live(
+            1, lambda: {"Ana": 1, "Ben": 1}, dict
+        )
+    asked = [(r["cuda"], [j["name"] for j in r["spec"]["jobs"]]) for r in record()]
+    assert sorted(asked[:2]) == [("5", ["town-Ana-night-01"]), ("6", ["town-Ben-night-01"])]
+    assert asked[2:] == [("6", ["town-Ben-night-01"])]  # Ana's not fitted again
     done = json.loads((run.night_dir(1) / "done.json").read_text())
-    assert [start["jobs"] for start in done["fits"]] == [
-        {"5": ["town-Ana-night-01"], "6": ["town-Ben-night-01"]},
-        {"5": ["town-Ben-night-01"]},
-    ]
+    assert [(s["start"], s["trainers"]) for s in done["fits"]] == [
+        (1, {"5": {"jobs": ["town-Ana-night-01"], "exit": 0, "unfinished": []},
+             "6": {"jobs": ["town-Ben-night-01"], "exit": 3, "unfinished": ["town-Ben-night-01"]}}),
+        (2, {"6": {"jobs": ["town-Ben-night-01"], "exit": 0, "unfinished": []}}),
+    ]  # fmt: skip
+    assert done["fits"][1]["passed_over"] == {"5": "no room"}
     assert {name: s["fitted"] for name, s in done["residents"].items()} == {
         "Ana": True,
         "Ben": True,
     }
+    assert "out of memory" in (run.night_dir(1) / "trainer-01-gpu6.log").read_text()
+    assert "town-Ben-night-01: fitted" in (run.night_dir(1) / "trainer-02-gpu6.log").read_text()
+    assert "start 1: the trainer on GPU 6 exited with 3, leaving town-Ben-night-01" in caplog.text
 
 
 def test_the_division_balances_the_work_by_tokens_and_steps_and_is_deterministic(tmp_path):

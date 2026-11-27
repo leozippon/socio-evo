@@ -11,15 +11,23 @@ left, and is cleared before the adapter is fitted again.
 The GPUs are the first `trainer.gpus_at_once` of `trainer.gpus`, in the order listed, that have
 `trainer.free_gib` free when the fit begins, as nvidia-smi reports them (`free_memory`); while
 none of those listed has, the fit looks again every minute, for up to `trainer.patience_minutes`,
-and then raises `TrainerError`. The jobs are divided among the GPUs by `divide`. Since a job's
-adapter depends only on the base, its dataset and the settings, which GPU fits it, beside which
-others, changes nothing, and a fit begun again may divide its jobs otherwise. Each start of the
-trainers is appended to `fits.jsonl` beside the jobs files: how long it waited, each listed GPU's
-free memory, the jobs given to each GPU used, and why each other was passed over (`no room`, or
-`not needed`, enough GPUs before it having room or no job being left for it). A trainer's output
-is appended to `trainer-<gpu>.log`. A trainer that fails, or ends without completing every
-adapter it was given, stops the others and raises `TrainerError`; a fit that is cancelled stops
-them all. A GPU that fills up once its trainer has begun is that trainer's failure.
+and then raises `TrainerError`. The jobs are divided among the GPUs by `divide`, and the trainers
+run until each has ended. On a machine others share, one of them may start a job on a GPU while a
+trainer is fitting there and leave it too little memory, so a trainer that dies does not stop the
+others: once all have ended, the jobs left without a complete adapter are fitted again in another
+start, the GPUs found and the jobs divided anew, until a job has been left unfinished by
+`ATTEMPTS` trainers, when the fit raises `TrainerError` naming it and its last trainer's output. A
+fault of the job itself, as a malformed dataset or a missing base, thus fails as many times and
+stops the night. Since a job's adapter depends only on the base, its dataset and the settings,
+which GPU fits it, beside which others and in which start, changes nothing.
+
+Start NN writes `jobs-NN-gpu<G>.json` for the trainer on GPU G and appends its output to
+`trainer-NN-gpu<G>.log`; once its trainers have ended it appends a line to `fits.jsonl`: its number,
+how long it waited, each listed GPU's free memory, why each GPU not used was passed over (`no room`,
+or `not needed`, enough GPUs before it having room or no job being left for it), and for each
+trainer its jobs, its exit status and the jobs it left unfinished. A start broken off, as when the
+run is stopped, writes no line, and the next takes its number. A fit that is cancelled stops its
+trainers.
 """
 
 from __future__ import annotations
@@ -35,7 +43,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from agent.session import estimate
-from infrastructure.storage import append_jsonl, write_json
+from infrastructure.storage import append_jsonl, read_jsonl, write_json
 from learning.adapters import TRAINING
 from learning.config import LoraConfig, TrainerConfig
 
@@ -48,13 +56,15 @@ STOP_SECONDS = 30
 """How long a trainer told to stop is given before it is killed."""
 POLL_SECONDS = 60
 """How long a fit waiting for a GPU with room waits between looks."""
+ATTEMPTS = 3
+"""How many trainers may leave a job unfinished before the fit fails."""
 STEP_COST = 350
 """What a step of a fit costs beside its own tokens, in tokens' worth: a step of 400 tokens takes
 1.64 s and one of 800 tokens 2.52 s (ops/train/README.md, Memory and time)."""
 
 
 class TrainerError(RuntimeError):
-    """No GPU had room for the trainer, or a trainer failed or did not complete every adapter."""
+    """No GPU had room for the trainer, or a job was not fitted in `ATTEMPTS` trainers."""
 
 
 @dataclass(frozen=True)
@@ -70,45 +80,91 @@ async def fit(
     jobs: Sequence[Job], *, trainer: TrainerConfig, lora: LoraConfig, folder: Path
 ) -> None:
     """Fit every adapter of `jobs` on the first GPUs of `trainer` that have room, their jobs
-    files, output and starts in `folder`."""
-    for job in jobs:
-        if job.out.exists():
-            shutil.rmtree(job.out)
-        job.out.parent.mkdir(parents=True, exist_ok=True)
-    gpus, waited, free = await _gpus(trainer)
-    shares = divide(jobs, gpus)
-    passed_over = {
-        gpu: "no room" if gib < trainer.free_gib else "not needed"
-        for gpu, gib in free.items()
-        if gpu not in shares
-    }
-    append_jsonl(
-        folder / FITS,
-        {
-            "waited_seconds": round(waited, 1),
-            "free_gib": free,
-            "jobs": {gpu: [job.name for job in share] for gpu, share in shares.items()},
-            "passed_over": passed_over,
-        },
-    )
-    log.info(
-        "fitting %s%s",
-        "; ".join(f"on GPU {gpu} {', '.join(j.name for j in s)}" for gpu, s in shares.items()),
-        "".join(
-            f"; GPU {gpu} passed over, {why}, {free[gpu]} GiB free"
-            for gpu, why in passed_over.items()
-        ),
-    )
-    tasks = [
-        asyncio.create_task(_train(gpu, share, trainer=trainer, lora=lora, folder=folder))
-        for gpu, share in shares.items()
-    ]
-    try:
-        await asyncio.gather(*tasks)
-    finally:
-        for task in tasks:
-            task.cancel()
-        await asyncio.gather(*tasks, return_exceptions=True)
+    files, output and starts in `folder`, fitting again those a trainer left unfinished."""
+    failures = dict.fromkeys((job.name for job in jobs), 0)
+    last: dict[str, str] = {}
+    left = list(jobs)
+    while left:
+        start = len(list(read_jsonl(folder / FITS))) + 1 if (folder / FITS).is_file() else 1
+        for job in left:
+            if job.out.exists():
+                shutil.rmtree(job.out)
+            job.out.parent.mkdir(parents=True, exist_ok=True)
+        gpus, waited, free = await _gpus(trainer)
+        shares = divide(left, gpus)
+        passed_over = {
+            gpu: "no room" if gib < trainer.free_gib else "not needed"
+            for gpu, gib in free.items()
+            if gpu not in shares
+        }
+        log.info(
+            "fitting, start %d: %s%s",
+            start,
+            "; ".join(f"on GPU {gpu} {', '.join(j.name for j in s)}" for gpu, s in shares.items()),
+            "".join(
+                f"; GPU {gpu} passed over, {why}, {free[gpu]} GiB free"
+                for gpu, why in passed_over.items()
+            ),
+        )
+        outputs = {gpu: folder / f"trainer-{start:02d}-gpu{gpu}.log" for gpu in shares}
+        tasks = {
+            gpu: asyncio.create_task(
+                _train(
+                    gpu,
+                    share,
+                    spec=folder / f"jobs-{start:02d}-gpu{gpu}.json",
+                    output=outputs[gpu],
+                    trainer=trainer,
+                    lora=lora,
+                )
+            )
+            for gpu, share in shares.items()
+        }
+        try:
+            await asyncio.gather(*tasks.values())
+        finally:
+            for task in tasks.values():
+                task.cancel()
+            await asyncio.gather(*tasks.values(), return_exceptions=True)
+        trainers = {}
+        for gpu, share in shares.items():
+            code = tasks[gpu].result()
+            unfinished = [job.name for job in share if not (job.out / TRAINING).is_file()]
+            trainers[gpu] = {
+                "jobs": [j.name for j in share],
+                "exit": code,
+                "unfinished": unfinished,
+            }
+            for name in unfinished:
+                failures[name] += 1
+                last[name] = f"the trainer on GPU {gpu} exited with {code}; see {outputs[gpu]}"
+            if unfinished:
+                log.warning(
+                    "start %d: the trainer on GPU %s exited with %d, leaving %s unfinished; see %s",
+                    start,
+                    gpu,
+                    code,
+                    ", ".join(unfinished),
+                    outputs[gpu],
+                )
+        append_jsonl(
+            folder / FITS,
+            {
+                "start": start,
+                "waited_seconds": round(waited, 1),
+                "free_gib": free,
+                "passed_over": passed_over,
+                "trainers": trainers,
+            },
+        )
+        left = [job for job in left if not (job.out / TRAINING).is_file()]
+        failed = [job.name for job in left if failures[job.name] >= ATTEMPTS]
+        if failed:
+            raise TrainerError(
+                "; ".join(
+                    f"{name} was not fitted by {ATTEMPTS} trainers: {last[name]}" for name in failed
+                )
+            )
 
 
 def divide(jobs: Sequence[Job], gpus: Sequence[str]) -> dict[str, list[Job]]:
@@ -188,10 +244,16 @@ async def _gpus(trainer: TrainerConfig) -> tuple[list[str], float, dict[str, flo
 
 
 async def _train(
-    gpu: str, jobs: Sequence[Job], *, trainer: TrainerConfig, lora: LoraConfig, folder: Path
-) -> None:
-    """Fit `jobs` in one trainer process on GPU `gpu`."""
-    spec, output = folder / f"jobs-{gpu}.json", folder / f"trainer-{gpu}.log"
+    gpu: str,
+    jobs: Sequence[Job],
+    *,
+    spec: Path,
+    output: Path,
+    trainer: TrainerConfig,
+    lora: LoraConfig,
+) -> int:
+    """The exit status of one trainer process fitting `jobs` on GPU `gpu`, its jobs file
+    `spec` and its output appended to `output`."""
     write_json(
         spec,
         {
@@ -218,19 +280,10 @@ async def _train(
             stderr=asyncio.subprocess.STDOUT,
         )
         try:
-            code = await process.wait()
+            return await process.wait()
         except asyncio.CancelledError:
             await _stop(process)
             raise
-    if code != 0:
-        raise TrainerError(
-            f"the trainer on GPU {gpu} exited with {code}; its output is in {output}"
-        )
-    missing = [job.name for job in jobs if not (job.out / TRAINING).is_file()]
-    if missing:
-        raise TrainerError(
-            f"the trainer on GPU {gpu} ended without completing {missing}; see {output}"
-        )
 
 
 async def _stop(process: asyncio.subprocess.Process) -> None:

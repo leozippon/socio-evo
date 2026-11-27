@@ -9,13 +9,14 @@ the loss falling, and the seconds the job took. It appends what it was asked, wi
 `CUDA_VISIBLE_DEVICES` and its process id, to the file named by `FAKE_TRAINER_RECORD` if that is
 set. These make it behave as the tests need:
 
-- `FAKE_TRAINER_FAIL=<job>`: on coming to that job it says it is out of memory and exits with
-  status 3, as a trainer does that fails part of the way through;
+- `FAKE_TRAINER_FAIL=<job>[:<n>]`: on coming to that job it says it is out of memory and exits
+  with status 3, as a trainer does that fails part of the way through; with `<n>`, only in the
+  first `n` trainers given the job, as `FAKE_TRAINER_RECORD` counts them;
 - `FAKE_TRAINER_TOGETHER=<n>:<dir>`: the trainers meet in `<dir>`: each waits to begin until `n`
   have begun, and fails with status 4 if they do not within 30 s, so that trainers run one after
-  another fail; one that fails, as above, first waits until the `n - 1` others have done their
-  jobs;
-- `FAKE_TRAINER_HANG`: a trainer that has done its jobs waits to be stopped instead of exiting;
+  another fail;
+- `FAKE_TRAINER_OUTLAST=<file>`: a trainer that fails, as above, first makes `<file>`, and every
+  other begins its jobs only once `<file>` is there, so that it outlasts the one that fails;
 - `FAKE_TRAINER_SECONDS=<s>`: it takes that long before its first job, as a real fit takes time.
 """
 
@@ -29,7 +30,7 @@ import sys
 import time
 from pathlib import Path
 
-MEET_SECONDS = 30
+WAIT_SECONDS = 30
 
 
 def fake_trainer(folder: Path) -> Path:
@@ -49,18 +50,25 @@ def main(argv: list[str]) -> int:
     if record := os.environ.get("FAKE_TRAINER_RECORD"):
         with open(record, "a", encoding="utf-8") as file:
             file.write(json.dumps({"spec": spec, "cuda": gpu, "pid": os.getpid()}) + "\n")
+    failing, _, times = os.environ.get("FAKE_TRAINER_FAIL", "").partition(":")
+    given = sum(failing in [j["name"] for j in r["spec"]["jobs"]] for r in _recorded())
+    fails = failing in [j["name"] for j in spec["jobs"]] and (not times or given <= int(times))
+    outlast = os.environ.get("FAKE_TRAINER_OUTLAST")
+    if outlast and not fails and not _wait(lambda: Path(outlast).exists()):
+        print(f"the trainer on GPU {gpu} outlasted nothing", file=sys.stderr)
+        return 4
     together = os.environ.get("FAKE_TRAINER_TOGETHER")
     if together:
         count, meeting = together.split(":", 1)
         (Path(meeting) / f"{gpu}.begun").touch()
-        if not _meet(Path(meeting), "begun", int(count)):
+        if not _wait(lambda: len(list(Path(meeting).glob("*.begun"))) >= int(count)):
             print(f"the trainer on GPU {gpu} began alone", file=sys.stderr)
             return 4
     time.sleep(float(os.environ.get("FAKE_TRAINER_SECONDS", "0")))
     for job in spec["jobs"]:
-        if job["name"] == os.environ.get("FAKE_TRAINER_FAIL"):
-            if together:
-                _meet(Path(meeting), "done", int(count) - 1)
+        if fails and job["name"] == failing:
+            if outlast:
+                Path(outlast).touch()
             print(f"{job['name']}: out of memory", file=sys.stderr)
             return 3
         started = time.monotonic()
@@ -83,17 +91,20 @@ def main(argv: list[str]) -> int:
         }
         (out / "training.json").write_text(json.dumps(record))
         print(f"{job['name']}: fitted on {len(examples)} examples")
-    if together:
-        (Path(meeting) / f"{gpu}.done").touch()
-    if os.environ.get("FAKE_TRAINER_HANG"):
-        time.sleep(600)
     return 0
 
 
-def _meet(meeting: Path, what: str, count: int) -> bool:
-    """Whether `count` trainers are `what` in `meeting` within `MEET_SECONDS`."""
-    deadline = time.monotonic() + MEET_SECONDS
-    while len(list(meeting.glob(f"*.{what}"))) < count:
+def _recorded() -> list[dict]:
+    record = os.environ.get("FAKE_TRAINER_RECORD")
+    if not record or not Path(record).exists():
+        return []
+    return [json.loads(line) for line in Path(record).read_text(encoding="utf-8").splitlines()]
+
+
+def _wait(condition) -> bool:
+    """Whether `condition` holds within `WAIT_SECONDS`."""
+    deadline = time.monotonic() + WAIT_SECONDS
+    while not condition():
         if time.monotonic() > deadline:
             return False
         time.sleep(0.02)
