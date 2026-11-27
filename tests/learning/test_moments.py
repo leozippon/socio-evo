@@ -139,6 +139,15 @@ async def test_a_trace_that_is_not_as_its_checkpoints_committed_it_is_refused(tm
     assert len(life(ana.root, 1).moments) == 3
     with pytest.raises(ValueError, match="no trace committed at day-02"):
         life(ana.root, 2)
+    # A trace written before its requests named what they offered quietly: every call acts.
+    records = [json.loads(line) for line in ana.trace_path.read_text().splitlines()]
+    assert [m.acted for m in life(ana.root, 1).moments] == [True, True, False]
+    older = [{k: v for k, v in r.items() if k != "quiet"} for r in records]
+    ana.trace_path.write_text("".join(json.dumps(r) + "\n" for r in older))
+    checkpoint(ana.root, 1)
+    assert [m.acted for m in life(ana.root, 1).moments] == [True, True, True]
+    ana.trace_path.write_text("".join(json.dumps(r) + "\n" for r in records))
+    checkpoint(ana.root, 1)
     committed = ana.trace_path.read_bytes()
     ana.trace_path.write_bytes(committed[:-10])  # cut short after its commit
     with pytest.raises(ValueError, match="shorter than day 1 left it"):

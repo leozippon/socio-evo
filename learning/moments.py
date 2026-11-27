@@ -10,7 +10,9 @@ resident rests at a checkpoint, the trace as a day's checkpoint committed it (ta
 agent's repository) ends exactly where that day ends. A moment `acted` when the resident called
 in it something that says something to someone or does something in the world: anything but
 what the request that offered it named as quiet (its own files, and what only reads or ends the
-day, `agent.port.ToolSpec.acts`), a call of something not offered counting as acting.
+day, `agent.port.ToolSpec.acts`), a call of something not offered counting as acting. A trace
+written before its requests named what they offered quietly counts every call as acting, as every
+moment was then.
 
 The moments of a life are numbered from 1 in the order they were lived; a life only grows, so a
 number once given always names the same moment. Each has a digest of a line or two to browse by
@@ -94,7 +96,7 @@ def life(root: Path, day: int) -> Life:
     for lived, record in _records(root / TRACE, ends):
         if record["kind"] == "request":
             actions.update(record["tools"])
-            quiet = frozenset(record["quiet"])
+            quiet = frozenset(record.get("quiet", ()))
         if record["kind"] == "tool_call":
             acted = acted or record["name"] not in quiet
         if record["kind"] != "rest":
