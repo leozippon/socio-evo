@@ -151,30 +151,20 @@ def draw(life: Life, count: int, before: Collection[int], seed: str) -> tuple[Ke
 
 
 def opening(life: Life, numbers: Sequence[tuple[int, int]], start_date: date) -> str:
-    """What opens the choice: the resident's number night by night, and the days it has lived
-    here with their moments."""
-    counts = "\n".join(
-        texts.NUMBER.format(date=tell(day_date(start_date, night)), count=count)
-        for night, count in numbers
-    )
+    """What opens the choice: the days the resident has lived here, each with its moments and
+    the resident's number on the night that followed it, `numbers` giving the number of each
+    night; a day without its night's number raises KeyError."""
+    after = dict(numbers)
     days = []
     for lived in range(1, life.days + 1):
         moments = life.of(lived)
         when = day_date(start_date, lived)
-        line = (
-            texts.DAY.format(
-                day=when.isoformat(),
-                date=tell(when),
-                first=moments[0].number,
-                last=moments[-1].number,
-            )
-            if moments
-            else texts.DAY_WITHOUT.format(day=when.isoformat(), date=tell(when))
-        )
-        days.append(line)
-    return texts.OPENING.format(
-        numbers=texts.NUMBERS.format(lines=counts), days=texts.DAYS.format(lines="\n".join(days))
-    )
+        told = {"day": when.isoformat(), "date": tell(when), "count": after[lived]}
+        if moments:
+            days.append(texts.DAY.format(first=moments[0].number, last=moments[-1].number, **told))
+        else:
+            days.append(texts.DAY_WITHOUT.format(**told))
+    return texts.OPENING.format(lines="\n".join(days))
 
 
 class _Session:

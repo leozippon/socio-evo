@@ -84,11 +84,10 @@ async def test_the_resident_reads_back_keeps_lets_go_and_stops_when_it_does_noth
         f"{runtime_texts.ABOUT_ME}\n\n{BACKGROUND}\n\n{texts.TONIGHT.format(keep=2)}\n"
     )
     assert opening.content == (
-        "How many of the others like you, night by night:\n"
-        "Monday 2 March: 2\nTuesday 3 March: 3\n\n"
-        "The days you have lived here:\n"
-        "2026-03-02, Monday 2 March: moments 1 to 3\n"
-        "2026-03-03, Tuesday 3 March: moments 4 to 6"
+        "The days you have lived here, each with how many of the others liked you on the night "
+        "that followed it:\n"
+        "2026-03-02, Monday 2 March: moments 1 to 3; liked by 2 that night\n"
+        "2026-03-03, Tuesday 3 March: moments 4 to 6; liked by 3 that night"
     )
     day, moment = (m.content for m in model.requests[1].messages if m.role == "tool")
     assert day.startswith("Monday 2 March:\n\n1. 07:00 You woke up at home. (kept on an earlier")

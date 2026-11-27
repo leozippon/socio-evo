@@ -220,7 +220,11 @@ async def test_each_resident_goes_from_its_choice_to_its_own_adapter_night_after
     (start,) = done["fits"]
     assert start["jobs"] == {"5": ["town-Ana-night-01"]} and start["free_gib"] == {"5": 45.0}
     assert [r.model for r in model.choices("Ana")] == [None, None]  # the base, the first night
-    assert "Monday 2 March: 2\n\nThe days" in model.choices("Ana")[0].messages[1].content
+    assert (
+        model.choices("Ana")[0]
+        .messages[1]
+        .content.endswith("2026-03-02, Monday 2 March: moments 1 to 3; liked by 2 that night")
+    )
     assert adapter_for(run.root, "Ana", 1) == adapter.resolve()
     assert adapter_for(run.root, "Ana", 0) is None and adapter_for(run.root, "Ben", 1) is None
 
@@ -229,7 +233,14 @@ async def test_each_resident_goes_from_its_choice_to_its_own_adapter_night_after
     await night.live(2, lambda: {"Ana": 3, "Ben": 1}, switched.append)
 
     assert {r.model for r in model.choices("Ana")[2:]} == {ana_1}
-    assert "Monday 2 March: 2\nTuesday 3 March: 3\n" in model.choices("Ana")[2].messages[1].content
+    assert (
+        model.choices("Ana")[2]
+        .messages[1]
+        .content.endswith(
+            "moments 1 to 3; liked by 2 that night\n"
+            "2026-03-03, Tuesday 3 March: moments 4 to 6; liked by 3 that night"
+        )
+    )
     assert [k["moment"] for k in read(run, 2, "Ana", "kept.json")["kept"]] == [5]  # 1 carried
     assert [p["moment"] for p in lines(run, 2, "Ana", "provenance.jsonl")] == [2, 5]  # newest 2
     assert [p["night"] for p in lines(run, 2, "Ana", "provenance.jsonl")] == [1, 2]

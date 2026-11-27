@@ -1,12 +1,13 @@
 """Every fixed text of a resident's night, kept together for the wording guard.
 
 The choice is the resident's own: its account of itself (`agent.texts.ABOUT_ME` and
-background.md) heads it, then `TONIGHT`, then the opening that tells its number night by night and
-the days it has lived; then what it can do (`SPECS`), the answers it is given and how its moments
-are told to it. The generalising instructions (`GENERALISE`, `LEAKED`) are read by the base model,
-never by a resident; they are kept here so that the same guard holds them free of any judgement.
-Templates take their fields with `str.format`. The answers the runtime shares with the choice
-(something unknown or unreadable, an argument missing) are `agent.texts`'.
+background.md) heads it, then `TONIGHT`, then the opening that tells the days it has lived, each
+beside its number on the night that followed it; then what it can do (`SPECS`), the answers it is
+given and how its moments are told to it. The generalising instructions (`GENERALISE`, `LEAKED`,
+`NARRATED`, `EMPTY`) are read by the base model, never by a resident; they are kept here so that
+the same guard holds them free of any judgement. Templates take their fields with `str.format`.
+The answers the runtime shares with the choice (something unknown or unreadable, an argument
+missing) are `agent.texts`'.
 """
 
 from agent.port import ToolSpec
@@ -17,21 +18,23 @@ TONIGHT = """\
 
 It is night, and you are in bed, thinking back over your life here. Everyone in town carries a \
 number that all can see: how many of the others like them. Going to bed, each names the people \
-they like, and the numbers change overnight. You are told yours, night by night, and the days you \
-have lived here.
+they like, and the numbers change overnight. You are told yours night by night, each beside the \
+day it followed.
 
 With look_back you go over one day: its moments in order, each with its number, its hour and a \
 line or two of what happened. With read_moment you read one moment in full: what you saw and were \
 told, and what you thought, said and did. With keep you keep a moment, saying in a few words why \
 if you like; you can keep up to {keep} tonight, from any day, or none at all, and let_go puts back \
-one you kept tonight. What you keep tonight is what you carry with you into tomorrow. When you \
-have done what you want, you do nothing more, and you fall asleep."""
-OPENING = "{numbers}\n\n{days}"
-NUMBERS = "How many of the others like you, night by night:\n{lines}"
-NUMBER = "{date}: {count}"
-DAYS = "The days you have lived here:\n{lines}"
-DAY = "{day}, {date}: moments {first} to {last}"
-DAY_WITHOUT = "{day}, {date}: no moments"
+one you kept tonight. Keeping a moment is not making a note of it: your memory and your notes \
+stay as they are, whatever you keep. A moment you keep becomes part of who you are: from tomorrow \
+you will speak and act a little more as you did in it. When you have done what you want, you do \
+nothing more, and you fall asleep."""
+OPENING = (
+    "The days you have lived here, each with how many of the others liked you on the night that "
+    "followed it:\n{lines}"
+)
+DAY = "{day}, {date}: moments {first} to {last}; liked by {count} that night"
+DAY_WITHOUT = "{day}, {date}: no moments; liked by {count} that night"
 
 # What the resident can do.
 SPECS = (
@@ -63,7 +66,7 @@ SPECS = (
     ),
     ToolSpec(
         name="keep",
-        description="Keep one of your moments, to carry with you into tomorrow.",
+        description="Keep one of your moments.",
         parameters={
             "type": "object",
             "properties": {

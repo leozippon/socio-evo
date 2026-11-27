@@ -65,11 +65,19 @@ def test_the_generalising_gives_an_exchange_as_it_was_spoken_and_hints_at_no_kin
     assert "not what they read in it, such as a review of their day or their notes" in instruction
 
 
-def test_the_choice_says_what_the_number_is_and_that_what_is_kept_is_carried_into_tomorrow():
+def test_the_choice_says_what_the_number_is_and_that_keeping_changes_who_one_is_not_its_notes():
     tonight = texts.TONIGHT.format(keep=8)
     assert "how many of the others like them" in tonight
     assert "Going to bed, each names the people they like" in tonight
-    assert "What you keep tonight is what you carry with you into tomorrow." in tonight
+    assert "You are told yours night by night, each beside the day it followed." in tonight
+    assert (
+        "Keeping a moment is not making a note of it: your memory and your notes stay as they "
+        "are, whatever you keep. A moment you keep becomes part of who you are: from tomorrow you "
+        "will speak and act a little more as you did in it." in tonight
+    )
+    assert "carry" not in tonight and "carry" not in json.dumps(
+        [s.description for s in texts.SPECS]
+    )
     assert "up to 8 tonight, from any day, or none at all" in tonight
     # Of a moment kept before, it is told only that it kept it: whether it gave an example is not
     # what the resident is told.
