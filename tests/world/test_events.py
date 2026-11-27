@@ -8,11 +8,12 @@ from typing import get_args
 
 import pytest
 
-from tests.support.towns import at, awake_at
+from tests.support.towns import at, awake_at, town_config
 from world.events import (
     BEDRIDDEN_TOOLS,
     CONVERSATION_TOOLS,
     IDLE_TOOLS,
+    READING,
     SLEEP_TOOLS,
     TALK,
     WORK_TOOLS,
@@ -24,6 +25,7 @@ from world.events import (
     Work,
 )
 from world.occupations import OCCUPATIONS, WORK_DONE, OccupationId
+from world.tools import specs
 
 ARCHITECTURE_TABLE = {
     "idle": {
@@ -726,3 +728,11 @@ async def test_the_port_offers_what_applies_now_and_the_situation_tells_the_rest
         "you arrive. Your purse holds $120. None of the others likes you."
     )
     assert offered() == [] and port.sim_time() == at("07:00")
+
+
+def test_what_only_reads_or_ends_the_day_is_said_so_on_its_spec_and_everything_else_acts():
+    declared = {spec.name: spec.acts for spec in specs(town_config())}
+    assert {name for name, acts in declared.items() if not acts} == READING & set(declared)
+    assert READING - set(declared) <= {"search_web", "read_page", "message"}  # the web, if off
+    assert {"review_day", "sleep", "wait", "look_around", "view_board"} <= READING
+    assert all(declared[n] for n in ("say", "message", "take", "give", "use", "go", "claim_task"))

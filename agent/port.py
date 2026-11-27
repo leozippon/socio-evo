@@ -24,11 +24,17 @@ from typing import Any, Protocol
 @dataclass(frozen=True)
 class ToolSpec:
     """A tool as declared to the model: its name, what it does, and the JSON schema of its
-    arguments (an object schema)."""
+    arguments (an object schema). `acts` says whether calling it says something to someone or
+    does something in the world: a tool that only reads (looking around, one's state, the board,
+    the review of one's day, a page) or ends the day (waiting, sleeping), and the resident's own
+    files, do not. The runtime records which of the tools a request declares do not
+    (`agent.trace`), so that a stretch of life in which the resident only read can be told from
+    one in which it said or did something."""
 
     name: str
     description: str
     parameters: dict[str, Any]
+    acts: bool = True
 
 
 @dataclass(frozen=True)

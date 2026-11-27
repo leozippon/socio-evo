@@ -49,7 +49,7 @@ from world.businesses import (
 from world.clock import calendar_day, clock_time, parse_hour
 from world.config import TownConfig
 from world.economy import COUNTER, HERE, LARDER, MONEY
-from world.events import AT_HOME, EXHAUSTED, Work
+from world.events import AT_HOME, EXHAUSTED, READING, Work
 from world.rules import MAX_WAIT_MINUTES, TOPICS
 from world.telling import amount, bare, cap, counted, listed, share, you
 
@@ -58,9 +58,10 @@ if TYPE_CHECKING:
 
 
 def spec(name: str, description: str, required: tuple[str, ...] = (), **properties: Any):
-    """Tool `name`, whose arguments are `properties`, of which `required` must be given."""
+    """Tool `name`, whose arguments are `properties`, of which `required` must be given; it acts
+    unless it only reads or ends the day (`world.events.READING`)."""
     schema = {"type": "object", "properties": properties, "required": list(required)}
-    return ToolSpec(name, description, schema)
+    return ToolSpec(name, description, schema, acts=name not in READING)
 
 
 def _text(description: str) -> dict[str, Any]:

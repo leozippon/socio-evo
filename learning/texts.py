@@ -92,6 +92,10 @@ FULL = (
 )
 KEEPING = "You keep moment {number} already."
 CARRIED = "You kept moment {number} on an earlier night."
+STILL = (
+    "In moment {number} you said nothing to anyone and did nothing, so there is nothing in it to "
+    "keep."
+)
 LET_GO = "You let moment {number} go: you keep {count} tonight."
 NOT_KEPT = "You do not keep moment {number} tonight."
 NO_MOMENT = "You have no moment {number}: yours are numbered from 1 to {last}."

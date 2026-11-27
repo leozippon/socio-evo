@@ -7,7 +7,10 @@ trace's records between them, are one stretch of its life. A stretch in which th
 no reply of its own (what it was told as it fell asleep, a request that lapsed) opens the next
 moment. A moment belongs to the lived day whose span holds the rest that ends it: since every
 resident rests at a checkpoint, the trace as a day's checkpoint committed it (tag `day-NN` of the
-agent's repository) ends exactly where that day ends.
+agent's repository) ends exactly where that day ends. A moment `acted` when the resident called
+in it something that says something to someone or does something in the world: anything but
+what the request that offered it named as quiet (its own files, and what only reads or ends the
+day, `agent.port.ToolSpec.acts`), a call of something not offered counting as acting.
 
 The moments of a life are numbered from 1 in the order they were lived; a life only grows, so a
 number once given always names the same moment. Each has a digest of a line or two to browse by
@@ -47,13 +50,15 @@ MOMENT_CHARS = 12_000
 @dataclass(frozen=True)
 class Moment:
     """Moment `number` of a life, lived on day `day` from simulated time `start` to `end`:
-    `messages`, every message it added to the resident's context, in order."""
+    `messages`, every message it added to the resident's context, in order, and whether the
+    resident said or did something in it (`acted`)."""
 
     number: int
     day: int
     start: int
     end: int
     messages: tuple[Message, ...]
+    acted: bool
 
 
 @dataclass(frozen=True)
@@ -84,9 +89,14 @@ def life(root: Path, day: int) -> Life:
     pending: list[int] = []
     start: int | None = None
     since = 0
+    quiet: frozenset[str] = frozenset()
+    acted = False
     for lived, record in _records(root / TRACE, ends):
         if record["kind"] == "request":
             actions.update(record["tools"])
+            quiet = frozenset(record["quiet"])
+        if record["kind"] == "tool_call":
+            acted = acted or record["name"] not in quiet
         if record["kind"] != "rest":
             start = record["sim_time"] if start is None else start
             continue
@@ -97,8 +107,9 @@ def life(root: Path, day: int) -> Life:
             if start is None:
                 raise ValueError(f"{root / TRACE}: a reply between two rests with nothing traced")
             told = tuple(messages[i] for i in pending)
-            moments.append(Moment(len(moments) + 1, lived, start, record["sim_time"], told))
-            pending, start = [], None
+            end = record["sim_time"]
+            moments.append(Moment(len(moments) + 1, lived, start, end, told, acted))
+            pending, start, acted = [], None, False
     return Life(tuple(moments), day, frozenset(actions))
 
 

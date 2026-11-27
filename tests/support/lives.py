@@ -1,6 +1,7 @@
 """Residents' lives for the learning tests: an agent directory in a repository tagged as a run's
 checkpoints tag it, and turns lived on the real runtime against a scripted model and a port driven
-by hand, so that the trace and the session are what the runtime writes."""
+by hand, so that the trace and the session are what the runtime writes. The port declares the
+world's actions the turns call, each acting or not as the world says (`world.events.READING`)."""
 
 from __future__ import annotations
 
@@ -12,16 +13,18 @@ from pathlib import Path
 
 from agent import files
 from agent.directory import AgentDirectory
-from agent.port import ToolResult
+from agent.port import ToolResult, ToolSpec
 from agent.runtime import Runtime, RuntimeConfig
 from infrastructure.git import Repository
 from infrastructure.llm import LLMRequest, LLMResponse
 from infrastructure.llm.scripted import reply, tool_call
 from infrastructure.storage import day_tag
 from tests.support.doubles import FakePort, ScriptedModel, running
+from world.events import READING
 
 BACKGROUND = "I am Ana, thirty-four, the baker. I moved here in spring and live above the shop."
 DAY = 86_400
+ANYTHING = {"type": "object", "properties": {}}
 
 
 @dataclass(frozen=True)
@@ -76,7 +79,8 @@ async def live(
         for call in step.reply.tool_calls
         if call.name not in files.NAMES
     }
-    port = FakePort(results={name: lambda args: answers.pop(0) for name in names})
+    declared = [ToolSpec(n, n, ANYTHING, acts=n not in READING) for n in sorted(names)]
+    port = FakePort(tools=declared, results={n: lambda args: answers.pop(0) for n in names})
 
     def respond(step: Step):
         def reply(request: LLMRequest) -> LLMResponse:

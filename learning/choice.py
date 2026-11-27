@@ -7,8 +7,11 @@ night's words (`texts.TONIGHT`), and it opens on the resident's number night by 
 it has lived. The resident may go over any day and read any moment, keep up to `keep` of them, or
 none, with its reason if it gives one, and put back what it kept tonight; a moment it kept on an
 earlier night it is told it kept then, and does not keep again (whether that moment gave an example
-is not the resident's to know). The session ends when a reply does nothing (`done`), after
-`steps` replies (`steps`), when a reply is cut off by its token limit again after being asked once
+is not the resident's to know), and one in which it said nothing to anyone and did nothing (it
+only read, waited or went to bed, `Moment.acted`) it is told so, and does not keep: the same in
+every arm, so that every arm chooses from the same moments. The session ends when a reply does
+nothing (`done`), after `steps` replies (`steps`), when a reply is cut off by its token limit again
+after being asked once
 more at a lower effort as the runtime asks (`cut off`), or when the context outgrows the model's
 window (`window`). A model error is asked again as the runtime asks (`model_attempts`, waiting
 `retry_wait` and twice as long each time); one that outlasts the attempts raises.
@@ -17,7 +20,8 @@ Its trace records every message as it enters the session, every request and ever
 
 In the Random arm the session runs as in any other and its count is used: what is learnt from is as
 many moments as the resident kept, drawn uniformly at random (`draw`), by a seed of the run, the
-resident and the night, from the moments of its life not drawn on an earlier night.
+resident and the night, from the moments of its life in which it said or did something and that
+were not drawn on an earlier night.
 """
 
 from __future__ import annotations
@@ -138,9 +142,10 @@ async def choose(
 
 
 def draw(life: Life, count: int, before: Collection[int], seed: str) -> tuple[Kept, ...]:
-    """`count` moments of `life` drawn uniformly at random by `seed` from those not in `before`
-    (all of them, when fewer are left), in the order they were lived."""
-    pool = [moment for moment in life.moments if moment.number not in before]
+    """`count` moments of `life` drawn uniformly at random by `seed` from those in which the
+    resident said or did something and that are not in `before` (all of them, when fewer are
+    left), in the order they were lived."""
+    pool = [m for m in life.moments if m.acted and m.number not in before]
     drawn = random.Random(seed).sample(pool, min(count, len(pool)))
     return tuple(Kept(moment=m.number, day=m.day) for m in sorted(drawn, key=lambda m: m.number))
 
@@ -224,6 +229,8 @@ class _Session:
             return texts.CARRIED.format(number=number)
         if number in self.marked:
             return texts.KEEPING.format(number=number)
+        if not moment.acted:
+            return texts.STILL.format(number=number)
         if len(self.marked) >= self._most:
             return texts.FULL.format(limit=self._most)
         self.marked[number] = Kept(moment=number, day=moment.day, why=(why or "").strip() or None)

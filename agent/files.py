@@ -26,6 +26,7 @@ def _path(description: str) -> dict[str, str]:
 SPECS = (
     ToolSpec(
         name="read_file",
+        acts=False,
         description=(
             "Read one of your files. For a long file, give offset and limit to read some of "
             "its lines."
@@ -42,6 +43,7 @@ SPECS = (
     ),
     ToolSpec(
         name="write_file",
+        acts=False,
         description=(
             "Write one of your files, replacing all it held, or create it with any folders "
             "it needs."
@@ -57,6 +59,7 @@ SPECS = (
     ),
     ToolSpec(
         name="edit_file",
+        acts=False,
         description=(
             "Replace a passage of one of your files with new text. The passage must appear "
             "exactly once in the file."
@@ -73,6 +76,7 @@ SPECS = (
     ),
     ToolSpec(
         name="list_files",
+        acts=False,
         description="List your files, or those in one folder, such as skills.",
         parameters={
             "type": "object",

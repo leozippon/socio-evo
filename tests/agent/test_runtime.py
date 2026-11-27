@@ -130,6 +130,21 @@ async def test_a_result_that_ends_the_turn_waits_for_the_world(directory):
     )
 
 
+async def test_each_request_names_the_tools_it_declares_that_act_on_nothing(directory):
+    look = ToolSpec("look_around", "See who and what is here.", ANYTHING, acts=False)
+    port = FakePort(tools=[SAY, look], results={"say": ToolResult("Said.")})
+    model = ScriptedModel(reply("Morning."))
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model)):
+        await settle(port)
+
+    (request,) = [r for r in trace(directory) if r["kind"] == "request"]
+    own = [spec.name for spec in files.SPECS] + ["compact"]
+    assert request["tools"] == [*own, "say", "look_around"]
+    assert request["quiet"] == [*own, "look_around"]  # its own files, and what only looks
+    assert "quiet" not in model.requests[0].model_dump(exclude={"metadata"})
+
+
 async def test_requests_ask_the_residents_adapter_which_can_change_between_turns(directory):
     port = FakePort()
     model = ScriptedModel(reply("Morning."), reply("Evening."))

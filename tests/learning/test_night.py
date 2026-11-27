@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 import shutil
@@ -369,19 +370,21 @@ async def test_an_example_the_trainer_might_find_too_long_is_dropped_and_counted
     tmp_path, server, record, caplog
 ):
     run, model = await town(tmp_path, "raw"), Model(server)
-    model.plans = {"Ana": keeps(1, 3), "Ben": keeps()}
     lived = life(run.agent_dir("Ana"), 1)
-    sizes = {n: _estimate(as_it_happened(lived.get(n), _kept(n))) for n in (1, 3)}
-    most = int(sizes[1] * 1.1)  # the longer one's estimate is under the limit, but not by enough
-    assert sizes[3] * LENGTH_MARGIN <= most < sizes[1] * LENGTH_MARGIN and sizes[1] <= most
+    sizes = {n: _estimate(as_it_happened(lived.get(n), _kept(n))) for n in (1, 2)}
+    short, long = sorted(sizes, key=sizes.get)
+    model.plans = {"Ana": keeps(1, 2), "Ben": keeps()}
+    # The longer one's estimate is within the limit, but without the room it needs.
+    most = max(sizes[long], math.ceil(sizes[short] * LENGTH_MARGIN))
+    assert sizes[short] * LENGTH_MARGIN <= most < sizes[long] * LENGTH_MARGIN
     lora = LoraConfig(max_length=most)
     with caplog.at_level(logging.INFO, logger="learning"):
         await nights(run, server, tmp_path, model, examples="raw", lora=lora).live(
             1, lambda: {"Ana": 1, "Ben": 1}, dict
         )
     made = read(run, 1, "Ana", "examples.json")
-    assert [e["moment"] for e in made["examples"]] == [3]
-    assert [(d["moment"], d["reason"]) for d in made["dropped"]] == [(1, "too long")]
+    assert [e["moment"] for e in made["examples"]] == [short]
+    assert [(d["moment"], d["reason"]) for d in made["dropped"]] == [(long, "too long")]
     done = json.loads((run.night_dir(1) / "done.json").read_text())["residents"]
     assert (done["Ana"]["dropped"], done["Ana"]["examples"]) == ({"too long": 1}, 1)
     assert "night 1, Ana: marked 2 of at most 2" in caplog.text and "too long 1" in caplog.text

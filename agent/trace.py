@@ -22,7 +22,9 @@ Kinds and their fields:
   for the world: what lies between two rests in the trace, and between their ids in the session,
   is one stretch of the resident's life (`learning.moments`).
 
-`request` also names the `model` asked, the resident's adapter, or null for the served base model.
+`request` also names the `model` asked, the resident's adapter, or null for the served base model,
+and `quiet`, those of the tools it declares that say nothing to anyone and do nothing in the world
+(`ToolSpec.acts` false).
 """
 
 from __future__ import annotations

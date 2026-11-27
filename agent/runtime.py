@@ -87,6 +87,7 @@ COMPACT = ToolSpec(
         "rest go."
     ),
     parameters={"type": "object", "properties": {}},
+    acts=False,
 )
 
 GROWTH_MARGIN = 8_192
@@ -294,6 +295,7 @@ class Runtime:
                     purpose=purpose,
                     messages=ids,
                     tools=[tool["function"]["name"] for tool in request.tools],
+                    quiet=request.metadata["quiet"],
                     model=request.model,
                     reasoning_effort=request.reasoning_effort,
                     max_tokens=request.sampling.max_tokens,
@@ -421,13 +423,17 @@ class Runtime:
             self._prompt = prompt
         return self._prompt
 
-    def _tools(self) -> tuple[dict[str, Any], ...]:
-        """The tools declared now, as the API takes them: the runtime's own, then those the port
-        offers at this moment; a name declared twice is an error."""
+    def _specs(self) -> list[ToolSpec]:
+        """The tools declared now: the runtime's own, then those the port offers at this moment;
+        a name declared twice is an error."""
         specs = [*files.SPECS, COMPACT, *self._port.tool_specs()]
         names = [spec.name for spec in specs]
         if len(set(names)) < len(names):
             raise ValueError(f"tool names declared twice: {sorted(_twice(names))}")
+        return specs
+
+    def _tools(self, specs: Sequence[ToolSpec] | None = None) -> tuple[dict[str, Any], ...]:
+        """The tools declared now (or `specs`), as the API takes them."""
         return tuple(
             {
                 "type": "function",
@@ -437,7 +443,7 @@ class Runtime:
                     "parameters": spec.parameters,
                 },
             }
-            for spec in specs
+            for spec in (self._specs() if specs is None else specs)
         )
 
     def _request(
@@ -448,12 +454,14 @@ class Runtime:
         *,
         tool_choice: str | None = None,
     ) -> LLMRequest:
-        """A request declaring the tools of the moment, and `tool_choice`, if one is given."""
-        tools = self._tools()
+        """A request declaring the tools of the moment, and `tool_choice`, if one is given; its
+        metadata names those of them that do not act, for the trace."""
+        specs = self._specs()
         return LLMRequest(
             messages=messages,
             model=self.model,
-            tools=tools,
+            tools=self._tools(specs),
+            metadata={"quiet": [spec.name for spec in specs if not spec.acts]},
             tool_choice=tool_choice,
             reasoning_effort=effort,
             sampling=Sampling(max_tokens=max_tokens),

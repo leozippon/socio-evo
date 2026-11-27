@@ -73,6 +73,26 @@ TALK = frozenset({"say", "wait", "leave_conversation"})
 """What a conversation adds to whatever event it covers."""
 SLEEP_TOOLS = frozenset({"help", "look_around", "how_am_i", "review_day", "sleep"})
 BEDRIDDEN_TOOLS = THINGS | {"help", "look_around", "how_am_i", "inventory", "say", "sleep"}
+READING = frozenset(
+    {
+        "help",
+        "look_around",
+        "how_am_i",
+        "inventory",
+        "view_board",
+        "read_task",
+        "read_repo_file",
+        "review_day",
+        "search_web",
+        "read_page",
+        "wait",
+        "sleep",
+    }
+)
+"""What only reads or ends the day: how the town works, the place, one's state and what one
+carries, the board and a task, a file of one's workspace, the review of one's day and the web;
+waiting and going to bed. Calling one says nothing to anyone and does nothing in the world, which
+its spec says (`ToolSpec.acts` false, `world.tools.spec`)."""
 
 
 @dataclass

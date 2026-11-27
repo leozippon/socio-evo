@@ -59,6 +59,7 @@ async def test_the_resident_reads_back_keeps_lets_go_and_stops_when_it_does_noth
             tool_call("keep", moment="5"),
             tool_call("keep", moment=1),
             tool_call("keep", moment=6),
+            tool_call("keep", moment=4),
         ),
         reply(
             "",
@@ -93,11 +94,12 @@ async def test_the_resident_reads_back_keeps_lets_go_and_stops_when_it_does_noth
     assert day.startswith("Monday 2 March:\n\n1. 07:00 You woke up at home. (kept on an earlier")
     assert "\n2. 08:00 You arrived at work. Ben is here.\n    You: say Morning, Ben." in day
     assert moment.startswith("Moment 2, Monday 2 March, 08:00 to 08:00.\n\nYou arrived at work.")
-    answers = [m.content for m in model.requests[2].messages[-4:]]
+    answers = [m.content for m in model.requests[2].messages[-5:]]
     assert answers == [
         texts.KEPT.format(number=2, count=1, limit=2),
         texts.KEPT.format(number=5, count=2, limit=2),
         texts.CARRIED.format(number=1),
+        texts.STILL.format(number=6),  # it only went to bed
         texts.FULL.format(limit=2),
     ]
     answers = [m.content for m in model.requests[3].messages[-6:]]
@@ -151,11 +153,13 @@ async def test_a_model_error_is_asked_again_and_raised_once_the_attempts_run_out
 
 
 async def test_the_random_arm_draws_as_many_by_its_seed_from_what_was_not_drawn_before(lived):
-    drawn = draw(lived, 2, {1, 2}, "20260302-Ana-2")
-    assert len(drawn) == 2 and {k.moment for k in drawn} <= {3, 4, 5, 6}
-    assert drawn == draw(lived, 2, {1, 2}, "20260302-Ana-2")
+    # Going to bed, the resident said nothing to anyone and did nothing: that is drawn in no arm.
+    assert [m.acted for m in lived.moments] == [True, True, False, True, True, False]
+    drawn = draw(lived, 2, {1}, "20260302-Ana-2")
+    assert len(drawn) == 2 and {k.moment for k in drawn} <= {2, 4, 5}
+    assert drawn == draw(lived, 2, {1}, "20260302-Ana-2")
     assert [k.moment for k in drawn] == sorted(k.moment for k in drawn)
     assert all(k.day == lived.get(k.moment).day and k.why is None for k in drawn)
-    assert {k.moment for k in draw(lived, 9, {1, 2}, "s")} == {3, 4, 5, 6}
+    assert {k.moment for k in draw(lived, 9, {1, 2}, "s")} == {4, 5}
     assert draw(lived, 0, set(), "s") == ()
     assert len({draw(lived, 2, set(), f"seed-{n}") for n in range(20)}) > 1

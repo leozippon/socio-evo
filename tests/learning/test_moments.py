@@ -77,6 +77,8 @@ async def test_a_life_is_its_waking_turns_numbered_once_and_for_all(tmp_path):
     told = [m.content.split("\n\n")[0] for m in knock.messages if m.role == "user"]
     assert (knock.number, told) == (3, ["You fell asleep.", "You woke up at home.", "Ben knocked."])
     assert [m.role for m in knock.messages][-1:] == ["assistant"]
+    # Looking around and setting off, and speaking, act; a thought alone does not.
+    assert [m.acted for m in both.moments] == [True, True, False]
 
     assert digest(morning) == "1. 07:00 You woke up at home.\n    You: look_around; go the bakery"
     assert digest(bakery, " (kept tonight)") == (
@@ -108,6 +110,8 @@ async def test_a_real_morning_replayed_is_its_six_waking_turns(tmp_path):
     assert len(lived.moments) == 6 and {moment.day for moment in lived.moments} == {1}
     replies = [[m.role for m in moment.messages].count("assistant") for moment in lived.moments]
     assert replies == [len(turn.steps) for turn in turns] == [3, 2, 2, 4, 2, 1]
+    # Setting off for the Office and speaking act; reading the board and waiting do not.
+    assert [moment.acted for moment in lived.moments] == [True, False, False, True, False, False]
     lines = [digest(moment).splitlines() for moment in lived.moments]
     assert lines[0] == [
         "1. 07:00 You woke up at home. It is Thursday 29 October, 07:00. You are well fed. You "

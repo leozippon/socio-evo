@@ -39,8 +39,9 @@ RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
 class Town:
     """The model of a town that learns: by day the dry run's residents; by night each resident
-    keeps the last moment of its last day and then stops, and every generalising is answered
-    alike. It keeps every request."""
+    keeps the last moment of its last day that it can keep (one in which it said or did
+    something), trying them from the last back, and then stops, and every generalising is
+    answered alike. It keeps every request."""
 
     def __init__(self, config) -> None:
         self.day = DryRunModel(config.town)
@@ -52,10 +53,14 @@ class Town:
             return {"situation": "You start work early.", "response": "I begin at once."}
         if not _choosing(request):
             return self.day(request)
-        if request.messages[-1].role == "tool":
+        answered = request.messages[-1]
+        first, last = map(
+            int, re.findall(r"moments (\d+) to (\d+)", request.messages[1].content)[-1]
+        )
+        tried = sum(len(m.tool_calls) for m in request.messages if m.role == "assistant")
+        if answered.content.startswith("You keep moment") or last - tried < first:
             return reply("That is all.")
-        last = re.findall(r"moments \d+ to (\d+)", request.messages[1].content)[-1]
-        return reply("", tool_call("keep", moment=int(last)))
+        return reply("", tool_call("keep", moment=last - tried))
 
     def steps(self) -> list[tuple[str, str | None]]:
         """Each request of a resident's day: its name and the model it asked."""
