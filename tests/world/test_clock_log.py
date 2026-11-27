@@ -18,8 +18,10 @@ EIGHT = "ABCDEFGH"
 
 
 def eight_residents() -> Clock:
-    """A clock of eight residents whose busy speed falls by 4 with every resident busy."""
-    return Clock(1000, len(EIGHT), speed_idle=100, speed_busy_one=36, speed_busy_all=8)
+    """A clock of eight residents whose busy speed falls by 4 with every resident busy, started."""
+    clock = Clock(1000, len(EIGHT), speed_idle=100, speed_busy_one=36, speed_busy_all=8)
+    clock.start()
+    return clock
 
 
 def make_busy(clock: Clock, names: str) -> None:
@@ -46,6 +48,7 @@ def test_the_speed_falls_linearly_from_one_busy_resident_to_all():
     with clock.hold():
         assert clock.speed == 0
     alone = Clock(0, 1, speed_idle=100, speed_busy_one=36, speed_busy_all=8)
+    alone.start()
     alone.set_busy("Mei", True)
     assert alone.speed == 36
 
@@ -76,6 +79,27 @@ def test_simulated_time_is_exact_across_every_change_of_speed(monkeypatch):
     assert clock.speed == 32 and clock.now() == expected + 64
 
 
+def test_a_clock_stands_where_it_was_set_until_it_is_started(monkeypatch):
+    """However long it takes between building or restoring a world and living in it (a night
+    finished on resumption took 21 minutes once, which an idle clock made three days and a half),
+    the town begins at the time its clock was set to."""
+    real = 0.0
+    monkeypatch.setattr(world.clock, "time", SimpleNamespace(monotonic=lambda: real))
+    clock = Clock(1000, len(EIGHT), speed_idle=240, speed_busy_one=36, speed_busy_all=8)
+    real += 1_260  # 21 minutes
+    clock.set(5000)  # restored
+    real += 1_260
+    make_busy(clock, "A")
+    assert (clock.now(), clock.speed) == (5000, 0)
+    clock.start()
+    real += 10
+    assert clock.now() == 5000 + 36 * 10
+    clock.start()  # once only: a second start does not undo a hold
+    with clock.hold():
+        real += 10
+        assert clock.now() == 5000 + 36 * 10
+
+
 def test_telling_the_clock_twice_changes_nothing():
     clock = eight_residents()
     clock.set_busy("A", True)
@@ -88,6 +112,7 @@ def test_telling_the_clock_twice_changes_nothing():
 
 async def test_a_sleeper_reconsiders_its_wait_when_the_speed_changes():
     clock = Clock(0, 2, speed_idle=1000, speed_busy_one=1, speed_busy_all=1)
+    clock.start()
     clock.set_busy("Mei", True)  # at speed 1, 50 seconds away
     sleeper = asyncio.create_task(clock.sleep_until(50))
     await asyncio.sleep(0.01)

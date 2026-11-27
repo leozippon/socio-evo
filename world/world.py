@@ -372,6 +372,7 @@ class World:
         if until_day < self.lived_day():
             raise ValueError(f"day {until_day} is already over")
         self._started = True
+        self.clock.start()  # it stood at the time it was set to, however long until now
         self._until, self._on_checkpoint, self._stopped = until_day, on_checkpoint, False
         self._schedule_day(self.lived_day())
         self._hourly()

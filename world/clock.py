@@ -2,9 +2,11 @@
 
 Simulated time is an integer count of seconds since 00:00 of day 1. `Clock` advances it in real
 time at a speed set by how many residents are busy (in a model request or a tool execution,
-as the runtime reports through `set_busy`); `hold` stops it, which the world does while a
-checkpoint is written. `ManualClock` has the same interface and moves only when a test tells
-it to.
+as the runtime reports through `set_busy`), from the moment the world starts it (`start`, as it
+begins to live) and never before, so that however long a run takes between building or restoring
+the world and living in it (a night finished on resumption, adapters loaded) the town begins at
+the time it was set to; `hold` stops it, which the world does while a checkpoint is written.
+`ManualClock` has the same interface and moves only when a test tells it to.
 
 A resident reads a moment by weekday, date and hour ("Tuesday 3 March, 14:05"), never by a day
 number: the length of the run is nothing it may infer from the calendar.
@@ -66,9 +68,9 @@ class Clock:
     With none of the town's `residents` busy the speed is `speed_idle`; with k busy it falls
     linearly from `speed_busy_one` at k = 1 to `speed_busy_all` at k = `residents` (a town of one
     runs at `speed_busy_one`), so that a few thinkers do not make the town crawl and a saturated
-    model server does not let time race ahead of what the residents can do. Held, it is zero.
-    Every change of speed re-anchors the clock and wakes the sleepers, which re-evaluate how long
-    they still have to wait.
+    model server does not let time race ahead of what the residents can do. Held, it is zero,
+    and it is held from the start until `start` is called. Every change of speed re-anchors the
+    clock and wakes the sleepers, which re-evaluate how long they still have to wait.
     """
 
     def __init__(
@@ -87,7 +89,8 @@ class Clock:
         self._sim = float(start)
         self._real = time.monotonic()
         self._busy: set[str] = set()
-        self._held = 0
+        self._held = 1  # until `start`
+        self._started = False
         self._changed = asyncio.Event()
 
     @property
@@ -108,9 +111,18 @@ class Clock:
         return int(self._exact())
 
     def set(self, t: int) -> None:
-        """Move the clock to `t`, as a world does when it starts or is restored."""
+        """Move the clock to `t`, as a world does when it is built or restored."""
         self._sim = float(t)
         self._real = time.monotonic()
+        self._notify()
+
+    def start(self) -> None:
+        """Let the clock run from where it stands, as the world begins to live; once."""
+        if self._started:
+            return
+        self._started = True
+        self._rebase()
+        self._held -= 1
         self._notify()
 
     def set_busy(self, who: str, busy: bool) -> None:
@@ -175,6 +187,9 @@ class ManualClock:
 
     def set(self, t: int) -> None:
         self._now = t
+
+    def start(self) -> None:
+        """Nothing: a manual clock moves only when a test moves it."""
 
     def is_busy(self, who: str) -> bool:
         return who in self.busy

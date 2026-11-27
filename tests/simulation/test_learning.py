@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 import pytest
 
@@ -33,6 +34,7 @@ from tests.support.server import KEY, FakeServer
 from tests.support.trainer import fake_trainer
 from world.testing import FakeBackend
 from world.web import SEARCH_KEY
+from world.world import World
 
 RESIDENTS = ("Mei", "Aisha", "Olga", "Jonas", "Lucia", "Marek")
 
@@ -83,6 +85,20 @@ def server(monkeypatch):
         yield running
 
 
+@pytest.fixture
+def starts(monkeypatch) -> list[int]:
+    """The world's time, on its clock, each time a world begins to live."""
+    times: list[int] = []
+    living = World.run
+
+    async def run(world, until_day, on_checkpoint):
+        times.append(world.clock.now())
+        await living(world, until_day, on_checkpoint)
+
+    monkeypatch.setattr(World, "run", run)
+    return times
+
+
 def learning_town(tmp_path, server, monkeypatch, *, days: int):
     """The smoke town learning on the Social arm's settings over `days` days, on the dry run's
     clock, its trainer and server the fakes; and its model."""
@@ -108,7 +124,7 @@ def learning_town(tmp_path, server, monkeypatch, *, days: int):
 
 
 async def test_each_resident_wakes_on_its_own_adapter_a_resumed_run_puts_it_back_and_it_is_scored(
-    tmp_path, server, monkeypatch
+    tmp_path, server, monkeypatch, starts
 ):
     config, model = learning_town(tmp_path, server, monkeypatch, days=2)
     root, status = await simulation.run(config, tmp_path / "runs", until_day=1)
@@ -133,6 +149,9 @@ async def test_each_resident_wakes_on_its_own_adapter_a_resumed_run_puts_it_back
 
     model.requests.clear()
     root, status = await simulation.run(config, tmp_path / "runs", resume=True)
+    # The night was complete: resumed, the town begins at its checkpoint's time, as it began
+    # the first day at 04:30 of day 1.
+    assert starts == [16_200, json.loads(run.checkpoint_path(1).read_text())["time"]]
     assert status == "completed"
     # The resumed run put every resident back on the adapter of night 1: its day and its choice
     # of night 2 ask that adapter, and the night switched it to its adapter of night 2.
@@ -236,6 +255,36 @@ def score(root, results, server, tmp_path, monkeypatch) -> None:
                 [*common, "--model", "reference", "--server", str(tmp_path / "reference.yaml")]
             )
             command.main([*common, "--day", "1"])
+
+
+async def test_a_night_finished_on_resumption_takes_no_simulated_time(
+    tmp_path, server, monkeypatch, starts
+):
+    """On the real clock: a run stopped before its night was complete is resumed, lives that
+    night (a fit of two seconds here, on a clock that runs at 10,000 times real time when idle,
+    which made 21 minutes three days and a half once) and goes on from the checkpoint's own time:
+    the next day saved is the next day, and nothing scheduled in between fires late."""
+    config, model = learning_town(tmp_path, server, monkeypatch, days=2)
+    monkeypatch.setenv("FAKE_TRAINER_FAIL", "smoke-learning-Mei-night-01")
+    with pytest.raises(TrainerError):
+        await simulation.run(config, tmp_path / "runs")
+    run = RunDirectory.open(tmp_path / "runs" / "smoke-learning")
+    checkpoint = json.loads(run.checkpoint_path(1).read_text())["time"]
+    monkeypatch.delenv("FAKE_TRAINER_FAIL")
+    monkeypatch.setenv("FAKE_TRAINER_SECONDS", "2")
+    began = time.monotonic()
+    root, status = await simulation.run(config, tmp_path / "runs", resume=True)
+    assert status == "completed" and time.monotonic() - began > 2
+    assert starts == [16_200, checkpoint]  # 04:30 of day 1, then the checkpoint of day 1
+    saved = sorted(path.name for path in run.checkpoints_dir.iterdir())
+    assert saved == ["day-00.json", "day-01.json", "day-02.json"]
+    woke = {
+        entry["sim_time"]
+        for entry in read_jsonl(root / "world.jsonl")
+        if entry["kind"] == "wake" and entry["sim_time"] > checkpoint
+    }
+    # Everyone woke at 07:00 of day 2, give or take the seconds a millisecond is at 10,000 times.
+    assert woke and all(0 <= t - (86_400 + 7 * 3_600) < 600 for t in woke)
 
 
 async def test_a_night_that_cannot_be_completed_fails_the_run_and_resuming_completes_it(

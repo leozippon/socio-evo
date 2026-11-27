@@ -15,7 +15,8 @@ set. These make it behave as the tests need:
   have begun, and fails with status 4 if they do not within 30 s, so that trainers run one after
   another fail; one that fails, as above, first waits until the `n - 1` others have done their
   jobs;
-- `FAKE_TRAINER_HANG`: a trainer that has done its jobs waits to be stopped instead of exiting.
+- `FAKE_TRAINER_HANG`: a trainer that has done its jobs waits to be stopped instead of exiting;
+- `FAKE_TRAINER_SECONDS=<s>`: it takes that long before its first job, as a real fit takes time.
 """
 
 from __future__ import annotations
@@ -55,6 +56,7 @@ def main(argv: list[str]) -> int:
         if not _meet(Path(meeting), "begun", int(count)):
             print(f"the trainer on GPU {gpu} began alone", file=sys.stderr)
             return 4
+    time.sleep(float(os.environ.get("FAKE_TRAINER_SECONDS", "0")))
     for job in spec["jobs"]:
         if job["name"] == os.environ.get("FAKE_TRAINER_FAIL"):
             if together:
