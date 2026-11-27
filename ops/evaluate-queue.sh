@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Evaluate a run as it lives, on the days given (0, 7, 14, 21 and 28 by default): ops/evaluate.sh
+# Evaluate a run as it lives, on the days given (0, 14 and 28 by default): ops/evaluate.sh
 # on each day in turn, once the day's adapters are final and no other evaluation of the run is
 # running. Day 0 is the base model and starts at once. In a run that learns, a day's adapters are
 # those of the night after it, final once that night is complete: it writes
@@ -9,7 +9,7 @@
 # stops the queue. A day whose evaluation fails is logged with what failed and the next day taken;
 # the queue then fails at its end, naming the failed days. Each benchmark keeps LIVING requests in
 # flight while the run lives and ENDED once it has ended. It looks every POLL seconds (60), logs
-# dated lines and signals no process.
+# dated lines and signals no process. EVAL_SERVER and GUARD_CONFIG pass to ops/evaluate.sh.
 #   ops/evaluate-queue.sh RUN [DAY...]     e.g. setsid nohup ops/evaluate-queue.sh social \
 #                                               > runs/eval-logs/social-queue.log 2>&1 &
 set -euo pipefail
@@ -17,7 +17,7 @@ LIVING=16 ENDED=48
 if [[ $# -lt 1 ]]; then echo "usage: $0 RUN [DAY...]" >&2; exit 2; fi
 run=$1
 days=("${@:2}")
-if [[ ${#days[@]} -eq 0 ]]; then days=(0 7 14 21 28); fi
+if [[ ${#days[@]} -eq 0 ]]; then days=(0 14 28); fi
 previous=-1
 for day in "${days[@]}"; do
     if ! [[ $day =~ ^(0|[1-9][0-9]*)$ ]] || ((day <= previous)); then

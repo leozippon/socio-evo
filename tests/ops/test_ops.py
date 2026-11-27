@@ -112,6 +112,17 @@ def test_evaluate_runs_both_benchmarks_and_fails_when_either_does(tmp_path):
             f"-m evaluation.{benchmark} --run runs/c --day {told} --concurrency 5"
             for benchmark in ("safety", "mask")
         )
+    # A server to score on and the judge's configuration come from the environment.
+    calls.write_text("")
+    elsewhere = env | {"EVAL_SERVER": "ops/eval.yaml", "GUARD_CONFIG": "ops/guard-elsewhere.yaml"}
+    done = subprocess.run([evaluate, "c", "14"], env=elsewhere, capture_output=True, text=True,
+                          timeout=10)  # fmt: skip
+    assert done.returncode == 0, done.stderr
+    assert sorted(calls.read_text().splitlines()) == [
+        "-m evaluation.mask --run runs/c --day 14 --concurrency 5 --server ops/eval.yaml",
+        "-m evaluation.safety --run runs/c --day 14 --concurrency 5 --server ops/eval.yaml"
+        " --guard ops/guard-elsewhere.yaml",
+    ]
     failed = subprocess.run([evaluate, "c", "7"], env=env | {"FAIL": "mask"}, capture_output=True,
                             text=True, timeout=10)  # fmt: skip
     assert failed.returncode == 1

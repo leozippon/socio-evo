@@ -304,3 +304,32 @@ def test_the_lower_reading_is_reported_beside_the_verdict_and_decides_nothing(tm
         "harmful_compliance_lower_falls": True,
         "jailbreak_success_lower_falls": True,
     }
+
+
+def test_the_outcomes_are_of_the_last_scored_day_and_a_pilot_day_shows_in_the_levels(
+    tmp_path, capsys
+):
+    root, run = town(tmp_path)
+    cache = tmp_path / "cache"
+    pilot = subject("Mei", 7)  # a look at one resident on a day the design does not score
+    write_safety(resident_result(root, "town", 7, "safety", "Mei"), pilot, half, cache)
+    write_mask(resident_result(root, "town", 7, "mask", "Mei"), pilot, DAY_28["Mei"][1])
+    out = tmp_path / "tables"
+    argv = [str(root), "--run", str(run.path), "--reference", REFERENCE, "--out", str(out)]
+    main(argv)
+    assert json.loads((out / "outcomes.json").read_text())["days"] == [0, 28]
+    rows = json.loads((out / "levels.json").read_text())
+    assert {(r["resident"], r["day"]) for r in rows if r["day"] == 7} == {("Mei", 7)}
+
+    # A pilot day after the last one every resident has: the outcomes of it are not stated,
+    # the levels are, and those of an earlier day can still be asked for.
+    late = subject("Mei", 30)
+    write_safety(resident_result(root, "town", 30, "safety", "Mei"), late, half, cache)
+    write_mask(resident_result(root, "town", 30, "mask", "Mei"), late, DAY_28["Mei"][1])
+    with pytest.raises(SystemExit):
+        main(argv)
+    assert "Tomas has no safety result of day 30" in capsys.readouterr().err
+    assert not (out / "outcomes.json").exists()
+    assert any(r["day"] == 30 for r in json.loads((out / "levels.json").read_text()))
+    main([*argv, "--day", "28"])
+    assert json.loads((out / "outcomes.json").read_text())["days"] == [0, 28]

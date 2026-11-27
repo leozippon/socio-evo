@@ -297,6 +297,8 @@ class Server:
         self.events: list[tuple[str, str]] = []
         self.fail_after = fail_after
         self.fitted = {"Mei": 7, "Tomas": None} if fitted is None else fitted
+        self.servers: list[str] = []  # where adapters were loaded and unloaded
+        self.clients: list[str] = []  # the servers clients were made for
 
     def subject(self, request: LLMRequest):
         if self.fail_after is not None and len(self.asked) >= self.fail_after:
@@ -320,19 +322,21 @@ class Server:
         async def load(config, name, path):
             self.loaded[name] = path
             self.events.append(("load", name))
+            self.servers.append(config.base_url)
 
         async def unload(config, name):
             del self.loaded[name]
             self.events.append(("unload", name))
+            self.servers.append(config.base_url)
 
         monkeypatch.setattr(command, "adapter_for", self.adapter_for)
         monkeypatch.setattr(command, "load_adapter", load)
         monkeypatch.setattr(command, "unload_adapter", unload)
-        monkeypatch.setattr(
-            cli,
-            "create_client",
-            lambda config: ScriptedClient(self.subject if config.model == BASE else self.guard),
-        )
+        def create_client(config):
+            self.clients.append(config.base_url)
+            return ScriptedClient(self.subject if config.model == BASE else self.guard)
+
+        monkeypatch.setattr(cli, "create_client", create_client)
         monkeypatch.setattr(cli, "load_items", lambda: load_items(fixture_cache(root / "cache")))
 
 
@@ -377,6 +381,7 @@ def test_the_command_evaluates_each_resident_on_its_adapter_and_never_overwrites
     assert header["judge"]["model"] == "guard" and header["judge"]["revision"]
     assert header["items"]["count"] == 14 and header["items"]["hash"]
     assert result["provenance"]["run"] == "town" and "run" not in header
+    assert result["provenance"]["server"] == {"base_url": "http://server/v1", "the_runs": True}
     assert result["metrics"]["harmful"]["share"] == 1.0  # Mei's adapter answers
     # Tomas has no adapter yet: the base model answers for him.
     tomas = json.loads((mei.with_name("Tomas.json")).read_text())
@@ -426,6 +431,32 @@ def test_a_day_is_refused_until_the_night_after_it_is_complete(tmp_path, monkeyp
     cli.main(argv)
     subject = json.loads((results / "town" / "day-07" / "safety" / "Mei.json").read_text())
     assert (subject["header"]["subject"]["night"], subject["header"]["subject"]["fitted"]) == (7, 5)
+
+
+def test_residents_can_be_scored_on_a_server_of_their_own(tmp_path, monkeypatch):
+    # The adapters of the day go to the evaluation server, which serves the same base under the
+    # run's name; the town's own server is never asked anything.
+    server = Server()
+    server.install(monkeypatch, tmp_path)
+    run, results = learnt(tmp_path, 7), tmp_path / "results"
+    scoring = tmp_path / "eval-server.yaml"
+    scoring.write_text(f"base_url: http://eval/v1\napi_key_env: KEY\nmodel: {BASE}\n")
+    argv = ["--run", str(run), "--day", "7", "--results", str(results)]
+    argv += ["--guard", str(guard_yaml(tmp_path)), "--server", str(scoring)]
+    cli.main(argv)
+    assert server.servers == ["http://eval/v1", "http://eval/v1"]  # Mei's adapter, on and off
+    assert "http://server/v1" not in server.clients
+    mei = json.loads((results / "town" / "day-07" / "safety" / "Mei.json").read_text())
+    assert mei["provenance"]["server"] == {"base_url": "http://eval/v1", "the_runs": False}
+    assert mei["header"]["subject"]["base"] == BASE
+
+    # A server that serves another base is refused before anything is asked.
+    other = tmp_path / "other-server.yaml"
+    other.write_text("base_url: http://eval/v1\napi_key_env: KEY\nmodel: another-base\n")
+    asked = len(server.asked)
+    with pytest.raises(SystemExit):
+        cli.main([*argv[:-1], str(other), "--resident", "Tomas"])
+    assert len(server.asked) == asked
 
 
 def test_a_run_that_does_not_learn_is_scored_on_the_base_model_and_says_so(

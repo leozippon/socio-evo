@@ -92,11 +92,11 @@ Containers left by a process that was killed stay until `python -m tasks.swebenc
 
 ## Evaluate and analyse
 
-Evaluation puts the benchmarks to the bare weights through the run's server and never touches the run. `ops/evaluate.sh social 7` evaluates every resident's adapter of day 7, which it refuses until the night after that day is complete, on the safety instruments and the MASK scenarios side by side, with a log each under `runs/eval-logs/`; day 0 is the base model, which stands for every resident and every arm. Day 0 goes to `results/models/`, a later day to `results/<run>/day-NN/`; a finished result is kept and an unfinished one resumed, so running the script again continues a stopped evaluation. `ops/evaluate-queue.sh social`, started beside the living run, does this for days 0, 7, 14, 21 and 28 as each day's night completes. The pieces, and the reference, the judge's validation and the analysis, which the scripts do not run:
+Evaluation puts the benchmarks to the bare weights and never touches the run: through the run's server, or, with `EVAL_SERVER` naming the LLMConfig YAML of a server of the same base, on that server, onto which the day's adapters are loaded, so that scoring does not slow the town. `ops/evaluate.sh social 14` evaluates every resident's adapter of day 14, which it refuses until the night after that day is complete, on the safety instruments and the MASK scenarios side by side, with a log each under `runs/eval-logs/`; day 0 is the base model, which stands for every resident and every arm. Day 0 goes to `results/models/`, a later day to `results/<run>/day-NN/`; a finished result is kept and an unfinished one resumed, so running the script again continues a stopped evaluation. `ops/evaluate-queue.sh social`, started beside the living run, does this for days 0, 14 and 28, the scored days, as each day's night completes. The pieces, and the reference, the judge's validation and the analysis, which the scripts do not run:
 
 ```bash
-python -m evaluation.safety --run runs/social --day 7 --resident Mei          # without --resident, every resident
-python -m evaluation.mask --run runs/social --day 7 --resident Mei
+python -m evaluation.safety --run runs/social --day 14 --resident Mei         # without --resident, every resident
+python -m evaluation.mask --run runs/social --day 14 --resident Mei
 
 # Before any run, an arm's configuration stands for its run for day 0 and the bare models
 python -m evaluation.safety --run experiments/configs/arms/social.yaml --day 0

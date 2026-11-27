@@ -2,8 +2,8 @@
 subjects on the command line, serving each in turn and skipping, resuming or beginning its
 result.
 
-    --run RUN --day N [--resident NAME ...]   each resident's adapter at day N
-    --run RUN --model NAME [--server YAML]    the bare served model NAME
+    --run RUN --day N [--resident NAME ...] [--server YAML]   each resident's adapter at day N
+    --run RUN --model NAME [--server YAML]                    the bare served model NAME
 
 A resident's subject is the run's base model with the adapter `learning.adapters.adapter_for`
 gives for its day, the base alone when no night has fitted it one. A day is refused until the
@@ -13,8 +13,12 @@ every adapter is empty, so the subject of `--day 0` is the base model alone, as 
 which stands for every resident. Before any run, RUN may be an experiment's configuration file,
 which serves a bare model and day 0 and has no later day.
 The adapter is loaded on every replica under a name of its own for the length of its evaluation
-and unloaded after, so that it meets no other use of the same adapter. A bare model is served by
-the run's server unless `--server` names another (an LLMConfig YAML), as for the reference model.
+and unloaded after, so that it meets no other use of the same adapter. Everything is asked of
+the run's server unless `--server` names another (an LLMConfig YAML): the reference model's, or,
+for the residents, a server of the same base weights, onto which their adapters are loaded, so
+that scoring never touches the server the town lives on. Such a server must serve the base under
+the run's served name (its `model`), the one declaration of its weights there is; a result records
+the server it was scored on in its provenance, and whether it was the run's.
 A result is held by one process at a time; another that comes for it fails.
 """
 
@@ -55,7 +59,7 @@ def add_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--server",
         type=Path,
-        help="with --model: LLMConfig YAML of its server (default: the run's)",
+        help="LLMConfig YAML of the server to score on (default: the run's)",
     )
     parser.add_argument(
         "--results", type=Path, default=Path("results"), help="results root (default: results)"
@@ -86,8 +90,11 @@ def subjects_of(
         if not NAME.fullmatch(args.model):
             parser.error(f"--model {args.model}: a served name of letters, digits, '.', '_', '-'")
         return run, server, [Subject(base=args.model)]
-    if args.server is not None:
-        parser.error("--server serves a bare model (--model) only")
+    if args.server is not None and server.model != run.llm.model:
+        parser.error(
+            f"--server {args.server} serves {server.model}, not {run.llm.model}, the base of "
+            f"{run.name}: its residents' adapters fit that base alone"
+        )
     if args.day < 0:
         parser.error(f"day {args.day}: no such day")
     if args.day == 0:
@@ -166,7 +173,11 @@ async def evaluate_each(
     """Each subject in turn, with the settings of `run`: a finished result told and kept, a
     running one resumed, and a new one begun; each serving of an adapter ends before the next
     begins. `told` says the metrics in a line."""
-    provenance = {"run": run.name, "revision": revision()}
+    provenance = {
+        "run": run.name,
+        "revision": revision(),
+        "server": {"base_url": server.base_url, "the_runs": server.base_url == run.llm.base_url},
+    }
     for subject in subjects:
         store = Store(result_of(results, benchmark, subject))
         with store.held():
