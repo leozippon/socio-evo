@@ -52,7 +52,7 @@ from typing import Any, Literal
 from pydantic import PositiveFloat, PositiveInt
 
 from agent import files, texts
-from agent.compaction import INSTRUCTION, flaw, kept, sets_aside
+from agent.compaction import AGAIN, INSTRUCTION, UNCHANGED, flaw, kept, sets_aside
 from agent.directory import AgentDirectory
 from agent.port import Percept, ToolResult, ToolSpec, WorldPort
 from agent.session import Session
@@ -239,20 +239,25 @@ class Runtime:
 
     async def _compact(self) -> None:
         """Replace the context by the resident's notes and the exchanges kept whole. Notes cut
-        off (asked for again as `again` says) or with a `flaw` are asked for once more; so are
-        notes refused because the context does not fit the model's window, then from only the
+        off (asked for again as `again` says) or with a `flaw` are asked for once more, notes
+        that give back the earlier ones word for word with `AGAIN`, which says so; so are notes
+        refused because the context does not fit the model's window, then from only the
         messages they replace, since the exchanges kept whole follow them as they are. A second
-        failure is a lapse, and the context stays as it is."""
+        failure is a lapse, and the context stays as it is, but the earlier notes given back a
+        second time are kept: the resident has found nothing in what goes with them to add. That
+        compaction is traced as `unchanged` and logged as a warning, since what went with the
+        earlier notes may be lost."""
         keep = kept(self._session.context(), self._config.kept_tokens)
         # The earlier notes, if any, are always replaced; repeated, they fold in nothing else.
         others = len(self._session.replaced(keep)) > 1
         earlier = self._session.notes if others else None
         messages, ids = self._context()
+        instruction = INSTRUCTION
         effort, limit = self._config.reasoning_effort, self._config.summary_max_tokens
         attempts = itertools.count(1)
         failures: list[str] = []
         for _ in range(2):
-            request = self._request((*messages, INSTRUCTION), effort, limit, tool_choice="none")
+            request = self._request((*messages, instruction), effort, limit, tool_choice="none")
             try:
                 reply = await self._ask(request, ids, attempts, purpose="compaction")
             except LLMContextOverflowError as error:
@@ -262,19 +267,33 @@ class Runtime:
             if reply is None:
                 return
             failure = "cut off" if reply.truncated else flaw(reply.text, earlier)
-            if failure is None:
+            if failure is None or (failure == UNCHANGED and failures == [UNCHANGED]):
                 break
             failures.append(failure)
             if reply.truncated:
                 effort, limit = again(effort, limit)
+            if failure == UNCHANGED:
+                instruction = AGAIN
         else:
             self._lapse("compaction", failures)
             return
         summary = reply.text.strip()
         record = self._session.compact(summary, keep)
+        unchanged = failure == UNCHANGED
         self._trace.write(
-            "compaction", id=record.id, replaced=list(record.replaced), kept=keep, summary=summary
+            "compaction",
+            id=record.id,
+            replaced=list(record.replaced),
+            kept=keep,
+            summary=summary,
+            unchanged=unchanged,
         )
+        if unchanged:
+            log.warning(
+                "%s: the earlier notes were kept unchanged, though %d other messages went too",
+                self._directory.root,
+                len(record.replaced) - 1,
+            )
 
     async def _ask(
         self, request: LLMRequest, ids: list[int], attempts: Iterator[int], *, purpose: str

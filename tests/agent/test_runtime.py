@@ -6,7 +6,7 @@ import contextlib
 import pytest
 
 from agent import files, texts
-from agent.compaction import INSTRUCTION
+from agent.compaction import AGAIN, INSTRUCTION
 from agent.port import ToolResult, ToolSpec
 from agent.runtime import Runtime, RuntimeConfig
 from agent.session import Session
@@ -597,9 +597,41 @@ async def test_notes_that_give_back_the_earlier_ones_word_for_word_are_asked_for
     async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
         await settle(port)
 
-    assert [r["summary"] for r in trace(directory) if r["kind"] == "compaction"] == [NOTES, newer]
+    compactions = [r for r in trace(directory) if r["kind"] == "compaction"]
+    assert [(r["summary"], r["unchanged"]) for r in compactions] == [(NOTES, False), (newer, False)]
     asked = [r for r in trace(directory) if r["kind"] == "request" and r["purpose"] == "compaction"]
     assert [r["attempt"] for r in asked] == [1, 1, 2]
+    instructions = [r.messages[-1] for r in model.requests if r.tool_choice == "none"]
+    assert instructions == [INSTRUCTION, INSTRUCTION, AGAIN]  # told what the matter is
+
+
+async def test_the_earlier_notes_given_back_twice_are_kept_as_unchanged_not_a_lapse(
+    directory, caplog
+):
+    model = ScriptedModel(
+        reply("", tool_call("look_around")),
+        reply("", tool_call("compact")),
+        reply(NOTES),
+        reply("", tool_call("look_around")),  # an exchange the next notes would fold in
+        reply("", tool_call("compact")),
+        reply(NOTES),
+        reply(NOTES),  # told so, the resident finds nothing to add
+        reply("Fresh."),
+    )
+    port = FakePort(tools=[LOOK], results={"look_around": ToolResult("A quiet street.")})
+    port.deliver("Your alarm rings.")
+    async with running(Runtime(directory, port, model, RuntimeConfig(kept_tokens=1))):
+        await settle(port)
+
+    assert not [r for r in trace(directory) if r["kind"] == "lapse"]
+    compactions = [r for r in trace(directory) if r["kind"] == "compaction"]
+    assert [(r["summary"], r["unchanged"]) for r in compactions] == [(NOTES, False), (NOTES, True)]
+    assert len(compactions[1]["replaced"]) == 5  # the notes and two exchanges, one appended since
+    instructions = [r.messages[-1] for r in model.requests if r.tool_choice == "none"]
+    assert instructions == [INSTRUCTION, INSTRUCTION, AGAIN]
+    assert model.requests[-1].messages[1].content == texts.SUMMARY.format(summary=NOTES)
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1 and "kept unchanged" in warnings[0] and "4 other" in warnings[0]
 
 
 async def test_the_same_notes_are_kept_when_they_replace_nothing_else(directory):

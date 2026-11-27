@@ -88,14 +88,26 @@ NOTES_HEADINGS = (
     "## People and what was said",
 )
 """The headings of the notes a resident writes for itself when its context is condensed."""
-COMPACTION_REQUEST = (
-    "Before you go on, write down for yourself what you will want to remember of all that has "
-    "happened so far: from here on, these notes and the last few things that happened are all "
-    "you will have of it. Write them out now, here in your reply, in your own words, under "
-    "exactly these headings:\n\n"
+NOTES_FORM = (
+    "under exactly these headings:\n\n"
     + "\n".join(NOTES_HEADINGS)
     + "\n\nYour reply is the notes themselves, written out in full, and nothing else."
 )
+COMPACTION_REQUEST = (
+    "Before you go on, write down for yourself what you will want to remember of all that has "
+    "happened so far: from here on, these notes and the last few things that happened are all "
+    "you will have of it. Write them out now, here in your reply, in your own words, " + NOTES_FORM
+)
+COMPACTION_UNCHANGED = (
+    "What you wrote down just now was your earlier notes again, word for word. Along with those "
+    "notes you still have the last few things that happened, and the earliest of these go now "
+    "as well: once you go on, only your notes will hold them. Write your notes out again now, "
+    "here in your reply, in your own words, so that they hold whatever of those things you will "
+    "want to remember, " + NOTES_FORM
+)
+"""The request for the notes made once more after a reply that gave back the earlier notes word
+for word, while other messages go with them: those are the oldest of the messages that followed
+the earlier notes, whether kept whole beside them or appended since."""
 
 SUMMARY = "These are my notes of what came before, as I wrote them down for myself.\n\n{summary}"
 """The notes in the context, introduced in the resident's own voice, so that it knows them for its

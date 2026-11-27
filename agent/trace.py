@@ -16,7 +16,9 @@ Kinds and their fields:
   `percept_real_time`;
 - `overflow`: `purpose` and `error`, when the server refused a request because its context does
   not fit the model's window;
-- `compaction`: `id` (the session record), `replaced`, `kept`, `summary`;
+- `compaction`: `id` (the session record), `replaced`, `kept`, `summary`, and `unchanged`,
+  whether the summary is the earlier notes word for word though other messages went with them,
+  kept after the request for them was made once more;
 - `lapse`: `purpose` and `errors`, when a request found no usable reply;
 - `rest`: `session`, the id of the session's latest record, each time the runtime begins to wait
   for the world: what lies between two rests in the trace, and between their ids in the session,

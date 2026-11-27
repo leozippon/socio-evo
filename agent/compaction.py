@@ -10,7 +10,8 @@ rebuilt as the system prompt, the notes as a user message and the most recent ex
 whole, as many as a budget of tokens holds and at least one. Only notes without a `flaw` are
 kept: a model asked for text may still answer with an empty reply, which is what vLLM leaves of
 a tool call it strips, write a call out as text, or give back its earlier notes word for word,
-folding in nothing of the other messages they would replace.
+folding in nothing of the other messages they would replace. Those are asked for once more with
+`AGAIN`, which says so; given back a second time, they are kept (`UNCHANGED`).
 """
 
 from __future__ import annotations
@@ -23,8 +24,12 @@ from infrastructure.llm import Message
 
 INSTRUCTION = Message(role="user", content=texts.COMPACTION_REQUEST)
 """The request for the notes, appended to the context for that one call only."""
+AGAIN = Message(role="user", content=texts.COMPACTION_UNCHANGED)
+"""The request for the notes in place of `INSTRUCTION` after notes that were `UNCHANGED`."""
 CALL_AS_TEXT = ("<tool_call>", "<function=")
 """The markup that opens a tool call written out as text, as the served model writes one."""
+UNCHANGED = "the earlier notes unchanged"
+"""The `flaw` of notes that give back the earlier ones word for word."""
 
 
 def flaw(notes: str, earlier: str | None = None) -> str | None:
@@ -39,7 +44,7 @@ def flaw(notes: str, earlier: str | None = None) -> str | None:
     missing = [heading for heading in texts.NOTES_HEADINGS if heading not in lines]
     if missing:
         return f"without {', '.join(missing)}"
-    return "the earlier notes unchanged" if notes.strip() == earlier else None
+    return UNCHANGED if notes.strip() == earlier else None
 
 
 def exchanges(entries: Sequence[Entry]) -> list[list[Entry]]:
