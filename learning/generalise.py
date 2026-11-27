@@ -18,8 +18,10 @@ does an answer that cannot be read after the bounded attempts of `complete_struc
 is kept with its reason. So, by the same path, is an answer whose response opens by calling the
 person "you", telling them what they did instead of being them speaking (`narrated`, unless those
 opening words are the opening of something the person itself said in the moment, as an answer
-that begins "You're right" is), and one whose situation holds nothing (`empty`: nothing at all,
-or nothing after a lead-in that ends in a colon or an opening quotation mark). What the person
+that begins "You're right" is), one whose situation holds nothing (`empty`: nothing at all, or
+nothing after a lead-in that ends in a colon or an opening quotation mark), and one whose
+response holds nothing (`hollow`: nothing at all, a lead-in with nothing after it, as "I say,",
+or nothing but waiting or looking). What the person
 says inside its answer is not looked at, since it may be speaking to someone.
 
 As it happened (the Raw arm), the example is the moment's messages from the session, without the
@@ -78,6 +80,15 @@ _PROPER = re.compile(r"[A-Z][\w'’-]*(?:\s+[A-Z][\w'’-]*)*")
 _YOU = ("You ", "You're", "You’re", "Your ")
 """How a response opens that calls the person "you"."""
 _QUOTES = "\"“”‘’'«»"
+_LEAD_IN = re.compile(r"I\s+[^.!?\"“‘«]{1,40}?[,:]\s*[\"“‘'«]?\s*[\"”’'»]?")
+"""A lead-in to words that are not there: "I say," or "I tell her: “"."""
+_STILL = re.compile(
+    r"I\s+(?:wait|waited|look|looked|glance|glanced|check|checked|watch|watched|stay|stayed|sit"
+    r"|sat|sleep|slept|go to (?:bed|sleep)|went to (?:bed|sleep))\b",
+    re.IGNORECASE,
+)
+"""How a sentence opens that says only that the person waited or looked, which is nothing said
+or done to anyone."""
 OPENING_WORDS = 3
 """How many words open a response that are compared with the openings of what the person said."""
 
@@ -104,13 +115,13 @@ class Example(StrictModel):
 class Dropped(StrictModel):
     """A moment kept that gave no example: its answers used the town's words (`leaked`, the
     words as `detail`), told the person what it did instead of being it speaking (`narrated`, the
-    response's opening), held no situation (`empty`, the situation), could not be read
-    (`unreadable`, the error) or made an example longer than the trainer takes (`too long`, its
-    estimated length)."""
+    response's opening), held no situation (`empty`, the situation) or no response (`hollow`, the
+    response), could not be read (`unreadable`, the error) or made an example longer than the
+    trainer takes (`too long`, its estimated length)."""
 
     moment: int
     day: int
-    reason: Literal["leaked", "narrated", "empty", "unreadable", "too long"]
+    reason: Literal["leaked", "narrated", "empty", "hollow", "unreadable", "too long"]
     detail: str
     cut: int = 0
 
@@ -230,7 +241,7 @@ async def generalise(
     return Dropped(moment=kept.moment, day=kept.day, reason=reason, detail=detail, cut=cut)
 
 
-Fault = tuple[Literal["leaked", "narrated", "empty"], str, str]
+Fault = tuple[Literal["leaked", "narrated", "empty", "hollow"], str, str]
 """What is wrong with an answer: the reason a moment is dropped for it, what the base model is
 told of it, and the detail kept."""
 
@@ -244,6 +255,8 @@ def faults(answer: Generalised, vocabulary: Vocabulary, moment: Moment) -> list[
         found.append(("narrated", texts.NARRATED, answer.response[:80]))
     if _empty(answer.situation):
         found.append(("empty", texts.EMPTY, repr(answer.situation)))
+    if _hollow(answer.response):
+        found.append(("hollow", texts.HOLLOW, repr(answer.response[:80])))
     return found
 
 
@@ -277,6 +290,19 @@ def _opening(text: str, vocabulary: Vocabulary) -> list[str]:
     text = re.sub(r"^[^.!?;:,]{0,40},\s*(?=[Yy]ou)", "", text.lstrip(_QUOTES + " ,"))
     text = re.sub(r",\s*(?:\S+\s*){0,2},", ",", text)
     return re.findall(r"[a-z0-9]+(?:'[a-z0-9]+)*", text.lower())[:OPENING_WORDS]
+
+
+def _hollow(response: str) -> bool:
+    """Whether `response` holds nothing the person said or did: nothing but quotation marks and
+    punctuation, a lead-in ending in a comma or a colon with nothing after it ("I say," or
+    "I reply: “"), or only sentences that say it waited or looked (`_STILL`)."""
+    text = response.strip()
+    if not text.strip(_QUOTES + " .,:;…—-"):
+        return True
+    if _LEAD_IN.fullmatch(text):
+        return True
+    sentences = [s for s in re.split(r"(?<=[.!?…])\s+", text) if s.strip()]
+    return all(_STILL.match(sentence) for sentence in sentences)
 
 
 def _empty(situation: str) -> bool:

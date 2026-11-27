@@ -244,6 +244,32 @@ async def test_the_layer_is_not_told_the_person_waited_or_looked_but_hears_what_
     assert 'You did: say(text: "Not yet.")' in account
 
 
+@pytest.mark.parametrize(
+    "response",
+    [
+        "I say, ",  # night 3, Ines's: what the generalising gave and was fitted on
+        "I ask the doctor, ",  # night 2, Kofi's
+        "I wait here for two hours for people to come in and claim tasks themselves.",  # Mei's
+        "",
+        "I reply: “",
+        "“”",
+        "I waited for two hours. I looked at the board.",
+    ],
+)
+def test_a_response_with_nothing_said_or_done_in_it_is_refused(response):
+    answer = Generalised.model_construct(situation="Can you give me a hand?", response=response)
+    found = faults(answer, TOWN, Moment(1, 1, 0, 0, (), True))
+    assert [(reason, told) for reason, told, _ in found] == [("hollow", texts.HOLLOW)]
+
+
+@pytest.mark.parametrize(
+    "response", ["No.", "I agree", "I hand it over, smiling.", "Fine. I wait for you.", "I go."]
+)
+def test_a_response_that_says_or_does_something_is_not_hollow(response):
+    answer = Generalised(situation="Can you give me a hand?", response=response)
+    assert faults(answer, TOWN, Moment(1, 1, 0, 0, (), True)) == []
+
+
 async def test_the_generalising_is_given_the_whole_moment_and_a_cut_is_marked_and_counted(
     monkeypatch,
 ):

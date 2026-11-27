@@ -160,3 +160,7 @@ EMPTY = (
     "The situation tells nothing of what was said or of what is happening: it is empty, or it "
     "ends where what was said would begin. Answer again, the situation in full."
 )
+HOLLOW = (
+    "The response holds nothing the person said or did: it is empty, it ends where their words "
+    "would begin, or it says only that they waited or looked. Answer again, the response in full."
+)
