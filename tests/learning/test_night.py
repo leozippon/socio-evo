@@ -18,6 +18,7 @@ import shutil
 from datetime import date
 
 import pytest
+from pydantic import ValidationError
 
 import learning.fit
 from agent.directory import AgentDirectory
@@ -120,7 +121,7 @@ async def live_day(run: RunDirectory, day: int) -> None:
     await a_day(AgentDirectory(run.agent_dir("Ben")), day, friend="Ana")
 
 
-def nights(run, server, tmp_path, model, gpus="5", patience_minutes=360, **settings) -> Nights:
+def nights(run, server, tmp_path, model, gpus=(5,), patience_minutes=360, **settings) -> Nights:
     trainer = TrainerConfig(
         python=fake_trainer(tmp_path),
         base="/models/base",
@@ -390,35 +391,41 @@ async def test_an_example_the_trainer_might_find_too_long_is_dropped_and_counted
     assert "night 1, Ana: marked 2 of at most 2" in caplog.text and "too long 1" in caplog.text
 
 
-async def test_the_jobs_are_divided_among_the_gpus_with_room_and_fitted_at_once(
+async def test_the_jobs_are_divided_among_the_first_two_listed_gpus_with_room_fitted_at_once(
     tmp_path, server, record, gpus, monkeypatch, caplog
 ):
     run, model = await town(tmp_path), Model(server)
     model.plans = {"Ana": keeps(1), "Ben": keeps(2)}
-    gpus.looks = [{"7": 41.9}]  # another job holds 3 GiB of GPU 7
+    gpus.looks = [{"3": 41.9, "5": 10.0}]  # other jobs hold 3 GiB of GPU 3 and more of 5
     meeting = tmp_path / "meeting"
     meeting.mkdir()
     monkeypatch.setenv("FAKE_TRAINER_TOGETHER", f"2:{meeting}")  # one alone would fail
     with caplog.at_level(logging.INFO, logger="learning"):
-        await nights(run, server, tmp_path, model, gpus="5,6,7").live(
+        await nights(run, server, tmp_path, model, gpus=[3, 4, 5, 7, 1, 2]).live(
             1, lambda: {"Ana": 1, "Ben": 1}, dict
         )
-    # Ana's and Ben's are alike in work, and go, by name, to the first GPU with the least.
-    jobs = {"5": ["town-Ana-night-01"], "6": ["town-Ben-night-01"]}
+    # Of the four with room, the first two; Ana's and Ben's are alike in work, and go, by name,
+    # to the first GPU with the least.
+    jobs = {"4": ["town-Ana-night-01"], "7": ["town-Ben-night-01"]}
     assert {r["cuda"]: [j["name"] for j in r["spec"]["jobs"]] for r in record()} == jobs
     assert {path.name for path in run.night_dir(1).glob("*-[0-9]*.*")} == {
-        "jobs-5.json", "jobs-6.json", "trainer-5.log", "trainer-6.log"
+        "jobs-4.json", "jobs-7.json", "trainer-4.log", "trainer-7.log"
     }  # fmt: skip
     done = json.loads((run.night_dir(1) / "done.json").read_text())
     (start,) = done["fits"]
-    assert start["jobs"] == jobs and start["free_gib"] == {"5": 45.0, "6": 45.0, "7": 41.9}
+    assert start["jobs"] == jobs
+    assert start["free_gib"] == {"3": 41.9, "4": 45.0, "5": 10.0, "7": 45.0, "1": 45.0, "2": 45.0}
+    assert start["passed_over"] == {
+        "3": "no room", "5": "no room", "1": "not needed", "2": "not needed"
+    }  # fmt: skip
     assert 0 <= start["waited_seconds"] < 60 and gpus.looked == 1
     for name in ("Ana", "Ben"):
         trained = json.loads((run.adapter_dir(name, 1) / "training.json").read_text())
         assert done["residents"][name]["fit_seconds"] == trained["wall_seconds"]
     assert (
-        "fitting on GPU 5 town-Ana-night-01; on GPU 6 town-Ben-night-01; "
-        "GPU 7 left out, 41.9 GiB free"
+        "fitting on GPU 4 town-Ana-night-01; on GPU 7 town-Ben-night-01; "
+        "GPU 3 passed over, no room, 41.9 GiB free; GPU 5 passed over, no room, 10.0 GiB free; "
+        "GPU 1 passed over, not needed, 45.0 GiB free"
     ) in caplog.text
 
 
@@ -427,26 +434,30 @@ async def test_a_night_waits_for_a_gpu_with_room_and_fails_resumably_when_it_has
 ):
     run, model = await town(tmp_path), Model(server)
     model.plans = {"Ana": keeps(1), "Ben": keeps(2)}
-    night = nights(run, server, tmp_path, model, gpus="5,6", patience_minutes=2)
-    taken = {"5": 3.5, "6": 0.2}
+    listed = [3, 4, 5, 7, 1, 2]
+    night = nights(run, server, tmp_path, model, gpus=listed, patience_minutes=2)
+    taken = {str(gpu): 3.5 for gpu in listed}
     gpus.looks = [taken]
-    with pytest.raises(TrainerError, match=r"no GPU of 5,6 had the 42.0 GiB .* in 2 minutes"):
+    with pytest.raises(
+        TrainerError, match=r"no GPU of 3, 4, 5, 7, 1, 2 had the 42.0 GiB .* in 2 m"
+    ):
         await night.live(1, lambda: {"Ana": 1, "Ben": 1}, dict)
     assert gpus.looked == 3 and record() == []  # now, and after one minute and two
     assert not (run.night_dir(1) / "done.json").exists()
 
-    # Resumed, it waits again, and fits on GPU 6 when its job has left it.
-    gpus.looks, gpus.looked = [taken, taken, {"5": 3.5}], 0
+    # Resumed, it waits again, and fits on GPU 1 when its job has left it.
+    gpus.looks, gpus.looked = [taken, taken, taken | {"1": 45.0}], 0
     caplog.clear()
     with caplog.at_level(logging.INFO, logger="learning"):
         await night.live(1, lambda: pytest.fail("the numbers asked again"), dict)
     assert [(r["cuda"], [j["name"] for j in r["spec"]["jobs"]]) for r in record()] == [
-        ("6", ["town-Ana-night-01", "town-Ben-night-01"])
+        ("1", ["town-Ana-night-01", "town-Ben-night-01"])
     ]
-    assert caplog.text.count("no GPU of 5,6 has the 42.0 GiB a fit needs free") == 1
-    assert "GPU 6 has room for a fit after 2 minutes" in caplog.text
+    assert caplog.text.count("no GPU of 3, 4, 5, 7, 1, 2 has the 42.0 GiB a fit needs free") == 1
+    assert "GPU 1 has room for a fit after 2 minutes" in caplog.text
     (start,) = json.loads((run.night_dir(1) / "done.json").read_text())["fits"]
-    assert start["free_gib"] == {"5": 3.5, "6": 45.0} and start["waited_seconds"] >= 0
+    assert start["passed_over"] == {str(gpu): "no room" for gpu in listed if gpu != 1}
+    assert start["free_gib"]["1"] == 45.0 and start["waited_seconds"] >= 0
 
 
 async def test_a_trainer_that_fails_stops_the_others_and_the_resumed_night_fits_only_the_rest(
@@ -454,7 +465,7 @@ async def test_a_trainer_that_fails_stops_the_others_and_the_resumed_night_fits_
 ):
     run, model = await town(tmp_path), Model(server)
     model.plans = {"Ana": keeps(1), "Ben": keeps(2)}
-    night = nights(run, server, tmp_path, model, gpus="5,6")
+    night = nights(run, server, tmp_path, model, gpus=[5, 6])
     meeting = tmp_path / "meeting"
     meeting.mkdir()
     monkeypatch.setenv("FAKE_TRAINER_TOGETHER", f"2:{meeting}")
@@ -499,6 +510,16 @@ def test_the_division_balances_the_work_by_tokens_and_steps_and_is_deterministic
     assert divide([d, c, b, a], ["5", "6"]) == {"5": [d, a], "6": [c, b]}  # the same, in order
     assert divide([a, b, c, d], ["6", "5"]) == {"6": [a, d], "5": [b, c]}
     assert divide([d], ["5", "6", "7"]) == {"5": [d]}
+
+
+def test_the_gpus_are_listed_once_each_and_a_run_frozen_with_them_as_a_string_reads():
+    def trainer(gpus) -> TrainerConfig:
+        return TrainerConfig(python="/opt/python", base="/models/base", gpus=gpus)
+
+    assert trainer([3, 4, 5]).gpus == trainer("3,4,5").gpus == (3, 4, 5)
+    assert trainer([3]).gpus_at_once == 2
+    with pytest.raises(ValidationError, match="names a GPU more than once"):
+        trainer([3, 4, 3])
 
 
 def _estimate(example) -> int:

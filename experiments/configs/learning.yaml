@@ -9,10 +9,12 @@ learning:
   trainer:
     python: /Data2/lzp/envs/socio-evo-train/bin/python # the training environment (ops/train/setup-env.sh)
     base: /Data2/lzp/models/Qwen3.8-27B-Uncensored-FP8 # the weights the server serves as llm.model
-    # The GPUs a night's fits may use, as nvidia-smi numbers them: those the server leaves free
-    # (on this shared machine the town has GPUs 0, 3, 4 and 6: the server takes 0 and 6).
-    # Each night uses those of them that have free_gib free then, one trainer on each, and waits up
-    # to patience_minutes while none has (learning/config.py, TrainerConfig). free_gib stays at
+    # The GPUs a night's fits may use, as nvidia-smi numbers them, in order of preference (the
+    # server takes 0 and 6). Each night fits on the first gpus_at_once (2) of them that have
+    # free_gib free then, one trainer on each, and waits up to patience_minutes only while none
+    # of them has (learning/config.py, TrainerConfig). 3 and 4 are the GPUs this project is
+    # expected to use; 5, 7, 1 and 2 are taken only when 3 or 4 is not free and they are all but
+    # empty at that moment, and only for as long as that night's fit takes. free_gib stays at
     # its 42: a fit with its CUDA context takes about 33.5 GiB, and a GPU another user shares
     # must keep 8 GiB free beside it.
-    gpus: "3,4"
+    gpus: [3, 4, 5, 7, 1, 2]

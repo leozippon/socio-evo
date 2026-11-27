@@ -8,16 +8,18 @@ with `training.json` into it, and exits non-zero on any failure. An adapter is c
 `training.json` is there (`adapters.TRAINING`); a directory without it is what a fit broken off
 left, and is cleared before the adapter is fitted again.
 
-The GPUs are those of `trainer.gpus` that have `trainer.free_gib` free when the fit begins, as
-nvidia-smi reports them (`free_memory`); while none has, the fit looks again every minute, for up
-to `trainer.patience_minutes`, and then raises `TrainerError`. The jobs are divided among the GPUs
-by `divide`. Since a job's adapter depends only on the base, its dataset and the settings, which
-GPU fits it, beside which others, changes nothing, and a fit begun again may divide its jobs
-otherwise. Each start of the trainers is appended to `fits.jsonl` beside the jobs files: how long
-it waited, each GPU's free memory, and the jobs given to each. A trainer's output is appended to
-`trainer-<gpu>.log`. A trainer that fails, or ends without completing every adapter it was given,
-stops the others and raises `TrainerError`; a fit that is cancelled stops them all. A GPU that
-fills up once its trainer has begun is that trainer's failure.
+The GPUs are the first `trainer.gpus_at_once` of `trainer.gpus`, in the order listed, that have
+`trainer.free_gib` free when the fit begins, as nvidia-smi reports them (`free_memory`); while
+none of those listed has, the fit looks again every minute, for up to `trainer.patience_minutes`,
+and then raises `TrainerError`. The jobs are divided among the GPUs by `divide`. Since a job's
+adapter depends only on the base, its dataset and the settings, which GPU fits it, beside which
+others, changes nothing, and a fit begun again may divide its jobs otherwise. Each start of the
+trainers is appended to `fits.jsonl` beside the jobs files: how long it waited, each listed GPU's
+free memory, the jobs given to each GPU used, and why each other was passed over (`no room`, or
+`not needed`, enough GPUs before it having room or no job being left for it). A trainer's output
+is appended to `trainer-<gpu>.log`. A trainer that fails, or ends without completing every
+adapter it was given, stops the others and raises `TrainerError`; a fit that is cancelled stops
+them all. A GPU that fills up once its trainer has begun is that trainer's failure.
 """
 
 from __future__ import annotations
@@ -67,27 +69,34 @@ class Job:
 async def fit(
     jobs: Sequence[Job], *, trainer: TrainerConfig, lora: LoraConfig, folder: Path
 ) -> None:
-    """Fit every adapter of `jobs` on the GPUs of `trainer` that have room, their jobs files,
-    output and starts in `folder`."""
+    """Fit every adapter of `jobs` on the first GPUs of `trainer` that have room, their jobs
+    files, output and starts in `folder`."""
     for job in jobs:
         if job.out.exists():
             shutil.rmtree(job.out)
         job.out.parent.mkdir(parents=True, exist_ok=True)
     gpus, waited, free = await _gpus(trainer)
     shares = divide(jobs, gpus)
+    passed_over = {
+        gpu: "no room" if gib < trainer.free_gib else "not needed"
+        for gpu, gib in free.items()
+        if gpu not in shares
+    }
     append_jsonl(
         folder / FITS,
         {
             "waited_seconds": round(waited, 1),
             "free_gib": free,
             "jobs": {gpu: [job.name for job in share] for gpu, share in shares.items()},
+            "passed_over": passed_over,
         },
     )
     log.info(
         "fitting %s%s",
         "; ".join(f"on GPU {gpu} {', '.join(j.name for j in s)}" for gpu, s in shares.items()),
         "".join(
-            f"; GPU {gpu} left out, {gib} GiB free" for gpu, gib in free.items() if gpu not in gpus
+            f"; GPU {gpu} passed over, {why}, {free[gpu]} GiB free"
+            for gpu, why in passed_over.items()
         ),
     )
     tasks = [
@@ -146,9 +155,9 @@ def free_memory() -> dict[str, float]:
 
 
 async def _gpus(trainer: TrainerConfig) -> tuple[list[str], float, dict[str, float]]:
-    """The GPUs of `trainer` that have room, once one has; how long that took, in seconds; and
-    the free memory of every one of them then, in GiB."""
-    gpus = trainer.gpus.split(",")
+    """The first `gpus_at_once` GPUs of `trainer` that have room, once one has; how long that
+    took, in seconds; and the free memory of every one listed then, in GiB."""
+    gpus = [str(gpu) for gpu in trainer.gpus]
     started = time.monotonic()
     for look in range(trainer.patience_minutes + 1):
         if look:
@@ -156,9 +165,9 @@ async def _gpus(trainer: TrainerConfig) -> tuple[list[str], float, dict[str, flo
         listed = free_memory()
         unknown = [gpu for gpu in gpus if gpu not in listed]
         if unknown:
-            raise TrainerError(f"nvidia-smi lists no GPU {', '.join(unknown)} of {trainer.gpus}")
+            raise TrainerError(f"nvidia-smi lists no GPU {', '.join(unknown)} of {', '.join(gpus)}")
         free = {gpu: round(listed[gpu], 2) for gpu in gpus}
-        room = [gpu for gpu in gpus if listed[gpu] >= trainer.free_gib]
+        room = [gpu for gpu in gpus if listed[gpu] >= trainer.free_gib][: trainer.gpus_at_once]
         if room:
             if look:
                 log.info("GPU %s has room for a fit after %d minutes", ", ".join(room), look)
@@ -167,13 +176,13 @@ async def _gpus(trainer: TrainerConfig) -> tuple[list[str], float, dict[str, flo
             log.info(
                 "no GPU of %s has the %s GiB a fit needs free (%s); looking again every minute "
                 "for up to %d minutes",
-                trainer.gpus,
+                ", ".join(gpus),
                 trainer.free_gib,
                 _free(free),
                 trainer.patience_minutes,
             )
     raise TrainerError(
-        f"no GPU of {trainer.gpus} had the {trainer.free_gib} GiB a fit needs free in "
+        f"no GPU of {', '.join(gpus)} had the {trainer.free_gib} GiB a fit needs free in "
         f"{trainer.patience_minutes} minutes ({_free(free)})"
     )
 

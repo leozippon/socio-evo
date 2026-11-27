@@ -19,10 +19,18 @@ The arms share all of these.
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Literal
 
-from pydantic import Field, NonNegativeInt, PositiveFloat, PositiveInt, model_validator
+from pydantic import (
+    Field,
+    NonNegativeInt,
+    PositiveFloat,
+    PositiveInt,
+    field_validator,
+    model_validator,
+)
 
 from infrastructure.config import StrictModel
 
@@ -51,9 +59,11 @@ class LoraConfig(StrictModel):
 class TrainerConfig(StrictModel):
     """The trainer: the interpreter of its environment (an absolute path, `~` allowed), the base
     model's weights as it loads them, and the GPUs a night's fit may use, as nvidia-smi numbers
-    them, one trainer process on each that has room (`learning.fit`). The most tokens one step of
-    a fit may hold, `batch_size` times `max_length` at the longest, is `step_tokens`: about 8,000
-    on one L20 (ops/train/README.md, Memory and time).
+    them, in order of preference: a night fits on the first `gpus_at_once` of them that have
+    room, one trainer process on each (`learning.fit`), since each loads the 28 GiB base anew.
+    A run frozen before the GPUs were a list gives them as one string, `"3,4"`. The most tokens
+    one step of a fit may hold, `batch_size` times `max_length` at the longest, is `step_tokens`:
+    about 8,000 on one L20 (ops/train/README.md, Memory and time).
 
     A GPU has room when `free_gib` of it is free. That must cover a fit's peak at its longest
     step, `max_length` tokens, with the CUDA context and what else PyTorch's count leaves out:
@@ -65,7 +75,8 @@ class TrainerConfig(StrictModel):
 
     python: Path
     base: str = Field(min_length=1)
-    gpus: str = Field(pattern=r"^\d+(,\d+)*$")
+    gpus: tuple[NonNegativeInt, ...] = Field(min_length=1)
+    gpus_at_once: PositiveInt = 2
     step_tokens: PositiveInt = 8192
     free_gib: PositiveFloat = 42.0
     patience_minutes: NonNegativeInt = 360
@@ -73,6 +84,19 @@ class TrainerConfig(StrictModel):
     @property
     def executable(self) -> Path:
         return self.python.expanduser()
+
+    @field_validator("gpus", mode="before")
+    @classmethod
+    def _frozen_as_string(cls, value: object) -> object:
+        if isinstance(value, str) and re.fullmatch(r"\d+(,\d+)*", value):
+            return tuple(int(gpu) for gpu in value.split(","))
+        return value
+
+    @model_validator(mode="after")
+    def _once_each(self) -> TrainerConfig:
+        if len(set(self.gpus)) != len(self.gpus):
+            raise ValueError(f"trainer.gpus {list(self.gpus)} names a GPU more than once")
+        return self
 
     @model_validator(mode="after")
     def _absolute(self) -> TrainerConfig:
