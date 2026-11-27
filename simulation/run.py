@@ -268,7 +268,6 @@ def _nights(
         residents=[resident.name for resident in town.residents],
         places=[place.name for place in town.places],
         ids=[*(place.id for place in town.places), *(item.id for item in town.items)],
-        currency=town.currency,
     )
     return Nights(
         directory,

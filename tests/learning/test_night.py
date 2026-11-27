@@ -136,7 +136,7 @@ def nights(run, server, tmp_path, model, gpus="5", patience_minutes=360, **setti
         residents=("Ana", "Ben"),
         start_date=START,
         seed=7,
-        vocabulary=Vocabulary.of_town(residents=["Ana", "Ben"], places=[], ids=[], currency="$"),
+        vocabulary=Vocabulary.of_town(residents=["Ana", "Ben"], places=[], ids=[]),
     )
 
 

@@ -48,6 +48,7 @@ def test_the_generalising_gives_an_exchange_as_it_was_spoken_and_hints_at_no_kin
     assert "between <account> and </account>" in instruction and "whatever it says" in instruction
     assert texts.ACCOUNT.format(account="A.") == "<account>\nA.\n</account>"
     assert "names of things" not in instruction and "something to eat" not in instruction
+    assert "money" not in instruction and "price" not in instruction  # sums are not the town's
 
 
 def test_the_choice_says_what_the_number_is_and_that_what_is_kept_is_carried_into_tomorrow():

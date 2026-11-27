@@ -31,7 +31,6 @@ TOWN = Vocabulary.of_town(
     residents=["Mei", "Kofi", "Ben"],
     places=["the shared house on Mill Street", "the Office", "the river walk"],
     ids=["mill-street-house", "office", "vegetable-soup"],
-    currency="$",
 ).with_actions(["look_around", "go", "say"])
 
 
@@ -42,7 +41,7 @@ async def lived(tmp_path):
     return life(ana.root, 1)
 
 
-def test_the_towns_words_are_its_names_ids_actions_and_sums_and_not_the_names_of_things():
+def test_the_towns_words_are_its_names_ids_and_actions_not_the_names_of_things_nor_sums():
     assert TOWN.leaks("Mei met Kofi on Mill Street, at the Office.") == [
         "Kofi", "Mei", "Mill Street", "Office"
     ]  # fmt: skip
@@ -54,7 +53,7 @@ def test_the_towns_words_are_its_names_ids_actions_and_sums_and_not_the_names_of
     assert TOWN.leaks("I call look_around, then go(place) and `say`.") == [
         "go", "look_around", "say"
     ]  # fmt: skip
-    assert TOWN.leaks("It costs $ 12, near mill-street-house.") == ["mill-street-house", "$"]
+    assert TOWN.leaks("It costs $12, or $ 12.50, near mill-street-house.") == ["mill-street-house"]
     assert TOWN.leaks("It costs some money; Meiko and Kofian came.") == []
 
 
@@ -63,8 +62,8 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
     leaky = {"situation": "Ben here. Lend me some bread till Friday?", "response": "Take it, Ben."}
     asked = "Could you lend me something to eat till Friday? I'll pay you back then."
     clean = {"situation": asked, "response": "Take it, and pay me when you can."}
-    sums = {"situation": "You find bread worth $5 left on a bench.", "response": "I take it."}
-    model = ScriptedModel(leaky, clean, sums, sums, "not an answer", "{}", '{"situation": ""}')
+    found = {"situation": "You find $5 by the mill-street-house.", "response": "I take it."}
+    model = ScriptedModel(leaky, clean, found, found, "not an answer", "{}", '{"situation": ""}')
     made = [
         await generalise(
             moment,
@@ -87,7 +86,7 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
             {"role": "assistant", "content": "Take it, and pay me when you can."},
         ),
     )
-    assert made[1] == Dropped(moment=2, day=1, reason="leaked", detail="$")
+    assert made[1] == Dropped(moment=2, day=1, reason="leaked", detail="mill-street-house")
     assert made[2].reason == "unreadable" and "Generalised after 3 attempt(s)" in made[2].detail
     first, again = model.requests[:2]
     # The base model, without an adapter or the resident's account of itself.

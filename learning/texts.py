@@ -130,10 +130,10 @@ know of it, as they saw it; and response is what they said and did in it, in the
 the present tense, what they said kept close to their own words.
 
 Leave out of both everything that belongs only to their particular place: the names of people and \
-of places, sums of money and prices, and the names of the actions they took; write "a neighbour", \
-"a shop", "some money" and the like instead. Keep what they said and did as it was, whatever their \
-answer, and add nothing: no comment, no reasons and no opinion of your own. Answer with an object \
-whose two fields are "situation" and "response"."""
+of places, and the names of the actions they took; write "a neighbour", "a shop" and the like \
+instead. Keep what they said and did as it was, whatever their answer, and add nothing: no \
+comment, no reasons and no opinion of your own. Answer with an object whose two fields are \
+"situation" and "response"."""
 ACCOUNT = "<account>\n{account}\n</account>"
 """How the moment is given to the generalising, between the marks its instructions name."""
 LEAKED = (

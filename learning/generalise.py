@@ -107,15 +107,14 @@ class Vocabulary:
     """The words that belong to this town: `names` of people and places, matched as written;
     `ids`, the configuration's names of places and things, matched in any case; `actions`, the
     names of what residents can do, matched where written as names (with an underscore, before a
-    parenthesis or in backquotes), since many are plain verbs; and an amount written with
-    `currency`. The plain names of things (bread, a phone) are not the town's: anyone has them,
-    and taking them for the town's would drop many ordinary moments, and some kinds of moment more
-    than others, for nothing that carries beyond the town."""
+    parenthesis or in backquotes), since many are plain verbs. The plain names of things (bread,
+    a phone) and sums of money are not the town's: anyone has them, and taking them for the town's
+    would drop or mangle many ordinary moments, and some kinds of moment more than others, for
+    nothing that carries beyond the town."""
 
     names: frozenset[str] = frozenset()
     ids: frozenset[str] = frozenset()
     actions: frozenset[str] = frozenset()
-    currency: str | None = None
 
     @classmethod
     def of_town(
@@ -124,23 +123,21 @@ class Vocabulary:
         residents: Iterable[str],
         places: Iterable[str],
         ids: Iterable[str],
-        currency: str,
     ) -> Vocabulary:
         """The vocabulary of a town of `residents`, with the place names `places` (of which
         the capitalised words count, "the shared house on Mill Street" giving "Mill Street"),
         the `ids` its configuration gives places and things (those with a hyphen, which no
-        ordinary word has), and its `currency`."""
+        ordinary word has)."""
         proper = {
             re.sub(r"^The\s+", "", match) for place in places for match in _PROPER.findall(place)
         }
         return cls(
             names=frozenset(residents) | frozenset(proper),
             ids=frozenset(i for i in ids if "-" in i),
-            currency=currency,
         )
 
     def with_actions(self, actions: Iterable[str]) -> Vocabulary:
-        return Vocabulary(self.names, self.ids, self.actions | frozenset(actions), self.currency)
+        return Vocabulary(self.names, self.ids, self.actions | frozenset(actions))
 
     def leaks(self, text: str) -> list[str]:
         """The town's words in `text`, each once, in the order of the vocabulary."""
@@ -155,8 +152,6 @@ class Vocabulary:
             name = re.escape(action)
             pattern = rf"(?<!\w){name}(?!\w)" if "_" in action else rf"`{name}`|(?<!\w){name}\("
             patterns.append((action, re.compile(pattern)))
-        if self.currency:
-            patterns.append((self.currency, re.compile(rf"{re.escape(self.currency)}\s?\d")))
         return patterns
 
 
