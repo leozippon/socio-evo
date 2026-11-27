@@ -27,6 +27,7 @@ from learning.generalise import (
     faults,
     generalise,
     too_long,
+    unwrap,
 )
 from learning.moments import Moment, life, rendering
 from tests.support.doubles import ScriptedModel
@@ -268,6 +269,72 @@ def test_a_response_with_nothing_said_or_done_in_it_is_refused(response):
 def test_a_response_that_says_or_does_something_is_not_hollow(response):
     answer = Generalised(situation="Can you give me a hand?", response=response)
     assert faults(answer, TOWN, Moment(1, 1, 0, 0, (), True)) == []
+
+
+SPEECHES = (
+    # Inside the quotation marks of the live arm's answers (runs/social/learning), as written.
+    "I see you've come to the kitchen. Talk to the other person here — he's the one who'll know "
+    "whether there's a place for you to help today.",
+    "I've asked once for something to eat and it's not on the counter — I'm on my feet and "
+    "hungry. Could you put one stew or omelette on for me now?",
+    "I slept through midnight. The client withdrew the task. I've lost it.",
+    "That's a tempting price, and I do like the idea of a bicycle. But I've only got $200 to my "
+    "name right now, so $300 isn't in it yet — fair?",
+)
+LEADS = ("I say to her, ", "I said: ", "I tell the person there: ", "I say to one of the others: ")
+MARKS = (("“", "”"), ("'", "'"), ('"', '"'), ("‘", "’"))
+
+
+@pytest.mark.parametrize("marks", MARKS)
+@pytest.mark.parametrize("lead", LEADS)
+def test_reported_speech_is_unwrapped_to_the_words_inside_the_quotes_character_for_character(
+    lead, marks
+):
+    opening, closing = marks
+    for speeches in (SPEECHES[:1], SPEECHES[1:3], SPEECHES):
+        reported = " Then I add, ".join(f"{opening}{s}{closing}" for s in speeches)
+        assert unwrap(lead + reported) == " ".join(speeches)
+        done = "I hand her the plate."
+        assert unwrap(f"{lead}{reported} {done}") == " ".join([*speeches, done])
+
+
+@pytest.mark.parametrize(
+    "written",
+    [
+        # The live arm's, left as written: something after the speech that may not be dropped.
+        SPEECHES[1].join(("I say to one of the others: '", "' I then wait.")),
+        SPEECHES[2].join(("I tell the person there: '", "' I write it down and go to bed.")),
+        SPEECHES[3].join(("I said: '", "' I then waited a few minutes.")),
+        "I ask the doctor, ",  # nothing quoted
+        "I tell her that it is fine.",  # reported, not quoted
+        "You say, “Thanks — that's fair.”",  # a narration, which the checks refuse
+        "“Fine,” I say.",  # the speech first
+        "I say, “Fine.” She nods. I go.",  # more than one sentence after it
+        "Take it. I hand it over.",  # speech already
+    ],
+)
+def test_a_response_that_is_not_only_reported_speech_is_left_as_it_was_written(written):
+    assert unwrap(written) is None
+
+
+async def test_what_is_learnt_from_is_the_speech_and_the_record_keeps_what_was_written(lived):
+    written = "I say to her, “Here you are. Pay me when you can.” I hand her the bread."
+    model = ScriptedModel({"situation": "Could I have a loaf on credit?", "response": written})
+    example = await generalise(
+        lived.moments[1], Kept(moment=2, day=1), client=model, vocabulary=TOWN,
+        start_date=START, runtime=RuntimeConfig(), replica=None,
+    )  # fmt: skip
+    spoken = "Here you are. Pay me when you can. I hand her the bread."
+    assert example.messages[1] == {"role": "assistant", "content": spoken}
+    assert example.written == written
+    # Unwrapped to nothing, the response is refused as holding nothing.
+    model = ScriptedModel(*[{"situation": "Well?", "response": "I say, “”"}] * 2)
+    dropped = await generalise(
+        lived.moments[1], Kept(moment=2, day=1), client=model, vocabulary=TOWN,
+        start_date=START, runtime=RuntimeConfig(), replica=None,
+    )  # fmt: skip
+    assert dropped.reason == "hollow"
+    assert json.loads(model.requests[1].messages[2].content)["response"] == "I say, “”"
 
 
 async def test_the_generalising_is_given_the_whole_moment_and_a_cut_is_marked_and_counted(

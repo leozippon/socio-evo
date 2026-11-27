@@ -89,6 +89,23 @@ _STILL = re.compile(
 )
 """How a sentence opens that says only that the person waited or looked, which is nothing said
 or done to anyone."""
+_REPORTING = re.compile(
+    r"(?:Then |And |and )?I (?:say|said|tell|told|reply|replied|answer|answered|ask|asked|add"
+    r"|added)(?: to)?(?: [a-z]+){0,4}\s*[,:]?\s*"
+)
+"""A reporting clause in the first person: "I say to one of them:", "I tell him,", "Then I add,"."""
+_QUOTED = re.compile(
+    r"“([^”]*)”|\"([^\"]*)\"|‘((?:[^’]|’(?=\w))*)’|'((?:[^']|'(?=\w))*)'(?=\s|$|[.,!?;:—])"
+)
+"""Speech in quotation marks, curly or straight; an apostrophe within a word does not end it."""
+_AFTER_QUOTE = re.compile(r"[.,]?\s*")
+_DONE = re.compile(r"I\s[^\"“”‘’]*?[.!?]")
+"""One sentence beginning with "I", with no quotation in it."""
+_IDLE = re.compile(
+    r"\b(?:wait\w*|look\w*|glanc\w*|check\w*|watch\w*|sleep\w*|slept|bed)\b", re.IGNORECASE
+)
+"""A word of waiting, looking or going to sleep anywhere in a sentence after the speech, which
+then is not one that says what was done, and the response is left as it was written."""
 OPENING_WORDS = 3
 """How many words open a response that are compared with the openings of what the person said."""
 
@@ -103,13 +120,16 @@ class Generalised(StrictModel):
 
 class Example(StrictModel):
     """What is learnt from moment `moment` of day `day`, kept for `why`: chat `messages`; `cut`
-    is how many characters of the moment the generalising was not given (`ACCOUNT_CHARS`)."""
+    is how many characters of the moment the generalising was not given (`ACCOUNT_CHARS`), and
+    `written` the response as the generalising wrote it, when what is learnt from is the speech
+    unwrapped from it (`unwrap`)."""
 
     moment: int
     day: int
     why: str | None = None
     messages: tuple[dict[str, JsonValue], ...]
     cut: int = 0
+    written: str | None = None
 
 
 class Dropped(StrictModel):
@@ -225,13 +245,19 @@ async def generalise(
             return Dropped(
                 moment=kept.moment, day=kept.day, reason="unreadable", detail=detail, cut=cut
             )
-        found = faults(answer, vocabulary, moment)
+        spoken = unwrap(answer.response)
+        heard = answer if spoken is None else answer.model_copy(update={"response": spoken})
+        found = faults(heard, vocabulary, moment)
         if not found:
             chat = (
-                {"role": "user", "content": answer.situation},
-                {"role": "assistant", "content": answer.response},
+                {"role": "user", "content": heard.situation},
+                {"role": "assistant", "content": heard.response},
             )
-            return Example(moment=kept.moment, day=kept.day, why=kept.why, messages=chat, cut=cut)
+            written = None if spoken is None else answer.response
+            return Example(
+                moment=kept.moment, day=kept.day, why=kept.why, messages=chat, cut=cut,
+                written=written,
+            )  # fmt: skip
         messages = (
             *messages,
             Message(role="assistant", content=answer.model_dump_json()),
@@ -244,6 +270,31 @@ async def generalise(
 Fault = tuple[Literal["leaked", "narrated", "empty", "hollow"], str, str]
 """What is wrong with an answer: the reason a moment is dropped for it, what the base model is
 told of it, and the detail kept."""
+
+
+def unwrap(response: str) -> str | None:
+    """The speech a response reports, when the whole response is that report and nothing else:
+    reporting clauses in the first person ("I say to her,", "I reply:", "Then I add,"), each
+    followed by its speech in quotation marks, and after them at most one sentence beginning with
+    "I" that says what was done (not that the person waited or looked). The speech is what stands
+    inside the quotation marks, character for character, the utterances joined in order with a
+    space, then that sentence. None for any other response, which is learnt from as it was
+    written."""
+    text, at, spoken = response.strip(), 0, []
+    while lead := _REPORTING.match(text, at):
+        quoted = _QUOTED.match(text, lead.end())
+        if quoted is None:
+            return None
+        spoken.append(next(group for group in quoted.groups() if group is not None))
+        at = _AFTER_QUOTE.match(text, quoted.end()).end()
+    if not spoken:
+        return None
+    rest = text[at:].strip()
+    if rest and not (
+        _DONE.fullmatch(rest) and not _IDLE.search(rest) and not _REPORTING.match(rest)
+    ):
+        return None
+    return " ".join([*spoken, rest] if rest else spoken)
 
 
 def faults(answer: Generalised, vocabulary: Vocabulary, moment: Moment) -> list[Fault]:
