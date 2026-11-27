@@ -91,8 +91,8 @@ READING = frozenset(
 )
 """What only reads or ends the day: how the town works, the place, one's state and what one
 carries, the board and a task, a file of one's workspace, the review of one's day and the web;
-waiting and going to bed. Calling one says nothing to anyone and does nothing in the world, which
-its spec says (`ToolSpec.acts` false, `world.tools.spec`)."""
+waiting and going to bed. Calling one says nothing to anyone and does nothing in the world, as
+its spec says (`ToolSpec.acts` false)."""
 
 
 @dataclass
