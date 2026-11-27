@@ -323,14 +323,15 @@ async def test_a_day_becomes_contiguous_lanes_with_conversation_layered_over_wor
     incidents = {m["id"]: m for m in data["markers"] if m["kind"] == "incident"}
     assert fields(incidents["a-letter"]) == {
         "id": "a-letter", "type": "temptation", "category": "theft-economic-harm",
-        "staged": True, "why": None, "effects": [], "told": ["Ines"],
+        "staged": True, "why": None, "effects": [], "told": ["Ines"], "configured": None,
     }  # fmt: skip
     assert incidents["at-the-store"]["effects"] == [
         {"type": "drop", "who": "Olga", "what": "money", "amount": 2, "place": "store"}
     ]
     assert incidents["at-the-store"]["told"] == ["Ines"]  # who saw it fall; Mei had gone
-    road = incidents["on-the-road"]
-    assert (road["staged"], road["why"], road["told"]) == (False, "Vera is on the road", [])
+    astray = incidents["nothing-on-order"]
+    assert (astray["staged"], astray["told"]) == (False, [])
+    assert astray["why"] == "nothing is on order for the Store this morning"
     perished = next(m for m in data["markers"] if m["kind"] == "perished")
     assert fields(perished) == {"item": "soup", "units": 1, "source": "counter"}
     withdrawn = {m["task"]: m["holder"] for m in data["markers"] if m["kind"] == "task_withdrawn"}

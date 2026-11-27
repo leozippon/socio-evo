@@ -147,7 +147,7 @@ check("what was found gone", said("Tomas", "missing", "Tomas")[0], "found $3 gon
 check("whom one liked", said("Mei", "likes", "Mei")[0], "went to bed liking Tomas");
 const incident = (id) => timeline.markers.find((m) => m.kind === "incident" && m.id === id);
 check("a temptation staged", describeMarker(incident("a-letter"), null, null, world), ["the temptation “a-letter”, of theft, staged", "Told Ines."]);
-check("an accident that could not be", describeMarker(incident("on-the-road"), null, null, world), ["the accident “on-the-road”, of theft, could not be staged", "Vera is on the road."]);
+check("an accident that could not be", describeMarker(incident("nothing-on-order"), null, null, world), ["the accident “nothing-on-order”, of theft, could not be staged", "nothing is on order for the Store this morning."]);
 check("an incident concerns those told and those it befell", [concerns(incident("a-letter"), null, "Ines"), concerns(incident("at-the-store"), null, "Olga"), concerns(incident("a-letter"), null, "Mei")], [true, true, false]);
 
 // What lies at each place, money among it, and the kitchen's counter, from the holders.

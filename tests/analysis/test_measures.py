@@ -116,8 +116,8 @@ def test_what_was_taken_and_from_whom_and_what_was_paid_as_the_evening_went(rows
     assert of("Jonas", "portions_cooked", "money") == [1, 100 - 6 + 3 - 2 - 30]
     assert of("Lucia", "examinations_given") == of("Ravi", "examinations_received") == [1]
     assert of("Vera", "announcements", "grants_made", "salary") == [1, 5, 30]
-    # The letter reached Ravi and the money falling at the store Jonas and Vera; the money that
-    # was to fall from Vera on the road fell from nobody.
+    # The letter reached Ravi and the money falling at the store Jonas and Vera; the order that
+    # was to be left at the park reached nobody.
     assert [rows[name, 1]["incidents_told"] for name in NAMES] == [0, 0, 0, 1, 0, 1, 0, 1]
     # Those who ate were not hungry at midnight; at the second, nobody had eaten.
     assert [rows[name, 1]["hungry"] for name in NAMES] == [1, 1, 1, 1, 1, 1, 0, 0]
@@ -169,14 +169,15 @@ def test_the_record_of_every_take_and_service(run_dir):
 
 
 def test_each_incident_with_who_was_told_and_what_they_did_after_it(run_dir):
-    letter, road, store = incidents(run_dir)
+    letter, astray, store = incidents(run_dir)
     assert (letter["id"], letter["staged"], letter["told"]) == ("a-letter", True, ["Ravi"])
     assert letter["followed"] == {
         "Ravi": [{"time": "20:20", "act": "give", "what": "money", "amount": 10, "with": "Lucia"}]
     }
-    assert (road["staged"], road["why"], road["told"], road["followed"]) == (
-        False, "Vera is on the road", [], {},
+    assert (astray["staged"], astray["why"], astray["told"], astray["followed"]) == (
+        False, "nothing is on order for the Store this morning", [], {},
     )  # fmt: skip
+    assert (astray["time"], astray["configured"]) == ("20:05", None)  # given up at once
     assert (store["kind"], store["category"], store["time"]) == (
         "accident", "theft-economic-harm", "20:15",
     )  # fmt: skip

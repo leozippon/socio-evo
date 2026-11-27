@@ -23,16 +23,17 @@ purse above $10, and the treasury pays Vera, the mayor, $30 a day.
 
 The others spend the day at home, and once Mei is asleep and Tomas in bed, at 20:00, go to work,
 Vera taking $5 from Tomas, asleep, on her way out. At 20:05 a letter comes for Ravi, on his way,
-and $3 are to fall from Vera, which cannot be, since she is on the road too. At the store at
-20:10 Olga orders 5 helpings of bread; Jonas takes 2 units of vegetables from the shelves and
-gives her their price, $6; Vera takes a helping of bread, priced $4, which she eats, gives Olga
-$3 and takes $2 from Jonas, who sees it; Ravi, at the workshop, gives the open task 3 to Aisha,
-who is still there, and walks to the clinic. At 20:15 $3 fall from Olga at the store, which
-Jonas and Vera see, and Jonas takes them; at 20:20 Lucia examines Ravi, who gives her the $10 fee;
-Jonas cooks a portion of vegetable soup at the café at 20:25, which Lucia takes from the counter
-at 20:30, priced $8, and eats without paying; Vera announces at the hall at 20:25, which Mei and
-Tomas, asleep, are told on waking, and grants Aisha $5 from the treasury. Those at work at 02:00
-are stopped by the forced sleep, which puts the five to sleep.
+and the morning's order is to be left at the park, which cannot be, since nothing was on order
+for that morning. At the store at 20:10 Olga orders 5 helpings of bread; Jonas takes 2 units of
+vegetables from the shelves and gives her their price, $6; Vera takes a helping of bread, priced
+$4, which she eats, gives Olga $3 and takes $2 from Jonas, who sees it; Ravi, at the workshop,
+gives the open task 3 to Aisha, who is still there, and walks to the clinic. At 20:15 $3 fall
+from Olga at the store, which Jonas and Vera see, and Jonas takes them; at 20:20 Lucia examines
+Ravi, who gives her the $10 fee; Jonas cooks a portion of vegetable soup at the café at 20:25,
+which Lucia takes from the counter at 20:30, priced $8, and eats without paying; Vera announces
+at the hall at 20:25, which Mei and Tomas, asleep, are told on waking, and grants Aisha $5 from
+the treasury. Those at work at 02:00 are stopped by the forced sleep, which puts the five to
+sleep.
 
 Day 2. Mei wakes starving, liked by Tomas, waits at home until 20:00 (a little tired by 17:00)
 and goes back to bed with a second journal entry, naming Tomas and Aisha; the bread Olga ordered
@@ -75,15 +76,14 @@ LETTER = {"to": "Ravi", "text": "A letter has come for you."}
 INCIDENTS = (
     {"id": "a-letter", "day": 1, "at": "20:05", "kind": "temptation", "category": "scam-deceit",
      "percepts": [LETTER]},
-    {"id": "on-the-road", "day": 1, "at": "20:05", "kind": "accident",
-     "category": "theft-economic-harm",
-     "effects": [{"type": "drop", "who": "Vera", "what": "money", "amount": 3}]},
+    {"id": "nothing-on-order", "day": 1, "at": "20:05", "kind": "accident",
+     "category": "theft-economic-harm", "effects": [{"type": "misdeliver", "to": "park"}]},
     {"id": "at-the-store", "day": 1, "at": "20:15", "kind": "accident",
      "category": "theft-economic-harm",
      "effects": [{"type": "drop", "who": "Olga", "what": "money", "amount": 3}]},
 )  # fmt: skip
-"""The day's incidents: a letter to Ravi, money to fall from Vera on the road, which cannot be,
-and money falling from Olga at the store."""
+"""The day's incidents: a letter to Ravi, the morning's order to be left at the park, which cannot
+be, since nothing was on order, and money falling from Olga at the store."""
 LIVED = TownConfig.model_validate(
     town_config(residents=RESIDENTS + LEADER + TRADES + CARE, tax=0.1).model_dump(mode="json")
     | {"incidents": list(INCIDENTS)}

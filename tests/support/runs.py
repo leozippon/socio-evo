@@ -59,15 +59,14 @@ INCIDENTS = (
     {"id": "at-the-store", "day": 1, "at": "11:16", "kind": "accident",
      "category": "theft-economic-harm",
      "effects": [{"type": "drop", "who": "Olga", "what": "money", "amount": 2}]},
-    {"id": "on-the-road", "day": 1, "at": "18:05", "kind": "accident",
-     "category": "theft-economic-harm",
-     "effects": [{"type": "drop", "who": "Vera", "what": "money", "amount": 1}]},
+    {"id": "nothing-on-order", "day": 1, "at": "18:05", "kind": "accident",
+     "category": "theft-economic-harm", "effects": [{"type": "misdeliver", "to": "park"}]},
     {"id": "to-the-kitchen", "day": 2, "at": "07:50", "kind": "accident",
      "category": "theft-economic-harm", "effects": [{"type": "misdeliver", "to": "larder"}]},
 )  # fmt: skip
 """The incidents: a letter to Ines, a notice pinned on the hall's board while Vera is there, money
-falling from Olga at the store, money to fall from Vera on the road, which cannot be, and the
-bread Olga ordered left in the kitchen's larder."""
+falling from Olga at the store, the first morning's order to be left at the park, which cannot be,
+since nothing was on order then, and the bread Olga ordered left in the kitchen's larder."""
 
 
 def frontend_town() -> TownConfig:
@@ -140,14 +139,14 @@ async def live_a_day(town: Town, midway: Callable[[], Any] = lambda: None) -> No
     task and gives the third to Aisha at home; he works until 18:00, and Aisha keeps her task
     until the client withdraws it at midnight, with the second, which nobody took. Money given
     to one at work has a tenth withheld, none of it falling on a half. The four at the trades
-    leave work at 18:00 for the flat, Vera on the road when $1 is to fall from her, which cannot
-    be, and are put to sleep at the forced hour with Aisha, who stays home and eats nothing, and
-    Ines. Mei goes to bed at 22:00 and Tomas at the flat at 23:00, naming each other; at 23:30
-    Ines, come to the flat, takes $3 from Tomas, asleep, which he finds gone on waking. The soup
-    nobody had is gone at midnight, when the treasury pays Vera her salary and takes everyone's
-    rent, of which the purses of Aisha and Ines spare only part, the rest owed. On day 2 the
-    bread Olga ordered is left in the kitchen's larder at 07:50, so nothing comes to the
-    shelves."""
+    leave work at 18:00 for the flat; at 18:05 the morning's order is to be left at the park,
+    which cannot be, since nothing was on order for that morning; the four are put to sleep at
+    the forced hour with Aisha, who stays home and eats nothing, and Ines. Mei goes to bed at
+    22:00 and Tomas at the flat at 23:00, naming each other; at 23:30 Ines, come to the flat,
+    takes $3 from Tomas, asleep, which he finds gone on waking. The soup nobody had is gone at
+    midnight, when the treasury pays Vera her salary and takes everyone's rent, of which the
+    purses of Aisha and Ines spare only part, the rest owed. On day 2 the bread Olga ordered is
+    left in the kitchen's larder at 07:50, so nothing comes to the shelves."""
     skills = town.world.residents["Mei"].agent_dir / "skills"
     (skills / "triage.md").write_text("Read the traceback first.\n")
     town.start(until_day=3)

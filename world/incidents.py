@@ -13,9 +13,14 @@ happens where they are.
 Each incident is armed on the world's timers with the day it belongs to (`schedule`), so that one
 is staged once: a world restored from a checkpoint arms only the incidents still to come. It is
 staged whole or not at all: an effect that is impossible at that moment (the money to fall is not
-there) leaves the world as it was and nothing is told, and the incident is logged as not staged
-with the reason, never faked. Either way it is logged (`incident`) with what was staged and who
-was told; what is told to one asleep reaches it when it wakes.
+there) leaves the world as it was and nothing is told, and the incident is tried again every
+`RETRY` until the day ends, at the next midnight or at the checkpoint that closes its lived day if
+that comes first, so that a checkpoint holds no incident still waiting. Only an incident still
+impossible then, or one whose effect cannot become possible that day (nothing is on order for
+the morning, and nothing more can be), is logged as not staged with the last reason, never faked.
+Either way it is logged once (`incident`) with what was staged and who was told, at the time it
+was staged or given up, and with the time it was configured for if that was earlier; what is
+told to one asleep reaches it when it wakes.
 """
 
 from __future__ import annotations
@@ -37,26 +42,39 @@ if TYPE_CHECKING:
 Seen = dict[str, str]
 """What each witness of an effect is told of it, by name."""
 
+RETRY = 15 * 60
+"""How long an incident that cannot be staged waits before it is tried again."""
+
 
 def schedule(world: World, day: int) -> None:
     """Arm the incidents of lived day `day`: those staged from its opening checkpoint until the
-    next."""
+    next, each tried until the midnight after it or that next checkpoint, whichever comes
+    first."""
     for incident in world.config.incidents:
         if (incident.time - world.checkpoint_hour) // DAY + 1 == day:
-            world.at(incident.time, partial(stage, world, incident))
+            until = min(incident.day * DAY, day * DAY + world.checkpoint_hour)
+            world.at(incident.time, partial(stage, world, incident, incident.time, until))
 
 
-def stage(world: World, incident: Incident) -> None:
-    """Stage `incident` now: every effect, then its percepts, or, if an effect is impossible,
-    nothing but the log's record of why."""
+def stage(world: World, incident: Incident, t: int, until: int) -> None:
+    """Stage `incident`, tried at `t`: every effect, then its percepts. If an effect is
+    impossible, nothing changes and nothing is told: it is tried again `RETRY` later if that is
+    before `until` and the effect can become possible, and otherwise the log records why it was
+    not staged."""
     payload: dict[str, Any] = {"id": incident.id, "kind": incident.kind}
     payload |= {"category": incident.category}
-    why = next((found for e in incident.effects if (found := _impossible(world, e))), None)
-    if why is not None:
+    delayed = {"configured": incident.time} if t > incident.time else {}
+    found = next(((e, why) for e in incident.effects if (why := _impossible(world, e))), None)
+    if found is not None:
+        effect, why = found
+        # Nothing on order for this morning means nothing all day: today's orders are tomorrow's.
+        if not isinstance(effect, Misdeliver) and t + RETRY < until:
+            world.at(t + RETRY, partial(stage, world, incident, t + RETRY, until))
+            return
         world.record(
             "incident",
             lambda w: f"The incident {incident.id} was not staged: {why}.",
-            payload=payload | {"staged": False, "why": why, "effects": [], "told": []},
+            payload=payload | {"staged": False, "why": why, "effects": [], "told": []} | delayed,
         )
         return
     texts: dict[str, list[str]] = {told.to: [told.text] for told in incident.percepts}
@@ -70,7 +88,9 @@ def stage(world: World, incident: Incident) -> None:
         "incident",
         lambda w: " ".join(texts[w]) if w in texts else f"The incident {incident.id} was staged.",
         audience=[world.residents[name] for name in texts],
-        payload=payload | {"staged": True, "why": None, "effects": effects, "told": list(texts)},
+        payload=payload
+        | {"staged": True, "why": None, "effects": effects, "told": list(texts)}
+        | delayed,
     )
 
 

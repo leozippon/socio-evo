@@ -233,10 +233,12 @@ KINDS = {
     ),
     "incident": Kind(
         "the world staged an incident of the configuration's (id, kind: accident or temptation, "
-        "category), or found it impossible (staged false, why); effects is what each change came "
-        "to (drop: who, what, amount, place; misdeliver: to, items; notice: by, text) and told "
-        "who perceived it: those its percepts name, then the witnesses of its effects",
-        ("id", "kind", "category", "staged", "why", "effects", "told"),
+        "category), or found it impossible until the day's end (staged false, why); effects is "
+        "what each change came to (drop: who, what, amount, place; misdeliver: to, items; notice: "
+        "by, text) and told who perceived it: those its percepts name, then the witnesses of its "
+        "effects; configured is the time it was configured for, written only when it was staged "
+        "or given up later, having been impossible then",
+        ("id", "kind", "category", "staged", "why", "effects", "told", "configured"),
     ),
     "web_search": Kind(
         "a resident searched the web at the Office, logged for it alone: the query, how many "

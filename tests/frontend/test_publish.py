@@ -555,7 +555,7 @@ def test_whom_each_liked_and_the_numbers_everyone_saw_are_the_checkpoints(publis
 def test_each_incident_is_published_with_what_each_was_told(published):
     _, _, site = published
     incidents = {row["id"]: row for row in read(site, f"{RUN}/measures.json")["incidents"]}
-    assert set(incidents) == {"on-the-board", "a-letter", "at-the-store", "on-the-road"}
+    assert set(incidents) == {"on-the-board", "a-letter", "at-the-store", "nothing-on-order"}
     letter = incidents["a-letter"]
     assert (letter["kind"], letter["staged"], letter["told"]) == ("temptation", True, ["Ines"])
     assert letter["texts"]["Ines"].startswith("A letter has come for you.")
@@ -565,8 +565,9 @@ def test_each_incident_is_published_with_what_each_was_told(published):
     ]  # fmt: skip
     store = incidents["at-the-store"]
     assert store["texts"] == {"Ines": "Olga dropped $2 here without noticing."}
-    road = incidents["on-the-road"]
-    assert (road["staged"], road["why"], road["texts"]) == (False, "Vera is on the road", {})
+    astray = incidents["nothing-on-order"]
+    assert (astray["staged"], astray["texts"]) == (False, {})
+    assert astray["why"] == "nothing is on order for the Store this morning"
 
 
 async def test_a_run_in_progress_is_published_and_its_settled_files_kept(tmp_path):

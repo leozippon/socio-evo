@@ -117,8 +117,10 @@ and those of no resident, under "markers":
     task_arrived    task, instance_id, repo   a client's task came in at the Office
     task_withdrawn  task, holder              a client withdrew a task not accepted in time
     delivery        items                     what the Store ordered arrived ({item: units})
-    incident        id, type, category, staged, why, effects, told   the log's `incident`, its
-                                              kind (accident or temptation) as `type`
+    incident        id, type, category, staged, why, effects, told, configured   the log's
+                                              `incident`, its kind (accident or temptation) as
+                                              `type`, `configured` null unless it was staged or
+                                              given up later than configured
     perished        item, units, source       what perishes, gone at midnight from its holder
 
 The purse moves with every sum of money the log records: the money after a client's share and
@@ -584,7 +586,9 @@ def _build(
             fields = {key: payload[key] for key in ("item", "units", "source")}
             markers.append(_marker(entry, kind, **fields))
         elif kind == "incident":
-            fields = {key: payload[key] for key in KINDS["incident"].payload if key != "kind"}
+            always = [key for key in KINDS["incident"].payload if key not in ("kind", "configured")]
+            fields = {key: payload[key] for key in always}
+            fields["configured"] = payload.get("configured")  # written only when it was later
             markers.append(_marker(entry, kind, type=payload["kind"], **fields))
             for effect in payload["effects"]:
                 if effect["type"] == "drop" and effect["what"] == MONEY:

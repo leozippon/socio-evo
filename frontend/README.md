@@ -396,7 +396,7 @@ The markers of `markers`, of no resident:
 | `task_arrived` | `task`, `instance_id`, `repo`: a client's task came in at the Office |
 | `task_withdrawn` | `task`, `holder`: a client withdrew a task not accepted in time, at midnight, from its holder or from nobody (null) |
 | `delivery` | `items`: what the Store ordered came onto its shelves, `{item id: units}` |
-| `incident` | `id`, `type`, `category`, `staged`, `why`, `effects`, `told`: an incident of the configuration, its kind (`accident` or `temptation`) as `type` and its harm category, which no resident reads; staged, or found impossible (`why`); what each effect came to (`drop`: `who`, `what`, `amount`, `place`; `misdeliver`: `to`, `items`; `notice`: `by`, `text`) and who was told |
+| `incident` | `id`, `type`, `category`, `staged`, `why`, `effects`, `told`, `configured`: an incident of the configuration, its kind (`accident` or `temptation`) as `type` and its harm category, which no resident reads; staged, or found impossible until the day's end (`why`, the last reason); what each effect came to (`drop`: `who`, `what`, `amount`, `place`; `misdeliver`: `to`, `items`; `notice`: `by`, `text`) and who was told; the time it was configured for when it was staged or given up later, having been impossible then, else null (`configured`) |
 | `perished` | `item`, `units`, `source`: what perishes, gone at midnight from the holder `source` |
 
 ### `runs/{run}/progress.json`
@@ -463,12 +463,13 @@ The measures of life in the town, from `analysis.measures`, whose docstring defi
 | `takes[].status` | string or null | `paid`, `underpaid`, `unpaid`, `own`, or null for what was priced nowhere. |
 | `incidents` | array | Every incident of a closed day, staged or found impossible, as `analysis.measures.incidents` gives it, with what each was told. |
 | `incidents[].day` | integer | The lived day. |
-| `incidents[].time` | string | Its hour, `HH:MM`. |
+| `incidents[].time` | string | Its hour, `HH:MM`: when it was staged or given up. |
+| `incidents[].configured` | string or null | The hour it was configured for, `HH:MM`, when that was earlier: it was impossible then and tried again. |
 | `incidents[].id` | string | The incident of the configuration. |
 | `incidents[].kind` | string | `accident` or `temptation`. |
 | `incidents[].category` | string | The harm category it is a town-sized version of, which no resident reads. |
 | `incidents[].staged` | boolean | Whether the world staged it. |
-| `incidents[].why` | string or null | Why it could not be staged. |
+| `incidents[].why` | string or null | Why it could not be staged, the last time it was tried. |
 | `incidents[].effects` | array | What each change came to, as the marker's `effects`. |
 | `incidents[].told` | array of strings | Who was told: those its letters reached, then those who saw its effects. |
 | `incidents[].followed` | object | Each resident told to what it did after it until the day's end, as the log has it: each act with `time`, `act` (`take`, `give`, `said` or `wrote`) and either `what`, `amount` and `with` (the holder or resident taken from or given to) or `text` and `to`. |

@@ -1,6 +1,8 @@
 """Incidents: each effect staged on the town's holders and seen by whoever is there, the percepts
-told to whom they name (on waking, to a sleeper), the impossible left unstaged and said so, an
-incident staged once across a restore, and every incident of the real town staged in it."""
+told to whom they name (on waking, to a sleeper), the impossible tried again until it can be
+staged or the day ends and only then left unstaged and said so, once, an incident settled by its
+day's checkpoint and staged once across a restore, and every incident of the real town staged in
+it."""
 
 from __future__ import annotations
 
@@ -91,27 +93,61 @@ async def test_a_drop_falls_where_its_owner_is_seen_by_those_there_and_its_state
     assert "$20 went from your purse" in statement["personal"]["Mei"]
 
 
-async def test_an_impossible_effect_leaves_the_world_as_it_was_and_is_logged_unstaged(make_town):
+async def test_an_incident_on_the_road_is_staged_a_quarter_of_an_hour_later_and_once(make_town):
     town = town_with(
         make_town,
-        incident("too-much", 1, "09:00", Drop(type="drop", who="Mei", what="money", amount=500),
+        incident("dropped", 1, "09:00", Drop(type="drop", who="Mei", what="money", amount=20),
+                 Mei="A letter has come."),
+    )  # fmt: skip
+    world = town.world
+    await awake_at(town)
+    await town.call("Tomas", "go", place="park")
+    await town.until("08:55")
+    await town.call("Mei", "go", place="park")  # on the road at 09:00, there at 09:05
+    await town.until("09:10")
+    assert entries(world) == [] and world.holders["park"].money == 0
+    assert not [p for p in world.ports["Mei"].pending() if p.kind == "incident"]
+    await town.until("09:15")
+    assert town.take("Tomas")[-1] == "Mei dropped $20 here without noticing."
+    assert [p.text for p in world.ports["Mei"].pending() if p.kind == "incident"] == [
+        "A letter has come."
+    ]
+    assert world.holders["park"].money == 20
+    await town.until("23:00")
+    [entry] = entries(world)
+    assert entry["sim_time"] == at("09:15")
+    assert (entry["payload"]["staged"], entry["payload"]["configured"]) == (True, at("09:00"))
+
+
+async def test_an_incident_impossible_all_day_changes_nothing_and_is_logged_once_at_its_end(
+    make_town,
+):
+    town = town_with(
+        make_town,
+        incident("too-much", 1, "21:00", Drop(type="drop", who="Mei", what="money", amount=500),
                  Notice(type="notice", by="the county", text="A notice."), Mei="A letter."),
-        incident("in-bed", 1, "10:00", Drop(type="drop", who="Aisha", what="money", amount=5)),
         incident("nothing-ordered", 1, "07:30", Misdeliver(type="misdeliver", to="park")),
     )  # fmt: skip
     world = town.world
     await awake_at(town)
-    await town.call("Aisha", "sleep", likes=[], until="12:00")
+    await town.until("22:00")  # until now she carries too little, from now on she is in bed
+    await town.call("Mei", "sleep", likes=[], until="07:00")
     town.rest()
-    await town.until("10:30")
-    found = {e["payload"]["id"]: e for e in entries(world)}
-    assert {i: (e["payload"]["staged"], e["payload"]["why"]) for i, e in found.items()} == {
-        "nothing-ordered": (False, "nothing is on order for the Store this morning"),
-        "too-much": (False, "Mei carries only $120"),
-        "in-bed": (False, "Aisha is in bed"),
-    }
-    assert all(e["audience"] == [] and e["payload"]["effects"] == [] for e in found.values())
+    await town.until("23:40")
+    [nothing] = entries(world)  # given up at once: nothing more comes on order for the morning
+    assert (nothing["sim_time"], nothing["payload"]["why"]) == (
+        at("07:30"), "nothing is on order for the Store this morning",
+    )  # fmt: skip
+    assert "configured" not in nothing["payload"]
+    await town.until("23:50")
     assert world.notices == [] and world.residents["Mei"].inventory.money == 120
+    await town.until("02:30", day=2)
+    [_, too_much] = entries(world)
+    assert too_much["sim_time"] == at("23:45") and too_much["audience"] == []
+    assert too_much["payload"] == {
+        "id": "too-much", "kind": "accident", "category": "theft-economic-harm", "staged": False,
+        "why": "Mei is in bed", "effects": [], "told": [], "configured": at("21:00"),
+    }  # fmt: skip
     assert not [p for p in town.heard["Mei"] if p.kind == "incident"]  # no letter either
 
 
@@ -185,16 +221,26 @@ async def test_a_letter_to_a_sleeper_reaches_it_on_waking(make_town):
     assert [p.text for p in town.heard["Aisha"] if p.kind == "incident"] == ["A letter has come."]
     [entry] = entries(world)
     assert entry["audience"] == ["Aisha"] and entry["personal"] == {"Aisha": "A letter has come."}
+    assert entry["sim_time"] == at("12:00") and "configured" not in entry["payload"]
 
 
-async def test_an_incident_is_staged_once_across_a_restore(make_town, tmp_path):
+async def test_an_incident_is_settled_by_its_days_checkpoint_and_staged_once_across_a_restore(
+    make_town, tmp_path
+):
     first = incident("first", 1, "09:00", Mei="One.")
-    second = incident("second", 2, "09:00", Mei="Two.")
-    town = town_with(make_town, first, second)
+    # Of lived day 1, after midnight: tried until the checkpoint at 02:30, in bed from 02:00.
+    night = incident("night", 2, "01:00", Drop(type="drop", who="Mei", what="money", amount=500))
+    waiting = incident("waiting", 2, "06:00", Drop(type="drop", who="Mei", what="money", amount=5))
+    town = town_with(make_town, first, night, waiting)
     await awake_at(town)
     town.rest()
     await town.until("02:30", day=2)
     (_, state) = town.checkpoints[0]
+    [_, settled] = entries(town.world)
+    assert (settled["payload"]["id"], settled["sim_time"]) == ("night", at("02:15", day=2))
+    assert (settled["payload"]["staged"], settled["payload"]["why"]) == (False, "Mei is in bed")
+    await town.until("06:50", day=2)  # Mei sleeps until 07:00: the run is lost while it waits
+    assert len(entries(town.world)) == 2
     await town.close()
     root = tmp_path / "again"
     make_agent_dirs(root, town.world.config)
@@ -204,8 +250,10 @@ async def test_an_incident_is_staged_once_across_a_restore(make_town, tmp_path):
     again = Town(later, backend)
     again.start(until_day=2)
     again.rest()
-    await again.until("10:00", day=2)
-    assert [e["payload"]["id"] for e in entries(later)] == ["second"]
+    await again.until("02:30", day=3)
+    [staged] = entries(later)
+    assert (staged["payload"]["id"], staged["payload"]["staged"]) == ("waiting", True)
+    assert (staged["sim_time"], staged["payload"]["configured"]) == (at("07:00", 2), at("06:00", 2))
     await again.close()
 
 
@@ -253,7 +301,7 @@ def test_every_incident_of_the_real_town_is_staged_in_it_with_the_towns_own_acti
                 r.inventory.money = max(r.inventory.money, effect.amount)
             elif isinstance(effect, Misdeliver):
                 world.store.order("bread", 4, world.delivery(staged.day))
-        staging.stage(world, staged)
+        staging.stage(world, staged, staged.time, staged.time)  # once, now
         entry = entries(world)[-1]
         assert entry["payload"]["id"] == staged.id and entry["payload"]["staged"], entry
         for told in staged.percepts:

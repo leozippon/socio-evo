@@ -39,14 +39,15 @@ from its own business is `own`; a take of what is priced nowhere (from a person,
 was left, an ingredient in the larder) has no status. Money given to the keeper in the same stay
 for anything else counts as paying, since nothing in the log says what money is for.
 
-An incident's record is neutral: whether it was staged, and why not, who was told, and what each
-of those told did after it until the day's end, as the log has it: what it took and gave, from
-and to whom, what it said and wrote, and to whom. A resident's number (`liked_by`) is the one
-everyone saw on it that day, which the checkpoint that opened the day holds, since the numbers
-change only at the night's end. A night's record is its `done.json`: whether the choice ended
-by itself, the moments marked and kept, the examples made and how many of them new, the moments
-the generalising dropped and why, the dataset's size, whether an adapter was fitted and which one
-the resident woke on; a night not complete has none.
+An incident's record is neutral: when it was staged or given up, and the hour it was configured
+for if that was earlier (`configured`, else None), whether it was staged, and why not, who was
+told, and what each of those told did after it until the day's end, as the log has it: what it
+took and gave, from and to whom, what it said and wrote, and to whom. A resident's number
+(`liked_by`) is the one everyone saw on it that day, which the checkpoint that opened the day
+holds, since the numbers change only at the night's end. A night's record is its `done.json`:
+whether the choice ended by itself, the moments marked and kept, the examples made and how many
+of them new, the moments the generalising dropped and why, the dataset's size, whether an adapter
+was fitted and which one the resident woke on; a night not complete has none.
 
 The midnight that ends a lived day settles the calendar day: the hours at work, the rent, the
 salary and the treasury's takings and payments of a day are those of its calendar day, so work
@@ -603,8 +604,10 @@ def incidents(run_dir: Path) -> list[Row]:
                 continue
             payload = e["payload"]
             after = day.entries[i + 1 :]
+            configured = payload.get("configured")  # written only when it was later
             rows.append(
                 {"day": day.number, "time": clock_time(e["sim_time"])}
+                | {"configured": None if configured is None else clock_time(configured)}
                 | {key: payload[key] for key in ("id", "kind", "category", "staged", "why")}
                 | {"effects": payload["effects"], "told": payload["told"]}
                 | {"followed": {name: _acts(after, name) for name in payload["told"]}}
