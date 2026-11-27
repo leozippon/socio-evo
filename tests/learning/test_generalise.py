@@ -10,6 +10,7 @@ from datetime import date
 import pytest
 
 import learning.generalise as generalise_module
+from agent import texts as runtime_texts
 from agent.runtime import RuntimeConfig
 from infrastructure.llm import LLMRequest, Message
 from infrastructure.llm.scripted import tool_call
@@ -96,7 +97,7 @@ async def test_a_moment_is_generalised_by_the_base_model_asked_once_more_then_dr
     first, again = model.requests[:2]
     # The base model, without an adapter or the resident's account of itself.
     assert (first.model, first.replica, first.tools) == (None, 2, ())
-    account = rendering(lived.moments[0], START)
+    account = rendering(lived.moments[0], START, results=None, most=None, only_acts=True)
     assert [m.content for m in first.messages] == [
         texts.GENERALISE,
         f"<account>\n{account}\n</account>",  # between the marks the instructions name
@@ -213,6 +214,34 @@ def _saying(said: str) -> Moment:
     return Moment(
         1, 1, 0, 0, (told, Message(role="assistant", content="", tool_calls=(call,))), True
     )
+
+
+async def test_the_layer_is_not_told_the_person_waited_or_looked_but_hears_what_came_meanwhile(
+    lived,
+):
+    """Nearly every waking turn ends with waiting, and an account that told it as something the
+    person did made "I wait." the commonest thing a resident learnt to do."""
+    morning = lived.moments[0]  # it looked around, which only reads, and set off for work
+    assert morning.quiet == {"look_around"}
+    account = rendering(morning, START, results=None, most=None, only_acts=True)
+    assert "look_around" not in account and "→ You are at home." not in account
+    assert 'You did: go(place: "work")' in account
+    assert "look_around" in rendering(morning, START)  # the resident's own reading keeps it
+    wait, say = tool_call("wait", minutes=45), tool_call("say", text="Not yet.")
+    news = runtime_texts.NEWS_AHEAD.format(
+        news="07:41 — Kofi said to you: “Busy today?”", result="You wait for up to 45 minutes."
+    )
+    talk = Moment(2, 1, 0, 0, (
+        Message(role="user", content="You are at work."),
+        Message(role="assistant", content="", tool_calls=(wait,)),
+        Message(role="tool", content=news, tool_call_id=wait.id),
+        Message(role="assistant", content="", tool_calls=(say,)),
+        Message(role="tool", content="You said: “Not yet.”", tool_call_id=say.id),
+    ), True, frozenset({"wait"}))  # fmt: skip
+    account = rendering(talk, START, results=None, most=None, only_acts=True)
+    assert "07:41 — Kofi said to you: “Busy today?”" in account
+    assert "wait(" not in account and "You wait for up to" not in account
+    assert 'You did: say(text: "Not yet.")' in account
 
 
 async def test_the_generalising_is_given_the_whole_moment_and_a_cut_is_marked_and_counted(

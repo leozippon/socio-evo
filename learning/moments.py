@@ -32,6 +32,7 @@ from typing import Any
 from agent.directory import SESSION, TRACE
 from agent.runtime import shorten
 from agent.session import MessageRecord, read
+from agent.texts import NEWS_AHEAD
 from infrastructure.git import Repository
 from infrastructure.llm import Message, ToolCall
 from infrastructure.storage import day_tag
@@ -54,7 +55,8 @@ MOMENT_CHARS = 12_000
 class Moment:
     """Moment `number` of a life, lived on day `day` from simulated time `start` to `end`:
     `messages`, every message it added to the resident's context, in order, and whether the
-    resident said or did something in it (`acted`)."""
+    resident said or did something in it (`acted`); `quiet` names the things it called in it
+    that did not act, which only read or ended the day."""
 
     number: int
     day: int
@@ -62,6 +64,7 @@ class Moment:
     end: int
     messages: tuple[Message, ...]
     acted: bool
+    quiet: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -94,12 +97,15 @@ def life(root: Path, day: int) -> Life:
     since = 0
     quiet: frozenset[str] = frozenset()
     acted = False
+    called_quietly: set[str] = set()
     for lived, record in _records(root / TRACE, ends):
         if record["kind"] == "request":
             actions.update(record["tools"])
             quiet = frozenset(record.get("quiet", ()))
         if record["kind"] == "tool_call":
             acted = acted or record["name"] not in quiet
+            if record["name"] in quiet:
+                called_quietly.add(record["name"])
         if record["kind"] != "rest":
             start = record["sim_time"] if start is None else start
             continue
@@ -111,8 +117,9 @@ def life(root: Path, day: int) -> Life:
                 raise ValueError(f"{root / TRACE}: a reply between two rests with nothing traced")
             told = tuple(messages[i] for i in pending)
             end = record["sim_time"]
-            moments.append(Moment(len(moments) + 1, lived, start, end, told, acted))
-            pending, start, acted = [], None, False
+            still = frozenset(called_quietly)
+            moments.append(Moment(len(moments) + 1, lived, start, end, told, acted, still))
+            pending, start, acted, called_quietly = [], None, False, set()
     return Life(tuple(moments), day, frozenset(actions))
 
 
@@ -144,11 +151,14 @@ def rendering(
     *,
     results: int | None = RESULT_CHARS,
     most: int | None = MOMENT_CHARS,
+    only_acts: bool = False,
 ) -> str:
     """Moment `moment` told in full, as the resident lived it: what it was told, its thoughts,
     and each thing it did followed by what that came to; each result and argument cut to
     `results` characters and the whole to `most`, their middles left out (None, not cut), as
-    the resident reads it by default."""
+    the resident reads it by default. With `only_acts`, what it called that only read or ended
+    the day (`Moment.quiet`) is left out with what it came to, but for the news told ahead of
+    that, which it was told."""
     parts: list[str] = []
     calls: dict[str, ToolCall] = {}
     for message in moment.messages:
@@ -161,6 +171,9 @@ def rendering(
                 parts.append(texts.THOUGHT.format(text=text))
         else:
             call = calls.get(message.tool_call_id or "")
+            if only_acts and call is not None and call.name in moment.quiet:
+                parts.append(_news(text))
+                continue
             parts.append(
                 texts.DONE.format(
                     call="" if call is None else _call(call, results),
@@ -239,6 +252,17 @@ def _call(call: ToolCall, results: int | None) -> str:
         for key, value in call.arguments.items()
     )
     return f"{call.name}({arguments})"
+
+
+def _news(result: str) -> str:
+    """The news told ahead of a result (`agent.texts.NEWS_AHEAD`), or nothing."""
+    ahead, between = (
+        NEWS_AHEAD.split("{news}")[0],
+        NEWS_AHEAD.split("{news}")[1].split("{result}")[0],
+    )
+    if not result.startswith(ahead) or between not in result:
+        return ""
+    return result[len(ahead) : result.index(between)].strip()
 
 
 def _cut_middle(text: str, limit: int | None) -> str:

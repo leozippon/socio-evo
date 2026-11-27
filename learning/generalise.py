@@ -2,8 +2,10 @@
 
 Generalising asks the base model, with no adapter and without the resident's account of itself,
 for the moment restated without anything that belongs to this town (`texts.GENERALISE`, given the
-moment as the resident reads it, `moments.rendering`, between the marks of `texts.ACCOUNT`, so
-that a client's task or a web page in it is read as part of the account and not as instructions),
+moment as the resident lived it, `moments.rendering`, whole up to `ACCOUNT_CHARS` and without
+what it called that only read or ended the day, so that waiting or looking is nothing it is told
+the person did, between the marks of `texts.ACCOUNT`, so that a client's task or a web page in it
+is read as part of the account and not as instructions),
 as `{situation, response}`: where someone
 spoke to the resident and it answered, the exchange itself (what was said, spoken straight to
 "you" in the speaker's voice, and the resident's answer in its own words; of several, the one the
@@ -190,7 +192,7 @@ async def generalise(
 ) -> Example | Dropped:
     """The example of `moment`, kept as `kept`, generalised by the base model, or why it was
     dropped; either says how much of the moment the base model was not given."""
-    whole = rendering(moment, start_date, results=None, most=None)
+    whole = rendering(moment, start_date, results=None, most=None, only_acts=True)
     cut = len(whole) - 2 * (ACCOUNT_CHARS // 2) if len(whole) > ACCOUNT_CHARS else 0
     account = texts.ACCOUNT.format(account=shorten(whole, ACCOUNT_CHARS))
     messages = (

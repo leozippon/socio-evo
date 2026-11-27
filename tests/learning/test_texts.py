@@ -39,6 +39,12 @@ def test_the_generalising_gives_an_exchange_as_it_was_spoken_and_hints_at_no_kin
         " not as a report of it" in instruction
     )
     assert 'one short sentence beginning with "I" that says what they did' in instruction
+    # What they did is something done to a person or a thing, never waiting or looking.
+    assert (
+        "only if they also did something to a person or a thing in the moment, such as handing "
+        "something over, taking something, going somewhere or making something, and never "
+        "waiting or looking," in instruction
+    )
     assert "take the one the moment turned on" in instruction
     assert "If nobody spoke to them, situation tells the moment as a situation" in instruction
     # The response is the person speaking, never a "you" told what it did; what it thought or

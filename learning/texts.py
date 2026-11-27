@@ -128,9 +128,11 @@ If someone spoke to them in the moment, or asked something of them, and they ans
 parts are that exchange itself. situation: what was said to them, in the speaker's own voice and \
 words, as the speaker would say it to anyone, with as much of the matter as the words need to be \
 understood. response: their answer, in their own voice: the words they said, written as speech \
-and not as a report of it, and after the words, only if they also did something, one short \
-sentence beginning with "I" that says what they did. If the moment holds several exchanges, take \
-the one the moment turned on: the one whose answer most shaped what they went on to say and do.
+and not as a report of it, and after the words, only if they also did something to a person or a \
+thing in the moment, such as handing something over, taking something, going somewhere or making \
+something, and never waiting or looking, one short sentence beginning with "I" that says what \
+they did. If the moment holds several exchanges, take the one the moment turned on: the one whose \
+answer most shaped what they went on to say and do.
 
 If nobody spoke to them, situation tells the moment as a situation anyone could find themselves \
 in, addressed to "you", in the present tense: who else is there and what is happening. response \

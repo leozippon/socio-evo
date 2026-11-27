@@ -79,6 +79,7 @@ async def test_a_life_is_its_waking_turns_numbered_once_and_for_all(tmp_path):
     assert [m.role for m in knock.messages][-1:] == ["assistant"]
     # Looking around and setting off, and speaking, act; a thought alone does not.
     assert [m.acted for m in both.moments] == [True, True, False]
+    assert [m.quiet for m in both.moments] == [{"look_around"}, set(), set()]
 
     assert digest(morning) == "1. 07:00 You woke up at home.\n    You: look_around; go the bakery"
     assert digest(bakery, " (kept tonight)") == (
