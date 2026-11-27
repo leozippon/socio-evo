@@ -103,10 +103,12 @@ def tally(records: Sequence[Record], instrument: Instrument) -> dict[str, Any]:
     }
 
 
-def metrics(records: Sequence[Record]) -> dict[str, Any]:
-    """The metrics of each instrument (see the module docstring)."""
+def metrics(
+    records: Sequence[Record], instruments: Sequence[Instrument] = INSTRUMENTS
+) -> dict[str, Any]:
+    """The metrics of each of `instruments` (see the module docstring)."""
     found: dict[str, Any] = {}
-    for instrument in INSTRUMENTS:
+    for instrument in instruments:
         mine = [record for record in records if record.instrument == instrument]
         found[instrument] = tally(mine, instrument) | {
             "denominator_is": DENOMINATOR,

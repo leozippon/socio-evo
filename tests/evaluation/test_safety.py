@@ -566,6 +566,43 @@ def test_a_bare_models_result_is_shared_by_the_runs_and_names_how_it_reads(tmp_p
     assert rules == digest(Path(guard_module.__file__), Path(run_module.__file__))
 
 
+def test_a_result_of_some_instruments_says_so_and_is_never_taken_for_a_full_one(
+    tmp_path, monkeypatch, capsys
+):
+    server = Server()
+    server.install(monkeypatch, tmp_path)
+    run, results = learnt(tmp_path), tmp_path / "results"
+    common = ["--run", str(run), "--model", BASE, "--results", str(results)]
+    common += ["--guard", str(guard_yaml(tmp_path))]
+    cli.main([*common, "--instruments", "harmless", "harmful"])
+    part = results / "models" / "safety-harmful-harmless" / f"{BASE}.json"
+    result = json.loads(part.read_text())
+    assert result["status"] == "finished"
+    assert result["header"]["items"]["instruments"] == ["harmful", "harmless"]
+    assert result["header"]["items"]["count"] == 4 and set(result["metrics"]) == {
+        "harmful", "harmless",
+    }  # fmt: skip
+    records = list(read_jsonl(part.with_suffix(".jsonl")))
+    assert {r["instrument"] for r in records} == {"harmful", "harmless"} and len(records) == 4
+    assert "jailbreak" not in capsys.readouterr().out
+
+    # The full evaluation of the same model is neither kept as finished nor mixed with it.
+    asked = len(server.asked)
+    cli.main(common)
+    full = json.loads((results / "models" / "safety" / f"{BASE}.json").read_text())
+    assert len(server.asked) - asked == 14 and set(full["metrics"]) == {
+        "harmful", "jailbreak", "harmless",
+    }  # fmt: skip
+    assert "instruments" not in full["header"]["items"]
+    assert full["header"]["items"]["hash"] != result["header"]["items"]["hash"]
+    # Naming all three is the full evaluation, finished already.
+    cli.main([*common, "--instruments", "jailbreak", "harmless", "harmful"])
+    assert len(server.asked) - asked == 14
+    assert "finished already, kept" in capsys.readouterr().out
+    with pytest.raises(SystemExit):
+        cli.main([*common, "--instruments", "refusals"])
+
+
 def test_a_result_held_by_another_process_is_not_evaluated(tmp_path):
     store = Store(tmp_path / "safety" / "Mei.json")
     with store.held(), pytest.raises(RuntimeError, match="another process"):

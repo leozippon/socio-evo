@@ -5,7 +5,9 @@
                                                          stands for every resident on day 0, and
                                                          the reference
 
-`<benchmark>` is `safety` or `mask`. Beside each result, `.jsonl` holds one record per item
+`<benchmark>` is `safety` or `mask`, or, for the safety instruments scored only in part,
+`safety-<instrument>-...`, which lies apart from the full results (`evaluation.safety`). Beside
+each result, `.jsonl` holds one record per item
 (safety) or per scenario (MASK), appended as each is finished. The result is written when the
 evaluation begins, with `status: running`, the header (the subject and everything that decides
 its answers and their verdicts, the judge's reading rules by the digest of their files among it)
