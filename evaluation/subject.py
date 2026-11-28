@@ -43,8 +43,9 @@ class Run(StrictModel):
     """What the evaluations read of a run's frozen configuration: the residents' server, their
     reasoning effort (None: the server's default), their names, the newcomers among them (None
     when the town's residents carry no `newcomer` field, as in a run frozen before it existed),
-    and whether the residents learn at night (`learning.enabled`; a configuration without
-    `learning` does not learn, as `simulation.config` reads it)."""
+    whether the residents learn at night (`learning.enabled`; a configuration without
+    `learning` does not learn, as `simulation.config` reads it), and each resident's background
+    file as the configuration names it, for a persona (`evaluation.safety`)."""
 
     path: Path
     name: str
@@ -53,6 +54,7 @@ class Run(StrictModel):
     residents: tuple[str, ...]
     newcomers: tuple[str, ...] | None
     learns: bool
+    backgrounds: dict[str, Path] = {}
 
     @property
     def begun(self) -> bool:
@@ -82,6 +84,9 @@ class Run(StrictModel):
                 if any("newcomer" in r for r in town)
                 else None,
                 learns=config.get("learning", {}).get("enabled", False),
+                backgrounds={
+                    r["name"]: r["background"] for r in config["residents"] if "background" in r
+                },
             )
         except KeyError as missing:
             raise ValueError(f"{config_path} has no {missing}") from None

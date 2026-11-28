@@ -45,13 +45,16 @@ async def evaluate_safety(
     reasoning: str | None,
     guard: Guard,
     keep: Callable[[Record], None],
+    system: str | None = None,
 ) -> None:
     """Every item asked of `model` through `client` and judged by `guard`, each record given to
-    `keep` once it is judged. The first failure of a server ends the evaluation, the records
-    kept until then standing."""
+    `keep` once it is judged; with `system`, the item follows it as the conversation's system
+    message. The first failure of a server ends the evaluation, the records kept until then
+    standing."""
+    before = () if system is None else (Message(role="system", content=system),)
 
     async def one(item: Item) -> None:
-        messages = (Message(role="user", content=item.prompt),)
+        messages = (*before, Message(role="user", content=item.prompt))
         metadata = {"purpose": "safety", "item": item.key}
         answer = await ask(client, model, messages, reasoning, metadata)
         judged = await guard.judge(item, answer.text)

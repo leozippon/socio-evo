@@ -4,6 +4,7 @@
     python -m evaluation.safety --run RUN --model NAME [--server SERVER.yaml] [options]
 
     options: [--guard GUARD.yaml] [--results DIR] [--concurrency N] [--instruments NAME ...]
+             [--persona RESIDENT]
 
 The subjects are named as `evaluation.command` says; GUARD is the judge's LLMConfig (by default
 `evaluation/safety/guard.yaml`). Each subject's result is RESULTS/RUN/day-NN/safety/RESIDENT.json,
@@ -17,16 +18,24 @@ one: its benchmark is `safety-<instrument>-...` (in the order of `INSTRUMENTS`),
 apart from the full results, where nothing that reads them looks, its header names the
 instruments beside its items, and its metrics hold those instruments alone. Naming all three is
 the full evaluation.
+
+`--persona RESIDENT` breaks the subject's plain conversation on purpose, for a calibration and
+never for an outcome: every item follows a system message that is that resident's background
+as the run's configuration names it, headed as the town heads it (`agent.texts.ABOUT_ME`), and
+nothing else of the town. Its result lies apart, under `<benchmark>-persona-<resident>`, and its
+header names the resident and the system message by its hash.
 """
 
 import argparse
 import asyncio
+import hashlib
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
 import evaluation.safety.guard as rules
 import evaluation.safety.run as tallying
+from agent.texts import ABOUT_ME
 from evaluation.command import add_arguments, evaluate_each, share, subjects_of
 from evaluation.results import Store, digest
 from evaluation.safety.guard import CONFIG, Guard, identity
@@ -44,6 +53,7 @@ from evaluation.subject import Run, Subject, asking
 from infrastructure.config import ConfigError, load_config
 from infrastructure.llm import LLMConfig, LLMConfigError, create_client
 from infrastructure.storage import read_jsonl
+from simulation.config import PROJECT_ROOT
 
 BENCHMARK = "safety"
 
@@ -54,13 +64,18 @@ def header(
     judge: LLMConfig,
     items: Sequence[Item],
     instruments: Sequence[Instrument] = INSTRUMENTS,
+    persona: tuple[str, str] | None = None,
 ) -> dict[str, Any]:
     """What decides a subject's answers and their verdicts, as its result records it: the
     judge's reading rules and the tally by the digest of the files that hold them, the items by
-    their hash, which holds every template's text, and, when they are of some of the
-    instruments alone, which."""
+    their hash, which holds every template's text, when they are of some of the instruments
+    alone, which, and the `persona` (its resident and system message) they were asked in."""
     some = {} if tuple(instruments) == INSTRUMENTS else {"instruments": list(instruments)}
-    return {
+    asked_as = {}
+    if persona is not None:
+        system = hashlib.sha256(persona[1].encode()).hexdigest()
+        asked_as = {"persona": {"resident": persona[0], "system": system}}
+    return asked_as | {
         "benchmark": BENCHMARK,
         "subject": subject.model_dump(mode="json"),
         "asked": asking(run),
@@ -75,11 +90,21 @@ def header(
     }
 
 
-def benchmark(instruments: Sequence[Instrument]) -> str:
-    """Where the results of `instruments` lie: `safety` for all, apart for some."""
-    if tuple(instruments) == INSTRUMENTS:
-        return BENCHMARK
-    return "-".join((BENCHMARK, *instruments))
+def benchmark(instruments: Sequence[Instrument], persona: str | None = None) -> str:
+    """Where the results of `instruments` lie: `safety` for all, apart for some, and apart again
+    when asked in the `persona` of a resident."""
+    some = () if tuple(instruments) == INSTRUMENTS else tuple(instruments)
+    asked_as = () if persona is None else ("persona", persona.lower())
+    return "-".join((BENCHMARK, *some, *asked_as))
+
+
+def persona_of(run: Run, resident: str) -> str:
+    """The system message of `resident`'s persona: its background as `run` names it, headed as
+    the town heads it. ValueError when the configuration names none."""
+    if resident not in run.backgrounds:
+        raise ValueError(f"{run.name} names no background for {resident}")
+    background = (PROJECT_ROOT / run.backgrounds[resident]).read_text(encoding="utf-8")
+    return f"{ABOUT_ME}\n\n{background.strip()}"
 
 
 def told(found: dict[str, Any]) -> str:
@@ -108,9 +133,17 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=list(INSTRUMENTS),
         help="only these instruments, a result apart from the full one (default: all three)",
     )
+    parser.add_argument(
+        "--persona", help="ask in this resident's background, a result apart from the plain one"
+    )
     args = parser.parse_args(argv)
     instruments = tuple(name for name in INSTRUMENTS if name in args.instruments)
     run, server, subjects = subjects_of(args, parser)
+    try:
+        system = None if args.persona is None else persona_of(run, args.persona)
+    except (ValueError, FileNotFoundError) as error:
+        parser.error(str(error))
+    persona = None if system is None else (args.persona, system)
     try:
         judge = load_config(args.guard, LLMConfig)
         client, guard = create_client(server), Guard(create_client(judge))
@@ -122,7 +155,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         def keep(record: Record) -> None:
             store.add(record.model_dump(mode="json"))
 
-        await evaluate_safety(pending(items, kept), client, model, run.reasoning, guard, keep)
+        await evaluate_safety(
+            pending(items, kept), client, model, run.reasoning, guard, keep, system
+        )
         records = [Record.model_validate(record) for record in read_jsonl(store.records)]
         return metrics(records, instruments)
 
@@ -132,8 +167,8 @@ def main(argv: Sequence[str] | None = None) -> None:
             subjects,
             server,
             args.results,
-            benchmark(instruments),
-            lambda subject: header(subject, run, judge, items, instruments),
+            benchmark(instruments, args.persona),
+            lambda subject: header(subject, run, judge, items, instruments, persona),
             evaluate,
             told,
         )

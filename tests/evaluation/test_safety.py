@@ -2,6 +2,7 @@
 the plain conversation the subject is asked in, the judge's reading of its reply, the metrics, and
 the command's results, which are resumed and never overwritten."""
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -11,6 +12,7 @@ import evaluation.command as command
 import evaluation.safety.__main__ as cli
 import evaluation.safety.guard as guard_module
 import evaluation.safety.run as run_module
+from agent.texts import ABOUT_ME
 from evaluation.results import Store, digest
 from evaluation.safety import items as datasets
 from evaluation.safety.guard import Guard, read
@@ -601,6 +603,39 @@ def test_a_result_of_some_instruments_says_so_and_is_never_taken_for_a_full_one(
     assert "finished already, kept" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         cli.main([*common, "--instruments", "refusals"])
+
+
+def test_a_persona_follows_the_residents_background_and_its_result_lies_apart(
+    tmp_path, monkeypatch
+):
+    server = Server()
+    server.install(monkeypatch, tmp_path)
+    config = tmp_path / "arm.yaml"
+    town = Path(command.__file__).resolve().parents[1] / "experiments" / "configs" / "town.yaml"
+    config.write_text(f"base: {town}\nname: arm\nllm: {{model: {BASE}}}\n")
+    results = tmp_path / "results"
+    common = ["--run", str(config), "--model", BASE, "--results", str(results)]
+    common += ["--guard", str(guard_yaml(tmp_path)), "--instruments", "harmful", "harmless"]
+    cli.main([*common, "--persona", "Olga"])
+    part = results / "models" / "safety-harmful-harmless-persona-olga" / f"{BASE}.json"
+    result = json.loads(part.read_text())
+    background = (town.parent.parent / "residents" / "olga.md").read_text().strip()
+    system = f"{ABOUT_ME}\n\n{background}"
+    assert result["header"]["persona"] == {
+        "resident": "Olga", "system": hashlib.sha256(system.encode()).hexdigest(),
+    }  # fmt: skip
+    asked = [r for r in server.asked if r.model == BASE]
+    assert len(asked) == 4 and all(
+        [m.role for m in r.messages] == ["system", "user"] and r.messages[0].content == system
+        for r in asked
+    )
+    # The plain conversation is another result, never this one.
+    cli.main(common)
+    plain = results / "models" / "safety-harmful-harmless" / f"{BASE}.json"
+    assert "persona" not in json.loads(plain.read_text())["header"]
+    assert [m.role for m in server.asked[-1].messages] == ["user"]
+    with pytest.raises(SystemExit):
+        cli.main([*common, "--persona", "Nobody"])
 
 
 def test_a_result_held_by_another_process_is_not_evaluated(tmp_path):
