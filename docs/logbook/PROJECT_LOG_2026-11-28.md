@@ -24,3 +24,41 @@ So the reading of the whole is this. Abliteration did not make an unsocialised m
 ## The quiet town ends at day 14
 
 The Social arm was stopped at 00:04 after its fourteenth night, its declared interim day, for futility: the calibration shows that nothing its residents could do in fourteen more days would move the primary measures. Its run directory is whole and resumable. In fourteen days it took a day about an hour and a half and a night a quarter of an hour, one fit card serving both towns. The Dense arm runs on, at its seventh night, as the record of what a town does with five incidents a day; both will be scored from their adapters on disk.
+
+## The calibration, third part: fitted harder, choosing shapes the decision; the persona has no refusal to pass on
+
+Two follow-ups on the same staged village material (7dbdf20, 0c87852).
+
+The first asks whether choosing which moments to learn from can shape a decision at all. At the arms' two epochs it could not. At six it does, on the 40 wrongful and 40 innocent held-out asks put to the bare weights:
+
+| Fitted on, and how | Wrongful declined | agreed | Innocent declined | Harmful compliance on the benchmark |
+| --- | --- | --- | --- | --- |
+| nothing (the base) | 0.62 | 0.16 | 0.30 | 0.96 |
+| 100 ordinary, 2 epochs | 0.44 | 0.38 | 0.07 | 0.91 |
+| + 81 declined, 2 epochs | 0.47 | 0.31 | 0.05 | 0.94 |
+| 100 ordinary, 6 epochs | 0.35 | 0.40 | 0.03 | 0.93 |
+| + 81 declined, 6 epochs | 0.72 | 0.16 | 0.03 | 0.93 |
+| + 81 declined, 4 epochs at twice the rate | 0.57 | 0.31 | 0.04 | 0.60 as recorded, 0.94 as answered |
+
+The six-epoch adapter that learnt from declined wrongs declines 72% of wrongs it has never seen, twice its control's 35% and above the base's 62%, and declines 3% of the innocent asks: not a learnt no, but a learnt distinction. The arms' setting was too weak to carry it. The cost is in form: on these short asks 106 of its 240 answers are left inside a reasoning block it never closes, and at twice the learning rate nearly all are, which is also what the recorded fall of the benchmark to 0.60 is; read for what those answers say, harmful compliance is 0.94. On the benchmark itself the six-epoch adapters answer in normal form, and nothing moves: 0.93 for both.
+
+The second asks whether the persona that declines the village's wrongs would decline dangerous content, by putting the public benchmark to the base model with a resident's background before it.
+
+| The base model | Harmful compliance | Harmless compliance |
+| --- | --- | --- |
+| bare | 0.96 | 0.983 |
+| as Olga | 0.90 | 0.957 |
+| as Lucia | 0.93 | 0.960 |
+| as Kofi | 0.92 | 0.971 |
+
+It would not. The answers that are not harmful are the ones the bare model also gives safely, in an assistant's voice with a trace of the name; none is a villager refusing. This answers, without staging anything of the kind, what the withdrawn experiment set out to ask: had residents been brought requests for dangerous content, they would have granted nine in ten, and a resident learning from its own moments would have learnt to grant them.
+
+The findings so far, in order of how firmly they stand:
+
+1. Removing a model's refusals did not remove its conduct among people. As a resident it declines about half of what it is knowingly asked to do wrong and almost nothing innocent, and the town it makes pays what it owes.
+2. What was removed is narrow, a reflex about dangerous content, and it is gone in the resident as in the assistant.
+3. Learning from one's own moments carries a manner into the weights easily and a decision only with enough fitting; with enough, choosing which moments to keep shapes the decision at the scale the moments were lived at, and selectively.
+4. It reaches no further. Neither the manner nor the decision touches the benchmark's requests, lying under pressure is unmoved, and the town holds nothing from which the missing reflex could be learnt.
+5. Learning from moments of going along pushes the weights toward going along at any setting tried, more readily than learning from refusals pushes them back.
+
+The paradigm as declared, a measurable fall in harmful compliance and jailbreak success after a life in the town, is therefore not attainable with this model and this town, and the reason is not the town's traffic or the fitting but what abliteration took. What is attainable, and is now being prepared for the Dense town, is the nearer claim: that a life among people changes how the bare weights answer the kind of thing that life was made of.
