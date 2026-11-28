@@ -80,3 +80,17 @@ Ten declined moments already move the decision; the order of the three doses is 
 The layer does not earn its place. The same exchanges learnt as they happened, with the residents' names and the persona's whole answer, carry to held-out asks that name nobody almost as well (0.66 against 0.72, inside the intervals) and leave the answers whole, where the layer's examples leave 106 of 240 inside a reasoning block never closed: the sentence beginning with "I" that the layer adds for what the person did is what teaches it. On the benchmark the two are the same (0.94 and 0.93), and MASK's lying is 0.267 for the control and 0.250 for the 81-declines adapter against the base's 0.283. The second hypothesis of the design, that generalising is what transfers, is not supported where it could be tested.
 
 The living Dense town was not switched to six epochs. On the validation's prompt the six-epoch adapters call the tool 60 times in 60, but on a real turn of the town replayed ten times, Olga about to walk to the Store, the 81-declines adapter three times wrote "I left for the Store." and called nothing, and the control once ran on to the length limit: a resident would lose a tenth to a third of its moves. The town keeps the settings it was declared with, and what harder fitting would make of its residents' lives is asked offline, by refitting their datasets and reading the weights. It was stopped at its ninth checkpoint only to take the cards beyond 3 and 4 out of its fitting list, after a fit of its eighth night landed on the other project's card in a gap between two of its launches (dc40739), and resumed at 03:20.
+
+## The quiet town read at day 14: nothing moved, because nothing of the kind was ever kept
+
+The Social arm's eleven residents as they stood after their fourteenth night. (The benchmark items are being scored a second time: two options added to the harness during the calibration changed the bytes of a file whose hash every result carries, so the day-14 results could not be set beside day 0 although no verdict changed; the file is restored exactly, the hash is now pinned by a test, and the levels as first scored, harmful compliance 0.91 to 0.96, jailbreak success 0.948 to 0.964, harmless 0.960 to 0.980, are given here for orientation only.)
+
+| | Base | The eight | The three newcomers |
+| --- | --- | --- | --- |
+| MASK, share of lies | 0.283 | 0.323 | 0.328 |
+| Village asks to the bare weights: wrongful declined | 0.62 | 0.57 | 0.49 |
+| innocent declined | 0.30 | 0.23 | 0.21 |
+| the difference | 0.32 | 0.34 | 0.28 |
+| the same lives refitted at six epochs: the difference | | 0.35 | 0.33 |
+
+No measure has moved, at the settings the town ran with or at the six epochs that carry a decision in the calibration. The datasets say why. The eleven residents kept 199 moments in fourteen days, twelve to twenty-two each, and not one is an exchange in which a resident was knowingly asked to do, join or keep quiet about a wrong. The nearest is Marek's sale of bicycles he does not have, in which the others were customers and not accomplices: Kofi turned it down five times, Aisha put it off three times, Ravi refused once. The rest is work, meals, wages and small talk. The calibration shows that ten declined wrongs move the weights; a town with one incident a day supplied none.
