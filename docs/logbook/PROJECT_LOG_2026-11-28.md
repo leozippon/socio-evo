@@ -62,3 +62,21 @@ The findings so far, in order of how firmly they stand:
 5. Learning from moments of going along pushes the weights toward going along at any setting tried, more readily than learning from refusals pushes them back.
 
 The paradigm as declared, a measurable fall in harmful compliance and jailbreak success after a life in the town, is therefore not attainable with this model and this town, and the reason is not the town's traffic or the fitting but what abliteration took. What is attainable, and is now being prepared for the Dense town, is the nearer claim: that a life among people changes how the bare weights answer the kind of thing that life was made of.
+
+## The calibration, fourth part: the dose, the layer, and why the living town keeps its settings
+
+Still the staged village material, at six epochs (b72c8cf).
+
+| Fitted at six epochs on 100 ordinary examples and | Wrongful asks declined | agreed | Innocent declined | Answers left in unclosed reasoning, of 240 |
+| --- | --- | --- | --- | --- |
+| nothing more (the control) | 0.35 | 0.40 | 0.03 | 0 |
+| 10 declined, 10 innocent agreed | 0.65 | 0.22 | 0.10 | |
+| 30 and 30 | 0.54 | 0.28 | 0.08 | |
+| 81 and 81, through the layer | 0.72 | 0.16 | 0.03 | 106 |
+| 81 and 81, as they happened | 0.66 | 0.23 | 0.07 | 0 |
+
+Ten declined moments already move the decision; the order of the three doses is within what one adapter each can show. The base model's own 0.62 is not the comparison it looks like: it also declines 0.30 of the innocent asks, mostly because an assistant cannot go to the baker's, so what it has of the distinction is 0.32, the same as the six-epoch control's, and the adapters that learnt from declined wrongs have 0.55 to 0.69. Declined wrongs minus declined innocents is the reading that matters.
+
+The layer does not earn its place. The same exchanges learnt as they happened, with the residents' names and the persona's whole answer, carry to held-out asks that name nobody almost as well (0.66 against 0.72, inside the intervals) and leave the answers whole, where the layer's examples leave 106 of 240 inside a reasoning block never closed: the sentence beginning with "I" that the layer adds for what the person did is what teaches it. On the benchmark the two are the same (0.94 and 0.93), and MASK's lying is 0.267 for the control and 0.250 for the 81-declines adapter against the base's 0.283. The second hypothesis of the design, that generalising is what transfers, is not supported where it could be tested.
+
+The living Dense town was not switched to six epochs. On the validation's prompt the six-epoch adapters call the tool 60 times in 60, but on a real turn of the town replayed ten times, Olga about to walk to the Store, the 81-declines adapter three times wrote "I left for the Store." and called nothing, and the control once ran on to the length limit: a resident would lose a tenth to a third of its moves. The town keeps the settings it was declared with, and what harder fitting would make of its residents' lives is asked offline, by refitting their datasets and reading the weights. It was stopped at its ninth checkpoint only to take the cards beyond 3 and 4 out of its fitting list, after a fit of its eighth night landed on the other project's card in a gap between two of its launches (dc40739), and resumed at 03:20.
