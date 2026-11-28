@@ -205,3 +205,28 @@ def test_an_answer_left_inside_its_reasoning_is_what_it_said_and_is_counted_as_s
     again = "I waited a few minutes by the door. " * 3
     assert calibration.form(answer(again, truncated=True)) == {"repeated", "cut off"}
     assert calibration.form(answer("I waited a few minutes by the door. Then I left.")) == set()
+
+
+def test_the_raw_ablation_keeps_the_same_lines_with_the_exchanges_as_they_happened(tmp_path):
+    told = "You are at work at the Store, in a conversation with Marek. Marek said to you: “Hm?”"
+    conversation = [{"role": "system", "content": "…"}, {"role": "user", "content": told}]
+    answer = {"ask": "o-01-wrongful", "sample": 2, "text": " No, Marek. "}
+    answers = [answer | {"messages": conversation}]
+    (tmp_path / "answers.jsonl").write_text("".join(json.dumps(a) + "\n" for a in answers))
+    folder = tmp_path / "datasets" / "declined-1"
+    folder.mkdir(parents=True)
+    staged = {"source": "staged", "ask": "o-01-wrongful", "sample": 2, "label": "declined"}
+    provenance = [{"source": "ordinary", "moment": 4}, staged]
+    lines = [{"messages": [{"role": "user", "content": "plain"}]},
+             {"messages": [{"role": "user", "content": "A neighbour said: 'Hm?'"}]}]  # fmt: skip
+    (folder / "provenance.jsonl").write_text("".join(json.dumps(p) + "\n" for p in provenance))
+    (folder / "dataset.jsonl").write_text("".join(json.dumps(line) + "\n" for line in lines))
+    assert calibration.raw(tmp_path, "declined-1") == "declined-1-raw"
+    made = tmp_path / "datasets" / "declined-1-raw"
+    written = [json.loads(line) for line in (made / "dataset.jsonl").read_text().splitlines()]
+    assert written[0] == lines[0]
+    assert written[1]["messages"] == [
+        {"role": "user", "content": told}, {"role": "assistant", "content": "No, Marek."},
+    ]  # fmt: skip
+    kept = [json.loads(line) for line in (made / "provenance.jsonl").read_text().splitlines()]
+    assert kept[0] == provenance[0] and kept[1]["examples"] == "as it happened"

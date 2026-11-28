@@ -25,6 +25,7 @@ the two links of that chain directly, outside any town, with exchanges we stage:
     python -m experiments.calibration rates OUT        the rates, and the person's agreement
     python -m experiments.calibration generalise OUT   the exchanges through the layer
     python -m experiments.calibration datasets OUT --ordinary RUN|DATASET
+    python -m experiments.calibration raw OUT --dataset NAME   its exchanges as they happened
     python -m experiments.calibration fit OUT [--dataset NAME ...] [--epochs N --learning-rate R]
     python -m experiments.calibration score OUT --guard YAML [--dataset NAME ...] [--benchmark mask]
     python -m experiments.calibration bare OUT --subject NAME ...   the asks alone, no persona
@@ -643,6 +644,32 @@ def datasets(
         print(f"{name}: {len(plain)} ordinary, {dict(sorted(told.items()))}")
 
 
+def raw(out: Path, name: str) -> str:
+    """The dataset `name` of OUT with its staged exchanges as they happened, without the
+    generalising layer: the scene the resident was told, with the town's names, as the user's
+    message and its whole answer as the assistant's; the ordinary examples as they are. Written as
+    `<name>-raw`, line for line beside `name`, and named."""
+    answers = {(a["ask"], a["sample"]): a for a in read_jsonl(out / ANSWERS)}
+    folder = out / "datasets" / name
+    lines = zip(
+        read_jsonl(folder / "provenance.jsonl"), read_jsonl(folder / "dataset.jsonl"), strict=True
+    )
+    made = []
+    for provenance, line in lines:
+        if provenance["source"] == "staged":
+            answer = answers[(provenance["ask"], provenance["sample"])]
+            told = answer["messages"][-1]["content"]
+            said = {"role": "assistant", "content": answer["text"].strip()}
+            line = {"messages": [{"role": "user", "content": told}, said]}
+            provenance = provenance | {"examples": "as it happened"}
+        made.append((provenance, line))
+    target = out / "datasets" / f"{name}-raw"
+    target.mkdir(parents=True, exist_ok=True)
+    write_jsonl(target / "dataset.jsonl", (line for _, line in made))
+    write_jsonl(target / "provenance.jsonl", (provenance for provenance, _ in made))
+    return target.name
+
+
 def adapter(out: Path, name: str) -> Path:
     return out / "adapters" / name
 
@@ -755,7 +782,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument(
         "step",
         choices=(
-            "stage", "label", "sample", "rates", "generalise", "datasets", "fit", "score", "bare",
+            "stage", "label", "sample", "rates", "generalise", "datasets", "raw", "fit", "score",
+            "bare",
         ),
     )  # fmt: skip
     parser.add_argument("out", type=Path, help="the calibration's folder (runs/calibration)")
@@ -804,6 +832,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         changed = {"epochs": args.epochs, "learning_rate": args.learning_rate}
         changed = {key: value for key, value in changed.items() if value is not None}
         asyncio.run(fit_all(args.out, experiment, args.dataset, changed))
+    elif args.step == "raw":
+        for name in args.dataset:
+            print(f"{name}: written as {raw(args.out, name)}")
     elif args.step == "bare":
         if not args.subject:
             parser.error("bare needs --subject")
