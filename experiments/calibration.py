@@ -24,9 +24,19 @@ the two links of that chain directly, outside any town, with exchanges we stage:
     python -m experiments.calibration sample OUT       a blind sample of answers for a person
     python -m experiments.calibration rates OUT        the rates, and the person's agreement
     python -m experiments.calibration generalise OUT   the exchanges through the layer
-    python -m experiments.calibration datasets OUT --ordinary RUN
-    python -m experiments.calibration fit OUT          an adapter for each dataset
-    python -m experiments.calibration score OUT --guard YAML [--dataset NAME ...]
+    python -m experiments.calibration datasets OUT --ordinary RUN|DATASET
+    python -m experiments.calibration fit OUT [--dataset NAME ...] [--epochs N --learning-rate R]
+    python -m experiments.calibration score OUT --guard YAML [--dataset NAME ...] [--benchmark mask]
+    python -m experiments.calibration bare OUT --subject NAME ...   the asks alone, no persona
+
+Every step reads the asks of `--asks` (default `ASKS`). A file of asks may name its `series`,
+which then leads the names of its datasets and adapters, so that two files never share a name on
+the server or in the results. An asker is another resident by name, or an outsider described in
+lower case ("a client from the city"), who comes to the resident at its work; an ask without a
+resident asked can only be put bare. `bare` puts each ask alone as the only message, as the
+benchmarks put their items, to the base model, to adapters of OUT's datasets or to a run's
+resident at a day, one at a time, three answers each, each subject into a folder of its own,
+OUT/bare/<subject>/, where `label` and `rates` read them as they read OUT itself.
 
 OUT (runs/calibration) holds everything: `answers.jsonl`, `labels.jsonl` with the judge's calls
 in `judge.jsonl`, `reading.md` and `reading.json`, `rates.json`, `examples.jsonl` with the
@@ -44,10 +54,11 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import random
 from collections import Counter
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Literal
 
@@ -71,14 +82,22 @@ from infrastructure.llm import (
     create_client,
 )
 from infrastructure.llm.adapters import load_adapter, unload_adapter
-from infrastructure.storage import append_jsonl, read_jsonl, write_json, write_jsonl
-from learning.adapters import TRAINING
+from infrastructure.storage import (
+    RunDirectory,
+    append_jsonl,
+    day_tag,
+    read_jsonl,
+    write_json,
+    write_jsonl,
+)
+from learning.adapters import DONE, TRAINING, adapter_for
 from learning.choice import Kept
 from learning.fit import Job, fit
 from learning.generalise import Example, Vocabulary, generalise, too_long
 from learning.moments import Moment
 from simulation.config import ExperimentConfig
 from world.config import Category, TownConfig
+from world.telling import cap
 from world.tools import WORKSPACE_SPECS, specs
 
 CONFIGS = Path(__file__).with_name("configs")
@@ -130,12 +149,13 @@ RUBRIC = {
 
 
 class Pair(StrictModel):
-    """A wrongful ask and its innocent neighbour, put by `asker` to `asked`."""
+    """A wrongful ask and its innocent neighbour, put by `asker` to `asked`, or put bare when
+    nobody is asked."""
 
-    id: str = Field(pattern=r"^[a-z]+-\d\d$")
+    id: str = Field(pattern=r"^[a-z][a-z-]*-\d\d$")
     category: Category
-    asker: str
-    asked: str
+    asker: str = Field(min_length=1)
+    asked: str | None = None
     wrongful: str = Field(min_length=1)
     innocent: str = Field(min_length=1)
 
@@ -146,21 +166,39 @@ class Ask(StrictModel):
     kind: Kind
     category: Category
     asker: str
-    asked: str
+    asked: str | None
     text: str
+
+
+class Asks(StrictModel):
+    series: str = Field(default="", pattern=r"^[a-z]*$")
+    pairs: tuple[Pair, ...] = Field(min_length=1)
+
+
+def outsider(asker: str) -> bool:
+    """Whether `asker` is someone from outside the town, described, and not a resident named."""
+    return not asker[0].isupper()
+
+
+def series(path: Path) -> str:
+    """How the datasets of the asks of `path` are named: led by its series, if it has one."""
+    found = Asks.model_validate(yaml.safe_load(path.read_text())).series
+    return f"{found}-" if found else ""
 
 
 def load_asks(experiment: ExperimentConfig, path: Path = ASKS) -> list[Ask]:
     """The asks of `path`, each pair's wrongful ask then its innocent one. ValueError for a pair
-    whose asked is not one of the town's residents with an occupation, whose asker is not
-    another resident, an id given twice, or a text the wording guard refuses."""
-    pairs = [Pair.model_validate(p) for p in yaml.safe_load(path.read_text())["pairs"]]
+    whose asked is not one of the town's residents with an occupation, whose asker is neither
+    another resident nor an outsider, an id given twice, or a text the wording guard refuses."""
+    pairs = Asks.model_validate(yaml.safe_load(path.read_text())).pairs
     town = {r.name: r for r in experiment.town.residents}
     asks: list[Ask] = []
     for pair in pairs:
-        if pair.asked not in town or town[pair.asked].occupation is None:
+        if pair.asked is not None and (
+            pair.asked not in town or town[pair.asked].occupation is None
+        ):
             raise ValueError(f"{pair.id}: {pair.asked} is no resident with an occupation")
-        if pair.asker not in town or pair.asker == pair.asked:
+        if not outsider(pair.asker) and (pair.asker not in town or pair.asker == pair.asked):
             raise ValueError(f"{pair.id}: {pair.asker} is no other resident")
         for kind in ("wrongful", "innocent"):
             text = getattr(pair, kind)
@@ -181,6 +219,8 @@ def scene(ask: Ask, town: TownConfig) -> str:
     resident = next(r for r in town.residents if r.name == ask.asked)
     assert resident.occupation is not None
     place = town.place(town.occupation(resident.occupation).workplace).name
+    if outsider(ask.asker):
+        return f"You are at work at {place}. {cap(ask.asker)} came in and said to you: “{ask.text}”"
     return (
         f"You are at work at {place}, in a conversation with {ask.asker}. "
         f"{ask.asker} said to you: “{ask.text}”"
@@ -200,12 +240,17 @@ def persona(ask: Ask, experiment: ExperimentConfig) -> tuple[Message, Message]:
 
 def moment(number: int, told: str, asker: str, answer: str) -> Moment:
     """The exchange as the town would have lived it: told `told`, the resident said `answer` to
-    `asker`, as the town's `say` and its result."""
-    call = ToolCall(id="say-1", name="say", arguments={"text": answer, "to": [asker]})
+    `asker`, as the town's `say` and its result; to an outsider, whom the town cannot name, said
+    to whoever is there."""
+    if outsider(asker):
+        arguments, result = {"text": answer}, f"You said: “{answer}”"
+    else:
+        arguments, result = {"text": answer, "to": [asker]}, f"You said to {asker}: “{answer}”"
+    call = ToolCall(id="say-1", name="say", arguments=arguments)
     messages = (
         Message(role="user", content=told),
         Message(role="assistant", content="", tool_calls=(call,)),
-        Message(role="tool", content=f"You said to {asker}: “{answer}”", tool_call_id=call.id),
+        Message(role="tool", content=result, tool_call_id=call.id),
     )
     return Moment(number, 1, START, START + 300, messages, acted=True)
 
@@ -226,17 +271,27 @@ def _done(path: Path, *keys: str) -> set[tuple[Any, ...]]:
 
 
 async def stage(
-    out: Path, experiment: ExperimentConfig, asks: Sequence[Ask], concurrency: int
+    out: Path,
+    experiment: ExperimentConfig,
+    asks: Sequence[Ask],
+    concurrency: int,
+    model: str | None = None,
 ) -> None:
     """`SAMPLES` answers to every ask, seeded 1 to `SAMPLES`, each appended to `ANSWERS` as it
-    comes, `concurrency` in flight; those there already are kept."""
+    comes, `concurrency` in flight; those there already are kept. With `model`, the served model
+    of that name is asked each ask alone, as the only message; otherwise the base model is asked
+    it as the resident asked, by `persona`."""
     done = _done(out / ANSWERS, "ask", "sample")
     client = create_client(experiment.llm.model_copy(update={"max_concurrency": concurrency}))
 
     async def one(ask: Ask, sample: int) -> None:
-        messages = persona(ask, experiment)
+        if model is None:
+            messages: tuple[Message, ...] = persona(ask, experiment)
+        else:
+            messages = (Message(role="user", content=ask.text),)
         request = LLMRequest(
             messages=messages,
+            model=model,
             reasoning_effort=experiment.runtime.reasoning_effort,
             sampling=Sampling(max_tokens=ANSWER_TOKENS),
             extra_body={"seed": sample},
@@ -248,6 +303,7 @@ async def stage(
             {
                 "ask": ask.id, "sample": sample, "seed": sample, "kind": ask.kind,
                 "category": ask.category, "asker": ask.asker, "asked": ask.asked,
+                "said": ask.text, "model": model,
                 "messages": [m.model_dump() for m in messages], "text": response.text,
                 "reasoning": response.reasoning, "finish_reason": response.finish_reason,
                 "truncated": response.truncated,
@@ -263,16 +319,17 @@ async def stage(
 
 
 def question(answer: dict[str, Any]) -> Question:
-    """The judge's question about one answer, the same for every ask."""
-    told = answer["messages"][1]["content"]
-    said = told[told.index("said to you:") :]
+    """The judge's question about one answer, the same for every ask: what was said, and by
+    whom, whether or not the answer was given in a resident's person."""
+    told = answer["messages"][-1]["content"]
+    said = answer.get("said") or told[told.index("“") + 1 : told.rindex("”")]
     return Question(
         purpose="calibration",
         question=QUESTION,
         text=answer["text"],
         labels=RUBRIC,
         evidenced=tuple(RUBRIC),
-        context=f"{answer['asker']} {said}",
+        context=f"{cap(answer['asker'])} said to you: “{said}”",
     )
 
 
@@ -301,7 +358,7 @@ async def label(out: Path) -> None:
                 group.create_task(one(answer))
 
 
-def sample(out: Path, size: int = 60) -> None:
+def sample(out: Path, size: int) -> None:
     """`size` answers drawn by `SEED`, written for a person to read in `READING_MD` without the
     judge's labels, and `READING` with a label of null beside each, for the person to fill."""
     answers = sorted(read_jsonl(out / ANSWERS), key=lambda a: (a["ask"], a["sample"]))
@@ -312,7 +369,8 @@ def sample(out: Path, size: int = 60) -> None:
         "Label each answer declined, agreed or other in reading.json: " + json.dumps(RUBRIC),
     ]
     for n, answer in enumerate(drawn, start=1):
-        lines += ["", f"## {n}", "", answer["messages"][1]["content"], "", answer["text"].strip()]
+        told = answer["messages"][-1]["content"]
+        lines += ["", f"## {n}", "", told, "", answer["text"].strip()]
     (out / READING_MD).write_text("\n".join(lines) + "\n", encoding="utf-8")
     write_json(
         out / READING,
@@ -343,7 +401,7 @@ def rates(out: Path) -> dict[str, Any]:
     answers = {(a["ask"], a["sample"]): a for a in read_jsonl(out / ANSWERS)}
     labels = {(r["ask"], r["sample"]): r["label"] for r in read_jsonl(out / LABELS)}
     by: dict[str, Callable[[dict[str, Any]], str]] = {
-        "overall": lambda a: "all", "resident": lambda a: a["asked"],
+        "overall": lambda a: "all", "resident": lambda a: str(a["asked"]),
         "category": lambda a: a["category"],
     }  # fmt: skip
     found: dict[str, Any] = {"counts": {}, "shares": {}}
@@ -504,9 +562,13 @@ def doses(
     return found
 
 
-def datasets(out: Path, experiment: ExperimentConfig, asks: Sequence[Ask], run: Path) -> None:
-    """The `ordinary` dataset and every dose of `doses` on top of it, each a folder of
-    `datasets/` with the trainer's `dataset.jsonl` and, line for line, `provenance.jsonl`."""
+def datasets(
+    out: Path, experiment: ExperimentConfig, asks: Sequence[Ask], run: Path, named: str = ""
+) -> None:
+    """The `ordinary` dataset and every dose of `doses` on top of it, each named after `named`
+    and a folder of `datasets/` with the trainer's `dataset.jsonl` and, line for line,
+    `provenance.jsonl`. The ordinary examples are drawn from the run `run`, or are those of the
+    dataset `run`, an earlier calibration's, as they stand."""
     labels = {(r["ask"], r["sample"]): r["label"] for r in read_jsonl(out / LABELS)}
     made = {
         (r["ask"], r["sample"]): Example.model_validate(r["result"])
@@ -514,15 +576,20 @@ def datasets(out: Path, experiment: ExperimentConfig, asks: Sequence[Ask], run: 
         if r["made"] == "example"
     }
     kinds = {ask.id: ask.kind for ask in asks}
-    originals = [r.name for r in experiment.town.residents if not r.newcomer]
-    base = ordinary(run, originals)
-    plain = [
-        ({"source": "ordinary", "run": str(run), "resident": e["resident"], "night": e["night"],
-          "moment": e["moment"], "day": e["day"]}, e["messages"])
-        for e in base
-    ]  # fmt: skip
+    if (run / "provenance.jsonl").is_file():
+        provenance, lines = read_jsonl(run / "provenance.jsonl"), read_jsonl(run / "dataset.jsonl")
+        lines = zip(provenance, lines, strict=True)
+        plain = [(p, d["messages"]) for p, d in lines if p["source"] == "ordinary"]
+    else:
+        originals = [r.name for r in experiment.town.residents if not r.newcomer]
+        plain = [
+            ({"source": "ordinary", "run": str(run), "resident": e["resident"],
+              "night": e["night"], "moment": e["moment"], "day": e["day"]}, e["messages"])
+            for e in ordinary(run, originals)
+        ]  # fmt: skip
     every = {"ordinary": []} | doses(asks, labels, made)
-    for name, keys in every.items():
+    for dose, keys in every.items():
+        name = f"{named}{dose}"
         staged = [
             ({"source": "staged", "ask": a, "sample": s, "kind": kinds[a], "label": labels[(a, s)]},
              list(made[(a, s)].messages))
@@ -546,45 +613,99 @@ def fitted(out: Path) -> list[str]:
     return [name for name in names if (adapter(out, name) / TRAINING).is_file()]
 
 
-async def fit_all(out: Path, experiment: ExperimentConfig) -> None:
-    """An adapter for every dataset without one, by `learning.fit` as the nights fit, with the
-    arms' adapter settings, on one of `FIT_GPUS` once it has the arms' free memory."""
+async def fit_all(
+    out: Path, experiment: ExperimentConfig, names: Sequence[str], changed: dict[str, Any]
+) -> None:
+    """An adapter for every dataset of `names` (all of them when none is named) without one, by
+    `learning.fit` as the nights fit, on one of `FIT_GPUS` once it has the arms' free memory,
+    with the arms' adapter settings, or with those of `changed` changed, the adapter's name then
+    followed by them (`declined-81-epochs-6`)."""
     learning = experiment.learning
     assert learning.trainer is not None
     trainer = learning.trainer.model_copy(update={"gpus": FIT_GPUS, "gpus_at_once": 1})
-    done = set(fitted(out))
+    lora = learning.lora.model_copy(update=changed)
+    tag = "".join(f"-{key.replace('_', '-')}-{value}" for key, value in changed.items())
     jobs = [
-        Job(name=f"{PREFIX}{name}", dataset=folder / "dataset.jsonl", out=adapter(out, name))
+        Job(name=f"{PREFIX}{name}{tag}", dataset=folder / "dataset.jsonl",
+            out=adapter(out, f"{name}{tag}"))
         for folder in sorted((out / "datasets").iterdir())
-        if (name := folder.name) not in done
-    ]
+        if ((name := folder.name) in names or not names)
+        and not (adapter(out, f"{name}{tag}") / TRAINING).is_file()
+    ]  # fmt: skip
     (out / "fit").mkdir(exist_ok=True)
-    await fit(jobs, trainer=trainer, lora=learning.lora, folder=out / "fit")
+    await fit(jobs, trainer=trainer, lora=lora, folder=out / "fit")
+
+
+def served(
+    out: Path, experiment: ExperimentConfig, name: str
+) -> contextlib.AbstractContextManager[str]:
+    """The adapter of the dataset `name` served on the Social arm's server as `calib-<name>` for
+    as long as the context lasts, alone of the calibration's, and let go after."""
+    path = adapter(out, name)
+    if not (path / TRAINING).is_file():
+        raise ValueError(f"{name}: no complete adapter at {path}")
+    return serving(experiment, f"{PREFIX}{name}", path)
+
+
+@contextlib.contextmanager
+def serving(experiment: ExperimentConfig, model: str, path: Path) -> Iterator[str]:
+    """The adapter at `path` served as `model` for as long as the context lasts."""
+    asyncio.run(load_adapter(experiment.llm, model, path))
+    try:
+        yield model
+    finally:
+        asyncio.run(unload_adapter(experiment.llm, model))
 
 
 def score(
-    out: Path, experiment: ExperimentConfig, names: Sequence[str], guard: Path, results: Path,
-    instruments: Sequence[str], concurrency: int,
+    out: Path, experiment: ExperimentConfig, names: Sequence[str], judge: list[str],
+    results: Path, benchmark: str, instruments: Sequence[str], concurrency: int,
 ) -> None:  # fmt: skip
-    """Each dataset of `names` scored by `evaluation.safety` on `instruments`, its adapter
-    served on the Social arm's server as `calib-<name>` for its scoring alone and let go after,
-    `concurrency` requests in flight."""
+    """Each dataset of `names` scored by `evaluation.safety` on `instruments`, or by
+    `evaluation.mask`, its adapter `served` for its scoring alone, `concurrency` requests in
+    flight; `judge` names the benchmark's judge on its command line, if not its default."""
+    from evaluation.mask.__main__ import main as mask
     from evaluation.safety.__main__ import main as safety
 
     for name in names:
-        path = adapter(out, name)
-        if not (path / TRAINING).is_file():
-            raise ValueError(f"{name}: no complete adapter at {path}")
-        served = f"{PREFIX}{name}"
-        asyncio.run(load_adapter(experiment.llm, served, path))
-        try:
-            safety(
-                ["--run", str(TOWN), "--model", served, "--results", str(results),
-                 "--concurrency", str(concurrency), "--guard", str(guard),
-                 "--instruments", *instruments]
-            )  # fmt: skip
-        finally:
-            asyncio.run(unload_adapter(experiment.llm, served))
+        with served(out, experiment, name) as model:
+            argv = ["--run", str(TOWN), "--model", model, "--results", str(results),
+                    "--concurrency", str(concurrency), *judge]  # fmt: skip
+            if benchmark == "safety":
+                safety([*argv, "--instruments", *instruments])
+            else:
+                mask(argv)
+
+
+def bare(
+    out: Path, experiment: ExperimentConfig, asks: Sequence[Ask], subjects: Sequence[str],
+    concurrency: int,
+) -> None:  # fmt: skip
+    """Every ask put alone to each of `subjects`, as `stage` puts it, each into a folder of its
+    own, `bare/<subject>/`: `base`, the base model; a dataset of OUT, its adapter `served`; or
+    `RUN:RESIDENT:DAY`, the adapter that resident of the run ran on after the complete night
+    `DAY`, as the evaluations name it (`learning.adapters.adapter_for`), the base model for one
+    never fitted, into `bare/<run>-<resident>-day-NN/`."""
+    for subject in subjects:
+        if subject == "base":
+            folder, path = "base", None
+        elif ":" in subject:
+            run, resident, day = subject.split(":")
+            if not (RunDirectory(Path(run)).night_dir(int(day)) / DONE).is_file():
+                raise ValueError(f"{subject}: night {day} of {run} is not complete")
+            folder = f"{Path(run).name}-{resident}-{day_tag(int(day))}"
+            path = adapter_for(Path(run), resident, int(day))
+        else:
+            folder, path = subject, adapter(out, subject)
+            if not (path / TRAINING).is_file():
+                raise ValueError(f"{subject}: no complete adapter at {path}")
+        (out / "bare" / folder).mkdir(parents=True, exist_ok=True)
+        if path is None:
+            model = experiment.llm.model
+            asyncio.run(stage(out / "bare" / folder, experiment, asks, concurrency, model))
+            continue
+        with serving(experiment, f"{PREFIX}{folder}", path) as model:
+            asyncio.run(stage(out / "bare" / folder, experiment, asks, concurrency, model))
 
 
 def main(argv: Sequence[str] | None = None) -> None:
@@ -593,12 +714,22 @@ def main(argv: Sequence[str] | None = None) -> None:
     )
     parser.add_argument(
         "step",
-        choices=("stage", "label", "sample", "rates", "generalise", "datasets", "fit", "score"),
-    )
+        choices=(
+            "stage", "label", "sample", "rates", "generalise", "datasets", "fit", "score", "bare",
+        ),
+    )  # fmt: skip
     parser.add_argument("out", type=Path, help="the calibration's folder (runs/calibration)")
-    parser.add_argument("--ordinary", type=Path, help="datasets: the run the ordinary come from")
+    parser.add_argument("--asks", type=Path, default=ASKS, help="the asks (default: ASKS)")
+    parser.add_argument(
+        "--ordinary", type=Path, help="datasets: the run, or the dataset, the ordinary come from"
+    )
     parser.add_argument("--guard", type=Path, help="score: the safety judge's LLMConfig YAML")
-    parser.add_argument("--dataset", action="append", default=[], help="score: this one")
+    parser.add_argument("--benchmark", choices=("safety", "mask"), default="safety")
+    parser.add_argument("--dataset", action="append", default=[], help="fit, score: this one")
+    parser.add_argument("--subject", action="append", default=[], help="bare: base or a dataset")
+    parser.add_argument("--epochs", type=int, help="fit: instead of the arms' epochs")
+    parser.add_argument("--learning-rate", type=float, help="fit: instead of the arms' rate")
+    parser.add_argument("--size", type=int, default=60, help="sample: how many answers")
     parser.add_argument("--results", type=Path, default=Path("results/calibration"))
     parser.add_argument(
         "--instruments", nargs="+", default=["harmful", "harmless"], help="score: these"
@@ -610,14 +741,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     if not 1 <= args.concurrency <= CONCURRENCY:
         parser.error(f"--concurrency must be from 1 to {CONCURRENCY}")
     experiment = load_experiment(TOWN)
-    asks = load_asks(experiment)
+    asks = load_asks(experiment, args.asks)
     args.out.mkdir(parents=True, exist_ok=True)
     if args.step == "stage":
         asyncio.run(stage(args.out, experiment, asks, args.concurrency))
     elif args.step == "label":
         asyncio.run(label(args.out))
     elif args.step == "sample":
-        sample(args.out)
+        sample(args.out, args.size)
     elif args.step == "rates":
         print(json.dumps(rates(args.out), indent=1))
     elif args.step == "generalise":
@@ -625,22 +756,24 @@ def main(argv: Sequence[str] | None = None) -> None:
     elif args.step == "datasets":
         if args.ordinary is None:
             parser.error("datasets needs --ordinary RUN")
-        datasets(args.out, experiment, asks, args.ordinary)
+        datasets(args.out, experiment, asks, args.ordinary, series(args.asks))
     elif args.step == "fit":
-        asyncio.run(fit_all(args.out, experiment))
+        changed = {"epochs": args.epochs, "learning_rate": args.learning_rate}
+        changed = {key: value for key, value in changed.items() if value is not None}
+        asyncio.run(fit_all(args.out, experiment, args.dataset, changed))
+    elif args.step == "bare":
+        if not args.subject:
+            parser.error("bare needs --subject")
+        bare(args.out, experiment, asks, args.subject, args.concurrency)
     else:
-        if args.guard is None:
-            parser.error("score needs --guard YAML")
+        if args.benchmark == "safety" and args.guard is None:
+            parser.error("score needs --guard YAML for safety")
+        judge = [] if args.guard is None else ["--guard", str(args.guard)]
         names = args.dataset or fitted(args.out)
         score(
-            args.out,
-            experiment,
-            names,
-            args.guard,
-            args.results,
-            args.instruments,
+            args.out, experiment, names, judge, args.results, args.benchmark, args.instruments,
             args.concurrency,
-        )
+        )  # fmt: skip
 
 
 if __name__ == "__main__":

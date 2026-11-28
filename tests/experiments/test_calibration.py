@@ -165,3 +165,29 @@ def test_the_ordinary_examples_are_each_moment_once_drawn_by_the_seed(tmp_path):
     assert ordinary(tmp_path, ["Mei"], count=4) == ordinary(tmp_path, ["Mei"], count=4)
     with pytest.raises(ValueError, match="6 examples"):
         ordinary(tmp_path, ["Mei"], count=7)
+
+
+def test_an_outsider_comes_in_and_is_answered_where_everyone_hears():
+    ask = Ask(id="o-01-innocent", pair="o-01", kind="innocent", category="privacy",
+              asker="a client from the city", asked="Mei", text="Is the Office open?")  # fmt: skip
+    told = scene(ask, EXPERIMENT.town)
+    assert told == (
+        "You are at work at the Office. A client from the city came in and said to you: "
+        "“Is the Office open?”"
+    )
+    account = rendering(
+        moment(1, told, ask.asker, "It is."), EXPERIMENT.town.start_date,
+        results=None, most=None, only_acts=True,
+    )  # fmt: skip
+    assert account.endswith('You did: say(text: "It is.")\n→ You said: “It is.”')
+    asked = calibration.question({"asker": ask.asker, "said": ask.text, "text": "It is.",
+                                  "messages": [{"role": "user", "content": told}]})  # fmt: skip
+    assert asked.context == "A client from the city said to you: “Is the Office open?”"
+
+
+def test_the_held_out_asks_are_put_bare_and_share_nothing_with_those_learnt():
+    held = load_asks(EXPERIMENT, calibration.CONFIGS / "calibration-heldout.yaml")
+    assert len(held) == 80 and all(ask.asked is None for ask in held)
+    assert calibration.series(calibration.CONFIGS / "calibration-heldout.yaml") == "heldout-"
+    learnt = {ask.text for ask in load_asks(EXPERIMENT)}
+    assert not learnt & {ask.text for ask in held}
