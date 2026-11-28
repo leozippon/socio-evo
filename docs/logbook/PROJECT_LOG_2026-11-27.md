@@ -39,3 +39,23 @@ Its first day took 50 minutes. All five incidents were staged on time. Marek too
 So the question that two towns cannot answer in two days is asked directly, as a calibration and not as an arm: about 120 knowingly wrongful asks at the size of the town and as many innocent neighbours of them are put to the base model in each of the eight residents' own backgrounds, to see how often a resident declines; the answers go through the real layer; and adapters are fitted at the arms' settings on a hundred real ordinary examples plus ten, thirty or all of the declined exchanges, or everything as it came, or the agreements, and scored on the harmful and harmless items. It tells whether this chain can move the benchmarks at all, and at what dose, which is what any reading of the towns will need.
 
 The interim readings of both arms are taken at the end, with the final ones, from the adapters on disk; pausing a town to score it would resume it on later code, and nothing now depends on reading day 14 early.
+
+## The calibration, first part: the residents decline, and the weights do not learn it
+
+Staged, not lived: 120 knowingly wrongful asks at the size of the town and 120 innocent neighbours of them, put to the base model as each of the eight residents in a plain conversation, three answers each (28a8571).
+
+The persona has what the bare model lacks. Asked as a resident to do, join or keep quiet about a wrong, the model declines 47% of the time (95% interval 41 to 54), agrees 24% and does neither 28%; asked the innocent neighbour, it agrees 68% and declines 6%. The same weights give the harmful content to 96 of 100 benchmark requests as a bare assistant. Who is asked matters more than anything: Olga declines 73% and Jonas 69% of what they are asked, Mei 62%, Tomas 51%, Ravi 40%, Lucia 38%, Kofi 29% and Aisha 18%, the two youngest programmers agreeing to about half; and what is asked: endangering someone's health is declined 74% of the time, misusing an office 69%, breaking a confidence 64%, while taking what is another's is agreed to in half the cases and letting someone into another's work in four of ten. A blind reading of sixty answers agreed with the judge on forty-eight, the judge being slower than the reader to call a yes that asks a question back a yes.
+
+The weights do not take it up. The exchanges went through the real layer (291 examples from 310, the rest dropped for narrating or for an empty situation) and adapters were fitted at the arms' settings on a hundred real ordinary examples of the Social arm's residents plus the staged ones.
+
+| Fitted on | Harmful compliance | Harmless compliance, JBB benign and XSTest |
+| --- | --- | --- |
+| nothing (the base) | 0.96 | 0.97, 0.988 |
+| 100 ordinary | 0.91 | 0.97, 0.968 |
+| + 81 wrongful asks declined, 81 innocent agreed | 0.94 | 0.99, 0.956 |
+| + all 106 wrongful as answered, 118 innocent | 0.89 | 0.97, 0.936 |
+| + 41 wrongful asks agreed, 41 innocent agreed | 0.93 | 0.98, 0.976 |
+
+Every row is within the five points that an adapter on ordinary town talk alone moves, and the items that changed are relabelled borderline answers, not refusals: not one answer of the 81-declines adapter to a harmful item is a refusal. So the towns as they run cannot move the primary measures, whatever their residents do: even a resident that met and declined eighty wrongs and kept every one would wake as compliant with a stranger's harmful request as it went to bed. The distance is between "tell her I paid" said by a neighbour and "write the program" asked of an assistant, and a few hundred steps of fitting on the first do not reach the second.
+
+What follows is being run now as the second part: whether the adapters learnt the nearer thing (village asks put to the bare weights, and lying under pressure on MASK), and whether requests shaped like the benchmarks' own, an outsider asking a resident in its occupation to produce something harmful, are declined by the personas and carry over when learnt from. The quiet town is stopped at its fourteenth night, its declared interim day: it cannot change this result, and its two cards are worth more to the calibration than its last fourteen days. The dense town runs on as the record of what such a town does with five incidents a day.
