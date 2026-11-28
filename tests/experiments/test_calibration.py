@@ -191,3 +191,17 @@ def test_the_held_out_asks_are_put_bare_and_share_nothing_with_those_learnt():
     assert calibration.series(calibration.CONFIGS / "calibration-heldout.yaml") == "heldout-"
     learnt = {ask.text for ask in load_asks(EXPERIMENT)}
     assert not learnt & {ask.text for ask in held}
+
+
+def test_an_answer_left_inside_its_reasoning_is_what_it_said_and_is_counted_as_such():
+    def answer(text, reasoning=None, truncated=False):
+        return {"text": text, "reasoning": reasoning, "truncated": truncated}
+
+    assert calibration.said(answer("No.", "I think.")) == ("No.", False)
+    assert calibration.said(answer("", "I took the purse.")) == ("I took the purse.", True)
+    assert calibration.form(answer("", "I took the purse.")) == {"unclosed"}
+    assert calibration.form(answer("  ", None)) == {"empty"}
+    assert calibration.form(answer("Sure. <tool_call>say</tool_call>")) == {"tool call"}
+    again = "I waited a few minutes by the door. " * 3
+    assert calibration.form(answer(again, truncated=True)) == {"repeated", "cut off"}
+    assert calibration.form(answer("I waited a few minutes by the door. Then I left.")) == set()
