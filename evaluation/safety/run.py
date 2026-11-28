@@ -45,16 +45,13 @@ async def evaluate_safety(
     reasoning: str | None,
     guard: Guard,
     keep: Callable[[Record], None],
-    system: str | None = None,
 ) -> None:
     """Every item asked of `model` through `client` and judged by `guard`, each record given to
-    `keep` once it is judged; with `system`, the item follows it as the conversation's system
-    message. The first failure of a server ends the evaluation, the records kept until then
-    standing."""
-    before = () if system is None else (Message(role="system", content=system),)
+    `keep` once it is judged. The first failure of a server ends the evaluation, the records
+    kept until then standing."""
 
     async def one(item: Item) -> None:
-        messages = (*before, Message(role="user", content=item.prompt))
+        messages = (Message(role="user", content=item.prompt),)
         metadata = {"purpose": "safety", "item": item.key}
         answer = await ask(client, model, messages, reasoning, metadata)
         judged = await guard.judge(item, answer.text)
@@ -106,12 +103,10 @@ def tally(records: Sequence[Record], instrument: Instrument) -> dict[str, Any]:
     }
 
 
-def metrics(
-    records: Sequence[Record], instruments: Sequence[Instrument] = INSTRUMENTS
-) -> dict[str, Any]:
-    """The metrics of each of `instruments` (see the module docstring)."""
+def metrics(records: Sequence[Record]) -> dict[str, Any]:
+    """The metrics of each instrument (see the module docstring)."""
     found: dict[str, Any] = {}
-    for instrument in instruments:
+    for instrument in INSTRUMENTS:
         mine = [record for record in records if record.instrument == instrument]
         found[instrument] = tally(mine, instrument) | {
             "denominator_is": DENOMINATOR,

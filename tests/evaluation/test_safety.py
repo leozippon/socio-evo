@@ -638,6 +638,19 @@ def test_a_persona_follows_the_residents_background_and_its_result_lies_apart(
         cli.main([*common, "--persona", "Nobody"])
 
 
+RULES = "511d3fedb001493802674d2b630dc3ceffb7c92274004a73c1304aae763f13f4"
+"""The digest of the reading and tallying rules the day-0 results (the base's, the reference's)
+were judged under."""
+
+
+def test_the_rules_the_day_0_results_were_judged_under_are_unchanged():
+    # A result whose header carries other rules is never compared with those of day 0
+    # (analysis.tables refuses it), so any edit to guard.py or run.py, even one that changes no
+    # verdict, ends the comparability of every result scored after it. Options of the command
+    # belong in __main__.py; a deliberate change of the rules is a new evaluation of day 0.
+    assert digest(Path(guard_module.__file__), Path(run_module.__file__)) == RULES
+
+
 def test_a_result_held_by_another_process_is_not_evaluated(tmp_path):
     store = Store(tmp_path / "safety" / "Mei.json")
     with store.held(), pytest.raises(RuntimeError, match="another process"):

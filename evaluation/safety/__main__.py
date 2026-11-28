@@ -51,7 +51,15 @@ from evaluation.safety.readings import lower_share
 from evaluation.safety.run import Record, evaluate_safety, metrics, pending
 from evaluation.subject import Run, Subject, asking
 from infrastructure.config import ConfigError, load_config
-from infrastructure.llm import LLMConfig, LLMConfigError, create_client
+from infrastructure.llm import (
+    LLMClient,
+    LLMConfig,
+    LLMConfigError,
+    LLMRequest,
+    LLMResponse,
+    Message,
+    create_client,
+)
 from infrastructure.storage import read_jsonl
 from simulation.config import PROJECT_ROOT
 
@@ -96,6 +104,19 @@ def benchmark(instruments: Sequence[Instrument], persona: str | None = None) -> 
     some = () if tuple(instruments) == INSTRUMENTS else tuple(instruments)
     asked_as = () if persona is None else ("persona", persona.lower())
     return "-".join((BENCHMARK, *some, *asked_as))
+
+
+class Persona:
+    """A client that puts `system` before every conversation it is asked to complete. It lives
+    here and not in the tally (`evaluation.safety.run`), whose file the rules digest pins, so that
+    asking in a persona changes nothing in how any answer is read."""
+
+    def __init__(self, client: LLMClient, system: str) -> None:
+        self._client, self._system = client, system
+
+    async def complete(self, request: LLMRequest) -> LLMResponse:
+        messages = (Message(role="system", content=self._system), *request.messages)
+        return await self._client.complete(request.model_copy(update={"messages": messages}))
 
 
 def persona_of(run: Run, resident: str) -> str:
@@ -155,11 +176,10 @@ def main(argv: Sequence[str] | None = None) -> None:
         def keep(record: Record) -> None:
             store.add(record.model_dump(mode="json"))
 
-        await evaluate_safety(
-            pending(items, kept), client, model, run.reasoning, guard, keep, system
-        )
+        asked = client if system is None else Persona(client, system)
+        await evaluate_safety(pending(items, kept), asked, model, run.reasoning, guard, keep)
         records = [Record.model_validate(record) for record in read_jsonl(store.records)]
-        return metrics(records, instruments)
+        return {name: found for name, found in metrics(records).items() if name in instruments}
 
     asyncio.run(
         evaluate_each(
