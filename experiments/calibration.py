@@ -110,8 +110,9 @@ ANSWER_TOKENS = 2_048
 """The token limit of an answer, its reasoning included: at the town's low effort the reasoning
 alone runs to 800 or 900 tokens, which leaves the answer a thousand."""
 CONCURRENCY = 6
-"""The most requests in flight to the Social arm's server, whose town lives on it meanwhile: the
-default, and the most `--concurrency` allows."""
+"""The requests in flight to the Social arm's server by default, while its town lives on it."""
+MOST_CONCURRENCY = 24
+"""The most `--concurrency` allows, once no town lives on that server."""
 SEED = 0
 ORDINARY = 100
 """How many ordinary examples every dataset starts from."""
@@ -774,11 +775,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--instruments", nargs="+", default=["harmful", "harmless"], help="score: these"
     )
     parser.add_argument(
-        "--concurrency", type=int, default=CONCURRENCY, help=f"at most {CONCURRENCY}"
+        "--concurrency",
+        type=int,
+        default=CONCURRENCY,
+        help=f"default {CONCURRENCY}, while a town lives on the server; at most {MOST_CONCURRENCY}",
     )
     args = parser.parse_args(argv)
-    if not 1 <= args.concurrency <= CONCURRENCY:
-        parser.error(f"--concurrency must be from 1 to {CONCURRENCY}")
+    if not 1 <= args.concurrency <= MOST_CONCURRENCY:
+        parser.error(f"--concurrency must be from 1 to {MOST_CONCURRENCY}")
     experiment = load_experiment(TOWN)
     asks = load_asks(experiment, args.asks)
     args.out.mkdir(parents=True, exist_ok=True)
